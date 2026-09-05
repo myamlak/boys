@@ -1,0 +1,49 @@
+Boys-function CPU throughput runs — i7-9850H
+=============================================
+Date: 2026-08-29
+Machine: LENOVO 20QQS32H0B, Intel Core i7-9850H (6C/12T, AVX2), 32 GB RAM
+Driver/CUDA: n/a (CPU)
+MSVC: 14.51.36231 (VS 2026), /O2; SIMD lanes /arch:AVX2
+Commit: (private repository revision, recorded with the submission record)
+Build preset: MSVC Release x64
+Power plan: High performance (GUID 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c)
+Environment closure: tasklist showed no benchmark executable, compiler
+  process, or interpreter before the run (another timed lane had exited); a
+  hung compiler process from an earlier build was closed before the run.
+
+self-check: cheb-simd-unsorted-n8 | max_abs_err: 2.082e-17 | budget: 5.50e-14 | PASS
+  worst at x = 0.280213298 (uniform-x40-n8, rng(46), 4194304 points)
+
+Sorted lanes (the CPU benchmark binary, --benchmark_filter=Boys
+--benchmark_repetitions=3; 3 reps, min/median/max ms from the three rep
+rows, median = paper cell;
+workload count 4194304 inputs per rep):
+kernel: scalar-double | workload: uniform-n32-x40 | count: 4194304 | reps: 3 | min_ms: 427.871 | median_ms: 429.688 | max_ms: 481.473 | median_Mvals_per_s: 9.761
+kernel: scalar-double | workload: molecular | count: 4194304 | reps: 3 | min_ms: 189.587 | median_ms: 193.041 | max_ms: 195.073 | median_Mvals_per_s: 21.765
+kernel: scalar-batch-double | workload: uniform-n32-x40 | count: 4194304 | reps: 3 | min_ms: 447.935 | median_ms: 491.762 | max_ms: 509.200 | median_Mvals_per_s: 8.659
+kernel: scalar-batch-double | workload: molecular | count: 4194304 | reps: 3 | min_ms: 89.709 | median_ms: 97.321 | max_ms: 105.573 | median_Mvals_per_s: 42.706
+kernel: scalar-f32 | workload: uniform-n32-x40 | count: 4194304 | reps: 3 | min_ms: 389.512 | median_ms: 400.439 | max_ms: 409.794 | median_Mvals_per_s: 10.737
+kernel: cheb-simd-sorted-n8 | workload: uniform-x40-n8 (region-sorted) | count: 4194304 | reps: 3 | min_ms: 28.818 | median_ms: 30.783 | max_ms: 36.004 | median_Mvals_per_s: 134.218
+kernel: scalar-f16 | workload: uniform-n32-x40 | count: 4194304 | reps: 3 | min_ms: 386.841 | median_ms: 389.807 | max_ms: 416.506 | median_Mvals_per_s: 10.737
+kernel: scalar-f16 | workload: molecular | count: 4194304 | reps: 3 | min_ms: 192.277 | median_ms: 195.188 | max_ms: 196.471 | median_Mvals_per_s: 21.475
+kernel: scalar-batch-f16 | workload: uniform-n32-x40 | count: 4194304 | reps: 3 | min_ms: 689.674 | median_ms: 771.629 | max_ms: 817.918 | median_Mvals_per_s: 5.369
+kernel: scalar-batch-f16 | workload: molecular | count: 4194304 | reps: 3 | min_ms: 244.677 | median_ms: 249.119 | max_ms: 281.171 | median_Mvals_per_s: 16.777
+kernel: scalar-bf16 | workload: uniform-n32-x40 | count: 4194304 | reps: 3 | min_ms: 359.536 | median_ms: 364.437 | max_ms: 364.452 | median_Mvals_per_s: 11.671
+kernel: scalar-batch-bf16 | workload: uniform-n32-x40 | count: 4194304 | reps: 3 | min_ms: 519.080 | median_ms: 559.066 | max_ms: 575.241 | median_Mvals_per_s: 7.457
+kernel: cheb-simd-f16-sorted-n8 | workload: uniform-x40-n8 (region-sorted) | count: 4194304 | reps: 3 | min_ms: 22.306 | median_ms: 23.346 | max_ms: 25.857 | median_Mvals_per_s: 178.957
+
+Unsorted-SIMD lane (the unsorted-SIMD benchmark binary, custom main,
+runs-log rows):
+kernel: cheb-simd-unsorted-n8 | workload: uniform-x40-n8 | count: 4194304 | passes: 3 | min_ms: 95.267 | median_ms: 100.613 | max_ms: 113.331 | median_Mvals_per_s: 41.687
+
+Summary (median of 3 recorded passes; paper cells):
+  scalar double uniform 9.76 M/s | molecular 21.77 M/s
+  scalar float uniform 10.74 M/s
+  AVX2 region-sorted uniform 134.2 M/s
+  AVX2 unsorted uniform 41.69 M/s -> measured unsorted penalty 3.2x
+    (sorted/unsorted on the same uniform-x40-n8 stream; the earlier design
+     study measured 2.3x on its own harness)
+  fp16/bf16 scalar lanes: uniform 10.74/11.67 M/s (single), 5.37/7.46 M/s (batch)
+  SIMD fp16 region-sorted 178.96 M/s
+
+Recorded under runs/PROTOCOL.md.

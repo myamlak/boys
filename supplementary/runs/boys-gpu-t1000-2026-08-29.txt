@@ -1,0 +1,47 @@
+Boys-function GPU throughput runs — Quadro T1000
+=================================================
+Date: 2026-08-29
+Machine: LENOVO 20QQS32H0B, Intel Core i7-9850H, 32 GB RAM,
+  Quadro T1000 4096 MiB, CC 7.5, 14 SMs
+Driver: 596.86; CUDA toolkit: 13.3.73
+MSVC: 14.51.36231 (VS 2026); nvcc -std=c++20, sm_75
+Commit: (private repository revision, recorded with the submission record)
+Build preset: MSVC Release x64 + CUDA
+Power plan: High performance (GUID 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c)
+Environment closure: tasklist showed no benchmark executable, compiler
+  process, or interpreter before the run.
+Device state (nvidia-smi clocks.sm,clocks.mem,power.draw,temperature.gpu):
+  before:  1395 MHz, 3500 MHz, 10.35 W, 36 C
+  during:  1395 MHz, 3500 MHz, 10.53 W, 37 C  (steady, no clock drops)
+  after:   1455 MHz, 3500 MHz, 11.10 W, 37 C
+  (short kernel bursts did not engage the boost clock; SM clock steady,
+   no pass invalidated)
+
+Self-check (all lanes vs the CPU references, PASS):
+self-check: cheb-f64 | max_abs_err: 2.101e-16 | budget: 5.50e-14 | PASS
+self-check: cheb-f32 | max_abs_err: 2.033e-07 | budget: 3.50e-07 | PASS
+self-check: erf-f64 (x >= 10.0, 3145792 pts) | max_abs_err: 6.721e-14 | budget: 1.00e-13 | PASS
+  erf x >= 5 worst: 2.154e-04 (n = 32, x = 5.039); asserted-domain worst at n = 32, x = 10.012
+self-check: lut-f64 | max_abs_err: 4.936e-14 | budget: 1.00e-12 | PASS
+self-check: fp16-single | max_abs_err_over_ulp: 0.000e+00 | budget: 3.50e-07 + 1 ULP | PASS
+
+Timing (one warmup pass, then 3 recorded passes; median = paper cell;
+uniform-n32-x40 workload, mt19937_64(42), 4194304 items, 256 threads/block):
+kernel: cheb-f64 | workload: uniform-n32-x40 | count: 4194304 | passes: 3 | min_ms: 95.097 | median_ms: 95.707 | max_ms: 97.358 | median_Mvals_per_s: 43.824
+kernel: cheb-f32 | workload: uniform-n32-x40 | count: 4194304 | passes: 3 | min_ms: 9.896 | median_ms: 9.916 | max_ms: 9.932 | median_Mvals_per_s: 422.977
+kernel: erf-f64 | workload: uniform-n32-x40 | count: 4194304 | passes: 3 | min_ms: 25.954 | median_ms: 25.954 | max_ms: 25.962 | median_Mvals_per_s: 161.602
+kernel: lut-f64 | workload: uniform-n32-x40 | count: 4194304 | passes: 3 | min_ms: 43.831 | median_ms: 43.844 | max_ms: 43.862 | median_Mvals_per_s: 95.664
+kernel: fp16-single | workload: uniform-n32-x40 | count: 4194304 | passes: 3 | min_ms: 23.076 | median_ms: 23.323 | max_ms: 24.025 | median_Mvals_per_s: 179.838
+  (fp16-single is the host-pointer API: wall-clock, per-call device-buffer
+   allocations included — the honest cost of the shipped API)
+
+Summary (median of 3 recorded passes; paper cells):
+  GPU float lane 423.0 M/s = 4.4x the fastest double lane (LUT kernel
+    95.7 M/s; cheb-f64 43.8 M/s), not the earlier design study's 991 M/s /
+    8.4x / 5.2x. The fresh run is on the paper's stated
+    workload and the shipped kernels; the gap is recorded as measured, and
+    the paper cells cite this run.
+  GPU fp16 (I/O-only, allocations included) 179.8 M/s
+  erf-f64 competitor 161.6 M/s; lut-f64 competitor 95.7 M/s
+
+Recorded under runs/PROTOCOL.md.

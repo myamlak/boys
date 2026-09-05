@@ -1,0 +1,114 @@
+Boys-function accuracy record — i7-9850H (tab:accuracy)
+========================================================
+Date: 2026-08-28
+Machine: LENOVO 20QQS32H0B, Intel Core i7-9850H (6C/12T, AVX2), 32 GB RAM
+Driver/CUDA: n/a (CPU lanes; the GPU self-check rows are in
+  boys-gpu-t1000-2026-08-29.txt)
+MSVC: 14.51.36231 (VS 2026), Release x64
+Commit: (private repository revision, recorded with the submission record)
+Build preset: MSVC Release x64
+
+This record carries the measured per-region worst absolute errors against
+the shipped 30-digit reference grid (boys_reference.csv, 2310 rows:
+n = 0..32 at 70 x-values in [0, 100], including all region boundaries),
+as printed by the accuracy runs of the accompanying test suite. The
+regions are the manuscript's: A = [0, x0), B = [x0, x1), C = [x1, inf)
+with x0 = 11.899848152108484, x1 = 28.989337738820740. Each row is the
+worst of the committed grid (a lower bound on the continuous worst; the
+asserted bounds below are the contract the test suite enforces).
+
+Double lanes (tab:accuracy rows "double single" / "double batch"):
+
+  lane          | region A        | region B        | region C        | overall
+  double single | 2.220e-16       | 9.936e-15       | 5.000e-14       | 5.000e-14
+  double batch  | 7.550e-15       | 9.936e-15       | 5.000e-14       | 5.000e-14
+
+  asserted bounds: single A <= 1e-15, B <= 3e-14, C/overall <= 5.5e-14;
+  batch all regions <= 5.5e-14. The overall worst 5.000e-14 sits at
+  (n = 32, x = x1) — the shared asymptotic cutoff, matching the
+  manuscript's "5.0e-14 at (32, x1)" cell. Region-C cells are the
+  asymptotic-form cutoff, not a polynomial error. (Region B holds only
+  the grid's five x-values in [x0, x1), so 9.936e-15 is a lower bound;
+  the manuscript's 2.9e-14 region-B cell was measured on a denser sweep
+  of the same kernel.)
+
+Float lanes (tab:accuracy rows "float single" / "float batch",
+budget-style cells <= 1.5e-7):
+
+  lane         | region A        | region B        | region C        | overall
+  float single | 1.192e-07       | 2.223e-08       | 1.490e-08       | 1.192e-07
+  float batch  | 5.960e-08       | 2.223e-08       | 1.490e-08       | 5.960e-08
+
+  asserted bound: every region <= 1.5e-7 (the certified float budget;
+  the batch lane seeds in double precision).
+
+fp16 / bf16 rows (tab:accuracy; I/O-only lanes around the certified
+float engine). Contract: |result - F_n(x16)| <= 1.5e-7 + one half-ULP of
+representation of the rounded reference value (the manuscript's
+error-bounded contract); the suite asserts the strictly stronger m*1e-7 + 1/2-ULP
+base of the D-F2 formula, whose 1e-7 is the fp16 lanes' asserted base,
+not the float budget (reconciliation: the provenance annex). The
+half-ULP term dominates every cell. Budgets are the max per-region
+per-value budget:
+
+  lane            | region A  bound / worst | region B  bound / worst | region C  bound / worst
+  fp16 single     | 4.884e-4  / 2.421e-04   | 1.222e-4  / 8.501e-05   | 6.114e-5  / 6.029e-05
+  fp16 batch      | 4.884e-4  / 2.421e-04   | 1.222e-4  / 8.501e-05   | 6.114e-5  / 6.029e-05
+  bf16 single     | 3.906e-3  / 1.903e-03   | 9.767e-4  / 6.381e-04   | 4.884e-4  / 4.763e-04
+  bf16 batch      | 3.906e-3  / 1.903e-03   | 9.767e-4  / 6.381e-04   | 4.884e-4  / 4.763e-04
+
+  The overall worsts (2.421e-04 fp16, 1.903e-03 bf16) are the
+  manuscript's worst cells (2.4e-4 / 1.9e-3); batch worsts coincide with
+  single worsts (both lanes drive the same certified float engine
+  through identical rounding). The half-ULP worsts are
+  representation-dominated: region A is dominated by values near
+  F_n = 1/2 (half-ULP 4.884e-4), B by F_0 near x0 (~0.257), C by F_0 at
+  x1 (~0.165). These worsts are also regenerated in exact arithmetic by
+  the shipped script fp16_bf16_io_worst.py (only mpmath required).
+
+CUDA rows (tab:accuracy, GPU-vs-CPU comparison; the GPU self-check rows
+of boys-gpu-t1000-2026-08-29.txt):
+
+  cheb-f64 |out - CPU double lane| <= 5.5e-14  (self-check worst 2.101e-16
+    on the uniform workload); cheb-f32 <= 3.5e-7 (self-check worst
+    2.033e-07); fp16-single <= 3.5e-7 + 1 ULP (self-check worst
+    0.000e+00 over ULP).
+
+The manuscript's worst cells 4.4e-17 (double single) and 1.8e-7 (float
+batch) are the device-vs-CPU worsts PRINTED by the fixed-seed comparison
+tests (boys_cuda_test.cpp, seeds rng(20260817)/rng(20260823), 65,536
+draws, n in 0..32, x in [1e-4, 60]) on this T1000 during the original validation
+(2026-08-17-24) and recorded in the design-study notes (section 5.5)
+and the pins spec's drift-guard table. Those prints were
+never committed, so the self-check rows above — the benchmark harness's
+uniform-n32-x40 workload (4,194,304 draws) — do not reproduce them; the
+difference is the draw (the larger sample shows larger sample worsts:
+2.101e-16 > 4.4e-17, 2.033e-7 > 1.8e-7), not a kernel change. The m = 1
+CUDA evaluation bodies are unchanged since the measurement (the
+relaxation commits parametrized the m > 1 paths only; the m = 1
+byte-identity pin is asserted in-suite), and the self-checks above pass on the same
+device/driver (596.86, CUDA 13.3.73). Re-probe recipe: rebuild the CUDA
+preset and run the CUDA test suite's BoysCudaTest.* cases on
+the T1000, capturing the printed worsts; if one moves, the article cell
+follows the measurement (the drift-guard rule), never the reverse.
+The CUDA fp16 row's cells equal the CPU fp16 cells by construction — the
+engines are bit-identical (self-check excess 0.000e+00 over ULP) — rather
+than by grid identity.
+
+Region-B exp-Taylor pin (the 1.8e-17 claim of the manuscript's Method
+section): the test replica of the shipped gather-table construction
+(3001 rows, step 0.01, degree-4 Taylor of e^-x) swept densely over
+[x0, x1) measures a worst of 1.303e-17 at x = 12.067248 (asserted <=
+1e-16); the manuscript's 1.8e-17 cell stands (same order, conservative).
+
+Footprint sizes (the manuscript's Discussion cells), printed by the
+accompanying test suite from the shipped tables:
+
+  Chebyshev coefficients + piece metadata: 17,904 B (~17.9 KB, the
+    manuscript's ~18 KB cell)
+  region-B exp-Taylor gather table: 192,064 B (~192 KB, matches)
+  flat-Taylor table spec (n <= 24, step 0.01, limit 50): 5,001,000 B
+    (~5 MB, the discarded competitor spec)
+
+Recorded under the protocol of runs/PROTOCOL.md (accuracy rows come from
+the test suite and the --self-check modes; no timing involved).

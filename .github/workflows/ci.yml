@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Cancel a still-running older run when a newer push lands on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Two legs, the two toolchains the kernel is verified on: windows-msvc
+# Release and linux-gcc Release. There is deliberately no CUDA leg: CI has
+# no GPU runner, the device pins are a documented local gate, and the timed
+# benchmark passes stay local-only by design (the paper's methodology
+# records machine/clock/commit per run). The CMake benchmark targets are
+# therefore off in CI (BUILD_BENCHMARKS=OFF; their timed runs are never a
+# CI gate).
+#
+# Every leg runs the full gate: build, ctest (kernel contract tests,
+# multiplier tests, the C-surface tests, the boundary pins, and the
+# BOUNDARY-CHECK standalone over the committed reference grid), the
+# generator byte-identity protocol (no-args in-place regeneration + --check
+# + git diff --exit-code over the two generated files), and the
+# zero-warning Doxygen build.
+#
+# Action and tool versions are pinned: checkout v7.0.1, msvc-dev-cmd
+# v1.13.0, mpmath 1.4.1 (requirements-boys.txt — the committed bytes only
+# reproduce against it), Doxygen 1.18.0 (the same release on both legs).
+
+jobs:
+  windows-msvc-release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          submodules: true
+      - uses: ilammy/msvc-dev-cmd@v1.13.0
+      - name: Set up Python + mpmath
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install --quiet mpmath==1.4.1
+      - name: Install Doxygen 1.18.0 (pinned release)
+        run: |
+          Invoke-WebRequest -Uri https://github.com/doxygen/doxygen/releases/download/Release_1_18_0/doxygen-1.18.0.windows.x64.bin.zip -OutFile doxygen.zip
+          Expand-Archive doxygen.zip -DestinationPath doxygen-1.18.0
+          Add-Content -Path $env:GITHUB_PATH -Value "$PWD\doxygen-1.18.0"
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF
+      - name: Build
+        run: cmake --build build
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - name: Generator byte-identity (no-args regeneration + --check + git diff)
+        run: |
+          .\.venv\Scripts\python.exe tools/gen_boys_coefficients.py --header src/boys_coefficients.hpp --reference tests/data/boys_reference.csv
+          .\.venv\Scripts\python.exe tools/gen_boys_coefficients.py --check --header src/boys_coefficients.hpp --reference tests/data/boys_reference.csv
+          git diff --exit-code -- src/boys_coefficients.hpp tests/data/boys_reference.csv
+      - name: Boundary standalone check
+        run: |
+          New-Item -ItemType Directory -Force boundary-run | Out-Null
+          cl /nologo /std:c++17 /EHsc /O2 tests/boys_boundary_standalone.cpp /Fe:boundary-run\boys-boundary-check.exe /Fo:boundary-run\
+          Copy-Item tests/data/boys_reference.csv boundary-run\boys_reference.csv
+          .\boundary-run\boys-boundary-check.exe
+      - name: Docs (zero-warning Doxygen gate)
+        run: cmake --build build --target boys-docs
+
+  linux-gcc-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          submodules: true
+      - name: Set up Python + mpmath (venv - the runner python is PEP-668 managed)
+        run: |
+          python3 -m venv .venv
+          .venv/bin/python -m pip install --quiet mpmath==1.4.1
+      - name: Install Doxygen 1.18.0 (pinned release)
+        run: |
+          curl -L -sS -o /tmp/doxygen.tar.gz https://github.com/doxygen/doxygen/releases/download/Release_1_18_0/doxygen-1.18.0.linux.bin.tar.gz
+          tar -xzf /tmp/doxygen.tar.gz -C /tmp
+          echo "$(dirname "$(find /tmp/doxygen-1.18.0 -name doxygen -type f | head -1)")" >> "$GITHUB_PATH"
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF
+      - name: Build
+        run: cmake --build build -j 2
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - name: Generator byte-identity (no-args regeneration + --check + git diff)
+        run: |
+          .venv/bin/python tools/gen_boys_coefficients.py --header src/boys_coefficients.hpp --reference tests/data/boys_reference.csv
+          .venv/bin/python tools/gen_boys_coefficients.py --check --header src/boys_coefficients.hpp --reference tests/data/boys_reference.csv
+          git diff --exit-code -- src/boys_coefficients.hpp tests/data/boys_reference.csv
+      - name: Boundary standalone check
+        run: |
+          mkdir -p boundary-run
+          g++ -std=c++17 -O2 tests/boys_boundary_standalone.cpp -o boundary-run/boys-boundary-check
+          cp tests/data/boys_reference.csv boundary-run/boys_reference.csv
+          ./boundary-run/boys-boundary-check
+      - name: Docs (zero-warning Doxygen gate)
+        run: cmake --build build --target boys-docs

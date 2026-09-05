@@ -1,0 +1,5 @@
+# Build-time-only regeneration dependency of tools/gen_boys_coefficients.py
+# (the Chebyshev coefficient tables and the 30-digit reference grid).
+# The committed tables were generated with this exact version; the
+# byte-identity gate (--check, the CI legs) only holds against it.
+mpmath==1.4.1

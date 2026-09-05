@@ -1,0 +1,90 @@
+# Doxyfile for the boysymmetriad API documentation.
+# Used by the `boys-docs` CMake target (working directory is the repo root).
+# Generate with:
+#   cmake --build build --target boys-docs
+# Output lands in build/doxygen/html (open index.html).
+# Gate: zero warnings — any warning fails the target (WARN_AS_ERROR).
+
+PROJECT_NAME           = boysymmetriad
+PROJECT_BRIEF          = "Boys-function kernel: self-contained evaluation of F_n(x), n = 0..32"
+OUTPUT_DIRECTORY       = build/doxygen
+OUTPUT_LANGUAGE        = English
+
+# Extraction: document everything public in the scanned headers, and warn
+# about anything that escaped documentation. EXTRACT_ALL must stay NO -
+# with YES Doxygen silently disables WARN_IF_UNDOCUMENTED, which defeats
+# the gate.
+EXTRACT_ALL            = NO
+EXTRACT_STATIC         = NO
+EXTRACT_PRIVATE        = NO
+HIDE_UNDOC_MEMBERS     = NO
+WARN_IF_UNDOCUMENTED   = YES
+WARN_NO_PARAMDOC       = YES
+WARN_IF_DOC_ERROR      = YES
+WARN_IF_INCOMPLETE_DOC = NO
+# The docs gate fails the build on any warning - the gate must be loud.
+WARN_AS_ERROR          = YES
+QUIET                  = YES
+WARNINGS               = YES
+WARN_FORMAT            = "$file:$line: $text"
+
+# Preprocessor: the fp16/bf16 API entries are guarded by #if BoysFp16 -
+# without the define Doxygen evaluates the guard to 0 and whole lanes are
+# invisible to the gate (a vacuous zero-warning pass).
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = YES
+PREDEFINED             = BoysFp16=1
+
+# Inputs: the public headers, scanned recursively; the README becomes the
+# front page of the published docs.
+INPUT                  = include/boysymmetriad README.md
+RECURSIVE              = YES
+FILE_PATTERNS          = *.hpp *.h *.md
+INPUT_ENCODING         = UTF-8
+USE_MDFILE_AS_MAINPAGE = README.md
+
+# C++ presentation
+OPTIMIZE_OUTPUT_FOR_C  = NO
+CPP_CLI_SUPPORT        = NO
+BUILTIN_STL_SUPPORT    = YES
+CASE_SENSE_NAMES       = YES
+SHOW_NAMESPACES        = YES
+SHOW_INCLUDE_FILES     = YES
+SHOW_GROUPED_MEMB_INC  = YES
+INLINE_INFO            = YES
+SORT_MEMBER_DOCS       = YES
+SORT_BRIEF_DOCS        = YES
+TYPEDEF_HIDES_STRUCT   = NO
+EXTRACT_LOCAL_CLASSES  = NO
+
+# Source browser
+SOURCE_BROWSER         = YES
+VERBATIM_HEADERS       = YES
+STRIP_CODE_COMMENTS    = YES
+REFERENCES_LINK_SOURCE = YES
+REFERENCED_BY_RELATION = NO
+REFERENCES_RELATION    = NO
+
+# HTML output only (LaTeX/RTF/man turned off)
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+HTML_COLORSTYLE        = LIGHT
+GENERATE_TREEVIEW      = YES
+TREEVIEW_WIDTH         = 250
+GENERATE_LATEX         = NO
+GENERATE_RTF           = NO
+GENERATE_MAN           = NO
+GENERATE_XML           = NO
+GENERATE_DOCBOOK       = NO
+
+# Index pages
+ALPHABETICAL_INDEX     = YES
+GENERATE_TODOLIST      = YES
+GENERATE_TESTLIST      = YES
+GENERATE_BUGLIST       = YES
+GENERATE_DEPRECATEDLIST= YES
+
+# No graphviz dependency (HAVE_DOT OFF); enable if diagram generation is
+# ever wanted.
+HAVE_DOT               = NO
