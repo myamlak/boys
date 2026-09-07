@@ -1,4 +1,4 @@
-# Assertions Reference
+﻿# Assertions Reference
 
 This page lists the assertion macros provided by GoogleTest for verifying code
 behavior. To use them, add `#include <gtest/gtest.h>`.
@@ -16,7 +16,7 @@ EXPECT_TRUE(my_condition) << "My condition is not true";
 ```
 
 Anything that can be streamed to an `ostream` can be streamed to an assertion
-macro—in particular, C strings and string objects. If a wide string (`wchar_t*`,
+macroâ€”in particular, C strings and string objects. If a wide string (`wchar_t*`,
 `TCHAR*` in `UNICODE` mode on Windows, or `std::wstring`) is streamed to an
 assertion, it will be translated to UTF-8 when printed.
 
@@ -112,9 +112,9 @@ Value of: value1
 Expected: starts with "Hello"
 ```
 
-GoogleTest provides a built-in library of matchers—see the
+GoogleTest provides a built-in library of matchersâ€”see the
 [Matchers Reference](matchers.md). It is also possible to write your own
-matchers—see [Writing New Matchers Quickly](../gmock_cook_book.md#NewMatchers).
+matchersâ€”see [Writing New Matchers Quickly](../gmock_cook_book.md#NewMatchers).
 The use of matchers makes `EXPECT_THAT` a powerful, extensible assertion.
 
 *The idea for this assertion was borrowed from Joe Walnes' Hamcrest project,
@@ -146,7 +146,7 @@ will result.
 
 If an argument supports the `<<` operator, it will be called to print the
 argument when the assertion fails. Otherwise, GoogleTest will attempt to print
-them in the best way it can—see
+them in the best way it canâ€”see
 [Teaching GoogleTest How to Print Your Values](../advanced.md#teaching-googletest-how-to-print-your-values).
 
 Arguments are always evaluated exactly once, so it's OK for the arguments to
@@ -574,7 +574,7 @@ status and produces `stderr` output that matches *`matcher`*.
 
 The parameter *`matcher`* is either a [matcher](matchers.md) for a `const
 std::string&`, or a regular expression (see
-[Regular Expression Syntax](../advanced.md#regular-expression-syntax))—a bare
+[Regular Expression Syntax](../advanced.md#regular-expression-syntax))â€”a bare
 string *`s`* (with no matcher) is treated as
 [`ContainsRegex(s)`](matchers.md#string-matchers), **not**
 [`Eq(s)`](matchers.md#generic-comparison).
@@ -626,7 +626,7 @@ cases:
 
 The parameter *`matcher`* is either a [matcher](matchers.md) for a `const
 std::string&`, or a regular expression (see
-[Regular Expression Syntax](../advanced.md#regular-expression-syntax))—a bare
+[Regular Expression Syntax](../advanced.md#regular-expression-syntax))â€”a bare
 string *`s`* (with no matcher) is treated as
 [`ContainsRegex(s)`](matchers.md#string-matchers), **not**
 [`Eq(s)`](matchers.md#generic-comparison).

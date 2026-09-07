@@ -1,4 +1,4 @@
-[ RUN      ] GMockOutputTest.ExpectedCall
+﻿[ RUN      ] GMockOutputTest.ExpectedCall
 
 FILE:#: EXPECT_CALL(foo_, Bar2(0, _)) invoked
 Stack trace:

@@ -1,4 +1,4 @@
-The non-test part of the code is expected to have 2 failures.
+﻿The non-test part of the code is expected to have 2 failures.
 
 googletest-output-test_.cc:#: Failure
 Value of: false

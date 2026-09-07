@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-  pull_request:
+    branches: [main]
 
 # Cancel a still-running older run when a newer push lands on the same ref.
 concurrency:
@@ -61,7 +61,8 @@ jobs:
           New-Item -ItemType Directory -Force boundary-run | Out-Null
           cl /nologo /std:c++17 /EHsc /O2 tests/boys_boundary_standalone.cpp /Fe:boundary-run\boys-boundary-check.exe /Fo:boundary-run\
           Copy-Item tests/data/boys_reference.csv boundary-run\boys_reference.csv
-          .\boundary-run\boys-boundary-check.exe
+          Set-Location boundary-run
+          .\boys-boundary-check.exe
       - name: Docs (zero-warning Doxygen gate)
         run: cmake --build build --target boys-docs
 
@@ -96,6 +97,6 @@ jobs:
           mkdir -p boundary-run
           g++ -std=c++17 -O2 tests/boys_boundary_standalone.cpp -o boundary-run/boys-boundary-check
           cp tests/data/boys_reference.csv boundary-run/boys_reference.csv
-          ./boundary-run/boys-boundary-check
+          cd boundary-run && ./boys-boundary-check
       - name: Docs (zero-warning Doxygen gate)
         run: cmake --build build --target boys-docs

@@ -1,4 +1,4 @@
-name: build-and-test-perfcounters
+﻿name: build-and-test-perfcounters
 
 on:
   push:

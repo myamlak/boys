@@ -1,5 +1,5 @@
-// Recursion-boundaries harness (main.tex tab:boundaries "Measured recursion
-// boundaries"). Measures where the erf-seeded upward recursion leaves the
+// Recursion-boundaries harness (tab:boundaries of the accompanying paper):
+// measures where the erf-seeded upward recursion leaves the
 // 5e-14 absolute window of the V&S eq. 26 series reference, per kmax in
 // {4, 8, 16, 32}, and pins the four recorded cells within
 // kMeasuredTolerance (the paper's cells adopted the
@@ -51,7 +51,7 @@ constexpr long double kSeriesTailFloor = 1e-26L;
 // (3.200e-15 at (n=31, x=38.3119) - measured on this machine).
 constexpr double kCsvAgreementTolerance = 5e-15;
 
-// Toolchain premise pin (spec's "(80-bit on MSVC)" is false): MSVC's long
+// Toolchain premise pin (the "(80-bit on MSVC)" premise is false): MSVC's long
 // double is 64-bit - a synonym for double - while GCC/Clang carry the x87
 // 80-bit type. The reference series degrades to double precision on MSVC
 // (~1e-16 relative instead of ~1e-19); F_n values are O(1) or smaller in
@@ -97,7 +97,7 @@ long double SeriesReference(int n, double x) {
     }
 
     // std::exp, not std::expl: C99 math names are not required in namespace std
-    // (libstdc++ has no std::expl - the CI gcc break); the long double overload
+    // (libstdc++ has no std::expl); the long double overload
     // is selected by the argument.
     return std::exp(-xL) * 0.5L * sum;
 }
@@ -142,7 +142,7 @@ bool PassesThreshold(int kmax, double x) {
 }
 
 // Two-phase deterministic descending sweep: phase 1 walks
-// x from 12.0 down in 0.01 steps (the protocol's "down to 0.001" floor is the
+// x from 12.0 down in 0.01 steps (the "down to 0.001" floor is the
 // sweep's low end - 12.0 -> 0.001 at step 0.01 does not land on 0.001, and
 // the smallest recorded cell, kmax = 4's 0.4625, sits far above it); phase 2
 // refines the pass/fail transition band in 0.001 steps (three decimal places
@@ -150,11 +150,11 @@ bool PassesThreshold(int kmax, double x) {
 // failure - see the reconciliation note on kThresholdRows). No random draws
 // anywhere.
 //
-// The spec's "error is monotone over the transition" premise is FALSE: the
+// The "error is monotone over the transition" premise is FALSE: the
 // amplified seed rounding error oscillates through the 5e-14 line hundreds
 // of times near the transition (verified on a 1e-4 grid), so "the" boundary
 // is a grid-dependent measurement, not a monotone threshold. Stopping both
-// phases at the first fail is therefore the spec's deterministic definition
+// phases at the first fail is therefore the deterministic definition
 // of the measured cell, not a monotonicity shortcut.
 double MeasureBoundary(int kmax) {
     constexpr double kSweepStart = 12.0;
@@ -348,7 +348,7 @@ TEST(BoysBoundaryTest, ErfSeededUpwardRecursionThresholds) {
 TEST(BoysBoundaryTest, InlineReferenceMatchesCommittedGrid) {
     // Self-test of the inline series: both it and the CSV evaluate the same
     // V&S eq. 26 series (the CSV at 30 mpmath digits, rounded to double), so
-    // their agreement is bounded by the two roundings. The spec's "agree to
+    // their agreement is bounded by the two roundings. The "agree to
     // ~1e-17" assumed the 80-bit long-double premise; with MSVC's 64-bit
     // long double the inline error is ~1e-16 relative, so the asserted
     // agreement (kCsvAgreementTolerance, ~5x the measured worst on MSVC)

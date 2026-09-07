@@ -6,7 +6,7 @@
 #include <array>
 #include <cstddef>
 
-namespace boysymmetriad::detail {
+namespace boys::detail {
 
 inline constexpr int kMaxOrder = 32;
 inline constexpr double kX0 = 1.18998481521084840e+01;
@@ -533,9 +533,42 @@ inline constexpr auto kBcoeffs = std::to_array<double>({2.03117554967922859e-01,
                                                         3.79333767615154839e-14});
 inline constexpr int kBDeg = 18;
 
-} // namespace boysymmetriad::detail
+// The extended band (the per-range seed design): an F0 fit on
+// [kExtendedBX0, kX0) evaluated by the same split Clenshaw; the
+// upward recursion from it is certified per kmax tier - an order n
+// takes the extended seed exactly when x >= kTierThresholds[n], the
+// per-order dispatch thresholds (the certified values of the
+// interval instrument, rounded up to the next double).
+inline constexpr double kExtendedBX0 = 1.08552523453493330e+00;
+inline constexpr auto kExtendedBcoeffs = std::to_array<double>({
+    4.12114508161470272e-01,  -2.08513328473299508e-01, 7.23146663434936776e-02,
+    -2.55479910482183173e-02, 8.64778167861495438e-03,  -2.74192371757364054e-03,
+    8.07090736167245327e-04,  -2.19956149640727428e-04, 5.55248467482282208e-05,
+    -1.30093169516035672e-05, 2.83691273573312611e-06,  -5.77570974546896711e-07,
+    1.10129683781869441e-07,  -1.97281092572063005e-08, 3.32990602638389726e-09,
+    -5.31073485374336990e-10, 8.02392141465355472e-11,  -1.15128891629713017e-11,
+    1.57227956403092410e-12,  -2.04802643771997034e-13, 2.54946807665347599e-14,
+    -3.03850609868245207e-15, 3.47296452162601717e-16,  -3.81251682238197342e-17,
+    3.98661416732232774e-18,
+});
+inline constexpr int kExtendedBDeg = 24;
+inline constexpr auto kTierThresholds = std::to_array<double>({
+    1.08552523453493333e+00, 1.08552523453493333e+00, 1.08552523453493333e+00,
+    1.08552523453493333e+00, 1.08552523453493333e+00, 2.01360534363369270e+00,
+    2.01360534363369270e+00, 2.01360534363369270e+00, 2.01360534363369270e+00,
+    4.89598289724388103e+00, 4.89598289724388103e+00, 4.89598289724388103e+00,
+    4.89598289724388103e+00, 4.89598289724388103e+00, 4.89598289724388103e+00,
+    4.89598289724388103e+00, 4.89598289724388103e+00, 1.07817723136493164e+01,
+    1.07817723136493164e+01, 1.07817723136493164e+01, 1.07817723136493164e+01,
+    1.07817723136493164e+01, 1.07817723136493164e+01, 1.07817723136493164e+01,
+    1.07817723136493164e+01, 1.07817723136493164e+01, 1.07817723136493164e+01,
+    1.07817723136493164e+01, 1.07817723136493164e+01, 1.07817723136493164e+01,
+    1.07817723136493164e+01, 1.07817723136493164e+01, 1.07817723136493164e+01,
+});
 
-namespace boysymmetriad::detail::f32 {
+} // namespace boys::detail
+
+namespace boys::detail::f32 {
 
 inline constexpr auto kCoeffs = std::to_array<float>({
     5.88131764429614901e-01,  -2.93306093784557076e-01, 8.74200422937726346e-02,
@@ -1019,4 +1052,4 @@ inline constexpr auto kBcoeffs = std::to_array<float>({2.03117554967922831e-01,
                                                        1.72048282765324401e-08});
 inline constexpr int kBDeg = 10;
 
-} // namespace boysymmetriad::detail::f32
+} // namespace boys::detail::f32

@@ -1,4 +1,4 @@
-# gMock Cookbook
+﻿# gMock Cookbook
 
 You can find recipes for using gMock here. If you haven't yet, please read
 [the dummy guide](gmock_for_dummies.md) first to make sure you understand the
@@ -1146,7 +1146,7 @@ Reference.
 ### Using Predicates as Matchers
 
 gMock provides a set of built-in matchers for matching arguments with expected
-values—see the [Matchers Reference](reference/matchers.md) for more information.
+valuesâ€”see the [Matchers Reference](reference/matchers.md) for more information.
 In case you find the built-in set lacking, you can use an arbitrary unary
 predicate function or functor as a matcher - as long as the predicate accepts a
 value of the type you want. You do this by wrapping the predicate inside the
@@ -2721,8 +2721,8 @@ Note that the support for move-only method arguments was only introduced to
 gMock in April 2017; in older code, you may find more complex
 [workarounds](#LegacyMoveOnly) for lack of this feature.
 
-Let’s say we are working on a fictional project that lets one post and share
-snippets called “buzzes”. Your code uses these types:
+Letâ€™s say we are working on a fictional project that lets one post and share
+snippets called â€śbuzzesâ€ť. Your code uses these types:
 
 ```cpp
 enum class AccessLevel { kInternal, kPublic };
@@ -2767,13 +2767,13 @@ named `mock_buzzer_`:
   MockBuzzer mock_buzzer_;
 ```
 
-First let’s see how we can set expectations on the `MakeBuzz()` method, which
+First letâ€™s see how we can set expectations on the `MakeBuzz()` method, which
 returns a `unique_ptr<Buzz>`.
 
 As usual, if you set an expectation without an action (i.e. the `.WillOnce()` or
 `.WillRepeatedly()` clause), when that expectation fires, the default action for
 that method will be taken. Since `unique_ptr<>` has a default constructor that
-returns a null `unique_ptr`, that’s what you’ll get if you don’t specify an
+returns a null `unique_ptr`, thatâ€™s what youâ€™ll get if you donâ€™t specify an
 action:
 
 ```cpp
@@ -2801,8 +2801,8 @@ If you just need to return a move-only value, you can use it in combination with
 Quiz time! What do you think will happen if a `Return` action is performed more
 than once (e.g. you write `... .WillRepeatedly(Return(std::move(...)));`)? Come
 think of it, after the first time the action runs, the source value will be
-consumed (since it’s a move-only value), so the next time around, there’s no
-value to move from -- you’ll get a run-time error that `Return(std::move(...))`
+consumed (since itâ€™s a move-only value), so the next time around, thereâ€™s no
+value to move from -- youâ€™ll get a run-time error that `Return(std::move(...))`
 can only be run once.
 
 If you need your mock method to do more than just moving a pre-defined value,
@@ -2863,7 +2863,7 @@ class MockBuzzer : public Buzzer {
 };
 ```
 
-The trick is to delegate the `ShareBuzz()` method to a mock method (let’s call
+The trick is to delegate the `ShareBuzz()` method to a mock method (letâ€™s call
 it `DoShareBuzz()`) that does not take move-only parameters. Then, instead of
 setting expectations on `ShareBuzz()`, you set them on the `DoShareBuzz()` mock
 method:

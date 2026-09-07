@@ -1,4 +1,4 @@
-# Quickstart: Building with Bazel
+﻿# Quickstart: Building with Bazel
 
 This tutorial aims to get you up and running with GoogleTest using the Bazel
 build system. If you're using GoogleTest for the first time or need a refresher,
@@ -37,7 +37,7 @@ First, create a directory for your workspace:
 $ mkdir my_workspace && cd my_workspace
 ```
 
-Next, you’ll create the `MODULE.bazel` file to specify dependencies. As of Bazel
+Next, youâ€™ll create the `MODULE.bazel` file to specify dependencies. As of Bazel
 7.0, the recommended way to consume GoogleTest is through the
 [Bazel Central Registry](https://registry.bazel.build/modules/googletest). To do
 this, create a `MODULE.bazel` file in the root directory of your Bazel workspace

@@ -1,20 +1,19 @@
-// The accuracy-parametrization contract tests (design record D-F1..D-F6 of
-// the accompanying paper).
+// The accuracy-parametrization contract tests.
 //
-// T1 — sampled-m per-region contract: for m in {1, 2, 10, 1e2, 1e4, 1e8} x
+// Sampled-m per-region contract: for m in {1, 2, 10, 1e2, 1e4, 1e8} x
 // {double single, double batch, float single, float batch}, assert
 // |F_hat_m - ref| <= m * B_region per region on the committed reference
 // grid (region bucketing: A x < kX0, B kX0 <= x < kX1, C x >= kX1), with
-// the D-F2 bounds B: double single 1e-15/3e-14/5.5e-14, double batch
+// the asserted bounds B: double single 1e-15/3e-14/5.5e-14, double batch
 // 5.5e-14 per region, float 1.5e-7 per region. The m = 1 rows re-assert
 // the certified pins.
 //
-// D-F4 — the effective-degree tables are non-increasing in m (a larger
+// The effective-degree tables are non-increasing in m (a larger
 // budget may only truncate further) over all six lane roles and both
 // regions, and the m = 1 tables are the full degrees (the m = 1 path is
 // today's path by construction).
 //
-// T2 — the fp16/Bf16 lanes forward the multiplier to the F32 engine
+// The fp16/Bf16 lanes forward the multiplier to the F32 engine
 // (I/O-only wrappers, no fp16-specific degree tables): assert
 // |F_hat - F(x16)| <= m * 1e-7 + 1/2 ULP per value on the reference grid at
 // sampled m, F(x16) being the certified double lane evaluated at the
@@ -33,9 +32,9 @@
 // file's existing tests untouched (the split is editorial only — same test
 // binary, same contract).
 
+#include "boys/boys.hpp"
 #include "boys_effective_degrees.hpp"
 #include "boys_impl.hpp"
-#include "boysymmetriad/boys.hpp"
 
 #include <algorithm>
 #include <array>
@@ -53,15 +52,16 @@
 
 namespace {
 
-using boysymmetriad::BoysBatch;
-using boysymmetriad::BoysBatchF32;
-using boysymmetriad::BoysSingle;
-using boysymmetriad::BoysSingleF32;
-using boysymmetriad::detail::BoysRole;
-using boysymmetriad::detail::kX0;
-using boysymmetriad::detail::kX1;
-using boysymmetriad::detail::RegionADegrees;
-using boysymmetriad::detail::RegionBDegrees;
+using boys::BoysBatch;
+using boys::BoysBatchF32;
+using boys::BoysSingle;
+using boys::BoysSingleF32;
+using boys::detail::BoysRole;
+using boys::detail::kExtendedBX0;
+using boys::detail::kX0;
+using boys::detail::kX1;
+using boys::detail::RegionADegrees;
+using boys::detail::RegionBDegrees;
 
 struct ReferenceRow {
     int n;
@@ -106,7 +106,7 @@ std::vector<ReferenceRow> LoadReference() {
 // orders per x; the batch lanes look up F_k(x) for k <= nmax), so a
 // per-order binary search is exact. Indexed once at startup.
 struct ReferenceGrid {
-    std::array<std::vector<ReferenceRow>, boysymmetriad::kMaxBoysOrder + 1> byN{};
+    std::array<std::vector<ReferenceRow>, boys::kMaxBoysOrder + 1> byN{};
 
     explicit ReferenceGrid(const std::vector<ReferenceRow>& rows) {
         for (const ReferenceRow& row : rows)
@@ -133,12 +133,12 @@ struct ReferenceGrid {
     }
 };
 
-enum class BoysRegion : std::uint8_t { A, B, C };
+enum class BoysRegion : std::uint8_t { A, B, C, E };
 
 BoysRegion RegionOf(double x) {
     if (x < kX0)
     {
-        return BoysRegion::A;
+        return x >= kExtendedBX0 ? BoysRegion::E : BoysRegion::A;
     }
 
     if (x < kX1)
@@ -151,7 +151,11 @@ BoysRegion RegionOf(double x) {
 
 enum class LaneKind : std::uint8_t { kDoubleSingle, kDoubleBatch, kFloatSingle, kFloatBatch };
 
-// The D-F2 asserted per-region bounds of the m = 1 contract.
+// The asserted per-region bounds of the m = 1 contract. The extended band
+// carries the region-B budget: at m = 1 its per-range F0 seed serves the
+// certified upward recursion (the band is the m = 1 lane's; the m > 1
+// branch keeps the region-A treatment there, whose tighter budget implies
+// this cell at every m).
 double RegionBound(BoysRegion region, LaneKind lane) {
     switch (lane)
     {
@@ -163,6 +167,7 @@ double RegionBound(BoysRegion region, LaneKind lane) {
             return 1e-15;
 
         case BoysRegion::B:
+        case BoysRegion::E:
             return 3e-14;
 
         case BoysRegion::C:
@@ -182,7 +187,7 @@ double RegionBound(BoysRegion region, LaneKind lane) {
     return 0.0; // unreachable
 }
 
-// Runs the callable once per sampled multiplier (T1/T2's set, D-F2), the
+// Runs the callable once per sampled multiplier, the
 // multiplier passed as a compile-time constant — the NTTP surface is the
 // contract under test.
 template <typename Fn> void ForEachSampledMultiplier(Fn&& fn) {
@@ -201,6 +206,7 @@ struct RegionWorsts {
     double a = 0.0;
     double b = 0.0;
     double c = 0.0;
+    double e = 0.0;
 
     // (error, x) are the candidate error and its x - the per-region max
     // accumulator's pair.
@@ -220,17 +226,26 @@ struct RegionWorsts {
         case BoysRegion::C:
             c = std::max(c, error);
             break;
+
+        case BoysRegion::E:
+            e = std::max(e, error);
+            break;
         }
     }
 };
 
 void PrintWorsts(const char* lane, double m, const RegionWorsts& worst) {
-    std::printf(
-        "%s m=%.0e: worst region A %.3e, B %.3e, C %.3e\n", lane, m, worst.a, worst.b, worst.c);
+    std::printf("%s m=%.0e: worst region A %.3e, B %.3e, C %.3e, extended band %.3e\n",
+                lane,
+                m,
+                worst.a,
+                worst.b,
+                worst.c,
+                worst.e);
 }
 
 // ---------------------------------------------------------------------------
-// T1 — the sampled-m grid contract, one templated sweep per lane
+// The sampled-m grid contract, one templated sweep per lane
 // ---------------------------------------------------------------------------
 
 template <double kM> void SweepDoubleSingle() {
@@ -251,7 +266,7 @@ template <double kM> void SweepDoubleSingle() {
 
 template <double kM> void SweepDoubleBatch() {
     RegionWorsts worst;
-    std::vector<double> batch(boysymmetriad::kMaxBoysOrder + 1);
+    std::vector<double> batch(boys::kMaxBoysOrder + 1);
 
     for (const ReferenceRow& row : gReference)
     {
@@ -290,7 +305,7 @@ template <double kM> void SweepFloatSingle() {
 
 template <double kM> void SweepFloatBatch() {
     RegionWorsts worst;
-    std::vector<float> batch(boysymmetriad::kMaxBoysOrder + 1);
+    std::vector<float> batch(boys::kMaxBoysOrder + 1);
 
     for (const ReferenceRow& row : gReference)
     {
@@ -329,7 +344,7 @@ TEST(BoysAccuracyTest, FloatBatchSampledMultipliers) {
 }
 
 // ---------------------------------------------------------------------------
-// D-F4 — the effective degrees: non-increasing in m, full at m = 1, inside
+// The effective degrees: non-increasing in m, full at m = 1, inside
 // the evaluator domain {0, 1, 2, 4, 6, ...} at every (m, role, point)
 // ---------------------------------------------------------------------------
 
@@ -353,34 +368,34 @@ template <BoysRole kRole> void AssertRoleTables() {
 
     // The m = 1 tables are the full degrees: the criterion's budget
     // (m - 1)*B is zero, so only the full degree has an empty tail.
-    if constexpr (boysymmetriad::detail::RoleUsesDoubleTables(kRole))
+    if constexpr (boys::detail::RoleUsesDoubleTables(kRole))
     {
-        for (std::size_t p = 0; p < boysymmetriad::detail::kPieces.size(); ++p)
+        for (std::size_t p = 0; p < boys::detail::kPieces.size(); ++p)
         {
-            EXPECT_EQ(a1[p], boysymmetriad::detail::kPieces[p].deg)
+            EXPECT_EQ(a1[p], boys::detail::kPieces[p].deg)
                 << "region-A piece " << p << " must keep its full degree at m = 1";
         }
     } else
     {
-        for (std::size_t p = 0; p < boysymmetriad::detail::f32::kPieces.size(); ++p)
+        for (std::size_t p = 0; p < boys::detail::f32::kPieces.size(); ++p)
         {
-            EXPECT_EQ(a1[p], boysymmetriad::detail::f32::kPieces[p].deg)
+            EXPECT_EQ(a1[p], boys::detail::f32::kPieces[p].deg)
                 << "region-A piece " << p << " must keep its full degree at m = 1";
         }
     }
 
     if constexpr (kRole == BoysRole::kDoubleSingle || kRole == BoysRole::kDoubleBatch)
     {
-        for (int n = 0; n <= boysymmetriad::kMaxBoysOrder; ++n)
+        for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
         {
-            EXPECT_EQ(b1[static_cast<std::size_t>(n)], boysymmetriad::detail::kBDeg)
+            EXPECT_EQ(b1[static_cast<std::size_t>(n)], boys::detail::kBDeg)
                 << "region-B order " << n << " must keep its full degree at m = 1";
         }
     } else
     {
-        for (int n = 0; n <= boysymmetriad::kMaxBoysOrder; ++n)
+        for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
         {
-            EXPECT_EQ(b1[static_cast<std::size_t>(n)], boysymmetriad::detail::f32::kBDeg)
+            EXPECT_EQ(b1[static_cast<std::size_t>(n)], boys::detail::f32::kBDeg)
                 << "region-B order " << n << " must keep its full degree at m = 1";
         }
     }
@@ -418,7 +433,7 @@ template <double kMLo, double kMHi, BoysRole kRole> void AssertRoleNonIncreasing
 }
 
 TEST(BoysAccuracyTest, EffectiveDegreesNonIncreasingInMultiplier) {
-    // D-F4 over every pair of sampled multipliers and every role.
+    // Non-increasing in m over every pair of sampled multipliers and every role.
     ForEachSampledMultiplier([]<double kMLo>() {
         ForEachSampledMultiplier([]<double kMHi>() {
             if constexpr (kMLo < kMHi)
@@ -444,13 +459,13 @@ TEST(BoysAccuracyTest, EffectiveDegreesNonIncreasingInMultiplier) {
 template <double kM> void CheckSingleBatchAgree() {
     std::mt19937_64 rng(424242);
     std::uniform_real_distribution<double> xd(1e-4, 40.0);
-    std::vector<double> batch(boysymmetriad::kMaxBoysOrder + 1);
+    std::vector<double> batch(boys::kMaxBoysOrder + 1);
 
     for (int sample = 0; sample < 200; ++sample)
     {
         const double x = xd(rng);
         const BoysRegion region = RegionOf(x);
-        const int nmax = static_cast<int>(rng() % (boysymmetriad::kMaxBoysOrder + 1));
+        const int nmax = static_cast<int>(rng() % (boys::kMaxBoysOrder + 1));
         BoysBatch<kM>(nmax, x, batch.data());
 
         for (int k = 0; k <= nmax; ++k)
@@ -467,13 +482,13 @@ template <double kM> void CheckSingleBatchAgree() {
 template <double kM> void CheckSingleBatchAgreeF32() {
     std::mt19937_64 rng(424243);
     std::uniform_real_distribution<float> xd(1e-4f, 40.0f);
-    std::vector<float> batch(boysymmetriad::kMaxBoysOrder + 1);
+    std::vector<float> batch(boys::kMaxBoysOrder + 1);
 
     for (int sample = 0; sample < 200; ++sample)
     {
         const float x = xd(rng);
         const BoysRegion region = RegionOf(static_cast<double>(x));
-        const int nmax = static_cast<int>(rng() % (boysymmetriad::kMaxBoysOrder + 1));
+        const int nmax = static_cast<int>(rng() % (boys::kMaxBoysOrder + 1));
         BoysBatchF32<kM>(nmax, x, batch.data());
 
         for (int k = 0; k <= nmax; ++k)
@@ -490,13 +505,13 @@ template <double kM> void CheckSingleBatchAgreeF32() {
 }
 
 template <double kM> void CheckZeroArgument() {
-    for (int n = 0; n <= boysymmetriad::kMaxBoysOrder; ++n)
+    for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
     {
         EXPECT_DOUBLE_EQ(BoysSingle<kM>(n, 0.0), 1.0 / (2.0 * n + 1.0));
         EXPECT_FLOAT_EQ(BoysSingleF32<kM>(n, 0.0f), 1.0f / (2.0f * static_cast<float>(n) + 1.0f));
     }
 
-    double batch[boysymmetriad::kMaxBoysOrder + 1];
+    double batch[boys::kMaxBoysOrder + 1];
     BoysBatch<kM>(8, 0.0, batch);
 
     for (int k = 0; k <= 8; ++k)
@@ -504,7 +519,7 @@ template <double kM> void CheckZeroArgument() {
         EXPECT_DOUBLE_EQ(batch[k], 1.0 / (2.0 * k + 1.0));
     }
 
-    float batchF32[boysymmetriad::kMaxBoysOrder + 1];
+    float batchF32[boys::kMaxBoysOrder + 1];
     BoysBatchF32<kM>(8, 0.0f, batchF32);
 
     for (int k = 0; k <= 8; ++k)
@@ -525,19 +540,19 @@ TEST(BoysAccuracyTest, ZeroArgumentExactAtSampledMultipliers) {
 }
 
 // ---------------------------------------------------------------------------
-// T2 — the fp16/Bf16 lanes at sampled m: |F_hat - F(x16)| <= m*1e-7 + 1/2
+// The fp16/Bf16 lanes at sampled m: |F_hat - F(x16)| <= m*1e-7 + 1/2
 // ULP per value, F(x16) the certified double lane at the fp16-rounded
 // argument (the reference lane). The multiplier forwards to the F32
 // engine's kFp16-budget roles (no fp16-specific degree tables).
 // ---------------------------------------------------------------------------
 #if BoysFp16
 
-double HalfUlp(boysymmetriad::F16 x) {
-    return 0.5 * (static_cast<double>(boysymmetriad::NextUp(x)) - static_cast<double>(x));
+double HalfUlp(boys::F16 x) {
+    return 0.5 * (static_cast<double>(boys::NextUp(x)) - static_cast<double>(x));
 }
 
-double HalfUlp(boysymmetriad::Bf16 x) {
-    return 0.5 * (static_cast<double>(boysymmetriad::NextUp(x)) - static_cast<double>(x));
+double HalfUlp(boys::Bf16 x) {
+    return 0.5 * (static_cast<double>(boys::NextUp(x)) - static_cast<double>(x));
 }
 
 template <typename Half,
@@ -547,7 +562,7 @@ template <typename Half,
 void RunHalfSampledCheck(const char* label) {
     double worstSingle = 0.0;
     double worstBatch = 0.0;
-    std::vector<Half> batch(boysymmetriad::kMaxBoysOrder + 1);
+    std::vector<Half> batch(boys::kMaxBoysOrder + 1);
 
     for (const ReferenceRow& row : gReference)
     {
@@ -586,19 +601,15 @@ void RunHalfSampledCheck(const char* label) {
 
 TEST(BoysAccuracyTest, F16SampledMultipliers) {
     ForEachSampledMultiplier([]<double kM>() {
-        RunHalfSampledCheck<boysymmetriad::F16,
-                            kM,
-                            boysymmetriad::BoysSingleF16<kM>,
-                            boysymmetriad::BoysBatchF16<kM>>("BoysF16");
+        RunHalfSampledCheck<boys::F16, kM, boys::BoysSingleF16<kM>, boys::BoysBatchF16<kM>>(
+            "BoysF16");
     });
 }
 
 TEST(BoysAccuracyTest, Bf16SampledMultipliers) {
     ForEachSampledMultiplier([]<double kM>() {
-        RunHalfSampledCheck<boysymmetriad::Bf16,
-                            kM,
-                            boysymmetriad::BoysSingleBf16<kM>,
-                            boysymmetriad::BoysBatchBf16<kM>>("BoysBf16");
+        RunHalfSampledCheck<boys::Bf16, kM, boys::BoysSingleBf16<kM>, boys::BoysBatchBf16<kM>>(
+            "BoysBf16");
     });
 }
 

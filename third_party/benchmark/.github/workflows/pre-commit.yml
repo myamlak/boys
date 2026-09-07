@@ -1,4 +1,4 @@
-name: python + Bazel pre-commit checks
+﻿name: python + Bazel pre-commit checks
 
 on:
   push:

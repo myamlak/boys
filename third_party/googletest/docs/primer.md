@@ -1,4 +1,4 @@
-# GoogleTest Primer
+﻿# GoogleTest Primer
 
 ## Introduction: Why GoogleTest?
 

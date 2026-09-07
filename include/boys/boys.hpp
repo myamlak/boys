@@ -3,10 +3,10 @@
 #include <cstddef>
 
 #if BoysFp16
-#include "boysymmetriad/f16.hpp"
+#include "boys/f16.hpp"
 #endif
 
-/// \defgroup boysymmetriad Boys-function kernel
+/// \defgroup boys Boys-function kernel
 ///
 /// Self-contained evaluation of the Boys function family F_n(x),
 /// n = 0..32, x >= 0 — the accuracy-critical building block of
@@ -73,9 +73,9 @@
 /// branch, indirection, or runtime dispatch anywhere on the m = 1 path, and
 /// all existing call sites compile unchanged. Relaxation (m > 1) truncates
 /// the Chebyshev seed fits to the certified effective degree d'(m) = min{d' :
-/// Δ(d')·A ≤ (m−1)·B_region}, Δ(d') = Σ_{k>d'}|c_k| the dropped-coefficient
-/// tail and A the path's seed-error amplification — a-priori bounded, never
-/// tuned (D-F3); the delivered error ≤ m·B_region follows from the m = 1
+/// Δ(d')·A ≤ (m−1)·B_region}, Δ(d') = Σ_{k>d'}|c_k| the
+/// dropped-coefficient tail and A the path's seed-error amplification — a-priori bounded, never
+/// tuned; the delivered error ≤ m·B_region follows from the m = 1
 /// asserted bound plus the tail bound. The contract and the work are
 /// **monotone in m** (d' is non-increasing in m); pointwise error is
 /// explicitly NOT guaranteed monotone — a larger m may occasionally change a
@@ -89,9 +89,9 @@
 /// suite tolerance's 1e-7 base is the fp16 lanes' asserted base, not the
 /// float budget.
 ///
-/// \ingroup boysymmetriad
+/// \ingroup boys
 
-namespace boysymmetriad {
+namespace boys {
 
 /// Highest Boys order supported by the kernel.
 inline constexpr int kMaxBoysOrder = 32;
@@ -114,7 +114,7 @@ inline constexpr double kBoysFullAccuracyMultiplier = 1.0;
 /// \param x     argument, >= 0
 /// \returns     F_n(x)
 ///
-/// \ingroup boysymmetriad
+/// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
 double BoysSingle(int n, double x) noexcept;
 
@@ -129,9 +129,43 @@ double BoysSingle(int n, double x) noexcept;
 /// \param x     argument, >= 0
 /// \param out   receives nmax + 1 values, out[k] = F_k(x)
 ///
-/// \ingroup boysymmetriad
+/// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
 void BoysBatch(int nmax, double x, double* out) noexcept;
+
+/// F_n(x_i) for an array of arguments at one fixed order n, double
+/// precision; |F_hat - F| <= m*B_region per value (the BoysSingle
+/// per-region contract, region table in the file preamble).
+///
+/// The fixed-n vector entry is the batch shape of integral-engine inner
+/// loops that group shell pairs by angular momentum: each element needs
+/// exactly one order, so no unused cross-order recursion is paid. Each
+/// output element is bit-identical to BoysSingle<kAccuracyMultiplier> at
+/// the same (n, x) - the m = 1 path runs the certified scalar single-lane
+/// region bodies verbatim (the bit-identity pin), the relaxed path the
+/// same bodies at the single-lane effective degrees. Arguments need no
+/// pre-partitioning: the region dispatch is per element, the portable
+/// shape. Engines that sort their arguments by region first should prefer
+/// the region-sorted AVX2 lanes (BoysRegionASimd and friends), which pay
+/// the region dispatch once per batch.
+///
+/// Layout: out[i * stride] = F_n(x[i]), i = 0..count-1; stride is measured
+/// in doubles and defaults to 1 (contiguous). The output span must hold
+/// (count - 1) * stride + 1 doubles; count may be 0 (no writes). The entry
+/// is scalar and portable: x and out need no alignment beyond
+/// alignof(double), and the two arrays must not overlap.
+///
+/// \tparam kAccuracyMultiplier see BoysSingle
+/// \param n      order, 0..kMaxBoysOrder - the batch's single fixed order
+/// \param x      array of count arguments, each >= 0
+/// \param out    receives F_n(x[i]) at out[i * stride]
+/// \param count  number of arguments
+/// \param stride output stride in doubles, >= 1 (default 1 = contiguous)
+///
+/// \ingroup boys
+template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+void BoysFixedN(
+    int n, const double* x, double* out, std::size_t count, std::size_t stride = 1) noexcept;
 
 /// F_n(x) in single precision, |F̂ − F| ≤ m·1.5e-7.
 ///
@@ -143,7 +177,7 @@ void BoysBatch(int nmax, double x, double* out) noexcept;
 /// \param x     argument, >= 0
 /// \returns     F_n(x)
 ///
-/// \ingroup boysymmetriad
+/// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
 float BoysSingleF32(int n, float x) noexcept;
 
@@ -154,7 +188,7 @@ float BoysSingleF32(int n, float x) noexcept;
 /// \param x     argument, >= 0
 /// \param out   receives nmax + 1 values, out[k] = F_k(x)
 ///
-/// \ingroup boysymmetriad
+/// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
 void BoysBatchF32(int nmax, float x, float* out) noexcept;
 
@@ -162,7 +196,7 @@ void BoysBatchF32(int nmax, float x, float* out) noexcept;
 ///
 /// \returns true when AVX2 is available on the processor and exposed by the OS (OSXSAVE)
 ///
-/// \ingroup boysymmetriad
+/// \ingroup boys
 bool BoysAvx2Available() noexcept;
 
 /// F_n(x) for an array of arguments in region A (x < x0), same n, AVX2,
@@ -178,7 +212,7 @@ bool BoysAvx2Available() noexcept;
 /// \param out    receives F_n(x[i])
 /// \param count  number of elements; x and out must hold count values
 ///
-/// \ingroup boysymmetriad
+/// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
 void BoysRegionASimd(int n, const double* x, double* out, std::size_t count) noexcept;
 
@@ -194,7 +228,7 @@ void BoysRegionASimd(int n, const double* x, double* out, std::size_t count) noe
 ///               (out[order * count + i] = F_order(x[i]))
 /// \param count  number of elements
 ///
-/// \ingroup boysymmetriad
+/// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
 void BoysRegionBSimd(int n, const double* x, double* out, std::size_t count) noexcept;
 
@@ -209,7 +243,7 @@ void BoysRegionBSimd(int n, const double* x, double* out, std::size_t count) noe
 /// \param out    receives F_n(x[i])
 /// \param count  number of elements
 ///
-/// \ingroup boysymmetriad
+/// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
 void BoysRegionCSimd(int n, const double* x, double* out, std::size_t count) noexcept;
 
@@ -227,7 +261,7 @@ void BoysRegionCSimd(int n, const double* x, double* out, std::size_t count) noe
 /// \param x     argument, >= 0 (fp16)
 /// \returns     F_n(x) in fp16
 ///
-/// \ingroup boysymmetriad
+/// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
 F16 BoysSingleF16(int n, F16 x) noexcept;
 
@@ -239,7 +273,7 @@ F16 BoysSingleF16(int n, F16 x) noexcept;
 /// \param x     argument, >= 0 (fp16)
 /// \param out   receives nmax + 1 values, out[k] = F_k(x)
 ///
-/// \ingroup boysymmetriad
+/// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
 void BoysBatchF16(int nmax, F16 x, F16* out) noexcept;
 
@@ -252,7 +286,7 @@ void BoysBatchF16(int nmax, F16 x, F16* out) noexcept;
 /// \param x     argument, >= 0 (bf16)
 /// \returns     F_n(x) in bf16
 ///
-/// \ingroup boysymmetriad
+/// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
 Bf16 BoysSingleBf16(int n, Bf16 x) noexcept;
 
@@ -263,7 +297,7 @@ Bf16 BoysSingleBf16(int n, Bf16 x) noexcept;
 /// \param x     argument, >= 0 (bf16)
 /// \param out   receives nmax + 1 values, out[k] = F_k(x)
 ///
-/// \ingroup boysymmetriad
+/// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
 void BoysBatchBf16(int nmax, Bf16 x, Bf16* out) noexcept;
 
@@ -281,7 +315,7 @@ void BoysBatchBf16(int nmax, Bf16 x, Bf16* out) noexcept;
 /// \param out    receives F_n(x[i]) in fp16
 /// \param count  number of elements; x and out must hold count values
 ///
-/// \ingroup boysymmetriad
+/// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
 void BoysRegionASimdF16(int n, const F16* x, F16* out, std::size_t count) noexcept;
 
@@ -295,7 +329,7 @@ void BoysRegionASimdF16(int n, const F16* x, F16* out, std::size_t count) noexce
 /// \param out    receives n + 1 contiguous blocks of count fp16 values
 /// \param count  number of elements
 ///
-/// \ingroup boysymmetriad
+/// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
 void BoysRegionBSimdF16(int n, const F16* x, F16* out, std::size_t count) noexcept;
 
@@ -308,7 +342,7 @@ void BoysRegionBSimdF16(int n, const F16* x, F16* out, std::size_t count) noexce
 /// \param out    receives F_n(x[i]) in fp16
 /// \param count  number of elements
 ///
-/// \ingroup boysymmetriad
+/// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
 void BoysRegionCSimdF16(int n, const F16* x, F16* out, std::size_t count) noexcept;
 
@@ -321,7 +355,7 @@ void BoysRegionCSimdF16(int n, const F16* x, F16* out, std::size_t count) noexce
 /// \param out    receives F_n(x[i]) in bf16
 /// \param count  number of elements; x and out must hold count values
 ///
-/// \ingroup boysymmetriad
+/// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
 void BoysRegionASimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noexcept;
 
@@ -334,7 +368,7 @@ void BoysRegionASimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
 /// \param out    receives n + 1 contiguous blocks of count bf16 values
 /// \param count  number of elements
 ///
-/// \ingroup boysymmetriad
+/// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
 void BoysRegionBSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noexcept;
 
@@ -347,7 +381,7 @@ void BoysRegionBSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
 /// \param out    receives F_n(x[i]) in bf16
 /// \param count  number of elements
 ///
-/// \ingroup boysymmetriad
+/// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
 void BoysRegionCSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noexcept;
 #endif // BoysFp16
@@ -368,6 +402,14 @@ extern template double BoysSingle<kBoysFullAccuracyMultiplier>(int n, double x) 
 extern template void BoysBatch<kBoysFullAccuracyMultiplier>(int nmax,
                                                             double x,
                                                             double* out) noexcept;
+/// \brief The m = 1 double fixed-n vector instantiation.
+/// \param n      Boys order in [0, kMaxBoysOrder]
+/// \param x      array of count arguments >= 0
+/// \param out    receives F_n(x[i]) at out[i * stride]
+/// \param count  element count
+/// \param stride output stride in doubles, >= 1 (default 1 = contiguous)
+extern template void BoysFixedN<kBoysFullAccuracyMultiplier>(
+    int n, const double* x, double* out, std::size_t count, std::size_t stride) noexcept;
 /// \brief The m = 1 float single instantiation.
 /// \param n      Boys order in [0, kMaxBoysOrder]
 /// \param x      argument >= 0
@@ -486,4 +528,4 @@ extern template void BoysRegionCSimdBf16<kBoysFullAccuracyMultiplier>(int n,
                                                                       std::size_t count) noexcept;
 #endif // BoysFp16
 
-} // namespace boysymmetriad
+} // namespace boys

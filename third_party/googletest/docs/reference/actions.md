@@ -1,4 +1,4 @@
-# Actions Reference
+﻿# Actions Reference
 
 [**Actions**](../gmock_for_dummies.md#actions-what-should-it-do) specify what a
 mock function should do when invoked. This page lists the built-in actions

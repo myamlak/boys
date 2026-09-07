@@ -1,4 +1,4 @@
-# Benchmark Tools
+﻿# Benchmark Tools
 
 ## compare.py
 
@@ -196,7 +196,7 @@ confusing with multiple benchmark repetitions.
 
 Thankfully, what we can do, is use statistical tests on the results to determine
 whether the performance has statistically-significantly changed. `compare.py`
-uses [Mann–Whitney U
+uses [Mannâ€“Whitney U
 test](https://en.wikipedia.org/wiki/Mann%E2%80%93Whitney_U_test), with a null
 hypothesis being that there's no difference in performance.
  

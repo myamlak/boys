@@ -1,4 +1,4 @@
-# - Compile and run code to check for C++ features
+﻿# - Compile and run code to check for C++ features
 #
 # This functions compiles a source file under the `cmake` folder
 # and adds the corresponding `HAVE_[FILENAME]` flag to the CMake

@@ -1,0 +1,69 @@
+# Deploys the Doxygen API reference to GitHub Pages on each release tag.
+#
+# Tags-only by design: the published docs always match a released API
+# surface (the SemVer tag discipline), and the deploy costs ~1-2 CI
+# minutes per release instead of one run per push. GitHub Pages must be
+# set to "GitHub Actions" as the source (Settings -> Pages) before the
+# deploy can succeed - which also requires the repository to be public.
+# Until then the deploy step is SKIPPED gracefully (the Pages-availability
+# check), so a tag push on a private repo stays green; at the go-public
+# flip, enabling Pages and re-running the v1.1.0 run (or the manual
+# workflow_dispatch) publishes the docs.
+#
+# The Doxygen run is the same zero-warning gate the CI legs execute
+# (Doxygen 1.18.0, the pinned release).
+name: docs
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          submodules: true
+      - name: Install Doxygen 1.18.0 (pinned release)
+        run: |
+          curl -L -sS -o /tmp/doxygen.tar.gz https://github.com/doxygen/doxygen/releases/download/Release_1_18_0/doxygen-1.18.0.linux.bin.tar.gz
+          tar -xzf /tmp/doxygen.tar.gz -C /tmp
+          echo "$(dirname "$(find /tmp/doxygen-1.18.0 -name doxygen -type f | head -1)")" >> "$GITHUB_PATH"
+      - name: Configure
+        run: cmake -S . -B build -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF
+      - name: Build docs (the zero-warning gate)
+        run: cmake --build build --target boys-docs
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/doxygen/html
+      - name: Check Pages availability (skips the deploy while the repo is private)
+        id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api repos/${{ github.repository }}/pages --silent >/dev/null 2>&1; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "Pages enabled - deploying."
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Pages unavailable (private repo?) - the deploy is skipped; enable Pages after going public."
+          fi
+      - name: Deploy
+        if: steps.pages.outputs.available == 'true'
+        id: deployment
+        uses: actions/deploy-pages@v4

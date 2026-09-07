@@ -1,4 +1,4 @@
-# Reducing Variance
+﻿# Reducing Variance
 
 <a name="disabling-cpu-frequency-scaling" />
 

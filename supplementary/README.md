@@ -1,4 +1,4 @@
-# Supplementary material — "Certified mixed precision for quantum-chemistry special functions: a-priori error bounds and the Boys function as a worked case study"
+﻿# Supplementary material â€” "Certified mixed precision for quantum-chemistry special functions: a-priori error bounds and the Boys function as a worked case study"
 
 This directory accompanies the manuscript `main.tex` (the compiled
 `main.pdf` is included). Everything here is self-contained: no path in any
@@ -82,10 +82,10 @@ The [2] and [1] cells are reproduced here as the
 configuration-sensitivity record: the recursion error oscillates
 through the 5e-14 line near the transition (402-3351 pass/fail
 alternations per band at 0.0001 resolution), so each grid records its
-own lattice draw, ulp-sensitive within ~10-20% — which is why the
+own lattice draw, ulp-sensitive within ~10-20% â€” which is why the
 `BOUNDARY-CHECK` gate accepts the fine sweep within a 20% band of the
 manuscript cells and the accompanying test suite pins them with the
-same tolerance — see the file header.
+same tolerance â€” see the file header.
 
 The 0.0001-resolution descending sweep the manuscript's tab:boundaries
 note cites (same executable, `--postcheck` mode):
@@ -107,7 +107,7 @@ recorded cell within the 20% band. On the recording machine (MSVC,
 sit at 0.4625 (kmax = 4; last pass 0.4626), 1.6373 (kmax = 8; last
 pass 1.6374), 4.2367 (kmax = 16; last pass 4.2368) and 10.0492
 (kmax = 32; last pass 10.0493), with 402 / 1330 / 2629 / 3351
-pass/fail alternations per band — this is the sweep whose first
+pass/fail alternations per band â€” this is the sweep whose first
 failing samples the manuscript cells record. The earlier 0.001
 two-phase cells (0.393 / 1.484 / 4.150 / 9.866) failed this sweep
 (+17.7% / +10.3% / +2.1% / +1.9% at 0.0001 resolution), and 1e-5
@@ -138,5 +138,5 @@ python tsuji_table_step_sweep.py        # finding (ii): 5.6e-13 (2^-3) / 4.1e-16
 
 Both are mpmath-only and re-analyze the published artifacts (arXiv:
 2512.10059 and the companion repository of the Tsuji et al. paper) from
-hardcoded published coefficients — no access to the authors' private code
+hardcoded published coefficients â€” no access to the authors' private code
 is assumed.

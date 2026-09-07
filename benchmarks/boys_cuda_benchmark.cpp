@@ -26,9 +26,9 @@
 //   fp16-single   GPU vs the shipped CPU fp16 lane, <= 3.5e-7 + 1 full ULP
 //                    (the GPU-vs-CPU comparison contract; the absolute
 //                    contract is pinned CPU-side by the accuracy record)
+#include "boys/boys.hpp"
+#include "boys/boys_cuda.hpp"
 #include "boys_cuda_benchmark_kernels.hpp"
-#include "boysymmetriad/boys.hpp"
-#include "boysymmetriad/boys_cuda.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -56,7 +56,7 @@ std::vector<Item> UniformInputs() {
     // in [0, 32], x uniform in [0, 40], mt19937_64(42).
     std::mt19937_64 rng(42);
     std::uniform_real_distribution<double> xd(0.0, 40.0);
-    std::uniform_int_distribution<int> nd(0, boysymmetriad::kMaxBoysOrder);
+    std::uniform_int_distribution<int> nd(0, boys::kMaxBoysOrder);
     std::vector<Item> items(kInputCount);
 
     for (auto& item : items)
@@ -93,7 +93,7 @@ double StableSeriesF(int n, double x) {
 bool BuildLutRows(std::vector<double>& rows) {
     rows.assign(38 * 1025, 0.0);
     std::vector<double> grid(1025);
-    std::vector<int> nmax(1025, boysymmetriad::kMaxBoysOrder);
+    std::vector<int> nmax(1025, boys::kMaxBoysOrder);
     std::vector<double> batch(33 * 1025);
 
     for (int i = 0; i < 1025; ++i)
@@ -138,9 +138,9 @@ bool BuildLutRows(std::vector<double>& rows) {
         return false;
     }
 
-    const auto status = boysymmetriad::BoysCuda::BatchF64(dN, dGrid, dBatch, 1025, nullptr);
+    const auto status = boys::BoysCuda::BatchF64(dN, dGrid, dBatch, 1025, nullptr);
 
-    if (status != boysymmetriad::BoysStatus::kSuccess)
+    if (status != boys::BoysStatus::kSuccess)
     {
         std::fprintf(stderr, "BatchF64 (LUT rows): status %d\n", static_cast<int>(status));
         cudaFree(dN);
@@ -193,8 +193,8 @@ Timing TimeLane(const char* name,
                 double* dX,
                 double* dOutF64,
                 float* dOutF32,
-                boysymmetriad::F16* dF16In,
-                boysymmetriad::F16* dF16Out) {
+                boys::F16* dF16In,
+                boys::F16* dF16Out) {
     cudaEvent_t t0;
     cudaEvent_t t1;
     cudaEventCreate(&t0);
@@ -203,19 +203,17 @@ Timing TimeLane(const char* name,
     const auto runOnce = [&]() {
         if (std::strcmp(name, "cheb-f64") == 0)
         {
-            const auto status =
-                boysymmetriad::BoysCuda::SingleF64(dN, dX, dOutF64, kInputCount, nullptr);
+            const auto status = boys::BoysCuda::SingleF64(dN, dX, dOutF64, kInputCount, nullptr);
 
-            if (status != boysymmetriad::BoysStatus::kSuccess)
+            if (status != boys::BoysStatus::kSuccess)
             {
                 std::exit(2);
             }
         } else if (std::strcmp(name, "cheb-f32") == 0)
         {
-            const auto status =
-                boysymmetriad::BoysCuda::SingleF32(dN, dX, dOutF32, kInputCount, nullptr);
+            const auto status = boys::BoysCuda::SingleF32(dN, dX, dOutF32, kInputCount, nullptr);
 
-            if (status != boysymmetriad::BoysStatus::kSuccess)
+            if (status != boys::BoysStatus::kSuccess)
             {
                 std::exit(2);
             }
@@ -231,9 +229,9 @@ Timing TimeLane(const char* name,
         {
 #if BoysFp16
             const auto status =
-                boysymmetriad::BoysCuda::SingleF16(dN, dF16In, dF16Out, kInputCount, nullptr);
+                boys::BoysCuda::SingleF16(dN, dF16In, dF16Out, kInputCount, nullptr);
 
-            if (status != boysymmetriad::BoysStatus::kSuccess)
+            if (status != boys::BoysStatus::kSuccess)
             {
                 std::exit(2);
             }
@@ -279,9 +277,9 @@ int SelfCheck(const std::vector<Item>& items,
               double* dX,
               double* dOutF64,
               float* dOutF32,
-              const std::vector<boysymmetriad::F16>& f16In,
-              boysymmetriad::F16* dF16In,
-              boysymmetriad::F16* dF16Out,
+              const std::vector<boys::F16>& f16In,
+              boys::F16* dF16In,
+              boys::F16* dF16Out,
               int blocks) {
     int failed = 0;
 
@@ -292,10 +290,9 @@ int SelfCheck(const std::vector<Item>& items,
 
     // cheb-f64
     {
-        const auto status =
-            boysymmetriad::BoysCuda::SingleF64(dN, dX, dOutF64, kInputCount, nullptr);
+        const auto status = boys::BoysCuda::SingleF64(dN, dX, dOutF64, kInputCount, nullptr);
 
-        if (status != boysymmetriad::BoysStatus::kSuccess)
+        if (status != boys::BoysStatus::kSuccess)
         {
             std::fprintf(stderr, "SingleF64: status %d\n", static_cast<int>(status));
             return 1;
@@ -307,8 +304,7 @@ int SelfCheck(const std::vector<Item>& items,
 
         for (std::size_t i = 0; i < kInputCount; ++i)
         {
-            const double err =
-                std::abs(outF64Host[i] - boysymmetriad::BoysSingle(items[i].n, items[i].x));
+            const double err = std::abs(outF64Host[i] - boys::BoysSingle(items[i].n, items[i].x));
             worst = std::max(worst, err);
         }
 
@@ -321,10 +317,9 @@ int SelfCheck(const std::vector<Item>& items,
 
     // cheb-f32
     {
-        const auto status =
-            boysymmetriad::BoysCuda::SingleF32(dN, dX, dOutF32, kInputCount, nullptr);
+        const auto status = boys::BoysCuda::SingleF32(dN, dX, dOutF32, kInputCount, nullptr);
 
-        if (status != boysymmetriad::BoysStatus::kSuccess)
+        if (status != boys::BoysStatus::kSuccess)
         {
             std::fprintf(stderr, "SingleF32: status %d\n", static_cast<int>(status));
             return 1;
@@ -337,7 +332,7 @@ int SelfCheck(const std::vector<Item>& items,
         {
             const double err =
                 std::abs(static_cast<double>(outF32Host[i]) -
-                         boysymmetriad::BoysSingleF32(items[i].n, static_cast<float>(items[i].x)));
+                         boys::BoysSingleF32(items[i].n, static_cast<float>(items[i].x)));
             worst = std::max(worst, err);
         }
 
@@ -376,8 +371,7 @@ int SelfCheck(const std::vector<Item>& items,
                 continue;
             }
 
-            const double err =
-                std::abs(outF64Host[i] - boysymmetriad::BoysSingle(items[i].n, items[i].x));
+            const double err = std::abs(outF64Host[i] - boys::BoysSingle(items[i].n, items[i].x));
 
             if (err > worstAll)
             {
@@ -428,8 +422,7 @@ int SelfCheck(const std::vector<Item>& items,
 
         for (std::size_t i = 0; i < kInputCount; ++i)
         {
-            const double err =
-                std::abs(outF64Host[i] - boysymmetriad::BoysSingle(items[i].n, items[i].x));
+            const double err = std::abs(outF64Host[i] - boys::BoysSingle(items[i].n, items[i].x));
             worst = std::max(worst, err);
         }
 
@@ -448,29 +441,26 @@ int SelfCheck(const std::vector<Item>& items,
     // ULP vs the exact value) is pinned CPU-side by the accuracy record.
 #if BoysFp16
     {
-        const auto status =
-            boysymmetriad::BoysCuda::SingleF16(dN, dF16In, dF16Out, kInputCount, nullptr);
+        const auto status = boys::BoysCuda::SingleF16(dN, dF16In, dF16Out, kInputCount, nullptr);
 
-        if (status != boysymmetriad::BoysStatus::kSuccess)
+        if (status != boys::BoysStatus::kSuccess)
         {
             std::fprintf(stderr, "SingleF16: status %d\n", static_cast<int>(status));
             return 1;
         }
 
-        std::vector<boysymmetriad::F16> f16OutHost(kInputCount);
+        std::vector<boys::F16> f16OutHost(kInputCount);
         // Stream-ordered readback of the asynchronous kernel.
-        cudaMemcpy(f16OutHost.data(),
-                   dF16Out,
-                   kInputCount * sizeof(boysymmetriad::F16),
-                   cudaMemcpyDeviceToHost);
+        cudaMemcpy(
+            f16OutHost.data(), dF16Out, kInputCount * sizeof(boys::F16), cudaMemcpyDeviceToHost);
         double worst = 0.0;
 
         for (std::size_t i = 0; i < kInputCount; ++i)
         {
-            const boysymmetriad::F16 cpu = boysymmetriad::BoysSingleF16(items[i].n, f16In[i]);
+            const boys::F16 cpu = boys::BoysSingleF16(items[i].n, f16In[i]);
             // Full grid step of the GPU-vs-CPU comparison contract.
             const double gridStep =
-                static_cast<double>(boysymmetriad::NextUp(cpu)) - static_cast<double>(cpu);
+                static_cast<double>(boys::NextUp(cpu)) - static_cast<double>(cpu);
             const double err =
                 std::abs(static_cast<double>(f16OutHost[i]) - static_cast<double>(cpu));
             worst = std::max(worst, err - gridStep);
@@ -535,9 +525,9 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    const auto init = boysymmetriad::BoysCuda::InitializeTables();
+    const auto init = boys::BoysCuda::InitializeTables();
 
-    if (init != boysymmetriad::BoysStatus::kSuccess)
+    if (init != boys::BoysStatus::kSuccess)
     {
         std::fprintf(stderr, "InitializeTables: status %d\n", static_cast<int>(init));
         return 1;
@@ -547,8 +537,8 @@ int main(int argc, char** argv) {
     double* dX = nullptr;
     double* dOutF64 = nullptr;
     float* dOutF32 = nullptr;
-    boysymmetriad::F16* dF16In = nullptr;
-    boysymmetriad::F16* dF16Out = nullptr;
+    boys::F16* dF16In = nullptr;
+    boys::F16* dF16Out = nullptr;
     cudaError_t e = cudaMalloc(&dN, kInputCount * sizeof(int));
 
     if (e == cudaSuccess)
@@ -568,12 +558,12 @@ int main(int argc, char** argv) {
 
     if (e == cudaSuccess)
     {
-        e = cudaMalloc(&dF16In, kInputCount * sizeof(boysymmetriad::F16));
+        e = cudaMalloc(&dF16In, kInputCount * sizeof(boys::F16));
     }
 
     if (e == cudaSuccess)
     {
-        e = cudaMalloc(&dF16Out, kInputCount * sizeof(boysymmetriad::F16));
+        e = cudaMalloc(&dF16Out, kInputCount * sizeof(boys::F16));
     }
 
     if (e != cudaSuccess)
@@ -584,14 +574,14 @@ int main(int argc, char** argv) {
 
     std::vector<int> nHost(kInputCount);
     std::vector<double> xHost(kInputCount);
-    std::vector<boysymmetriad::F16> f16In(kInputCount);
-    std::vector<boysymmetriad::F16> f16Out(kInputCount);
+    std::vector<boys::F16> f16In(kInputCount);
+    std::vector<boys::F16> f16Out(kInputCount);
 
     for (std::size_t i = 0; i < kInputCount; ++i)
     {
         nHost[i] = items[i].n;
         xHost[i] = items[i].x;
-        f16In[i] = boysymmetriad::F16(static_cast<float>(items[i].x));
+        f16In[i] = boys::F16(static_cast<float>(items[i].x));
     }
 
     e = cudaMemcpy(dN, nHost.data(), kInputCount * sizeof(int), cudaMemcpyHostToDevice);
@@ -604,7 +594,7 @@ int main(int argc, char** argv) {
     if (e == cudaSuccess)
     {
         e = cudaMemcpy(
-            dF16In, f16In.data(), kInputCount * sizeof(boysymmetriad::F16), cudaMemcpyHostToDevice);
+            dF16In, f16In.data(), kInputCount * sizeof(boys::F16), cudaMemcpyHostToDevice);
     }
 
     if (e != cudaSuccess)

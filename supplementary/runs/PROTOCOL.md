@@ -1,4 +1,4 @@
-# Clean-run benchmark protocol — Boys-kernel manuscript (tab:throughput)
+﻿# Clean-run benchmark protocol â€” Boys-kernel manuscript (tab:throughput)
 
 Every cell of tab:throughput in the accompanying manuscript and every ratio
 in its caption traces to a row of the recorded runs logs shipped beside this
@@ -15,23 +15,23 @@ computed from the recorded rows, never asserted independently.
 
 ## Protocol (each recorded run)
 
-(a) **Environment closure** — no other benchmark process and no heavy
+(a) **Environment closure** â€” no other benchmark process and no heavy
     build in flight (a process-list check for benchmark executables,
-    compiler processes, and interpreters before every timed pass — timing
+    compiler processes, and interpreters before every timed pass â€” timing
     lanes must not overlap on the same machine), no interactive load,
     Windows power plan "High performance" (`powercfg /getactivescheme`
     must report it; the runs log records the GUID).
-(b) **Device state (GPU lanes)** — `nvidia-smi --query-gpu=clocks.sm,
+(b) **Device state (GPU lanes)** â€” `nvidia-smi --query-gpu=clocks.sm,
     clocks.mem,power.draw,temperature.gpu` sampled before, during, and
     after each kernel. A pass whose SM clock drops from its steady-state
     value (laptop thermal throttling) is discarded and re-run after the
     device cools.
-(c) **Statistics** — one warmup pass, then 3 recorded passes; the runs
+(c) **Statistics** â€” one warmup pass, then 3 recorded passes; the runs
     log reports min/median/max per kernel; the paper cell is the median.
-(d) **Identity** — machine (CPU model, RAM, GPU), driver version, CUDA
+(d) **Identity** â€” machine (CPU model, RAM, GPU), driver version, CUDA
     toolkit, MSVC version, commit hash, build preset, power plan GUID,
     date, and the protocol fields in every runs log.
-(e) **Ratios** — computed from the recorded rows, never asserted
+(e) **Ratios** â€” computed from the recorded rows, never asserted
     independently.
 
 ## Benchmark executables
@@ -43,7 +43,7 @@ competitor/unsorted lanes). Throughput cells come from the timing mode.
 Three benchmark programs accompany the submission:
 
 - the sorted CPU benchmark (scalar double/float, batch, SIMD lanes),
-  run with `--benchmark_repetitions=3` — the 3 recorded passes per lane
+  run with `--benchmark_repetitions=3` â€” the 3 recorded passes per lane
   (the first repetition of the first lane doubles as the process warmup),
   the paper cell is the median of the 3 rows;
 - the unsorted-SIMD benchmark (custom main, runs-log rows), run as
@@ -59,18 +59,18 @@ pass, 3 recorded passes, median; MSVC `/O2`, `/arch:AVX2` as stated in the
 paper's tab:throughput caption. They record into the runs logs accompanying
 the submission. The process-list closure check applies; device-state
 sampling does not. The unsorted lane measures the mixed per-vector kernel
-on the unsorted uniform-x40 workload (order 8, rng(46) — the design-study
+on the unsorted uniform-x40 workload (order 8, rng(46) â€” the design-study
 shape); the flat-Taylor competitor is not included (scope decision,
 2026-08-29).
 
 ## GPU-side application (the GPU rows of tab:throughput)
 
 The GPU benchmark measures five lanes on the uniform (n in [0,32], x in
-[0,40], mt19937_64(42)) workload — identical to the CPU benchmark's
+[0,40], mt19937_64(42)) workload â€” identical to the CPU benchmark's
 uniform workload: cheb-f64, cheb-f32 (the certified GPU lanes), erf-f64
 and lut-f64 (the competitor kernels), and fp16-single (the I/O-only lane;
 the host-pointer synchronous API owns its device buffers per call, so its
-row includes the per-call allocation cost — the honest number for the
+row includes the per-call allocation cost â€” the honest number for the
 shipped API). `--self-check` verifies every lane against the CPU
 references before any timing run.
 
@@ -85,7 +85,7 @@ Every runs log carries:
 - the `--self-check` accuracy rows (one line per lane: max abs error vs
   the CPU reference and the asserted budget)
 - a summary row per kernel: lane, workload (uniform/molecular), items/s
-  (median) — the paper cell
+  (median) â€” the paper cell
 - the statement "Recorded under `PROTOCOL.md`"
 
 Example row layout (placeholder values):

@@ -1,4 +1,4 @@
-# Build tool dependency policy
+﻿# Build tool dependency policy
 
 We follow the [Foundational C++ support policy](https://opensource.google/documentation/policies/cplusplus-support) for our build tools. In
 particular the ["Build Systems" section](https://opensource.google/documentation/policies/cplusplus-support#build-systems).

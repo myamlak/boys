@@ -1,4 +1,4 @@
-# Download and unpack googletest at configure time
+﻿# Download and unpack googletest at configure time
 set(GOOGLETEST_PREFIX "${benchmark_BINARY_DIR}/third_party/googletest")
 configure_file(${benchmark_SOURCE_DIR}/cmake/GoogleTest.cmake.in ${GOOGLETEST_PREFIX}/CMakeLists.txt @ONLY)
 

@@ -1,30 +1,29 @@
 #pragma once
 
 // The template definitions behind the accuracy-multiplier surface of
-// boysymmetriad/boys.hpp (design record D-F1..D-F6 of the accompanying
-// paper). Internal header: callers all use the default m = 1, which the
+// boys/boys.hpp. Internal header: callers all use the default m = 1, which the
 // extern-template
 // declarations in boys.hpp route to the explicit instantiations in
 // boys.cpp / boys_simd.cpp; the sampled-m instantiations (the contract
 // tests) include this header directly for their definitions.
 //
 // Every entry is compiled twice under if constexpr: the m = 1 branch is
-// today's certified body VERBATIM (the bit-identity pin, D-F2 — the
+// today's certified body VERBATIM (the bit-identity pin — the
 // discarded relaxed branch adds no instruction, branch, or load to the
 // m = 1 path), and the m > 1 branch evaluates the seed fits at the
-// compile-time effective degrees of boys_effective_degrees.hpp (D-F3).
+// compile-time effective degrees of boys_effective_degrees.hpp.
 // The relaxed region-C paths are m-invariant (the asymptotic form has no
 // coefficients to truncate); only their scalar tails carry the multiplier.
 
+#include "boys/boys.hpp"
 #include "boys_coefficients.hpp"
 #include "boys_effective_degrees.hpp"
-#include "boysymmetriad/boys.hpp"
 
 #include <cassert>
 #include <cmath>
 #include <cstddef>
 
-namespace boysymmetriad {
+namespace boys {
 namespace detail {
 
 constexpr double kBoysHalfSqrtPi = 0.886226925452758014; // sqrt(pi)/2
@@ -118,6 +117,31 @@ inline double ChebyshevValue(int order, double x) noexcept {
 inline double RegionBSeed(double x) noexcept {
     const double t = 2.0 * (x - kX0) / (kX1 - kX0) - 1.0;
     return ClenshawSplit(detail::kBcoeffs.data(), detail::kBDeg, t);
+}
+
+// The extended band's per-(n, x) dispatch (the pure-function rule): an
+// order n takes the extended seed exactly when x >= kTierThresholds[n],
+// regardless of the entry point or the other orders of a batch call. The
+// threshold table is n-indexed (structurally like the per-order degree
+// tables): each order's entry is the certified boundary of the smallest
+// kmax row that covers it (the rows 4/8/16/32), so
+// BoysBatch(n,x)[n] == BoysSingle(n,x) == BoysBatch(m>=n,x)[n] exactly.
+// The band is the m = 1 lane's: the m > 1 branch keeps today's
+// region-A dispatch in the band (the per-order amplification of the
+// band's upward recursion needs its own derivation - named future work,
+// not ported here), and the float lane's dispatch is untouched (its
+// double-seeded region-A branch already serves the band at the float
+// budget).
+
+// The extended-band seed (the per-range seed design): F_0(x) on
+// [kExtendedBX0, kX0) via the same split Clenshaw evaluation as the
+// region-B seed. It serves the upward recursion below kX0 in the m = 1
+// double lanes only, dispatched per (n, x) at the certified per-order
+// thresholds kTierThresholds; the m > 1 branch and the float lanes keep
+// their existing dispatch untouched.
+inline double RegionBExtendedSeed(double x) noexcept {
+    const double t = 2.0 * (x - kExtendedBX0) / (kX0 - kExtendedBX0) - 1.0;
+    return ClenshawSplit(detail::kExtendedBcoeffs.data(), detail::kExtendedBDeg, t);
 }
 
 // ---------------------------------------------------------------------------
@@ -219,7 +243,7 @@ inline float RegionBSeedF32(float x) noexcept {
 }
 
 // ---------------------------------------------------------------------------
-// Degree-parameterized variants (the D-F3 relaxation path)
+// Degree-parameterized variants (the relaxation path)
 // ---------------------------------------------------------------------------
 // The region-A seed at the piece's effective degree; the piece index is the
 // flat kPieces index (the degrees tables are indexed the same way).
@@ -256,7 +280,7 @@ inline float RegionBSeedF32WithDegrees(float x, int degree) noexcept {
 // verbatim; the relaxed branch evaluates at the effective degrees)
 // ---------------------------------------------------------------------------
 // The F32 engine's computation budget: the float lane's 1.5e-7, or the
-// fp16/bf16 lanes' tighter 1e-7 (D-F2's fp16 formula; the fp16 entries are
+// fp16/bf16 lanes' tighter 1e-7 (the fp16 formula; the fp16 entries are
 // I/O around this engine, so the budget is the only difference between the
 // roles at m > 1 — at m = 1 the branch is identical regardless).
 enum class BoysBudget {
@@ -279,6 +303,19 @@ template <double kAccuracyMultiplier> double BoysSingleImpl(int n, double x) noe
 
         if (x < kX0)
         {
+            if (x >= detail::kTierThresholds[static_cast<std::size_t>(n)])
+            {
+                double f = RegionBExtendedSeed(x);
+                const double expx = 0.5 * std::exp(-x);
+
+                for (int l = 0; l < n; ++l)
+                {
+                    f = ((l + 0.5) * f - expx) / x;
+                }
+
+                return f;
+            }
+
             return ChebyshevValue(n, x);
         }
 
@@ -367,6 +404,41 @@ template <double kAccuracyMultiplier> void BoysBatchImpl(int nmax, double x, dou
 
         if (x < kX0)
         {
+            // The pure per-(n, x) dispatch, driven by the n-indexed
+            // threshold table: the upward recursion from the extended seed
+            // serves exactly the orders k with x >= kTierThresholds[k] - a
+            // prefix (the thresholds are non-decreasing in n); the tail
+            // orders come from the per-order region-A fits. The per-order
+            // result out[k] is then bit-identical to BoysSingle(k, x) for
+            // every k (the single entry applies the same per-(n, x) rule).
+            int served = 0;
+
+            while (served < nmax &&
+                   x >= detail::kTierThresholds[static_cast<std::size_t>(served + 1)])
+            {
+                ++served;
+            }
+
+            if (x >= detail::kTierThresholds[0])
+            {
+                double f = RegionBExtendedSeed(x);
+                out[0] = f;
+                const double expx = 0.5 * std::exp(-x);
+
+                for (int l = 1; l <= served; ++l)
+                {
+                    f = ((l - 0.5) * f - expx) / x;
+                    out[l] = f;
+                }
+
+                for (int l = served + 1; l <= nmax; ++l)
+                {
+                    out[l] = ChebyshevValue(l, x);
+                }
+
+                return;
+            }
+
             double f = ChebyshevValue(nmax, x);
             out[nmax] = f;
             const double expx = 0.5 * std::exp(-x);
@@ -469,6 +541,145 @@ template <double kAccuracyMultiplier> void BoysBatchImpl(int nmax, double x, dou
     }
 }
 
+// The fixed-n vector engine: F_n at every argument of an array, one fixed
+// order (the batch shape of angular-momentum-grouped inner loops; the
+// strided output layout belongs to the public surface in boys.hpp). The
+// region bodies below mirror BoysSingleImpl's verbatim - the m = 1 branch
+// is the certified scalar single-lane code (the bit-identity pin), the
+// relaxed branch the same bodies at the single-lane effective degrees
+// (BoysRole::kDoubleSingle) - so every output element is bit-identical to
+// the corresponding BoysSingle call by construction; keep the two engines'
+// bodies in lockstep. The region dispatch is per element: mixed-region
+// arguments need no pre-partitioning (the portable shape). The
+// dispatch-once-per-batch region structure lives in the AVX2 region-sorted
+// lanes (boys_simd.cpp), whose callers partition by region first.
+template <double kAccuracyMultiplier>
+void BoysFixedNImpl(
+    int n, const double* x, double* out, std::size_t count, std::size_t stride) noexcept {
+    static_assert(kAccuracyMultiplier >= 1.0,
+                  "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
+    assert(n >= 0 && n <= kMaxBoysOrder);
+    assert(x != nullptr);
+    assert(out != nullptr);
+    assert(stride >= 1);
+
+    if constexpr (kAccuracyMultiplier == 1.0)
+    {
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const double xi = x[i];
+            assert(xi >= 0.0);
+
+            if (xi == 0.0)
+            {
+                out[i * stride] = 1.0 / (2.0 * n + 1.0);
+                continue;
+            }
+
+            if (xi < kX0)
+            {
+                if (xi >= detail::kTierThresholds[static_cast<std::size_t>(n)])
+                {
+                    double f = RegionBExtendedSeed(xi);
+                    const double expx = 0.5 * std::exp(-xi);
+
+                    for (int l = 0; l < n; ++l)
+                    {
+                        f = ((l + 0.5) * f - expx) / xi;
+                    }
+
+                    out[i * stride] = f;
+                    continue;
+                }
+
+                out[i * stride] = ChebyshevValue(n, xi);
+                continue;
+            }
+
+            double f = RegionBSeed(xi);
+
+            if (xi < kX1)
+            {
+                const double expx = 0.5 * std::exp(-xi);
+
+                for (int l = 0; l < n; ++l)
+                {
+                    f = ((l + 0.5) * f - expx) / xi;
+                }
+
+                out[i * stride] = f;
+                continue;
+            }
+
+            f = kBoysHalfSqrtPi / std::sqrt(xi);
+
+            for (int l = 0; l < n; ++l)
+            {
+                f = (l + 0.5) * f / xi;
+            }
+
+            out[i * stride] = f;
+        }
+    } else
+    {
+        static constexpr auto kDegreesA =
+            RegionADegrees<kAccuracyMultiplier, BoysRole::kDoubleSingle>();
+        static constexpr auto kDegreesB =
+            RegionBDegrees<kAccuracyMultiplier, BoysRole::kDoubleSingle>();
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const double xi = x[i];
+            assert(xi >= 0.0);
+
+            if (xi == 0.0)
+            {
+                out[i * stride] = 1.0 / (2.0 * n + 1.0);
+                continue;
+            }
+
+            if (xi < kX0)
+            {
+                out[i * stride] = ChebyshevValueWithDegrees(n, xi, kDegreesA);
+                continue;
+            }
+
+            // The order-n single-lane seed entry mirrors the relaxed single
+            // path; the per-order amplification analysis of BoysSingleImpl
+            // applies unchanged.
+            double f = RegionBSeedWithDegrees(xi, kDegreesB[static_cast<std::size_t>(n)]);
+
+            if (xi < kX1)
+            {
+                const double expx = 0.5 * std::exp(-xi);
+
+                for (int l = 0; l < n; ++l)
+                {
+                    f = ((l + 0.5) * f - expx) / xi;
+                }
+
+                out[i * stride] = f;
+                continue;
+            }
+
+            f = kBoysHalfSqrtPi / std::sqrt(xi);
+
+            for (int l = 0; l < n; ++l)
+            {
+                f = (l + 0.5) * f / xi;
+            }
+
+            out[i * stride] = f;
+        }
+    }
+}
+
+// The float lanes' scope (the per-range seed design is fp64-only v1): the
+// float dispatch is untouched, still keyed to kX0/kX1, so the carved band
+// [kExtendedBX0, kX0) stays EXACTLY today's float path - the per-order
+// region-A fits, double-seeded in the batch form (ChebyshevValue's double
+// evaluation), serving the band at the float budget. The certified table
+// is the double recursion's; the float band is measured, not certified.
 template <double kAccuracyMultiplier, BoysBudget kBudget>
 float BoysSingleF32Impl(int n, float x) noexcept {
     static_assert(kAccuracyMultiplier >= 1.0,
@@ -699,7 +910,7 @@ void BoysBatchF32Impl(int nmax, float x, float* out) noexcept {
 } // namespace detail
 
 // ---------------------------------------------------------------------------
-// The public template entries (declared in boysymmetriad/boys.hpp)
+// The public template entries (declared in boys/boys.hpp)
 // ---------------------------------------------------------------------------
 
 template <double kAccuracyMultiplier> double BoysSingle(int n, double x) noexcept {
@@ -708,6 +919,12 @@ template <double kAccuracyMultiplier> double BoysSingle(int n, double x) noexcep
 
 template <double kAccuracyMultiplier> void BoysBatch(int nmax, double x, double* out) noexcept {
     detail::BoysBatchImpl<kAccuracyMultiplier>(nmax, x, out);
+}
+
+template <double kAccuracyMultiplier>
+void BoysFixedN(
+    int n, const double* x, double* out, std::size_t count, std::size_t stride) noexcept {
+    detail::BoysFixedNImpl<kAccuracyMultiplier>(n, x, out, count, stride);
 }
 
 template <double kAccuracyMultiplier> float BoysSingleF32(int n, float x) noexcept {
@@ -720,7 +937,7 @@ template <double kAccuracyMultiplier> void BoysBatchF32(int nmax, float x, float
 
 #if BoysFp16
 // The fp16/bf16 lanes forward the multiplier to the F32 engine with the
-// fp16 computation budget (D-F2's m*1e-7 + 1/2-ULP formula); at m = 1 the
+// fp16 computation budget (the m*1e-7 + 1/2-ULP formula); at m = 1 the
 // engine branch is the certified F32 path verbatim, so the lanes are
 // bit-unchanged. The half-ULP representation term is m-independent.
 
@@ -771,4 +988,4 @@ template <double kAccuracyMultiplier> void BoysBatchBf16(int nmax, Bf16 x, Bf16*
 }
 #endif // BoysFp16
 
-} // namespace boysymmetriad
+} // namespace boys

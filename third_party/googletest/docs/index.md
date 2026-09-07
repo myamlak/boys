@@ -1,4 +1,4 @@
-# GoogleTest User's Guide
+﻿# GoogleTest User's Guide
 
 ## Welcome to GoogleTest!
 

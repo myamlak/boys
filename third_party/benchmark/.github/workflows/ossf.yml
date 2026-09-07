@@ -1,4 +1,4 @@
-name: OSSF Scorecard Weekly
+﻿name: OSSF Scorecard Weekly
 
 on:
   schedule:

@@ -1,4 +1,4 @@
-name: test-bindings
+﻿name: test-bindings
 
 on:
   push:

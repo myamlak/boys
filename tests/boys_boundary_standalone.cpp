@@ -1,6 +1,10 @@
-// Standalone reproduction of tab:boundaries of the accompanying manuscript:
-// the smallest x for which the double-precision upward recursion from an
-// erf-seeded F0 stays within 5e-14 of the reference for all n <= kmax.
+// Standalone reproduction of the boundary-measurement record behind the
+// accompanying manuscript: the smallest x for which the double-precision
+// upward recursion from an erf-seeded F0 stays within 5e-14 of the
+// reference for all n <= kmax. The manuscript's published table
+// (tab:boundaries) carries the CERTIFIED boundaries of the shipped
+// fit-seeded recurrence; the measured cells below are the witness record
+// that certification superseded.
 //
 // Three measurement records are reproduced, exactly as recorded (each is a
 // lattice draw of an oscillating error envelope - see below):
@@ -29,7 +33,8 @@
 //   [3] the 0.0001-resolution descending sweep (run with --postcheck) over
 //       [0.8 x0, 1.2 x0] of each recorded cell, with the same seed, step,
 //       and 5e-14 criterion as [2] — the measurement the manuscript's
-//       tab:boundaries cells NOW record. The cells are the first failing
+//       resolution-sensitivity record tabulates (the pre-certification
+//       witness cells). The cells are the first failing
 //       samples of this sweep on the recording machine (MSVC, 2026-09-05):
 //       kmax = 4: 0.4625, kmax = 8: 1.6373, kmax = 16: 4.2367, kmax = 32:
 //       10.0492, with the passing sample one 1e-4 step above each (0.4626 /
@@ -74,6 +79,11 @@
 //                                           four recorded cells - the
 //                                           measurement the manuscript's
 //                                           cells record)
+//          ./boys_boundary --extended-seed (section [4]: the 0.0001-step
+//                                           descending sweep over the
+//                                           shipped kernel's extended-band
+//                                           path - the certified table's
+//                                           measured consistency check)
 // No dependencies beyond the standard library.
 //
 // Expected coarse-grid values (the superseded first-generation cells):
@@ -89,6 +99,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -521,10 +532,283 @@ bool RunPostCheckAll() {
     return allOk;
 }
 
+// ---------------------------------------------------------------------------
+// [4] the extended-band path (the per-range seed design), copied verbatim
+// from the shipped kernel (external/boys/src/boys_impl.hpp, the
+// RegionBExtendedSeed dispatch of BoysSingleImpl<1.0>): the F0 fit on
+// [kExtendedBX0, kX0) plus the upward step, dispatched per kmax tier at the
+// certified kTierBoundaries. The constants are exact decimal copies of the
+// generated header (src/boys_coefficients.hpp); the code shape - the
+// split-Clenshaw seed with std::fma everywhere, the hoisted 0.5*exp(-x)
+// precompute, the step f = ((l + 0.5)*f - expx)/x - is the certified path
+// of the manuscript's certified-boundary table (interval_envelope.py
+// mirrors the same source). This sweep is the certified rows' measured
+// consistency check: the certified crossings sit AT OR ABOVE the recorded
+// first failures.
+// ---------------------------------------------------------------------------
+
+// The generated constants (boys_coefficients.hpp, exact decimal copies; the
+// double values are the nearest doubles to these literals).
+constexpr double kX0 = 1.18998481521084840e+01; // region-A/B boundary (double)
+constexpr double kExtendedBX0 = 1.08552523453493333e+00; // the band's left edge
+constexpr int kExtendedBDeg = 24;
+constexpr double kExtendedBcoeffs[25] = {
+    4.12114508161470272e-01,  -2.08513328473299508e-01, 7.23146663434936776e-02,
+    -2.55479910482183173e-02, 8.64778167861495438e-03,  -2.74192371757364054e-03,
+    8.07090736167245327e-04,  -2.19956149640727428e-04, 5.55248467482282208e-05,
+    -1.30093169516035672e-05, 2.83691273573312611e-06,  -5.77570974546896711e-07,
+    1.10129683781869441e-07,  -1.97281092572063005e-08, 3.32990602638389726e-09,
+    -5.31073485374336990e-10, 8.02392141465355472e-11,  -1.15128891629713017e-11,
+    1.57227956403092410e-12,  -2.04802643771997034e-13, 2.54946807665347599e-14,
+    -3.03850609868245207e-15, 3.47296452162601717e-16,  -3.81251682238197342e-17,
+    3.98661416732232774e-18,
+};
+// The certified per-order dispatch thresholds (the dispatch constants of
+// the kernel, the next doubles above the instrument's certified values):
+// order n takes the extended seed exactly when x >= kTierThresholds[n].
+constexpr double kTierThresholds[33] = {
+    1.08552523453493333e+00, 1.08552523453493333e+00, 1.08552523453493333e+00,
+    1.08552523453493333e+00, 1.08552523453493333e+00, 2.01360534363369270e+00,
+    2.01360534363369270e+00, 2.01360534363369270e+00, 2.01360534363369270e+00,
+    4.89598289724388103e+00, 4.89598289724388103e+00, 4.89598289724388103e+00,
+    4.89598289724388103e+00, 4.89598289724388103e+00, 4.89598289724388103e+00,
+    4.89598289724388103e+00, 4.89598289724388103e+00, 1.07817723136493164e+01,
+    1.07817723136493164e+01, 1.07817723136493164e+01, 1.07817723136493164e+01,
+    1.07817723136493164e+01, 1.07817723136493164e+01, 1.07817723136493164e+01,
+    1.07817723136493164e+01, 1.07817723136493164e+01, 1.07817723136493164e+01,
+    1.07817723136493164e+01, 1.07817723136493164e+01, 1.07817723136493164e+01,
+    1.07817723136493164e+01, 1.07817723136493164e+01, 1.07817723136493164e+01,
+};
+
+// ClenshawSplit: the split-Clenshaw evaluation of the seeds, verbatim from
+// boys_impl.hpp (explicit std::fma in every fused position; the even/odd
+// split assumes even deg >= 4, which the generator only ever emits).
+inline double ClenshawSplit(const double* c, int deg, double t) noexcept {
+    if (deg == 0)
+    {
+        return c[0];
+    }
+
+    if (deg == 1)
+    {
+        return std::fma(t, c[1], c[0]);
+    }
+
+    const double v = std::fma(2.0, t * t, -1.0);
+    const double twoV = v + v;
+
+    if (deg == 2)
+    {
+        return std::fma(t, c[1], std::fma(v, c[2], c[0]));
+    }
+
+    assert(deg >= 4 && deg % 2 == 0);
+
+    const int m = deg / 2;
+    double b1 = c[std::ptrdiff_t{2} * m];
+    double b2 = 0.0;
+
+    for (int k = m - 1; k >= 1; --k)
+    {
+        const double b0 = std::fma(twoV, b1, c[std::ptrdiff_t{2} * k] - b2);
+        b2 = b1;
+        b1 = b0;
+    }
+
+    const double even = std::fma(v, b1, c[0] - b2);
+    double o1 = c[2 * m - 1];
+    double o2 = 0.0;
+
+    for (int k = m - 2; k >= 1; --k)
+    {
+        const double o0 = std::fma(twoV, o1, c[std::ptrdiff_t{2} * k + 1] - o2);
+        o2 = o1;
+        o1 = o0;
+    }
+
+    const double odd = std::fma(twoV - 1.0, o1, c[1] - o2);
+    return std::fma(t, odd, even);
+}
+
+// RegionBExtendedSeed: verbatim from boys_impl.hpp (the extended-band F0
+// fit on t = 2*(x-kExtendedBX0)/(kX0-kExtendedBX0) - 1).
+inline double RegionBExtendedSeed(double x) noexcept {
+    const double t = 2.0 * (x - kExtendedBX0) / (kX0 - kExtendedBX0) - 1.0;
+    return ClenshawSplit(kExtendedBcoeffs, kExtendedBDeg, t);
+}
+
+// ExtendedBandUpward: the shipped kernel's extended-band evaluation for the
+// tier dispatch (the m = 1 double-single branch of BoysSingleImpl<1.0>,
+// verbatim order of operations): the F0 fit seed, the hoisted 0.5*exp(-x)
+// precompute, then f = ((l + 0.5)*f - expx)/x.
+double ExtendedBandUpward(int n, double x) {
+    double f = RegionBExtendedSeed(x);
+    const double expx = 0.5 * std::exp(-x);
+
+    for (int l = 0; l < n; ++l)
+    {
+        f = ((l + 0.5) * f - expx) / x;
+    }
+
+    return f;
+}
+
+bool PassesThresholdExtended(int kmax, double x) {
+    for (int n = 0; n <= kmax; ++n)
+    {
+        const double recursion = ExtendedBandUpward(n, x);
+        const double reference =
+            static_cast<double>(SeriesReferenceLongDouble(n, static_cast<long double>(x)));
+
+        if (std::abs(recursion - reference) > kBoundaryThreshold)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+// The [4] rows: the certified boundaries of the extended band (the
+// manuscript's certified-boundary table, 1-ulp-exp column) and the sweep
+// band per tier. The 0.0001-step descending sweep from kX0 records where
+// the extended path's own error first crosses 5e-14; the certified
+// crossings must sit AT OR ABOVE those first failures (a conservative bound
+// crosses no lower than the true error does).
+struct ExtendedRow {
+    int kmax;
+    double xEnvCertified; // the certified boundary (1-ulp-exp column)
+};
+
+const std::array<ExtendedRow, 4> kExtendedRows = {
+    ExtendedRow{4, kTierThresholds[4]},
+    ExtendedRow{8, kTierThresholds[8]},
+    ExtendedRow{16, kTierThresholds[16]},
+    ExtendedRow{32, kTierThresholds[32]},
+};
+
+struct ExtendedSweepResult {
+    int samples = 0;
+    bool allAboveEnvPass = true; // every sampled x >= xEnvCertified passes
+    int alternations = 0; // pass/fail flips over the whole walk
+    int firstFailIndex = -1; // first failing sample, descending from kX0
+    double firstFailX = 0.0;
+    double lastPassX = 0.0; // the passing sample just above the first failure
+};
+
+// The 0.0001-step descending sweep over the extended-band path: from just
+// below kX0 down to 0.8 * xEnvCertified, the whole range walked (not
+// stopped at the first failure), so the pass/fail alternations are counted
+// as evidence of the envelope's oscillation near the transition.
+ExtendedSweepResult RunExtendedSeedSweep(const ExtendedRow& row) {
+    const double xTop = kX0 - kPostCheckStep;
+    const double xBottom = 0.8 * row.xEnvCertified;
+    const int nSamples = static_cast<int>(std::lround((xTop - xBottom) / kPostCheckStep)) + 1;
+
+    ExtendedSweepResult result;
+    result.samples = nSamples;
+
+    bool passes = PassesThresholdExtended(row.kmax, xTop);
+    int currentRun = 1;
+
+    for (int i = 1; i < nSamples; ++i)
+    {
+        const double x = xTop - static_cast<double>(i) * kPostCheckStep;
+        const bool next = PassesThresholdExtended(row.kmax, x);
+
+        if (next != passes)
+        {
+            ++result.alternations;
+            currentRun = 1;
+            passes = next;
+        } else
+        {
+            ++currentRun;
+        }
+
+        if (!next && x >= row.xEnvCertified)
+        {
+            result.allAboveEnvPass = false;
+        }
+
+        if (result.firstFailIndex < 0 && !next)
+        {
+            result.firstFailIndex = i;
+            result.firstFailX = x;
+            result.lastPassX = x + kPostCheckStep;
+        }
+    }
+
+    return result;
+}
+
+// Runs section [4] for all four tiers and reports, per tier, (i) the
+// walk's first failing sample, and (ii) the consistency check against the
+// certified x_env value - the certified crossing must sit AT OR ABOVE the
+// first failure (the bound is conservative); a first failure above the
+// certified value would refute the certificate.
+bool RunExtendedSeedAll() {
+    std::printf("\n");
+    std::printf("=== [4] extended-seed record: 0.0001-step descending sweep over\n");
+    std::printf("    [0.8 x_env, kX0) of the shipped kernel's extended-band path ===\n");
+    std::printf("    (the per-range F0 fit seed and the upward step, copied verbatim\n");
+    std::printf("    from the shipped kernel; the certified-boundary table's measured\n");
+    std::printf("    consistency check - the certification itself is the interval\n");
+    std::printf("    evaluation, interval_envelope.py)\n");
+
+    bool allOk = true;
+
+    for (const ExtendedRow& row : kExtendedRows)
+    {
+        const ExtendedSweepResult check = RunExtendedSeedSweep(row);
+        const bool consistent =
+            check.allAboveEnvPass &&
+            (check.firstFailIndex < 0 || check.firstFailX <= row.xEnvCertified + kPostCheckStep);
+        allOk = allOk && consistent;
+
+        std::printf("\n");
+        std::printf(
+            "kmax=%2d: certified x_env %.5f | sweep [%.4f, %.4f] | step %.4f | %d samples\n",
+            row.kmax,
+            row.xEnvCertified,
+            0.8 * row.xEnvCertified,
+            kX0 - kPostCheckStep,
+            kPostCheckStep,
+            check.samples);
+
+        if (check.firstFailIndex >= 0)
+        {
+            std::printf("  first failure @1e-4 (descending): %.4f | last pass @1e-4: %.4f\n",
+                        check.firstFailX,
+                        check.lastPassX);
+        } else
+        {
+            std::printf("  no failure inside the swept range (transition below %.4f)\n",
+                        0.8 * row.xEnvCertified);
+        }
+
+        std::printf("  every sampled x >= certified x_env passes: %s\n",
+                    check.allAboveEnvPass ? "YES" : "NO - failures above x_env");
+        std::printf("  pass/fail alternations in the range: %d\n", check.alternations);
+        std::printf("  EXTENDED-SEED kmax=%2d: %s\n",
+                    row.kmax,
+                    consistent ? "certified crossing sits AT OR ABOVE the first failure "
+                                 "(the bound is conservative - consistent)"
+                               : "NOT CONSISTENT - see the values above");
+    }
+
+    std::printf("\n");
+    std::printf("EXTENDED-SEED (kmax = 4, 8, 16, 32): %s\n",
+                allOk ? "all four certified crossings CONSISTENT with the 0.0001 sweep"
+                      : "DEVIATION");
+    return allOk;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     const bool postCheckMode = argc > 1 && std::strcmp(argv[1], "--postcheck") == 0;
+    const bool extendedSeedMode = argc > 1 && std::strcmp(argv[1], "--extended-seed") == 0;
 
     // Self-test: inline series vs the shipped grid.
     const std::vector<CsvRow> rows = LoadCsv("boys_reference.csv");
@@ -564,6 +848,11 @@ int main(int argc, char** argv) {
     if (postCheckMode)
     {
         return RunPostCheckAll() ? 0 : 1;
+    }
+
+    if (extendedSeedMode)
+    {
+        return RunExtendedSeedAll() ? 0 : 1;
     }
 
     // [1] coarse grid — the superseded first-generation measurement (record).

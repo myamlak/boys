@@ -1,4 +1,4 @@
-# Building and installing Python bindings
+﻿# Building and installing Python bindings
 
 Python bindings are available as wheels on [PyPI](https://pypi.org/project/google-benchmark/) for importing and 
 using Google Benchmark directly in Python. 

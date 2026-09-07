@@ -1,4 +1,4 @@
-find_package(LLVMAr REQUIRED)
+﻿find_package(LLVMAr REQUIRED)
 set(CMAKE_AR "${LLVMAR_EXECUTABLE}" CACHE FILEPATH "" FORCE)
 
 find_package(LLVMNm REQUIRED)

@@ -1,10 +1,10 @@
 // The C linkage surface contract (boys_c.h): scalar/batch entries match the
 // C++ lanes, the multiplier dispatch is exact over the sampled set, and the
 // validation rules return the documented status codes.
+#include "boys/boys.hpp"
+#include "boys/boys_c.h"
 #include "boys_effective_degrees.hpp"
 #include "boys_impl.hpp"
-#include "boysymmetriad/boys.hpp"
-#include "boysymmetriad/boys_c.h"
 
 #include <cmath>
 #include <cstdint>
@@ -14,8 +14,8 @@
 
 namespace {
 
-constexpr double kX0 = boysymmetriad::detail::kX0;
-constexpr double kX1 = boysymmetriad::detail::kX1;
+constexpr double kX0 = boys::detail::kX0;
+constexpr double kX1 = boys::detail::kX1;
 
 const double kSampleXs[] = {
     0.0, 1e-12, 1e-6, 0.5, 1.25, 7.0, kX0, kX0 + 1.0, 15.0, 23.0, kX1, 30.0, 60.0, 100.0, 1e6};
@@ -32,8 +32,7 @@ TEST(BoysCTest, DoubleMatchesCppLane) {
     {
         for (double x : kSampleXs)
         {
-            EXPECT_DOUBLE_EQ(RefSingle(n, x), boysymmetriad::BoysSingle(n, x))
-                << "n=" << n << " x=" << x;
+            EXPECT_DOUBLE_EQ(RefSingle(n, x), boys::BoysSingle(n, x)) << "n=" << n << " x=" << x;
         }
     }
 }
@@ -46,7 +45,7 @@ TEST(BoysCTest, FloatMatchesCppLane) {
             const float xf = static_cast<float>(x);
             float value = 0.0f;
             ASSERT_EQ(BoysFloat(n, xf, &value), BOYS_SUCCESS);
-            EXPECT_FLOAT_EQ(value, boysymmetriad::BoysSingleF32(n, xf)) << "n=" << n << " x=" << x;
+            EXPECT_FLOAT_EQ(value, boys::BoysSingleF32(n, xf)) << "n=" << n << " x=" << x;
         }
     }
 }
@@ -56,8 +55,7 @@ TEST(BoysCTest, FloatMatchesCppLane) {
 template <double kM> void CheckMultiplierLane(int n, double x) {
     double viaC = 0.0;
     ASSERT_EQ(BoysDoubleWithMultiplier(kM, n, x, &viaC), BOYS_SUCCESS);
-    EXPECT_DOUBLE_EQ(viaC, boysymmetriad::BoysSingle<kM>(n, x))
-        << "m=" << kM << " n=" << n << " x=" << x;
+    EXPECT_DOUBLE_EQ(viaC, boys::BoysSingle<kM>(n, x)) << "m=" << kM << " n=" << n << " x=" << x;
 }
 
 TEST(BoysCTest, DoubleMultiplierDispatchMatchesCpp) {
@@ -83,11 +81,11 @@ TEST(BoysCTest, FloatMultiplierDispatchMatchesCpp) {
             const float xf = static_cast<float>(x);
             float viaC = 0.0f;
             ASSERT_EQ(BoysFloatWithMultiplier(1.0, n, xf, &viaC), BOYS_SUCCESS);
-            EXPECT_FLOAT_EQ(viaC, boysymmetriad::BoysSingleF32(n, xf));
+            EXPECT_FLOAT_EQ(viaC, boys::BoysSingleF32(n, xf));
             ASSERT_EQ(BoysFloatWithMultiplier(2.0, n, xf, &viaC), BOYS_SUCCESS);
-            EXPECT_FLOAT_EQ(viaC, boysymmetriad::BoysSingleF32<2.0>(n, xf));
+            EXPECT_FLOAT_EQ(viaC, boys::BoysSingleF32<2.0>(n, xf));
             ASSERT_EQ(BoysFloatWithMultiplier(1e8, n, xf, &viaC), BOYS_SUCCESS);
-            EXPECT_FLOAT_EQ(viaC, boysymmetriad::BoysSingleF32<1e8>(n, xf));
+            EXPECT_FLOAT_EQ(viaC, boys::BoysSingleF32<1e8>(n, xf));
         }
     }
 }
@@ -114,7 +112,7 @@ TEST(BoysCTest, DoubleBatchMatchesCppPerElement) {
     for (std::size_t i = 0; i < xs.size(); ++i)
     {
         std::vector<double> row(nmax + 1);
-        boysymmetriad::BoysBatch(nmax, xs[i], row.data());
+        boys::BoysBatch(nmax, xs[i], row.data());
 
         for (int k = 0; k <= nmax; ++k)
         {
@@ -136,7 +134,7 @@ TEST(BoysCTest, FloatBatchMatchesCppPerElement) {
     for (std::size_t i = 0; i < xs.size(); ++i)
     {
         std::vector<float> row(nmax + 1);
-        boysymmetriad::BoysBatchF32(nmax, xs[i], row.data());
+        boys::BoysBatchF32(nmax, xs[i], row.data());
 
         for (int k = 0; k <= nmax; ++k)
         {
@@ -153,15 +151,14 @@ TEST(BoysCTest, RejectsInvalidArguments) {
     const double nan = std::numeric_limits<double>::quiet_NaN();
 
     EXPECT_EQ(BoysDouble(-1, 0.5, &value), BOYS_ERROR_INVALID_ARGUMENT);
-    EXPECT_EQ(BoysDouble(boysymmetriad::kMaxBoysOrder + 1, 0.5, &value),
-              BOYS_ERROR_INVALID_ARGUMENT);
+    EXPECT_EQ(BoysDouble(boys::kMaxBoysOrder + 1, 0.5, &value), BOYS_ERROR_INVALID_ARGUMENT);
     EXPECT_EQ(BoysDouble(0, -1.0, &value), BOYS_ERROR_INVALID_ARGUMENT);
     EXPECT_EQ(BoysDouble(0, nan, &value), BOYS_ERROR_INVALID_ARGUMENT);
     EXPECT_EQ(BoysDouble(0, 0.5, nullptr), BOYS_ERROR_INVALID_ARGUMENT);
     EXPECT_EQ(BoysFloat(0, -1.0f, &fvalue), BOYS_ERROR_INVALID_ARGUMENT);
     EXPECT_EQ(BoysFloat(0, 0.5f, nullptr), BOYS_ERROR_INVALID_ARGUMENT);
     EXPECT_EQ(BoysDoubleBatch(-1, 4, nullptr, nullptr), BOYS_ERROR_INVALID_ARGUMENT);
-    EXPECT_EQ(BoysDoubleBatch(boysymmetriad::kMaxBoysOrder + 1, 4, nullptr, nullptr),
+    EXPECT_EQ(BoysDoubleBatch(boys::kMaxBoysOrder + 1, 4, nullptr, nullptr),
               BOYS_ERROR_INVALID_ARGUMENT);
     EXPECT_EQ(BoysDoubleBatch(0, -1, nullptr, nullptr), BOYS_ERROR_INVALID_ARGUMENT);
 

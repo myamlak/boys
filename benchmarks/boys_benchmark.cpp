@@ -10,8 +10,8 @@
 // x-range of interest). The SIMD lanes are measured on region-sorted arrays
 // (the engine pattern); the unsorted penalty is measured by the mixed
 // per-vector kernel in the companion unsorted-SIMD benchmark.
+#include "boys/boys.hpp"
 #include "boys_coefficients.hpp"
-#include "boysymmetriad/boys.hpp"
 
 #include <benchmark/benchmark.h>
 #include <cmath>
@@ -33,7 +33,7 @@ double gSink = 0.0;
 std::vector<Item> UniformInputs() {
     std::mt19937_64 rng(42);
     std::uniform_real_distribution<double> xd(0.0, 40.0);
-    std::uniform_int_distribution<int> nd(0, boysymmetriad::kMaxBoysOrder);
+    std::uniform_int_distribution<int> nd(0, boys::kMaxBoysOrder);
     std::vector<Item> items(kInputCount);
 
     for (auto& item : items)
@@ -114,7 +114,7 @@ std::vector<Item> MolecularInputs() {
         // Geometric n: the low orders dominate real integral workloads.
         int n = 0;
 
-        while (n < boysymmetriad::kMaxBoysOrder && (rng() & 1u) == 0)
+        while (n < boys::kMaxBoysOrder && (rng() & 1u) == 0)
         {
             ++n;
         }
@@ -130,33 +130,33 @@ void RunSingle(const std::vector<Item>& items, bool f32) {
     {
         for (const auto& item : items)
         {
-            gSink += boysymmetriad::BoysSingleF32(item.n, static_cast<float>(item.x));
+            gSink += boys::BoysSingleF32(item.n, static_cast<float>(item.x));
         }
     } else
     {
         for (const auto& item : items)
         {
-            gSink += boysymmetriad::BoysSingle(item.n, item.x);
+            gSink += boys::BoysSingle(item.n, item.x);
         }
     }
 }
 
 void RunBatch(const std::vector<Item>& items, bool f32) {
-    double batchD[boysymmetriad::kMaxBoysOrder + 1];
-    float batchF[boysymmetriad::kMaxBoysOrder + 1];
+    double batchD[boys::kMaxBoysOrder + 1];
+    float batchF[boys::kMaxBoysOrder + 1];
 
     if (f32)
     {
         for (const auto& item : items)
         {
-            boysymmetriad::BoysBatchF32(item.n, static_cast<float>(item.x), batchF);
+            boys::BoysBatchF32(item.n, static_cast<float>(item.x), batchF);
             gSink += batchF[item.n];
         }
     } else
     {
         for (const auto& item : items)
         {
-            boysymmetriad::BoysBatch(item.n, item.x, batchD);
+            boys::BoysBatch(item.n, item.x, batchD);
             gSink += batchD[item.n];
         }
     }
@@ -255,10 +255,10 @@ SimdInputs BuildSimdInputs(int n) {
     {
         const double x = xd(rng);
 
-        if (x < boysymmetriad::detail::kX0)
+        if (x < boys::detail::kX0)
         {
             s.xA.push_back(x);
-        } else if (x < boysymmetriad::detail::kX1)
+        } else if (x < boys::detail::kX1)
         {
             s.xB.push_back(x);
         } else
@@ -278,7 +278,7 @@ SimdInputs gSimd = BuildSimdInputs(8);
 } // namespace
 
 static void BmBoysSimdSortedN8(benchmark::State& state) {
-    if (!boysymmetriad::BoysAvx2Available())
+    if (!boys::BoysAvx2Available())
     {
         state.SkipWithError("AVX2 required for the SIMD lanes");
         return;
@@ -289,9 +289,9 @@ static void BmBoysSimdSortedN8(benchmark::State& state) {
     for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
                          // variable is deliberately unused.
     {
-        boysymmetriad::BoysRegionASimd(n, gSimd.xA.data(), gSimd.outA.data(), gSimd.xA.size());
-        boysymmetriad::BoysRegionBSimd(n, gSimd.xB.data(), gSimd.outB.data(), gSimd.xB.size());
-        boysymmetriad::BoysRegionCSimd(n, gSimd.xC.data(), gSimd.outC.data(), gSimd.xC.size());
+        boys::BoysRegionASimd(n, gSimd.xA.data(), gSimd.outA.data(), gSimd.xA.size());
+        boys::BoysRegionBSimd(n, gSimd.xB.data(), gSimd.outB.data(), gSimd.xB.size());
+        boys::BoysRegionCSimd(n, gSimd.xC.data(), gSimd.outC.data(), gSimd.xC.size());
         benchmark::DoNotOptimize(gSimd.outA.data());
         benchmark::DoNotOptimize(gSimd.outB.data());
         benchmark::DoNotOptimize(gSimd.outC.data());
@@ -319,7 +319,7 @@ void RunSingleHalf(const std::vector<Item>& items) {
 
 template <typename Half, void (*BatchFn)(int, Half, Half*) noexcept>
 void RunBatchHalf(const std::vector<Item>& items) {
-    Half batch[boysymmetriad::kMaxBoysOrder + 1];
+    Half batch[boys::kMaxBoysOrder + 1];
 
     for (const auto& item : items)
     {
@@ -329,8 +329,8 @@ void RunBatchHalf(const std::vector<Item>& items) {
 }
 
 struct SimdInputsF16 {
-    std::vector<boysymmetriad::F16> xA, xB, xC;
-    std::vector<boysymmetriad::F16> outA, outB, outC;
+    std::vector<boys::F16> xA, xB, xC;
+    std::vector<boys::F16> outA, outB, outC;
 };
 
 SimdInputsF16 BuildSimdInputsF16(int n) {
@@ -345,13 +345,13 @@ SimdInputsF16 BuildSimdInputsF16(int n) {
     {
         // Region membership is decided on the fp16-rounded argument (the
         // value the SIMD kernel sees), not the unrounded draw.
-        const boysymmetriad::F16 x16 = static_cast<boysymmetriad::F16>(xd(rng));
+        const boys::F16 x16 = static_cast<boys::F16>(xd(rng));
         const double x = static_cast<double>(x16);
 
-        if (x < boysymmetriad::detail::kX0)
+        if (x < boys::detail::kX0)
         {
             s.xA.push_back(x16);
-        } else if (x < boysymmetriad::detail::kX1)
+        } else if (x < boys::detail::kX1)
         {
             s.xB.push_back(x16);
         } else
@@ -374,7 +374,7 @@ static void BmBoysSingleF16Uniform(benchmark::State& state) {
     for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
                          // variable is deliberately unused.
     {
-        RunSingleHalf<boysymmetriad::F16, boysymmetriad::BoysSingleF16>(gUniform);
+        RunSingleHalf<boys::F16, boys::BoysSingleF16>(gUniform);
         benchmark::DoNotOptimize(gSink);
     }
 
@@ -387,7 +387,7 @@ static void BmBoysSingleF16Molecular(benchmark::State& state) {
     for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
                          // variable is deliberately unused.
     {
-        RunSingleHalf<boysymmetriad::F16, boysymmetriad::BoysSingleF16>(gMolecular);
+        RunSingleHalf<boys::F16, boys::BoysSingleF16>(gMolecular);
         benchmark::DoNotOptimize(gSink);
     }
 
@@ -400,7 +400,7 @@ static void BmBoysBatchF16Uniform(benchmark::State& state) {
     for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
                          // variable is deliberately unused.
     {
-        RunBatchHalf<boysymmetriad::F16, boysymmetriad::BoysBatchF16>(gUniform);
+        RunBatchHalf<boys::F16, boys::BoysBatchF16>(gUniform);
         benchmark::DoNotOptimize(gSink);
     }
 
@@ -413,7 +413,7 @@ static void BmBoysBatchF16Molecular(benchmark::State& state) {
     for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
                          // variable is deliberately unused.
     {
-        RunBatchHalf<boysymmetriad::F16, boysymmetriad::BoysBatchF16>(gMolecular);
+        RunBatchHalf<boys::F16, boys::BoysBatchF16>(gMolecular);
         benchmark::DoNotOptimize(gSink);
     }
 
@@ -426,7 +426,7 @@ static void BmBoysSingleBf16Uniform(benchmark::State& state) {
     for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
                          // variable is deliberately unused.
     {
-        RunSingleHalf<boysymmetriad::Bf16, boysymmetriad::BoysSingleBf16>(gUniform);
+        RunSingleHalf<boys::Bf16, boys::BoysSingleBf16>(gUniform);
         benchmark::DoNotOptimize(gSink);
     }
 
@@ -439,7 +439,7 @@ static void BmBoysBatchBf16Uniform(benchmark::State& state) {
     for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
                          // variable is deliberately unused.
     {
-        RunBatchHalf<boysymmetriad::Bf16, boysymmetriad::BoysBatchBf16>(gUniform);
+        RunBatchHalf<boys::Bf16, boys::BoysBatchBf16>(gUniform);
         benchmark::DoNotOptimize(gSink);
     }
 
@@ -449,7 +449,7 @@ static void BmBoysBatchBf16Uniform(benchmark::State& state) {
 BENCHMARK(BmBoysBatchBf16Uniform);
 
 static void BmBoysSimdF16SortedN8(benchmark::State& state) {
-    if (!boysymmetriad::BoysAvx2Available())
+    if (!boys::BoysAvx2Available())
     {
         state.SkipWithError("AVX2 required for the SIMD lanes");
         return;
@@ -460,12 +460,9 @@ static void BmBoysSimdF16SortedN8(benchmark::State& state) {
     for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
                          // variable is deliberately unused.
     {
-        boysymmetriad::BoysRegionASimdF16(
-            n, gSimdF16.xA.data(), gSimdF16.outA.data(), gSimdF16.xA.size());
-        boysymmetriad::BoysRegionBSimdF16(
-            n, gSimdF16.xB.data(), gSimdF16.outB.data(), gSimdF16.xB.size());
-        boysymmetriad::BoysRegionCSimdF16(
-            n, gSimdF16.xC.data(), gSimdF16.outC.data(), gSimdF16.xC.size());
+        boys::BoysRegionASimdF16(n, gSimdF16.xA.data(), gSimdF16.outA.data(), gSimdF16.xA.size());
+        boys::BoysRegionBSimdF16(n, gSimdF16.xB.data(), gSimdF16.outB.data(), gSimdF16.xB.size());
+        boys::BoysRegionCSimdF16(n, gSimdF16.xC.data(), gSimdF16.outC.data(), gSimdF16.xC.size());
         benchmark::DoNotOptimize(gSimdF16.outA.data());
         benchmark::DoNotOptimize(gSimdF16.outB.data());
         benchmark::DoNotOptimize(gSimdF16.outC.data());

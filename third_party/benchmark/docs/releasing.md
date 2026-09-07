@@ -1,4 +1,4 @@
-# How to release
+﻿# How to release
 
 * Make sure you're on main and synced to HEAD
 * Ensure the project builds and tests run

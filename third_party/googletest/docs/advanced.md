@@ -1,4 +1,4 @@
-# Advanced GoogleTest Topics
+﻿# Advanced GoogleTest Topics
 
 ## Introduction
 
@@ -1117,7 +1117,7 @@ TEST_P(FooTest, HasBlahBlah) {
 
 Finally, you can use the `INSTANTIATE_TEST_SUITE_P` macro to instantiate the
 test suite with any set of parameters you want. GoogleTest defines a number of
-functions for generating test parameters—see details at
+functions for generating test parametersâ€”see details at
 [`INSTANTIATE_TEST_SUITE_P`](reference/testing.md#INSTANTIATE_TEST_SUITE_P) in
 the Testing Reference.
 

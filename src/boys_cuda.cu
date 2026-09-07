@@ -11,7 +11,7 @@
 #include <math.h>
 #include <stddef.h>
 
-namespace boysymmetriad {
+namespace boys {
 namespace {
 
 constexpr int kMaxPieces = 12;
@@ -41,8 +41,7 @@ __constant__ int cCount32[33];
 __constant__ float cBcoeffs32[24];
 __constant__ int cBDeg32;
 
-// The accuracy-multiplier effective-degree tables (design record D-F6 of
-// the accompanying paper): one lane per CUDA entry
+// The accuracy-multiplier effective-degree tables: one lane per CUDA entry
 // point, in the order the host fills them (boys_cuda.cpp FillEffLane):
 //   0 = double single (BoysSingleF64KernelEff, region-B degree per order)
 //   1 = double batch (BoysBatchF64KernelEff, region-B degree = order-0 entry)
@@ -206,7 +205,7 @@ __device__ __forceinline__ float DevSeedB32(float x) {
 }
 
 // ---------------------------------------------------------------------------
-// effective-degree variants (the D-F3 relaxation path)
+// effective-degree variants (the relaxation path)
 // ---------------------------------------------------------------------------
 // Identical shapes to the full-accuracy helpers above; the degrees come from
 // the per-lane cDegEff/cBDegEff tables instead of cDeg/cBDeg. kLane is the
@@ -575,7 +574,7 @@ __global__ void BoysBatchF16Kernel(const int* n,
 #endif // BoysFp16
 
 // ---------------------------------------------------------------------------
-// effective-degree kernels (the D-F3 relaxation path)
+// effective-degree kernels (the relaxation path)
 // ---------------------------------------------------------------------------
 // One per CUDA lane, mirroring the full-accuracy kernels above exactly
 // (same arithmetic, same region structure, same output layout) except that
@@ -1158,9 +1157,8 @@ extern "C" int BoysCudaLaunchBatchF16(
 }
 #endif // BoysFp16
 
-// Accuracy-multiplier effective-degree upload (design record D-F6 of
-// the accompanying paper). The host layer (boys_cuda.cpp, C++23) computes
-// the per-lane degree tables from the
+// Accuracy-multiplier effective-degree upload. The host layer (boys_cuda.cpp,
+// C++23) computes the per-lane degree tables from the
 // constexpr machinery and hands them over as flat arrays in the lane order
 // documented at cDegEff; this function caches the upload per (device, m) —
 // the single-m-per-process contract, same idempotence as BoysCudaUploadTables.
@@ -1255,4 +1253,4 @@ extern "C" int BoysCudaLaunchBatchF16Eff(
 #endif // BoysFp16
 } // namespace
 
-} // namespace boysymmetriad
+} // namespace boys

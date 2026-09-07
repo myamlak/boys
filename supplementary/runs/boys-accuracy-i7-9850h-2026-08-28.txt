@@ -1,4 +1,4 @@
-Boys-function accuracy record — i7-9850H (tab:accuracy)
+﻿Boys-function accuracy record â€” i7-9850H (tab:accuracy)
 ========================================================
 Date: 2026-08-28
 Machine: LENOVO 20QQS32H0B, Intel Core i7-9850H (6C/12T, AVX2), 32 GB RAM
@@ -25,7 +25,7 @@ Double lanes (tab:accuracy rows "double single" / "double batch"):
 
   asserted bounds: single A <= 1e-15, B <= 3e-14, C/overall <= 5.5e-14;
   batch all regions <= 5.5e-14. The overall worst 5.000e-14 sits at
-  (n = 32, x = x1) — the shared asymptotic cutoff, matching the
+  (n = 32, x = x1) â€” the shared asymptotic cutoff, matching the
   manuscript's "5.0e-14 at (32, x1)" cell. Region-C cells are the
   asymptotic-form cutoff, not a polynomial error. (Region B holds only
   the grid's five x-values in [x0, x1), so 9.936e-15 is a lower bound;
@@ -80,8 +80,8 @@ tests (boys_cuda_test.cpp, seeds rng(20260817)/rng(20260823), 65,536
 draws, n in 0..32, x in [1e-4, 60]) on this T1000 during the original validation
 (2026-08-17-24) and recorded in the design-study notes (section 5.5)
 and the pins spec's drift-guard table. Those prints were
-never committed, so the self-check rows above — the benchmark harness's
-uniform-n32-x40 workload (4,194,304 draws) — do not reproduce them; the
+never committed, so the self-check rows above â€” the benchmark harness's
+uniform-n32-x40 workload (4,194,304 draws) â€” do not reproduce them; the
 difference is the draw (the larger sample shows larger sample worsts:
 2.101e-16 > 4.4e-17, 2.033e-7 > 1.8e-7), not a kernel change. The m = 1
 CUDA evaluation bodies are unchanged since the measurement (the
@@ -91,8 +91,8 @@ device/driver (596.86, CUDA 13.3.73). Re-probe recipe: rebuild the CUDA
 preset and run the CUDA test suite's BoysCudaTest.* cases on
 the T1000, capturing the printed worsts; if one moves, the article cell
 follows the measurement (the drift-guard rule), never the reverse.
-The CUDA fp16 row's cells equal the CPU fp16 cells by construction — the
-engines are bit-identical (self-check excess 0.000e+00 over ULP) — rather
+The CUDA fp16 row's cells equal the CPU fp16 cells by construction â€” the
+engines are bit-identical (self-check excess 0.000e+00 over ULP) â€” rather
 than by grid identity.
 
 Region-B exp-Taylor pin (the 1.8e-17 claim of the manuscript's Method

@@ -1,4 +1,4 @@
-# Defines functions and macros useful for building Google Test and
+﻿# Defines functions and macros useful for building Google Test and
 # Google Mock.
 #
 # Note:

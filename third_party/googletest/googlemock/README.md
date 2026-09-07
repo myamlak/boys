@@ -1,4 +1,4 @@
-# Googletest Mocking (gMock) Framework
+﻿# Googletest Mocking (gMock) Framework
 
 ### Overview
 

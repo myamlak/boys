@@ -1,4 +1,4 @@
-# Platform Specific Build Instructions
+﻿# Platform Specific Build Instructions
 
 ## Building with GCC
 

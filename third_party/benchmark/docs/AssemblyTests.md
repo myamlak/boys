@@ -1,4 +1,4 @@
-# Assembly Tests
+﻿# Assembly Tests
 
 The Benchmark library provides a number of functions whose primary
 purpose in to affect assembly generation, including `DoNotOptimize`

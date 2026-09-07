@@ -1,8 +1,8 @@
-#include "boysymmetriad/boys_cuda.hpp"
+#include "boys/boys_cuda.hpp"
 
+#include "boys/boys.hpp"
+#include "boys/f16.hpp"
 #include "boys_effective_degrees.hpp"
-#include "boysymmetriad/boys.hpp"
-#include "boysymmetriad/f16.hpp"
 
 #include <array>
 #include <cstddef>
@@ -45,7 +45,7 @@ int BoysCudaLaunchBatchF16Eff(
 #endif
 }
 
-namespace boysymmetriad {
+namespace boys {
 namespace {
 
 // code == 1 is the internal table-layout error; every other nonzero code is
@@ -65,9 +65,9 @@ BoysStatus FromLaunchCode(int code) {
 
 namespace {
 // ---------------------------------------------------------------------------
-// The accuracy-multiplier effective-degree tables (design record D-F6 of
-// the accompanying paper). The CUDA side cannot see the constexpr degree
-// machinery (nvcc translation units get a CUDA-safe include list only), so
+// The accuracy-multiplier effective-degree tables. The CUDA side cannot see
+// the constexpr degree machinery (nvcc translation units get a CUDA-safe
+// include list only), so
 // the host layer computes the six lanes' degree tables here and uploads
 // them through BoysCudaUploadEffTables, which caches per (device, m). The
 // lane order matches the cDegEff lane axis in boys_cuda.cu:
@@ -379,4 +379,4 @@ template BoysStatus BoysCuda::SingleF16<1e8>(const int*, const F16*, F16*, std::
 template BoysStatus BoysCuda::BatchF16<1e8>(const int*, const F16*, F16*, std::size_t, void*);
 #endif
 
-} // namespace boysymmetriad
+} // namespace boys

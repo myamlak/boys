@@ -1,4 +1,4 @@
-# GoogleTest FAQ
+﻿# GoogleTest FAQ
 
 ## Why should test suite names and test names not contain underscore?
 
@@ -33,7 +33,7 @@ contains `_`?
     `TestSuiteName_Bar__Test`, which is invalid.
 
 So clearly `TestSuiteName` and `TestName` cannot start or end with `_`
-(Actually, `TestSuiteName` can start with `_`—as long as the `_` isn't followed
+(Actually, `TestSuiteName` can start with `_`â€”as long as the `_` isn't followed
 by an upper-case letter. But that's getting complicated. So for simplicity we
 just say that it cannot start with `_`.).
 
@@ -258,7 +258,7 @@ disabled by our build system. Please see more details
 ## My death test hangs (or seg-faults). How do I fix it?
 
 In GoogleTest, death tests are run in a child process and the way they work is
-delicate. To write death tests you really need to understand how they work—see
+delicate. To write death tests you really need to understand how they workâ€”see
 the details at [Death Assertions](reference/assertions.md#death) in the
 Assertions Reference.
 

@@ -1,5 +1,5 @@
-#include "boysymmetriad/boys.hpp"
-#include "boysymmetriad/boys_cuda.hpp"
+#include "boys/boys.hpp"
+#include "boys/boys_cuda.hpp"
 
 #include <cmath>
 #include <cstddef>
@@ -11,7 +11,7 @@
 #include <vector>
 
 #if BoysFp16
-#include "boysymmetriad/f16.hpp"
+#include "boys/f16.hpp"
 #endif
 
 namespace {
@@ -29,9 +29,9 @@ struct DeviceSetup {
         EXPECT_EQ(error, cudaSuccess);
         error = cudaMalloc(&x, kCount * sizeof(double));
         EXPECT_EQ(error, cudaSuccess);
-        error = cudaMalloc(&outF32, kCount * (boysymmetriad::kMaxBoysOrder + 1) * sizeof(float));
+        error = cudaMalloc(&outF32, kCount * (boys::kMaxBoysOrder + 1) * sizeof(float));
         EXPECT_EQ(error, cudaSuccess);
-        error = cudaMalloc(&outF64, kCount * (boysymmetriad::kMaxBoysOrder + 1) * sizeof(double));
+        error = cudaMalloc(&outF64, kCount * (boys::kMaxBoysOrder + 1) * sizeof(double));
         EXPECT_EQ(error, cudaSuccess);
 
         std::mt19937_64 rng(20260817);
@@ -41,7 +41,7 @@ struct DeviceSetup {
 
         for (std::size_t i = 0; i < kCount; ++i)
         {
-            hostN[i] = static_cast<int>(rng() % (boysymmetriad::kMaxBoysOrder + 1));
+            hostN[i] = static_cast<int>(rng() % (boys::kMaxBoysOrder + 1));
             hostX[i] = xd(rng);
         }
         // The x == 0 device path is a dedicated branch in every kernel.
@@ -71,11 +71,11 @@ struct DeviceSetup {
 // and round to fp16): the cross-lane float budget is the F32 one above, and
 // one ULP of quantization covers the fp16 rounding (HalfUlp here is the
 // full grid step, NextUp(x) - x, not half of it).
-double HalfUlp(boysymmetriad::F16 x) {
-    return static_cast<double>(boysymmetriad::NextUp(x)) - static_cast<double>(x);
+double HalfUlp(boys::F16 x) {
+    return static_cast<double>(boys::NextUp(x)) - static_cast<double>(x);
 }
 
-double F16Tolerance(boysymmetriad::F16 cpuValue) {
+double F16Tolerance(boys::F16 cpuValue) {
     return 3.5e-7 + HalfUlp(cpuValue);
 }
 #endif // BoysFp16
@@ -92,15 +92,15 @@ TEST(BoysCudaTest, SingleF32MatchesCpu) {
     }
 
     DeviceSetup setup;
-    ASSERT_EQ(boysymmetriad::BoysCuda::InitializeTables(), boysymmetriad::BoysStatus::kSuccess);
+    ASSERT_EQ(boys::BoysCuda::InitializeTables(), boys::BoysStatus::kSuccess);
 
     std::vector<int> hostN(kCount);
     std::vector<double> hostX(kCount);
     cudaMemcpy(hostN.data(), setup.n, kCount * sizeof(int), cudaMemcpyDeviceToHost);
     cudaMemcpy(hostX.data(), setup.x, kCount * sizeof(double), cudaMemcpyDeviceToHost);
 
-    ASSERT_EQ(boysymmetriad::BoysCuda::SingleF32(setup.n, setup.x, setup.outF32, kCount, nullptr),
-              boysymmetriad::BoysStatus::kSuccess);
+    ASSERT_EQ(boys::BoysCuda::SingleF32(setup.n, setup.x, setup.outF32, kCount, nullptr),
+              boys::BoysStatus::kSuccess);
     cudaDeviceSynchronize();
 
     std::vector<float> hostOut(kCount);
@@ -109,7 +109,7 @@ TEST(BoysCudaTest, SingleF32MatchesCpu) {
 
     for (std::size_t i = 0; i < kCount; ++i)
     {
-        const float cpu = boysymmetriad::BoysSingleF32(hostN[i], static_cast<float>(hostX[i]));
+        const float cpu = boys::BoysSingleF32(hostN[i], static_cast<float>(hostX[i]));
         worst = std::max(worst, std::abs(hostOut[i] - cpu));
     }
 
@@ -127,10 +127,10 @@ TEST(BoysCudaTest, SingleF64MatchesCpu) {
     }
 
     DeviceSetup setup;
-    ASSERT_EQ(boysymmetriad::BoysCuda::InitializeTables(), boysymmetriad::BoysStatus::kSuccess);
+    ASSERT_EQ(boys::BoysCuda::InitializeTables(), boys::BoysStatus::kSuccess);
 
-    ASSERT_EQ(boysymmetriad::BoysCuda::SingleF64(setup.n, setup.x, setup.outF64, kCount, nullptr),
-              boysymmetriad::BoysStatus::kSuccess);
+    ASSERT_EQ(boys::BoysCuda::SingleF64(setup.n, setup.x, setup.outF64, kCount, nullptr),
+              boys::BoysStatus::kSuccess);
     cudaDeviceSynchronize();
 
     std::vector<int> hostN(kCount);
@@ -144,7 +144,7 @@ TEST(BoysCudaTest, SingleF64MatchesCpu) {
 
     for (std::size_t i = 0; i < kCount; ++i)
     {
-        const double cpu = boysymmetriad::BoysSingle(hostN[i], hostX[i]);
+        const double cpu = boys::BoysSingle(hostN[i], hostX[i]);
         worst = std::max(worst, std::abs(hostOut[i] - cpu));
     }
 
@@ -162,10 +162,10 @@ TEST(BoysCudaTest, BatchF32MatchesCpu) {
     }
 
     DeviceSetup setup;
-    ASSERT_EQ(boysymmetriad::BoysCuda::InitializeTables(), boysymmetriad::BoysStatus::kSuccess);
+    ASSERT_EQ(boys::BoysCuda::InitializeTables(), boys::BoysStatus::kSuccess);
 
-    ASSERT_EQ(boysymmetriad::BoysCuda::BatchF32(setup.n, setup.x, setup.outF32, kCount, nullptr),
-              boysymmetriad::BoysStatus::kSuccess);
+    ASSERT_EQ(boys::BoysCuda::BatchF32(setup.n, setup.x, setup.outF32, kCount, nullptr),
+              boys::BoysStatus::kSuccess);
     cudaDeviceSynchronize();
 
     std::vector<int> hostN(kCount);
@@ -173,17 +173,17 @@ TEST(BoysCudaTest, BatchF32MatchesCpu) {
     cudaMemcpy(hostN.data(), setup.n, kCount * sizeof(int), cudaMemcpyDeviceToHost);
     cudaMemcpy(hostX.data(), setup.x, kCount * sizeof(double), cudaMemcpyDeviceToHost);
 
-    std::vector<float> hostOut(kCount * (boysymmetriad::kMaxBoysOrder + 1));
+    std::vector<float> hostOut(kCount * (boys::kMaxBoysOrder + 1));
     cudaMemcpy(hostOut.data(),
                setup.outF32,
-               kCount * (boysymmetriad::kMaxBoysOrder + 1) * sizeof(float),
+               kCount * (boys::kMaxBoysOrder + 1) * sizeof(float),
                cudaMemcpyDeviceToHost);
     float worst = 0.0f;
-    std::vector<float> cpuBatch(boysymmetriad::kMaxBoysOrder + 1);
+    std::vector<float> cpuBatch(boys::kMaxBoysOrder + 1);
 
     for (std::size_t i = 0; i < kCount; ++i)
     {
-        boysymmetriad::BoysBatchF32(hostN[i], static_cast<float>(hostX[i]), cpuBatch.data());
+        boys::BoysBatchF32(hostN[i], static_cast<float>(hostX[i]), cpuBatch.data());
 
         for (int k = 0; k <= hostN[i]; ++k)
         {
@@ -205,12 +205,12 @@ TEST(BoysCudaTest, BatchF64MatchesCpu) {
     }
 
     DeviceSetup setup;
-    ASSERT_EQ(boysymmetriad::BoysCuda::InitializeTables(), boysymmetriad::BoysStatus::kSuccess);
+    ASSERT_EQ(boys::BoysCuda::InitializeTables(), boys::BoysStatus::kSuccess);
 
     cudaStream_t stream = nullptr;
     ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
-    ASSERT_EQ(boysymmetriad::BoysCuda::BatchF64(setup.n, setup.x, setup.outF64, kCount, stream),
-              boysymmetriad::BoysStatus::kSuccess);
+    ASSERT_EQ(boys::BoysCuda::BatchF64(setup.n, setup.x, setup.outF64, kCount, stream),
+              boys::BoysStatus::kSuccess);
     cudaStreamSynchronize(stream);
     cudaStreamDestroy(stream);
     cudaDeviceSynchronize();
@@ -220,17 +220,17 @@ TEST(BoysCudaTest, BatchF64MatchesCpu) {
     cudaMemcpy(hostN.data(), setup.n, kCount * sizeof(int), cudaMemcpyDeviceToHost);
     cudaMemcpy(hostX.data(), setup.x, kCount * sizeof(double), cudaMemcpyDeviceToHost);
 
-    std::vector<double> hostOut(kCount * (boysymmetriad::kMaxBoysOrder + 1));
+    std::vector<double> hostOut(kCount * (boys::kMaxBoysOrder + 1));
     cudaMemcpy(hostOut.data(),
                setup.outF64,
-               kCount * (boysymmetriad::kMaxBoysOrder + 1) * sizeof(double),
+               kCount * (boys::kMaxBoysOrder + 1) * sizeof(double),
                cudaMemcpyDeviceToHost);
     double worst = 0.0;
-    std::vector<double> cpuBatch(boysymmetriad::kMaxBoysOrder + 1);
+    std::vector<double> cpuBatch(boys::kMaxBoysOrder + 1);
 
     for (std::size_t i = 0; i < kCount; ++i)
     {
-        boysymmetriad::BoysBatch(hostN[i], hostX[i], cpuBatch.data());
+        boys::BoysBatch(hostN[i], hostX[i], cpuBatch.data());
 
         for (int k = 0; k <= hostN[i]; ++k)
         {
@@ -250,12 +250,11 @@ struct F16DeviceSetup {
     F16DeviceSetup(std::size_t count) {
         cudaError_t error = cudaMalloc(&n, count * sizeof(int));
         EXPECT_EQ(error, cudaSuccess);
-        error = cudaMalloc(&x, count * sizeof(boysymmetriad::F16));
+        error = cudaMalloc(&x, count * sizeof(boys::F16));
         EXPECT_EQ(error, cudaSuccess);
-        error = cudaMalloc(&out, count * sizeof(boysymmetriad::F16));
+        error = cudaMalloc(&out, count * sizeof(boys::F16));
         EXPECT_EQ(error, cudaSuccess);
-        error = cudaMalloc(&batchOut,
-                           count * (boysymmetriad::kMaxBoysOrder + 1) * sizeof(boysymmetriad::F16));
+        error = cudaMalloc(&batchOut, count * (boys::kMaxBoysOrder + 1) * sizeof(boys::F16));
         EXPECT_EQ(error, cudaSuccess);
     }
 
@@ -267,35 +266,32 @@ struct F16DeviceSetup {
     }
 
     int* n = nullptr;
-    boysymmetriad::F16* x = nullptr;
-    boysymmetriad::F16* out = nullptr;
-    boysymmetriad::F16* batchOut = nullptr;
+    boys::F16* x = nullptr;
+    boys::F16* out = nullptr;
+    boys::F16* batchOut = nullptr;
 };
 
-void FillF16Inputs(std::vector<int>& hostN,
-                   std::vector<boysymmetriad::F16>& hostX,
-                   std::uint64_t seed) {
+void FillF16Inputs(std::vector<int>& hostN, std::vector<boys::F16>& hostX, std::uint64_t seed) {
     std::mt19937_64 rng(seed);
     std::uniform_real_distribution<float> xd(1e-4f, 60.0f);
 
     for (std::size_t i = 0; i < hostN.size(); ++i)
     {
-        hostN[i] = static_cast<int>(rng() % (boysymmetriad::kMaxBoysOrder + 1));
-        hostX[i] = static_cast<boysymmetriad::F16>(xd(rng));
+        hostN[i] = static_cast<int>(rng() % (boys::kMaxBoysOrder + 1));
+        hostX[i] = static_cast<boys::F16>(xd(rng));
     }
     // The x == 0 device path is a dedicated branch in every kernel.
     hostN[0] = 3;
-    hostX[0] = boysymmetriad::F16{0.0f};
+    hostX[0] = boys::F16{0.0f};
     hostN[1] = 17;
-    hostX[1] = boysymmetriad::F16{0.0f};
+    hostX[1] = boys::F16{0.0f};
 }
 
 void UploadF16Inputs(F16DeviceSetup& setup,
                      const std::vector<int>& hostN,
-                     const std::vector<boysymmetriad::F16>& hostX) {
+                     const std::vector<boys::F16>& hostX) {
     cudaMemcpy(setup.n, hostN.data(), hostN.size() * sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(
-        setup.x, hostX.data(), hostX.size() * sizeof(boysymmetriad::F16), cudaMemcpyHostToDevice);
+    cudaMemcpy(setup.x, hostX.data(), hostX.size() * sizeof(boys::F16), cudaMemcpyHostToDevice);
 }
 
 TEST(BoysCudaTest, SingleF16MatchesCpu) {
@@ -307,26 +303,25 @@ TEST(BoysCudaTest, SingleF16MatchesCpu) {
         GTEST_SKIP() << "no CUDA device";
     }
 
-    ASSERT_EQ(boysymmetriad::BoysCuda::InitializeTables(), boysymmetriad::BoysStatus::kSuccess);
+    ASSERT_EQ(boys::BoysCuda::InitializeTables(), boys::BoysStatus::kSuccess);
 
     std::vector<int> hostN(kCount);
-    std::vector<boysymmetriad::F16> hostX(kCount);
-    std::vector<boysymmetriad::F16> hostOut(kCount);
+    std::vector<boys::F16> hostX(kCount);
+    std::vector<boys::F16> hostOut(kCount);
     FillF16Inputs(hostN, hostX, 20260823);
     F16DeviceSetup setup(kCount);
     UploadF16Inputs(setup, hostN, hostX);
 
-    ASSERT_EQ(boysymmetriad::BoysCuda::SingleF16(setup.n, setup.x, setup.out, kCount, nullptr),
-              boysymmetriad::BoysStatus::kSuccess);
+    ASSERT_EQ(boys::BoysCuda::SingleF16(setup.n, setup.x, setup.out, kCount, nullptr),
+              boys::BoysStatus::kSuccess);
     cudaDeviceSynchronize();
-    cudaMemcpy(
-        hostOut.data(), setup.out, kCount * sizeof(boysymmetriad::F16), cudaMemcpyDeviceToHost);
+    cudaMemcpy(hostOut.data(), setup.out, kCount * sizeof(boys::F16), cudaMemcpyDeviceToHost);
 
     double worst = 0.0;
 
     for (std::size_t i = 0; i < kCount; ++i)
     {
-        const boysymmetriad::F16 cpu = boysymmetriad::BoysSingleF16(hostN[i], hostX[i]);
+        const boys::F16 cpu = boys::BoysSingleF16(hostN[i], hostX[i]);
         const double error = std::abs(static_cast<double>(hostOut[i]) - static_cast<double>(cpu));
         EXPECT_LE(error, F16Tolerance(cpu))
             << "i=" << i << " n=" << hostN[i] << " x=" << static_cast<float>(hostX[i]);
@@ -345,29 +340,27 @@ TEST(BoysCudaTest, BatchF16MatchesCpu) {
         GTEST_SKIP() << "no CUDA device";
     }
 
-    ASSERT_EQ(boysymmetriad::BoysCuda::InitializeTables(), boysymmetriad::BoysStatus::kSuccess);
+    ASSERT_EQ(boys::BoysCuda::InitializeTables(), boys::BoysStatus::kSuccess);
 
     std::vector<int> hostN(kCount);
-    std::vector<boysymmetriad::F16> hostX(kCount);
-    std::vector<boysymmetriad::F16> hostOut(kCount * (boysymmetriad::kMaxBoysOrder + 1));
+    std::vector<boys::F16> hostX(kCount);
+    std::vector<boys::F16> hostOut(kCount * (boys::kMaxBoysOrder + 1));
     FillF16Inputs(hostN, hostX, 20260824);
     F16DeviceSetup setup(kCount);
     UploadF16Inputs(setup, hostN, hostX);
 
-    ASSERT_EQ(boysymmetriad::BoysCuda::BatchF16(setup.n, setup.x, setup.batchOut, kCount, nullptr),
-              boysymmetriad::BoysStatus::kSuccess);
+    ASSERT_EQ(boys::BoysCuda::BatchF16(setup.n, setup.x, setup.batchOut, kCount, nullptr),
+              boys::BoysStatus::kSuccess);
     cudaDeviceSynchronize();
-    cudaMemcpy(hostOut.data(),
-               setup.batchOut,
-               hostOut.size() * sizeof(boysymmetriad::F16),
-               cudaMemcpyDeviceToHost);
+    cudaMemcpy(
+        hostOut.data(), setup.batchOut, hostOut.size() * sizeof(boys::F16), cudaMemcpyDeviceToHost);
 
     double worst = 0.0;
-    std::vector<boysymmetriad::F16> cpuBatch(boysymmetriad::kMaxBoysOrder + 1);
+    std::vector<boys::F16> cpuBatch(boys::kMaxBoysOrder + 1);
 
     for (std::size_t i = 0; i < kCount; ++i)
     {
-        boysymmetriad::BoysBatchF16(hostN[i], hostX[i], cpuBatch.data());
+        boys::BoysBatchF16(hostN[i], hostX[i], cpuBatch.data());
 
         for (int k = 0; k <= hostN[i]; ++k)
         {
@@ -393,32 +386,30 @@ TEST(BoysCudaTest, BatchF16MatchesCpuOnAStream) {
         GTEST_SKIP() << "no CUDA device";
     }
 
-    ASSERT_EQ(boysymmetriad::BoysCuda::InitializeTables(), boysymmetriad::BoysStatus::kSuccess);
+    ASSERT_EQ(boys::BoysCuda::InitializeTables(), boys::BoysStatus::kSuccess);
 
     std::vector<int> hostN(kCount);
-    std::vector<boysymmetriad::F16> hostX(kCount);
-    std::vector<boysymmetriad::F16> hostOut(kCount * (boysymmetriad::kMaxBoysOrder + 1));
+    std::vector<boys::F16> hostX(kCount);
+    std::vector<boys::F16> hostOut(kCount * (boys::kMaxBoysOrder + 1));
     FillF16Inputs(hostN, hostX, 20260824);
     F16DeviceSetup setup(kCount);
     UploadF16Inputs(setup, hostN, hostX);
 
     cudaStream_t stream = nullptr;
     ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
-    ASSERT_EQ(boysymmetriad::BoysCuda::BatchF16(setup.n, setup.x, setup.batchOut, kCount, stream),
-              boysymmetriad::BoysStatus::kSuccess);
+    ASSERT_EQ(boys::BoysCuda::BatchF16(setup.n, setup.x, setup.batchOut, kCount, stream),
+              boys::BoysStatus::kSuccess);
     cudaStreamSynchronize(stream);
     cudaStreamDestroy(stream);
     cudaDeviceSynchronize();
-    cudaMemcpy(hostOut.data(),
-               setup.batchOut,
-               hostOut.size() * sizeof(boysymmetriad::F16),
-               cudaMemcpyDeviceToHost);
+    cudaMemcpy(
+        hostOut.data(), setup.batchOut, hostOut.size() * sizeof(boys::F16), cudaMemcpyDeviceToHost);
 
-    std::vector<boysymmetriad::F16> cpuBatch(boysymmetriad::kMaxBoysOrder + 1);
+    std::vector<boys::F16> cpuBatch(boys::kMaxBoysOrder + 1);
 
     for (std::size_t i = 0; i < kCount; ++i)
     {
-        boysymmetriad::BoysBatchF16(hostN[i], hostX[i], cpuBatch.data());
+        boys::BoysBatchF16(hostN[i], hostX[i], cpuBatch.data());
 
         for (int k = 0; k <= hostN[i]; ++k)
         {
@@ -439,11 +430,10 @@ TEST(BoysCudaTest, F16RejectsZeroCount) {
         GTEST_SKIP() << "no CUDA device";
     }
 
-    boysymmetriad::F16 x = boysymmetriad::F16{1.0f};
+    boys::F16 x = boys::F16{1.0f};
     int n = 1;
-    ASSERT_EQ(boysymmetriad::BoysCuda::SingleF16(&n, &x, &x, 0, nullptr),
-              boysymmetriad::BoysStatus::kInvalidArgument);
-    ASSERT_EQ(boysymmetriad::BoysCuda::BatchF16(&n, &x, &x, 0, nullptr),
-              boysymmetriad::BoysStatus::kInvalidArgument);
+    ASSERT_EQ(boys::BoysCuda::SingleF16(&n, &x, &x, 0, nullptr),
+              boys::BoysStatus::kInvalidArgument);
+    ASSERT_EQ(boys::BoysCuda::BatchF16(&n, &x, &x, 0, nullptr), boys::BoysStatus::kInvalidArgument);
 }
 #endif // BoysFp16

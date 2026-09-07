@@ -1,4 +1,4 @@
-Boys-function CPU throughput runs — i7-9850H
+﻿Boys-function CPU throughput runs â€” i7-9850H
 =============================================
 Date: 2026-08-29
 Machine: LENOVO 20QQS32H0B, Intel Core i7-9850H (6C/12T, AVX2), 32 GB RAM

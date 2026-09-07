@@ -1,4 +1,4 @@
-<a name="perf-counters" />
+﻿<a name="perf-counters" />
 
 # User-Requested Performance Counters
 

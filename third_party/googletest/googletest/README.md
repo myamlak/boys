@@ -1,4 +1,4 @@
-### Generic Build Instructions
+﻿### Generic Build Instructions
 
 #### Setup
 

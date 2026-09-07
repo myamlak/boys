@@ -1,7 +1,7 @@
 #pragma once
 
 // The compile-time effective-degree machinery behind the accuracy-multiplier
-// parametrization (design record D-F1..D-F6 of the accompanying paper).
+// parametrization.
 // The multiplier m relaxes each lane's *asserted*
 // per-region bounds B_region by truncating the Chebyshev seed fits to the
 // effective degree
@@ -28,7 +28,7 @@
 //   kF32Fp16Single     A: float  table, A=1,            B=1e-7;  B: float,  A_B(n),   B=1e-7
 //   kF32Fp16Batch      A: double table, A=w(b),         B=1e-7;  B: float,  A_B(n),   B=1e-7
 // (the fp16/bf16 lanes are I/O around the fp32 engine; their 1e-7 region
-// budgets are the suite-asserted fp16 base of the D-F2 formula —
+// budgets are the suite-asserted fp16 base of the fp16 bound formula —
 // strictly stronger than the accompanying manuscript's error-bounded
 // 1.5e-7 + ½ULP (the suite's 1e-7 is the fp16 lanes' asserted base, not
 // the float budget); the representation half-ULP term is m-independent).
@@ -42,7 +42,7 @@
 #include <array>
 #include <cstddef>
 
-namespace boysymmetriad {
+namespace boys {
 namespace detail {
 
 /// The lane roles of the accuracy contract (region budgets + amplification).
@@ -100,8 +100,7 @@ constexpr bool RoleUsesBatchAmplification(BoysRole role) noexcept {
            role == BoysRole::kF32Fp16Batch;
 }
 
-/// Whether the role's region-A seed evaluates the double piece table (the
-/// f32/fp16 batch seeds are double-precision evaluations, boys.cpp:363).
+/// Whether the role's region-A seed evaluates the double piece table.
 constexpr bool RoleUsesDoubleTables(BoysRole role) noexcept {
     return role == BoysRole::kDoubleSingle || role == BoysRole::kDoubleBatch ||
            role == BoysRole::kF32Batch || role == BoysRole::kF32Fp16Batch;
@@ -138,6 +137,12 @@ constexpr double RegionBAmplification(int order) noexcept {
     return numerator / denominator;
 }
 
+// The extended band (the per-range seed design below kX0) is the m = 1
+// lane's: its per-order amplification for the m > 1 machinery needs its
+// own derivation (the band's effective edge varies per order, unlike the
+// fixed kX0 worst case region B's RegionBAmplification assumes) - named
+// future work; the m > 1 branch keeps the region-A treatment in the band.
+
 /// The dropped-coefficient tail Delta(d') = sum_{k=d'+1}^{deg} |c_k|.
 template <typename CoeffArray>
 constexpr double CoefficientTail(const CoeffArray& coeffs,
@@ -155,7 +160,7 @@ constexpr double CoefficientTail(const CoeffArray& coeffs,
     return tail;
 }
 
-/// D-F3's effective degree: the smallest admissible truncation (most
+/// The effective degree: the smallest admissible truncation (most
 /// relaxation) in the ClenshawSplit evaluation domain {0,1,2,4,6,...} —
 /// degree 0/1/2 are special-cased by the evaluator, even degrees >= 4 are
 /// the split-Clenshaw domain; the scan returns deg (no truncation) when
@@ -190,8 +195,9 @@ constexpr int EffectiveDegree(const CoeffArray& coeffs,
 #if !defined(__CUDACC__)
 // The per-(m, role) compile-time d' tables. The degree tables are flat
 // std::array<int, ...> (one entry per region-A piece / per order for
-// region B) per the MSVC constexpr-arrays lesson; the NTTP forms are
-// instantiation-local constants — zero mutable state on the CPU path.
+// region B; the flat form keeps the tables constexpr on MSVC). The NTTP
+// forms are instantiation-local constants — zero mutable state on the CPU
+// path.
 template <double kAccuracyMultiplier, BoysRole kRole> constexpr auto RegionADegrees() noexcept {
     if constexpr (RoleUsesDoubleTables(kRole))
     {
@@ -276,4 +282,4 @@ template <double kAccuracyMultiplier, BoysRole kRole> constexpr auto RegionBDegr
 #endif // !defined(__CUDACC__)
 
 } // namespace detail
-} // namespace boysymmetriad
+} // namespace boys

@@ -1,8 +1,9 @@
 # Third-party notices
 
-Repo license: BSD-3-Clause (`LICENSE`). This file lists licenses and
-attribution obligations for every third-party component the repository
-ships or consumes, so the notices must travel with any redistribution.
+Repo license:
+BSD-3-Clause (`LICENSE`). This file lists licenses and attribution
+obligations for every third-party component the repository ships or
+consumes, so the notices must travel with any redistribution.
 
 | Component | Version | Purpose | License | Full text |
 |---|---|---|---|---|
@@ -12,7 +13,7 @@ ships or consumes, so the notices must travel with any redistribution.
 | CUDA toolkit | optional build flag | CUDA lane (kernel sources and host wrapper) | NVIDIA toolkit license | NVIDIA package (not redistributed; never CI-built) |
 
 The pinned submodules carry their own LICENSE files inside the submodule;
-their full texts are not duplicated here (the submodule rule). GoogleTest
+their full texts are not duplicated here. GoogleTest
 and Google Benchmark are the only vendored code. mpmath and the CUDA
 toolkit are build-time-only tools and are not redistributed with any
 release; their licenses apply only if the tooling itself is shipped.

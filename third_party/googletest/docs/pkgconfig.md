@@ -1,4 +1,4 @@
-## Using GoogleTest from various build systems
+﻿## Using GoogleTest from various build systems
 
 GoogleTest comes with pkg-config files that can be used to determine all
 necessary flags for compiling and linking to GoogleTest (and GoogleMock).
@@ -141,4 +141,4 @@ $ pkg-config --libs gtest
 
 which contains the correct sysroot now. For a more comprehensive guide to also
 including `${CHOST}` in build system calls, see the excellent tutorial by Diego
-Elio Pettenò: <https://autotools.io/pkgconfig/cross-compiling.html>
+Elio PettenĂ˛: <https://autotools.io/pkgconfig/cross-compiling.html>

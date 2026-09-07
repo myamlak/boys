@@ -1,4 +1,4 @@
-# Contributing to boysymmetriad
+# Contributing to boys
 
 Thanks for considering a contribution. This library is a paper-backed,
 measurement-cited artifact: the accuracy contract in the README is a
@@ -8,29 +8,32 @@ whole file before opening a PR.
 ## What this project is
 
 A standalone C++23 library evaluating the Boys function family F_n(x),
-n = 0..32, in the three-region scheme, released with its accompanying
-paper (citation in the README). The committed generated tables and the
-30-digit reference grid are part of the artifact: they are the
-reproducibility evidence behind the paper's numbers.
+n = 0..32, in the three-region scheme, cut from the qcx quantum-chemistry
+framework and released with its paper (citation in the README). The
+committed generated tables and the 30-digit reference grid are part of
+the artifact: they are the reproducibility evidence behind the paper's
+numbers. The public history is intentionally compressed to two commits
+(the squashed release-cut practice) for the first public release; the
+v1.0.0 and v1.1.0 tags mark the two release cuts.
 
 ## Ground rules
 
 1. **The accuracy contract is the contract.** Every merged change must
    keep the committed reference grid green (`ctest`) at the documented
-   budgets: 1e-15/5.5e-14 fp64 by lane, 1.5e-7 fp32, fp32 + one half-ULP
-   fp16/bf16. A change that needs a budget relaxation is a paper-level
-   claim change — it belongs in an issue for the maintainer first, not in
-   a PR.
-2. **Published citations only.** Comments, commit messages, and docs must
-   cite only published work — the papers behind the evaluation scheme and
-   the library's own paper. Internal process labels, private-repository
-   references, and unpublished design material must never appear.
-3. **Generated files are verified, never hand-edited.** The committed
-   tables and reference grid are the source of truth for the build and
-   CI; the generator (`tools/gen_boys_coefficients.py`) reproduces them
-   byte-for-byte, and `--check` is the identity proof. Never commit
-   regenerated tables without running `--check`; every CI leg runs the
-   full regeneration protocol, so a drift fails the leg.
+   budgets: 5e-14 fp64, 1e-7 fp32, fp32 + one half-ULP fp16/bf16. A
+   change that needs a budget relaxation is a paper-level claim change —
+   it belongs in an issue for the maintainer first, not in a PR.
+2. **No internal references, ever.** This is a public repository cut from
+   a private monorepo. Comments, commit messages, and docs must not
+   reference internal decision numbers, internal doc paths, stage or
+   track names, or the private repository. The only sanctioned citations
+   are published ones: the entries of `CITATION.bib`, which mirror the
+   accompanying paper's bibliography.
+3. **Regeneration is local-only.** The committed tables and reference
+   grid are the source of truth for the build and CI; the generator
+   (`tools/gen_boys_coefficients.py`) verifies them byte-for-byte via
+   `--check`. Never commit regenerated tables without running `--check`
+   and never wire regeneration into CI.
 4. **Small, reviewable changes.** One logical change per PR.
 
 ## Build and test
@@ -39,30 +42,28 @@ Requirements: CMake >= 3.25, a C++23 compiler (MSVC, GCC, or Clang), git.
 No vcpkg, no FetchContent — dependencies are pinned submodules.
 
 ```bash
-git clone https://github.com/[owner]/boysymmetriad.git --recurse-submodules
+git clone https://github.com/myamlak/boys.git --recurse-submodules
 cmake -S . -B build
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
 Optional: `-DBUILD_BENCHMARKS=ON` (benchmarks; default ON locally) and
-`-DBUILD_CUDA=ON` (CUDA lane; needs the CUDA toolkit — a local-only gate,
-CI has no GPU leg). The regeneration identity check:
+`-DBUILD_CUDA=ON` (CUDA lane; needs the CUDA toolkit, local-only).
+Regeneration check (local, never CI):
 
 ```bash
 python3 tools/gen_boys_coefficients.py --check
 ```
 
-CI runs two legs per push — Windows MSVC (Release) and Linux GCC
-(Release) — each with the full gate: build, ctest, the generator
-regeneration protocol, the BOUNDARY-CHECK standalone, and the
-zero-warning Doxygen build. CUDA and the timed benchmark runs are
-maintained locally; a maintainer run of those native gates is expected
-before merge.
+CI runs two legs (windows-msvc and linux-gcc, Release) per main push;
+CUDA is
+maintained locally — a PR that breaks the Linux matrix fails, and a
+maintainer run of the native toolchain gate is expected before merge.
 
 ## Style rules
 
-The repository style rules apply to all changes:
+The library's style rules:
 
 - **Naming:** PascalCase for types and functions, camelCase variables,
   `_camelCase` private members, kPascalCase constants/enums, short
@@ -79,9 +80,8 @@ The repository style rules apply to all changes:
   pointer + count APIs use `std::span`; raw arrays only where ABIs
   mandate them.
 - **Errors:** no exceptions. CPU lanes are total functions with
-  documented preconditions; the CUDA lane reports via the `BoysStatus`
-  enum and the C surface via integer status codes. New fallible surfaces
-  follow the same patterns.
+  documented preconditions; the CUDA lane reports via the `BoysError`
+  enum. New fallible surfaces follow the same pattern.
 - **Comments:** brief, self-contained, and why-focused (ground rule 2
   limits what may be cited; the reasoning itself always stays).
 
@@ -97,9 +97,8 @@ The repository style rules apply to all changes:
 
 ## What never goes in
 
-- Unpublished references of any kind: internal decision numbers, process
-  or track labels, private-repository paths, person-specific internal
-  notes.
+- Anything referencing the private source repository: internal paths, decision
+  numbers, stage/track names, person-specific internal notes.
 - Vendored code beyond the pinned submodules (GoogleTest, optional
   Google Benchmark) and the generated tables.
 - Generated-table or reference-grid edits without `--check` evidence.
@@ -111,6 +110,29 @@ The library is BSD-3-Clause (see LICENSE, `Copyright (c) 2026 Marcin
 Makowski`). By contributing, you agree your contribution is licensed
 under the same terms. Third-party components and their licenses are
 listed in THIRD_PARTY_NOTICES.md.
+
+## Versioning
+
+- **MAJOR** = an incompatible public API/ABI change (removal, rename,
+  signature, layout, namespace) or the narrowing/removal of supported
+  domains, lanes, types, or m-values, the weakening of a documented
+  accuracy budget, or an error-behavior change that can break callers.
+- **MINOR** = additive public API, or any internal
+  algorithm/dispatch/region-boundary/certified-table change that may
+  alter returned bits but preserves every documented domain and budget
+  (the per-range seed design of v1.1.0 is this class).
+- **PATCH** = no intended public-API or numerical-result change; if a
+  change can alter any returned bit for any supported input, it is at
+  least minor.
+
+The public numerical contract is that for every supported n, x, lane,
+and region the returned value satisfies |F_hat_n(x)-F_n(x)| <= m*B_region
+at the documented m; public function signatures and supported domains are
+stable within a major version. Bitwise outputs, internal region
+thresholds, seed selection, recursion order, and dispatch logic are not
+stable between minor releases and may change as long as that bound
+remains satisfied; exact bitwise reproducibility requires pinning the
+release tag, compiler, and build flags.
 
 ## Getting help
 

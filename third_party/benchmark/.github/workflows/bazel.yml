@@ -1,4 +1,4 @@
-name: bazel
+﻿name: bazel
 
 on:
   push: {}

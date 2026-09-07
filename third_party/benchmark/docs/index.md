@@ -1,4 +1,4 @@
-# Benchmark
+﻿# Benchmark
 
 * [Assembly Tests](AssemblyTests.md)
 * [Dependencies](dependencies.md)

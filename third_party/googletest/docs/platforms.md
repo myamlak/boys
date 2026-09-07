@@ -1,4 +1,4 @@
-# Supported Platforms
+﻿# Supported Platforms
 
 GoogleTest follows Google's
 [Foundational C++ Support Policy](https://opensource.google/documentation/policies/cplusplus-support).

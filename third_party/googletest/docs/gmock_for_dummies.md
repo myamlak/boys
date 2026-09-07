@@ -1,4 +1,4 @@
-# gMock for Dummies
+﻿# gMock for Dummies
 
 ## What Is gMock?
 
@@ -355,7 +355,7 @@ EXPECT_CALL(turtle, Forward(100));
 
 Oftentimes you do not want to be too specific. Remember that talk about tests
 being too rigid? Over specification leads to brittle tests and obscures the
-intent of tests. Therefore we encourage you to specify only what's necessary—no
+intent of tests. Therefore we encourage you to specify only what's necessaryâ€”no
 more, no less. If you aren't interested in the value of an argument, write `_`
 as the argument, which means "anything goes":
 

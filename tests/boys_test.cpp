@@ -1,5 +1,5 @@
+#include "boys/boys.hpp"
 #include "boys_coefficients.hpp"
-#include "boysymmetriad/boys.hpp"
 
 #include <algorithm>
 #include <array>
@@ -78,17 +78,20 @@ constexpr double kRegionBTolerance = 3e-14;
 // Region bucketing per the paper's tab:accuracy caption: region A x < kX0,
 // region B kX0 <= x < kX1, region C x >= kX1 (the x = kX1 and x = 100 grid
 // rows land in C, so the paper's "(32, x1)" worst sits in region C, the
-// shared asymptotic cutoff). The boundaries are the shipped kernel's own
-// (boys_coefficients.hpp kX0/kX1).
-enum class BoysRegion : std::uint8_t { A, B, C };
+// shared asymptotic cutoff). The extended band [kExtendedBX0, kX0) is its
+// own region (E): the per-range F0 seed + upward recursion serves it per
+// kmax tier, carrying the region-B-style budgets. The boundaries are the
+// shipped kernel's own (boys_coefficients.hpp kX0/kX1/kExtendedBX0).
+enum class BoysRegion : std::uint8_t { A, B, C, E };
 
 BoysRegion RegionOf(double x) {
-    using boysymmetriad::detail::kX0;
-    using boysymmetriad::detail::kX1;
+    using boys::detail::kExtendedBX0;
+    using boys::detail::kX0;
+    using boys::detail::kX1;
 
     if (x < kX0)
     {
-        return BoysRegion::A;
+        return x >= kExtendedBX0 ? BoysRegion::E : BoysRegion::A;
     }
 
     if (x < kX1)
@@ -104,6 +107,7 @@ struct RegionWorsts {
     double a = 0.0;
     double b = 0.0;
     double c = 0.0;
+    double e = 0.0;
 
     // (error, x) are the candidate error and its x - the per-region max
     // accumulator's pair.
@@ -123,6 +127,10 @@ struct RegionWorsts {
         case BoysRegion::C:
             c = std::max(c, error);
             break;
+
+        case BoysRegion::E:
+            e = std::max(e, error);
+            break;
         }
     }
 };
@@ -133,23 +141,23 @@ std::vector<ReferenceRow> gReference = LoadReference();
 // The fp16 lane tests reuse the certified accuracy targets in their
 // absolute sense: the reference is the certified double lane (5e-14)
 // evaluated at the fp16-rounded argument, and the tolerance is the fp16
-// lanes' asserted bound — the 1e-7 base of the D-F2 formula plus one
+// lanes' asserted bound — the 1e-7 base of the fp16 bound formula plus one
 // half-ULP of the fp16-rounded reference, strictly stronger than the
 // error-bounded 1.5e-7 + ½ULP contract (the fp16 output quantizes at
 // ~1e-3 near x = 0, far above any 1e-7 absolute assertion).
-double HalfUlp(boysymmetriad::F16 x) {
-    return 0.5 * (static_cast<double>(boysymmetriad::NextUp(x)) - static_cast<double>(x));
+double HalfUlp(boys::F16 x) {
+    return 0.5 * (static_cast<double>(boys::NextUp(x)) - static_cast<double>(x));
 }
 
-double HalfUlp(boysymmetriad::Bf16 x) {
-    return 0.5 * (static_cast<double>(boysymmetriad::NextUp(x)) - static_cast<double>(x));
+double HalfUlp(boys::Bf16 x) {
+    return 0.5 * (static_cast<double>(boys::NextUp(x)) - static_cast<double>(x));
 }
 
 // Reference-grid sweep shared by the F16/Bf16 single and batch tests. The
 // half type is the API, so the engine receives the fp16-rounded argument;
 // the reference is therefore the certified double lane (5e-14)
 // evaluated at that same rounded argument, and the tolerance is the fp16
-// lanes' asserted bound — the 1e-7 base of the D-F2 formula plus one
+// lanes' asserted bound — the 1e-7 base of the fp16 bound formula plus one
 // half-ULP of the fp16-rounded reference (strictly stronger than the
 // error-bounded 1.5e-7 + ½ULP contract).
 template <typename Half,
@@ -162,12 +170,12 @@ void RunReferenceChecks(const char* label) {
     RegionWorsts batchWorst;
     RegionWorsts singleWorstTolerance;
     RegionWorsts batchWorstTolerance;
-    std::vector<Half> batch(boysymmetriad::kMaxBoysOrder + 1);
+    std::vector<Half> batch(boys::kMaxBoysOrder + 1);
 
     for (const auto& row : gReference)
     {
         const Half x = static_cast<Half>(row.x);
-        const double reference = boysymmetriad::BoysSingle(row.n, static_cast<double>(x));
+        const double reference = boys::BoysSingle(row.n, static_cast<double>(x));
         const Half half = static_cast<Half>(reference);
         const double tolerance = 1e-7 + HalfUlp(half);
         const double single = static_cast<double>(SingleFn(row.n, x));
@@ -184,7 +192,7 @@ void RunReferenceChecks(const char* label) {
             // The row tolerance is tied to F_{row.n}(x), which underflows to
             // fp16 zero at large x for high orders; each batch element is
             // quantized at its own F_k(x), so it needs its own half-ULP.
-            const double batchReference = boysymmetriad::BoysSingle(k, static_cast<double>(x));
+            const double batchReference = boys::BoysSingle(k, static_cast<double>(x));
             const double batchTolerance = 1e-7 + HalfUlp(static_cast<Half>(batchReference));
             const double batchError = std::abs(static_cast<double>(batch[k]) - batchReference);
             EXPECT_LE(batchError, batchTolerance)
@@ -204,28 +212,39 @@ void RunReferenceChecks(const char* label) {
     EXPECT_LE(singleWorst.a, singleWorstTolerance.a) << "fp16 single region A (x < kX0)";
     EXPECT_LE(singleWorst.b, singleWorstTolerance.b) << "fp16 single region B (kX0 <= x < kX1)";
     EXPECT_LE(singleWorst.c, singleWorstTolerance.c) << "fp16 single region C (x >= kX1)";
+    EXPECT_LE(singleWorst.e, singleWorstTolerance.e)
+        << "fp16 single extended band (kExtendedBX0 <= x < kX0)";
     EXPECT_LE(batchWorst.a, batchWorstTolerance.a) << "fp16 batch region A (x < kX0)";
     EXPECT_LE(batchWorst.b, batchWorstTolerance.b) << "fp16 batch region B (kX0 <= x < kX1)";
     EXPECT_LE(batchWorst.c, batchWorstTolerance.c) << "fp16 batch region C (x >= kX1)";
+    EXPECT_LE(batchWorst.e, batchWorstTolerance.e)
+        << "fp16 batch extended band (kExtendedBX0 <= x < kX0)";
 
-    std::printf("%s: worst single |error| = %.3e (region A %.3e, region B %.3e, region C %.3e), "
-                "worst batch |error| = %.3e (region A %.3e, region B %.3e, region C %.3e); "
-                "single region budgets %.3e/%.3e/%.3e, batch region budgets %.3e/%.3e/%.3e\n",
-                label,
-                worstSingle,
-                singleWorst.a,
-                singleWorst.b,
-                singleWorst.c,
-                worstBatch,
-                batchWorst.a,
-                batchWorst.b,
-                batchWorst.c,
-                singleWorstTolerance.a,
-                singleWorstTolerance.b,
-                singleWorstTolerance.c,
-                batchWorstTolerance.a,
-                batchWorstTolerance.b,
-                batchWorstTolerance.c);
+    std::printf(
+        "%s: worst single |error| = %.3e (region A %.3e, region B %.3e, region C %.3e, "
+        "extended band %.3e), "
+        "worst batch |error| = %.3e (region A %.3e, region B %.3e, region C %.3e, "
+        "extended band %.3e); "
+        "single region budgets %.3e/%.3e/%.3e/%.3e, batch region budgets %.3e/%.3e/%.3e/%.3e\n",
+        label,
+        worstSingle,
+        singleWorst.a,
+        singleWorst.b,
+        singleWorst.c,
+        singleWorst.e,
+        worstBatch,
+        batchWorst.a,
+        batchWorst.b,
+        batchWorst.c,
+        batchWorst.e,
+        singleWorstTolerance.a,
+        singleWorstTolerance.b,
+        singleWorstTolerance.c,
+        singleWorstTolerance.e,
+        batchWorstTolerance.a,
+        batchWorstTolerance.b,
+        batchWorstTolerance.c,
+        batchWorstTolerance.e);
 }
 
 // SIMD-lane sweep shared by the F16/Bf16 tests: each region lane must agree
@@ -246,7 +265,7 @@ void RunSimdLaneChecks() {
     const int n = 8;
     std::vector<Half> x(kCount);
     std::vector<Half> out(kCount);
-    std::vector<Half> batchOut(kCount * (boysymmetriad::kMaxBoysOrder + 1));
+    std::vector<Half> batchOut(kCount * (boys::kMaxBoysOrder + 1));
 
     // Region A (x < x0): same-n array. The tolerance is one full ULP (and
     // the same in regions B and C below): the SIMD kernel maps x to the
@@ -284,7 +303,7 @@ void RunSimdLaneChecks() {
 
     for (std::size_t i = 0; i < kCount; ++i)
     {
-        std::array<Half, boysymmetriad::kMaxBoysOrder + 1> scalar{};
+        std::array<Half, boys::kMaxBoysOrder + 1> scalar{};
         BatchFn(n, x[i], scalar.data());
 
         for (int k = 0; k <= n; ++k)
@@ -364,7 +383,7 @@ TEST(BoysTest, SingleMatchesReferenceDouble) {
 
     for (const auto& row : gReference)
     {
-        const double value = boysymmetriad::BoysSingle(row.n, row.x);
+        const double value = boys::BoysSingle(row.n, row.x);
         const double error = std::abs(value - row.value);
         EXPECT_LE(error, kDoubleTolerance)
             << "n=" << row.n << " x=" << row.x << " got=" << value << " want=" << row.value;
@@ -377,12 +396,15 @@ TEST(BoysTest, SingleMatchesReferenceDouble) {
     EXPECT_LE(regionWorst.a, kRegionATolerance) << "region A (x < kX0)";
     EXPECT_LE(regionWorst.b, kRegionBTolerance) << "region B (kX0 <= x < kX1)";
     EXPECT_LE(regionWorst.c, kDoubleTolerance) << "region C (x >= kX1)";
+    EXPECT_LE(regionWorst.e, kRegionBTolerance) << "extended band (kExtendedBX0 <= x < kX0)";
 
-    std::printf("BoysSingle: worst |error| = %.3e (region A %.3e, region B %.3e, region C %.3e)\n",
+    std::printf("BoysSingle: worst |error| = %.3e (region A %.3e, region B %.3e, region C %.3e, "
+                "extended band %.3e)\n",
                 worst,
                 regionWorst.a,
                 regionWorst.b,
-                regionWorst.c);
+                regionWorst.c,
+                regionWorst.e);
 }
 
 TEST(BoysTest, BatchMatchesReferenceDouble) {
@@ -390,11 +412,11 @@ TEST(BoysTest, BatchMatchesReferenceDouble) {
     // exist for; it must hold the same tolerance as the single evaluations.
     double worst = 0.0;
     RegionWorsts regionWorst;
-    std::vector<double> batch(boysymmetriad::kMaxBoysOrder + 1);
+    std::vector<double> batch(boys::kMaxBoysOrder + 1);
 
     for (const auto& row : gReference)
     {
-        boysymmetriad::BoysBatch(row.n, row.x, batch.data());
+        boys::BoysBatch(row.n, row.x, batch.data());
 
         for (int k = 0; k <= row.n; ++k)
         {
@@ -425,12 +447,15 @@ TEST(BoysTest, BatchMatchesReferenceDouble) {
     EXPECT_LE(regionWorst.a, kDoubleTolerance) << "batch region A (x < kX0)";
     EXPECT_LE(regionWorst.b, kDoubleTolerance) << "batch region B (kX0 <= x < kX1)";
     EXPECT_LE(regionWorst.c, kDoubleTolerance) << "batch region C (x >= kX1)";
+    EXPECT_LE(regionWorst.e, kDoubleTolerance) << "batch extended band (kExtendedBX0 <= x < kX0)";
 
-    std::printf("BoysBatch: worst |error| = %.3e (region A %.3e, region B %.3e, region C %.3e)\n",
+    std::printf("BoysBatch: worst |error| = %.3e (region A %.3e, region B %.3e, region C %.3e, "
+                "extended band %.3e)\n",
                 worst,
                 regionWorst.a,
                 regionWorst.b,
-                regionWorst.c);
+                regionWorst.c,
+                regionWorst.e);
 }
 
 TEST(BoysTest, SingleMatchesReferenceFloat) {
@@ -444,7 +469,7 @@ TEST(BoysTest, SingleMatchesReferenceFloat) {
             continue;
         }
 
-        const float value = boysymmetriad::BoysSingleF32(row.n, static_cast<float>(row.x));
+        const float value = boys::BoysSingleF32(row.n, static_cast<float>(row.x));
         const float error = std::abs(value - static_cast<float>(row.value));
         EXPECT_LE(error, kFloatTolerance)
             << "n=" << row.n << " x=" << row.x << " got=" << value << " want=" << row.value;
@@ -456,19 +481,22 @@ TEST(BoysTest, SingleMatchesReferenceFloat) {
     EXPECT_LE(regionWorst.a, static_cast<double>(kFloatTolerance)) << "region A (x < kX0)";
     EXPECT_LE(regionWorst.b, static_cast<double>(kFloatTolerance)) << "region B (kX0 <= x < kX1)";
     EXPECT_LE(regionWorst.c, static_cast<double>(kFloatTolerance)) << "region C (x >= kX1)";
+    EXPECT_LE(regionWorst.e, static_cast<double>(kFloatTolerance))
+        << "extended band (kExtendedBX0 <= x < kX0)";
 
-    std::printf(
-        "BoysSingleF32: worst |error| = %.3e (region A %.3e, region B %.3e, region C %.3e)\n",
-        worst,
-        regionWorst.a,
-        regionWorst.b,
-        regionWorst.c);
+    std::printf("BoysSingleF32: worst |error| = %.3e (region A %.3e, region B %.3e, region C %.3e, "
+                "extended band %.3e)\n",
+                worst,
+                regionWorst.a,
+                regionWorst.b,
+                regionWorst.c,
+                regionWorst.e);
 }
 
 TEST(BoysTest, BatchMatchesReferenceFloat) {
     float worst = 0.0f;
     RegionWorsts regionWorst;
-    std::vector<float> batch(boysymmetriad::kMaxBoysOrder + 1);
+    std::vector<float> batch(boys::kMaxBoysOrder + 1);
 
     for (const auto& row : gReference)
     {
@@ -477,7 +505,7 @@ TEST(BoysTest, BatchMatchesReferenceFloat) {
             continue;
         }
 
-        boysymmetriad::BoysBatchF32(row.n, static_cast<float>(row.x), batch.data());
+        boys::BoysBatchF32(row.n, static_cast<float>(row.x), batch.data());
 
         for (int k = 0; k <= row.n; ++k)
         {
@@ -505,33 +533,35 @@ TEST(BoysTest, BatchMatchesReferenceFloat) {
     EXPECT_LE(regionWorst.b, static_cast<double>(kFloatTolerance))
         << "batch region B (kX0 <= x < kX1)";
     EXPECT_LE(regionWorst.c, static_cast<double>(kFloatTolerance)) << "batch region C (x >= kX1)";
+    EXPECT_LE(regionWorst.e, static_cast<double>(kFloatTolerance))
+        << "batch extended band (kExtendedBX0 <= x < kX0)";
 
-    std::printf(
-        "BoysBatchF32: worst |error| = %.3e (region A %.3e, region B %.3e, region C %.3e)\n",
-        worst,
-        regionWorst.a,
-        regionWorst.b,
-        regionWorst.c);
+    std::printf("BoysBatchF32: worst |error| = %.3e (region A %.3e, region B %.3e, region C %.3e, "
+                "extended band %.3e)\n",
+                worst,
+                regionWorst.a,
+                regionWorst.b,
+                regionWorst.c,
+                regionWorst.e);
 }
 
 TEST(BoysTest, ZeroArgumentIsExact) {
-    for (int n = 0; n <= boysymmetriad::kMaxBoysOrder; ++n)
+    for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
     {
-        EXPECT_DOUBLE_EQ(boysymmetriad::BoysSingle(n, 0.0), 1.0 / (2.0 * n + 1.0));
-        EXPECT_FLOAT_EQ(boysymmetriad::BoysSingleF32(n, 0.0f),
-                        1.0f / (2.0f * static_cast<float>(n) + 1.0f));
+        EXPECT_DOUBLE_EQ(boys::BoysSingle(n, 0.0), 1.0 / (2.0 * n + 1.0));
+        EXPECT_FLOAT_EQ(boys::BoysSingleF32(n, 0.0f), 1.0f / (2.0f * static_cast<float>(n) + 1.0f));
     }
 
-    double batch[boysymmetriad::kMaxBoysOrder + 1];
-    boysymmetriad::BoysBatch(8, 0.0, batch);
+    double batch[boys::kMaxBoysOrder + 1];
+    boys::BoysBatch(8, 0.0, batch);
 
     for (int k = 0; k <= 8; ++k)
     {
         EXPECT_DOUBLE_EQ(batch[k], 1.0 / (2.0 * k + 1.0));
     }
 
-    float batchF32[boysymmetriad::kMaxBoysOrder + 1];
-    boysymmetriad::BoysBatchF32(8, 0.0f, batchF32);
+    float batchF32[boys::kMaxBoysOrder + 1];
+    boys::BoysBatchF32(8, 0.0f, batchF32);
 
     for (int k = 0; k <= 8; ++k)
     {
@@ -544,17 +574,17 @@ TEST(BoysTest, BatchConsistentWithSingleDouble) {
     // agree within the combined error bound.
     std::mt19937_64 rng(12345);
     std::uniform_real_distribution<double> xd(1e-4, 40.0);
-    std::vector<double> batch(boysymmetriad::kMaxBoysOrder + 1);
+    std::vector<double> batch(boys::kMaxBoysOrder + 1);
 
     for (int sample = 0; sample < 200; ++sample)
     {
         const double x = xd(rng);
-        const int nmax = static_cast<int>(rng() % (boysymmetriad::kMaxBoysOrder + 1));
-        boysymmetriad::BoysBatch(nmax, x, batch.data());
+        const int nmax = static_cast<int>(rng() % (boys::kMaxBoysOrder + 1));
+        boys::BoysBatch(nmax, x, batch.data());
 
         for (int k = 0; k <= nmax; ++k)
         {
-            const double single = boysymmetriad::BoysSingle(k, x);
+            const double single = boys::BoysSingle(k, x);
             EXPECT_LE(std::abs(batch[k] - single), 1e-13) << "n=" << k << " x=" << x;
         }
     }
@@ -564,7 +594,7 @@ TEST(BoysTest, AsymptoticBehavior) {
     // F_0(x) ~ 1/2 sqrt(pi/x) for large x; values decay monotonically.
     for (double x : {30.0, 40.0, 50.0, 100.0})
     {
-        const double f0 = boysymmetriad::BoysSingle(0, x);
+        const double f0 = boys::BoysSingle(0, x);
         EXPECT_NEAR(f0, 0.886226925452758014 / std::sqrt(x), 5e-14);
     }
 
@@ -573,17 +603,17 @@ TEST(BoysTest, AsymptoticBehavior) {
     for (int i = 0; i <= 100; ++i)
     {
         const double x = 0.1 * i;
-        const double f0 = boysymmetriad::BoysSingle(0, x);
+        const double f0 = boys::BoysSingle(0, x);
         EXPECT_LE(f0, previous);
         previous = f0;
     }
 }
 
 // ---------------------------------------------------------------------------
-// Region-B exp-Taylor gather-table pin (main.tex: "on [x0, x1) its measured
+// Region-B exp-Taylor gather-table pin (the paper: "on [x0, x1) its measured
 // worst absolute error is 1.8e-17"; the SIMD lane measured 1.83e-17 at
 // x ~ 11.99). The shipped ExpTable is private to its TU; this replica
-// is deliberately independent (the referee pattern), replicating the
+// is deliberately independent, replicating the
 // construction exactly: 3001 rows at step 0.01, row i centered on
 // z = -(i * 0.01), degree-4 Taylor coefficients of e^{-x} built with
 // std::exp. Evaluation mirrors the SIMD chain's Horner form
@@ -629,8 +659,8 @@ struct ExpTaylorReplica {
 };
 
 TEST(BoysTest, ExpTaylorGatherTableRegionB) {
-    using boysymmetriad::detail::kX0;
-    using boysymmetriad::detail::kX1;
+    using boys::detail::kX0;
+    using boys::detail::kX1;
 
     const ExpTaylorReplica table;
     double worst = 0.0;
@@ -667,7 +697,7 @@ TEST(BoysTest, ExpTaylorGatherTableRegionB) {
 }
 
 TEST(BoysTest, FootprintSizes) {
-    namespace detail = boysymmetriad::detail;
+    namespace detail = boys::detail;
 
     // tab:throughput/Discussion footprint cells (paper: ~18 KB Chebyshev,
     // i.e. 17,904 B incl. metadata — ~192 KB region-B gather table, ~5 MB
@@ -705,7 +735,7 @@ TEST(BoysTest, FootprintSizes) {
 }
 
 TEST(BoysTest, SimdMatchesScalarWhenAvailable) {
-    if (!boysymmetriad::BoysAvx2Available())
+    if (!boys::BoysAvx2Available())
     {
         GTEST_SKIP() << "AVX2 not available on this CPU";
     }
@@ -714,9 +744,13 @@ TEST(BoysTest, SimdMatchesScalarWhenAvailable) {
     constexpr std::size_t kCount = 4096;
     std::vector<double> x(kCount);
     std::vector<double> out(kCount);
-    std::vector<double> batchOut(kCount * (boysymmetriad::kMaxBoysOrder + 1));
+    std::vector<double> batchOut(kCount * (boys::kMaxBoysOrder + 1));
 
-    // Region A (x < x0): same-n array.
+    // Region A (x < x0): same-n array. The SIMD lane serves the extended
+    // band with the region-A per-order fits (its untouched path); the
+    // scalar single serves it with the per-range extended seed, so the
+    // band draws agree within the two paths' combined budgets (3e-14 +
+    // 1e-15) while the below-band draws keep the old bit-close 1e-15.
     std::uniform_real_distribution<double> xdA(1e-4, 11.89);
 
     for (auto& v : x)
@@ -725,11 +759,12 @@ TEST(BoysTest, SimdMatchesScalarWhenAvailable) {
     }
 
     const int n = 8;
-    boysymmetriad::BoysRegionASimd(n, x.data(), out.data(), kCount);
+    boys::BoysRegionASimd(n, x.data(), out.data(), kCount);
 
     for (std::size_t i = 0; i < kCount; ++i)
     {
-        EXPECT_NEAR(out[i], boysymmetriad::BoysSingle(n, x[i]), 1e-15);
+        const double tolerance = x[i] >= boys::detail::kExtendedBX0 ? 3e-14 + 1e-15 : 1e-15;
+        EXPECT_NEAR(out[i], boys::BoysSingle(n, x[i]), tolerance);
     }
 
     // Region B (x0 <= x < x1): full batch layout.
@@ -740,12 +775,12 @@ TEST(BoysTest, SimdMatchesScalarWhenAvailable) {
         v = xdB(rng);
     }
 
-    boysymmetriad::BoysRegionBSimd(n, x.data(), batchOut.data(), kCount);
+    boys::BoysRegionBSimd(n, x.data(), batchOut.data(), kCount);
 
     for (std::size_t i = 0; i < kCount; ++i)
     {
-        double scalar[boysymmetriad::kMaxBoysOrder + 1];
-        boysymmetriad::BoysBatch(n, x[i], scalar);
+        double scalar[boys::kMaxBoysOrder + 1];
+        boys::BoysBatch(n, x[i], scalar);
 
         for (int k = 0; k <= n; ++k)
         {
@@ -761,85 +796,77 @@ TEST(BoysTest, SimdMatchesScalarWhenAvailable) {
         v = xdC(rng);
     }
 
-    boysymmetriad::BoysRegionCSimd(n, x.data(), out.data(), kCount);
+    boys::BoysRegionCSimd(n, x.data(), out.data(), kCount);
 
     for (std::size_t i = 0; i < kCount; ++i)
     {
-        EXPECT_NEAR(out[i], boysymmetriad::BoysSingle(n, x[i]), 1e-15);
+        EXPECT_NEAR(out[i], boys::BoysSingle(n, x[i]), 1e-15);
     }
 
     // Tail fallbacks: counts that are not multiples of four (count = 5
     // exercises the scalar tail; count = 0 must be a no-op). Each region
     // function receives arguments from its own domain (the documented
-    // precondition).
+    // precondition). The band draws of the A tail use the combined
+    // SIMD-region-A/scalar-extended budgets, as in the main loop above.
     double tailA[5] = {1.0, 2.0, 5.0, 8.0, 11.0};
     double tailC[5] = {30.0, 35.0, 40.0, 45.0, 50.0};
     double tailOut[5] = {};
-    boysymmetriad::BoysRegionASimd(n, tailA, tailOut, 5);
+    boys::BoysRegionASimd(n, tailA, tailOut, 5);
 
     for (std::size_t i = 0; i < 5; ++i)
     {
-        EXPECT_NEAR(tailOut[i], boysymmetriad::BoysSingle(n, tailA[i]), 1e-15);
+        const double tolerance = tailA[i] >= boys::detail::kExtendedBX0 ? 3e-14 + 1e-15 : 1e-15;
+        EXPECT_NEAR(tailOut[i], boys::BoysSingle(n, tailA[i]), tolerance);
     }
 
-    boysymmetriad::BoysRegionCSimd(n, tailC, tailOut, 5);
+    boys::BoysRegionCSimd(n, tailC, tailOut, 5);
 
     for (std::size_t i = 0; i < 5; ++i)
     {
-        EXPECT_NEAR(tailOut[i], boysymmetriad::BoysSingle(n, tailC[i]), 1e-15);
+        EXPECT_NEAR(tailOut[i], boys::BoysSingle(n, tailC[i]), 1e-15);
     }
 
-    boysymmetriad::BoysRegionASimd(n, tailA, tailOut, 0);
-    boysymmetriad::BoysRegionBSimd(n, tailA, batchOut.data(), 0);
-    boysymmetriad::BoysRegionCSimd(n, tailC, tailOut, 0);
+    boys::BoysRegionASimd(n, tailA, tailOut, 0);
+    boys::BoysRegionBSimd(n, tailA, batchOut.data(), 0);
+    boys::BoysRegionCSimd(n, tailC, tailOut, 0);
 }
 
 #if BoysFp16
 TEST(BoysTest, SingleMatchesReferenceF16) {
-    RunReferenceChecks<boysymmetriad::F16,
-                       boysymmetriad::BoysSingleF16,
-                       boysymmetriad::BoysBatchF16>("BoysF16");
+    RunReferenceChecks<boys::F16, boys::BoysSingleF16, boys::BoysBatchF16>("BoysF16");
 }
 
 TEST(BoysTest, BatchMatchesReferenceF16) {
     // Covered by the single sweep's batch half; this test name documents the
     // batch gate explicitly for the fp16 lane.
-    RunReferenceChecks<boysymmetriad::F16,
-                       boysymmetriad::BoysSingleF16,
-                       boysymmetriad::BoysBatchF16>("BoysF16(batch)");
+    RunReferenceChecks<boys::F16, boys::BoysSingleF16, boys::BoysBatchF16>("BoysF16(batch)");
 }
 
 TEST(BoysTest, SingleMatchesReferenceBf16) {
-    RunReferenceChecks<boysymmetriad::Bf16,
-                       boysymmetriad::BoysSingleBf16,
-                       boysymmetriad::BoysBatchBf16>("BoysBf16");
+    RunReferenceChecks<boys::Bf16, boys::BoysSingleBf16, boys::BoysBatchBf16>("BoysBf16");
 }
 
 TEST(BoysTest, BatchMatchesReferenceBf16) {
-    RunReferenceChecks<boysymmetriad::Bf16,
-                       boysymmetriad::BoysSingleBf16,
-                       boysymmetriad::BoysBatchBf16>("BoysBf16(batch)");
+    RunReferenceChecks<boys::Bf16, boys::BoysSingleBf16, boys::BoysBatchBf16>("BoysBf16(batch)");
 }
 
 TEST(BoysTest, ZeroArgumentIsExactF16) {
     // The engine computes in float: the exact value 1/(2n+1) must survive to
     // the fp16 output up to one half-ULP of quantization.
-    for (int n = 0; n <= boysymmetriad::kMaxBoysOrder; ++n)
+    for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
     {
-        const boysymmetriad::F16 got = boysymmetriad::BoysSingleF16(n, boysymmetriad::F16{0.0f});
-        const boysymmetriad::F16 want =
-            static_cast<boysymmetriad::F16>(1.0f / (2.0f * static_cast<float>(n) + 1.0f));
+        const boys::F16 got = boys::BoysSingleF16(n, boys::F16{0.0f});
+        const boys::F16 want = static_cast<boys::F16>(1.0f / (2.0f * static_cast<float>(n) + 1.0f));
         EXPECT_LE(std::abs(static_cast<float>(got) - static_cast<float>(want)), HalfUlp(want))
             << "n=" << n;
     }
 
-    std::array<boysymmetriad::F16, boysymmetriad::kMaxBoysOrder + 1> batchF16{};
-    boysymmetriad::BoysBatchF16(8, boysymmetriad::F16{0.0f}, batchF16.data());
+    std::array<boys::F16, boys::kMaxBoysOrder + 1> batchF16{};
+    boys::BoysBatchF16(8, boys::F16{0.0f}, batchF16.data());
 
     for (int k = 0; k <= 8; ++k)
     {
-        const boysymmetriad::F16 want =
-            static_cast<boysymmetriad::F16>(1.0f / (2.0f * static_cast<float>(k) + 1.0f));
+        const boys::F16 want = static_cast<boys::F16>(1.0f / (2.0f * static_cast<float>(k) + 1.0f));
         EXPECT_LE(std::abs(static_cast<float>(batchF16[k]) - static_cast<float>(want)),
                   HalfUlp(want))
             << "k=" << k;
@@ -847,22 +874,22 @@ TEST(BoysTest, ZeroArgumentIsExactF16) {
 }
 
 TEST(BoysTest, ZeroArgumentIsExactBf16) {
-    for (int n = 0; n <= boysymmetriad::kMaxBoysOrder; ++n)
+    for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
     {
-        const boysymmetriad::Bf16 got = boysymmetriad::BoysSingleBf16(n, boysymmetriad::Bf16{0.0f});
-        const boysymmetriad::Bf16 want =
-            static_cast<boysymmetriad::Bf16>(1.0f / (2.0f * static_cast<float>(n) + 1.0f));
+        const boys::Bf16 got = boys::BoysSingleBf16(n, boys::Bf16{0.0f});
+        const boys::Bf16 want =
+            static_cast<boys::Bf16>(1.0f / (2.0f * static_cast<float>(n) + 1.0f));
         EXPECT_LE(std::abs(static_cast<float>(got) - static_cast<float>(want)), HalfUlp(want))
             << "n=" << n;
     }
 
-    std::array<boysymmetriad::Bf16, boysymmetriad::kMaxBoysOrder + 1> batchBf16{};
-    boysymmetriad::BoysBatchBf16(8, boysymmetriad::Bf16{0.0f}, batchBf16.data());
+    std::array<boys::Bf16, boys::kMaxBoysOrder + 1> batchBf16{};
+    boys::BoysBatchBf16(8, boys::Bf16{0.0f}, batchBf16.data());
 
     for (int k = 0; k <= 8; ++k)
     {
-        const boysymmetriad::Bf16 want =
-            static_cast<boysymmetriad::Bf16>(1.0f / (2.0f * static_cast<float>(k) + 1.0f));
+        const boys::Bf16 want =
+            static_cast<boys::Bf16>(1.0f / (2.0f * static_cast<float>(k) + 1.0f));
         EXPECT_LE(std::abs(static_cast<float>(batchBf16[k]) - static_cast<float>(want)),
                   HalfUlp(want))
             << "k=" << k;
@@ -878,17 +905,17 @@ TEST(BoysTest, BatchConsistentWithSingleF16) {
     // lane-vs-lane check).
     std::mt19937_64 rng(24680);
     std::uniform_real_distribution<float> xd(1e-4f, 100.0f);
-    std::vector<boysymmetriad::F16> batch(boysymmetriad::kMaxBoysOrder + 1);
+    std::vector<boys::F16> batch(boys::kMaxBoysOrder + 1);
 
     for (int sample = 0; sample < 200; ++sample)
     {
-        const boysymmetriad::F16 x = static_cast<boysymmetriad::F16>(xd(rng));
-        const int nmax = static_cast<int>(rng() % (boysymmetriad::kMaxBoysOrder + 1));
-        boysymmetriad::BoysBatchF16(nmax, x, batch.data());
+        const boys::F16 x = static_cast<boys::F16>(xd(rng));
+        const int nmax = static_cast<int>(rng() % (boys::kMaxBoysOrder + 1));
+        boys::BoysBatchF16(nmax, x, batch.data());
 
         for (int k = 0; k <= nmax; ++k)
         {
-            const boysymmetriad::F16 single = boysymmetriad::BoysSingleF16(k, x);
+            const boys::F16 single = boys::BoysSingleF16(k, x);
             EXPECT_LE(std::abs(static_cast<float>(batch[k]) - static_cast<float>(single)),
                       2.0 * (1e-7 + HalfUlp(single)))
                 << "n=" << k << " x=" << static_cast<float>(x);
@@ -902,17 +929,17 @@ TEST(BoysTest, BatchConsistentWithSingleBf16) {
     // and their sum can straddle a half grid step where F_n is tiny.
     std::mt19937_64 rng(24681);
     std::uniform_real_distribution<float> xd(1e-4f, 100.0f);
-    std::vector<boysymmetriad::Bf16> batch(boysymmetriad::kMaxBoysOrder + 1);
+    std::vector<boys::Bf16> batch(boys::kMaxBoysOrder + 1);
 
     for (int sample = 0; sample < 200; ++sample)
     {
-        const boysymmetriad::Bf16 x = static_cast<boysymmetriad::Bf16>(xd(rng));
-        const int nmax = static_cast<int>(rng() % (boysymmetriad::kMaxBoysOrder + 1));
-        boysymmetriad::BoysBatchBf16(nmax, x, batch.data());
+        const boys::Bf16 x = static_cast<boys::Bf16>(xd(rng));
+        const int nmax = static_cast<int>(rng() % (boys::kMaxBoysOrder + 1));
+        boys::BoysBatchBf16(nmax, x, batch.data());
 
         for (int k = 0; k <= nmax; ++k)
         {
-            const boysymmetriad::Bf16 single = boysymmetriad::BoysSingleBf16(k, x);
+            const boys::Bf16 single = boys::BoysSingleBf16(k, x);
             EXPECT_LE(std::abs(static_cast<float>(batch[k]) - static_cast<float>(single)),
                       2.0 * (1e-7 + HalfUlp(single)))
                 << "n=" << k << " x=" << static_cast<float>(x);
@@ -921,30 +948,30 @@ TEST(BoysTest, BatchConsistentWithSingleBf16) {
 }
 
 TEST(BoysTest, SimdMatchesScalarF16) {
-    if (!boysymmetriad::BoysAvx2Available())
+    if (!boys::BoysAvx2Available())
     {
         GTEST_SKIP() << "AVX2 not available on this CPU";
     }
 
-    RunSimdLaneChecks<boysymmetriad::F16,
-                      boysymmetriad::BoysSingleF16,
-                      boysymmetriad::BoysBatchF16,
-                      boysymmetriad::BoysRegionASimdF16,
-                      boysymmetriad::BoysRegionBSimdF16,
-                      boysymmetriad::BoysRegionCSimdF16>();
+    RunSimdLaneChecks<boys::F16,
+                      boys::BoysSingleF16,
+                      boys::BoysBatchF16,
+                      boys::BoysRegionASimdF16,
+                      boys::BoysRegionBSimdF16,
+                      boys::BoysRegionCSimdF16>();
 }
 
 TEST(BoysTest, SimdMatchesScalarBf16) {
-    if (!boysymmetriad::BoysAvx2Available())
+    if (!boys::BoysAvx2Available())
     {
         GTEST_SKIP() << "AVX2 not available on this CPU";
     }
 
-    RunSimdLaneChecks<boysymmetriad::Bf16,
-                      boysymmetriad::BoysSingleBf16,
-                      boysymmetriad::BoysBatchBf16,
-                      boysymmetriad::BoysRegionASimdBf16,
-                      boysymmetriad::BoysRegionBSimdBf16,
-                      boysymmetriad::BoysRegionCSimdBf16>();
+    RunSimdLaneChecks<boys::Bf16,
+                      boys::BoysSingleBf16,
+                      boys::BoysBatchBf16,
+                      boys::BoysRegionASimdBf16,
+                      boys::BoysRegionBSimdBf16,
+                      boys::BoysRegionCSimdBf16>();
 }
 #endif // BoysFp16

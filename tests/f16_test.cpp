@@ -1,4 +1,4 @@
-// The F16/Bf16 conversion contract (boysymmetriad/f16.hpp):
+// The F16/Bf16 conversion contract (boys/f16.hpp):
 // round-to-nearest-even float -> half on the I/O boundary, verified bit by
 // bit against the IEEE-754 binary16 / bfloat16 rounding rules. The cases
 // cover every branch of FloatToHalf (Inf/NaN quieting, the 65520 RNE
@@ -7,7 +7,7 @@
 // assertions go through detail::F16Bits / F16FromBits so the same table
 // runs on the MSVC wrapper path and the stdfloat path (GCC/Clang CI).
 
-#include "boysymmetriad/f16.hpp"
+#include "boys/f16.hpp"
 
 #include <bit>
 #include <cmath>
@@ -17,11 +17,11 @@
 
 namespace {
 
-using boysymmetriad::Bf16;
-using boysymmetriad::F16;
-using boysymmetriad::detail::Bf16Bits;
-using boysymmetriad::detail::F16Bits;
-using boysymmetriad::detail::F16FromBits;
+using boys::Bf16;
+using boys::F16;
+using boys::detail::Bf16Bits;
+using boys::detail::F16Bits;
+using boys::detail::F16FromBits;
 
 TEST(F16ConversionTest, FloatToHalfRoundsToNearestEven) {
     // Not constexpr: MSVC's STL does not make std::ldexp constexpr (GCC/

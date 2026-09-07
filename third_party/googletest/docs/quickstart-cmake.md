@@ -1,4 +1,4 @@
-# Quickstart: Building with CMake
+﻿# Quickstart: Building with CMake
 
 This tutorial aims to get you up and running with GoogleTest using CMake. If
 you're using GoogleTest for the first time or need a refresher, we recommend

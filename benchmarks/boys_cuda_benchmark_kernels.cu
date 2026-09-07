@@ -1,6 +1,6 @@
 // GPU competitor kernels of the benchmark suite: the erf-F0 and the
 // Tsuji-style gridded-LUT lanes, compiled by nvcc. Mirrors the
-// boysymmetriad split (boys_cuda.cpp / boys_cuda.cu): the host translation
+// boys split (boys_cuda.cpp / boys_cuda.cu): the host translation
 // unit includes only the extern "C" seam in
 // boys_cuda_benchmark_kernels.hpp (nvcc TUs compile at
 // CMAKE_CUDA_STANDARD 20, so C++23 headers must not reach them).

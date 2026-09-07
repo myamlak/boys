@@ -10,9 +10,8 @@
 /// types" — 14.51 header text), so this library supplies the
 /// self-contained F16/Bf16
 /// wrappers there: pure I/O types over the IEEE-754 binary16 / bfloat16 bit
-/// patterns. No third-party half library (fp16 plan decision 3) and no
-/// arithmetic outside the engine's float domain — the half value only
-/// crosses the lane boundary.
+/// patterns. No third-party half library, and no arithmetic outside the
+/// engine's float domain — the half value only crosses the lane boundary.
 
 #include <bit>
 #include <cstdint>
@@ -21,7 +20,7 @@
 #include <stdfloat>
 #endif
 
-namespace boysymmetriad {
+namespace boys {
 
 #if defined(__cpp_lib_stdfloat)
 /// The fp16 I/O type of the Boys half lane: the C++23 extended type
@@ -35,7 +34,7 @@ using Bf16 = std::bfloat16_t;
 /// file doc). Round-to-nearest-even conversions, explicit widening,
 /// comparisons — nothing else.
 ///
-/// \ingroup boysymmetriad
+/// \ingroup boys
 class F16 {
 public:
     /// Value-initializes to 0.0.
@@ -226,7 +225,7 @@ private:
 /// Self-contained bfloat16 I/O type (the MSVC fallback; see the file doc).
 /// Same contract as F16 with the 8-bit exponent / 7-bit mantissa layout.
 ///
-/// \ingroup boysymmetriad
+/// \ingroup boys
 class Bf16 {
 public:
     /// Value-initializes to 0.0.
@@ -402,7 +401,7 @@ constexpr Bf16 Bf16FromBits(std::uint16_t bits) noexcept {
 ///
 /// \param x The value to get the successor of.
 /// \returns The successor of x, widened to float.
-/// \ingroup boysymmetriad
+/// \ingroup boys
 constexpr float NextUp(F16 x) noexcept {
     return static_cast<float>(detail::F16FromBits(detail::F16Bits(x) + 1));
 }
@@ -413,9 +412,9 @@ constexpr float NextUp(F16 x) noexcept {
 ///
 /// \param x The value to get the successor of.
 /// \returns The successor of x, widened to float.
-/// \ingroup boysymmetriad
+/// \ingroup boys
 constexpr float NextUp(Bf16 x) noexcept {
     return static_cast<float>(detail::Bf16FromBits(detail::Bf16Bits(x) + 1));
 }
 
-} // namespace boysymmetriad
+} // namespace boys

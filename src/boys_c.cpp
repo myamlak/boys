@@ -6,20 +6,20 @@
 // the m = 1 instantiations (see boys_impl.hpp), so the relaxed bodies are
 // compiled here, exactly as the contract tests compile them.
 
-#include "boysymmetriad/boys_c.h"
+#include "boys/boys_c.h"
 
+#include "boys/boys.hpp"
 #include "boys_effective_degrees.hpp"
 #include "boys_impl.hpp"
-#include "boysymmetriad/boys.hpp"
 
 namespace {
 
 template <double kAccuracyMultiplier> double BoysSingleRelaxed(int n, double x) noexcept {
-    return boysymmetriad::BoysSingle<kAccuracyMultiplier>(n, x);
+    return boys::BoysSingle<kAccuracyMultiplier>(n, x);
 }
 
 template <double kAccuracyMultiplier> float BoysSingleF32Relaxed(int n, float x) noexcept {
-    return boysymmetriad::BoysSingleF32<kAccuracyMultiplier>(n, x);
+    return boys::BoysSingleF32<kAccuracyMultiplier>(n, x);
 }
 
 // The sampled multiplier set of the accuracy contract. Dispatch is by exact
@@ -40,7 +40,7 @@ int FindMultiplier(double m) {
 }
 
 bool ValidOrder(int n) {
-    return n >= 0 && n <= boysymmetriad::kMaxBoysOrder;
+    return n >= 0 && n <= boys::kMaxBoysOrder;
 }
 
 bool ValidX(double x) {
@@ -63,7 +63,7 @@ int RunBatchDouble(int nmax, int count, const double* x, double* out) {
         return BOYS_ERROR_INVALID_ARGUMENT;
     }
 
-    double row[boysymmetriad::kMaxBoysOrder + 1];
+    double row[boys::kMaxBoysOrder + 1];
 
     for (int i = 0; i < count; ++i)
     {
@@ -72,7 +72,7 @@ int RunBatchDouble(int nmax, int count, const double* x, double* out) {
             return BOYS_ERROR_INVALID_ARGUMENT;
         }
 
-        boysymmetriad::BoysBatch(nmax, x[i], row);
+        boys::BoysBatch(nmax, x[i], row);
 
         for (int k = 0; k <= nmax; ++k)
         {
@@ -93,7 +93,7 @@ int BoysDouble(int n, double x, double* out) {
         return BOYS_ERROR_INVALID_ARGUMENT;
     }
 
-    *out = boysymmetriad::BoysSingle(n, x);
+    *out = boys::BoysSingle(n, x);
     return BOYS_SUCCESS;
 }
 
@@ -103,7 +103,7 @@ int BoysFloat(int n, float x, float* out) {
         return BOYS_ERROR_INVALID_ARGUMENT;
     }
 
-    *out = boysymmetriad::BoysSingleF32(n, x);
+    *out = boys::BoysSingleF32(n, x);
     return BOYS_SUCCESS;
 }
 
@@ -116,7 +116,7 @@ int BoysDoubleWithMultiplier(double m, int n, double x, double* out) {
     switch (FindMultiplier(m))
     {
     case 0:
-        *out = boysymmetriad::BoysSingle(n, x);
+        *out = boys::BoysSingle(n, x);
         return BOYS_SUCCESS;
     case 1:
         *out = BoysSingleRelaxed<2.0>(n, x);
@@ -147,7 +147,7 @@ int BoysFloatWithMultiplier(double m, int n, float x, float* out) {
     switch (FindMultiplier(m))
     {
     case 0:
-        *out = boysymmetriad::BoysSingleF32(n, x);
+        *out = boys::BoysSingleF32(n, x);
         return BOYS_SUCCESS;
     case 1:
         *out = BoysSingleF32Relaxed<2.0>(n, x);
@@ -189,7 +189,7 @@ int BoysFloatBatch(int nmax, int count, const float* x, float* out) {
         return BOYS_ERROR_INVALID_ARGUMENT;
     }
 
-    float row[boysymmetriad::kMaxBoysOrder + 1];
+    float row[boys::kMaxBoysOrder + 1];
 
     for (int i = 0; i < count; ++i)
     {
@@ -198,7 +198,7 @@ int BoysFloatBatch(int nmax, int count, const float* x, float* out) {
             return BOYS_ERROR_INVALID_ARGUMENT;
         }
 
-        boysymmetriad::BoysBatchF32(nmax, x[i], row);
+        boys::BoysBatchF32(nmax, x[i], row);
 
         for (int k = 0; k <= nmax; ++k)
         {

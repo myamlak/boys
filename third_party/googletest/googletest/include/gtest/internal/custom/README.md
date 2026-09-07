@@ -1,4 +1,4 @@
-# Customization Points
+﻿# Customization Points
 
 The custom directory is an injection point for custom user configurations.
 

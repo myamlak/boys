@@ -1,4 +1,4 @@
-# - Returns a version string from Git tags
+﻿# - Returns a version string from Git tags
 #
 # This function inspects the annotated git tags for the project and returns a string
 # into a CMake variable

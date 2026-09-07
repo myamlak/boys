@@ -1,7 +1,7 @@
+#include "boys/boys.hpp"
 #include "boys_coefficients.hpp"
 #include "boys_effective_degrees.hpp"
 #include "boys_impl.hpp"
-#include "boysymmetriad/boys.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -38,7 +38,7 @@
 // instantiations of the region entries live at the bottom of this TU (the
 // extern-template declarations in boys.hpp).
 
-namespace boysymmetriad {
+namespace boys {
 namespace {
 
 using detail::kX0;
@@ -59,7 +59,7 @@ bool DetectAvx2() noexcept {
     const bool avx2 = (cpuInfo[1] & (1u << 5)) != 0;
     return osXsave && avx2;
 #else
-    // GCC/Clang (WSL lanes): the kernel enables the AVX XCR0 state whenever
+    // GCC/Clang builds: the kernel enables the AVX XCR0 state whenever
     // the CPU supports it, so OSXSAVE + AVX2 is sufficient (same check the
     // MSVC branch performs).
     unsigned int eax = 0, ebx = 0, ecx = 0, edx = 0;
@@ -462,7 +462,7 @@ void BoysRegionCSimd(int n, const double* x, double* out, std::size_t count) noe
 // I/O). Same region-partitioned engine pattern as the F64 lanes above; the
 // lanes are the certified mixed-precision extension (fp16 I/O around the
 // certified fp32 fits of detail::f32). The relaxed branches use the fp16
-// computation budget (1e-7, D-F2) with the F32 piece tables.
+// computation budget (1e-7) with the F32 piece tables.
 // ---------------------------------------------------------------------------
 // CPUID detection of the F16C feature bit (the fp16 lane's conversions).
 bool DetectF16c() noexcept {
@@ -997,4 +997,4 @@ template void BoysRegionCSimdBf16<kBoysFullAccuracyMultiplier>(int n,
                                                                std::size_t count) noexcept;
 #endif // BoysFp16
 
-} // namespace boysymmetriad
+} // namespace boys

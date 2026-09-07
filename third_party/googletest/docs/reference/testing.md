@@ -1,4 +1,4 @@
-# Testing Reference
+﻿# Testing Reference
 
 <!--* toc_depth: 3 *-->
 
@@ -41,7 +41,7 @@ Defines an individual test named *`TestName`* that uses the test fixture class
 
 Both arguments *`TestFixtureName`* and *`TestName`* must be valid C++
 identifiers and must not contain underscores (`_`). *`TestFixtureName`* must be
-the name of a test fixture class—see
+the name of a test fixture classâ€”see
 [Test Fixtures](../primer.md#same-data-multiple-tests).
 
 The statements within the test body can be any code under test.
@@ -62,7 +62,7 @@ test fixture class *`TestFixtureName`*. The test suite name is
 
 Both arguments *`TestFixtureName`* and *`TestName`* must be valid C++
 identifiers and must not contain underscores (`_`). *`TestFixtureName`* must be
-the name of a value-parameterized test fixture class—see
+the name of a value-parameterized test fixture classâ€”see
 [Value-Parameterized Tests](../advanced.md#value-parameterized-tests).
 
 The statements within the test body can be any code under test. Within the test

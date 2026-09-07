@@ -1,4 +1,4 @@
-name: clang-tidy
+﻿name: clang-tidy
 
 on:
   push: {}

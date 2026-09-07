@@ -1,11 +1,11 @@
-# Doxyfile for the boysymmetriad API documentation.
+# Doxyfile for the boys API documentation.
 # Used by the `boys-docs` CMake target (working directory is the repo root).
 # Generate with:
 #   cmake --build build --target boys-docs
 # Output lands in build/doxygen/html (open index.html).
 # Gate: zero warnings — any warning fails the target (WARN_AS_ERROR).
 
-PROJECT_NAME           = boysymmetriad
+PROJECT_NAME           = boys
 PROJECT_BRIEF          = "Boys-function kernel: self-contained evaluation of F_n(x), n = 0..32"
 OUTPUT_DIRECTORY       = build/doxygen
 OUTPUT_LANGUAGE        = English
@@ -29,7 +29,7 @@ WARNINGS               = YES
 WARN_FORMAT            = "$file:$line: $text"
 
 # Preprocessor: the fp16/bf16 API entries are guarded by #if BoysFp16 -
-# without the define Doxygen evaluates the guard to 0 and whole lanes are
+# without the define Doxygen evaluates the guard to 0 and whole entries are
 # invisible to the gate (a vacuous zero-warning pass).
 ENABLE_PREPROCESSING   = YES
 MACRO_EXPANSION        = YES
@@ -38,11 +38,12 @@ PREDEFINED             = BoysFp16=1
 
 # Inputs: the public headers, scanned recursively; the README becomes the
 # front page of the published docs.
-INPUT                  = include/boysymmetriad README.md
+INPUT                  = include/boys docs/mainpage.md
+FULL_PATH_NAMES        = NO
 RECURSIVE              = YES
 FILE_PATTERNS          = *.hpp *.h *.md
 INPUT_ENCODING         = UTF-8
-USE_MDFILE_AS_MAINPAGE = README.md
+USE_MDFILE_AS_MAINPAGE = docs/mainpage.md
 
 # C++ presentation
 OPTIMIZE_OUTPUT_FOR_C  = NO

@@ -13,7 +13,7 @@
  * compile-time Chebyshev degree truncation. Any other m is rejected with
  * BOYS_ERROR_UNSUPPORTED_MULTIPLIER.
  *
- * \ingroup boysymmetriad
+ * \ingroup boys
  */
 
 #ifndef BOYSYMETRIAD_BOYS_C_H

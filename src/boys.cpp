@@ -1,4 +1,4 @@
-#include "boysymmetriad/boys.hpp"
+#include "boys/boys.hpp"
 
 #include "boys_impl.hpp"
 
@@ -21,10 +21,12 @@
 // every call site to — no implicit instantiation, no code
 // duplication across TUs, zero cost on the m = 1 path.
 
-namespace boysymmetriad {
+namespace boys {
 
 template double BoysSingle<kBoysFullAccuracyMultiplier>(int n, double x) noexcept;
 template void BoysBatch<kBoysFullAccuracyMultiplier>(int nmax, double x, double* out) noexcept;
+template void BoysFixedN<kBoysFullAccuracyMultiplier>(
+    int n, const double* x, double* out, std::size_t count, std::size_t stride) noexcept;
 template float BoysSingleF32<kBoysFullAccuracyMultiplier>(int n, float x) noexcept;
 template void BoysBatchF32<kBoysFullAccuracyMultiplier>(int nmax, float x, float* out) noexcept;
 
@@ -35,4 +37,4 @@ template Bf16 BoysSingleBf16<kBoysFullAccuracyMultiplier>(int n, Bf16 x) noexcep
 template void BoysBatchBf16<kBoysFullAccuracyMultiplier>(int nmax, Bf16 x, Bf16* out) noexcept;
 #endif // BoysFp16
 
-} // namespace boysymmetriad
+} // namespace boys

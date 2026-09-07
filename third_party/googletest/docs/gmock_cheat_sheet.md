@@ -1,4 +1,4 @@
-# gMock Cheat Sheet
+﻿# gMock Cheat Sheet
 
 ## Defining a Mock Class
 

@@ -7,7 +7,7 @@
 // unsorted input stream the engine actually faces.
 //
 // Ported from the design-study mixed-SIMD implementation (read-only
-// reference) onto the shipped coefficient tables (boysymmetriad::detail::
+// reference) onto the shipped coefficient tables (boys::detail::
 // kPieces / kPieceStart / kCoeffs / kBcoeffs / kBDeg / kX0 / kX1). Two
 // corrections against the reference:
 //   * the e^{-x} gather follows the shipped kernel's ExpTable convention
@@ -21,8 +21,8 @@
 // x)| over the benchmark inputs, budget 5.5e-14) and exits; the default
 // mode runs the runs-log protocol (warmup + 3 passes, min/median/max,
 // median = paper cell).
+#include "boys/boys.hpp"
 #include "boys_coefficients.hpp"
-#include "boysymmetriad/boys.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -94,8 +94,8 @@ private:
 
 // Split Clenshaw (even/odd), 4-wide, half-depth FMA chains — the shipped
 // kernel shape.
-__m256d Clenshaw4Split(const boysymmetriad::detail::OrderPiece& piece, __m256d xv) {
-    const double* c = boysymmetriad::detail::kCoeffs.data() + piece.offset;
+__m256d Clenshaw4Split(const boys::detail::OrderPiece& piece, __m256d xv) {
+    const double* c = boys::detail::kCoeffs.data() + piece.offset;
     const int deg = piece.deg;
 
     if (deg == 0)
@@ -149,7 +149,7 @@ __m256d Clenshaw4Split(const boysymmetriad::detail::OrderPiece& piece, __m256d x
 // lanes of the companion sorted benchmark.
 void ChebSimdMixed(
     int n, const double* x, double* out, std::size_t count, const ExpTable& expTable) {
-    using namespace boysymmetriad::detail;
+    using namespace boys::detail;
 
     for (std::size_t i = 0; i + 3 < count; i += 4)
     {
@@ -244,7 +244,7 @@ void ChebSimdMixed(
 
     for (std::size_t i = count - (count % 4); i < count; ++i)
     {
-        out[i] = boysymmetriad::BoysSingle(n, x[i]);
+        out[i] = boys::BoysSingle(n, x[i]);
     }
 }
 
@@ -254,7 +254,7 @@ double MaxAbsError(const double* out, const double* x, std::size_t count, double
 
     for (std::size_t i = 0; i < count; ++i)
     {
-        const double err = std::abs(out[i] - boysymmetriad::BoysSingle(kOrder, x[i]));
+        const double err = std::abs(out[i] - boys::BoysSingle(kOrder, x[i]));
 
         if (err > worst)
         {

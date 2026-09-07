@@ -1,11 +1,11 @@
 #pragma once
 
-#include "boysymmetriad/boys.hpp"
+#include "boys/boys.hpp"
 
 #include <cstddef>
 
 #if BoysFp16
-#include "boysymmetriad/f16.hpp"
+#include "boys/f16.hpp"
 #endif
 
 /// \file
@@ -17,7 +17,7 @@
 /// points take raw device pointers — the caller owns the device memory
 /// (cudaMalloc/cudaMemcpy/cudaFree) and the stream.
 
-namespace boysymmetriad {
+namespace boys {
 
 /// Result status of the CUDA lane entry points.
 ///
@@ -45,7 +45,13 @@ enum class BoysStatus {
 /// reported by the return status). Synchronize the stream (or use
 /// cudaStreamSynchronize on a per-call stream) before reading the outputs.
 ///
-/// \ingroup boysymmetriad
+/// Count-0 contract asymmetry (documented, not changed — changing it
+/// would be a MAJOR-version error-behavior break): the fp16/bf16 family
+/// validates count == 0 and returns kInvalidArgument, while the fp32/fp64
+/// families accept count == 0 as a no-op zero-thread launch (no kernel
+/// queued, the output untouched, kSuccess).
+///
+/// \ingroup boys
 class BoysCuda {
 public:
     /// Uploads the Chebyshev coefficient tables (double and float lanes) to
@@ -169,4 +175,4 @@ public:
 #endif // BoysFp16
 };
 
-} // namespace boysymmetriad
+} // namespace boys

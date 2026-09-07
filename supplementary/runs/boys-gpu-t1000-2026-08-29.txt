@@ -1,4 +1,4 @@
-Boys-function GPU throughput runs — Quadro T1000
+﻿Boys-function GPU throughput runs â€” Quadro T1000
 =================================================
 Date: 2026-08-29
 Machine: LENOVO 20QQS32H0B, Intel Core i7-9850H, 32 GB RAM,
@@ -33,7 +33,7 @@ kernel: erf-f64 | workload: uniform-n32-x40 | count: 4194304 | passes: 3 | min_m
 kernel: lut-f64 | workload: uniform-n32-x40 | count: 4194304 | passes: 3 | min_ms: 43.831 | median_ms: 43.844 | max_ms: 43.862 | median_Mvals_per_s: 95.664
 kernel: fp16-single | workload: uniform-n32-x40 | count: 4194304 | passes: 3 | min_ms: 23.076 | median_ms: 23.323 | max_ms: 24.025 | median_Mvals_per_s: 179.838
   (fp16-single is the host-pointer API: wall-clock, per-call device-buffer
-   allocations included — the honest cost of the shipped API)
+   allocations included â€” the honest cost of the shipped API)
 
 Summary (median of 3 recorded passes; paper cells):
   GPU float lane 423.0 M/s = 4.4x the fastest double lane (LUT kernel
