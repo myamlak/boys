@@ -1,0 +1,36 @@
+# The CI legs branch protection requires on main, one check name per line.
+#
+# This file is the single source of truth for two consumers: the branch
+# protection rule itself (required_status_checks.contexts, set through the API)
+# and the supported-platform table in README.md (tools/gen_platform_table.py
+# reads it and marks each leg required or not). Adding a leg to ci.yml does NOT
+# require it; adding a name here does not create a leg.
+#
+# Names are the rendered job names from a completed run - a name that matches
+# nothing is silently unenforced, so add one only from a leg that has reported.
+#
+# NO LEG IS EXCLUDED (2026-09-17). `linux-arm64 gcc Release` was excluded while
+# its boundary pin was red: the cells were a recording-machine lattice draw of
+# an oscillating error envelope, and glibc-aarch64 drew them past the recorded
+# band (kmax = 4 landed 21.9% off against a 20% band). The pin was replaced by
+# a stable measurement - the failure top of a descending sweep at a stated
+# resolution - which spreads 5.1% across gcc/clang/MSVC where the retired draw
+# spread 27.0% from the lattice alone on one machine. The leg went green with
+# every other leg (run 35164402325, 12/12) and is required here like the rest.
+
+windows-msvc Release
+windows-msvc Debug
+linux-x86 gcc Release
+linux-x86 gcc Debug
+linux-x86 clang Release
+linux-x86 clang Debug
+linux-x86 clang-tidy
+linux-sanitizers asan+ubsan
+linux-arm64 gcc Release
+windows-arm64 msvc Release
+macos arm64
+macos x64
+
+# Every name above is a leg that has reported green at least once (run
+# 35164402325 carries all twelve), which is the bar for adding one: a required
+# name that never reports blocks every PR.

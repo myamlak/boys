@@ -1,0 +1,33 @@
+# clang-tidy baseline for boys.
+#
+# The CI leg (see .github/workflows/ci.yml, "linux-x86 clang-tidy") runs this
+# over the project's own compile database and gates on `error:` diagnostics —
+# a TU that tidy cannot parse, which is the failure mode that makes a tidy run
+# worthless. The checks below are the BASELINE: their warnings are reported in
+# the leg's log for the author to act on, and are deliberately not the gate.
+# That is the project rule (tidy issues are first reported locally; CI is the
+# backstop), and it is also what keeps a tidy leg attributable: a build leg that
+# fails on a tidy warning cannot be told apart from one that fails on the code.
+Checks: >
+  clang-diagnostic-*,
+  bugprone-*,
+  performance-*,
+  portability-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -bugprone-suspicious-stringview-data-usage,
+  -bugprone-multi-level-implicit-pointer-conversion,
+  -portability-avoid-pragma-once,
+  -performance-avoid-endl
+
+# No NOLINT silencing beyond the per-line ones already in the sources: a check
+# is either in the baseline or it is not.
+WarningsAsErrors: ''
+
+# The library's own headers are checked as they are included; the vendored
+# trees are not this project's to tidy.
+HeaderFilterRegex: '^(include/boys|src|tests)/.*'
+
+# The repository .clang-format is the one true style.
+FormatStyle: file

@@ -1,0 +1,428 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  # Required status checks are reported on pull requests only when the workflow
+  # runs on pull_request: a checks-only branch-protection rule over a
+  # push-triggered workflow would block every PR on checks that never appear.
+  # This trigger is therefore load-bearing for the protection rule on main, not
+  # a convenience.
+  pull_request:
+    branches: [main]
+
+# Cancel a still-running older run when a newer push lands on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# --- Coverage policy -------------------------------------------------------
+#
+# boys is a PUBLIC repository, so GitHub gives it unlimited free standard-runner
+# minutes AND double the machine: the same label is 4 vCPU / 16 GB here rather
+# than the 2 vCPU / 8 GB of the reduced tier. The direction is deliberate: boys
+# gets the fullest coverage standard runners allow.
+#
+# STANDARD HOSTED LABELS ONLY (windows-latest, windows-11-arm, ubuntu-latest,
+# ubuntu-24.04-arm, macos-latest, macos-15-intel). Larger runners are billed
+# and would break the free assumption — never add one here.
+#
+# boys is a numeric kernel library with an AVX2/FMA gate and an fp16 seam, so
+# architecture and sanitizer coverage is where its risk actually lives:
+#
+#   windows-latest    MSVC   Debug + Release   (the verified toolchain)
+#   windows-11-arm    MSVC   Release           (arm64 — see the note below)
+#   ubuntu-latest     GCC    Debug + Release   (the verified toolchain)
+#   ubuntu-latest     Clang  Debug + Release   (the -ffp-contract class)
+#   ubuntu-latest     ASan+UBSan               (highest value per minute here)
+#   ubuntu-24.04-arm  GCC    Release           (arm64 — see the note below)
+#   macos-latest      AppleClang Release       (arm64 — see the note below)
+#   macos-15-intel    AppleClang Release       (x64: macos-latest is Apple Silicon)
+#
+# FULL SUITE ON EVERY LEG, Debug and Release alike. No fast-subset rule
+# applies here: such a rule exists for MSVC-side cost (MSVC Debug is 10-50x
+# the Release cost of the heavy suites, where Linux Debug is only ~2x), and a
+# build-only Debug leg would never execute the nine assert(BoysAvx2Available())
+# sites — precisely what a Debug leg is for. boys' suite is small (~50 tests,
+# 4096-element sweeps) and its minutes are free, so the cost reasoning does not
+# arise.
+#
+# THE ARM64 LEGS. They were added RED on purpose and they earned their keep on
+# the first run: src/boys_simd.cpp included <immintrin.h> unconditionally and
+# CMakeLists applied -mavx2;-mfma;-mf16c (or /arch:AVX2) with no architecture
+# guard anywhere in the tree, which is the finding those legs exist to expose.
+# The tree now carries the guard (CMakeLists' BOYS_ARCH_X86_64 probe feeds
+# BOYS_SIMD_X86 in the SIMD TU), so the arm64 legs build and run the FULL suite
+# rather than being marked continue-on-error — never that, and never a deleted
+# leg. What they assert is unchanged and is the point: the vector tier is
+# ABSENT there, BoysAvx2Available() reports false, and the scalar lanes carry
+# the twelve region entry points (see the guard's comment in src/boys_simd.cpp).
+#
+# Every leg runs the gate the two original legs established: build, ctest (the
+# kernel contract tests, multiplier tests, C-surface tests, boundary pins, the
+# BOUNDARY-CHECK standalone over the committed reference grid, and the dispatch
+# assertion), the generator byte-identity protocol (no-args in-place
+# regeneration + --check + git diff --exit-code over the two generated files),
+# and the zero-warning Doxygen build. The two original legs (windows-msvc-
+# release, linux-gcc-release) keep all of it verbatim; the new x86 legs carry
+# the same set so the retention is per-leg rather than workflow-wide.
+#
+# The two NEW arm64 legs (linux-arm64, windows-arm64) carry build + ctest + the
+# dispatch assertion: every arm64 fact this tree has to state is a build or a
+# runtime fact, and the generator and Doxygen gates are already carried by five
+# legs including macos arm64 (whose job does run them — Doxygen publishes
+# mac-arm assets but no Linux arm64 tarball for the pinned release). Extending
+# the generator gate to linux-arm64 is a possible follow-up, not a claim made
+# here.
+#
+# Action and tool versions are pinned: checkout v7.0.1, msvc-dev-cmd v1.13.0,
+# mpmath 1.4.1 (requirements-boys.txt — the committed bytes only reproduce
+# against it), clang-format 18.1.3 (the byte-identity gate's formatter: the
+# generator used to format the header with whatever clang-format it found on
+# PATH and to skip silently when it found none, which is how the macos leg
+# drifted — see tools/gen_boys_coefficients.py), Doxygen 1.18.0 (the same
+# release on every leg that can run it; the macOS assets are the mac-arm/
+# mac-intel zips, verified to carry the same flat doxygen-1.18.0/doxygen layout
+# as the Linux tarball).
+#
+# There is deliberately no CUDA leg: CI has no GPU runner, the device pins are
+# a documented local gate, and the timed benchmark passes stay local-only by
+# design (each timed run records machine, clock and commit). The
+# CMake benchmark targets are therefore off in CI (BUILD_BENCHMARKS=OFF).
+#
+# --- The dispatch assertion ------------------------------------------------
+#
+# Each leg asserts what BoysAvx2Available() MUST report for that architecture:
+# TRUE on the x86_64 legs, FALSE on the arm64 legs. This is worth more than the
+# rest of the matrix combined, because the SIMD correctness tests gate
+# themselves with a soft GTEST_SKIP on that same predicate
+# (tests/boys_test.cpp): a wrong CPUID bit therefore makes every SIMD test SKIP
+# while CI reports green with the whole vector tier dead — the exact failure
+# this repository already suffered once. A hard assertion turns that silent
+# skip into a red build. It observes the capability PREDICATE, not which path a
+# given call took; that residual gap is named in the probe's own header, not
+# papered over.
+#
+# It is ONE tracked source (tests/boys_avx2_probe.cpp) built as a CMake target
+# and run by ctest, with the per-leg expectation passed as
+# -DBOYS_EXPECT_AVX2=<0|1> at configure time. It used to be a heredoc pasted
+# into five jobs and compiled by hand next to the library, which is why it
+# failed on two legs for two reasons that had nothing to do with AVX2: the
+# hand-compiled probe missed MSVC Debug's /MDd (the leg died on a CRT mismatch)
+# and the sanitizer leg's -fsanitize flags (it died on undefined __asan_init).
+# A target that LINKS boys inherits the configuration's CRT, sanitizers and
+# architecture, so there is no second flag set left to keep in step. The probe
+# is built only when the option is supplied, so developer builds are unaffected.
+
+jobs:
+  # -------------------------------------------------------------------------
+  # windows-latest, MSVC, Debug + Release. The original windows-msvc-release
+  # job, unchanged, run for both configurations.
+  # -------------------------------------------------------------------------
+  windows-msvc:
+    name: windows-msvc ${{ matrix.build_type }}
+    runs-on: windows-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - build_type: Release
+            expect_avx2: 1
+          - build_type: Debug
+            expect_avx2: 1
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          submodules: true
+      - uses: ilammy/msvc-dev-cmd@v1.13.0
+      - name: Set up Python + mpmath + clang-format (pinned)
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install --quiet mpmath==1.4.1 clang-format==18.1.3 pyyaml==6.0.2
+      - name: Install Doxygen 1.18.0 (pinned release)
+        run: |
+          Invoke-WebRequest -Uri https://github.com/doxygen/doxygen/releases/download/Release_1_18_0/doxygen-1.18.0.windows.x64.bin.zip -OutFile doxygen.zip
+          Expand-Archive doxygen.zip -DestinationPath doxygen-1.18.0
+          Add-Content -Path $env:GITHUB_PATH -Value "$PWD\doxygen-1.18.0"
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF -DBOYS_EXPECT_AVX2=${{ matrix.expect_avx2 }}
+      - name: Build
+        run: cmake --build build
+      - name: Test (full suite + dispatch assertion)
+        run: ctest --test-dir build --output-on-failure
+      - name: Generator byte-identity (no-args regeneration + --check + git diff)
+        env:
+          CLANG_FORMAT: ${{ github.workspace }}/.venv/Scripts/clang-format.exe
+        run: |
+          .\.venv\Scripts\python.exe tools/gen_boys_coefficients.py --header src/boys_coefficients.hpp --reference tests/data/boys_reference.csv
+          .\.venv\Scripts\python.exe tools/gen_boys_coefficients.py --check --header src/boys_coefficients.hpp --reference tests/data/boys_reference.csv
+          git diff --exit-code -- src/boys_coefficients.hpp tests/data/boys_reference.csv
+      - name: README platform table (generated from the workflow matrix)
+        run: .\.venv\Scripts\python.exe tools/gen_platform_table.py --check
+      - name: Boundary standalone check
+        run: |
+          New-Item -ItemType Directory -Force boundary-run | Out-Null
+          cl /nologo /std:c++17 /EHsc /O2 tests/boys_boundary_standalone.cpp /Fe:boundary-run\boys-boundary-check.exe /Fo:boundary-run\
+          Copy-Item tests/data/boys_reference.csv boundary-run\boys_reference.csv
+          Set-Location boundary-run
+          .\boys-boundary-check.exe
+      - name: Docs (zero-warning Doxygen gate)
+        run: cmake --build build --target boys-docs
+
+  # -------------------------------------------------------------------------
+  # ubuntu-latest, GCC and Clang, Debug + Release. The original
+  # linux-gcc-release job, unchanged, plus Clang and the Debug configurations.
+  # -------------------------------------------------------------------------
+  linux-x86:
+    name: linux-x86 ${{ matrix.compiler }} ${{ matrix.build_type }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: gcc
+            build_type: Release
+            cc: gcc
+            cxx: g++
+          - compiler: gcc
+            build_type: Debug
+            cc: gcc
+            cxx: g++
+          - compiler: clang
+            build_type: Release
+            cc: clang
+            cxx: clang++
+          - compiler: clang
+            build_type: Debug
+            cc: clang
+            cxx: clang++
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          submodules: true
+      - name: Set up Python + mpmath + clang-format (pinned)
+        run: |
+          python3 -m venv .venv
+          .venv/bin/python -m pip install --quiet mpmath==1.4.1 clang-format==18.1.3 pyyaml==6.0.2
+      - name: Install Doxygen 1.18.0 (pinned release)
+        run: |
+          curl -L -sS -o /tmp/doxygen.tar.gz https://github.com/doxygen/doxygen/releases/download/Release_1_18_0/doxygen-1.18.0.linux.bin.tar.gz
+          tar -xzf /tmp/doxygen.tar.gz -C /tmp
+          echo "$(dirname "$(find /tmp/doxygen-1.18.0 -name doxygen -type f | head -1)")" >> "$GITHUB_PATH"
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF -DBOYS_EXPECT_AVX2=1
+      - name: Build
+        run: cmake --build build -j 4
+      - name: Test (full suite + dispatch assertion)
+        run: ctest --test-dir build --output-on-failure
+      - name: Generator byte-identity (no-args regeneration + --check + git diff)
+        env:
+          CLANG_FORMAT: ${{ github.workspace }}/.venv/bin/clang-format
+        run: |
+          .venv/bin/python tools/gen_boys_coefficients.py --header src/boys_coefficients.hpp --reference tests/data/boys_reference.csv
+          .venv/bin/python tools/gen_boys_coefficients.py --check --header src/boys_coefficients.hpp --reference tests/data/boys_reference.csv
+          git diff --exit-code -- src/boys_coefficients.hpp tests/data/boys_reference.csv
+      - name: README platform table (generated from the workflow matrix)
+        run: .venv/bin/python tools/gen_platform_table.py --check
+      - name: Boundary standalone check
+        run: |
+          mkdir -p boundary-run
+          g++ -std=c++17 -O2 tests/boys_boundary_standalone.cpp -o boundary-run/boys-boundary-check
+          cp tests/data/boys_reference.csv boundary-run/boys_reference.csv
+          cd boundary-run && ./boys-boundary-check
+      - name: Docs (zero-warning Doxygen gate)
+        run: cmake --build build --target boys-docs
+  # -------------------------------------------------------------------------
+  # ubuntu-latest, AddressSanitizer + UndefinedBehaviorSanitizer. For kernel
+  # code this is the highest value per minute on the board: the region
+  # partitioning, the 4-lane vector tails and the padded coefficient tables are
+  # exactly where an out-of-bounds or a signed-overflow would live.
+  # -------------------------------------------------------------------------
+  linux-sanitizers:
+    name: linux-sanitizers asan+ubsan
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          submodules: true
+      - name: Configure (ASan + UBSan)
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF -DBOYS_EXPECT_AVX2=1 \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+      - name: Build
+        run: cmake --build build -j 4
+      - name: Test (full suite + dispatch assertion, under the sanitizers)
+        run: ctest --test-dir build --output-on-failure
+  # -------------------------------------------------------------------------
+  # ubuntu-24.04-arm, GCC. NEON vs AVX2: this catches x86-only assumptions.
+  # It was red on the first run — the finding it exists to produce — and now
+  # builds and runs the full suite with the AVX2 tier absent by construction.
+  # -------------------------------------------------------------------------
+  linux-arm64:
+    name: linux-arm64 gcc Release
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          submodules: true
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF -DBOYS_EXPECT_AVX2=0
+      - name: Build
+        run: cmake --build build -j 4
+      - name: Test (full suite + dispatch assertion)
+        run: ctest --test-dir build --output-on-failure
+  # -------------------------------------------------------------------------
+  # windows-11-arm, MSVC arm64.
+  #
+  # The first run of this leg was RED FOR THE WRONG REASON and the fix is the
+  # interesting part: ilammy/msvc-dev-cmd defaults to host=x64, so the leg was
+  # building an x64 binary and running it under Windows' x64 emulation on the
+  # ARM64 runner. It reported BoysAvx2Available() = true, correctly — for an
+  # x64 build. That is a green-looking leg with no arm64 subject at all, so the
+  # arch is now stated explicitly rather than inherited from the action's
+  # default.
+  # -------------------------------------------------------------------------
+  windows-arm64:
+    name: windows-arm64 msvc Release
+    runs-on: windows-11-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          submodules: true
+      - uses: ilammy/msvc-dev-cmd@v1.13.0
+        with:
+          arch: arm64
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF -DBOYS_EXPECT_AVX2=0
+      - name: Build
+        run: cmake --build build
+      - name: Test (full suite + dispatch assertion)
+        run: ctest --test-dir build --output-on-failure
+
+  # -------------------------------------------------------------------------
+  # macOS, AppleClang: macos-latest is Apple Silicon (arm64 — the AVX2 tier is
+  # absent there, asserted as such) and macos-15-intel is the x64 runner that
+  # actually has AVX2.
+  # -------------------------------------------------------------------------
+  macos:
+    name: macos ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            label: arm64
+            doxygen_asset: doxygen-1.18.0-mac-arm.zip
+            expect_avx2: 0
+          - runner: macos-15-intel
+            label: x64
+            doxygen_asset: doxygen-1.18.0-mac-intel.zip
+            expect_avx2: 1
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          submodules: true
+      - name: Set up Python + mpmath + clang-format (pinned)
+        run: |
+          python3 -m venv .venv
+          .venv/bin/python -m pip install --quiet mpmath==1.4.1 clang-format==18.1.3 pyyaml==6.0.2
+      - name: Install Doxygen 1.18.0 (pinned release)
+        run: |
+          curl -L -sS -o /tmp/doxygen.zip https://github.com/doxygen/doxygen/releases/download/Release_1_18_0/${{ matrix.doxygen_asset }}
+          unzip -q /tmp/doxygen.zip -d /tmp
+          echo "$(dirname "$(find /tmp/doxygen-1.18.0 -name doxygen -type f | head -1)")" >> "$GITHUB_PATH"
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF -DBOYS_EXPECT_AVX2=${{ matrix.expect_avx2 }}
+      - name: Build
+        run: cmake --build build -j 3
+      - name: Test (full suite + dispatch assertion)
+        run: ctest --test-dir build --output-on-failure
+      - name: Generator byte-identity (no-args regeneration + --check + git diff)
+        env:
+          CLANG_FORMAT: ${{ github.workspace }}/.venv/bin/clang-format
+        run: |
+          .venv/bin/python tools/gen_boys_coefficients.py --header src/boys_coefficients.hpp --reference tests/data/boys_reference.csv
+          .venv/bin/python tools/gen_boys_coefficients.py --check --header src/boys_coefficients.hpp --reference tests/data/boys_reference.csv
+          git diff --exit-code -- src/boys_coefficients.hpp tests/data/boys_reference.csv
+      - name: README platform table (generated from the workflow matrix)
+        run: .venv/bin/python tools/gen_platform_table.py --check
+      - name: Boundary standalone check
+        run: |
+          mkdir -p boundary-run
+          c++ -std=c++17 -O2 tests/boys_boundary_standalone.cpp -o boundary-run/boys-boundary-check
+          cp tests/data/boys_reference.csv boundary-run/boys_reference.csv
+          cd boundary-run && ./boys-boundary-check
+      - name: Docs (zero-warning Doxygen gate)
+        run: cmake --build build --target boys-docs
+
+  # -------------------------------------------------------------------------
+  # ubuntu-latest, clang-tidy over the project's own compile database.
+  #
+  # A leg of its own, not a step on a build leg: a tidy failure has to be
+  # attributable to tidy. The project rule applies verbatim — tidy issues are first
+  # reported LOCALLY, and CI is the backstop — so the gate here is the FAILURE
+  # MODE of a tidy run rather than its findings: zero `error:` diagnostics and
+  # no "Error while processing" line, i.e. every TU parsed. The baseline check
+  # set in .clang-tidy prints its findings into the log for the author.
+  #
+  # boys has no PCH (CMakeLists: "No PCH in this tree"), so the compile
+  # database is self-sufficient and no materialise-the-PCHs step is needed.
+  # No external tidy script is imported: a tool that assumes another tree's
+  # layout is the defect class this project keeps finding. This uses boys'
+  # own database instead.
+  # -------------------------------------------------------------------------
+  clang-tidy:
+    name: linux-x86 clang-tidy
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          submodules: true
+      - name: Configure (compile database)
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+      - name: clang-tidy over the library and test TUs
+        run: |
+          clang-tidy --version
+          python3 - <<'PY' > /tmp/tidy-sources.txt
+          import json, pathlib
+          db = json.load(open("build/compile_commands.json"))
+          for entry in db:
+              path = pathlib.Path(entry["file"]).resolve()
+              if "third_party" in path.parts:
+                  continue
+              print(path)
+          PY
+          : > tidy.log
+          while read -r src; do
+            echo "=== clang-tidy ${src}" | tee -a tidy.log
+            clang-tidy -p build "${src}" >> tidy.log 2>&1 || true
+          done < /tmp/tidy-sources.txt
+          echo "--- findings ---"
+          grep -E "warning:|error:" tidy.log | head -50 || true
+          if grep -qE ": error:|Error while processing" tidy.log; then
+            echo "clang-tidy could not process every TU: the run is not usable."
+            exit 1
+          fi
+          echo "clang-tidy: every TU parsed, no error: diagnostics"
