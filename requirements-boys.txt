@@ -1,0 +1,13 @@
+# Build-time-only regeneration dependency of tools/gen_boys_coefficients.py
+# (the Chebyshev coefficient tables and the 45-digit reference grid).
+# The committed tables were generated with this exact version; the
+# byte-identity gate (--check, the CI legs) only holds against it.
+mpmath==1.4.1
+
+# The emitted header is clang-format output, so the formatter is part of the
+# regeneration pipeline rather than an optional polish step: the byte-identity
+# gate compares against the committed bytes, which only one formatter version
+# reproduces. tools/gen_boys_coefficients.py reads $CLANG_FORMAT first, then
+# PATH, and treats a missing formatter as an error instead of writing bytes the
+# gate would then report as drift.
+clang-format==18.1.3
