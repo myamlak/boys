@@ -91,6 +91,15 @@ MAX_ORDER = 32
 MAX_DEG_DOUBLE = 18
 MAX_DEG_FLOAT = 10
 
+# The leftmost region-A band is fitted at its own degree rather than the
+# shared cap: its a-priori truncation bound at 18, the minimum of
+# 2 |F_n(c - h (rho + 1/rho)/2)| rho^-deg / (rho - 1) over rho > 1, is
+# 6.47e-16 for F0 and 2.18e-16..6.47e-16 across F1..F32 - above the
+# 4.112e-17 truncation tail the seed design targets, for every order. At
+# degree 20 the whole family sits at 1.14e-18..3.14e-18. Even degrees only:
+# the split Clenshaw reads the odd coefficients up to c[deg-1].
+FIRST_BAND_DEG = 20
+
 # The extended band (the per-range seed design): a second F0 fit serving
 # [XNEW0, X0) with the region-B-style upward recursion, dispatched per kmax
 # tier (4/8/16/32). The boundaries are certified by the interval instrument
@@ -104,18 +113,26 @@ XNEW0 = mpf("1.0855252345349333")
 EXTENDED_DEG_LADDER = (12, 18, 24, 30, 36, 42, 48, 54, 60, 72, 96)
 
 # The certified per-kmax boundaries of the extended band (kmax 4/8/16/32),
-# as certified by the interval instrument under the band's
-# a-priori seed bound delta_0' (the seed-bound correction, 2026-09-06) - the
-# stored values ARE the kernel's dispatch constants: the next doubles above
-# the certified crossings, so the dispatched region is a subset of the
+# as certified by the interval instrument under the band's range-uniform
+# a-priori seed bound R_hat + tau = 1.0761680238880251877e-15 (R_hat the
+# evaluation-rounding sum over the seed's coded roundings, tau the
+# polynomial-definition term). tau is computed rather than typed:
+# (u/2)*sum_j|c_j| for the stored-coefficient rounding plus
+# (1 + Lambda_24)*Tail_proj for truncation and aliasing, with Lambda_24 =
+# 3.0117926123493714563 the Chebyshev Lebesgue constant of the 25
+# interpolation nodes. The bound covers the SEED's own definition and
+# evaluation error, NOT the error a caller receives: the crossing condition
+# charges the upward recursion and the asymptotic tail separately.
+# The stored values ARE the kernel's dispatch constants: the next doubles
+# above the certified crossings, so the dispatched region is a subset of the
 # certified region. --check reproduces them exactly.
 TIER_BOUNDARIES_CERTIFIED = [
     mpf("1.0855252345349333"),  # kmax 4: the band's left edge (the crossing clamps there;
                                 # the true failure boundary is at or below the fit's
                                 # lower edge - a conservative certified lower bound)
-    mpf("2.0136053436336927"),  # kmax 8: the 1-ulp-exp certified crossing
-    mpf("4.895982897243881"),  # kmax 16: the 1-ulp-exp certified crossing
-    mpf("10.781772313649316"),  # kmax 32: the 1-ulp-exp certified crossing
+    mpf("2.0170701478602067"),  # kmax 8: the 1-ulp-exp certified crossing
+    mpf("4.8998472055064735"),  # kmax 16: the 1-ulp-exp certified crossing
+    mpf("10.785490619744019"),  # kmax 32: the 1-ulp-exp certified crossing
 ]
 
 
@@ -235,7 +252,13 @@ def fit_order(n, region_b=False, f32=False):
     stack = [(mpf(0), X0, 0)]
     while stack:
         a, b, depth = stack.pop()
-        r = fit_interval(n, a, b, tol, maxdeg, weighted=True)
+        # The leftmost *band* carries its own degree (see FIRST_BAND_DEG);
+        # every later band walks the default ladder, and so do the float-lane
+        # bands, whose 1e-7 class is a different target. b < X0 keeps the
+        # unsplit region on the default ladder: at 20 an order can pass there
+        # without splitting, which would merge the two bands into one.
+        degs = (FIRST_BAND_DEG,) if (not f32 and a == 0 and b < X0) else None
+        r = fit_interval(n, a, b, tol, maxdeg, weighted=True, degs=degs)
         if r is None:
             if depth > 40:
                 raise RuntimeError(f"F{n}: fit never converged on [{a},{b}]")
@@ -526,10 +549,14 @@ def write_reference(path):
         # per-kmax boundaries) plus interior points across the band; the
         # superseded dispatch constants pin the vacated slices' edges (the
         # dispatch shift: [old, new) returns to the region-A path there).
+        # A retired boundary is never dropped from the grid: each generation
+        # of them stays pinned, newest set last.
         extras = [XNEW0] + [v for v in TIER_BOUNDARIES_CERTIFIED]
         extras += [mpf("1.5"), mpf("3"), mpf("5"), mpf("7"), mpf("9"), mpf("11")]
         extras += [mpf("1.857502623467682"), mpf("4.7030889427115925"),
                    mpf("10.655106119385133")]
+        extras += [mpf("2.0136053436336927"), mpf("4.895982897243881"),
+                   mpf("10.781772313649316")]
         # Deduplicate on the PARSED double, not on the mpf: the grid's
         # consumers index rows by exactly that pair (boys_test.cpp fetches the
         # reference for F_k by matching (k, row.x) as doubles), and the mpf

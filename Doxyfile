@@ -38,7 +38,7 @@ PREDEFINED             = BoysFp16=1
 
 # Inputs: the public headers, scanned recursively; the README becomes the
 # front page of the published docs.
-INPUT                  = include/boys docs/mainpage.md
+INPUT                  = include/boys docs/mainpage.md docs/consumer-perspective.md
 FULL_PATH_NAMES        = NO
 RECURSIVE              = YES
 FILE_PATTERNS          = *.hpp *.h *.md
