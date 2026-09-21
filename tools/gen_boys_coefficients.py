@@ -130,19 +130,14 @@ EXTENDED_DEG_LADDER = (12, 18, 24, 30, 36, 42, 48, 54, 60, 72, 96)
 # recursion and the asymptotic tail separately.
 # The stored values ARE the kernel's dispatch constants: the next doubles
 # above the certified crossings, so the dispatched region is a subset of the
-# certified region. They are UNCHANGED: they were certified under the older,
-# looser constant, and a crossing taken from a looser bound is stricter than
-# the corrected one requires, so the dispatch reads the table more often and
-# cannot lose accuracy. Those crossings are not reproducible from this file's
-# closed form, so they are left as certified rather than re-derived. --check
-# reproduces them exactly.
+# certified region. --check reproduces them exactly.
 TIER_BOUNDARIES_CERTIFIED = [
     mpf("1.0855252345349333"),  # kmax 4: the band's left edge (the crossing clamps there;
                                 # the true failure boundary is at or below the fit's
                                 # lower edge - a conservative certified lower bound)
-    mpf("2.0170701478602067"),  # kmax 8: the 1-ulp-exp certified crossing
-    mpf("4.8998472055064735"),  # kmax 16: the 1-ulp-exp certified crossing
-    mpf("10.785490619744019"),  # kmax 32: the 1-ulp-exp certified crossing
+    mpf("2.015297705335114"),   # kmax 8: the 1-ulp-exp certified crossing
+    mpf("4.897870299825657"),   # kmax 16: the 1-ulp-exp certified crossing
+    mpf("10.783587858916762"),  # kmax 32: the 1-ulp-exp certified crossing
 ]
 
 
@@ -557,8 +552,8 @@ def write_reference(path):
                   mpf("31"), mpf("33"), mpf("40"), mpf("50"), mpf("100")]
         # The extended band's design edges (the left edge and the certified
         # per-kmax boundaries) plus interior points across the band; the
-        # superseded dispatch constants pin the vacated slices' edges (the
-        # dispatch shift: [old, new) returns to the region-A path there).
+        # superseded dispatch constants pin the edge of the slice whose
+        # dispatch changed hands, whichever way the boundary moved.
         # A retired boundary is never dropped from the grid: each generation
         # of them stays pinned, newest set last.
         extras = [XNEW0] + [v for v in TIER_BOUNDARIES_CERTIFIED]
@@ -567,6 +562,8 @@ def write_reference(path):
                    mpf("10.655106119385133")]
         extras += [mpf("2.0136053436336927"), mpf("4.895982897243881"),
                    mpf("10.781772313649316")]
+        extras += [mpf("2.0170701478602067"), mpf("4.8998472055064735"),
+                   mpf("10.785490619744019")]
         # Deduplicate on the PARSED double, not on the mpf: the grid's
         # consumers index rows by exactly that pair (boys_test.cpp fetches the
         # reference for F_k by matching (k, row.x) as doubles), and the mpf
