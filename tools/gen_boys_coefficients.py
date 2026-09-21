@@ -104,8 +104,8 @@ FIRST_BAND_DEG = 20
 # [XNEW0, X0) with the region-B-style upward recursion, dispatched per kmax
 # tier (4/8/16/32). The boundaries are certified by the interval instrument
 # (the interval instrument) under the band's range-uniform
-# a-priori seed bound delta_0' = 1.0527e-15 (R_hat 1.0116e-15 forward
-# rounding + tau 4.112e-17 truncation tail, no x-sampling) and hardcoded
+# a-priori seed bound delta_0' = 1.0641e-15 (R_hat 1.0116e-15 forward
+# rounding + tau 5.2538e-17 truncation tail, no x-sampling) and hardcoded
 # below as the dispatch constants; the fit tolerance is the same 5e-14
 # class as the shipped region-B fit, so the delivered seed width keeps the
 # recursion envelope <= 5e-14 from each per-kmax boundary up.
@@ -114,18 +114,28 @@ EXTENDED_DEG_LADDER = (12, 18, 24, 30, 36, 42, 48, 54, 60, 72, 96)
 
 # The certified per-kmax boundaries of the extended band (kmax 4/8/16/32),
 # as certified by the interval instrument under the band's range-uniform
-# a-priori seed bound R_hat + tau = 1.0761680238880251877e-15 (R_hat the
+# a-priori seed bound R_hat + tau = 1.0641375040661759464e-15 (R_hat the
 # evaluation-rounding sum over the seed's coded roundings, tau the
 # polynomial-definition term). tau is computed rather than typed:
-# (u/2)*sum_j|c_j| for the stored-coefficient rounding plus
-# (1 + Lambda_24)*Tail_proj for truncation and aliasing, with Lambda_24 =
-# 3.0117926123493714563 the Chebyshev Lebesgue constant of the 25
-# interpolation nodes. The bound covers the SEED's own definition and
-# evaluation error, NOT the error a caller receives: the crossing condition
-# charges the upward recursion and the asymptotic tail separately.
+# (u/2)*sum_j|c_j| for the stored-coefficient rounding plus Tail_proj for
+# truncation and aliasing, Tail_proj the Chebyshev interpolant bound
+# 4*M(rho)*rho^-d/(rho-1) minimised over rho (Trefethen2019, ch. 8): the
+# coefficients interpolate at Chebyshev-Gauss nodes, where the aliasing is
+# at most the size of the tail, so the interpolant constant applies rather
+# than the older (1 + Lambda_d) form, which charged the aliasing the
+# worst-case operator norm a decaying tail never attains and was 2.0059x
+# too loose.
+# The bound covers the SEED's own definition and evaluation error, NOT the
+# error a caller receives: the crossing condition charges the upward
+# recursion and the asymptotic tail separately.
 # The stored values ARE the kernel's dispatch constants: the next doubles
 # above the certified crossings, so the dispatched region is a subset of the
-# certified region. --check reproduces them exactly.
+# certified region. They are UNCHANGED: they were certified under the older,
+# looser constant, and a crossing taken from a looser bound is stricter than
+# the corrected one requires, so the dispatch reads the table more often and
+# cannot lose accuracy. Those crossings are not reproducible from this file's
+# closed form, so they are left as certified rather than re-derived. --check
+# reproduces them exactly.
 TIER_BOUNDARIES_CERTIFIED = [
     mpf("1.0855252345349333"),  # kmax 4: the band's left edge (the crossing clamps there;
                                 # the true failure boundary is at or below the fit's
@@ -313,7 +323,7 @@ def extended_gen_delta(cd, edge, x):
     evaluation-rounding bound R_hat = 1.0116e-15 (the forward-error bound of
     the seed-bound derivation - the interval instrument certifies the band under
     the same quantity plus the truncation tail tau, delta_0' = R_hat + tau
-    = 1.0527e-15)."""
+    = 1.0641e-15)."""
     err = mpf(abs(clenshaw_double(cd, float(x), float(edge), float(X0)) - float(boys_ref(0, x))))
     return err + mpf("1.0116e-15")
 
