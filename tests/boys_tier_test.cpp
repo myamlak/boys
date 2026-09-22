@@ -1,0 +1,1428 @@
+// The run-time accuracy tier's contract tests: AccuracyTier, QueryTier,
+// TierCoverage, AccuracyRegion, AccuracyComponent and BoysAllOrdersAtTier.
+//
+// The tier is a selector: it names one of the multipliers this kernel already
+// instantiates and routes a call to that instantiation at run time. Four
+// things can go wrong with a selector, and each gets its own test:
+//
+//  1. MISMAPPING. A requested rung silently reaches a different multiplier.
+//     The tier entry must be BIT-IDENTICAL to the compile-time instantiation at
+//     the rung's own multiplier, everywhere, for every order. One exact
+//     comparison and no tolerance: a tolerance here is exactly the slack a
+//     wrong rung could hide in. Asserted twice - against the library's own
+//     instantiation (routed by the extern-template declarations below, so the
+//     comparison carries no per-translation-unit codegen confound) and against
+//     an instantiation this TU compiled for itself.
+//
+//  2. BOUND NOT MET. Each rung must hold the bound the code declares for it.
+//     The declaration is transcribed below with its source and re-derived from
+//     QueryTier at run time, so a change to either fails this file instead of
+//     drifting.
+//
+//  3. DISHONEST QUERY. QueryTier exists so a caller can ask in advance what a
+//     tier delivers, so a report claiming coverage the code does not have is
+//     the defect this file is sharpest about: the query's `reachable` is
+//     asserted to be an upper bound on the MEASURED error, and its `meets` is
+//     asserted against the delivered value at the tolerance it answers for.
+//
+//  4. SILENT SUBSTITUTION OR SILENT NON-WRITE. An unavailable tier must not
+//     return a value at an accuracy the caller did not ask for, and must not
+//     leave the output unwritten. The documented fallback is the reference
+//     multiplier, which is never coarser than any tier a caller could name, so
+//     a garbage enumerator is asserted to select the reference rung exactly -
+//     and to leave no sentinel standing in the output.
+//
+// Two guards against a green result that proves nothing. Both are counted and
+// printed rather than folded into a pass total:
+//  * a cell whose bound exceeds the function's own magnitude is BOUND-COVERED:
+//    returning zero would pass it, so it cannot distinguish the tier from a
+//    stub, and it is counted as a vacuous pass;
+//  * a cell where two rungs agree bitwise cannot distinguish those rungs. The
+//    rungs are m-invariant in region C by construction (the asymptotic form has
+//    no coefficients to truncate), so a region-C-only sweep can never detect a
+//    mis-mapping. RungsAreDistinguishableWhereTheTierVaries measures where they
+//    do differ.
+//
+// Reference: the committed high-precision grid is located at run time
+// (BoysTierReference, falling back to BoysDataDir/boys_reference.csv) and its
+// provenance is printed, so every claim below is attributed to a named
+// reference rather than to the library under test.
+
+#include "boys/boys.hpp"
+#include "boys_impl.hpp" // kX0/kX1, the region kernels, BoysAllOrdersImpl
+
+#include <algorithm>
+#include <array>
+#include <bit>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <fstream>
+#include <gtest/gtest.h>
+#include <limits>
+#include <sstream>
+#include <string>
+#include <vector>
+
+namespace boys {
+
+// The six relaxed instantiations are defined in src/boys.cpp (commit 2f81bb8).
+// Declaring them extern here routes the reference calls in this file to the
+// library's own compiled code, so the bit-identity test compares the library's
+// dispatch against the library's instantiation rather than against a second
+// copy this translation unit compiled for itself.
+extern template void BoysAllOrders<64.0>(int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrders<256.0>(int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrders<1024.0>(int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrders<4096.0>(int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrders<16384.0>(int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrders<65536.0>(int nmax, double x, double* out) noexcept;
+
+} // namespace boys
+
+namespace {
+
+using boys::AccuracyComponent;
+using boys::AccuracyMultiplier;
+using boys::AccuracyRegion;
+using boys::AccuracyTier;
+using boys::BoysAllOrders;
+using boys::BoysAllOrdersAtTier;
+using boys::QueryTier;
+using boys::TierCoverage;
+using boys::detail::BoysAllOrdersImpl;
+using boys::detail::kX0;
+using boys::detail::kX1;
+
+// ---------------------------------------------------------------------------
+// The declared contract, transcribed from include/boys/boys.hpp.
+// ---------------------------------------------------------------------------
+
+// BoysAllOrdersAtTier's own declaration: the batch entry's contract - the
+// contract table's "double batch" row - which is m*5.5e-14 in all three
+// regions. Not the three-value per-region column (m*1e-15 in region A), which
+// belongs to the single lane: the tier entry dispatches to BoysAllOrders, and
+// TheEntryHoldsTheBatchRowAndNotThePerRegionColumn measures it exceeding that
+// column by 3.2x at m = 1 alone.
+//
+// Not taken on trust: TheTranscribedBoundIsTheOneQueryTierDeclares re-derives
+// the base from QueryTier, which restates it as its own reachable. If either
+// declaration moves, the two disagree and that test fails.
+constexpr double kDeclaredBatchBase = 5.5e-14;
+
+// The region C entry of that table, restated by QueryTier as an m-independent
+// reachable: the asymptotic branch has no coefficients to truncate.
+constexpr double kDeclaredAsymptotic = 5.5e-14;
+
+// The seven rungs and the multiplier each enumerator names.
+struct Rung {
+    AccuracyTier tier;
+    double multiplier;
+    const char* name;
+};
+
+constexpr std::array<Rung, 7> kRungs{{
+    {AccuracyTier::kReference, boys::kBoysFullAccuracyMultiplier, "kReference"},
+    {AccuracyTier::kRelaxed64, 64.0, "kRelaxed64"},
+    {AccuracyTier::kRelaxed256, 256.0, "kRelaxed256"},
+    {AccuracyTier::kRelaxed1024, 1024.0, "kRelaxed1024"},
+    {AccuracyTier::kRelaxed4096, 4096.0, "kRelaxed4096"},
+    {AccuracyTier::kRelaxed16384, 16384.0, "kRelaxed16384"},
+    {AccuracyTier::kRelaxed65536, 65536.0, "kRelaxed65536"},
+}};
+
+constexpr std::array<AccuracyRegion, 3> kRegions{{
+    AccuracyRegion::kA,
+    AccuracyRegion::kB,
+    AccuracyRegion::kC,
+}};
+
+// The compile-time path at a multiplier, compiled by the library and reached
+// through the library's exported instantiation.
+template <double M> void LibraryPath(int nmax, double x, double* out) noexcept {
+    BoysAllOrders<M>(nmax, x, out);
+}
+
+// The same code compiled in this translation unit, for the cross-TU check.
+template <double M> void LocalPath(int nmax, double x, double* out) noexcept {
+    BoysAllOrdersImpl<M>(nmax, x, out);
+}
+
+using PathFn = void (*)(int, double, double*) noexcept;
+
+// Indexed by rung, in kRungs order.
+constexpr std::array<PathFn, 7> kLibraryPaths{{
+    &LibraryPath<boys::kBoysFullAccuracyMultiplier>,
+    &LibraryPath<64.0>,
+    &LibraryPath<256.0>,
+    &LibraryPath<1024.0>,
+    &LibraryPath<4096.0>,
+    &LibraryPath<16384.0>,
+    &LibraryPath<65536.0>,
+}};
+
+constexpr std::array<PathFn, 7> kLocalPaths{{
+    &LocalPath<boys::kBoysFullAccuracyMultiplier>,
+    &LocalPath<64.0>,
+    &LocalPath<256.0>,
+    &LocalPath<1024.0>,
+    &LocalPath<4096.0>,
+    &LocalPath<16384.0>,
+    &LocalPath<65536.0>,
+}};
+
+// ---------------------------------------------------------------------------
+// The reference grid
+// ---------------------------------------------------------------------------
+
+struct Grid {
+    std::vector<double> xs; // the distinct arguments, ascending
+    // values[n][i] = F_n(xs[i]); dense, so a sweep lookup is O(1).
+    std::array<std::vector<double>, boys::kMaxBoysOrder + 1> values{};
+    std::string provenance;
+    std::size_t rows = 0;
+    std::size_t missing = 0;
+
+    bool Load(const std::string& path, const std::string& label) {
+        std::ifstream file(path);
+
+        if (!file)
+        {
+            return false;
+        }
+
+        std::vector<std::array<double, 3>> raw; // {n, x, value}
+        std::string line;
+        std::getline(file, line); // header
+
+        while (std::getline(file, line))
+        {
+            std::stringstream ss(line);
+            std::string cell;
+            std::array<double, 3> row{};
+            bool complete = true;
+
+            for (int c = 0; c < 3; ++c)
+            {
+                if (!std::getline(ss, cell, ','))
+                {
+                    complete = false;
+                    break;
+                }
+
+                row[static_cast<std::size_t>(c)] = std::strtod(cell.c_str(), nullptr);
+            }
+
+            if (complete)
+            {
+                raw.push_back(row);
+            }
+        }
+
+        if (raw.empty())
+        {
+            return false;
+        }
+
+        provenance = label + " [" + path + "]";
+        rows = raw.size();
+
+        xs.reserve(raw.size());
+
+        for (const std::array<double, 3>& row : raw)
+        {
+            xs.push_back(row[1]);
+        }
+
+        std::sort(xs.begin(), xs.end());
+        xs.erase(std::unique(xs.begin(), xs.end()), xs.end());
+
+        for (auto& v : values)
+        {
+            v.assign(xs.size(), std::nan(""));
+        }
+
+        for (const std::array<double, 3>& row : raw)
+        {
+            const std::size_t n = static_cast<std::size_t>(row[0]);
+
+            if (n > static_cast<std::size_t>(boys::kMaxBoysOrder))
+            {
+                continue;
+            }
+
+            const auto it = std::lower_bound(xs.begin(), xs.end(), row[1]);
+            values[n][static_cast<std::size_t>(it - xs.begin())] = row[2];
+        }
+
+        for (const auto& v : values)
+        {
+            for (double value : v)
+            {
+                if (std::isnan(value))
+                {
+                    ++missing;
+                }
+            }
+        }
+
+        return true;
+    }
+};
+
+// Loaded once per process. The gate lane's grid when the tree carries it, else
+// the suite's; the provenance is printed rather than assumed.
+const Grid& Reference() {
+    static const Grid grid = [] {
+        Grid g;
+
+        if (g.Load(BoysTierReference, "accuracy-gate grid"))
+        {
+            return g;
+        }
+
+        g = Grid{};
+        const std::string suite = std::string(BoysDataDir) + "/boys_reference.csv";
+
+        if (!g.Load(suite, "suite grid"))
+        {
+            ADD_FAILURE() << "no reference grid: tried " << BoysTierReference << " and " << suite;
+        }
+
+        return g;
+    }();
+
+    return grid;
+}
+
+AccuracyRegion RegionOf(double x) {
+    if (x < kX0)
+    {
+        return AccuracyRegion::kA;
+    }
+
+    return x < kX1 ? AccuracyRegion::kB : AccuracyRegion::kC;
+}
+
+const char* RegionName(AccuracyRegion region) {
+    switch (region)
+    {
+    case AccuracyRegion::kA:
+        return "A";
+
+    case AccuracyRegion::kB:
+        return "B";
+
+    case AccuracyRegion::kC:
+        return "C";
+    }
+
+    return "?";
+}
+
+// What QueryTier states for a rung and region, at a tolerance the comparison
+// cannot itself satisfy: reachable is the reach of the report.
+double DeclaredReachable(AccuracyTier tier, AccuracyRegion region) {
+    return QueryTier(tier, region, 0.0).reachable;
+}
+
+// The floor under which a region's reference coverage cannot support the bound
+// claim it is being used for. Region A carries the per-order Chebyshev pieces,
+// region B the F0 seed's truncation range and region C the asymptotic onset;
+// each needs many arguments and a wrong tier shows up at specific ones (a piece
+// boundary, the seed's amplification maximum, the onset). The accuracy gate's
+// grid carries 646 / 248 / 544 arguments. The suite grid's x set carries
+// 73 / 5 / 10 - which is why a region below this floor is reported as NOT
+// CHECKED rather than counted as a pass.
+constexpr std::size_t kMinArgumentsPerRegion = 32;
+
+std::size_t ArgumentCount(AccuracyRegion region) {
+    const Grid& grid = Reference();
+    std::size_t count = 0;
+
+    for (double x : grid.xs)
+    {
+        if (RegionOf(x) == region)
+        {
+            ++count;
+        }
+    }
+
+    return count;
+}
+
+bool RegionIsCovered(AccuracyRegion region) {
+    return ArgumentCount(region) >= kMinArgumentsPerRegion;
+}
+
+// ---------------------------------------------------------------------------
+// The sweeps
+// ---------------------------------------------------------------------------
+
+// One measurement cell: the error, where the worst one is, and whether the
+// cell can distinguish anything.
+struct Sweep {
+    std::size_t cells = 0;
+    std::size_t met = 0;
+    std::size_t bound_covered = 0; // met, but returning zero would pass too
+    double worst = 0.0;
+    int worst_n = -1;
+    double worst_x = 0.0;
+
+    void Note(double error, int n, double x, double magnitude, double bound) {
+        ++cells;
+
+        if (error > worst)
+        {
+            worst = error;
+            worst_n = n;
+            worst_x = x;
+        }
+
+        if (error <= bound)
+        {
+            ++met;
+
+            if (bound > std::fabs(magnitude))
+            {
+                ++bound_covered;
+            }
+        }
+    }
+};
+
+// Every argument of the reference grid in the region, every nmax in 0..32,
+// every order of the returned batch, against the reference value. No sampling:
+// a gap here is a cell a wrong rung could hide in.
+Sweep RunSweep(AccuracyTier tier, AccuracyRegion region, double bound) {
+    const Grid& grid = Reference();
+    Sweep sweep;
+
+    if (grid.xs.empty())
+    {
+        return sweep;
+    }
+
+    std::vector<double> out(boys::kMaxBoysOrder + 1, std::nan(""));
+
+    for (std::size_t i = 0; i < grid.xs.size(); ++i)
+    {
+        const double x = grid.xs[i];
+
+        if (RegionOf(x) != region)
+        {
+            continue;
+        }
+
+        for (int nmax = 0; nmax <= boys::kMaxBoysOrder; ++nmax)
+        {
+            std::fill(out.begin(), out.end(), std::nan(""));
+            BoysAllOrdersAtTier(tier, nmax, x, out.data());
+
+            for (int k = 0; k <= nmax; ++k)
+            {
+                const double reference = grid.values[static_cast<std::size_t>(k)][i];
+
+                if (std::isnan(reference))
+                {
+                    continue;
+                }
+
+                sweep.Note(std::fabs(out[static_cast<std::size_t>(k)] - reference),
+                           k,
+                           x,
+                           reference,
+                           bound);
+            }
+        }
+    }
+
+    return sweep;
+}
+
+// The sweeps are shared by the accuracy test, the reachable-upper-bound test
+// and the honesty test; computed once, against the bound the code declares.
+const Sweep& SweepFor(std::size_t rung, AccuracyRegion region) {
+    static std::vector<Sweep> cache; // [rung * 3 + region]
+
+    if (cache.empty())
+    {
+        cache.resize(kRungs.size() * kRegions.size());
+
+        for (std::size_t r = 0; r < kRungs.size(); ++r)
+        {
+            for (std::size_t g = 0; g < kRegions.size(); ++g)
+            {
+                cache[r * kRegions.size() + g] = RunSweep(
+                    kRungs[r].tier, kRegions[g], DeclaredReachable(kRungs[r].tier, kRegions[g]));
+            }
+        }
+    }
+
+    return cache[rung * kRegions.size() + static_cast<std::size_t>(region)];
+}
+
+bool BitwiseEqual(const double* a, const double* b, int count) {
+    for (int k = 0; k <= count; ++k)
+    {
+        if (std::bit_cast<std::uint64_t>(a[k]) != std::bit_cast<std::uint64_t>(b[k]))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+std::size_t CountDifferingCells(PathFn a, PathFn b, AccuracyRegion region) {
+    const Grid& grid = Reference();
+
+    if (grid.xs.empty())
+    {
+        return 0;
+    }
+
+    std::vector<double> outa(boys::kMaxBoysOrder + 1, std::nan(""));
+    std::vector<double> outb(boys::kMaxBoysOrder + 1, std::nan(""));
+    std::size_t differ = 0;
+
+    for (double x : grid.xs)
+    {
+        if (RegionOf(x) != region)
+        {
+            continue;
+        }
+
+        for (int nmax = 0; nmax <= boys::kMaxBoysOrder; ++nmax)
+        {
+            std::fill(outa.begin(), outa.end(), std::nan(""));
+            std::fill(outb.begin(), outb.end(), std::nan(""));
+            a(nmax, x, outa.data());
+            b(nmax, x, outb.data());
+
+            if (!BitwiseEqual(outa.data(), outb.data(), nmax))
+            {
+                ++differ;
+            }
+        }
+    }
+
+    return differ;
+}
+
+// ---------------------------------------------------------------------------
+// The declared-bound transcription, checked against the declaration
+// ---------------------------------------------------------------------------
+
+TEST(Tier, TheTranscribedBoundIsTheOneQueryTierDeclares) {
+    EXPECT_DOUBLE_EQ(DeclaredReachable(AccuracyTier::kReference, AccuracyRegion::kA),
+                     kDeclaredBatchBase)
+        << "QueryTier's region A reachable no longer matches the transcribed contract "
+           "table entry - re-read include/boys/boys.hpp";
+    EXPECT_DOUBLE_EQ(DeclaredReachable(AccuracyTier::kReference, AccuracyRegion::kB),
+                     kDeclaredBatchBase)
+        << "QueryTier's region B reachable no longer matches the transcribed contract "
+           "table entry";
+    EXPECT_DOUBLE_EQ(DeclaredReachable(AccuracyTier::kReference, AccuracyRegion::kC),
+                     kDeclaredAsymptotic)
+        << "QueryTier's region C reachable no longer matches the transcribed contract "
+           "table entry";
+}
+
+// ---------------------------------------------------------------------------
+// 1. The rung-to-instantiation mapping
+// ---------------------------------------------------------------------------
+
+TEST(Tier, MappingMatchesTheDeclaredMultiplier) {
+    // AccuracyMultiplier is documented as the multiplier a tier names and the
+    // enumerators state the rungs. A disagreement is the mis-mapping caught
+    // before any number is computed.
+    for (const Rung& rung : kRungs)
+    {
+        EXPECT_DOUBLE_EQ(AccuracyMultiplier(rung.tier), rung.multiplier)
+            << rung.name << " names m = " << rung.multiplier << " but AccuracyMultiplier reports "
+            << AccuracyMultiplier(rung.tier);
+        EXPECT_GT(AccuracyMultiplier(rung.tier), 0.0) << rung.name;
+    }
+}
+
+TEST(Tier, TierIsBitIdenticalToTheCompileTimePathAtItsMultiplier) {
+    const Grid& grid = Reference();
+
+    if (grid.xs.empty())
+    {
+        GTEST_SKIP() << "no reference grid";
+    }
+
+    std::printf("\nreference: %s\n%zu rows, %zu arguments, %zu absent (n, x) cells\n",
+                grid.provenance.c_str(),
+                grid.rows,
+                grid.xs.size(),
+                grid.missing);
+    std::printf("%-15s %-7s %10s %10s %10s %10s\n",
+                "rung",
+                "region",
+                "mismatch",
+                "cells",
+                "cross-TU",
+                "cells");
+
+    for (std::size_t r = 0; r < kRungs.size(); ++r)
+    {
+        const Rung& rung = kRungs[r];
+        std::vector<double> got(boys::kMaxBoysOrder + 1, std::nan(""));
+        std::vector<double> want(boys::kMaxBoysOrder + 1, std::nan(""));
+
+        for (AccuracyRegion region : kRegions)
+        {
+            std::size_t mismatch = 0;
+            std::size_t cells = 0;
+            std::size_t cross_tu = 0;
+            std::size_t cross_cells = 0;
+            double first_x = 0.0;
+            int first_nmax = -1;
+
+            for (double x : grid.xs)
+            {
+                if (RegionOf(x) != region)
+                {
+                    continue;
+                }
+
+                for (int nmax = 0; nmax <= boys::kMaxBoysOrder; ++nmax)
+                {
+                    std::fill(got.begin(), got.end(), std::nan(""));
+                    std::fill(want.begin(), want.end(), std::nan(""));
+                    BoysAllOrdersAtTier(rung.tier, nmax, x, got.data());
+                    kLibraryPaths[r](nmax, x, want.data());
+                    ++cells;
+
+                    if (!BitwiseEqual(got.data(), want.data(), nmax))
+                    {
+                        if (mismatch == 0)
+                        {
+                            first_nmax = nmax;
+                            first_x = x;
+                        }
+
+                        ++mismatch;
+                    }
+
+                    std::fill(want.begin(), want.end(), std::nan(""));
+                    kLocalPaths[r](nmax, x, want.data());
+                    ++cross_cells;
+
+                    if (!BitwiseEqual(got.data(), want.data(), nmax))
+                    {
+                        ++cross_tu;
+                    }
+                }
+            }
+
+            std::printf("%-15s %-7s %10zu %10zu %10zu %10zu\n",
+                        rung.name,
+                        RegionName(region),
+                        mismatch,
+                        cells,
+                        cross_tu,
+                        cross_cells);
+
+            EXPECT_EQ(mismatch, 0U)
+                << rung.name << " (m = " << rung.multiplier << ") is not bit-identical to the "
+                << "compile-time instantiation in region " << RegionName(region)
+                << "; first mismatch at nmax = " << first_nmax << ", x = " << first_x;
+            EXPECT_EQ(cross_tu, 0U)
+                << rung.name << " dispatch disagrees with the instantiation compiled in this "
+                << "translation unit in region " << RegionName(region)
+                << " - the two TUs' codegen differs, so the comparison above needs re-reading";
+        }
+    }
+}
+
+TEST(Tier, RungsAreDistinguishableWhereTheTierVaries) {
+    // The identity test above proves nothing where two rungs produce the same
+    // bits. Region C is m-invariant by construction - the asymptotic form has
+    // no coefficients to truncate - so a region-C-only sweep could not tell a
+    // correct dispatch from a fixed rung. This measures where the rungs
+    // actually differ, per region, so the identity test's reach is stated
+    // rather than assumed.
+    const Grid& grid = Reference();
+
+    if (grid.xs.empty())
+    {
+        GTEST_SKIP() << "no reference grid";
+    }
+
+    std::printf("\n%-7s %-24s %20s\n", "region", "cell pairs that differ", "reference vs m=65536");
+
+    std::size_t total_differ_ab = 0;
+
+    for (AccuracyRegion region : kRegions)
+    {
+        const std::size_t differ = CountDifferingCells(kLibraryPaths[0], kLibraryPaths[6], region);
+        std::size_t cells = 0;
+
+        for (double x : grid.xs)
+        {
+            if (RegionOf(x) == region)
+            {
+                cells += boys::kMaxBoysOrder + 1;
+            }
+        }
+
+        std::printf("%-7s %10zu / %-10zu %20zu\n", RegionName(region), differ, cells, cells);
+
+        if (region != AccuracyRegion::kC)
+        {
+            total_differ_ab += differ;
+        }
+    }
+
+    // Regions A and B carry the relaxable resource, so the rungs must differ
+    // there - otherwise the identity test cannot distinguish any two of them.
+    EXPECT_GT(total_differ_ab, 0U)
+        << "no rung pair differs in regions A or B: the identity test cannot tell the "
+           "rungs apart, so its pass would be vacuous";
+}
+
+// ---------------------------------------------------------------------------
+// 2. The declared per-rung bound
+// ---------------------------------------------------------------------------
+
+TEST(Tier, EveryRungMeetsItsDeclaredBoundOnTheReferenceGrid) {
+    const Grid& grid = Reference();
+
+    if (grid.xs.empty())
+    {
+        GTEST_SKIP() << "no reference grid";
+    }
+
+    std::printf("\n%-15s %-7s %12s %12s %10s %10s %10s\n",
+                "rung",
+                "region",
+                "worst error",
+                "declared",
+                "ratio",
+                "cells",
+                "bound-cov");
+
+    std::printf("reference: %s\n", grid.provenance.c_str());
+
+    for (AccuracyRegion region : kRegions)
+    {
+        std::printf("region %s coverage: %zu arguments%s\n",
+                    RegionName(region),
+                    ArgumentCount(region),
+                    RegionIsCovered(region) ? "" : "  <-- NOT CHECKED (below the floor of 32)");
+    }
+
+    std::size_t not_checked = 0;
+
+    for (std::size_t r = 0; r < kRungs.size(); ++r)
+    {
+        const Rung& rung = kRungs[r];
+
+        for (AccuracyRegion region : kRegions)
+        {
+            const double bound = DeclaredReachable(rung.tier, region);
+            const Sweep& sweep = SweepFor(r, region);
+            const double ratio = sweep.worst > 0.0 ? sweep.worst / bound : 0.0;
+
+            std::printf("%-15s %-7s %12.4e %12.4e %10.4f %10zu %10zu%s\n",
+                        rung.name,
+                        RegionName(region),
+                        sweep.worst,
+                        bound,
+                        ratio,
+                        sweep.cells,
+                        sweep.bound_covered,
+                        RegionIsCovered(region) ? "" : "  NOT CHECKED");
+
+            if (!RegionIsCovered(region))
+            {
+                // Not a pass and not a failure: the reference in the tree
+                // cannot check this region's claim, so the region is reported
+                // as unchecked rather than counted either way.
+                ++not_checked;
+                continue;
+            }
+
+            EXPECT_LE(sweep.worst, bound)
+                << rung.name << " region " << RegionName(region) << ": worst error " << sweep.worst
+                << " at n = " << sweep.worst_n << ", x = " << sweep.worst_x
+                << " exceeds the declared bound " << bound << " (m = " << rung.multiplier << ")";
+        }
+    }
+
+    std::printf("%zu of %zu (rung, region) bound claims were not checked: the reference in the "
+                "tree is too thin in those regions\n",
+                not_checked,
+                kRungs.size() * kRegions.size());
+}
+
+// ---------------------------------------------------------------------------
+// 3. The query surface, against the delivered values
+// ---------------------------------------------------------------------------
+
+TEST(Tier, QueryReachableIsAnUpperBoundOnTheDeliveredError) {
+    // `reachable` is documented as the largest error the tier can deliver in
+    // the region. If the code delivers more, the query has told the caller it
+    // reaches an accuracy it does not have - a report claiming coverage that
+    // is not there, which is the defect this test is for.
+    const Grid& grid = Reference();
+
+    if (grid.xs.empty())
+    {
+        GTEST_SKIP() << "no reference grid";
+    }
+
+    for (std::size_t r = 0; r < kRungs.size(); ++r)
+    {
+        for (AccuracyRegion region : kRegions)
+        {
+            const TierCoverage coverage = QueryTier(kRungs[r].tier, region, 0.0);
+            const Sweep& sweep = SweepFor(r, region);
+
+            // A thin region can only understate the sweep's maximum, so an
+            // upper-bound check there is a vacuous pass rather than evidence.
+            if (!RegionIsCovered(region))
+            {
+                std::printf("NOT CHECKED: %s region %s (reference coverage %zu arguments)\n",
+                            kRungs[r].name,
+                            RegionName(region),
+                            ArgumentCount(region));
+                continue;
+            }
+
+            EXPECT_LE(sweep.worst, coverage.reachable)
+                << kRungs[r].name << " region " << RegionName(region)
+                << ": QueryTier reports reachable = " << coverage.reachable << " but the code "
+                << "delivers " << sweep.worst << " at n = " << sweep.worst_n
+                << ", x = " << sweep.worst_x << " - the report claims coverage it does not have";
+        }
+    }
+}
+
+TEST(Tier, QueryMeetsIsTheToleranceComparisonAndItsAnswerIsHonest) {
+    const Grid& grid = Reference();
+
+    if (grid.xs.empty())
+    {
+        GTEST_SKIP() << "no reference grid";
+    }
+
+    // Tolerances chosen to land on, just under and just over each rung's
+    // reachable, plus the extremes of the documented range.
+    for (std::size_t r = 0; r < kRungs.size(); ++r)
+    {
+        for (AccuracyRegion region : kRegions)
+        {
+            const TierCoverage at_zero = QueryTier(kRungs[r].tier, region, 0.0);
+            const double reachable = at_zero.reachable;
+            const Sweep& sweep = SweepFor(r, region);
+
+            // The delivered-error side of this comparison is only as strong as
+            // the region's reference coverage; a thin region is not counted.
+            const bool region_checked = RegionIsCovered(region);
+
+            const std::array<double, 9> tolerances{{
+                0.0,
+                reachable * 0.25,
+                reachable * 0.999999,
+                reachable,
+                reachable * 1.000001,
+                reachable * 4.0,
+                1e-9,
+                1e-7,
+                1.0,
+            }};
+
+            for (double tolerance : tolerances)
+            {
+                const TierCoverage coverage = QueryTier(kRungs[r].tier, region, tolerance);
+
+                // The answer is the threshold comparison, not a second rule.
+                EXPECT_EQ(coverage.meets, reachable <= tolerance)
+                    << kRungs[r].name << " region " << RegionName(region)
+                    << ": meets = " << coverage.meets << " at tolerance " << tolerance
+                    << " does not follow from reachable = " << reachable;
+                EXPECT_DOUBLE_EQ(coverage.reachable, reachable)
+                    << "reachable must not depend on the tolerance asked about";
+
+                // The honesty direction: a report of coverage is only as good
+                // as the delivered error behind it.
+                if (region_checked && coverage.meets && tolerance < reachable)
+                {
+                    EXPECT_LE(sweep.worst, tolerance)
+                        << kRungs[r].name << " region " << RegionName(region)
+                        << ": QueryTier reports the tier meets a tolerance of " << tolerance
+                        << " but the delivered error reaches " << sweep.worst;
+                }
+            }
+        }
+    }
+}
+
+// The worst error at one argument, over every order of the returned batch.
+// Cached per rung so the per-argument honesty test below is one pass.
+const std::vector<double>& PerArgumentWorst(std::size_t rung) {
+    static std::vector<std::vector<double>> cache;
+
+    if (cache.empty())
+    {
+        const Grid& grid = Reference();
+        cache.resize(kRungs.size());
+
+        for (std::size_t r = 0; r < kRungs.size(); ++r)
+        {
+            std::vector<double>& worst = cache[r];
+
+            if (grid.xs.empty())
+            {
+                continue;
+            }
+
+            worst.assign(grid.xs.size(), 0.0);
+            std::vector<double> out(boys::kMaxBoysOrder + 1, std::nan(""));
+
+            for (std::size_t i = 0; i < grid.xs.size(); ++i)
+            {
+                BoysAllOrdersAtTier(kRungs[r].tier, boys::kMaxBoysOrder, grid.xs[i], out.data());
+
+                for (int k = 0; k <= boys::kMaxBoysOrder; ++k)
+                {
+                    const double reference = grid.values[static_cast<std::size_t>(k)][i];
+
+                    if (std::isnan(reference))
+                    {
+                        continue;
+                    }
+
+                    worst[i] =
+                        std::max(worst[i], std::fabs(out[static_cast<std::size_t>(k)] - reference));
+                }
+            }
+        }
+    }
+
+    return cache[rung];
+}
+
+TEST(Tier, QueryAnsweredForAnArgumentIsHonestAboutThatArgument) {
+    // The sharpest form of the query's promise, and the one that catches a
+    // report answered for the wrong region: asking about THIS argument must
+    // give a reachable that bounds THIS argument's delivered error, and a
+    // `meets` that the delivered error actually satisfies. A caller who names
+    // the region by hand can produce a report about a different region; the
+    // argument-taking entry cannot.
+    const Grid& grid = Reference();
+
+    if (grid.xs.empty())
+    {
+        GTEST_SKIP() << "no reference grid";
+    }
+
+    std::size_t overclaimed = 0;
+    std::size_t dishonest_meets = 0;
+    std::size_t cells = 0;
+    double first_overclaim_x = 0.0;
+    int first_overclaim_rung = -1;
+
+    for (std::size_t r = 0; r < kRungs.size(); ++r)
+    {
+        const std::vector<double>& worst = PerArgumentWorst(r);
+
+        for (std::size_t i = 0; i < grid.xs.size(); ++i)
+        {
+            const double x = grid.xs[i];
+            ++cells;
+
+            const TierCoverage coverage = QueryTier(kRungs[r].tier, x, 0.0);
+
+            if (worst[i] > coverage.reachable)
+            {
+                if (overclaimed == 0)
+                {
+                    first_overclaim_x = x;
+                    first_overclaim_rung = static_cast<int>(r);
+                }
+
+                ++overclaimed;
+            }
+
+            // The tolerance the report itself says is reachable must be met by
+            // the value delivered at this argument.
+            const TierCoverage at_reach = QueryTier(kRungs[r].tier, x, coverage.reachable);
+            EXPECT_TRUE(at_reach.meets) << kRungs[r].name << " at x = " << x
+                                        << ": the report named a reachable error it does not "
+                                        << "meet at its own tolerance";
+
+            if (at_reach.meets && worst[i] > at_reach.reachable)
+            {
+                ++dishonest_meets;
+            }
+        }
+    }
+
+    std::printf("\nper-argument query: %zu (rung, argument) cells, %zu reachable overclaims, "
+                "%zu dishonest meets\n",
+                cells,
+                overclaimed,
+                dishonest_meets);
+
+    EXPECT_EQ(overclaimed, 0U)
+        << "QueryTier(tier, x, ...) reported a reachable error smaller than the code delivers "
+        << "at x = " << first_overclaim_x << " (rung index " << first_overclaim_rung
+        << ") - the report claims coverage it does not have";
+    EXPECT_EQ(dishonest_meets, 0U);
+}
+
+TEST(Tier, NamingTheWrongRegionOverclaimsAndTheArgumentEntryRemovesTheGuess) {
+    // Why the argument-taking entry exists. The region-taking form trusts the
+    // caller's classification, and the region boundaries are internal, so a
+    // caller who guesses is not being conservative: region C's reachable is the
+    // reference tier's at every m, so naming region C for an argument that is
+    // really in region A or B reports a tier reaching m times better than it
+    // does. This measures that hazard per wrong name - the evidence for the
+    // overload, printed rather than asserted at, because the hazard belongs to
+    // a caller's guess and not to the code.
+    const Grid& grid = Reference();
+
+    if (grid.xs.empty())
+    {
+        GTEST_SKIP() << "no reference grid";
+    }
+
+    std::printf("\n%-15s", "rung");
+
+    for (AccuracyRegion named : kRegions)
+    {
+        std::printf("  overclaim-if-named-%s", RegionName(named));
+    }
+
+    std::printf("\n");
+
+    for (std::size_t r = 0; r < kRungs.size(); ++r)
+    {
+        const std::vector<double>& worst = PerArgumentWorst(r);
+        std::printf("%-15s", kRungs[r].name);
+
+        for (AccuracyRegion named : kRegions)
+        {
+            const double reachable = DeclaredReachable(kRungs[r].tier, named);
+            std::size_t overclaims = 0;
+
+            for (std::size_t i = 0; i < grid.xs.size(); ++i)
+            {
+                if (worst[i] > reachable)
+                {
+                    ++overclaims;
+                }
+            }
+
+            std::printf("  %10zu / %-6zu", overclaims, grid.xs.size());
+        }
+
+        std::printf("\n");
+    }
+
+    // The argument-taking entry cannot overclaim: it derives the region, so
+    // every cell it answers for is answered at its own region's bound.
+    std::size_t overclaims = 0;
+
+    for (std::size_t r = 0; r < kRungs.size(); ++r)
+    {
+        const std::vector<double>& worst = PerArgumentWorst(r);
+
+        for (std::size_t i = 0; i < grid.xs.size(); ++i)
+        {
+            if (worst[i] > QueryTier(kRungs[r].tier, grid.xs[i], 0.0).reachable)
+            {
+                ++overclaims;
+            }
+        }
+    }
+
+    EXPECT_EQ(overclaims, 0U);
+}
+
+TEST(Tier, TheEntryHoldsTheBatchRowAndNotThePerRegionColumn) {
+    // The tier entry dispatches to BoysAllOrders - the batch entry - so the
+    // bound it can hold is the batch row of the contract table, m*5.5e-14 in
+    // every region, NOT the three-value per-region column (m*1e-15 in region
+    // A) that the single lane holds. The two differ by up to 5.5e-14/1e-15 =
+    // 55 at m = 1, and by 55*m at a relaxed rung, so a caller who reads the
+    // sentence's "B_region" as the per-region column is told a bound up to
+    // tens of times tighter than the code enforces.
+    //
+    // This is decided by measurement, not by preference: if the per-region
+    // column were this entry's contract, the entry would have to hold m*1e-15
+    // in region A, and at m = 1 it does not. The cell the batch lane is worst
+    // at is the smallest argument, where the extended-band seed serves the
+    // whole recursion, so that is where the two bounds are told apart.
+    const Grid& grid = Reference();
+
+    if (grid.xs.empty())
+    {
+        GTEST_SKIP() << "no reference grid";
+    }
+
+    // The reference tier's own contract, as the header states it for the
+    // single lane and for the batch lane.
+    constexpr double kPerRegionColumnA = 1e-15;
+    constexpr double kBatchRow = 5.5e-14;
+
+    // The smallest positive argument: the cell the batch lane's extended-band
+    // seed serves the whole recursion at. Not x = 0, where every tier returns
+    // 1/(2l+1) exactly and the two bounds cannot be told apart.
+    const double denorm = std::numeric_limits<double>::denorm_min();
+
+    std::printf("\n%-15s %14s %12s %13s %14s\n",
+                "rung",
+                "worst region A",
+                "of m*1e-15",
+                "of m*5.5e-14",
+                "at denorm_min");
+
+    std::vector<double> out(boys::kMaxBoysOrder + 1, std::nan(""));
+    std::size_t outside_per_region = 0;
+    std::size_t outside_batch = 0;
+
+    for (std::size_t r = 0; r < kRungs.size(); ++r)
+    {
+        const Rung& rung = kRungs[r];
+        const double m = rung.multiplier;
+        const double worst = SweepFor(r, AccuracyRegion::kA).worst;
+
+        double at_denorm = 0.0;
+        BoysAllOrdersAtTier(rung.tier, boys::kMaxBoysOrder, denorm, out.data());
+
+        for (int k = 0; k <= boys::kMaxBoysOrder; ++k)
+        {
+            // F_k(denorm_min) = 1/(2k+1) to every digit a double holds: the
+            // integrand's x*t^2 term is below the representation of the result.
+            const double exact = 1.0 / (2.0 * k + 1.0);
+            at_denorm = std::max(at_denorm, std::fabs(out[static_cast<std::size_t>(k)] - exact));
+        }
+
+        std::printf("%-15s %14.4e %12.4f %13.4f %14.4e\n",
+                    rung.name,
+                    worst,
+                    worst / (m * kPerRegionColumnA),
+                    worst / (m * kBatchRow),
+                    at_denorm);
+
+        if (worst > m * kPerRegionColumnA)
+        {
+            ++outside_per_region;
+        }
+
+        if (worst > m * kBatchRow)
+        {
+            ++outside_batch;
+        }
+    }
+
+    std::printf(
+        "region A: %zu of %zu rungs exceed the per-region column, %zu exceed the batch row\n",
+        outside_per_region,
+        kRungs.size(),
+        outside_batch);
+
+    // The decision, pinned: the entry does NOT hold the per-region column, so
+    // the per-region table cannot be this entry's contract...
+    EXPECT_GT(outside_per_region, 0U)
+        << "no rung exceeds the per-region column in region A, so this reference cannot tell "
+        << "the two readings apart - re-check before changing the documented bound";
+    // ...and it does hold the batch row, which is what QueryTier reports. If
+    // this fails, QueryTier IS under-reporting and the code needs the fix, not
+    // the sentence.
+    EXPECT_EQ(outside_batch, 0U)
+        << "a rung exceeds the batch row, so QueryTier under-reports the delivered error";
+}
+
+TEST(Tier, QueryLimitingNamesTheComponentThatBoundsTheRegion) {
+    const std::array<AccuracyComponent, 3> expected{{
+        AccuracyComponent::kRegionASeed,
+        AccuracyComponent::kRegionBFit,
+        AccuracyComponent::kRegionCAsymptotic,
+    }};
+
+    for (const Rung& rung : kRungs)
+    {
+        for (std::size_t g = 0; g < kRegions.size(); ++g)
+        {
+            // Asking for an error no tier can reach: the caller is told what
+            // stops it, and the name must be the region's own component.
+            const TierCoverage coverage = QueryTier(rung.tier, kRegions[g], 0.0);
+            EXPECT_EQ(coverage.limiting, expected[g])
+                << rung.name << " region " << RegionName(kRegions[g]);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 4. Refusal by name: an unavailable tier, and an argument no tier refuses
+// ---------------------------------------------------------------------------
+
+TEST(Tier, UnavailableTierSelectsTheReferenceRungAndWritesEveryOutput) {
+    // There is no named error channel on this surface (void, noexcept), so the
+    // documented refusal is the conservative fallback: an enumerator the
+    // selector does not know evaluates at the reference multiplier, which is
+    // never coarser than any tier the caller could have named. What must never
+    // happen is a SILENT NON-WRITE - the caller reading whatever its buffer
+    // held - so the output is pre-filled with a sentinel that a real evaluation
+    // cannot produce, and the sentinel is asserted gone.
+    const Grid& grid = Reference();
+
+    if (grid.xs.empty())
+    {
+        GTEST_SKIP() << "no reference grid";
+    }
+
+    constexpr double kSentinel = std::numeric_limits<double>::quiet_NaN();
+    const std::array<AccuracyTier, 3> unavailable{{
+        static_cast<AccuracyTier>(7), // one past the last enumerator
+        static_cast<AccuracyTier>(-1), // below the first
+        static_cast<AccuracyTier>(1000),
+    }};
+
+    std::vector<double> got(boys::kMaxBoysOrder + 1);
+    std::vector<double> reference(boys::kMaxBoysOrder + 1);
+
+    for (AccuracyTier tier : unavailable)
+    {
+        for (double x : grid.xs)
+        {
+            for (int nmax = 0; nmax <= boys::kMaxBoysOrder; ++nmax)
+            {
+                std::fill(got.begin(), got.end(), kSentinel);
+                BoysAllOrdersAtTier(tier, nmax, x, got.data());
+
+                for (int k = 0; k <= nmax; ++k)
+                {
+                    ASSERT_FALSE(std::isnan(got[static_cast<std::size_t>(k)]))
+                        << "an unavailable tier (" << static_cast<int>(tier) << ") left out[" << k
+                        << "] unwritten at x = " << x << ", nmax = " << nmax
+                        << ": the caller reads uninitialized memory and no refusal happened";
+                }
+
+                std::fill(reference.begin(), reference.end(), kSentinel);
+                BoysAllOrders<boys::kBoysFullAccuracyMultiplier>(nmax, x, reference.data());
+
+                ASSERT_TRUE(BitwiseEqual(got.data(), reference.data(), nmax))
+                    << "an unavailable tier (" << static_cast<int>(tier)
+                    << ") did not fall back to the reference rung at x = " << x
+                    << ", nmax = " << nmax;
+            }
+        }
+    }
+}
+
+TEST(Tier, UnavailableTierIsReportedAsTheReferenceByTheWholeQuerySurface) {
+    // The query surface and the selector must answer the same question the
+    // same way, or a caller that records the accuracy it asked for beside the
+    // numbers it got records an accuracy it did not get.
+    const std::array<AccuracyTier, 3> unavailable{{
+        static_cast<AccuracyTier>(7),
+        static_cast<AccuracyTier>(-1),
+        static_cast<AccuracyTier>(1000),
+    }};
+
+    for (AccuracyTier tier : unavailable)
+    {
+        EXPECT_DOUBLE_EQ(AccuracyMultiplier(tier), AccuracyMultiplier(AccuracyTier::kReference))
+            << "AccuracyMultiplier(" << static_cast<int>(tier) << ") must name the multiplier "
+            << "the selector actually reaches";
+
+        for (AccuracyRegion region : kRegions)
+        {
+            const TierCoverage got = QueryTier(tier, region, 1e-12);
+            const TierCoverage want = QueryTier(AccuracyTier::kReference, region, 1e-12);
+
+            EXPECT_DOUBLE_EQ(got.reachable, want.reachable) << static_cast<int>(tier);
+            EXPECT_EQ(got.meets, want.meets) << static_cast<int>(tier);
+            EXPECT_EQ(got.limiting, want.limiting) << static_cast<int>(tier);
+        }
+    }
+}
+
+TEST(Tier, NoArgumentIsOutsideAnyTiersRegion) {
+    // The tier entry has no per-tier region restriction: every rung serves all
+    // three regions, and the two regions with a relaxable resource are the ones
+    // the rungs differ in. So there is no "argument outside the tier's region"
+    // to refuse, and the sharpest way to say so is that region C is
+    // BIT-IDENTICAL across every rung - asking any tier for a region C value
+    // gets the same bits, which is the m-invariance the query surface reports
+    // as a constant reachable.
+    const Grid& grid = Reference();
+
+    if (grid.xs.empty())
+    {
+        GTEST_SKIP() << "no reference grid";
+    }
+
+    std::vector<double> base(boys::kMaxBoysOrder + 1);
+    std::vector<double> other(boys::kMaxBoysOrder + 1);
+    std::size_t differs = 0;
+    std::size_t cells = 0;
+
+    for (double x : grid.xs)
+    {
+        if (RegionOf(x) != AccuracyRegion::kC)
+        {
+            continue;
+        }
+
+        for (int nmax = 0; nmax <= boys::kMaxBoysOrder; ++nmax)
+        {
+            BoysAllOrdersAtTier(AccuracyTier::kReference, nmax, x, base.data());
+            ++cells;
+
+            for (std::size_t r = 1; r < kRungs.size(); ++r)
+            {
+                BoysAllOrdersAtTier(kRungs[r].tier, nmax, x, other.data());
+
+                if (!BitwiseEqual(base.data(), other.data(), nmax))
+                {
+                    ++differs;
+                }
+            }
+        }
+    }
+
+    std::printf(
+        "\nregion C: %zu cells, %zu rung disagreements with the reference rung\n", cells, differs);
+
+    EXPECT_EQ(differs, 0U)
+        << "region C is documented as having no relaxable resource, so every rung must "
+        << "return the reference rung's bits there; " << differs << " cells disagree";
+}
+
+TEST(Tier, DeliveredErrorRatiosArePinnedSoASilentRegressionIsVisible) {
+    // The declared bound is loose enough that a regression can hide under it:
+    // at kRelaxed16384 in region B the code delivers 0.21 of m*5.5e-14, so a
+    // rung that got four times worse would still pass the bound test above.
+    // This pins the ratio the code actually delivers, as an UPPER bound at 5%
+    // above the recorded value - a further improvement passes, a regression
+    // does not.
+    //
+    // The ratios are specific to this reference and to this sweep, so they are
+    // pinned only when the accuracy gate's grid is the reference; on the suite
+    // grid the sweep is too thin and the pin is not asserted. Re-baselining is
+    // mechanical: the measured table is printed beside the recorded one.
+    const Grid& grid = Reference();
+
+    if (grid.xs.empty())
+    {
+        GTEST_SKIP() << "no reference grid";
+    }
+
+    // Measured with the accuracy gate's grid; column order matches kRegions.
+    struct Recorded {
+        const char* rung;
+        double ratio[3];
+    };
+
+    constexpr std::array<Recorded, 7> kRecorded{{
+        {"kReference", {0.0585, 0.1807, 0.9091}},
+        {"kRelaxed64", {0.7049, 0.0743, 0.9091}},
+        {"kRelaxed256", {0.7841, 0.5211, 0.9091}},
+        {"kRelaxed1024", {0.9759, 0.1303, 0.9091}},
+        {"kRelaxed4096", {0.8015, 0.8419, 0.9091}},
+        {"kRelaxed16384", {0.6249, 0.2105, 0.9091}},
+        {"kRelaxed65536", {0.9786, 0.0526, 0.9091}},
+    }};
+
+    // 5% above the recorded value: an improvement is a smaller ratio and
+    // passes; a regression beyond 5% is a change to report, not to absorb.
+    constexpr double kPin = 1.05;
+    const bool pinned = grid.provenance.find("accuracy-gate") != std::string::npos;
+
+    std::printf("\n%-15s %-7s %12s %12s %8s\n", "rung", "region", "measured", "recorded", "of pin");
+
+    for (std::size_t r = 0; r < kRungs.size(); ++r)
+    {
+        for (std::size_t g = 0; g < kRegions.size(); ++g)
+        {
+            const double declared = DeclaredReachable(kRungs[r].tier, kRegions[g]);
+            const double measured =
+                declared > 0.0 ? SweepFor(r, kRegions[g]).worst / declared : 0.0;
+            const double recorded = kRecorded[r].ratio[g];
+
+            std::printf("%-15s %-7s %12.4f %12.4f %8.4f\n",
+                        kRungs[r].name,
+                        RegionName(kRegions[g]),
+                        measured,
+                        recorded,
+                        measured / recorded);
+
+            if (!pinned)
+            {
+                continue;
+            }
+
+            EXPECT_LE(measured, recorded * kPin)
+                << kRungs[r].name << " region " << RegionName(kRegions[g]) << " now delivers "
+                << measured << " of its declared bound, against a recorded " << recorded
+                << ". If the reference grid or the sweep changed, re-baseline the "
+                << "table in this test; otherwise a rung got worse inside a bound loose enough "
+                << "to hide it.";
+        }
+    }
+}
+
+TEST(Tier, BoundCoveredCellsAreCountedAndNamedRatherThanPassed) {
+    // The vacuous-pass audit: how much of each rung's green total is a cell
+    // where the declared bound is larger than the function's own magnitude, so
+    // returning zero would pass it too. Printed in full and asserted to be
+    // counted, not hidden - a rung whose whole sweep is bound-covered has not
+    // been tested at all.
+    const Grid& grid = Reference();
+
+    if (grid.xs.empty())
+    {
+        GTEST_SKIP() << "no reference grid";
+    }
+
+    std::printf("\n%-15s %-7s %10s %10s %10s\n", "rung", "region", "cells", "met", "bound-cov");
+
+    for (std::size_t r = 0; r < kRungs.size(); ++r)
+    {
+        for (AccuracyRegion region : kRegions)
+        {
+            const Sweep& sweep = SweepFor(r, region);
+
+            std::printf("%-15s %-7s %10zu %10zu %10zu\n",
+                        kRungs[r].name,
+                        RegionName(region),
+                        sweep.cells,
+                        sweep.met,
+                        sweep.bound_covered);
+
+            EXPECT_LE(sweep.bound_covered, sweep.cells) << kRungs[r].name;
+        }
+    }
+
+    // The reference rung in region A is the certified lane's own pin: its
+    // bound-covered count is the floor the audit is measured against, and it is
+    // reported rather than asserted at - but a rung that is bound-covered
+    // EVERYWHERE in a region would mean no cell of that region distinguishes a
+    // correct implementation from a stub, which is worth failing on.
+    for (std::size_t r = 0; r < kRungs.size(); ++r)
+    {
+        for (AccuracyRegion region : kRegions)
+        {
+            const Sweep& sweep = SweepFor(r, region);
+
+            EXPECT_LT(sweep.bound_covered, sweep.cells)
+                << kRungs[r].name << " region " << RegionName(region)
+                << ": every cell is bound-covered, so no cell of this region distinguishes a "
+                << "correct implementation from one that returns zero";
+        }
+    }
+}
+
+} // namespace

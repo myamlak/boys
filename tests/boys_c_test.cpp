@@ -112,7 +112,7 @@ TEST(BoysCTest, DoubleBatchMatchesCppPerElement) {
     for (std::size_t i = 0; i < xs.size(); ++i)
     {
         std::vector<double> row(nmax + 1);
-        boys::BoysBatch(nmax, xs[i], row.data());
+        boys::BoysAllOrders(nmax, xs[i], row.data());
 
         for (int k = 0; k <= nmax; ++k)
         {
@@ -134,7 +134,7 @@ TEST(BoysCTest, FloatBatchMatchesCppPerElement) {
     for (std::size_t i = 0; i < xs.size(); ++i)
     {
         std::vector<float> row(nmax + 1);
-        boys::BoysBatchF32(nmax, xs[i], row.data());
+        boys::BoysAllOrdersF32(nmax, xs[i], row.data());
 
         for (int k = 0; k <= nmax; ++k)
         {

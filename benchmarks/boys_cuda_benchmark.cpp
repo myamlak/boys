@@ -85,15 +85,16 @@ double StableSeriesF(int n, double x) {
     return 0.5 * std::exp(-x) * sum;
 }
 
-// Builds the 38 x 1025 LUT: rows 0..32 from BoysBatchF64 on the grid
+// Builds the 38 x 1025 LUT: rows 0..32 from BoysCuda::AllNF64 on the grid
 // (certified <= 5.5e-14), rows 33..37 via the stable series above (the
-// degree-5 corrections of order-32 inputs reach F_37). BatchF64 takes
+// degree-5 corrections of order-32 inputs reach F_37). The batch entry takes
 // DEVICE pointers (boys_cuda.hpp), so the grid travels through device
-// memory for the 1025-point batch (once per process).
+// memory for the 1025-point batch (once per process); one nmax covers the
+// whole grid, so the sorted-argument entry applies and no order array is
+// uploaded.
 bool BuildLutRows(std::vector<double>& rows) {
     rows.assign(38 * 1025, 0.0);
     std::vector<double> grid(1025);
-    std::vector<int> nmax(1025, boys::kMaxBoysOrder);
     std::vector<double> batch(33 * 1025);
 
     for (int i = 0; i < 1025; ++i)
@@ -101,15 +102,9 @@ bool BuildLutRows(std::vector<double>& rows) {
         grid[i] = i * 0.03125;
     }
 
-    int* dN = nullptr;
     double* dGrid = nullptr;
     double* dBatch = nullptr;
-    cudaError_t e = cudaMalloc(&dN, 1025 * sizeof(int));
-
-    if (e == cudaSuccess)
-    {
-        e = cudaMalloc(&dGrid, 1025 * sizeof(double));
-    }
+    cudaError_t e = cudaMalloc(&dGrid, 1025 * sizeof(double));
 
     if (e == cudaSuccess)
     {
@@ -122,28 +117,21 @@ bool BuildLutRows(std::vector<double>& rows) {
         return false;
     }
 
-    e = cudaMemcpy(dN, nmax.data(), 1025 * sizeof(int), cudaMemcpyHostToDevice);
-
-    if (e == cudaSuccess)
-    {
-        e = cudaMemcpy(dGrid, grid.data(), 1025 * sizeof(double), cudaMemcpyHostToDevice);
-    }
+    e = cudaMemcpy(dGrid, grid.data(), 1025 * sizeof(double), cudaMemcpyHostToDevice);
 
     if (e != cudaSuccess)
     {
         std::fprintf(stderr, "cudaMemcpy (LUT rows): %s\n", cudaGetErrorString(e));
-        cudaFree(dN);
         cudaFree(dGrid);
         cudaFree(dBatch);
         return false;
     }
 
-    const auto status = boys::BoysCuda::BatchF64(dN, dGrid, dBatch, 1025, nullptr);
+    const auto status = boys::BoysCuda::AllNF64(boys::kMaxBoysOrder, dGrid, dBatch, 1025, nullptr);
 
     if (status != boys::BoysStatus::kSuccess)
     {
-        std::fprintf(stderr, "BatchF64 (LUT rows): status %d\n", static_cast<int>(status));
-        cudaFree(dN);
+        std::fprintf(stderr, "AllNF64 (LUT rows): status %d\n", static_cast<int>(status));
         cudaFree(dGrid);
         cudaFree(dBatch);
         return false;
@@ -152,7 +140,6 @@ bool BuildLutRows(std::vector<double>& rows) {
     // The entry is asynchronous: the readback below is stream-ordered after
     // the batch kernel on the default stream.
     e = cudaMemcpy(batch.data(), dBatch, 33 * 1025 * sizeof(double), cudaMemcpyDeviceToHost);
-    cudaFree(dN);
     cudaFree(dGrid);
     cudaFree(dBatch);
 

@@ -52,8 +52,8 @@
 
 namespace {
 
-using boys::BoysBatch;
-using boys::BoysBatchF32;
+using boys::BoysAllOrders;
+using boys::BoysAllOrdersF32;
 using boys::BoysSingle;
 using boys::BoysSingleF32;
 using boys::detail::BoysRole;
@@ -271,7 +271,7 @@ template <double kM> void SweepDoubleBatch() {
 
     for (const ReferenceRow& row : gReference)
     {
-        BoysBatch<kM>(row.n, row.x, batch.data());
+        BoysAllOrders<kM>(row.n, row.x, batch.data());
 
         for (int k = 0; k <= row.n; ++k)
         {
@@ -310,7 +310,7 @@ template <double kM> void SweepFloatBatch() {
 
     for (const ReferenceRow& row : gReference)
     {
-        BoysBatchF32<kM>(row.n, static_cast<float>(row.x), batch.data());
+        BoysAllOrdersF32<kM>(row.n, static_cast<float>(row.x), batch.data());
 
         for (int k = 0; k <= row.n; ++k)
         {
@@ -467,7 +467,7 @@ template <double kM> void CheckSingleBatchAgree() {
         const double x = xd(rng);
         const BoysRegion region = RegionOf(x);
         const int nmax = static_cast<int>(rng() % (boys::kMaxBoysOrder + 1));
-        BoysBatch<kM>(nmax, x, batch.data());
+        BoysAllOrders<kM>(nmax, x, batch.data());
 
         for (int k = 0; k <= nmax; ++k)
         {
@@ -490,7 +490,7 @@ template <double kM> void CheckSingleBatchAgreeF32() {
         const float x = xd(rng);
         const BoysRegion region = RegionOf(static_cast<double>(x));
         const int nmax = static_cast<int>(rng() % (boys::kMaxBoysOrder + 1));
-        BoysBatchF32<kM>(nmax, x, batch.data());
+        BoysAllOrdersF32<kM>(nmax, x, batch.data());
 
         for (int k = 0; k <= nmax; ++k)
         {
@@ -513,7 +513,7 @@ template <double kM> void CheckZeroArgument() {
     }
 
     double batch[boys::kMaxBoysOrder + 1];
-    BoysBatch<kM>(8, 0.0, batch);
+    BoysAllOrders<kM>(8, 0.0, batch);
 
     for (int k = 0; k <= 8; ++k)
     {
@@ -521,7 +521,7 @@ template <double kM> void CheckZeroArgument() {
     }
 
     float batchF32[boys::kMaxBoysOrder + 1];
-    BoysBatchF32<kM>(8, 0.0f, batchF32);
+    BoysAllOrdersF32<kM>(8, 0.0f, batchF32);
 
     for (int k = 0; k <= 8; ++k)
     {
@@ -606,14 +606,14 @@ void RunHalfSampledCheck(const char* label) {
 
 TEST(BoysAccuracyTest, F16SampledMultipliers) {
     ForEachSampledMultiplier([]<double kM>() {
-        RunHalfSampledCheck<boys::F16, kM, boys::BoysSingleF16<kM>, boys::BoysBatchF16<kM>>(
+        RunHalfSampledCheck<boys::F16, kM, boys::BoysSingleF16<kM>, boys::BoysAllOrdersF16<kM>>(
             "BoysF16");
     });
 }
 
 TEST(BoysAccuracyTest, Bf16SampledMultipliers) {
     ForEachSampledMultiplier([]<double kM>() {
-        RunHalfSampledCheck<boys::Bf16, kM, boys::BoysSingleBf16<kM>, boys::BoysBatchBf16<kM>>(
+        RunHalfSampledCheck<boys::Bf16, kM, boys::BoysSingleBf16<kM>, boys::BoysAllOrdersBf16<kM>>(
             "BoysBf16");
     });
 }

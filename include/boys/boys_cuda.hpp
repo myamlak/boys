@@ -40,16 +40,41 @@ enum class BoysStatus {
 /// on the first call at that m — InitializeTables and the entries are
 /// safe to call from multiple host threads.
 ///
+/// Accuracy is a compile-time property of the call: the entry's
+/// kAccuracyMultiplier selects the certified degree table its instantiation
+/// is built with, which is why the first call at a new m uploads that
+/// instantiation's tables. The lane has no per-call accuracy parameter, and
+/// the multiplier is monotonically relaxing exactly as the CPU lanes
+/// document it.
+///
+/// That is the one place the device surface is narrower than the CPU's. The
+/// CPU's double lane takes an accuracy tier as a per-call argument
+/// (BoysAllOrdersAtTier — one argument, all orders) over the rungs m = 1, 64,
+/// 256, 1024, 4096, 16384, 65536, and answers "what would this tier deliver
+/// here" before the call (QueryTier, AccuracyMultiplier, TierCoverage, which
+/// names the region component that would limit it). The device has no such
+/// parameter: a call is fixed at the m its instantiation was built with
+/// (1, 2, 10, 100, 1e4, 1e8 — a finer set than the CPU's at the low end,
+/// coarser at the top), the entry cannot be handed a tier at run time, and
+/// nothing here reports what an m delivers: that is m * B_region from the
+/// contract table, which the caller computes. A caller carrying a CPU tier
+/// gets the nearest device behaviour by naming, at the call site, the largest
+/// instantiated m whose bound does not exceed the tier's own.
+///
+/// The three shapes per precision family: Single* (one order per argument),
+/// AllOrders* (all orders per argument, top order per element), AllN* (all
+/// orders at every argument, one common top order).
+///
 /// All entries are asynchronous: the kernel is queued on the caller's
 /// stream and the call returns once the launch is accepted (errors are
 /// reported by the return status). Synchronize the stream (or use
 /// cudaStreamSynchronize on a per-call stream) before reading the outputs.
 ///
-/// Count-0 contract asymmetry (documented, not changed — changing it
-/// would be a MAJOR-version error-behavior break): the fp16/bf16 family
-/// validates count == 0 and returns kInvalidArgument, while the fp32/fp64
-/// families accept count == 0 as a no-op zero-thread launch (no kernel
-/// queued, the output untouched, kSuccess).
+/// An empty batch (count == 0) is a no-op in every entry of every family: no
+/// kernel is queued (a zero-block launch is a CUDA error), the output is
+/// untouched, and the call returns kSuccess. The AllN* entries validate nmax
+/// before they look at count, so an out-of-range nmax is kInvalidArgument
+/// whether or not the batch is empty.
 ///
 /// \ingroup boys
 class BoysCuda {
@@ -80,16 +105,21 @@ public:
     static BoysStatus SingleF32(
         const int* n, const double* x, float* out, std::size_t count, void* stream);
 
-    /// F_0(x[i])..F_nmax(x[i]) in single precision per input (i).
+    /// F_0(x[i])..F_nmax(x[i]) in single precision per input (i) — all orders
+    /// at every argument, the top order read per element.
     ///
-    /// Output layout: out[order * count + i] = F_order(x[i]), order 0..nmax[i].
+    /// Output layout: out[order * count + i] = F_order(x[i]), order 0..nmax[i]:
+    /// plane l holds F_l(x[i]) for the arguments whose order reaches l. For a
+    /// batch whose arguments share one top order — every plane fully
+    /// populated, and no order array to upload — use AllNF32.
     /// The region-A seed is computed in double precision on the device — the
     /// downward recursion amplifies float seed errors beyond the certified
     /// 1.5e-7 float budget (same reasoning as the CPU float batch).
     ///
     /// \tparam kAccuracyMultiplier as SingleF32; the batch relaxation covers
     ///   the whole output family via the order-0 region-B entry (the F0
-    ///   seed's error reaches every output with amplification <= 1).
+    ///   seed's error reaches every output with amplification A_B(l), at most
+    ///   1 + 1.846e-17 over the supported orders).
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
     /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
@@ -98,10 +128,46 @@ public:
     ///
     /// \returns kDeviceError when the launch fails.
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
-    static BoysStatus BatchF32(
+    static BoysStatus AllOrdersF32(
         const int* n, const double* x, float* out, std::size_t count, void* stream);
 
-    /// F_n(x[i]) in double precision, |error| <= 5e-14.
+    /// F_0(x[i])..F_nmax(x[i]) at one common nmax, single precision — every
+    /// order at every argument of the batch, in one launch.
+    ///
+    /// Output layout: out[k * count + i] = F_k(x[i]), k = 0..nmax — the
+    /// order-major planes the CPU lane's BoysAllN returns, so a batch moved
+    /// between the CPU and the device lanes is not transposed.
+    ///
+    /// The CPU float lane stops at BoysSingleF32 and BoysAllOrdersF32: it has
+    /// no uniform-order batch, so this entry (and AllNF16, which mirrors it)
+    /// adds a shape the CPU float lane does not have, and takes its layout
+    /// from the double lane's BoysAllN.
+    ///
+    /// \pre x[i - 1] <= x[i] for every i in [1, count): the arguments are
+    ///      non-decreasing. The kernel classifies each argument itself, so an
+    ///      unsorted batch still returns correct values; what the ordering
+    ///      buys is the classification landing on one path per warp. This
+    ///      entry does not sort its arguments (an internal sort is a launch, a
+    ///      permutation and device scratch, and the caller that builds x is
+    ///      the one that knows its order): a batch in arbitrary order is
+    ///      AllOrdersF32 with the order array set to nmax.
+    ///
+    /// \tparam kAccuracyMultiplier as AllOrdersF32; the batch relaxation covers
+    ///   the whole output family via the order-0 region-B entry.
+    /// \param nmax   highest order, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, non-decreasing, each >= 0
+    /// \param out    device array, at least count * (nmax + 1) floats
+    /// \param count  number of arguments
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kInvalidArgument when nmax is outside [0, kMaxBoysOrder],
+    /// kDeviceError when the launch fails.
+    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+    static BoysStatus AllNF32(
+        int nmax, const double* x, float* out, std::size_t count, void* stream);
+
+    /// F_n(x[i]) in double precision, |error| <= 5.5e-14 (the double single
+    /// lane's loosest per-region bound; the others are tighter).
     ///
     /// \tparam kAccuracyMultiplier the accuracy multiplier: m = 1 is the
     ///   bit-identical full-accuracy path; m > 1 relaxes the asserted bound
@@ -117,8 +183,14 @@ public:
     static BoysStatus SingleF64(
         const int* n, const double* x, double* out, std::size_t count, void* stream);
 
-    /// F_0(x[i])..F_nmax(x[i]) in double precision per input (i), layout as
-    /// BatchF32.
+    /// F_0(x[i])..F_nmax(x[i]) in double precision per input (i) — shape and
+    /// layout as AllOrdersF32 (a per-element top order, order-major planes).
+    ///
+    /// This is the entry the CPU's run-time tier entry is shaped like
+    /// (BoysAllOrdersAtTier is one argument, all orders, double), and it takes
+    /// no tier: the multiplier is the template argument below, fixed where the
+    /// call site names it. The class contract states the whole of that
+    /// asymmetry.
     ///
     /// \tparam kAccuracyMultiplier as SingleF64; the batch relaxation covers
     ///   the whole output family via the order-0 region-B entry.
@@ -130,8 +202,31 @@ public:
     ///
     /// \returns kDeviceError when the launch fails.
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
-    static BoysStatus BatchF64(
+    static BoysStatus AllOrdersF64(
         const int* n, const double* x, double* out, std::size_t count, void* stream);
+
+    /// F_0(x[i])..F_nmax(x[i]) at one common nmax, double precision — the
+    /// uniform-order batch: many arguments, all nmax + 1 orders each, the
+    /// layout AllNF32 documents and the bound the CPU lane's BoysAllN
+    /// documents, |F_hat - F| <= m * 5.5e-14 (the double batch lane's
+    /// per-region budget, the same in every region).
+    ///
+    /// \pre x[i - 1] <= x[i] for every i in [1, count) — the ordering contract
+    ///      AllNF32 states, for the reason it states there.
+    ///
+    /// \tparam kAccuracyMultiplier as SingleF64; the batch relaxation covers
+    ///   the whole output family via the order-0 region-B entry.
+    /// \param nmax   highest order, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, non-decreasing, each >= 0
+    /// \param out    device array, at least count * (nmax + 1) doubles
+    /// \param count  number of arguments
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kInvalidArgument when nmax is outside [0, kMaxBoysOrder],
+    /// kDeviceError when the launch fails.
+    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+    static BoysStatus AllNF64(
+        int nmax, const double* x, double* out, std::size_t count, void* stream);
 
 #if BoysFp16
     /// F_n(x[i]) in fp16 — the fp16 lane of the certified mixed-precision
@@ -146,16 +241,15 @@ public:
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of fp16 arguments, >= 0
     /// \param out    device array receiving F_n(x[i]) in fp16
-    /// \param count  number of elements (must be > 0)
+    /// \param count  number of elements; 0 is the no-op the class documents
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     ///
-    /// \returns kInvalidArgument when count == 0, kDeviceError when a device
-    /// operation fails.
+    /// \returns kDeviceError when a device operation fails.
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus SingleF16(
         const int* n, const F16* x, F16* out, std::size_t count, void* stream);
 
-    /// F_0(x[i])..F_nmax(x[i]) in fp16 per input (i), layout as BatchF32
+    /// F_0(x[i])..F_nmax(x[i]) in fp16 per input (i), layout as AllOrdersF32
     /// (out[order * count + i] = F_order(x[i])), device pointers and
     /// stream contract as SingleF16.
     ///
@@ -164,14 +258,34 @@ public:
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of fp16 arguments, >= 0
     /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
-    /// \param count  number of elements (must be > 0)
+    /// \param count  number of elements; 0 is the no-op the class documents
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     ///
-    /// \returns kInvalidArgument when count == 0, kDeviceError when a device
-    /// operation fails.
+    /// \returns kDeviceError when a device operation fails.
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
-    static BoysStatus BatchF16(
+    static BoysStatus AllOrdersF16(
         const int* n, const F16* x, F16* out, std::size_t count, void* stream);
+
+    /// F_0(x[i])..F_nmax(x[i]) at one common nmax in fp16 — the uniform-order
+    /// batch of the fp16 lane, layout as AllNF32, device pointers and stream
+    /// contract as SingleF16. Like AllNF32 it has no CPU fp16 counterpart (the
+    /// CPU fp16 lane stops at BoysSingleF16 and BoysAllOrdersF16).
+    ///
+    /// \pre x[i - 1] <= x[i] for every i in [1, count) — the ordering contract
+    ///      AllNF32 states, for the reason it states there.
+    ///
+    /// \tparam kAccuracyMultiplier as SingleF16; the batch relaxation covers
+    ///   the whole output family via the order-0 region-B entry.
+    /// \param nmax   highest order, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, non-decreasing, each >= 0
+    /// \param out    device array, at least count * (nmax + 1) fp16 values
+    /// \param count  number of arguments; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kInvalidArgument when nmax is outside [0, kMaxBoysOrder],
+    /// kDeviceError when a device operation fails.
+    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+    static BoysStatus AllNF16(int nmax, const F16* x, F16* out, std::size_t count, void* stream);
 #endif // BoysFp16
 };
 

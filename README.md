@@ -7,7 +7,7 @@
 
 Self-contained C++23 evaluation of the Boys function family
 F_n(x) = ∫₀¹ t^(2n) exp(−x t²) dt for n = 0..32 — scalar fp64/fp32
-lanes, an AVX2 region-sorted SIMD lane, fp16/bf16 I/O wrappers, and
+lanes, an AVX2 vector tier reached through the same entries, fp16/bf16 I/O wrappers, and
 optional CUDA kernels. The library depends on nothing outside the C++
 standard library, the optional CUDA toolkit, and the committed generated
 tables. Every lane is validated against a committed 45-digit reference
@@ -30,7 +30,17 @@ int main()
     double f0 = boys::BoysSingle(0, 0.5);  // F_0(0.5)
 
     std::array<double, 8> out;
-    boys::BoysBatch(7, 1.25, out.data());  // F_0..F_7(1.25)
+    boys::BoysAllOrders(7, 1.25, out.data());  // F_0..F_7(1.25)
+
+    // Many arguments, all orders: the batch shape an integral engine needs.
+    // Arguments may arrive in any order; the entry classifies, groups and
+    // dispatches internally. out[k * count + i] = F_k(x[i]).
+    const double x[3] = {0.5, 12.5, 30.0};
+    std::array<double, 3 * 33> planes;
+    boys::BoysAllN(32, x, planes.data(), 3);
+
+    // Already non-decreasing? Say so and skip the sort.
+    boys::BoysAllN(32, x, planes.data(), 3, boys::BoysSortedArgs{});
 }
 ```
 
@@ -47,8 +57,24 @@ and the region definitions):
 | double batch | ≤ m·5.5e-14 | ≤ m·5.5e-14 | ≤ m·5.5e-14 | ≤ m·5.5e-14 |
 | float single / batch | ≤ m·1.5e-7 | ≤ m·1.5e-7 | ≤ m·1.5e-7 | ≤ m·1.5e-7 |
 | fp16 / bf16 | ≤ m·1e-7 + ½ ULP | ≤ m·1e-7 + ½ ULP | ≤ m·1e-7 + ½ ULP | ≤ m·1e-7 + ½ ULP |
+| native half | — | — | ≤ 8 ULP of the returned value |
 | CUDA fp64 | same m·budgets as the CPU double lanes, verified directly against the reference grid | |
 | CUDA fp32 | same m·budgets as the CPU float lanes; GPU-vs-CPU cross-lane budget 3.5e-7 | |
+
+The last of those is the only lane that does not round once per value. The
+fp16/bf16 row is fp16 *I/O* around the fp32 engine, so its error is the
+engine's; the native half lane (`BoysAllOrdersHalf2`, `BoysAllNF16Native`)
+evaluates region C's ladder in packed binary16, one correctly rounded
+operation per step, which is what buys two arguments to a register and costs
+the accuracy its own bound names: ≤ 8 ULP of the returned value, measured at
+a worst of 4.3 ULP. Its output is 2^15 F_k(x) — the exact scale that keeps
+the ladder in the format's normal range down to F_k(x) = 2^-29, which is x up
+to 359 / 128 / 30 at orders 3 / 4 / 8. **That is the ceiling of the claim:**
+past those arguments the entry returns a subnormal half and then a zero by
+design, and no accuracy is claimed there, so a caller that has to be right at
+those orders and arguments wants the double or float lane. It is a region-C
+entry: x must be at or above the region-C boundary, and there is no fallback
+to the table regions.
 
 Public function signatures and supported domains are stable within a
 major version. Bitwise outputs, internal region thresholds, seed

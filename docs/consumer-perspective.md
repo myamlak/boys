@@ -72,9 +72,13 @@ consequence did not materialise, and **it should not be carried forward as thoug
 Accuracy work needs to know which term is binding, and the answer is not the certified one.
 
 For the shipped `F_0` table over `[0, X0)`, the truncation error **of the fit** is around
-`5e-19`, while **rounding the coefficients to double contributes about `3e-17`** — the
-half-ulp of the leading coefficient alone. Every band is rounding-limited at roughly
-`1e-16` to `2e-16`. Meanwhile the generator's own fit bar for the region is `2.5e-14`.
+`5e-19`, while **rounding the coefficients to double contributes about `5.551e-17`** — the
+half-ulp of the leading coefficient alone, which sits in the binade where a half-ulp *is*
+`5.551e-17`. This paragraph said `3e-17`, and `3e-17` is the half-ulp of no double in that
+binade: **the figure was a recollection rather than a rounding of the shipped literal**, and it
+is corrected here to the number exact arithmetic on the shipped coefficient gives. Every band is
+rounding-limited at roughly `1e-16` to `2e-16`. Meanwhile the generator's own fit bar for the
+region is `2.5e-14`.
 
 **So the delivered error is set by coefficient rounding, and neither the truncation bound
 nor the fit bar is what determines it.** Any change aimed at accuracy should start from that.
@@ -98,10 +102,24 @@ model contains no `R`, so it understates the high-order coefficients — by five
 magnitude at four orders and by eight at six, in one realistic case. **The angular-momentum
 factors are what does this, and they dominate the double factorial completely.**
 
-**And the amplification does not grow either.** Region B's amplification factor is below one
-for every supported order — the band edge is chosen that way on purpose, so that recursion
-*contracts* — and region A's returns to one by the highest order. So the two effects the
-argument set against each other do not pull in opposite directions; neither grows.
+**And the amplification does not grow either.** Region B's amplification factor is one up to a
+last-digit excess for every supported order — **`1 + 1.846e-17` at order 32, which is above one**
+— and region A's returns to one by the highest order. This paragraph said the factor "is below one
+for every supported order", and **that was wrong in the direction the sentence was making its
+point with**: the band edge is chosen so the recursion neither amplifies nor contracts, and with
+the shipped `x0` it lands a hair on the amplifying side. The normalized gain is
+`prod(2j−1)/(2 x0)^l`, which the edge is chosen to make exactly 1; at `l = 32` the shipped double
+`x0 = 11.899848152108484` puts it at `1 + 1.846e-17`, a figure reached here in double-double
+arithmetic and independently by exact rational arithmetic. **Two further sites carry the same
+inequality in source comments** — `src/boys_impl.hpp` ("`A_B(l) = prod(j+1/2)/x0^l <= A_B(0) = 1`",
+at the region-B dispatch and again by the batch entry) and `src/boys_cuda.cu` (the same
+`A_B(0) = 1` at the CUDA region-B dispatch and the batch entry) — and they are **reported by the
+accuracy gate rather than edited by it**: the gate measures this tree's code and does not rewrite
+it. The arithmetic they need is the normalisation above. (Read as the literal product
+`prod(j + ½)/x0^l` instead — the form those comments write — the order-32 value is 65, not 1; that
+is not the quantity the edge is tuned against, and saying so is the part those sites still owe.)
+So the two effects the argument set against each other do not pull in opposite directions; neither
+grows, and the one that does not grow stops one rounding short of being exactly flat.
 
 **What is actually there, measured:** the slack per order runs between about five hundred and
 twenty thousand, **flat across the orders rather than growing**, and the coefficient tails vary

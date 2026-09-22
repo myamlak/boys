@@ -18,9 +18,12 @@ current release's tree; that commit carries the release tag.
 
 1. **The accuracy contract is the contract.** Every merged change must
    keep the committed reference grid green (`ctest`) at the documented
-   budgets: 5e-14 fp64, 1e-7 fp32, fp32 + one half-ULP fp16/bf16. A
-   change that needs a budget relaxation is a contract-level claim change —
-   it belongs in an issue for the maintainer first, not in a PR.
+   budgets: 5.5e-14 fp64 (its loosest per-region budget), 1.5e-7 fp32,
+   1e-7 + one half-ULP fp16/bf16, and 8 ULP of the returned value for the
+   native half lane (its bound is in ULP of the returned value rather than
+   in a region budget). A change that needs a budget relaxation
+   is a contract-level claim change — it belongs in an issue for the
+   maintainer first, not in a PR.
 2. **No internal references, ever.** Comments, commit messages, and docs
    must not reference internal decision numbers, internal doc paths, stage
    or track names, or any private repository. The only sanctioned citations

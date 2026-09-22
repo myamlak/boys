@@ -72,7 +72,7 @@ int RunBatchDouble(int nmax, int count, const double* x, double* out) {
             return BOYS_ERROR_INVALID_ARGUMENT;
         }
 
-        boys::BoysBatch(nmax, x[i], row);
+        boys::BoysAllOrders(nmax, x[i], row);
 
         for (int k = 0; k <= nmax; ++k)
         {
@@ -198,7 +198,7 @@ int BoysFloatBatch(int nmax, int count, const float* x, float* out) {
             return BOYS_ERROR_INVALID_ARGUMENT;
         }
 
-        boys::BoysBatchF32(nmax, x[i], row);
+        boys::BoysAllOrdersF32(nmax, x[i], row);
 
         for (int k = 0; k <= nmax; ++k)
         {

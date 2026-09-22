@@ -2,7 +2,8 @@
 
 The boys kernel evaluates the Boys function family
 F_n(x) = ∫₀¹ t^(2n) exp(−x t²) dt, n = 0..32, in scalar fp64/fp32,
-AVX2 region-sorted SIMD, fp16/bf16 I/O, and optional CUDA lanes.
+an AVX2 vector tier behind the same entries, fp16/bf16 I/O, and optional CUDA
+lanes.
 Source and quick start: the [GitHub repository](https://github.com/myamlak/boys).
 
 ## Entry points
@@ -11,32 +12,36 @@ All CPU entries are `noexcept` and total: preconditions are n in
 [0, 32], x >= 0, and output spans of the documented size. The CUDA
 lane reports through \ref boys::BoysStatus instead. Every
 entry is templated on one compile-time accuracy multiplier
-`kAccuracyMultiplier` (default 1; see the accuracy contract below).
+`kAccuracyMultiplier` (default 1) except the native half lane, which has no
+relaxable resource and no region but region C (see the accuracy contract
+below).
 
 | Entry point | Lane |
 |---|---|
-| \ref boys::BoysSingle, \ref boys::BoysBatch | scalar fp64, single argument / order batch F_0..F_nmax |
+| \ref boys::BoysSingle, \ref boys::BoysAllOrders | scalar fp64, single argument / order batch F_0..F_nmax |
 | \ref boys::BoysFixedN | fp64, one order over an array of arguments, strided |
-| \ref boys::BoysSingleF32, \ref boys::BoysBatchF32 | scalar fp32 (the batch form seeds in double) |
-| \ref boys::BoysRegionASimd, \ref boys::BoysRegionBSimd, \ref boys::BoysRegionCSimd | AVX2 + FMA region-sorted fp64; arrays pre-partitioned by region, gate on \ref boys::BoysAvx2Available |
-| \ref boys::BoysSingleF16, \ref boys::BoysBatchF16, \ref boys::BoysSingleBf16, \ref boys::BoysBatchBf16 | fp16/bf16 scalar I/O around the fp32 engine |
-| \ref boys::BoysRegionASimdF16, \ref boys::BoysRegionBSimdF16, \ref boys::BoysRegionCSimdF16 | fp16 AVX2 region lanes (F16C) |
-| \ref boys::BoysRegionASimdBf16, \ref boys::BoysRegionBSimdBf16, \ref boys::BoysRegionCSimdBf16 | bf16 AVX2 region lanes |
-| \ref boys::BoysCuda::InitializeTables, \ref boys::BoysCuda::SingleF32, \ref boys::BoysCuda::BatchF32, \ref boys::BoysCuda::SingleF64, \ref boys::BoysCuda::BatchF64, \ref boys::BoysCuda::SingleF16, \ref boys::BoysCuda::BatchF16 | CUDA lane (optional build); device arrays with an opaque stream handle; the tables upload on first use, `InitializeTables` is an optional warm-up |
+| \ref boys::BoysAllN | fp64, all nmax + 1 orders over an array of arguments, order-major planes; classifies, groups and dispatches internally (\ref boys::BoysSortedArgs skips the sort for a non-decreasing array) |
+| \ref boys::BoysSingleF32, \ref boys::BoysAllOrdersF32 | scalar fp32 (the batch form seeds in double) |
+| \ref boys::BoysSingleF16, \ref boys::BoysAllOrdersF16, \ref boys::BoysSingleBf16, \ref boys::BoysAllOrdersBf16 | fp16/bf16 scalar I/O around the fp32 engine |
+| \ref boys::BoysAllOrdersHalf2, \ref boys::BoysAllNF16Native | native half: region C's ladder in packed binary16 (\ref boys::Half2), one correctly rounded half operation per step, two arguments to a register, results scaled by 2^15 (\ref boys::kHalfNativeScaleExponent) |
+| \ref boys::BoysCuda::InitializeTables, \ref boys::BoysCuda::SingleF32, \ref boys::BoysCuda::AllOrdersF32, \ref boys::BoysCuda::AllNF32, \ref boys::BoysCuda::SingleF64, \ref boys::BoysCuda::AllOrdersF64, \ref boys::BoysCuda::AllNF64, \ref boys::BoysCuda::SingleF16, \ref boys::BoysCuda::AllOrdersF16, \ref boys::BoysCuda::AllNF16 | CUDA lane (optional build); device arrays with an opaque stream handle; the tables upload on first use, `InitializeTables` is an optional warm-up; `AllOrders*` is the all-orders batch at a per-element order, `AllN*` is the device \ref boys::BoysAllN (one top order for the batch, order-major planes) and takes non-decreasing arguments, since it never sorts |
 
 ## Architecture
 
-The AVX2 region lanes are x86_64-only by construction: their kernels are
+The AVX2 vector tier is x86_64-only by construction: its kernels are
 AVX2/FMA intrinsics and the translation unit is compiled with `-mavx2 -mfma
 -mf16c` (GCC/Clang) or `/arch:AVX2` (MSVC). On every other target the library
-still builds, and the twelve region entry points above are defined against the
-certified scalar lanes instead — same signatures, same contracts, and the same
-numerics as the scalar tails the x86 entries already run for their last
-`count % 4` elements (region B keeps its transposed `out[l * count + i]`
-layout). \ref boys::BoysAvx2Available reports `false` there; that predicate is
+still builds, and the tier's region kernels are defined against the certified
+scalar lanes instead — same contracts, and the same numerics as the scalar
+tails the x86 kernels already ran for their last
+`count % 4` elements. \ref boys::BoysAvx2Available reports `false` there; that predicate is
 what separates "the vector tier is absent on this target" from "the vector tier
 is silently dead on this target", which is why the CI matrix asserts it per
 architecture rather than trusting a green build.
+
+The region kernels themselves are internal: a caller that reached them directly
+would have to partition its arguments by region first, which is the work
+\ref boys::BoysAllN exists to do. The entries above are the surface.
 
 ## Types
 
@@ -56,8 +61,17 @@ lane, and region, m the accuracy multiplier of the call:
 | double batch | ≤ m·5.5e-14 | ≤ m·5.5e-14 | ≤ m·5.5e-14 | ≤ m·5.5e-14 |
 | float single / batch | ≤ m·1.5e-7 | ≤ m·1.5e-7 | ≤ m·1.5e-7 | ≤ m·1.5e-7 |
 | fp16 / bf16 | ≤ m·1e-7 + ½ ULP | ≤ m·1e-7 + ½ ULP | ≤ m·1e-7 + ½ ULP | ≤ m·1e-7 + ½ ULP |
+| native half | — | — | ≤ 8 ULP of the returned value |
 | CUDA fp64 | same m·budgets as the CPU double lanes, verified directly | |
 | CUDA fp32 | same m·budgets as the CPU float lanes; GPU-vs-CPU 3.5e-7 | |
+
+The native half lane is the one exception to the region-budget form above: it
+covers region C only, its results are the scaled values 2^15 F_k(x), and its
+bound is stated in ULP of the returned value (≤ 8 ULP, measured at a worst of
+4.3). Its domain ends at F_k(x) = 2^-29 — x about 359 / 128 / 30 at orders
+3 / 4 / 8 — where the return becomes a subnormal half and then a zero by
+design: past that argument the lane claims nothing, and a caller that has to
+be right there wants the double or float lane.
 
 Public signatures and supported domains are stable within a major
 version; bitwise outputs are not (pin the release tag, compiler, and
@@ -65,6 +79,10 @@ flags for exact reproducibility). The full contract statement and the
 region definitions are in the header comments (see \ref boys::BoysSingle),
 and the certified boundaries are pinned by the committed reference grid
 (`tests/data/boys_reference.csv`).
+
+Where each lane's bound holds, where it stops, and what sets its ceiling
+are in [the per-lane contract and limitations](lane-contract.md), beside
+the design notes.
 
 ## Indexes
 
