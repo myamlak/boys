@@ -816,12 +816,6 @@ double LargestXSparsable(const Reference& ref, int order, double field)
     return best;
 }
 
-// The reference's own magnitude decade, for a printed location.
-int DecadeOf(double v)
-{
-    return v > 0.0 ? static_cast<int>(std::floor(std::log10(v))) : 0;
-}
-
 // ---------------------------------------------------------------------------
 // The documented claims, and the verdict this run gives each one.
 // ---------------------------------------------------------------------------
@@ -922,28 +916,6 @@ Verdict FromAccum(const Accum& a)
     }
 
     return Verdict::Verified;
-}
-
-Verdict Combine(std::initializer_list<Verdict> vs)
-{
-    bool anyVacuous = false;
-
-    for (const Verdict v : vs)
-    {
-        if (v == Verdict::Exceeded)
-        {
-            return Verdict::Exceeded;
-        }
-
-        if (v == Verdict::Verified)
-        {
-            return Verdict::Verified;
-        }
-
-        anyVacuous = anyVacuous || v == Verdict::Vacuous;
-    }
-
-    return anyVacuous ? Verdict::Vacuous : Verdict::EvidenceAbsent;
 }
 
 // Region B's amplification A_B(n) = prod_{j=1..n} (j + 1/2) / x0^n, the

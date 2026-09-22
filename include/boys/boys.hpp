@@ -250,7 +250,7 @@ constexpr double AccuracyMultiplier(AccuracyTier tier) noexcept {
 struct TierCoverage {
     bool meets = false; ///< the tier delivers an error at or below the request
     double reachable = 0.0; ///< the largest error the tier can deliver here
-    AccuracyComponent limiting = AccuracyComponent::kRegionCAsymptotic;
+    AccuracyComponent limiting = AccuracyComponent::kRegionCAsymptotic; ///< the component that limits the tier when a tighter error is asked for
 };
 
 /// The accuracy a tier delivers for arguments in \p region, and the component
