@@ -72,12 +72,17 @@
 ///
 /// The delivered figures are the worst found, against the committed 45-digit
 /// reference grid and against a 200000-point sweep of the lower band's left
-/// end, where these modes are worst. The \c kFp64 figure is the fitted
-/// polynomial's own truncation: the product adds nothing measurable to what the
-/// coefficients already cost, and it is the same figure the shipped split
-/// Clenshaw delivers. The two split-mode figures are their format's floor. The
-/// sweep is what found them - the grid alone samples 1.24e-07 and 1.37e-07 at
-/// those modes and understates the worst by about 1.5 times.
+/// end, where these modes are worst. The 200000 is that sweep's own size and
+/// not the size of the suite's: the dense-sweep test in the tree runs 20000
+/// points of the same form, which is a coarser instrument and reports a
+/// correspondingly lower worst, so its printed number and the figures above
+/// are not the same measurement and the difference is the grid rather than
+/// the lane. The \c kFp64 figure is the fitted polynomial's own truncation:
+/// the product adds nothing measurable to what the coefficients already cost,
+/// and it is the same figure the shipped split Clenshaw delivers. The two
+/// split-mode figures are their format's floor. The sweep is what found them -
+/// the grid alone samples 1.24e-07 and 1.37e-07 at those modes and understates
+/// the worst by about 1.5 times.
 ///
 /// **The multiplier does not move the ceiling, and for the two split modes it
 /// does not move the bound either.** A mode's floor is its format's, which no
