@@ -72,6 +72,17 @@
 #define BOYS_GATE_NATIVE_HALF 1
 #endif
 
+// The region-A transform lane is an entry of its own and carries its own
+// header and its own published bounds. The same rule applies to it: a revision
+// that does not carry the header must report the lane's claims as evidence
+// absent rather than skip them, so its measurement is guarded here and the
+// guard is stated in the report; the claim slots exist either way, so the count
+// of claims does not move when the lane lands - only their verdicts do.
+#if __has_include("boys/boys_transform.hpp")
+#include <boys/boys_transform.hpp>
+#define BOYS_GATE_TRANSFORM 1
+#endif
+
 #include "boys/boys_impl.hpp" // the region kernels and the relaxed bodies
 
 #include <algorithm>
@@ -140,6 +151,41 @@ constexpr int kBf16MinNormalExp = -126;
 // exceeds it.
 constexpr double kF16Field = 65504.0 * 16777216.0;        // 65504 * 2^24
 constexpr double kF16NormalField = 65504.0 * 16384.0;     // 65504 * 2^14
+
+// The region-A transform lane (include/boys/boys_transform.hpp): the double
+// table's two shared bands evaluated as one matrix product per band, in a mode
+// the caller names. Its published bounds are the double single lane's region-A
+// budget for kFp64 - the product adds nothing measurable to the coefficients'
+// own truncation - and that same budget plus the fp32 accumulator's own floor
+// for the two split modes. The two split modes' rows are a claim about the
+// modelled arithmetic and not about a tensor core on a card; the lane's own
+// preamble says which way the idealisation can be wrong, and the rows below
+// say it again rather than leaving it to a reader who starts at the table.
+constexpr double kTransformSplitFloor = 2.5e-7;
+constexpr double kTransformFp64Bound = kBoundSingleA; // m*1e-15
+constexpr double kTransformSplitBound = kBoundSingleA + kTransformSplitFloor;
+// The multiplier the lane's rung claim is measured at: the fp64 mode's
+// multiplier is live from m = 2 upward, so a relaxed width exists to measure.
+constexpr double kTransformRung = 1024.0;
+
+// The delivered worst each mode publishes over region A - the table in
+// include/boys/boys_transform.hpp (1.110e-16, 1.916e-07, 1.946e-07), which the
+// prose in that header, in README and in docs/lane-contract.md rounds to
+// 1.11e-16, 1.92e-07 and 1.95e-07. The tighter of the two readings is the one
+// the rows hold the sweep to.
+constexpr double kTransformFp64Delivered = 1.11e-16;
+constexpr double kTransformTf32x3Delivered = 1.916e-07;
+constexpr double kTransformBf16x6Delivered = 1.946e-07;
+// The figures above are stated to four figures, and that is the precision they
+// are claims at: the fp64 mode's 1.110e-16 is 2^-53 written to four figures -
+// the exact maximum is 1.11022e-16 - so a row comparing a sweep's own worst
+// against the printed digits without this would refute a document that is right
+// to the figure it printed. A delivered figure is a swept maximum and not a
+// bound; the bound is the m*B column beside it in the same table.
+constexpr int kTransformFigures = 4;
+// The figure the lane's multiplier paragraph names as the floor the fits' term
+// cannot reach: "cannot reach 1.9e-07 until m is about 1.9e8".
+constexpr double kTransformSplitFloorPublished = 1.9e-07;
 
 // How many exceeded points a claim prints before the report's own worst-cell
 // line takes over; a sweep that fails everywhere would otherwise bury it.
@@ -376,6 +422,22 @@ double HalfBound(double got, int mantissaBits, int minNormalExp) {
 
 bool Unrepresentable(double got, int minNormalExp) {
     return got == 0.0 || std::fabs(got) < std::ldexp(1.0, minNormalExp);
+}
+
+// A value's significand to `figures` figures, as an integer: two published
+// accuracy figures are compared at the precision the document states them at,
+// which is the only precision at which a rounded measurement is a claim at all.
+// It is an integer comparison so that the two sides cannot disagree over a
+// rounding of the comparison itself.
+long long SignificantInt(double v, int figures) {
+    if (v == 0.0 || !std::isfinite(v))
+    {
+        return 0;
+    }
+
+    const double exponent = std::floor(std::log10(std::fabs(v)));
+    const double scaled = std::fabs(v) / std::pow(10.0, exponent - (figures - 1));
+    return static_cast<long long>(std::llround(scaled));
 }
 
 // ---------------------------------------------------------------------------
@@ -1034,6 +1096,25 @@ int main(int argc, char** argv) {
     // base bound (baseBound is display only, as for the relaxed rungs).
     const int kNativeHalf2 = AddClaim("native packed half", "C", 0.0);
     const int kNativeHalfBatch = AddClaim("native packed half batch", "C", 0.0);
+    // The region-A transform lane's modes: one slot per mode, each carrying the
+    // mode's published bound over region A - both bands, every order, every
+    // argument of the band. The slots exist in every revision - the rows below
+    // read them - and carry no points where the tree has no
+    // boys/boys_transform.hpp.
+    const int kTransformFp64 = AddClaim("transform kFp64", "A", kTransformFp64Bound);
+    const int kTransformTf32x3 = AddClaim("transform kTf32x3", "A", kTransformSplitBound);
+    const int kTransformBf16x6 = AddClaim("transform kBf16x6", "A", kTransformSplitBound);
+    // The same lane at a relaxed multiplier: one rung per mode, where the
+    // documented bound is m*1e-15 for fp64 and m*1e-15 + 2.5e-7 for the two
+    // split modes.
+    const int kTransformRung1024 = AddClaim("transform kFp64 m=1024", "A",
+                                            kTransformRung * kTransformFp64Bound);
+    const int kTransformTf32x3Rung = AddClaim("transform kTf32x3 m=1024", "A",
+                                              kTransformRung * kTransformFp64Bound +
+                                                  kTransformSplitFloor);
+    const int kTransformBf16x6Rung = AddClaim("transform kBf16x6 m=1024", "A",
+                                              kTransformRung * kTransformFp64Bound +
+                                                  kTransformSplitFloor);
     // The run-time accuracy tier's rungs: one slot per multiplier the tier can
     // select. The slots exist in every revision - the rows below read them -
     // and carry no points where the tree has no BoysAllOrdersAtTier.
@@ -1103,6 +1184,97 @@ int main(int argc, char** argv) {
             }
         }
     }
+
+    // ---- the region-A transform lane ---------------------------------------
+    // The double table's two shared bands as one matrix product per band, in
+    // each of the published modes, measured by the same instrument as every
+    // other lane: this gate's own committed reference, at the same arguments,
+    // every order, against the mode's published bound. The entry takes one
+    // band's arguments and neither sorts nor classifies them - the band a call
+    // is handed is its precondition - so the caller groups them here, which is
+    // also what keeps a cell from being measured against the other band's fit.
+#ifdef BOYS_GATE_TRANSFORM
+    {
+        for (int band = 0; band < 2; ++band)
+        {
+            const boys::RegionABand which =
+                (band == 0) ? boys::RegionABand::kA1 : boys::RegionABand::kA2;
+            std::vector<double> xs;
+            std::vector<std::size_t> arg;
+
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                const bool inBand = (band == 0)
+                                        ? (ref.x[i] < boys::kRegionA1Edge)
+                                        : (ref.x[i] >= boys::kRegionA1Edge &&
+                                           ref.x[i] < boys::kRegionAEnd);
+
+                if (inBand)
+                {
+                    xs.push_back(ref.x[i]);
+                    arg.push_back(i);
+                }
+            }
+
+            if (xs.empty())
+            {
+                continue;
+            }
+
+            const std::size_t batch = xs.size();
+            std::vector<double> out(batch * static_cast<std::size_t>(nmax + 1));
+
+            // One mode's product, then every cell it wrote, measured against
+            // the reference at the argument that cell belongs to.
+            const auto sweep = [&](int slot, auto run) {
+                run();
+
+                for (int n = 0; n <= nmax; ++n)
+                {
+                    for (std::size_t j = 0; j < batch; ++j)
+                    {
+                        const double got = out[static_cast<std::size_t>(n) * batch + j];
+                        const std::size_t k = ref.Index(n, arg[j]);
+
+                        Measure(slot,
+                                n,
+                                xs[j],
+                                got,
+                                ref.v[k],
+                                ref.decade[k],
+                                Claims()[static_cast<std::size_t>(slot)].baseBound,
+                                Unrepresentable(got, -1022));
+                    }
+                }
+            };
+
+            sweep(kTransformFp64, [&] {
+                boys::BoysRegionAProduct<boys::ProductMode::kFp64>(
+                    which, nmax, xs.data(), out.data(), batch);
+            });
+            sweep(kTransformTf32x3, [&] {
+                boys::BoysRegionAProduct<boys::ProductMode::kTf32x3>(
+                    which, nmax, xs.data(), out.data(), batch);
+            });
+            sweep(kTransformBf16x6, [&] {
+                boys::BoysRegionAProduct<boys::ProductMode::kBf16x6>(
+                    which, nmax, xs.data(), out.data(), batch);
+            });
+            sweep(kTransformRung1024, [&] {
+                boys::BoysRegionAProduct<boys::ProductMode::kFp64, kTransformRung>(
+                    which, nmax, xs.data(), out.data(), batch);
+            });
+            sweep(kTransformTf32x3Rung, [&] {
+                boys::BoysRegionAProduct<boys::ProductMode::kTf32x3, kTransformRung>(
+                    which, nmax, xs.data(), out.data(), batch);
+            });
+            sweep(kTransformBf16x6Rung, [&] {
+                boys::BoysRegionAProduct<boys::ProductMode::kBf16x6, kTransformRung>(
+                    which, nmax, xs.data(), out.data(), batch);
+            });
+        }
+    }
+#endif
 
     // ---- double batch: the per-argument all-orders entry -------------------
     {
@@ -2909,6 +3081,229 @@ int main(int argc, char** argv) {
             floatWorstRel,
             floatWorstRelN,
             floatWorstRelX));
+
+    // ---- the region-A transform lane ---------------------------------------
+    // The lane's own header and the three published documents state its
+    // accuracy claims; these seven rows are those claims. Three carry the bound
+    // a caller is held to, three the delivered worst the documents publish, and
+    // one the multiplier's rung where the bound is allowed to move. The two
+    // split modes' rows say again what those bounds are - an idealisation of a
+    // 32-bit tensor-core accumulator, measured here in software - so a green
+    // row is not read as a statement about a card. No row here says anything
+    // about speed, and the lane's own preamble claims none.
+    {
+        const Accum& fp64 = Claims()[static_cast<std::size_t>(kTransformFp64)];
+        const Accum& tf32 = Claims()[static_cast<std::size_t>(kTransformTf32x3)];
+        const Accum& bf16 = Claims()[static_cast<std::size_t>(kTransformBf16x6)];
+        const Accum& rung = Claims()[static_cast<std::size_t>(kTransformRung1024)];
+        const Accum& tf32Rung = Claims()[static_cast<std::size_t>(kTransformTf32x3Rung)];
+        const Accum& bf16Rung = Claims()[static_cast<std::size_t>(kTransformBf16x6Rung)];
+        const Accum& splitRung = (tf32Rung.worstErr >= bf16Rung.worstErr) ? tf32Rung : bf16Rung;
+        const std::size_t splitRungCells = tf32Rung.points + bf16Rung.points;
+        const std::size_t splitRungFailures = tf32Rung.failures + bf16Rung.failures;
+        const std::string kTransformDomain =
+            "region A - both bands, x < kRegionA1Edge and kRegionA1Edge <= x < kRegionAEnd - "
+            "every order 0..32, every argument of the band. The band is the entry's "
+            "precondition rather than a convenience: the coefficient matrix is the band's, so "
+            "the sweep groups the arguments by band itself and a cell is never measured against "
+            "the other band's fits";
+        const std::string kSplitIdealisation =
+            " The bound is an idealisation of an fp32 tensor-core accumulator and not a "
+            "measurement of a card: this sweep measures the software model the lane's preamble "
+            "describes, which accumulates fp32 with round-to-nearest and a full roll-over, and "
+            "a card's fused sum truncates and aligns its addends instead, so a card's error can "
+            "be worse than this row's and never better. A green row here is not evidence that a "
+            "card is inside the bound, and the lane's own paragraph says the same";
+
+        add("transform.fp64.bound",
+            "the region-A transform's fp64 mode: |F_hat - F| <= m*1e-15 over region A - the "
+            "double single lane's region-A budget, both bands, every order, every argument",
+            "include/boys/boys_transform.hpp preamble (the bounds table); docs/lane-contract.md, "
+            "the region-A transform lane; README, the region-A transform paragraph",
+            fp64.points == 0 ? Verdict::EvidenceAbsent : verdictOf({kTransformFp64}),
+            fp64.points == 0
+                ? std::string("this revision carries no boys/boys_transform.hpp, so no mode of "
+                              "the lane is measured here and none of its bounds is either "
+                              "confirmed or refuted")
+                : worstOf({kTransformFp64}),
+            kTransformDomain);
+
+        add("transform.fp64.delivered",
+            "the fp64 mode's delivered worst over region A is 1.110e-16 - the per-order fits' "
+            "own truncation, which the product adds nothing measurable to",
+            "include/boys/boys_transform.hpp preamble (the delivered column of its bounds "
+            "table); docs/lane-contract.md; README, both of which round it to 1.11e-16",
+            fp64.points == 0
+                ? Verdict::EvidenceAbsent
+                : ((SignificantInt(fp64.worstErr, kTransformFigures) <=
+                    SignificantInt(kTransformFp64Delivered, kTransformFigures) &&
+                    kTransformFp64Delivered <= kTransformFp64Bound)
+                       ? Verdict::Verified
+                       : Verdict::Exceeded),
+            fp64.points == 0
+                ? std::string("this revision carries no boys/boys_transform.hpp")
+                : Fmt("this gate's grid: worst %.6g at (n=%d, x=%.6g), which is the published "
+                      "figure at the %d figures the table states it to - the exact maximum is "
+                      "2^-53 - against the mode's budget %.4g. The published figure is a swept "
+                      "maximum, over the committed reference grid and a dense sweep of the "
+                      "lower band's left end, so this row holds the code to it at the precision "
+                      "the document states and cannot re-find the maximum that produced it: a "
+                      "regression the four figures would carry - the fifth digit moving by one "
+                      "- is what this row is sized to catch",
+                      fp64.worstErr,
+                      fp64.worstN,
+                      fp64.worstX,
+                      kTransformFigures,
+                      kTransformFp64Bound),
+            kTransformDomain,
+            "the row fails in either direction: if a cell of the grid delivers more than the "
+            "published figure the document's own number is refuted by this instrument, and if "
+            "the published figure ever exceeds the mode's budget the document would be "
+            "publishing a measurement outside the bound it states for the mode");
+
+        add("transform.tf32x3.bound",
+            "the region-A transform's 3xTF32 mode: |F_hat - F| <= m*1e-15 + 2.5e-7 over "
+            "region A, the fp32 accumulator's own floor plus the fits' term",
+            "include/boys/boys_transform.hpp preamble (the bounds table); docs/lane-contract.md, "
+            "the region-A transform lane; README, the region-A transform paragraph",
+            tf32.points == 0 ? Verdict::EvidenceAbsent : verdictOf({kTransformTf32x3}),
+            tf32.points == 0
+                ? std::string("this revision carries no boys/boys_transform.hpp")
+                : worstOf({kTransformTf32x3}) + kSplitIdealisation,
+            kTransformDomain);
+
+        add("transform.tf32x3.delivered",
+            "the 3xTF32 mode's delivered worst over region A is 1.916e-07 - its 32-bit "
+            "accumulator's floor, not the operand split's - which the prose rounds to 1.92e-07",
+            "include/boys/boys_transform.hpp preamble (the delivered column of its bounds "
+            "table); docs/lane-contract.md and README, which round it to 1.92e-07",
+            tf32.points == 0
+                ? Verdict::EvidenceAbsent
+                : ((SignificantInt(tf32.worstErr, kTransformFigures) <=
+                    SignificantInt(kTransformTf32x3Delivered, kTransformFigures) &&
+                    kTransformTf32x3Delivered <= kTransformSplitBound)
+                       ? Verdict::Verified
+                       : Verdict::Exceeded),
+            tf32.points == 0
+                ? std::string("this revision carries no boys/boys_transform.hpp")
+                : Fmt("this gate's grid: worst %.6g at (n=%d, x=%.6g), inside the published "
+                      "%.4g by %.3g and inside the mode's budget %.4g. The published figure is "
+                      "the maximum over the committed reference grid and a dense sweep of the "
+                      "lower band's left end, where these modes are worst, and the grid alone "
+                      "understates it - the lane's own preamble says so and gives the two grid "
+                      "samples - so this row holds the code to the published figure at every "
+                      "argument of the grid and cannot re-find the maximum that produced it: a "
+                      "regression narrower than the %.2g between the two would hide from it",
+                      tf32.worstErr,
+                      tf32.worstN,
+                      tf32.worstX,
+                      kTransformTf32x3Delivered,
+                      kTransformTf32x3Delivered - tf32.worstErr,
+                      kTransformSplitBound,
+                      kTransformTf32x3Delivered - tf32.worstErr),
+            kTransformDomain + "." + kSplitIdealisation);
+
+        add("transform.bf16x6.bound",
+            "the region-A transform's bf16x6 mode: |F_hat - F| <= m*1e-15 + 2.5e-7 over "
+            "region A, the fp32 accumulator's own floor plus the fits' term",
+            "include/boys/boys_transform.hpp preamble (the bounds table); docs/lane-contract.md, "
+            "the region-A transform lane; README, the region-A transform paragraph",
+            bf16.points == 0 ? Verdict::EvidenceAbsent : verdictOf({kTransformBf16x6}),
+            bf16.points == 0
+                ? std::string("this revision carries no boys/boys_transform.hpp")
+                : worstOf({kTransformBf16x6}) + kSplitIdealisation,
+            kTransformDomain);
+
+        add("transform.bf16x6.delivered",
+            "the bf16x6 mode's delivered worst over region A is 1.946e-07 - its 32-bit "
+            "accumulator's floor - which the prose rounds to 1.95e-07",
+            "include/boys/boys_transform.hpp preamble (the delivered column of its bounds "
+            "table); docs/lane-contract.md and README, which round it to 1.95e-07",
+            bf16.points == 0
+                ? Verdict::EvidenceAbsent
+                : ((SignificantInt(bf16.worstErr, kTransformFigures) <=
+                    SignificantInt(kTransformBf16x6Delivered, kTransformFigures) &&
+                    kTransformBf16x6Delivered <= kTransformSplitBound)
+                       ? Verdict::Verified
+                       : Verdict::Exceeded),
+            bf16.points == 0
+                ? std::string("this revision carries no boys/boys_transform.hpp")
+                : Fmt("this gate's grid: worst %.6g at (n=%d, x=%.6g), inside the published "
+                      "%.4g by %.3g and inside the mode's budget %.4g. The published figure is "
+                      "a swept maximum - over the committed reference grid and a dense sweep of "
+                      "the lower band's left end - so this row holds the code to it at every "
+                      "argument of the grid and cannot re-find the maximum that produced it: a "
+                      "regression narrower than the %.2g between the two would hide from it",
+                      bf16.worstErr,
+                      bf16.worstN,
+                      bf16.worstX,
+                      kTransformBf16x6Delivered,
+                      kTransformBf16x6Delivered - bf16.worstErr,
+                      kTransformSplitBound,
+                      kTransformBf16x6Delivered - bf16.worstErr),
+            kTransformDomain + "." + kSplitIdealisation);
+
+        // The multiplier's rung. The lane's paragraph says the fp64 mode's
+        // bound is the double lane's m*1e-15 at every m with the multiplier
+        // live from m = 2 upward, and that the two split modes' bound is their
+        // accumulator's floor over the whole documented range because the fits'
+        // term cannot reach 1.9e-07 until m is about 1.9e8. One rung measures
+        // both halves: the three modes' bounds at m = 1024, the width that is
+        // what the multiplier buys, and the cross-over the split modes' half of
+        // the sentence rests on.
+        const bool widthRelaxed =
+            boys::detail::BandDegreeAtMultiplier<0>(kTransformRung) <
+            boys::detail::BandDegreeAtMultiplier<0>(1.0);
+        const double crossOver = (kTransformSplitFloorPublished / kTransformFp64Bound) + 1.0;
+
+        add("transform.multiplier.rung",
+            "the multiplier's two halves on this lane: the fp64 mode's bound is m*1e-15 with "
+            "its width relaxed from m = 2 upward, and the two split modes' bound is their "
+            "accumulator's floor over the whole documented range, the fits' term not reaching "
+            "1.9e-07 until m is about 1.9e8",
+            "include/boys/boys_transform.hpp preamble (the multiplier paragraph); "
+            "docs/lane-contract.md, the region-A transform lane",
+            rung.points == 0
+                ? Verdict::EvidenceAbsent
+                : ((rung.failures == 0 && splitRungFailures == 0 && widthRelaxed &&
+                    crossOver >= 1.0e8 && crossOver <= 3.0e8)
+                       ? Verdict::Verified
+                       : Verdict::Exceeded),
+            rung.points == 0
+                ? std::string("this revision carries no boys/boys_transform.hpp")
+                : Fmt("at m = %.0f: fp64 %zu cells, worst %.6g at (n=%d, x=%.6g) against its "
+                      "budget %.6g, %zu outside it; the two split modes %zu cells, worst %.6g "
+                      "at (n=%d, x=%.6g) against theirs. The lower band's width is %d "
+                      "coefficients at m = 1 and %d at m = %.0f, so the multiplier moves the "
+                      "arithmetic and not the budget alone. The split modes' half of the "
+                      "sentence is arithmetic on two published numbers rather than a "
+                      "measurement, and this row carries it as such: their floor %.4g divided "
+                      "by the fits' term %.4g puts the cross-over at m = %.6g, four orders "
+                      "past the largest multiplier the rest of this surface samples",
+                      kTransformRung,
+                      rung.points,
+                      rung.worstErr,
+                      rung.worstN,
+                      rung.worstX,
+                      rung.worstBound,
+                      rung.failures,
+                      splitRungCells,
+                      splitRung.worstErr,
+                      splitRung.worstN,
+                      splitRung.worstX,
+                      boys::detail::BandDegreeAtMultiplier<0>(1.0),
+                      boys::detail::BandDegreeAtMultiplier<0>(kTransformRung),
+                      kTransformRung,
+                      kTransformSplitFloorPublished,
+                      kTransformFp64Bound,
+                      crossOver),
+            kTransformDomain,
+            "the row fails if a cell at the rung is outside its mode's bound - the sentence is "
+            "about every m, so m = 1024 is a cell of it and not a sample of the m = 1 row - or "
+            "if the width does not relax at m = 1024, when the multiplier would buy nothing, or "
+            "if the cross-over the split modes' half rests on leaves the order of magnitude the "
+            "document states for it");
+    }
 
     add("LC.half.budget",
         "the half lane stays inside its budget at every order tested",
