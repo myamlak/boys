@@ -1,6 +1,6 @@
 #include "boys/boys.hpp"
 #include "boys/boys_coefficients.hpp"
-#include "boys_impl.hpp"
+#include "boys/boys_impl.hpp"
 
 #include <cassert>
 #include <cstddef>

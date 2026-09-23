@@ -4,9 +4,11 @@ cmake_minimum_required(VERSION 3.25)
 #
 # Layout: public headers under include/boys/, sources under src/,
 # tests under tests/ (gtest, vendored), benchmark drivers under
-# benchmarks/, the regeneration script under tools/. The library exports
-# only the m = 1 instantiations of the templated entries (extern-template
-# architecture, see src/boys.cpp); the CUDA lane is an optional second
+# benchmarks/, the regeneration script under tools/. The templated entries'
+# kernel ships in the headers, so a consumer instantiates whichever accuracy
+# multiplier it names; the library itself exports the default m = 1
+# instantiations and the sampled rungs (extern-template architecture, see
+# include/boys/boys.hpp and src/boys.cpp). The CUDA lane is an optional second
 # target that needs the CUDA toolkit (device pins are a documented local
 # gate — CI has no GPU leg and never builds it). No PCH in this tree.
 #
@@ -421,8 +423,8 @@ endif()
 
 # --- Generator byte-identity gate (top-level convenience targets) -----------
 # --check regenerates the Chebyshev tables and the reference grid into a temp
-# and byte-compares against the committed files (default paths: src/boys_
-# coefficients.hpp and tests/data/boys_reference.csv — spelled out here and
+# and byte-compares against the committed files (default paths: include/boys/
+# boys_coefficients.hpp and tests/data/boys_reference.csv — spelled out here and
 # in CI). The generator is deterministic (mpmath pinned in
 # requirements-boys.txt), so --check over the committed files is the
 # identity proof; CI additionally runs the no-args in-place regeneration

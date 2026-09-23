@@ -657,4 +657,40 @@ void BoysAllNF16Native(int nmax, const F16* x, F16* out, std::size_t count) noex
 
 #endif // BoysFp16
 
+/// \cond
+// Hidden from the API reference: each of these is an instantiation of the
+// entries declared above at the default multiplier, not an entry of its own.
+// They are what the default call sites link against instead of compiling the
+// kernel again in their own translation unit; a caller that names any other
+// multiplier compiles the rung it asks for from the definition below.
+extern template double BoysSingle<kBoysFullAccuracyMultiplier>(int n, double x) noexcept;
+extern template void BoysAllOrders<kBoysFullAccuracyMultiplier>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysFixedN<kBoysFullAccuracyMultiplier>(
+    int n, const double* x, double* out, std::size_t count, std::size_t stride) noexcept;
+extern template void BoysAllN<kBoysFullAccuracyMultiplier>(
+    int nmax, const double* x, double* out, std::size_t count, std::size_t* workspace) noexcept;
+extern template void BoysAllN<kBoysFullAccuracyMultiplier>(
+    int nmax, const double* x, double* out, std::size_t count, BoysSortedArgs) noexcept;
+extern template float BoysSingleF32<kBoysFullAccuracyMultiplier>(int n, float x) noexcept;
+extern template void BoysAllOrdersF32<kBoysFullAccuracyMultiplier>(
+    int nmax, float x, float* out) noexcept;
+
+#if BoysFp16
+extern template F16 BoysSingleF16<kBoysFullAccuracyMultiplier>(int n, F16 x) noexcept;
+extern template void BoysAllOrdersF16<kBoysFullAccuracyMultiplier>(
+    int nmax, F16 x, F16* out) noexcept;
+extern template Bf16 BoysSingleBf16<kBoysFullAccuracyMultiplier>(int n, Bf16 x) noexcept;
+extern template void BoysAllOrdersBf16<kBoysFullAccuracyMultiplier>(
+    int nmax, Bf16 x, Bf16* out) noexcept;
+#endif // BoysFp16
+/// \endcond
+
 } // namespace boys
+
+// The kernel behind the entries above, shipped as a header so that every
+// multiplier a caller names is instantiable at the call site. The reference
+// documents the entries; this is their implementation. It is included here
+// rather than at the top of this file because its definitions name the
+// declarations above.
+#include "boys/boys_impl.hpp"

@@ -1,6 +1,6 @@
 #include "boys/boys.hpp"
 
-#include "boys_impl.hpp"
+#include "boys/boys_impl.hpp"
 
 // Boys function kernel. Region structure (fixed kmax=32 boundaries, the
 // configuration validated end-to-end against the mpmath reference grid):
@@ -13,13 +13,15 @@
 //   D_0 = 1, D_1 = 2v - 1 (same three-term recurrence as T_j).
 // std::fma is used explicitly - MSVC does not contract without /fp:fast.
 //
-// The kernel bodies live in boys_impl.hpp — the accuracy-multiplier
+// The kernel bodies live in boys/boys_impl.hpp — the accuracy-multiplier
 // template definitions: every entry is compiled twice under
 // if constexpr, the m = 1 branch being today's certified body verbatim
 // (the bit-identity pin). This TU provides the default m = 1 explicit
 // instantiations that the extern-template declarations in boys.hpp route
-// every call site to — no implicit instantiation, no code
-// duplication across TUs, zero cost on the m = 1 path.
+// every default call site to — no implicit instantiation, no code
+// duplication across TUs, zero cost on the m = 1 path. A call site that
+// names any other multiplier compiles its rung from the shipped definition
+// instead of linking here.
 
 namespace boys {
 

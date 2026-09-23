@@ -1,11 +1,18 @@
 #pragma once
 
 // The template definitions behind the accuracy-multiplier surface of
-// boys/boys.hpp. Internal header: callers all use the default m = 1, which the
-// extern-template
-// declarations in boys.hpp route to the explicit instantiations in
-// boys.cpp / boys_simd.cpp; the sampled-m instantiations (the contract
-// tests) include this header directly for their definitions.
+// boys/boys.hpp: the kernel every templated entry of that header is compiled
+// from, shipped so that every value of kAccuracyMultiplier those entries
+// document is instantiable at the caller's call site. boys/boys.hpp includes
+// this header at its end, after the entries it defines and the tags they name
+// are declared, which is the only order in which the definitions compile: it
+// is a continuation of that header, not a header a translation unit includes
+// on its own.
+//
+// The library's own instantiations are the default m = 1 set and the sampled
+// rungs (boys.cpp / boys_simd.cpp). The extern-template declarations in
+// boys/boys.hpp route the default call sites to them; a call site that names
+// any other multiplier compiles the rung it asks for from here.
 //
 // Every entry is compiled twice under if constexpr: the m = 1 branch is
 // today's certified body VERBATIM (the bit-identity pin — the
@@ -15,9 +22,17 @@
 // The relaxed region-C paths are m-invariant (the asymptotic form has no
 // coefficients to truncate); only their scalar tails carry the multiplier.
 
-#include "boys/boys.hpp"
+/// \cond
+// Not API: the kernel the entries are compiled from. The header ships because
+// the entries are header-defined; the API reference documents the entries.
+
+#include "boys/accuracy.hpp"
 #include "boys/boys_coefficients.hpp"
 #include "boys/boys_effective_degrees.hpp"
+
+#if BoysFp16
+#include "boys/f16.hpp"
+#endif
 
 #include <algorithm>
 #include <array>
@@ -1580,3 +1595,5 @@ template <double kAccuracyMultiplier> void BoysAllOrdersBf16(int nmax, Bf16 x, B
 #endif // BoysFp16
 
 } // namespace boys
+
+/// \endcond

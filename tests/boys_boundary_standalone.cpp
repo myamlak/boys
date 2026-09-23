@@ -603,7 +603,7 @@ bool RunPostCheckAll() {
 
 // ---------------------------------------------------------------------------
 // [4] the extended-band path (the per-range seed design), copied verbatim
-// from the shipped kernel (external/boys/src/boys_impl.hpp, the
+// from the shipped kernel (external/boys/include/boys/boys_impl.hpp, the
 // RegionBExtendedSeed dispatch of BoysSingleImpl<1.0>): the F0 fit on
 // [kExtendedBX0, kX0) plus the upward step, dispatched per kmax tier at the
 // certified kTierBoundaries. The constants are exact decimal copies of the

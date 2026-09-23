@@ -49,7 +49,7 @@
 // reference rather than to the library under test.
 
 #include "boys/boys.hpp"
-#include "boys_impl.hpp" // kX0/kX1, the region kernels, BoysAllOrdersImpl
+#include "boys/boys_impl.hpp" // kX0/kX1, the region kernels, BoysAllOrdersImpl
 
 #include <algorithm>
 #include <array>

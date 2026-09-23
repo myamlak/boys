@@ -72,7 +72,7 @@
 #define BOYS_GATE_NATIVE_HALF 1
 #endif
 
-#include "boys_impl.hpp" // the region kernels and the relaxed bodies
+#include "boys/boys_impl.hpp" // the region kernels and the relaxed bodies
 
 #include <algorithm>
 #include <array>
@@ -3498,7 +3498,7 @@ int main(int argc, char** argv) {
         add("LC.regionB.amplification",
             "[corrected this revision] region B's amplification is one plus 1.8e-17 at order 32 "
             "- above one, not at most one - and that is its maximum over the supported orders",
-            "src/boys_impl.hpp (\"A_B(l) = prod(j+1/2)/x0^l <= A_B(0) = 1\"); "
+            "include/boys/boys_impl.hpp (\"A_B(l) = prod(j+1/2)/x0^l <= A_B(0) = 1\"); "
             "docs/consumer-perspective.md (\"below one for every supported order\")",
             (amplNormExcess > 0.0 && amplNormExcess < 1e-15 && amplNormMaxAt == nmax)
                 ? Verdict::Verified

@@ -36,7 +36,7 @@
 
 #include "boys/boys.hpp"
 #include "boys/half2.hpp"
-#include "boys_impl.hpp"
+#include "boys/boys_impl.hpp"
 
 #include <algorithm>
 #include <array>

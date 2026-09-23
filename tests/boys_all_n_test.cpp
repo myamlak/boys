@@ -27,7 +27,7 @@
 #include "boys/boys.hpp"
 #include "boys/boys_coefficients.hpp"
 #include "boys/boys_effective_degrees.hpp"
-#include "boys_impl.hpp"
+#include "boys/boys_impl.hpp"
 
 #include <algorithm>
 #include <array>
