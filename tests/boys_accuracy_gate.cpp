@@ -3417,30 +3417,97 @@ int main(int argc, char** argv) {
         "failure, and the counters above are the number of them; it also fails if a point "
         "past the ceiling returns a usable value the count does not carry");
 
+    // The half lane binds where |F_n(x)| exceeds its ceiling, and F_n falls
+    // with x, so region C is entirely past the ceiling for an order exactly
+    // when the branch's left edge is. That is the onset order the paragraph
+    // claims, so the row measures the onset rather than a proxy for it. Every
+    // return at that magnitude is subnormal, and a subnormal half has one
+    // quantum, so each of those orders sits against the same ceiling.
+    const double subnormalCeiling =
+        kBoundHalfBase + 0.5 * UlpOf(0.0, kF16MantissaBits, kF16MinNormalExp);
+    std::size_t edgeIndex = count;
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        if (ref.x[i] == boys::detail::kX1)
+        {
+            edgeIndex = i;
+            break;
+        }
+    }
+
+    const bool edgeOnGrid = edgeIndex < count;
+
+    const auto pastCeilingAtX1 = [&](int order) {
+        if (!edgeOnGrid)
+        {
+            return false;
+        }
+
+        const double got = static_cast<double>(static_cast<float>(
+            boys::BoysSingleF16(order, boys::F16(static_cast<float>(ref.x[edgeIndex])))));
+
+        return std::fabs(ref.v16[ref.Index(order, edgeIndex)]) <=
+               kBoundHalfBase + 0.5 * UlpOf(got, kF16MantissaBits, kF16MinNormalExp);
+    };
+
+    const auto edgeValue = [&](int order) {
+        return edgeOnGrid ? std::fabs(ref.v16[ref.Index(order, edgeIndex)]) : 0.0;
+    };
+
+    // The order the whole of region C is past the ceiling from: 3, 4 and 5
+    // carry cells the lane does claim over, so the onset is not their
+    // neighbour.
+    int ceilingOnset = nmax + 1;
+
+    for (int order = 0; order <= nmax; ++order)
+    {
+        if (pastCeilingAtX1(order))
+        {
+            ceilingOnset = order;
+            break;
+        }
+    }
+
     add("LC.half.range_from_order3",
-        "from order 3 upward on region C every argument is past the ceiling: the returns are "
-        "subnormal then exactly zero, and the lane claims no accuracy for them",
+        "from order 3 upward on region C every return is a subnormal half or zero, and from "
+        "order 6 upward every argument of the branch is past the ceiling, so no accuracy is "
+        "claimed there. Orders 3, 4 and 5 are inside the range the lane does claim over: "
+        "they still carry cells whose value exceeds the ceiling",
         "docs/lane-contract.md, half",
-        (refNormalX[3] < boys::detail::kX1 && f16Single.failures == 0) ? Verdict::Verified
-                                                                      : Verdict::Exceeded,
+        (refNormalX[3] < boys::detail::kX1 && f16Single.failures == 0 && ceilingOnset == 6)
+            ? Verdict::Verified
+            : Verdict::Exceeded,
         Fmt("reference order 3 reaches the half type's normal range nowhere at or above "
             "region C's start x=%.6g (no such argument on the grid; the largest argument "
             "of the branch that is normal is %.6g at order 2 and %.6g at order 1), so no "
             "argument of the branch is normal unscaled; the lane's largest normal return "
             "is x=%.6g at order 2 and its largest nonzero return x=%.6g at order 6 "
-            "(reference %.6g); delivered worst is %.3g of budget",
+            "(reference %.6g); at the branch's left edge, fp16(%.6g) = %.6g, order 3 has "
+            "%.4g against the subnormal ceiling %.4g, 4 has %.4g, 5 has %.4g and 6 has "
+            "%.4g, so the onset order is %d; delivered worst is %.3g of budget",
             boys::detail::kX1,
             refNormalX[2],
             refNormalX[1],
             laneNormalX[2],
             laneNonzeroX[6],
             refZeroX[6],
+            boys::detail::kX1,
+            edgeOnGrid ? ref.x16[edgeIndex] : 0.0,
+            edgeValue(3),
+            subnormalCeiling,
+            edgeValue(4),
+            edgeValue(5),
+            edgeValue(6),
+            ceilingOnset,
             f16Single.worstRatio),
         "orders 3 to 32 on region C (x >= kX1), the part of the half lane's argument range "
-        "where the return is the format's floor rather than a number",
-        "the row fails if an argument of the branch at order 3 or above returns a normal half "
-        "that the sweep does not account for, or if the reference's own order-3 value becomes "
-        "normal somewhere on the branch");
+        "where the returns are subnormal or zero",
+        "the row fails if the onset order is not 6 - that is, if an order below 6 is already "
+        "entirely past the ceiling, or if one from 6 upward still carries a cell inside it, "
+        "which is exactly what the whole-branch reading asserts - if an argument of the "
+        "branch at order 3 or above returns a normal half that the sweep does not account "
+        "for, or if the reference's own order-3 value becomes normal somewhere on the branch");
 
     // Withdrawn: "a per-order power-of-two scale carries order 3 to x ~ 361,
     // order 4 to 129, order 8 to 30". The reaches themselves rest on the
