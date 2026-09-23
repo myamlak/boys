@@ -1,202 +1,128 @@
-# Design notes: the library seen from its consumer's side
+# The library from its consumer's side
 
-This note is about what the library is *for*, as distinct from what it does. Its numbers —
-evaluations per second, accuracy per lane, bytes per table — describe the library. A consumer needs
-numbers about the calculation the library sits inside, and those have not been measured.
+This note is about what the library is *for*, not what it does. The library's own numbers describe
+the library. A consumer needs numbers about the calculation the library sits inside.
 
-It records reasoning and open questions, not settled design.
+## How much of a calculation is this function?
 
-## The question that comes first — now measured
+About **ten percent** of an integral evaluation, measured on a 586-basis-function fixture of 74
+atoms.
 
-**What share of an integral evaluation is this function at all?** Nothing in this
-repository can answer that, because it is a measurement inside a consumer. **It has now been
-taken in one.**
+Treat that as a floor, not a ceiling. The measurement replays a tight loop rather than instrumenting
+the engine, so it understates the share. Machine load moved it by a third between two runs half an
+hour apart. Ten percent is the right order of magnitude, not three significant figures.
 
-**The answer is about ten percent** — 10.3 percent of the integral span as the best estimate,
-between 4.9 and 10.3 percent across runs, on a 586-basis-function fixture of 74 atoms. The
-figure is a **floor, not a ceiling**, because the estimator replays a tight loop rather than
-instrumenting the engine. **Machine load moved it by a third between two runs half an hour
-apart**, so ten percent is the right order and not three significant figures.
+Three findings beside it matter more than the share itself.
 
-**Three findings beside it matter more than the share.**
+**The library supports orders to 32. Production rarely goes past 8.** The call distribution was
+measured in one consumer code and is not reproduced here, so read it as an indication rather than a
+number.
 
-**The library supports orders to 32; production never goes past 8.** 95.2 percent of the
-965 million calls measured sit at order 3 or below, mean 1.47. **Everything above 8 is
-supported, maintained and instantiated for nothing.**
+**The asymptotic branch serves most calls. The Chebyshev tables serve a small minority.** That
+matters before any further work on the tables. Their degrees, their band structure and the rule that
+chooses the bands sit on a small share of the calls.
 
-**The asymptotic branch serves 84 percent of calls; the Chebyshev tables serve 9.2 percent.**
-That is worth weighing before any further work on the table — **its degrees, its band
-structure and the partition that chooses them are on the path for under a tenth of the
-calls**, and those calls are a tenth of the integral evaluation.
+**The ladder's contraction costs several times what evaluating the function costs.** The transforms
+and the block zeroing are the work. This function is upstream of them.
 
-**And the ladder's contraction runs at roughly nine times the cost of evaluating the
-function that feeds it.** The transforms and the block zeroing are the work; this function is
-upstream of it.
-
-**So the ceiling on anything done here is about ten percent of an integral evaluation**, and
-most of that ten percent is on a branch that does not read the tables at all.
+So the ceiling on anything done here is about a tenth of an integral evaluation.
 
 ## Which end of the recurrence carries the requirement
 
-For one shell quartet the consumer needs `F_0 … F_L` at a single argument, where `L` is the
-total angular momentum of the quartet. There are two ways to get them, and **they put the
-accuracy requirement at opposite ends of the recurrence**:
+A consumer needs `F_0 … F_L` at one argument, where `L` is the total angular momentum of a shell
+quartet. There are two ways to get them, and they put the accuracy requirement at opposite ends.
 
-- **upward from `F_0`** — the seed is the lowest order, and each step multiplies its error by
-  about `(n + ½)/x`, so the requirement is hardest at the *highest* order;
-- **downward from `F_L`** — the recurrence is stable, so the requirement is hardest at the
-  seed itself, and the low orders come out accurate as a by-product.
+- Upward from `F_0`: the seed is the lowest order, and each step multiplies its error by about
+  `(n + ½)/x`. The requirement is hardest at the highest order.
+- Downward from `F_L`: the recurrence is stable. The requirement is hardest at the seed, and the low
+  orders come out accurate as a by-product.
 
-**This question was put, and the answer refutes the worry that prompted it.** Reading the
-implementation rather than reasoning about it: **the library already uses both directions, and
-chooses between them deliberately per lane.**
+The library uses both, and chooses per lane.
 
-- **The double batch entry is hybrid.** Below `X0` it serves a *prefix* of the orders by an
-  upward recursion from the extended-band seed — exactly those orders whose tier threshold the
-  argument has reached — and takes the remaining orders from the per-order region-A fits. The
-  per-order result is bit-identical to the single-order entry, which applies the same
-  per-argument rule.
-- **The single-precision batch entry is downward**, from a double-precision seed at the top
-  order, and the reason is written where the code is: the downward recursion amplifies a float
-  seed by up to `X0^n / prod(j + 1/2)`, about `5e4` at eight orders, far beyond the
-  single-precision budget. One double evaluation per batch is negligible; the recursion itself
-  stays in single precision.
+- The double batch entry is hybrid. Below `X0` it serves a prefix of the orders by upward recursion
+  from the extended-band seed. It takes the rest from the per-order region-A fits.
+- The single-precision batch entry recurses downward from a double-precision seed. A float seed
+  would be amplified past the single-precision budget, by about 5e4 at eight orders.
 
-**So the accuracy analysis is aimed at the right end after all, for the path a
-double-precision consumer actually uses.** The question was still worth asking — the answer
-was not derivable from the contract, only from the implementation — but the expected
-consequence did not materialise, and **it should not be carried forward as though it had.**
+## What limits the delivered error
 
-## What actually limits the delivered error
+The fits are better than the format that stores them. Over `[0, X0)`, the shipped `F_0` table's own
+truncation error is about 5e-19. Rounding its coefficients to double costs about 5.551e-17. That is
+the half-ulp of the leading coefficient, which sits in the binade where a half-ulp is exactly that.
 
-Accuracy work needs to know which term is binding, and the answer is not the certified one.
+Every band is rounding-limited, at roughly 1e-16 to 2e-16. The generator's own fit bar for the region
+is 2.5e-14.
 
-For the shipped `F_0` table over `[0, X0)`, the truncation error **of the fit** is around
-`5e-19`, while **rounding the coefficients to double contributes about `5.551e-17`** — the
-half-ulp of the leading coefficient alone, which sits in the binade where a half-ulp *is*
-`5.551e-17`. This paragraph said `3e-17`, and `3e-17` is the half-ulp of no double in that
-binade: **the figure was a recollection rather than a rounding of the shipped literal**, and it
-is corrected here to the number exact arithmetic on the shipped coefficient gives. Every band is
-rounding-limited at roughly `1e-16` to `2e-16`. Meanwhile the generator's own fit bar for the
-region is `2.5e-14`.
+**So the delivered error is set by coefficient rounding.** Neither the truncation bound nor the fit
+bar determines it. Any work aimed at accuracy should start from that.
 
-**So the delivered error is set by coefficient rounding, and neither the truncation bound
-nor the fit bar is what determines it.** Any change aimed at accuracy should start from that.
+## Could the high-order fits be coarser?
 
-## The per-order question: asked, checked, and refuted
+No. It is worth recording why, because the argument for it is attractive.
 
-**A plausible argument that the high-order fits could be coarser was put forward and then
-tested properly, and it is wrong.** It is recorded here because the *reason* it is wrong is the
-useful part, and because a later reader will find the argument attractive for the same reasons.
+The argument runs like this. Each order enters an integral multiplied by a coefficient that decays
+sharply. High orders are therefore damped, so their fits could be less accurate.
 
-**The argument was this.** Each order enters an integral multiplied by a coefficient decaying
-like `(1/(2p))^n / (2n − 1)!!`, so high orders are damped hard and their fits should be allowed
-to be less accurate — the opposite of what this library's amplification machinery asks for.
+The argument fails because the coefficient model is wrong. The contraction coefficients decay like
+`R^n`, the internuclear separation to the order. They carry no double factorial. The model they were
+assumed to follow has no `R` in it at all, so it understates them by orders of magnitude. The
+angular-momentum factors dominate the double factorial completely.
 
-**The coefficient model is wrong.** The contraction coefficients were computed exactly, by
-differentiating the closed form of the simplest two-electron integral and validating the
-result three ways — against a hand-derived case, against translation invariance, and against
-numerical differentiation. **The ratio is not the one assumed: it goes like `R^n`, the
-internuclear separation to the order, and carries no double factorial at all.** The assumed
-model contains no `R`, so it understates the high-order coefficients — by five orders of
-magnitude at four orders and by eight at six, in one realistic case. **The angular-momentum
-factors are what does this, and they dominate the double factorial completely.**
+The amplification does not grow either. Region B's amplification is one to within a last-digit
+excess, `1 + 1.846e-17` at order 32. Region A's returns to one by the highest order.
 
-**And the amplification does not grow either.** Region B's amplification factor is one up to a
-last-digit excess for every supported order — **`1 + 1.846e-17` at order 32, which is above one**
-— and region A's returns to one by the highest order. This paragraph said the factor "is below one
-for every supported order", and **that was wrong in the direction the sentence was making its
-point with**: the band edge is chosen so the recursion neither amplifies nor contracts, and with
-the shipped `x0` it lands a hair on the amplifying side. The normalized gain is
-`prod(2j−1)/(2 x0)^l`, which the edge is chosen to make exactly 1; at `l = 32` the shipped double
-`x0 = 11.899848152108484` puts it at `1 + 1.846e-17`, a figure reached here in double-double
-arithmetic and independently by exact rational arithmetic. **Two further sites carry the same
-inequality in source comments** — `src/boys_impl.hpp` ("`A_B(l) = prod(j+1/2)/x0^l <= A_B(0) = 1`",
-at the region-B dispatch and again by the batch entry) and `src/boys_cuda.cu` (the same
-`A_B(0) = 1` at the CUDA region-B dispatch and the batch entry) — and they are **reported by the
-accuracy gate rather than edited by it**: the gate measures this tree's code and does not rewrite
-it. The arithmetic they need is the normalisation above. (Read as the literal product
-`prod(j + ½)/x0^l` instead — the form those comments write — the order-32 value is 65, not 1; that
-is not the quantity the edge is tuned against, and saying so is the part those sites still owe.)
-So the two effects the argument set against each other do not pull in opposite directions; neither
-grows, and the one that does not grow stops one rounding short of being exactly flat.
+What is actually there: the slack per order is flat across the orders rather than growing.
+Coarsening the high-order fits would buy about ten percent of one code path, and only below x = 2.
+Everywhere else it buys nothing. Most ladders are one seed plus a recursion, not a set of per-order
+fits. **This is not the lever.**
 
-**What is actually there, measured:** the slack per order runs between about five hundred and
-twenty thousand, **flat across the orders rather than growing**, and the coefficient tails vary
-by no more than fifteen times over the whole range. **Coarsening the high-order fits would buy
-nine to eleven percent of a ladder up to eight orders, and only in the two argument bands where
-per-order fits are used at all — which is below about two. Everywhere else it buys nothing**,
-because most ladders are one seed plus a recursion rather than a set of per-order fits.
+## What the other thresholds already allow
 
-**So this is not the lever, and the table should not be reorganised around it.** The measured
-cost of the change would be a re-derived table for a return of roughly a tenth of one code
-path.
+For almost every calculation, the binding constraint is not this function. Production screening
+thresholds sit at 1e-10 to 1e-12. Density fitting carries errors near 1e-6. A density-functional grid
+carries 1e-6 to 1e-8. Coupled-perturbed convergence has its own.
 
-**One thing the same source is clear about, and it is worth writing down:** for almost every
-calculation the binding constraint is *not* this function. Production screening thresholds sit
-at `1e-10` to `1e-12`, density fitting carries errors around `1e-6`, a density-functional grid
-`1e-6` to `1e-8`, and the coupled-perturbed convergence has its own. **All are larger than a
-`1e-14` error here.** Tightening this function past `1e-14` buys nothing unless those move too,
-and **the accuracy that is genuinely free to give up is in the other thresholds rather than in
-this function.**
+All of those are larger than a 1e-14 error here. Tightening this function past 1e-14 buys nothing
+unless they move too. The accuracy that is genuinely free to give up is in the other thresholds, not
+in this function.
 
-## Reduced precision: what it is for, and what it cannot do
+## Reduced precision
 
-**It cannot serve the accurate path, and that is arithmetic rather than opinion.** Half
-precision carries about eleven bits of mantissa — roughly five parts in ten thousand —
-against the one part in a hundred trillion that quantum chemistry asks of this function.
+Half precision cannot serve the accurate path. That is arithmetic, not opinion. Eleven bits of
+mantissa is about five parts in ten thousand. Quantum chemistry asks this function for one part in a
+hundred trillion.
 
-**But the current reduced-precision lanes are slow for a reason that has nothing to do with
-half precision:** they convert single to half and back *around* each call, so the conversion
-is the cost. **A batch that lives in half precision from end to end pays no conversion.**
+The shipped half lanes are slow for a reason that has nothing to do with half precision. They convert
+single to half and back around each call, so the conversion is the cost. A batch that lives in half
+precision from end to end pays none of it.
 
-**What pays on a GPU is packed arithmetic** — two values per register, one instruction doing
-the work of two — worth roughly a factor of two over single precision on any card that
-supports it. **Tensor cores buy nothing here**, because a Chebyshev recurrence is scalar:
-there is no matrix to multiply. Framing these lanes as a tensor-core path misdescribes them.
+What pays on a GPU is packed arithmetic: two values per register, one instruction doing the work of
+two. That is worth roughly a factor of two over single precision on a card that supports it. **Tensor
+cores buy nothing here.** A Chebyshev recurrence is scalar, so there is no matrix to multiply.
+Framing these lanes as a tensor-core path misdescribes them.
 
-**Where half precision genuinely earns its place** is in the work that does not need
-accuracy:
+Where half precision earns its place is in work that does not need accuracy.
 
-- **Screening.** Quartets are bounded before they are computed, and the screened pool is far
-  larger than the computed one. A bound wrong by a part in a thousand is harmless if it stays
-  conservative.
-- **Early iterations of a self-consistent field.** The density is far from converged for the
-  first several cycles, so an error of a part in a thousand in the integrals cannot reach the
-  answer.
+- **Screening.** Quartets are bounded before they are computed, and the screened pool is far larger
+  than the computed one. A bound wrong by a part in a thousand is harmless if it stays conservative.
+- **Early self-consistent-field iterations.** The density is far from converged for the first several
+  cycles. An error of a part in a thousand in the integrals cannot reach the answer.
 - **Anything recomputed in double afterwards** — a preconditioner, a trial step, a guess.
 
-**So these lanes are not a less accurate imitation of the accurate one.** They are the pass
-that runs over everything, where the accurate lane runs over a small part of everything — and
-the contract they carry should be the one their own use needs.
+So these lanes are not a less accurate imitation of the accurate one. They are the pass that runs
+over everything. The accurate lane runs over a small part of everything.
 
-**A verdict on their speed belongs on hardware chosen to show it.** The advantage is a
-function of the card, so a measurement on a small laptop part is not a measurement of the
-lane.
+A verdict on their speed belongs on hardware chosen to show it. The advantage is a property of the
+card. A measurement on a small laptop part is not a measurement of the lane.
 
 ## The first band's degree
 
-The first region-A band, `[0, 5.94992407605424223]`, carried an a-priori truncation bound of
-`6.47e-16` at degree 18 — about **sixteen times the `4.1e-17` the seed design targets**. **Every
-order on the band was over the target**, `2.18e-16` (`F_32`) to `6.47e-16` (`F_0`), so the
-degree is a property of **the band**, not of `F_0`. **It is fitted at degree 20 for every order
-now**, which puts the whole family at `1.14e-18`..`3.14e-18`. Degree 19 was never a candidate:
-the split Clenshaw evaluates the odd coefficients only up to `c[deg-1]`, so it requires an even
-degree. The other two fitted bands meet the target as shipped (`2.58e-18`, `5.98e-18`).
+The first region-A band, `[0, 5.94992407605424223]`, carried an a-priori truncation bound of 6.47e-16
+at degree 18. That is about sixteen times the 4.1e-17 the seed design targets. Every order on the
+band was over the target, so the degree is a property of the band rather than of `F_0`.
 
-**The fix moves the certificate, not the delivered error** — the point of the section above.
-The band's polynomial sits `2.20e-16` from a high-precision `F_0` where it sat `2.43e-16`
-before: coefficient rounding, not the truncation tail, sets both.
+It is now fitted at degree 20 for every order, which brings the family to 1.14e-18 to 3.14e-18.
+Degree 19 was never a candidate. The split Clenshaw evaluates odd coefficients only up to
+`c[deg-1]`, so the degree must be even. The other two fitted bands meet the target as shipped.
 
-## What to do, in order
-
-1. **Measure the function's share of a real integral evaluation**, in a consumer. Everything
-   else is ranked by this number.
-2. **Establish which recursion direction the consumer uses, per region** — one line of code
-   to read, large consequence.
-3. **Fix the first band's degree** — **done**: the band is fitted at degree 20 for every
-   order, which puts its a-priori bound under the seed design's tail.
-4. **Offer a selectable accuracy tier** matching what the chemistry needs, derived from the
-   truncation bound rather than searched.
-5. **Re-aim the reduced-precision lanes** at one of the uses above, and measure them on
-   hardware that can show the difference.
+The change moves the certificate, not the delivered error. Coefficient rounding sets both.
