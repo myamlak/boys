@@ -63,8 +63,9 @@ over part of the range than over the rest. Every figure below holds for **all** 
 | CUDA fp64 | same m·budgets as the CPU double lanes |
 | CUDA fp32 | same m·budgets as the CPU float lanes; GPU-vs-CPU cross-lane budget 3.5e-7 |
 
-"ULP" is the last representable digit of the result in the format concerned. The multiplier is any
-value at or above 1, with no upper end, and raising it loosens the bound and reduces the work.
+"ULP" is the last representable digit of the result in the format concerned. On the C++ surface the
+multiplier is any value at or above 1, with no upper end, and raising it loosens the bound and
+reduces the work. The C surface takes a sampled set instead, listed in its own header.
 
 The fp16 and bf16 rows are fp16 *I/O* around the fp32 engine, so their error is the engine's.
 
