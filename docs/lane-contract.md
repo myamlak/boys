@@ -35,8 +35,8 @@ only the largest arguments.
 x below about 1.0855. That last figure belongs to the single-argument entry; the batch entry is at
 most 5.5e-14 throughout, so a caller using the batch form should read 5.5e-14.
 
-A multiplier, set at compile time or per call, runs from 1 to 65536. Raising it loosens the bound
-and reduces the work.
+A multiplier, set at compile time or per call, is any value at or above 1, with no upper end.
+Raising it loosens the bound and reduces the work.
 
 **This is the most accurate double the library produces.** The stored coefficients are rounded to
 double precision and hold only the sixteen or so significant digits a double can hold, so nothing
