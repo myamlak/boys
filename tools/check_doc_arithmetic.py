@@ -55,8 +55,12 @@ from dataclasses import dataclass, field, replace
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 
-# The published set: what a reader outside this repository can open.
-PUBLISHED = ("README.md", "CONTRIBUTING.md")
+# The published set: what a reader outside this repository can open. The two
+# documents under docs/ are here because they carry the per-lane contracts, so
+# they make more quantitative claims than any other published file; a checker
+# that skipped them would be checking the prose least likely to be wrong.
+PUBLISHED = ("README.md", "CONTRIBUTING.md", "docs/lane-contract.md",
+             "docs/consumer-perspective.md")
 
 CALIBRATION_DOC = "tools/check_doc_arithmetic_calibration.md"
 
@@ -1205,19 +1209,18 @@ def summarise(findings, stream):
 # --------------------------------------------------------------------------
 
 # (document, a literal that identifies the site, the verdict, the check).
-# The first four are pinned to the published documents themselves, at whatever
-# line the rewriting lanes have them on. The last two reproduce the shape of
-# two cases from the same review that the published set no longer carries, so
-# the checks that would catch them stay calibrated too.
+# Every case is pinned to the calibration corpus rather than to a published
+# document, because the published documents no longer carry a single one of
+# these defects: each was repaired, and pinning a check to prose that has been
+# made correct would leave it calibrated against nothing. The corpus reproduces
+# the shape of each defect instead, so the check that caught it still reports
+# the same verdict on an input that is still wrong.
 CALIBRATION = (
-    ("docs/lane-contract.md", "sixty times more accurate", "not derivable",
-     "relation"),
-    ("docs/lane-contract.md", "7.7 times as much", "mismatch", "relation"),
-    ("docs/lane-contract.md", "five to eight orders of magnitude", "mismatch",
-     "relation"),
-    ("docs/lane-contract.md", "thousandths of a per cent", "mismatch", "relation"),
-    ("docs/lane-contract.md", "0.9999 of the bound", "multiplier-unswept",
-     "multiplier"),
+    (CALIBRATION_DOC, "sixty times more accurate", "not derivable", "relation"),
+    (CALIBRATION_DOC, "7.7 times as much", "mismatch", "relation"),
+    (CALIBRATION_DOC, "five to eight orders of magnitude", "mismatch", "relation"),
+    (CALIBRATION_DOC, "thousandths of a per cent", "mismatch", "relation"),
+    (CALIBRATION_DOC, "0.9999 of the bound", "multiplier-unswept", "multiplier"),
     (CALIBRATION_DOC, "4.59", "mismatch", "agreement"),
     (CALIBRATION_DOC, "a factor of three", "mismatch", "relation"),
 )

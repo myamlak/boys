@@ -28,8 +28,8 @@ are the cases where an error here stays in the answer.
 ## Where reduced precision earns its place
 
 Half precision cannot serve the accurate path. That is arithmetic rather than opinion: sixteen bits
-carry about five parts in ten thousand, and quantum chemistry asks this function for about one part
-in a hundred trillion.
+carry about five parts in ten thousand, and the accuracy these integrals are usually asked for is
+about one part in a hundred trillion.
 
 What it *can* serve is work that does not need accuracy.
 
@@ -44,9 +44,29 @@ The shipped half lanes convert each value to sixteen bits on the way in and back
 the conversion is their cost. If you are calling them one value at a time, that conversion is what
 you are paying for and the arithmetic is not the bottleneck.
 
-**If your card does sixteen-bit arithmetic on two values per instruction**, that is worth roughly a
-factor of two over 32-bit arithmetic. It is a property of the card, and a measurement on one card is
-not a measurement of another.
+**If your card does sixteen-bit arithmetic on two values per instruction**, that instruction carries
+twice the values a 32-bit one does, which is a factor of two in throughput for the same number of
+instructions. **That is arithmetic on an instruction's shape, not a measurement of any card**, and
+no timing here supports it. Whether a real code sees it depends on the card and on what else the
+loop is doing.
+
+**These lanes do not cover every order.** The packed-half lane returns values for orders 0 to 8 only
+— at order 9 and above the function is already too small for that format to represent, and no
+argument makes it usable. The 16-bit-storage lanes cover all orders but return nothing usable once
+the result drops below their own bound, which happens at arguments that depend steeply on the order.
+Before putting a reduced-precision lane in a loop, check what it covers for the orders that loop
+uses.
+
+## If your arguments are large
+
+Arguments at or above x = 28.984375 have a third option: the packed-half lane, which holds its own
+rounding to within 8 of the last representable digits of the result, for orders 0 to 8. It is the
+most accurate of the 16-bit lanes where it applies, and it is also the narrowest.
+
+The region-A transform lane is the other alternative direction: it computes a batch of arguments at
+once and lets you choose the arithmetic, including a 32-bit mode for cards that have no 64-bit
+arithmetic. Its section in `docs/lane-contract.md` states which modes reach which accuracy, and
+which orders it may be asked to seed a recursion at.
 
 ## What is not claimed
 
