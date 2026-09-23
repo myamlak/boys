@@ -323,7 +323,9 @@ TEST(BoysTransform, ModeSetIsTheUsableOne) {
 // figure.
 TEST(BoysTransform, SplitModesAreInsideTheirBoundOnADenseSweep) {
     std::vector<double> xs;
-    for (int i = 1; i <= 20001; ++i)
+    // u stays below 1: the band is half-open, so its right end belongs to the
+    // next band and is not an argument of this one.
+    for (int i = 1; i < 20001; ++i)
     {
         const double u = static_cast<double>(i) / 20001.0;
         xs.push_back(boys::kRegionA1Edge * u * u * u * u);
