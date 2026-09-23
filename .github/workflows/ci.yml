@@ -60,12 +60,22 @@ concurrency:
 #
 # Every leg runs the gate the two original legs established: build, ctest (the
 # kernel contract tests, multiplier tests, C-surface tests, boundary pins, the
-# BOUNDARY-CHECK standalone over the committed reference grid, and the dispatch
-# assertion), the generator byte-identity protocol (no-args in-place
-# regeneration + --check + git diff --exit-code over the two generated files),
-# and the zero-warning Doxygen build. The two original legs (windows-msvc-
-# release, linux-gcc-release) keep all of it verbatim; the new x86 legs carry
-# the same set so the retention is per-leg rather than workflow-wide.
+# BOUNDARY-CHECK standalone over the committed reference grid, the dispatch
+# assertion, and the two CONSUMER checks - a translation unit that includes
+# only <boys/boys.hpp> and exercises the whole documented surface, and one that
+# names multipliers the library does not pre-instantiate and links no library
+# at all), the generator byte-identity protocol (no-args in-place regeneration
+# + --check + git diff --exit-code over the two generated files), and the
+# zero-warning Doxygen build. The two original legs (windows-msvc-release,
+# linux-gcc-release) keep all of it verbatim; the new x86 legs carry the same
+# set so the retention is per-leg rather than workflow-wide.
+#
+# The VERDICTS step is a reading step, not a second gate: ctest prints a test's
+# output only when the test fails, so the accuracy gate's verdict and the
+# consumer checks' coverage never reach the log of a green leg. The step re-runs
+# those three programs with -V, which changes what is displayed and nothing
+# about the verdicts (each is still its own exit status). A red leg shows the
+# same output in the ctest step above, which runs with --output-on-failure.
 #
 # The two NEW arm64 legs (linux-arm64, windows-arm64) carry build + ctest + the
 # dispatch assertion: every arm64 fact this tree has to state is a build or a
@@ -151,6 +161,14 @@ jobs:
         run: cmake --build build
       - name: Test (full suite + dispatch assertion)
         run: ctest --test-dir build --output-on-failure
+      # ctest prints a test's output only when the test FAILS, so on a green
+      # run the accuracy gate's verdict - the claim count and the fraction of
+      # comparison cells that can discriminate - never reaches this log, and
+      # the two consumer checks report what they covered to nobody. This
+      # re-runs the same three programs with their output shown: same
+      # binaries, same exit statuses as the ctest step above.
+      - name: Verdicts (accuracy gate and consumer checks)
+        run: ctest --test-dir build -V -R 'boys-accuracy-gate|boys-consumer-'
       - name: Generator byte-identity (no-args regeneration + --check + git diff)
         env:
           CLANG_FORMAT: ${{ github.workspace }}/.venv/Scripts/clang-format.exe
@@ -220,6 +238,14 @@ jobs:
         run: cmake --build build -j 4
       - name: Test (full suite + dispatch assertion)
         run: ctest --test-dir build --output-on-failure
+      # ctest prints a test's output only when the test FAILS, so on a green
+      # run the accuracy gate's verdict - the claim count and the fraction of
+      # comparison cells that can discriminate - never reaches this log, and
+      # the two consumer checks report what they covered to nobody. This
+      # re-runs the same three programs with their output shown: same
+      # binaries, same exit statuses as the ctest step above.
+      - name: Verdicts (accuracy gate and consumer checks)
+        run: ctest --test-dir build -V -R 'boys-accuracy-gate|boys-consumer-'
       - name: Generator byte-identity (no-args regeneration + --check + git diff)
         env:
           CLANG_FORMAT: ${{ github.workspace }}/.venv/bin/clang-format
@@ -264,6 +290,14 @@ jobs:
         run: cmake --build build -j 4
       - name: Test (full suite + dispatch assertion, under the sanitizers)
         run: ctest --test-dir build --output-on-failure
+      # ctest prints a test's output only when the test FAILS, so on a green
+      # run the accuracy gate's verdict - the claim count and the fraction of
+      # comparison cells that can discriminate - never reaches this log, and
+      # the two consumer checks report what they covered to nobody. This
+      # re-runs the same three programs with their output shown: same
+      # binaries, same exit statuses as the ctest step above.
+      - name: Verdicts (accuracy gate and consumer checks)
+        run: ctest --test-dir build -V -R 'boys-accuracy-gate|boys-consumer-'
   # -------------------------------------------------------------------------
   # ubuntu-24.04-arm, GCC. NEON vs AVX2: this catches x86-only assumptions.
   # It was red on the first run — the finding it exists to produce — and now
@@ -283,6 +317,14 @@ jobs:
         run: cmake --build build -j 4
       - name: Test (full suite + dispatch assertion)
         run: ctest --test-dir build --output-on-failure
+      # ctest prints a test's output only when the test FAILS, so on a green
+      # run the accuracy gate's verdict - the claim count and the fraction of
+      # comparison cells that can discriminate - never reaches this log, and
+      # the two consumer checks report what they covered to nobody. This
+      # re-runs the same three programs with their output shown: same
+      # binaries, same exit statuses as the ctest step above.
+      - name: Verdicts (accuracy gate and consumer checks)
+        run: ctest --test-dir build -V -R 'boys-accuracy-gate|boys-consumer-'
   # -------------------------------------------------------------------------
   # windows-11-arm, MSVC arm64.
   #
@@ -311,6 +353,14 @@ jobs:
         run: cmake --build build
       - name: Test (full suite + dispatch assertion)
         run: ctest --test-dir build --output-on-failure
+      # ctest prints a test's output only when the test FAILS, so on a green
+      # run the accuracy gate's verdict - the claim count and the fraction of
+      # comparison cells that can discriminate - never reaches this log, and
+      # the two consumer checks report what they covered to nobody. This
+      # re-runs the same three programs with their output shown: same
+      # binaries, same exit statuses as the ctest step above.
+      - name: Verdicts (accuracy gate and consumer checks)
+        run: ctest --test-dir build -V -R 'boys-accuracy-gate|boys-consumer-'
 
   # -------------------------------------------------------------------------
   # macOS, AppleClang: macos-latest is Apple Silicon (arm64 — the AVX2 tier is
@@ -352,6 +402,14 @@ jobs:
         run: cmake --build build -j 3
       - name: Test (full suite + dispatch assertion)
         run: ctest --test-dir build --output-on-failure
+      # ctest prints a test's output only when the test FAILS, so on a green
+      # run the accuracy gate's verdict - the claim count and the fraction of
+      # comparison cells that can discriminate - never reaches this log, and
+      # the two consumer checks report what they covered to nobody. This
+      # re-runs the same three programs with their output shown: same
+      # binaries, same exit statuses as the ctest step above.
+      - name: Verdicts (accuracy gate and consumer checks)
+        run: ctest --test-dir build -V -R 'boys-accuracy-gate|boys-consumer-'
       - name: Generator byte-identity (no-args regeneration + --check + git diff)
         env:
           CLANG_FORMAT: ${{ github.workspace }}/.venv/bin/clang-format
