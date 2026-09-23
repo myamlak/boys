@@ -11,7 +11,8 @@
 // (the engine pattern); the unsorted penalty is measured by the mixed
 // per-vector kernel in the companion unsorted-SIMD benchmark.
 #include "boys/boys.hpp"
-#include "boys_coefficients.hpp"
+#include "boys/boys_coefficients.hpp"
+#include "boys/boys_impl.hpp"
 
 #include <benchmark/benchmark.h>
 #include <cmath>
@@ -149,14 +150,14 @@ void RunBatch(const std::vector<Item>& items, bool f32) {
     {
         for (const auto& item : items)
         {
-            boys::BoysBatchF32(item.n, static_cast<float>(item.x), batchF);
+            boys::BoysAllOrdersF32(item.n, static_cast<float>(item.x), batchF);
             gSink += batchF[item.n];
         }
     } else
     {
         for (const auto& item : items)
         {
-            boys::BoysBatch(item.n, item.x, batchD);
+            boys::BoysAllOrders(item.n, item.x, batchD);
             gSink += batchD[item.n];
         }
     }
@@ -180,7 +181,7 @@ static void BmBoysSingleUniform(benchmark::State& state) {
 
 BENCHMARK(BmBoysSingleUniform);
 
-static void BmBoysBatchUniform(benchmark::State& state) {
+static void BmBoysAllOrdersUniform(benchmark::State& state) {
     for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
                          // variable is deliberately unused.
     {
@@ -191,7 +192,7 @@ static void BmBoysBatchUniform(benchmark::State& state) {
     state.SetItemsProcessed(static_cast<int64_t>(gUniform.size()) * state.iterations());
 }
 
-BENCHMARK(BmBoysBatchUniform);
+BENCHMARK(BmBoysAllOrdersUniform);
 
 static void BmBoysSingleMolecular(benchmark::State& state) {
     for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
@@ -206,7 +207,7 @@ static void BmBoysSingleMolecular(benchmark::State& state) {
 
 BENCHMARK(BmBoysSingleMolecular);
 
-static void BmBoysBatchMolecular(benchmark::State& state) {
+static void BmBoysAllOrdersMolecular(benchmark::State& state) {
     for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
                          // variable is deliberately unused.
     {
@@ -217,7 +218,7 @@ static void BmBoysBatchMolecular(benchmark::State& state) {
     state.SetItemsProcessed(static_cast<int64_t>(gMolecular.size()) * state.iterations());
 }
 
-BENCHMARK(BmBoysBatchMolecular);
+BENCHMARK(BmBoysAllOrdersMolecular);
 
 static void BmBoysSingleF32Uniform(benchmark::State& state) {
     for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
@@ -289,9 +290,9 @@ static void BmBoysSimdSortedN8(benchmark::State& state) {
     for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
                          // variable is deliberately unused.
     {
-        boys::BoysRegionASimd(n, gSimd.xA.data(), gSimd.outA.data(), gSimd.xA.size());
-        boys::BoysRegionBSimd(n, gSimd.xB.data(), gSimd.outB.data(), gSimd.xB.size());
-        boys::BoysRegionCSimd(n, gSimd.xC.data(), gSimd.outC.data(), gSimd.xC.size());
+        boys::detail::BoysRegionASimd(n, gSimd.xA.data(), gSimd.outA.data(), gSimd.xA.size());
+        boys::detail::BoysRegionBSimd(n, gSimd.xB.data(), gSimd.outB.data(), gSimd.xB.size());
+        boys::detail::BoysRegionCSimd(n, gSimd.xC.data(), gSimd.outC.data(), gSimd.xC.size());
         benchmark::DoNotOptimize(gSimd.outA.data());
         benchmark::DoNotOptimize(gSimd.outB.data());
         benchmark::DoNotOptimize(gSimd.outC.data());
@@ -400,31 +401,31 @@ static void BmBoysSingleF16Molecular(benchmark::State& state) {
 
 BENCHMARK(BmBoysSingleF16Molecular);
 
-static void BmBoysBatchF16Uniform(benchmark::State& state) {
+static void BmBoysAllOrdersF16Uniform(benchmark::State& state) {
     for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
                          // variable is deliberately unused.
     {
-        RunBatchHalf<boys::F16, boys::BoysBatchF16>(gUniform);
+        RunBatchHalf<boys::F16, boys::BoysAllOrdersF16>(gUniform);
         benchmark::DoNotOptimize(gSink);
     }
 
     state.SetItemsProcessed(static_cast<int64_t>(gUniform.size()) * state.iterations());
 }
 
-BENCHMARK(BmBoysBatchF16Uniform);
+BENCHMARK(BmBoysAllOrdersF16Uniform);
 
-static void BmBoysBatchF16Molecular(benchmark::State& state) {
+static void BmBoysAllOrdersF16Molecular(benchmark::State& state) {
     for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
                          // variable is deliberately unused.
     {
-        RunBatchHalf<boys::F16, boys::BoysBatchF16>(gMolecular);
+        RunBatchHalf<boys::F16, boys::BoysAllOrdersF16>(gMolecular);
         benchmark::DoNotOptimize(gSink);
     }
 
     state.SetItemsProcessed(static_cast<int64_t>(gMolecular.size()) * state.iterations());
 }
 
-BENCHMARK(BmBoysBatchF16Molecular);
+BENCHMARK(BmBoysAllOrdersF16Molecular);
 
 static void BmBoysSingleBf16Uniform(benchmark::State& state) {
     for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
@@ -439,18 +440,18 @@ static void BmBoysSingleBf16Uniform(benchmark::State& state) {
 
 BENCHMARK(BmBoysSingleBf16Uniform);
 
-static void BmBoysBatchBf16Uniform(benchmark::State& state) {
+static void BmBoysAllOrdersBf16Uniform(benchmark::State& state) {
     for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
                          // variable is deliberately unused.
     {
-        RunBatchHalf<boys::Bf16, boys::BoysBatchBf16>(gUniform);
+        RunBatchHalf<boys::Bf16, boys::BoysAllOrdersBf16>(gUniform);
         benchmark::DoNotOptimize(gSink);
     }
 
     state.SetItemsProcessed(static_cast<int64_t>(gUniform.size()) * state.iterations());
 }
 
-BENCHMARK(BmBoysBatchBf16Uniform);
+BENCHMARK(BmBoysAllOrdersBf16Uniform);
 
 static void BmBoysSimdF16SortedN8(benchmark::State& state) {
     if (!boys::BoysAvx2Available())
@@ -464,9 +465,9 @@ static void BmBoysSimdF16SortedN8(benchmark::State& state) {
     for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
                          // variable is deliberately unused.
     {
-        boys::BoysRegionASimdF16(n, gSimdF16.xA.data(), gSimdF16.outA.data(), gSimdF16.xA.size());
-        boys::BoysRegionBSimdF16(n, gSimdF16.xB.data(), gSimdF16.outB.data(), gSimdF16.xB.size());
-        boys::BoysRegionCSimdF16(n, gSimdF16.xC.data(), gSimdF16.outC.data(), gSimdF16.xC.size());
+        boys::detail::BoysRegionASimdF16(n, gSimdF16.xA.data(), gSimdF16.outA.data(), gSimdF16.xA.size());
+        boys::detail::BoysRegionBSimdF16(n, gSimdF16.xB.data(), gSimdF16.outB.data(), gSimdF16.xB.size());
+        boys::detail::BoysRegionCSimdF16(n, gSimdF16.xC.data(), gSimdF16.outC.data(), gSimdF16.xC.size());
         benchmark::DoNotOptimize(gSimdF16.outA.data());
         benchmark::DoNotOptimize(gSimdF16.outB.data());
         benchmark::DoNotOptimize(gSimdF16.outC.data());

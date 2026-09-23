@@ -4,9 +4,11 @@ cmake_minimum_required(VERSION 3.25)
 #
 # Layout: public headers under include/boys/, sources under src/,
 # tests under tests/ (gtest, vendored), benchmark drivers under
-# benchmarks/, the regeneration script under tools/. The library exports
-# only the m = 1 instantiations of the templated entries (extern-template
-# architecture, see src/boys.cpp); the CUDA lane is an optional second
+# benchmarks/, the regeneration script under tools/. The templated entries'
+# kernel ships in the headers, so a consumer instantiates whichever accuracy
+# multiplier it names; the library itself exports the default m = 1
+# instantiations and the sampled rungs (extern-template architecture, see
+# include/boys/boys.hpp and src/boys.cpp). The CUDA lane is an optional second
 # target that needs the CUDA toolkit (device pins are a documented local
 # gate — CI has no GPU leg and never builds it). No PCH in this tree.
 #
@@ -17,7 +19,7 @@ cmake_minimum_required(VERSION 3.25)
 # gtest/benchmark tree is a warning — not a FATAL — when the feature
 # that needs it is OFF. See README.md, "Consuming as a submodule".
 
-project(boys VERSION 1.3.0 LANGUAGES CXX)
+project(boys VERSION 2.0.0 LANGUAGES CXX)
 
 if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     set(BOYS_TOP_LEVEL ON)
@@ -78,6 +80,20 @@ function(boys_strict_warnings target)
     endforeach()
     set_property(DIRECTORY APPEND PROPERTY BOYS_STRICT_TARGETS ${target})
 endfunction()
+
+# The header-only consumer check proves that the entries' template definitions
+# are reachable from the public headers, and it proves it by NOT linking the
+# library: with a library on its link line it would still compile, still run,
+# and prove nothing. Assert the absence here, so a later edit that links it
+# fails the configure on every leg instead of quietly retiring the check.
+function(boys_assert_no_linked_library target)
+    get_target_property(linked ${target} LINK_LIBRARIES)
+    if (linked)
+        message(FATAL_ERROR "boys: ${target} must link nothing - what it proves is that "
+            "the public headers alone suffice - but it links: ${linked}. Remove the link, "
+            "or the check stops proving what it exists to prove.")
+    endif()
+endfunction()
 set_property(DIRECTORY PROPERTY BOYS_STRICT_TARGETS "")
 
 if (BUILD_CUDA)
@@ -115,7 +131,9 @@ endif()
 add_library(boys
     src/boys.cpp
     src/boys_c.cpp
-    src/boys_simd.cpp)
+    src/boys_half_native.cpp
+    src/boys_simd.cpp
+    src/boys_transform.cpp)
 add_library(boys::boys ALIAS boys)
 target_include_directories(boys PUBLIC include PRIVATE src)
 target_compile_features(boys PUBLIC cxx_std_20)
@@ -130,9 +148,9 @@ boys_strict_warnings(boys)
 # that TU cannot drift apart.
 #
 # On a non-x86_64 target the SIMD TU still compiles: the intrinsics and the
-# flag set are gated out and the twelve region entry points are defined
-# against the certified scalar lanes instead (see the guard in
-# src/boys_simd.cpp). BoysAvx2Available() reports false there.
+# flag set are gated out and the region kernels are defined against the
+# certified scalar lanes instead (see the guard in src/boys_simd.cpp).
+# BoysAvx2Available() reports false there.
 include(CheckCXXSourceCompiles)
 check_cxx_source_compiles("
 #if !defined(__x86_64__) && !defined(_M_X64)
@@ -157,7 +175,7 @@ if (BOYS_ARCH_X86_64)
 else()
     target_compile_definitions(boys PRIVATE BOYS_SIMD_X86=0)
     message(STATUS "boys: non-x86_64 target — the AVX2 tier is not built; the "
-        "region entry points dispatch to the certified scalar lanes and "
+        "region kernels fall back to the certified scalar lanes and "
         "BoysAvx2Available() reports false.")
 endif()
 
@@ -169,15 +187,107 @@ if (BOYS_BUILD_TESTS)
         tests/boys_test.cpp
         tests/boys_boundary_test.cpp
         tests/boys_accuracy_test.cpp
+        tests/boys_tier_test.cpp
         tests/boys_fixed_n_test.cpp
+        tests/boys_all_n_test.cpp
         tests/boys_c_test.cpp
-        tests/f16_test.cpp)
+        tests/f16_test.cpp
+        tests/boys_half_native_test.cpp
+        tests/boys_transform_test.cpp)
     target_link_libraries(boys-tests PRIVATE boys gtest gtest_main)
     target_include_directories(boys-tests PRIVATE src)
     target_compile_features(boys-tests PRIVATE cxx_std_23)
+    # BoysTierReference is the accuracy gate lane's 80-digit grid when the
+    # tree carries it; the tier tests fall back to BoysDataDir's grid at run
+    # time and print which reference they measured against either way.
     target_compile_definitions(boys-tests PRIVATE
-        BoysDataDir="${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
+        BoysDataDir="${CMAKE_CURRENT_SOURCE_DIR}/tests/data"
+        BoysTierReference="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/boys_accuracy_gate_reference.csv")
     boys_strict_warnings(boys-tests)
+
+    # The ACCURACY GATE (tests/boys_accuracy_gate.cpp) measures every
+    # documented per-lane, per-region bound against the independent
+    # high-precision reference grid (tests/data/boys_accuracy_gate_reference.csv,
+    # regenerated by tools/gen_boys_accuracy_gate_reference.py) over a dense
+    # sweep that runs past the suite's grid, and reports each claim as a ratio
+    # of delivered error to documented bound with the location of the maximum.
+    # It exits non-zero on any exceeded claim; passes that hold only because
+    # the returned value is below what the format can hold are counted apart.
+    #
+    # The gate prints the revision it measured, read from the tree at configure
+    # time, so "verified at this revision" names one: a result pasted into a
+    # report months later would otherwise be attributable to nothing.
+    find_package(Git QUIET)
+    if(GIT_FOUND)
+        execute_process(
+            COMMAND "${GIT_EXECUTABLE}" rev-parse --short HEAD
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            OUTPUT_VARIABLE BOYS_GATE_REVISION
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET)
+    endif()
+    if(NOT BOYS_GATE_REVISION)
+        set(BOYS_GATE_REVISION "unknown")
+    endif()
+    add_executable(boys-accuracy-gate tests/boys_accuracy_gate.cpp)
+    target_link_libraries(boys-accuracy-gate PRIVATE boys)
+    target_include_directories(boys-accuracy-gate PRIVATE src)
+    target_compile_features(boys-accuracy-gate PRIVATE cxx_std_23)
+    target_compile_definitions(boys-accuracy-gate PRIVATE
+        BoysDataDir="${CMAKE_CURRENT_SOURCE_DIR}/tests/data"
+        BoysGateRevision="${BOYS_GATE_REVISION}")
+    boys_strict_warnings(boys-accuracy-gate)
+
+    # The run-time accuracy tier (BoysAllOrdersAtTier / QueryTier) arrives on a
+    # branch of its own, so the gate compiles its tier claims only where the
+    # headers this revision ships declare those entries. Asked of the compiler,
+    # not of a version string: a revision without the tier reports those claims
+    # as evidence-absent instead of failing to build, and a revision that has
+    # them cannot slip through unmeasured.
+    #
+    # The probe is a STATIC_LIBRARY try-compile, not an executable one, and
+    # that is the whole question: it compiles the entries' declarations and does
+    # not link them, because a probe that links tests whether THIS build links
+    # the library's definitions, and answers no for a revision that merely keeps
+    # the tier's code in a translation unit the probe does not compile. The
+    # definitions are tested where they belong --- the gate target links the
+    # library, so a declaration without a definition fails that link loudly
+    # instead of quietly dropping three claims into evidence-absent.
+    #
+    # The result is unset first so the probe runs on every configure: a cached
+    # no, left behind by an earlier revision, would be the silent direction.
+    include(CheckCXXSourceCompiles)
+    unset(BOYS_GATE_HAS_TIER CACHE)
+    set(_boys_probe_target_type "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
+    set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+    set(CMAKE_REQUIRED_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    if (MSVC)
+        set(CMAKE_REQUIRED_FLAGS "/std:c++20 /EHsc")
+    else()
+        set(CMAKE_REQUIRED_FLAGS "-std=c++20")
+    endif()
+    check_cxx_source_compiles("
+#include <boys/boys.hpp>
+int main() {
+    double out[33];
+    boys::BoysAllOrdersAtTier(boys::AccuracyTier::kRelaxed64, 32, 30.0, out);
+    const boys::TierCoverage c = boys::QueryTier(
+        boys::AccuracyTier::kRelaxed64, boys::AccuracyRegion::kC, 1e-12);
+    return (c.meets || c.reachable > 0.0) ? 0 : 1;
+}
+" BOYS_GATE_HAS_TIER)
+    set(CMAKE_TRY_COMPILE_TARGET_TYPE "${_boys_probe_target_type}")
+    unset(_boys_probe_target_type)
+    unset(CMAKE_REQUIRED_FLAGS)
+    unset(CMAKE_REQUIRED_INCLUDES)
+
+    if (BOYS_GATE_HAS_TIER)
+        target_compile_definitions(boys-accuracy-gate PRIVATE BOYS_GATE_TIER=1)
+        message(STATUS "boys: the accuracy gate will measure the run-time accuracy tier")
+    else()
+        message(STATUS "boys: this revision has no run-time accuracy tier; the gate's tier "
+            "claims are reported as evidence-absent")
+    endif()
 
     # The BOUNDARY-CHECK standalone (tests/boys_boundary_standalone.cpp)
     # reproduces the measured recursion-boundary cells from the
@@ -188,8 +298,65 @@ if (BOYS_BUILD_TESTS)
     add_executable(boys-boundary-standalone tests/boys_boundary_standalone.cpp)
     boys_strict_warnings(boys-boundary-standalone)
 
+    # The CONSUMER CHECKS (tests/consumer_umbrella.cpp and
+    # tests/consumer_header_only.cpp). The suite above includes headers from
+    # src/ and links the library, so it cannot see the two defects a consumer
+    # meets first: a public header the umbrella does not reach, and an entry
+    # whose definition never left a .cpp file (a link error for every
+    # multiplier the library does not pre-instantiate). These two programs are
+    # consumers, and each is built so that its own defect has somewhere to
+    # show:
+    #
+    #   boys-consumer-umbrella  includes ONLY <boys/boys.hpp>, first include,
+    #     no internal header, and links the library. It exercises every entry
+    #     the public headers document - all three product modes, both QueryTier
+    #     overloads, both many-argument shapes, the fp16/bf16 lanes, the native
+    #     half lane - at multipliers the library does not pre-instantiate, and
+    #     judges every returned value against the bound its entry states, with
+    #     the committed 45-digit grid as the reference.
+    #
+    #   boys-consumer-header-only  proves the definitions really are reachable
+    #     from the headers: it names non-rung multipliers and links NOTHING.
+    #     Its meaning is the empty link line, so the target's link libraries
+    #     are asserted empty below rather than trusted.
+    #
+    # Neither target adds src/ to its include path (the library publishes
+    # include/ as PUBLIC and src/ as PRIVATE), and both say so: they carry an
+    # __has_include probe that fails the compile if the internal directory ever
+    # reaches their include path. The include path and the compile definitions
+    # of the header-only check are read from the library's own interface - the
+    # same ones a consumer inherits from linking boys::boys - so the two cannot
+    # drift apart.
+    add_executable(boys-consumer-umbrella tests/consumer_umbrella.cpp)
+    target_link_libraries(boys-consumer-umbrella PRIVATE boys)
+    target_compile_definitions(boys-consumer-umbrella PRIVATE
+        BoysConsumerReference="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/boys_reference.csv")
+    boys_strict_warnings(boys-consumer-umbrella)
+
+    get_target_property(boysConsumerIncludes boys INTERFACE_INCLUDE_DIRECTORIES)
+    get_target_property(boysConsumerDefines boys INTERFACE_COMPILE_DEFINITIONS)
+    if (NOT boysConsumerIncludes OR NOT boysConsumerDefines)
+        message(FATAL_ERROR "boys: the library publishes its consumer surface through "
+            "INTERFACE_INCLUDE_DIRECTORIES and INTERFACE_COMPILE_DEFINITIONS; the "
+            "header-only consumer check reads both and found one empty.")
+    endif()
+    add_executable(boys-consumer-header-only tests/consumer_header_only.cpp)
+    target_include_directories(boys-consumer-header-only PRIVATE ${boysConsumerIncludes})
+    target_compile_definitions(boys-consumer-header-only PRIVATE ${boysConsumerDefines}
+        BoysConsumerReference="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/boys_reference.csv")
+    target_compile_features(boys-consumer-header-only PRIVATE cxx_std_20)
+    boys_strict_warnings(boys-consumer-header-only)
+    boys_assert_no_linked_library(boys-consumer-header-only)
+
     add_test(NAME boys-tests COMMAND boys-tests)
     add_test(NAME boys-boundary-standalone COMMAND boys-boundary-standalone)
+    add_test(NAME boys-consumer-umbrella COMMAND boys-consumer-umbrella)
+    add_test(NAME boys-consumer-header-only COMMAND boys-consumer-header-only)
+    # --strict: the gate fails on a claim whose evidence is not in the tree as
+    # well as on one it measures exceeded, so a green ctest never means "every
+    # documented claim is met at this revision" while a claim rest on a
+    # measurement this revision cannot re-run.
+    add_test(NAME boys-accuracy-gate COMMAND boys-accuracy-gate --strict)
     set_tests_properties(boys-boundary-standalone PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
 
@@ -221,14 +388,19 @@ endif()
 # --- CUDA lane (optional; needs the toolkit) --------------------------------
 if (BUILD_CUDA)
     # The host wrapper (boys_cuda.cpp) and the kernels (boys_cuda.cu) are one
-    # target: the .cpp compiles as C++23, the .cu as C++20 with a CUDA-safe
-    # include list (see the .cu preamble). Entry points take raw device
-    # pointers + a stream and report through boys::BoysStatus.
+    # target: the .cpp takes the library target's own minimum standard, the .cu
+    # is pinned at C++20 with a CUDA-safe include list (see the .cu preamble).
+    # Entry points take raw device pointers + a stream and report through
+    # boys::BoysStatus.
     add_library(boys-cuda
         src/boys_cuda.cpp
         src/boys_cuda.cu)
     target_include_directories(boys-cuda PUBLIC include PRIVATE src)
     target_compile_definitions(boys-cuda PUBLIC BoysFp16=1)
+    # Stated because this target links nothing that carries a standard into it:
+    # without it the host TU compiles at the compiler's default (C++14 on
+    # MSVC) and the library's headers do not build.
+    target_compile_features(boys-cuda PRIVATE cxx_std_20)
     boys_strict_warnings(boys-cuda)
 
     if (BOYS_BUILD_TESTS)
@@ -262,6 +434,16 @@ if (BUILD_BENCHMARKS)
     target_compile_definitions(boys-benchmark PRIVATE BoysFp16=1)
     target_compile_features(boys-benchmark PRIVATE cxx_std_23)
     boys_strict_warnings(boys-benchmark)
+
+    # The batch entry's own driver: it reports the entry against the
+    # per-argument loop and separates the sort's cost from the win, with
+    # ratios as the result and a protocol that survives a busy machine (see
+    # the file preamble). Portable: it calls no intrinsics of its own.
+    add_executable(boys-all-n-benchmark benchmarks/boys_all_n_benchmark.cpp)
+    target_link_libraries(boys-all-n-benchmark PRIVATE boys)
+    target_compile_definitions(boys-all-n-benchmark PRIVATE BoysFp16=1)
+    target_compile_features(boys-all-n-benchmark PRIVATE cxx_std_23)
+    boys_strict_warnings(boys-all-n-benchmark)
 
     # The AVX2 timing harness is x86_64-only, like the tier it measures. It is
     # a local-only target (never a CI leg), so on a non-x86_64 host it is
@@ -307,8 +489,8 @@ endif()
 
 # --- Generator byte-identity gate (top-level convenience targets) -----------
 # --check regenerates the Chebyshev tables and the reference grid into a temp
-# and byte-compares against the committed files (default paths: src/boys_
-# coefficients.hpp and tests/data/boys_reference.csv — spelled out here and
+# and byte-compares against the committed files (default paths: include/boys/
+# boys_coefficients.hpp and tests/data/boys_reference.csv — spelled out here and
 # in CI). The generator is deterministic (mpmath pinned in
 # requirements-boys.txt), so --check over the committed files is the
 # identity proof; CI additionally runs the no-args in-place regeneration
@@ -319,7 +501,7 @@ if (BOYS_TOP_LEVEL)
         add_custom_target(boys-generator-check
             COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_boys_coefficients.py --check
-                --header ${CMAKE_CURRENT_SOURCE_DIR}/src/boys_coefficients.hpp
+                --header ${CMAKE_CURRENT_SOURCE_DIR}/include/boys/boys_coefficients.hpp
                 --reference ${CMAKE_CURRENT_SOURCE_DIR}/tests/data/boys_reference.csv
             COMMENT "Boys table/reference byte-identity check (needs mpmath)"
             VERBATIM)

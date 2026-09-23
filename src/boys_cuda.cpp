@@ -2,7 +2,7 @@
 
 #include "boys/boys.hpp"
 #include "boys/f16.hpp"
-#include "boys_effective_degrees.hpp"
+#include "boys/boys_effective_degrees.hpp"
 
 #include <array>
 #include <cstddef>
@@ -20,28 +20,37 @@ int BoysCudaUploadTables();
 int BoysCudaUploadEffTables(double m, const int* degA, const int* degB);
 int BoysCudaLaunchSingleF32(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
-int BoysCudaLaunchBatchF32(
+int BoysCudaLaunchAllOrdersF32(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllNF32(int nmax, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchSingleF64(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
-int BoysCudaLaunchBatchF64(
+int BoysCudaLaunchAllOrdersF64(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllNF64(int nmax, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchSingleF32Eff(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
-int BoysCudaLaunchBatchF32Eff(
+int BoysCudaLaunchAllOrdersF32Eff(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllNF32Eff(
+    int nmax, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchSingleF64Eff(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
-int BoysCudaLaunchBatchF64Eff(
+int BoysCudaLaunchAllOrdersF64Eff(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllNF64Eff(
+    int nmax, const double* x, double* out, std::size_t count, void* stream);
 #if BoysFp16
 int BoysCudaLaunchSingleF16(
     const int* n, const void* x, void* out, std::size_t count, void* stream);
-int BoysCudaLaunchBatchF16(const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF16(
+    const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllNF16(int nmax, const void* x, void* out, std::size_t count, void* stream);
 int BoysCudaLaunchSingleF16Eff(
     const int* n, const void* x, void* out, std::size_t count, void* stream);
-int BoysCudaLaunchBatchF16Eff(
+int BoysCudaLaunchAllOrdersF16Eff(
     const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllNF16Eff(int nmax, const void* x, void* out, std::size_t count, void* stream);
 #endif
 }
 
@@ -59,6 +68,33 @@ BoysStatus FromLaunchCode(int code) {
     }
 
     return BoysStatus::kDeviceError;
+}
+
+// The uniform-order entries' one host-visible scalar: the order array of the
+// per-element entries cannot be checked without a device copy, this can.
+BoysStatus CheckOrder(int nmax) {
+    if (nmax < 0 || nmax > kMaxBoysOrder)
+    {
+        return BoysStatus::kInvalidArgument;
+    }
+
+    return BoysStatus::kSuccess;
+}
+
+// Shared launch path for every entry: the count == 0 no-op (a zero-block launch
+// is a CUDA error, an empty batch is a success that writes nothing) and the one
+// status mapping. Order is either entry's first argument: the per-element order
+// array or the uniform batch's nmax. The pointers carry the entry's own element
+// type, the fp16 lane's crossing as the void* the .cu exports take.
+template <typename Launcher, typename Order, typename X, typename Value>
+BoysStatus RunLaunch(
+    Launcher launcher, Order order, X x, Value* out, std::size_t count, void* stream) {
+    if (count == 0)
+    {
+        return BoysStatus::kSuccess;
+    }
+
+    return FromLaunchCode(launcher(order, x, out, count, stream));
 }
 
 } // namespace
@@ -157,21 +193,22 @@ BoysStatus BoysCuda::SingleF32(
     {
         // Byte-identical to the full-accuracy path: the m = 1 instantiation
         // calls the existing kernel and cDeg tables.
-        return FromLaunchCode(BoysCudaLaunchSingleF32(n, x, out, count, stream));
-    }
-
-    const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-    if (status != BoysStatus::kSuccess)
+        return RunLaunch(BoysCudaLaunchSingleF32, n, x, out, count, stream);
+    } else
     {
-        return status;
-    }
+        const auto status = EnsureEffTables<kAccuracyMultiplier>();
 
-    return FromLaunchCode(BoysCudaLaunchSingleF32Eff(n, x, out, count, stream));
+        if (status != BoysStatus::kSuccess)
+        {
+            return status;
+        }
+
+        return RunLaunch(BoysCudaLaunchSingleF32Eff, n, x, out, count, stream);
+    }
 }
 
 template <double kAccuracyMultiplier>
-BoysStatus BoysCuda::BatchF32(
+BoysStatus BoysCuda::AllOrdersF32(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
@@ -180,17 +217,49 @@ BoysStatus BoysCuda::BatchF32(
 
     if constexpr (kAccuracyMultiplier == 1.0)
     {
-        return FromLaunchCode(BoysCudaLaunchBatchF32(n, x, out, count, stream));
-    }
-
-    const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-    if (status != BoysStatus::kSuccess)
+        return RunLaunch(BoysCudaLaunchAllOrdersF32, n, x, out, count, stream);
+    } else
     {
-        return status;
+        const auto status = EnsureEffTables<kAccuracyMultiplier>();
+
+        if (status != BoysStatus::kSuccess)
+        {
+            return status;
+        }
+
+        return RunLaunch(BoysCudaLaunchAllOrdersF32Eff, n, x, out, count, stream);
+    }
+}
+
+template <double kAccuracyMultiplier>
+BoysStatus BoysCuda::AllNF32(
+    int nmax, const double* x, float* out, std::size_t count, void* stream) {
+    const auto valid = CheckOrder(nmax);
+
+    if (valid != BoysStatus::kSuccess)
+    {
+        return valid;
     }
 
-    return FromLaunchCode(BoysCudaLaunchBatchF32Eff(n, x, out, count, stream));
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    if constexpr (kAccuracyMultiplier == 1.0)
+    {
+        return RunLaunch(BoysCudaLaunchAllNF32, nmax, x, out, count, stream);
+    } else
+    {
+        const auto status = EnsureEffTables<kAccuracyMultiplier>();
+
+        if (status != BoysStatus::kSuccess)
+        {
+            return status;
+        }
+
+        return RunLaunch(BoysCudaLaunchAllNF32Eff, nmax, x, out, count, stream);
+    }
 }
 
 template <double kAccuracyMultiplier>
@@ -203,21 +272,22 @@ BoysStatus BoysCuda::SingleF64(
 
     if constexpr (kAccuracyMultiplier == 1.0)
     {
-        return FromLaunchCode(BoysCudaLaunchSingleF64(n, x, out, count, stream));
-    }
-
-    const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-    if (status != BoysStatus::kSuccess)
+        return RunLaunch(BoysCudaLaunchSingleF64, n, x, out, count, stream);
+    } else
     {
-        return status;
-    }
+        const auto status = EnsureEffTables<kAccuracyMultiplier>();
 
-    return FromLaunchCode(BoysCudaLaunchSingleF64Eff(n, x, out, count, stream));
+        if (status != BoysStatus::kSuccess)
+        {
+            return status;
+        }
+
+        return RunLaunch(BoysCudaLaunchSingleF64Eff, n, x, out, count, stream);
+    }
 }
 
 template <double kAccuracyMultiplier>
-BoysStatus BoysCuda::BatchF64(
+BoysStatus BoysCuda::AllOrdersF64(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
@@ -226,90 +296,128 @@ BoysStatus BoysCuda::BatchF64(
 
     if constexpr (kAccuracyMultiplier == 1.0)
     {
-        return FromLaunchCode(BoysCudaLaunchBatchF64(n, x, out, count, stream));
-    }
-
-    const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-    if (status != BoysStatus::kSuccess)
+        return RunLaunch(BoysCudaLaunchAllOrdersF64, n, x, out, count, stream);
+    } else
     {
-        return status;
-    }
+        const auto status = EnsureEffTables<kAccuracyMultiplier>();
 
-    return FromLaunchCode(BoysCudaLaunchBatchF64Eff(n, x, out, count, stream));
+        if (status != BoysStatus::kSuccess)
+        {
+            return status;
+        }
+
+        return RunLaunch(BoysCudaLaunchAllOrdersF64Eff, n, x, out, count, stream);
+    }
 }
 
-#if BoysFp16
-namespace {
-BoysStatus CheckCount(std::size_t count) {
-    // The fp16 kernels require at least one element (the count == 0 pin).
-    if (count == 0)
-    {
-        return BoysStatus::kInvalidArgument;
-    }
-
-    return BoysStatus::kSuccess;
-}
-
-// Shared fp16-launch path: device pointers throughout (the caller owns the
-// device memory), uniform async contract — the kernel is queued on the
-// caller's stream and the call returns once the launch is accepted.
-BoysStatus RunF16Call(int (*launcher)(const int*, const void*, void*, std::size_t, void*),
-                      const int* n,
-                      const void* x,
-                      void* out,
-                      std::size_t count,
-                      void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    const auto valid = CheckCount(count);
+template <double kAccuracyMultiplier>
+BoysStatus BoysCuda::AllNF64(
+    int nmax, const double* x, double* out, std::size_t count, void* stream) {
+    const auto valid = CheckOrder(nmax);
 
     if (valid != BoysStatus::kSuccess)
     {
         return valid;
     }
 
-    return FromLaunchCode(launcher(n, x, out, count, stream));
-}
-} // namespace
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
 
+    if constexpr (kAccuracyMultiplier == 1.0)
+    {
+        return RunLaunch(BoysCudaLaunchAllNF64, nmax, x, out, count, stream);
+    } else
+    {
+        const auto status = EnsureEffTables<kAccuracyMultiplier>();
+
+        if (status != BoysStatus::kSuccess)
+        {
+            return status;
+        }
+
+        return RunLaunch(BoysCudaLaunchAllNF64Eff, nmax, x, out, count, stream);
+    }
+}
+
+#if BoysFp16
 template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::SingleF16(
     const int* n, const F16* x, F16* out, std::size_t count, void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
     if constexpr (kAccuracyMultiplier == 1.0)
     {
-        return RunF16Call(BoysCudaLaunchSingleF16, n, x, out, count, stream);
-    }
-
-    const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-    if (status != BoysStatus::kSuccess)
+        return RunLaunch(BoysCudaLaunchSingleF16, n, x, out, count, stream);
+    } else
     {
-        return status;
-    }
+        const auto status = EnsureEffTables<kAccuracyMultiplier>();
 
-    return RunF16Call(BoysCudaLaunchSingleF16Eff, n, x, out, count, stream);
+        if (status != BoysStatus::kSuccess)
+        {
+            return status;
+        }
+
+        return RunLaunch(BoysCudaLaunchSingleF16Eff, n, x, out, count, stream);
+    }
 }
 
 template <double kAccuracyMultiplier>
-BoysStatus BoysCuda::BatchF16(
+BoysStatus BoysCuda::AllOrdersF16(
     const int* n, const F16* x, F16* out, std::size_t count, void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
     if constexpr (kAccuracyMultiplier == 1.0)
     {
-        return RunF16Call(BoysCudaLaunchBatchF16, n, x, out, count, stream);
-    }
-
-    const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-    if (status != BoysStatus::kSuccess)
+        return RunLaunch(BoysCudaLaunchAllOrdersF16, n, x, out, count, stream);
+    } else
     {
-        return status;
+        const auto status = EnsureEffTables<kAccuracyMultiplier>();
+
+        if (status != BoysStatus::kSuccess)
+        {
+            return status;
+        }
+
+        return RunLaunch(BoysCudaLaunchAllOrdersF16Eff, n, x, out, count, stream);
+    }
+}
+
+template <double kAccuracyMultiplier>
+BoysStatus BoysCuda::AllNF16(int nmax, const F16* x, F16* out, std::size_t count, void* stream) {
+    const auto valid = CheckOrder(nmax);
+
+    if (valid != BoysStatus::kSuccess)
+    {
+        return valid;
     }
 
-    return RunF16Call(BoysCudaLaunchBatchF16Eff, n, x, out, count, stream);
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    if constexpr (kAccuracyMultiplier == 1.0)
+    {
+        return RunLaunch(BoysCudaLaunchAllNF16, nmax, x, out, count, stream);
+    } else
+    {
+        const auto status = EnsureEffTables<kAccuracyMultiplier>();
+
+        if (status != BoysStatus::kSuccess)
+        {
+            return status;
+        }
+
+        return RunLaunch(BoysCudaLaunchAllNF16Eff, nmax, x, out, count, stream);
+    }
 }
 #endif // BoysFp16
 
@@ -320,63 +428,90 @@ BoysStatus BoysCuda::BatchF16(
 // (the full-accuracy pin), then the relaxation sample set.
 // ---------------------------------------------------------------------------
 template BoysStatus BoysCuda::SingleF32<1.0>(const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::BatchF32<1.0>(const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32<1.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF32<1.0>(int, const double*, float*, std::size_t, void*);
 template BoysStatus BoysCuda::SingleF64<1.0>(
     const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::BatchF64<1.0>(const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64<1.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF64<1.0>(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
 template BoysStatus BoysCuda::SingleF16<1.0>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::BatchF16<1.0>(const int*, const F16*, F16*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF16<1.0>(const int*, const F16*, F16*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF16<1.0>(int, const F16*, F16*, std::size_t, void*);
 #endif
 template BoysStatus BoysCuda::SingleF32<2.0>(const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::BatchF32<2.0>(const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32<2.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF32<2.0>(int, const double*, float*, std::size_t, void*);
 template BoysStatus BoysCuda::SingleF64<2.0>(
     const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::BatchF64<2.0>(const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64<2.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF64<2.0>(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
 template BoysStatus BoysCuda::SingleF16<2.0>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::BatchF16<2.0>(const int*, const F16*, F16*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF16<2.0>(const int*, const F16*, F16*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF16<2.0>(int, const F16*, F16*, std::size_t, void*);
 #endif
 template BoysStatus BoysCuda::SingleF32<10.0>(
     const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::BatchF32<10.0>(const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32<10.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF32<10.0>(int, const double*, float*, std::size_t, void*);
 template BoysStatus BoysCuda::SingleF64<10.0>(
     const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::BatchF64<10.0>(
+template BoysStatus BoysCuda::AllOrdersF64<10.0>(
     const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF64<10.0>(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
 template BoysStatus BoysCuda::SingleF16<10.0>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::BatchF16<10.0>(const int*, const F16*, F16*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF16<10.0>(const int*, const F16*, F16*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF16<10.0>(int, const F16*, F16*, std::size_t, void*);
 #endif
 template BoysStatus BoysCuda::SingleF32<100.0>(
     const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::BatchF32<100.0>(
+template BoysStatus BoysCuda::AllOrdersF32<100.0>(
     const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF32<100.0>(int, const double*, float*, std::size_t, void*);
 template BoysStatus BoysCuda::SingleF64<100.0>(
     const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::BatchF64<100.0>(
+template BoysStatus BoysCuda::AllOrdersF64<100.0>(
     const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF64<100.0>(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
 template BoysStatus BoysCuda::SingleF16<100.0>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::BatchF16<100.0>(const int*, const F16*, F16*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF16<100.0>(const int*, const F16*, F16*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF16<100.0>(int, const F16*, F16*, std::size_t, void*);
 #endif
 template BoysStatus BoysCuda::SingleF32<1e4>(const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::BatchF32<1e4>(const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32<1e4>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF32<1e4>(int, const double*, float*, std::size_t, void*);
 template BoysStatus BoysCuda::SingleF64<1e4>(
     const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::BatchF64<1e4>(const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64<1e4>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF64<1e4>(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
 template BoysStatus BoysCuda::SingleF16<1e4>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::BatchF16<1e4>(const int*, const F16*, F16*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF16<1e4>(const int*, const F16*, F16*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF16<1e4>(int, const F16*, F16*, std::size_t, void*);
 #endif
 template BoysStatus BoysCuda::SingleF32<1e8>(const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::BatchF32<1e8>(const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32<1e8>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF32<1e8>(int, const double*, float*, std::size_t, void*);
 template BoysStatus BoysCuda::SingleF64<1e8>(
     const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::BatchF64<1e8>(const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64<1e8>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF64<1e8>(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
 template BoysStatus BoysCuda::SingleF16<1e8>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::BatchF16<1e8>(const int*, const F16*, F16*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF16<1e8>(const int*, const F16*, F16*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF16<1e8>(int, const F16*, F16*, std::size_t, void*);
 #endif
 
 } // namespace boys

@@ -1,7 +1,7 @@
 #include "boys/boys.hpp"
-#include "boys_coefficients.hpp"
-#include "boys_effective_degrees.hpp"
-#include "boys_impl.hpp"
+#include "boys/boys_coefficients.hpp"
+#include "boys/boys_effective_degrees.hpp"
+#include "boys/boys_impl.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -97,7 +97,7 @@
 // instantiations of the region entries live at the bottom of this TU (the
 // extern-template declarations in boys.hpp).
 
-namespace boys {
+namespace boys::detail {
 namespace {
 
 using detail::kX0;
@@ -410,10 +410,18 @@ __m256d ClenshawB4(__m256d xv) noexcept {
 
 } // namespace
 
+} // namespace boys::detail
+
+namespace boys {
+
 bool BoysAvx2Available() noexcept {
-    static const bool available = DetectAvx2();
+    static const bool available = detail::DetectAvx2();
     return available;
 }
+
+} // namespace boys
+
+namespace boys::detail {
 
 template <double kAccuracyMultiplier>
 void BoysRegionASimd(int n, const double* x, double* out, std::size_t count) noexcept {
@@ -522,7 +530,7 @@ void BoysRegionBSimd(int n, const double* x, double* out, std::size_t count) noe
     for (std::size_t i = count - (count % 4); i < count; ++i)
     {
         double batch[kMaxBoysOrder + 1];
-        BoysBatch<kAccuracyMultiplier>(n, x[i], batch);
+        BoysAllOrders<kAccuracyMultiplier>(n, x[i], batch);
 
         for (int l = 0; l <= n; ++l)
         {
@@ -736,7 +744,7 @@ struct F16Lane {
     }
 
     template <double kAccuracyMultiplier> static void Batch(int n, HalfT x, HalfT* out) noexcept {
-        BoysBatchF16<kAccuracyMultiplier>(n, x, out);
+        BoysAllOrdersF16<kAccuracyMultiplier>(n, x, out);
     }
 };
 
@@ -773,13 +781,16 @@ struct Bf16Lane {
     }
 
     template <double kAccuracyMultiplier> static void Batch(int n, HalfT x, HalfT* out) noexcept {
-        BoysBatchBf16<kAccuracyMultiplier>(n, x, out);
+        BoysAllOrdersBf16<kAccuracyMultiplier>(n, x, out);
     }
 };
 
 // Region-partitioned 8-wide kernels shared by the fp16 and bf16 lanes.
-// The scalar tails call the half-lane scalar entries, so the SIMD lane
-// never drifts from the certified scalar lane.
+// The scalar tails call the half-lane scalar entries, and the vector bodies
+// hold the same documented bound as those entries (they are not bit-identical
+// to them: the bodies run the fp32 fit at full degree where the scalar lane
+// truncates it, so the two differ by quanta of the half format, never by a
+// value the bound cannot absorb).
 template <typename Lane, double kAccuracyMultiplier>
 void RegionASimdHalf(int n,
                      const typename Lane::HalfT* x,
@@ -852,15 +863,22 @@ void RegionBSimdHalf(int n,
             const __m256 xv = Lane::Load(x + i);
             __m256 f = ClenshawB8F32(xv);
             const __m256 expx = Eval8Exp(expTable, xv);
-            const __m256 invx = _mm256_div_ps(_mm256_set1_ps(1.0f), xv);
             Lane::Store(out + i, f);
 
             for (int l = 0; l < n; ++l)
             {
-                f = _mm256_fmadd_ps(_mm256_set1_ps(static_cast<float>(l) + 0.5f),
+                // Divide by x rather than multiply by the rounded 1/x: the
+                // upward recurrence amplifies a relative perturbation by
+                // ((l + 1/2)/x) per step, and past l = x that factor exceeds
+                // one, so the reciprocal's 6e-8 rounding compounds to tens of
+                // per cent at the highest orders (measured at n = 32,
+                // x = 11.9453: 2.5e-8 by multiplication, 8.4e-8 by division,
+                // against 1.539e-7 exact). The certified scalar lane divides.
+                f = _mm256_div_ps(
+                    _mm256_fmadd_ps(_mm256_set1_ps(static_cast<float>(l) + 0.5f),
                                     f,
-                                    _mm256_mul_ps(_mm256_set1_ps(-0.5f), expx));
-                f = _mm256_mul_ps(f, invx);
+                                    _mm256_mul_ps(_mm256_set1_ps(-0.5f), expx)),
+                    xv);
                 Lane::Store(out + (l + 1) * count + i, f);
             }
         }
@@ -874,15 +892,16 @@ void RegionBSimdHalf(int n,
             const __m256 xv = Lane::Load(x + i);
             __m256 f = ClenshawB8F32Deg(kDegreesB[static_cast<std::size_t>(n)], xv);
             const __m256 expx = Eval8Exp(expTable, xv);
-            const __m256 invx = _mm256_div_ps(_mm256_set1_ps(1.0f), xv);
             Lane::Store(out + i, f);
 
             for (int l = 0; l < n; ++l)
             {
-                f = _mm256_fmadd_ps(_mm256_set1_ps(static_cast<float>(l) + 0.5f),
+                // Division, not a rounded reciprocal: see the m = 1 arm.
+                f = _mm256_div_ps(
+                    _mm256_fmadd_ps(_mm256_set1_ps(static_cast<float>(l) + 0.5f),
                                     f,
-                                    _mm256_mul_ps(_mm256_set1_ps(-0.5f), expx));
-                f = _mm256_mul_ps(f, invx);
+                                    _mm256_mul_ps(_mm256_set1_ps(-0.5f), expx)),
+                    xv);
                 Lane::Store(out + (l + 1) * count + i, f);
             }
         }
@@ -962,7 +981,7 @@ void BoysRegionBSimdF16(int n, const F16* x, F16* out, std::size_t count) noexce
 
         for (std::size_t i = 0; i < count; ++i)
         {
-            BoysBatchF16<kAccuracyMultiplier>(n, x[i], batch);
+            BoysAllOrdersF16<kAccuracyMultiplier>(n, x[i], batch);
 
             for (int l = 0; l <= n; ++l)
             {
@@ -1023,7 +1042,7 @@ void BoysRegionBSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
 
         for (std::size_t i = 0; i < count; ++i)
         {
-            BoysBatchBf16<kAccuracyMultiplier>(n, x[i], batch);
+            BoysAllOrdersBf16<kAccuracyMultiplier>(n, x[i], batch);
 
             for (int l = 0; l <= n; ++l)
             {
@@ -1056,7 +1075,7 @@ void BoysRegionCSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
 }
 #endif // BoysFp16
 
-} // namespace boys
+} // namespace boys::detail
 
 #else // BOYS_SIMD_X86
 
@@ -1072,11 +1091,19 @@ void BoysRegionCSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
 // gets the same numbers it would get from the x86 entry on a machine without
 // AVX2. Region B keeps its transposed layout out[l * count + i].
 // ---------------------------------------------------------------------------
+namespace boys::detail {
+
+} // namespace boys::detail
+
 namespace boys {
 
 bool BoysAvx2Available() noexcept {
     return false;
 }
+
+} // namespace boys
+
+namespace boys::detail {
 
 template <double kAccuracyMultiplier>
 void BoysRegionASimd(int n, const double* x, double* out, std::size_t count) noexcept {
@@ -1096,7 +1123,7 @@ void BoysRegionBSimd(int n, const double* x, double* out, std::size_t count) noe
 
     for (std::size_t i = 0; i < count; ++i)
     {
-        BoysBatch<kAccuracyMultiplier>(n, x[i], batch);
+        BoysAllOrders<kAccuracyMultiplier>(n, x[i], batch);
 
         for (int l = 0; l <= n; ++l)
         {
@@ -1134,7 +1161,7 @@ void BoysRegionBSimdF16(int n, const F16* x, F16* out, std::size_t count) noexce
 
     for (std::size_t i = 0; i < count; ++i)
     {
-        BoysBatchF16<kAccuracyMultiplier>(n, x[i], batch);
+        BoysAllOrdersF16<kAccuracyMultiplier>(n, x[i], batch);
 
         for (int l = 0; l <= n; ++l)
         {
@@ -1171,7 +1198,7 @@ void BoysRegionBSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
 
     for (std::size_t i = 0; i < count; ++i)
     {
-        BoysBatchBf16<kAccuracyMultiplier>(n, x[i], batch);
+        BoysAllOrdersBf16<kAccuracyMultiplier>(n, x[i], batch);
 
         for (int l = 0; l <= n; ++l)
         {
@@ -1191,13 +1218,13 @@ void BoysRegionCSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
 }
 #endif // BoysFp16
 
-} // namespace boys
+} // namespace boys::detail
 
 #endif // BOYS_SIMD_X86
 
 // The default (m = 1) instantiations behind the extern-template declarations
 // in boys.hpp (the m = 1 branches are today's bodies verbatim).
-namespace boys {
+namespace boys::detail {
 template void BoysRegionASimd<kBoysFullAccuracyMultiplier>(int n,
                                                            const double* x,
                                                            double* out,
@@ -1237,4 +1264,4 @@ template void BoysRegionCSimdBf16<kBoysFullAccuracyMultiplier>(int n,
                                                                std::size_t count) noexcept;
 #endif // BoysFp16
 
-} // namespace boys
+} // namespace boys::detail

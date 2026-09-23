@@ -2,6 +2,10 @@
 // Piecewise Chebyshev (split Clenshaw) fits of F_n(x), region A seeds
 // weighted against downward-recursion amplification; validated against a
 // 30-digit mpmath reference (definitive check: tests/boys_test.cpp).
+/// \cond
+// Not API: the generated tables the entries are compiled from. The
+// header ships because the entries' kernels are header-defined; the
+// API reference documents the entries.
 #pragma once
 #include <array>
 #include <cstddef>
@@ -1075,3 +1079,5 @@ inline constexpr auto kBcoeffs = std::to_array<float>({2.03117549419403076e-01f,
 inline constexpr int kBDeg = 10;
 
 } // namespace boys::detail::f32
+
+/// \endcond

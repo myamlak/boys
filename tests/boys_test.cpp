@@ -1,5 +1,6 @@
 #include "boys/boys.hpp"
-#include "boys_coefficients.hpp"
+#include "boys/boys_coefficients.hpp"
+#include "boys/boys_impl.hpp"
 
 #include <algorithm>
 #include <array>
@@ -421,7 +422,7 @@ TEST(BoysTest, BatchMatchesReferenceDouble) {
 
     for (const auto& row : gReference)
     {
-        boys::BoysBatch(row.n, row.x, batch.data());
+        boys::BoysAllOrders(row.n, row.x, batch.data());
 
         for (int k = 0; k <= row.n; ++k)
         {
@@ -454,7 +455,7 @@ TEST(BoysTest, BatchMatchesReferenceDouble) {
     EXPECT_LE(regionWorst.c, kDoubleTolerance) << "batch region C (x >= kX1)";
     EXPECT_LE(regionWorst.e, kDoubleTolerance) << "batch extended band (kExtendedBX0 <= x < kX0)";
 
-    std::printf("BoysBatch: worst |error| = %.3e (region A %.3e, region B %.3e, region C %.3e, "
+    std::printf("BoysAllOrders: worst |error| = %.3e (region A %.3e, region B %.3e, region C %.3e, "
                 "extended band %.3e)\n",
                 worst,
                 regionWorst.a,
@@ -510,7 +511,7 @@ TEST(BoysTest, BatchMatchesReferenceFloat) {
             continue;
         }
 
-        boys::BoysBatchF32(row.n, static_cast<float>(row.x), batch.data());
+        boys::BoysAllOrdersF32(row.n, static_cast<float>(row.x), batch.data());
 
         for (int k = 0; k <= row.n; ++k)
         {
@@ -541,7 +542,7 @@ TEST(BoysTest, BatchMatchesReferenceFloat) {
     EXPECT_LE(regionWorst.e, static_cast<double>(kFloatTolerance))
         << "batch extended band (kExtendedBX0 <= x < kX0)";
 
-    std::printf("BoysBatchF32: worst |error| = %.3e (region A %.3e, region B %.3e, region C %.3e, "
+    std::printf("BoysAllOrdersF32: worst |error| = %.3e (region A %.3e, region B %.3e, region C %.3e, "
                 "extended band %.3e)\n",
                 worst,
                 regionWorst.a,
@@ -558,7 +559,7 @@ TEST(BoysTest, ZeroArgumentIsExact) {
     }
 
     double batch[boys::kMaxBoysOrder + 1];
-    boys::BoysBatch(8, 0.0, batch);
+    boys::BoysAllOrders(8, 0.0, batch);
 
     for (int k = 0; k <= 8; ++k)
     {
@@ -566,7 +567,7 @@ TEST(BoysTest, ZeroArgumentIsExact) {
     }
 
     float batchF32[boys::kMaxBoysOrder + 1];
-    boys::BoysBatchF32(8, 0.0f, batchF32);
+    boys::BoysAllOrdersF32(8, 0.0f, batchF32);
 
     for (int k = 0; k <= 8; ++k)
     {
@@ -585,7 +586,7 @@ TEST(BoysTest, BatchConsistentWithSingleDouble) {
     {
         const double x = xd(rng);
         const int nmax = static_cast<int>(rng() % (boys::kMaxBoysOrder + 1));
-        boys::BoysBatch(nmax, x, batch.data());
+        boys::BoysAllOrders(nmax, x, batch.data());
 
         for (int k = 0; k <= nmax; ++k)
         {
@@ -783,7 +784,7 @@ TEST(BoysTest, SimdMatchesScalarWhenAvailable) {
     }
 
     const int n = 8;
-    boys::BoysRegionASimd(n, x.data(), out.data(), kCount);
+    boys::detail::BoysRegionASimd(n, x.data(), out.data(), kCount);
 
     for (std::size_t i = 0; i < kCount; ++i)
     {
@@ -799,12 +800,12 @@ TEST(BoysTest, SimdMatchesScalarWhenAvailable) {
         v = xdB(rng);
     }
 
-    boys::BoysRegionBSimd(n, x.data(), batchOut.data(), kCount);
+    boys::detail::BoysRegionBSimd(n, x.data(), batchOut.data(), kCount);
 
     for (std::size_t i = 0; i < kCount; ++i)
     {
         double scalar[boys::kMaxBoysOrder + 1];
-        boys::BoysBatch(n, x[i], scalar);
+        boys::BoysAllOrders(n, x[i], scalar);
 
         for (int k = 0; k <= n; ++k)
         {
@@ -820,7 +821,7 @@ TEST(BoysTest, SimdMatchesScalarWhenAvailable) {
         v = xdC(rng);
     }
 
-    boys::BoysRegionCSimd(n, x.data(), out.data(), kCount);
+    boys::detail::BoysRegionCSimd(n, x.data(), out.data(), kCount);
 
     for (std::size_t i = 0; i < kCount; ++i)
     {
@@ -835,7 +836,7 @@ TEST(BoysTest, SimdMatchesScalarWhenAvailable) {
     double tailA[5] = {1.0, 2.0, 5.0, 8.0, 11.0};
     double tailC[5] = {30.0, 35.0, 40.0, 45.0, 50.0};
     double tailOut[5] = {};
-    boys::BoysRegionASimd(n, tailA, tailOut, 5);
+    boys::detail::BoysRegionASimd(n, tailA, tailOut, 5);
 
     for (std::size_t i = 0; i < 5; ++i)
     {
@@ -843,35 +844,35 @@ TEST(BoysTest, SimdMatchesScalarWhenAvailable) {
         EXPECT_NEAR(tailOut[i], boys::BoysSingle(n, tailA[i]), tolerance);
     }
 
-    boys::BoysRegionCSimd(n, tailC, tailOut, 5);
+    boys::detail::BoysRegionCSimd(n, tailC, tailOut, 5);
 
     for (std::size_t i = 0; i < 5; ++i)
     {
         EXPECT_NEAR(tailOut[i], boys::BoysSingle(n, tailC[i]), 1e-15);
     }
 
-    boys::BoysRegionASimd(n, tailA, tailOut, 0);
-    boys::BoysRegionBSimd(n, tailA, batchOut.data(), 0);
-    boys::BoysRegionCSimd(n, tailC, tailOut, 0);
+    boys::detail::BoysRegionASimd(n, tailA, tailOut, 0);
+    boys::detail::BoysRegionBSimd(n, tailA, batchOut.data(), 0);
+    boys::detail::BoysRegionCSimd(n, tailC, tailOut, 0);
 }
 
 #if BoysFp16
 TEST(BoysTest, SingleMatchesReferenceF16) {
-    RunReferenceChecks<boys::F16, boys::BoysSingleF16, boys::BoysBatchF16>("BoysF16");
+    RunReferenceChecks<boys::F16, boys::BoysSingleF16, boys::BoysAllOrdersF16>("BoysF16");
 }
 
 TEST(BoysTest, BatchMatchesReferenceF16) {
     // Covered by the single sweep's batch half; this test name documents the
     // batch gate explicitly for the fp16 lane.
-    RunReferenceChecks<boys::F16, boys::BoysSingleF16, boys::BoysBatchF16>("BoysF16(batch)");
+    RunReferenceChecks<boys::F16, boys::BoysSingleF16, boys::BoysAllOrdersF16>("BoysF16(batch)");
 }
 
 TEST(BoysTest, SingleMatchesReferenceBf16) {
-    RunReferenceChecks<boys::Bf16, boys::BoysSingleBf16, boys::BoysBatchBf16>("BoysBf16");
+    RunReferenceChecks<boys::Bf16, boys::BoysSingleBf16, boys::BoysAllOrdersBf16>("BoysBf16");
 }
 
 TEST(BoysTest, BatchMatchesReferenceBf16) {
-    RunReferenceChecks<boys::Bf16, boys::BoysSingleBf16, boys::BoysBatchBf16>("BoysBf16(batch)");
+    RunReferenceChecks<boys::Bf16, boys::BoysSingleBf16, boys::BoysAllOrdersBf16>("BoysBf16(batch)");
 }
 
 TEST(BoysTest, ZeroArgumentIsExactF16) {
@@ -886,7 +887,7 @@ TEST(BoysTest, ZeroArgumentIsExactF16) {
     }
 
     std::array<boys::F16, boys::kMaxBoysOrder + 1> batchF16{};
-    boys::BoysBatchF16(8, boys::F16{0.0f}, batchF16.data());
+    boys::BoysAllOrdersF16(8, boys::F16{0.0f}, batchF16.data());
 
     for (int k = 0; k <= 8; ++k)
     {
@@ -908,7 +909,7 @@ TEST(BoysTest, ZeroArgumentIsExactBf16) {
     }
 
     std::array<boys::Bf16, boys::kMaxBoysOrder + 1> batchBf16{};
-    boys::BoysBatchBf16(8, boys::Bf16{0.0f}, batchBf16.data());
+    boys::BoysAllOrdersBf16(8, boys::Bf16{0.0f}, batchBf16.data());
 
     for (int k = 0; k <= 8; ++k)
     {
@@ -935,7 +936,7 @@ TEST(BoysTest, BatchConsistentWithSingleF16) {
     {
         const boys::F16 x = static_cast<boys::F16>(xd(rng));
         const int nmax = static_cast<int>(rng() % (boys::kMaxBoysOrder + 1));
-        boys::BoysBatchF16(nmax, x, batch.data());
+        boys::BoysAllOrdersF16(nmax, x, batch.data());
 
         for (int k = 0; k <= nmax; ++k)
         {
@@ -959,7 +960,7 @@ TEST(BoysTest, BatchConsistentWithSingleBf16) {
     {
         const boys::Bf16 x = static_cast<boys::Bf16>(xd(rng));
         const int nmax = static_cast<int>(rng() % (boys::kMaxBoysOrder + 1));
-        boys::BoysBatchBf16(nmax, x, batch.data());
+        boys::BoysAllOrdersBf16(nmax, x, batch.data());
 
         for (int k = 0; k <= nmax; ++k)
         {
@@ -979,10 +980,10 @@ TEST(BoysTest, SimdMatchesScalarF16) {
 
     RunSimdLaneChecks<boys::F16,
                       boys::BoysSingleF16,
-                      boys::BoysBatchF16,
-                      boys::BoysRegionASimdF16,
-                      boys::BoysRegionBSimdF16,
-                      boys::BoysRegionCSimdF16>();
+                      boys::BoysAllOrdersF16,
+                      boys::detail::BoysRegionASimdF16,
+                      boys::detail::BoysRegionBSimdF16,
+                      boys::detail::BoysRegionCSimdF16>();
 }
 
 TEST(BoysTest, SimdMatchesScalarBf16) {
@@ -993,9 +994,9 @@ TEST(BoysTest, SimdMatchesScalarBf16) {
 
     RunSimdLaneChecks<boys::Bf16,
                       boys::BoysSingleBf16,
-                      boys::BoysBatchBf16,
-                      boys::BoysRegionASimdBf16,
-                      boys::BoysRegionBSimdBf16,
-                      boys::BoysRegionCSimdBf16>();
+                      boys::BoysAllOrdersBf16,
+                      boys::detail::BoysRegionASimdBf16,
+                      boys::detail::BoysRegionBSimdBf16,
+                      boys::detail::BoysRegionCSimdBf16>();
 }
 #endif // BoysFp16

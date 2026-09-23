@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate the Boys-function Chebyshev coefficient tables and test reference data.
 
-Reproduces src/boys_coefficients.hpp (double and float lanes) and
+Reproduces include/boys/boys_coefficients.hpp (double and float lanes) and
 tests/data/boys_reference.csv from scratch, validating every fit
 against a 30-digit mpmath reference. Requires: `pip install mpmath`.
 
@@ -425,6 +425,10 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
         f.write("// Piecewise Chebyshev (split Clenshaw) fits of F_n(x), region A seeds\n")
         f.write("// weighted against downward-recursion amplification; validated against a\n")
         f.write("// 30-digit mpmath reference (definitive check: tests/boys_test.cpp).\n")
+        f.write("/// \\cond\n")
+        f.write("// Not API: the generated tables the entries are compiled from. The\n")
+        f.write("// header ships because the entries' kernels are header-defined; the\n")
+        f.write("// API reference documents the entries.\n")
         f.write("#pragma once\n#include <array>\n#include <cstddef>\n\n")
         f.write("namespace boys::detail {\n\n")
         f.write(f"inline constexpr int kMaxOrder = {MAX_ORDER};\n")
@@ -521,6 +525,7 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
                 + ", ".join(fmtf(c) for c in cs) + "});\n")
         f.write(f"inline constexpr int kBDeg = {deg};\n")
         f.write("\n}  // namespace boys::detail::f32\n")
+        f.write("\n/// \\endcond\n")
 
 
 def write_reference(path):
@@ -631,7 +636,7 @@ def format_header(path):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--header", default="src/boys_coefficients.hpp")
+    parser.add_argument("--header", default="include/boys/boys_coefficients.hpp")
     parser.add_argument("--reference", default="tests/data/boys_reference.csv")
     parser.add_argument("--reference-only", action="store_true",
                         help="regenerate only the reference CSV (skip the fitting)")

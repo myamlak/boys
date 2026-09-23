@@ -2,15 +2,15 @@
 //
 // The m = 1 entries route to the library's exported certified
 // instantiations; the sampled-m entries (m > 1) instantiate the engine from
-// the internal headers at the dispatch set below — the library exports only
-// the m = 1 instantiations (see boys_impl.hpp), so the relaxed bodies are
-// compiled here, exactly as the contract tests compile them.
+// the shipped headers at the dispatch set below — those call sites name
+// their own multiplier, so their bodies are compiled here, exactly as the
+// contract tests compile them.
 
 #include "boys/boys_c.h"
 
 #include "boys/boys.hpp"
-#include "boys_effective_degrees.hpp"
-#include "boys_impl.hpp"
+#include "boys/boys_effective_degrees.hpp"
+#include "boys/boys_impl.hpp"
 
 namespace {
 
@@ -72,7 +72,7 @@ int RunBatchDouble(int nmax, int count, const double* x, double* out) {
             return BOYS_ERROR_INVALID_ARGUMENT;
         }
 
-        boys::BoysBatch(nmax, x[i], row);
+        boys::BoysAllOrders(nmax, x[i], row);
 
         for (int k = 0; k <= nmax; ++k)
         {
@@ -198,7 +198,7 @@ int BoysFloatBatch(int nmax, int count, const float* x, float* out) {
             return BOYS_ERROR_INVALID_ARGUMENT;
         }
 
-        boys::BoysBatchF32(nmax, x[i], row);
+        boys::BoysAllOrdersF32(nmax, x[i], row);
 
         for (int k = 0; k <= nmax; ++k)
         {

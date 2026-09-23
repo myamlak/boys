@@ -4,7 +4,7 @@
 // C++20 with a CUDA-safe include list only: the library's C++23 headers
 // would poison the nvcc translation unit.
 
-#include "boys_coefficients.hpp"
+#include "boys/boys_coefficients.hpp"
 
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
@@ -41,15 +41,20 @@ __constant__ int cCount32[33];
 __constant__ float cBcoeffs32[24];
 __constant__ int cBDeg32;
 
-// The accuracy-multiplier effective-degree tables: one lane per CUDA entry
-// point, in the order the host fills them (boys_cuda.cpp FillEffLane):
+// The accuracy-multiplier effective-degree tables: one lane per CUDA role,
+// in the order the host fills them (boys_cuda.cpp FillEffLane). Each all-orders
+// lane serves both entries of its precision — the per-element orders and the
+// uniform nmax — so the two read one degree table:
 //   0 = double single (BoysSingleF64KernelEff, region-B degree per order)
-//   1 = double batch (BoysBatchF64KernelEff, region-B degree = order-0 entry)
+//   1 = double batch (BoysAllOrdersF64KernelEff/BoysAllNF64KernelEff,
+//       region-B degree = order-0 entry)
 //   2 = float single (BoysSingleF32KernelEff, region-B degree per order)
-//   3 = float batch (BoysBatchF32KernelEff, region-B degree = order-0 entry;
+//   3 = float batch (BoysAllOrdersF32KernelEff/BoysAllNF32KernelEff,
+//       region-B degree = order-0 entry;
 //       the region-A seed is the DOUBLE piece table, budget 1.5e-7)
 //   4 = fp16 single (BoysSingleF16KernelEff, region-B degree per order)
-//   5 = fp16 batch (BoysBatchF16KernelEff, region-B degree = order-0 entry;
+//   5 = fp16 batch (BoysAllOrdersF16KernelEff/BoysAllNF16KernelEff,
+//       region-B degree = order-0 entry;
 //       the region-A seed is the DOUBLE piece table, budget 1e-7)
 // Filled host-side once per (device, m) — the single-m-per-process cache,
 // same idempotence contract as BoysCudaUploadTables. The relaxed kernels
@@ -212,7 +217,7 @@ __device__ __forceinline__ float DevSeedB32(float x) {
 // compile-time lane index of the calling kernel (cDegEff[0..5] above); the
 // region-B entry is the per-order degree for the single lanes and the
 // order-0 entry for the batch lanes (the F0 seed's error reaches every
-// output with amplification <= A_B(0) = 1 — the CPU fix, boys_impl.hpp).
+// output with gain <= 1 + 1.846e-17 — the CPU fix, boys_impl.hpp).
 template <int kLane> __device__ __forceinline__ double DevSeedEff(int order, double x) {
     const int count = cCount[order];
     int p = count - 1;
@@ -308,27 +313,14 @@ __global__ void BoysSingleF32Kernel(const int* n,
     out[i] = f;
 }
 
-// See BoysSingleF32Kernel: x and out never alias.
-__global__ void BoysBatchF32Kernel(const int* n,
-                                   const double* __restrict__ x,
-                                   float* __restrict__ out,
-                                   size_t count) {
-    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
-
-    if (i >= count)
-    {
-        return;
-    }
-
-    const int order = n[i];
-    const float xx = static_cast<float>(x[i]);
-
+__device__ __forceinline__ void DevAllOrdersF32(
+    int order, float xx, float* __restrict__ out, size_t i, size_t count) {
     if (xx < static_cast<float>(kX0d))
     {
         // Double seed: the downward recursion amplifies a float seed error
-        // beyond the certified 1.5e-7 float budget (see BoysBatchF32 in
+        // beyond the certified 1.5e-7 float budget (see BoysAllOrdersF32 in
         // boys.cpp).
-        const double seed = DevSeed(order, static_cast<double>(x[i]));
+        const double seed = DevSeed(order, static_cast<double>(xx));
         float f = static_cast<float>(seed);
         out[order * count + i] = f;
         // expf, not __expf: the downward recursion amplifies the e^{-x}
@@ -369,6 +361,37 @@ __global__ void BoysBatchF32Kernel(const int* n,
         f = (l - 0.5f) * f / xx;
         out[l * count + i] = f;
     }
+}
+
+// See BoysSingleF32Kernel: x and out never alias.
+__global__ void BoysAllOrdersF32Kernel(const int* n,
+                                   const double* __restrict__ x,
+                                   float* __restrict__ out,
+                                   size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DevAllOrdersF32(n[i], static_cast<float>(x[i]), out, i, count);
+}
+
+// The uniform-order entry: one nmax for the whole batch, so the recursion
+// bounds are warp-uniform and no order array is read.
+__global__ void BoysAllNF32Kernel(int nmax,
+                                  const double* __restrict__ x,
+                                  float* __restrict__ out,
+                                  size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DevAllOrdersF32(nmax, static_cast<float>(x[i]), out, i, count);
 }
 
 __global__ void BoysSingleF64Kernel(const int* n, const double* x, double* out, size_t count) {
@@ -413,16 +436,16 @@ __global__ void BoysSingleF64Kernel(const int* n, const double* x, double* out, 
     out[i] = f;
 }
 
-__global__ void BoysBatchF64Kernel(const int* n, const double* x, double* out, size_t count) {
-    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
-
-    if (i >= count)
-    {
-        return;
-    }
-
-    const int order = n[i];
-    const double xx = x[i];
+// ---------------------------------------------------------------------------
+// all-orders bodies: one argument, every order 0..order, written into the
+// caller's order-major planes (out[l * count + i] = F_l(x)). One body per
+// precision family, shared by the two kernels that reach it — the per-element
+// order array and the batch's single nmax (the uniform entry) — so the two
+// cannot drift apart numerically.
+// ---------------------------------------------------------------------------
+__device__ __forceinline__ void DevAllOrdersF64(
+    int order, double x, double* __restrict__ out, size_t i, size_t count) {
+    const double xx = x;
 
     if (xx < kX0d)
     {
@@ -463,6 +486,30 @@ __global__ void BoysBatchF64Kernel(const int* n, const double* x, double* out, s
         f = (l - 0.5) * f / xx;
         out[l * count + i] = f;
     }
+}
+
+__global__ void BoysAllOrdersF64Kernel(const int* n, const double* x, double* out, size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DevAllOrdersF64(n[i], x[i], out, i, count);
+}
+
+// The uniform-order entry: one nmax for the whole batch, so the recursion
+// bounds are warp-uniform and no order array is read.
+__global__ void BoysAllNF64Kernel(int nmax, const double* x, double* out, size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DevAllOrdersF64(nmax, x[i], out, i, count);
 }
 
 // ---------------------------------------------------------------------------
@@ -513,23 +560,8 @@ __global__ void BoysSingleF16Kernel(const int* n,
     out[i] = __float2half(f);
 }
 
-// See BoysSingleF16Kernel; the batch layout matches BoysBatchF32Kernel
-// (the region-A seed in double precision -- the downward recursion
-// amplifies float seed errors beyond the 1e-7 budget).
-__global__ void BoysBatchF16Kernel(const int* n,
-                                   const __half* __restrict__ x,
-                                   __half* __restrict__ out,
-                                   size_t count) {
-    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
-
-    if (i >= count)
-    {
-        return;
-    }
-
-    const int order = n[i];
-    const float xx = __half2float(x[i]);
-
+__device__ __forceinline__ void DevAllOrdersF16(
+    int order, float xx, __half* __restrict__ out, size_t i, size_t count) {
     if (xx < static_cast<float>(kX0d))
     {
         const double seed = DevSeed(order, static_cast<double>(xx));
@@ -571,6 +603,38 @@ __global__ void BoysBatchF16Kernel(const int* n,
         out[l * count + i] = __float2half(f);
     }
 }
+
+// See BoysSingleF16Kernel; the batch layout matches BoysAllOrdersF32Kernel
+// (the region-A seed in double precision -- the downward recursion
+// amplifies float seed errors beyond the 1e-7 budget).
+__global__ void BoysAllOrdersF16Kernel(const int* n,
+                                   const __half* __restrict__ x,
+                                   __half* __restrict__ out,
+                                   size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DevAllOrdersF16(n[i], __half2float(x[i]), out, i, count);
+}
+
+// The uniform-order entry (see BoysAllNF64Kernel).
+__global__ void BoysAllNF16Kernel(int nmax,
+                                  const __half* __restrict__ x,
+                                  __half* __restrict__ out,
+                                  size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DevAllOrdersF16(nmax, __half2float(x[i]), out, i, count);
+}
 #endif // BoysFp16
 
 // ---------------------------------------------------------------------------
@@ -584,7 +648,7 @@ __global__ void BoysBatchF16Kernel(const int* n,
 //   0 double single, 1 double batch, 2 float single, 3 float batch,
 //   4 fp16 single, 5 fp16 batch.
 // The batch lanes read the order-0 region-B entry (the F0 seed's error
-// reaches every output with amplification <= A_B(0) = 1) and the per-order
+// reaches every output with gain <= 1 + 1.846e-17) and the per-order
 // region-A entry at the batch's top order (the A_A(nmax) amplification
 // covers the downward recursion) — exactly the CPU relaxed batches.
 template <int kLane>
@@ -631,16 +695,9 @@ __global__ void BoysSingleF64KernelEff(const int* n, const double* x, double* ou
 }
 
 template <int kLane>
-__global__ void BoysBatchF64KernelEff(const int* n, const double* x, double* out, size_t count) {
-    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
-
-    if (i >= count)
-    {
-        return;
-    }
-
-    const int order = n[i];
-    const double xx = x[i];
+__device__ __forceinline__ void DevAllOrdersF64Eff(
+    int order, double x, double* __restrict__ out, size_t i, size_t count) {
+    const double xx = x;
 
     if (xx < kX0d)
     {
@@ -681,6 +738,33 @@ __global__ void BoysBatchF64KernelEff(const int* n, const double* x, double* out
         f = (l - 0.5) * f / xx;
         out[l * count + i] = f;
     }
+}
+
+template <int kLane>
+__global__ void BoysAllOrdersF64KernelEff(const int* n, const double* x, double* out, size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DevAllOrdersF64Eff<kLane>(n[i], x[i], out, i, count);
+}
+
+// The uniform-order entry reads its lane's degree table exactly as its
+// per-element twin does (kDoubleBatch: the order-0 region-B entry and the
+// per-order region-A entry at the batch's top order).
+template <int kLane>
+__global__ void BoysAllNF64KernelEff(int nmax, const double* x, double* out, size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DevAllOrdersF64Eff<kLane>(nmax, x[i], out, i, count);
 }
 
 template <int kLane>
@@ -729,26 +813,14 @@ __global__ void BoysSingleF32KernelEff(const int* n,
 }
 
 template <int kLane>
-__global__ void BoysBatchF32KernelEff(const int* n,
-                                      const double* __restrict__ x,
-                                      float* __restrict__ out,
-                                      size_t count) {
-    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
-
-    if (i >= count)
-    {
-        return;
-    }
-
-    const int order = n[i];
-    const float xx = static_cast<float>(x[i]);
-
+__device__ __forceinline__ void DevAllOrdersF32Eff(
+    int order, float xx, float* __restrict__ out, size_t i, size_t count) {
     if (xx < static_cast<float>(kX0d))
     {
         // Double seed, as the full-accuracy kernel: the downward recursion
         // amplifies a float seed error beyond the lane budget (the float
         // lane's 1.5e-7; the fp16 roles' tighter 1e-7 base).
-        const double seed = DevSeedEff<kLane>(order, static_cast<double>(x[i]));
+        const double seed = DevSeedEff<kLane>(order, static_cast<double>(xx));
         float f = static_cast<float>(seed);
         out[order * count + i] = f;
         const float expx = 0.5f * expf(-xx);
@@ -786,6 +858,36 @@ __global__ void BoysBatchF32KernelEff(const int* n,
         f = (l - 0.5f) * f / xx;
         out[l * count + i] = f;
     }
+}
+
+template <int kLane>
+__global__ void BoysAllOrdersF32KernelEff(const int* n,
+                                      const double* __restrict__ x,
+                                      float* __restrict__ out,
+                                      size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DevAllOrdersF32Eff<kLane>(n[i], static_cast<float>(x[i]), out, i, count);
+}
+
+template <int kLane>
+__global__ void BoysAllNF32KernelEff(int nmax,
+                                     const double* __restrict__ x,
+                                     float* __restrict__ out,
+                                     size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DevAllOrdersF32Eff<kLane>(nmax, static_cast<float>(x[i]), out, i, count);
 }
 
 #if BoysFp16
@@ -832,20 +934,8 @@ __global__ void BoysSingleF16KernelEff(const int* n,
 }
 
 template <int kLane>
-__global__ void BoysBatchF16KernelEff(const int* n,
-                                      const __half* __restrict__ x,
-                                      __half* __restrict__ out,
-                                      size_t count) {
-    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
-
-    if (i >= count)
-    {
-        return;
-    }
-
-    const int order = n[i];
-    const float xx = __half2float(x[i]);
-
+__device__ __forceinline__ void DevAllOrdersF16Eff(
+    int order, float xx, __half* __restrict__ out, size_t i, size_t count) {
     if (xx < static_cast<float>(kX0d))
     {
         const double seed = DevSeedEff<kLane>(order, static_cast<double>(xx));
@@ -886,6 +976,36 @@ __global__ void BoysBatchF16KernelEff(const int* n,
         f = (l - 0.5f) * f / xx;
         out[l * count + i] = __float2half(f);
     }
+}
+
+template <int kLane>
+__global__ void BoysAllOrdersF16KernelEff(const int* n,
+                                      const __half* __restrict__ x,
+                                      __half* __restrict__ out,
+                                      size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DevAllOrdersF16Eff<kLane>(n[i], __half2float(x[i]), out, i, count);
+}
+
+template <int kLane>
+__global__ void BoysAllNF16KernelEff(int nmax,
+                                     const __half* __restrict__ x,
+                                     __half* __restrict__ out,
+                                     size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DevAllOrdersF16Eff<kLane>(nmax, __half2float(x[i]), out, i, count);
 }
 #endif // BoysFp16
 
@@ -1117,10 +1237,17 @@ extern "C" int BoysCudaLaunchSingleF32(
     return static_cast<int>(cudaGetLastError());
 }
 
-extern "C" int BoysCudaLaunchBatchF32(
+extern "C" int BoysCudaLaunchAllOrdersF32(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    BoysBatchF32Kernel<<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+    BoysAllOrdersF32Kernel<<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
         n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchAllNF32(
+    int nmax, const double* x, float* out, std::size_t count, void* stream) {
+    BoysAllNF32Kernel<<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+        nmax, x, out, count);
     return static_cast<int>(cudaGetLastError());
 }
 
@@ -1131,10 +1258,17 @@ extern "C" int BoysCudaLaunchSingleF64(
     return static_cast<int>(cudaGetLastError());
 }
 
-extern "C" int BoysCudaLaunchBatchF64(
+extern "C" int BoysCudaLaunchAllOrdersF64(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    BoysBatchF64Kernel<<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+    BoysAllOrdersF64Kernel<<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
         n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchAllNF64(
+    int nmax, const double* x, double* out, std::size_t count, void* stream) {
+    BoysAllNF64Kernel<<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+        nmax, x, out, count);
     return static_cast<int>(cudaGetLastError());
 }
 
@@ -1149,10 +1283,17 @@ extern "C" int BoysCudaLaunchSingleF16(
     return static_cast<int>(cudaGetLastError());
 }
 
-extern "C" int BoysCudaLaunchBatchF16(
+extern "C" int BoysCudaLaunchAllOrdersF16(
     const int* n, const void* x, void* out, std::size_t count, void* stream) {
-    BoysBatchF16Kernel<<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+    BoysAllOrdersF16Kernel<<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
         n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchAllNF16(
+    int nmax, const void* x, void* out, std::size_t count, void* stream) {
+    BoysAllNF16Kernel<<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+        nmax, static_cast<const __half*>(x), static_cast<__half*>(out), count);
     return static_cast<int>(cudaGetLastError());
 }
 #endif // BoysFp16
@@ -1215,10 +1356,17 @@ extern "C" int BoysCudaLaunchSingleF64Eff(
     return static_cast<int>(cudaGetLastError());
 }
 
-extern "C" int BoysCudaLaunchBatchF64Eff(
+extern "C" int BoysCudaLaunchAllOrdersF64Eff(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    BoysBatchF64KernelEff<1>
+    BoysAllOrdersF64KernelEff<1>
         <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchAllNF64Eff(
+    int nmax, const double* x, double* out, std::size_t count, void* stream) {
+    BoysAllNF64KernelEff<1>
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(nmax, x, out, count);
     return static_cast<int>(cudaGetLastError());
 }
 
@@ -1229,10 +1377,17 @@ extern "C" int BoysCudaLaunchSingleF32Eff(
     return static_cast<int>(cudaGetLastError());
 }
 
-extern "C" int BoysCudaLaunchBatchF32Eff(
+extern "C" int BoysCudaLaunchAllOrdersF32Eff(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    BoysBatchF32KernelEff<3>
+    BoysAllOrdersF32KernelEff<3>
         <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchAllNF32Eff(
+    int nmax, const double* x, float* out, std::size_t count, void* stream) {
+    BoysAllNF32KernelEff<3>
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(nmax, x, out, count);
     return static_cast<int>(cudaGetLastError());
 }
 
@@ -1244,10 +1399,17 @@ extern "C" int BoysCudaLaunchSingleF16Eff(
     return static_cast<int>(cudaGetLastError());
 }
 
-extern "C" int BoysCudaLaunchBatchF16Eff(
+extern "C" int BoysCudaLaunchAllOrdersF16Eff(
     const int* n, const void* x, void* out, std::size_t count, void* stream) {
-    BoysBatchF16KernelEff<5><<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+    BoysAllOrdersF16KernelEff<5><<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
         n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchAllNF16Eff(
+    int nmax, const void* x, void* out, std::size_t count, void* stream) {
+    BoysAllNF16KernelEff<5><<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+        nmax, static_cast<const __half*>(x), static_cast<__half*>(out), count);
     return static_cast<int>(cudaGetLastError());
 }
 #endif // BoysFp16
