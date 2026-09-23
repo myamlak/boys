@@ -1,5 +1,5 @@
 #include "boys/boys.hpp"
-#include "boys_coefficients.hpp"
+#include "boys/boys_coefficients.hpp"
 #include "boys_impl.hpp"
 
 #include <algorithm>

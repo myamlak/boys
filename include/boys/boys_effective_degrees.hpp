@@ -37,7 +37,11 @@
 // runtime m by calling EffectiveDegree directly (the non-template core);
 // the per-(m, role) NTTP getters at the bottom are CPU-side only.
 
-#include "boys_coefficients.hpp"
+/// \cond
+// Not API: the degree arithmetic the entries are compiled from. See the
+// headers that name it for the entries it serves.
+
+#include "boys/boys_coefficients.hpp"
 
 #include <array>
 #include <cstddef>
@@ -283,3 +287,5 @@ template <double kAccuracyMultiplier, BoysRole kRole> constexpr auto RegionBDegr
 
 } // namespace detail
 } // namespace boys
+
+/// \endcond

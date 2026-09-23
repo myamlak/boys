@@ -9,7 +9,7 @@
 #include "boys/boys_c.h"
 
 #include "boys/boys.hpp"
-#include "boys_effective_degrees.hpp"
+#include "boys/boys_effective_degrees.hpp"
 #include "boys_impl.hpp"
 
 namespace {

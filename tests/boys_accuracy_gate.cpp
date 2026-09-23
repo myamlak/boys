@@ -3540,7 +3540,7 @@ int main(int argc, char** argv) {
             (leadCoeff >= 0.5 && leadCoeff < 1.0 && halfUlpLead == 5.551115123125783e-17)
                 ? Verdict::Verified
                 : Verdict::Exceeded,
-            Fmt("the shipped table's leading coefficient is %.17g (src/boys_coefficients.hpp, "
+            Fmt("the shipped table's leading coefficient is %.17g (include/boys/boys_coefficients.hpp, "
                 "kCoeffs[0]); its binade is [0.5, 1), whose ULP is 2^-53, so a correctly "
                 "rounded double there is off by at most half of one, %.6g = 2^-54. The figure "
                 "the sentence carried, 3e-17, is the half-ULP of no double in that binade (the "

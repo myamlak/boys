@@ -7,10 +7,8 @@
 // public header's table). It reports each mode's worst alongside the bound, so
 // a change that eats the margin is visible rather than silent.
 
+#include "boys/boys.hpp"
 #include "boys/boys_transform.hpp"
-
-#include "boys_transform.hpp"   // the relaxed-width definitions
-
 
 #include <gtest/gtest.h>
 

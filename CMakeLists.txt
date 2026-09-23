@@ -433,7 +433,7 @@ if (BOYS_TOP_LEVEL)
         add_custom_target(boys-generator-check
             COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_boys_coefficients.py --check
-                --header ${CMAKE_CURRENT_SOURCE_DIR}/src/boys_coefficients.hpp
+                --header ${CMAKE_CURRENT_SOURCE_DIR}/include/boys/boys_coefficients.hpp
                 --reference ${CMAKE_CURRENT_SOURCE_DIR}/tests/data/boys_reference.csv
             COMMENT "Boys table/reference byte-identity check (needs mpmath)"
             VERBATIM)

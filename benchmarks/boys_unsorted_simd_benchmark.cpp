@@ -22,7 +22,7 @@
 // mode runs the runs-log protocol (warmup + 3 passes, min/median/max,
 // median = the recorded cell).
 #include "boys/boys.hpp"
-#include "boys_coefficients.hpp"
+#include "boys/boys_coefficients.hpp"
 
 #include <algorithm>
 #include <chrono>

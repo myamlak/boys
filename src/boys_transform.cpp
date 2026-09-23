@@ -1,15 +1,15 @@
 #include "boys/boys_transform.hpp"
 
-#include "boys_transform.hpp"
-
-// The region-A transform lane. The product's structure and the modes' bounds
-// are in the public header; this TU provides the default m = 1 explicit
-// instantiations that the extern-template declarations route every call site
-// to, so no call site instantiates the kernel and no two TUs hold a copy of it.
+// The region-A transform lane. The product's structure, the modes' bounds and
+// the kernel itself are in the public header, which is what makes every
+// multiplier a caller names instantiable at the call site: the kernel is a
+// template defined in the headers, so a consumer's translation unit compiles
+// the rung it uses and no fixed set of multipliers is the surface.
 //
-// The m > 1 rungs are not instantiated here: the lane's multiplier is a
-// compile-time parameter and its relaxed widths are the caller's to choose, the
-// documented surface being the three modes at full accuracy.
+// This TU holds the default multiplier's instantiations, which the
+// extern-template declarations in that header route the default call sites to:
+// a caller that names no multiplier links against these instead of compiling
+// the kernel again in its own translation unit.
 
 namespace boys {
 

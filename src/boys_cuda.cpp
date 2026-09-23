@@ -2,7 +2,7 @@
 
 #include "boys/boys.hpp"
 #include "boys/f16.hpp"
-#include "boys_effective_degrees.hpp"
+#include "boys/boys_effective_degrees.hpp"
 
 #include <array>
 #include <cstddef>

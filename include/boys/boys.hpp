@@ -7,6 +7,9 @@
 #include "boys/half2.hpp"
 #endif
 
+#include "boys/accuracy.hpp"
+#include "boys/boys_transform.hpp"
+
 /// \defgroup boys Boys-function kernel
 ///
 /// Self-contained evaluation of the Boys function family F_n(x),
@@ -144,16 +147,6 @@
 /// \ingroup boys
 
 namespace boys {
-
-/// Highest Boys order supported by the kernel.
-inline constexpr int kMaxBoysOrder = 32;
-
-/// The default accuracy multiplier of every lane: m = 1 is full static
-/// accuracy, bit-identical to the certified lanes (the documented
-/// contract).
-/// Larger m values trade certified accuracy for work via compile-time degree
-/// truncation (see the contract table in the file preamble).
-inline constexpr double kBoysFullAccuracyMultiplier = 1.0;
 
 /// A run-time accuracy tier: one of the multipliers this kernel
 /// instantiates, chosen per call rather than fixed at build time.

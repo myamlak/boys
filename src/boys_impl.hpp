@@ -16,8 +16,8 @@
 // coefficients to truncate); only their scalar tails carry the multiplier.
 
 #include "boys/boys.hpp"
-#include "boys_coefficients.hpp"
-#include "boys_effective_degrees.hpp"
+#include "boys/boys_coefficients.hpp"
+#include "boys/boys_effective_degrees.hpp"
 
 #include <algorithm>
 #include <array>

@@ -155,9 +155,9 @@ jobs:
         env:
           CLANG_FORMAT: ${{ github.workspace }}/.venv/Scripts/clang-format.exe
         run: |
-          .\.venv\Scripts\python.exe tools/gen_boys_coefficients.py --header src/boys_coefficients.hpp --reference tests/data/boys_reference.csv
-          .\.venv\Scripts\python.exe tools/gen_boys_coefficients.py --check --header src/boys_coefficients.hpp --reference tests/data/boys_reference.csv
-          git diff --exit-code -- src/boys_coefficients.hpp tests/data/boys_reference.csv
+          .\.venv\Scripts\python.exe tools/gen_boys_coefficients.py --header include/boys/boys_coefficients.hpp --reference tests/data/boys_reference.csv
+          .\.venv\Scripts\python.exe tools/gen_boys_coefficients.py --check --header include/boys/boys_coefficients.hpp --reference tests/data/boys_reference.csv
+          git diff --exit-code -- include/boys/boys_coefficients.hpp tests/data/boys_reference.csv
       - name: README platform table (generated from the workflow matrix)
         run: .\.venv\Scripts\python.exe tools/gen_platform_table.py --check
       - name: Boundary standalone check
@@ -224,9 +224,9 @@ jobs:
         env:
           CLANG_FORMAT: ${{ github.workspace }}/.venv/bin/clang-format
         run: |
-          .venv/bin/python tools/gen_boys_coefficients.py --header src/boys_coefficients.hpp --reference tests/data/boys_reference.csv
-          .venv/bin/python tools/gen_boys_coefficients.py --check --header src/boys_coefficients.hpp --reference tests/data/boys_reference.csv
-          git diff --exit-code -- src/boys_coefficients.hpp tests/data/boys_reference.csv
+          .venv/bin/python tools/gen_boys_coefficients.py --header include/boys/boys_coefficients.hpp --reference tests/data/boys_reference.csv
+          .venv/bin/python tools/gen_boys_coefficients.py --check --header include/boys/boys_coefficients.hpp --reference tests/data/boys_reference.csv
+          git diff --exit-code -- include/boys/boys_coefficients.hpp tests/data/boys_reference.csv
       - name: README platform table (generated from the workflow matrix)
         run: .venv/bin/python tools/gen_platform_table.py --check
       - name: Boundary standalone check
@@ -356,9 +356,9 @@ jobs:
         env:
           CLANG_FORMAT: ${{ github.workspace }}/.venv/bin/clang-format
         run: |
-          .venv/bin/python tools/gen_boys_coefficients.py --header src/boys_coefficients.hpp --reference tests/data/boys_reference.csv
-          .venv/bin/python tools/gen_boys_coefficients.py --check --header src/boys_coefficients.hpp --reference tests/data/boys_reference.csv
-          git diff --exit-code -- src/boys_coefficients.hpp tests/data/boys_reference.csv
+          .venv/bin/python tools/gen_boys_coefficients.py --header include/boys/boys_coefficients.hpp --reference tests/data/boys_reference.csv
+          .venv/bin/python tools/gen_boys_coefficients.py --check --header include/boys/boys_coefficients.hpp --reference tests/data/boys_reference.csv
+          git diff --exit-code -- include/boys/boys_coefficients.hpp tests/data/boys_reference.csv
       - name: README platform table (generated from the workflow matrix)
         run: .venv/bin/python tools/gen_platform_table.py --check
       - name: Boundary standalone check

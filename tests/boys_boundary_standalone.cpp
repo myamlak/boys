@@ -607,7 +607,7 @@ bool RunPostCheckAll() {
 // RegionBExtendedSeed dispatch of BoysSingleImpl<1.0>): the F0 fit on
 // [kExtendedBX0, kX0) plus the upward step, dispatched per kmax tier at the
 // certified kTierBoundaries. The constants are exact decimal copies of the
-// generated header (src/boys_coefficients.hpp); the code shape - the
+// generated header (include/boys/boys_coefficients.hpp); the code shape - the
 // split-Clenshaw seed with std::fma everywhere, the hoisted 0.5*exp(-x)
 // precompute, the step f = ((l + 0.5)*f - expx)/x - is the certified path
 // of the certified-boundary table (the interval instrument,

@@ -11,7 +11,7 @@
 // (the engine pattern); the unsorted penalty is measured by the mixed
 // per-vector kernel in the companion unsorted-SIMD benchmark.
 #include "boys/boys.hpp"
-#include "boys_coefficients.hpp"
+#include "boys/boys_coefficients.hpp"
 #include "boys_impl.hpp"
 
 #include <benchmark/benchmark.h>

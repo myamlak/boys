@@ -4,7 +4,7 @@
 // C++20 with a CUDA-safe include list only: the library's C++23 headers
 // would poison the nvcc translation unit.
 
-#include "boys_coefficients.hpp"
+#include "boys/boys_coefficients.hpp"
 
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>

@@ -20,7 +20,7 @@
 // fp16-rounded argument (the reference lane).
 //
 // The sampled-m instantiations are compiled from the internal headers
-// (boys_impl.hpp, boys_effective_degrees.hpp) — the library exports only
+// (boys_impl.hpp in src/, boys/boys_effective_degrees.hpp) — the library exports only
 // the m = 1 instantiations; the m = 1 call sites below still route to the
 // library's certified instantiations. The relaxed SIMD lanes consume the
 // same constexpr degree tables as their scalar twins (region A:
@@ -33,7 +33,7 @@
 // binary, same contract).
 
 #include "boys/boys.hpp"
-#include "boys_effective_degrees.hpp"
+#include "boys/boys_effective_degrees.hpp"
 #include "boys_impl.hpp"
 
 #include <algorithm>
