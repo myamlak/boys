@@ -14,11 +14,15 @@ reproducibility evidence behind the documented accuracy contract.
 ## Ground rules
 
 1. **The accuracy contract is the contract.** Every merged change must keep the committed reference
-   grid green (`ctest`) at the documented budgets: 5.5e-14 fp64, its loosest per-region budget;
-   1.5e-7 fp32; 1e-7 plus one half-ULP for fp16 and bf16; and 8 ULP of the returned value for the
-   native half lane, whose bound is stated in ULP rather than as a region budget. A change that needs
-   a budget relaxed is a change to the contract. Open an issue for the maintainer first, and do not
-   put it in a pull request.
+   grid green (`ctest`) at the documented budgets:
+   - 5.5e-14 for fp64, its loosest per-region budget;
+   - 1.5e-7 for fp32;
+   - 1e-7 plus one half-ULP for fp16 and bf16;
+   - 8 ULP of the returned value for the native half lane, whose bound is stated in ULP rather than
+     as a region budget.
+
+   A change that needs a budget relaxed is a change to the contract. Open an issue for the
+   maintainer first, and do not put it in a pull request.
 2. **No internal references, ever.** Comments, commit messages and docs must not reference internal
    decision numbers, internal document paths, stage or track names, or any private repository. The
    only sanctioned citations are published ones: the entries of `CITATION.bib`.
