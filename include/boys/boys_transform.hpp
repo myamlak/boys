@@ -82,12 +82,12 @@
 /// **The multiplier does not move the ceiling, and for the two split modes it
 /// does not move the bound either.** A mode's floor is its format's, which no
 /// multiplier changes. The fit term \c (m−1)·1e-15 cannot reach 1.9e-07 until
-/// \c m is about 1.9e8, four orders past the 65536 the multiplier surface
-/// offers, so for \c kTf32x3 and \c kBf16x6 the bound is the floor at every
-/// multiplier this library names. For \c kFp64 the floor is 1.11e-16, below the
-/// budget's own 1e-15, so its bound is the double single lane's \c m·1e-15 at
-/// every \c m, and the multiplier is live from \c m = 2 upward as it is on
-/// every other lane.
+/// \c m is about 1.9e8, four orders past the largest multiplier the rest of
+/// this surface samples, so for \c kTf32x3 and \c kBf16x6 the bound is the
+/// floor up to there and the fit term past it. For \c kFp64 the floor is
+/// 1.11e-16, below the budget's own 1e-15, so its bound is the double single
+/// lane's \c m·1e-15 at every \c m, and the multiplier is live from \c m = 2
+/// upward as it is on every other lane.
 ///
 /// **The two split modes miss the float lane's budget at \c m = 1 and carry it
 /// from \c m = 2.** Their floor is 1.28 to 1.30 times the float lane's 1.5e-7,
