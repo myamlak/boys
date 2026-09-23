@@ -116,7 +116,8 @@ add_library(boys
     src/boys.cpp
     src/boys_c.cpp
     src/boys_half_native.cpp
-    src/boys_simd.cpp)
+    src/boys_simd.cpp
+    src/boys_transform.cpp)
 add_library(boys::boys ALIAS boys)
 target_include_directories(boys PUBLIC include PRIVATE src)
 target_compile_features(boys PUBLIC cxx_std_20)
@@ -175,7 +176,8 @@ if (BOYS_BUILD_TESTS)
         tests/boys_all_n_test.cpp
         tests/boys_c_test.cpp
         tests/f16_test.cpp
-        tests/boys_half_native_test.cpp)
+        tests/boys_half_native_test.cpp
+        tests/boys_transform_test.cpp)
     target_link_libraries(boys-tests PRIVATE boys gtest gtest_main)
     target_include_directories(boys-tests PRIVATE src)
     target_compile_features(boys-tests PRIVATE cxx_std_23)

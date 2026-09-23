@@ -47,6 +47,57 @@ recurses in single.
 about 6e-8 relative. The bound is 1.5e-7 absolute, so for values of order one the two are within a
 factor of a few of each other. The format has no room left to give.
 
+## the region-A transform lane
+
+A separate entry computes the fits of region A as a matrix product instead of by the fitted
+recurrence: one product per band, all orders at once, for a batch of arguments. It is an alternative
+to the lanes above and changes none of them. It adds nothing to them either, at the same precision:
+its arithmetic mode is what the caller picks, and the mode decides both the bound and what hardware
+can run it.
+
+| Mode | Operand | Accumulated in | Bound over region A |
+|---|---|---|---|
+| fp64 | 64-bit | 64-bit | m·1e-15 |
+| 3xTF32 | 32-bit, as two 11-bit parts | 32-bit | m·1e-15 + 2.5e-7 |
+| bf16×6 | 32-bit, as three 8-bit parts | 32-bit | m·1e-15 + 2.5e-7 |
+
+The 64-bit mode delivers 1.11e-16, which is the fits' own truncation: the product adds nothing
+measurable to what the coefficients already cost. The other two deliver 1.92e-07 and 1.95e-07, which
+is their 32-bit accumulator's own floor.
+
+**The limit of the first is the table, and of the other two the accumulator.** Rounding an fp64
+operand to 11-bit parts and summing six of them changes nothing while the total is 32-bit, so no
+amount of operand precision reaches 64-bit-grade accuracy on a 32-bit accumulator. That is a
+property of the card's accumulator, not of the split.
+
+**The multiplier does not improve the two 32-bit modes.** A format's floor does not scale with the
+multiplier; the fit's term does, but it cannot reach 1.9e-07 until the multiplier is about 1.9e8,
+four orders past the largest value this library offers. So over the whole multiplier range their
+bound is that floor. The 64-bit mode's floor is below the 1e-15 budget, so its bound is the same
+m·1e-15 as the double lane's and the multiplier lifts it from 2 upward as everywhere else.
+
+**The two 32-bit modes miss the float lane's bound at multiplier 1 and hold it from 2.** Their floor
+is 1.3 times 1.5e-7. The float lane's bound is m·1.5e-7, so at multiplier 2 it is 3e-7 and both
+modes are comfortably inside it. That is the trade they offer: a float-lane-grade result from a card
+with no 64-bit arithmetic, at 1.3 times the float lane's bound at the same multiplier.
+
+**These two bounds are arithmetic on a model, not a measurement of a card.** They were measured
+against the committed reference grid and against a dense sweep of the band, but on a CPU that
+emulates the mode's accumulator with ordinary 32-bit additions. A tensor core's fused sum does not
+work that way: it truncates and aligns the terms with a limited number of extra bits, which makes it
+less accurate than this model, never more. So the model can talk a caller out of a mode and cannot
+talk one into it, and the 32-bit rows above are the ones it is least entitled to judge. The 64-bit
+row is a claim about an ordinary double sum, a far narrower thing to assume, but it is still
+untested on hardware. **No speed is claimed for any mode**: what was verified here is the
+arithmetic.
+
+**The domain is the whole of region A for the values themselves.** A caller who takes one order's
+value as the starting point of the downward recursion is held to a tighter requirement, because
+that recursion carries the order's error up to order 0 with a gain that peaks at 1.04e5 near the
+band's right end and is 1 at the highest order. There the fp64 mode may seed at orders 0 to 2 and 25
+to 32 and nowhere between — the admissible orders are not a range — and the two 32-bit modes may
+seed at no order at all.
+
 ## half — storing 16-bit values and computing in 32-bit
 
 **At most `m·1e-7` plus half of the last representable digit of the result**, where `m` is the same
