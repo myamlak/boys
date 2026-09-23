@@ -46,18 +46,24 @@ int main()
 
 ## Accuracy contract
 
-The bound is |F̂_n(x) − F_n(x)| ≤ m·B_region, for every supported n, x, lane and region. Here m is
-the compile-time accuracy multiplier of the call, and defaults to 1:
+The bound is |F̂_n(x) − F_n(x)| ≤ m·B, for every supported n, x and lane. Here m is the compile-time
+accuracy multiplier of the call, and defaults to 1.
 
-| Lane | region A | extended band | region B | region C |
-|---|---|---|---|---|
-| double single | ≤ m·1e-15 | ≤ m·3e-14 | ≤ m·3e-14 | ≤ m·5.5e-14 |
-| double batch | ≤ m·5.5e-14 | ≤ m·5.5e-14 | ≤ m·5.5e-14 | ≤ m·5.5e-14 |
-| float single / batch | ≤ m·1.5e-7 | ≤ m·1.5e-7 | ≤ m·1.5e-7 | ≤ m·1.5e-7 |
-| fp16 / bf16 | ≤ m·1e-7 + ½ ULP | ≤ m·1e-7 + ½ ULP | ≤ m·1e-7 + ½ ULP | ≤ m·1e-7 + ½ ULP |
-| native half | — | — | — | ≤ 8 ULP of the returned value |
-| CUDA fp64 | same m·budgets as the CPU double lanes, verified directly against the reference grid | | | |
-| CUDA fp32 | same m·budgets as the CPU float lanes; GPU-vs-CPU cross-lane budget 3.5e-7 | | | |
+The library evaluates the function differently at different argument sizes, and one lane is tighter
+over part of the range than over the rest. Every figure below holds for **all** x ≥ 0:
+
+| Lane | Error bound |
+|---|---|
+| double single | ≤ m·5.5e-14 everywhere; ≤ m·3e-14 below x = 11.899848152108484; ≤ m·1e-15 below about x = 1.0855 |
+| double batch | ≤ m·5.5e-14 |
+| float single / batch | ≤ m·1.5e-7 |
+| fp16 / bf16 | ≤ m·1e-7 + ½ ULP |
+| native half, x ≥ 28.984375 | ≤ 8 ULP of the returned value |
+| CUDA fp64 | same m·budgets as the CPU double lanes |
+| CUDA fp32 | same m·budgets as the CPU float lanes; GPU-vs-CPU cross-lane budget 3.5e-7 |
+
+"ULP" is the last representable digit of the result in the format concerned. The multiplier runs from
+1 to 65536, and raising it loosens the bound and reduces the work.
 
 The fp16 and bf16 rows are fp16 *I/O* around the fp32 engine, so their error is the engine's.
 

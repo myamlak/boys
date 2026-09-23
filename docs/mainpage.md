@@ -50,18 +50,20 @@ entries above are the surface.
 
 ## Accuracy contract
 
-The bound is |F̂_n(x) − F_n(x)| ≤ m·B_region for every supported n, x, lane and region, with m the
-accuracy multiplier of the call:
+The bound is |F̂_n(x) − F_n(x)| ≤ m·B for every supported n, x and lane, with m the accuracy
+multiplier of the call. It defaults to 1 and runs to 65536. Every figure holds for **all** x ≥ 0:
 
-| Lane | region A | extended band | region B | region C |
-|---|---|---|---|---|
-| double single | ≤ m·1e-15 | ≤ m·3e-14 | ≤ m·3e-14 | ≤ m·5.5e-14 |
-| double batch | ≤ m·5.5e-14 | ≤ m·5.5e-14 | ≤ m·5.5e-14 | ≤ m·5.5e-14 |
-| float single / batch | ≤ m·1.5e-7 | ≤ m·1.5e-7 | ≤ m·1.5e-7 | ≤ m·1.5e-7 |
-| fp16 / bf16 | ≤ m·1e-7 + ½ ULP | ≤ m·1e-7 + ½ ULP | ≤ m·1e-7 + ½ ULP | ≤ m·1e-7 + ½ ULP |
-| native half | — | — | — | ≤ 8 ULP of the returned value |
-| CUDA fp64 | same m·budgets as the CPU double lanes, verified directly | | | |
-| CUDA fp32 | same m·budgets as the CPU float lanes; GPU-vs-CPU 3.5e-7 | | | |
+| Lane | Error bound |
+|---|---|
+| double single | ≤ m·5.5e-14 everywhere; ≤ m·3e-14 below x = 11.899848152108484; ≤ m·1e-15 below about x = 1.0855 |
+| double batch | ≤ m·5.5e-14 |
+| float single / batch | ≤ m·1.5e-7 |
+| fp16 / bf16 | ≤ m·1e-7 + ½ ULP |
+| native half, x ≥ 28.984375 | ≤ 8 ULP of the returned value |
+| CUDA fp64 | same m·budgets as the CPU double lanes |
+| CUDA fp32 | same m·budgets as the CPU float lanes; GPU-vs-CPU 3.5e-7 |
+
+"ULP" is the last representable digit of the result in the format concerned.
 
 The native half lane is the one exception to the region-budget form above. It covers region C only.
 Its results are the scaled values 2^15 F_k(x), and its bound is stated in ULP of the returned value:

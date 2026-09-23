@@ -1,106 +1,136 @@
-# Per-lane accuracy and limitations
+# Accuracy: what each lane guarantees
 
-Each lane's budget is tabulated in [the README](https://github.com/myamlak/boys#accuracy-contract)
-and in the header preamble. This page gives what a table of budgets cannot: **which arguments each
-bound holds over, where each lane stops, and what sets its accuracy ceiling.**
+This library evaluates the Boys function `F_n(x) = ∫₀¹ t^(2n) e^(−x t²) dt`, for orders n = 0 to 32
+and arguments x ≥ 0.
 
-A lane is a range, not a number. Every lane carries a compile-time or per-call multiplier `m`, from
-1 to 65536. Raising it loosens the budget and reduces the work together.
+It offers several lanes, which differ in precision and in cost. This page states each lane's error
+bound, the arguments the bound covers, and where the lane stops being usable.
 
-## double — scalar and batch
+## How the argument affects the bound
 
-**Bounds.** 1e-15 on region A, 3e-14 on the extended band and region B, and 5.5e-14 on region C for
-the scalar entry. The batch entry is 5.5e-14 in every region.
+The library evaluates the function differently at different argument sizes, and the error bound
+differs with it:
 
-**Ceiling: coefficient rounding.** The stored coefficients are correctly rounded doubles. The fit's
-own truncation error is 5e-19, while the doubles holding it carry 1e-16 to 2e-16. The polynomial is
-sixty times better than the format that stores it, and nothing below that floor is reachable. **A
-caller holding the `m = 1` result holds the most accurate double this library produces.**
+| Arguments | How they are evaluated |
+|---|---|
+| x < 11.899848152108484 | stored polynomial fits, one per order |
+| 11.899848152108484 ≤ x < 28.98933773882074 | a stored fit at the lowest order, then upward recursion |
+| x ≥ 28.98933773882074 | a closed-form asymptotic result |
 
-## float — single and batch
+Below about x = 1.0855 all orders are inside their own fits. Between that and x = 11.8998, the
+higher orders are served by recursion from a single fit, which is slightly less accurate.
 
-**Bounds.** 1.5e-7 absolute at `m = 1`, the same in every region, with the same multipliers. The
-batch entry seeds in double and recurses in single.
+Every bound in this document holds for **all** x ≥ 0. Where a lane is tighter over part of the
+range, its entry says so.
 
-**Ceiling: the format.** A 24-bit significand resolves about 6e-8 relative. The `m = 1` budget is
-1.5e-7 absolute. For values of order one those two are within a factor of a few of each other, so
-the format has no rung left below the budget.
+## double
 
-## half — fp16 and bf16, storing half and computing wide
+**At most 5.5e-14 everywhere.** At most 3e-14 for x below 11.899848152108484, and at most 1e-15 for
+x below about 1.0855.
 
-**Bounds.** `m·1e-7 + ½ ULP`. Half takes no part in the arithmetic. The argument is rounded to the
-half type, the float engine evaluates at that value, and the result is rounded back.
+A multiplier, set at compile time or per call, runs from 1 to 65536. Raising it loosens the bound
+and reduces the work.
 
-**The margin is a fragility, not a cushion.** The worst cell sits at **0.9999 of budget**: a margin
-of thousandths of a per cent, not a per cent. At that distance the ½ ULP representation term is 99%
-of the budget. One half-quantum of extra error anywhere in the lane therefore takes a cell over it —
-a differently rounded argument, or an engine one rounding worse. Treat this lane as inside its bound
-with nothing to spare.
+**This is the most accurate double the library produces.** The stored coefficients are rounded to
+double precision, and they hold only the 16 or so significant digits that a double can hold. The
+mathematical fit behind them is about sixty times more accurate than the numbers used to store it,
+so no accuracy below roughly 1e-16 is reachable, however the evaluation is arranged.
 
-**Ceiling: the representation term.** It is independent of `m`. Eleven significand bits resolve about
-five parts in ten thousand, and the budget already spends half of one such step on representing the
-result. Raising `m` loosens only the engine's share.
+## float
 
-**Past the ceiling the lane claims nothing.** With `u` the format's quantum at the returned value,
-the bound holds where `|F_n(x)| > m·1e-7 + ½u`, and nowhere else. Below that the return is subnormal,
-then exactly zero.
+**At most 1.5e-7 everywhere.**
 
-In fp16 the ceiling and the format's floor coincide. **From order 3 upward on region C, every
-argument of the branch is past it.** At high orders and large arguments this lane therefore returns
-zero rather than a value. A caller who needs those arguments wants the float or double lane. bf16's
-exponent range matches float's, so bf16 keeps returning usable values down to about 1e-38.
+The same multiplier applies. The batch entry computes a starting value in double precision and then
+recurses in single.
+
+**The limit is the number format.** A 32-bit float carries about seven significant digits, which is
+about 6e-8 relative. The bound is 1.5e-7 absolute, so for values of order one the two are within a
+factor of a few of each other. The format has no room left to give.
+
+## half — storing 16-bit values and computing in 32-bit
+
+**At most `m·1e-7` plus half of the last representable digit of the result**, where `m` is the same
+multiplier as above.
+
+Half precision takes no part in the arithmetic. The argument is rounded to 16 bits, the 32-bit
+evaluation runs at that value, and the result is rounded back to 16 bits.
+
+**The margin is thin, and that is a warning rather than a cushion.** The worst case sits at 0.9999 of
+the bound — a margin of thousandths of a per cent, not a per cent. At that distance, half of one
+representable digit of the result is 99% of the whole bound. One extra step of error anywhere in the
+lane therefore pushes a result over its bound. Treat this lane as inside its bound with nothing to
+spare.
+
+**The limit is the 16-bit format, and it does not improve with the multiplier.** Sixteen bits carry
+about eleven significant bits, or five parts in ten thousand, and the bound already spends half of
+one such step on representing the result. Raising the multiplier loosens only the part that comes
+from the 32-bit arithmetic.
+
+**Below a certain size the lane returns nothing usable.** The bound holds only where the result is
+larger than `m·1e-7` plus half a representable digit. Smaller than that, the returned value becomes a
+subnormal 16-bit number, and then exactly zero.
+
+For 16-bit floats the two thresholds coincide, and **from order 3 upward, at arguments at or above
+x = 28.98933773882074, every argument is past it.** At high orders and large arguments this lane
+therefore returns zero rather than a value, and a caller who needs those arguments wants the float or
+double lane. The 16-bit brain-float format has the same exponent range as a 32-bit float, so it keeps
+returning usable values down to about 1e-38.
 
 ## packed half — the native lane
 
-**Bounds.** Region C only, from x = 28.984375 upward, returning `2^15·F_k(x)`: **within 8 ULP of the
-returned value**, worst measured 4.243 ULP. The bound is in ULP rather than a region budget, because
-ULP is the shape of this lane's error. There is no multiplier.
+**Within 8 of the last representable digits of the returned value**, worst measured 4.243, for
+arguments at or above x = 28.984375. The bound is stated in representable digits rather than as a
+size, because that is the shape of this lane's error. There is no multiplier.
 
-**It is not a drop-in for the half lane above.** It rounds once per operation, where that lane rounds
-once per value. It therefore spends about 7.7× the half-quantum of representation that lane's budget
-leaves it. That is a floor set by eleven mantissa bits, not by the algorithm. The steps that pay it
-are the low orders callers actually use.
+**It is not a drop-in for the half lane above.** It rounds once per calculation step, where that lane
+rounds once per value. It therefore loses about 7.7 times as much as the half lane's bound allows for
+representing its result — a floor set by having only eleven significant bits, not by the algorithm.
+The steps that pay for it are the low orders, which are the ones callers use most.
 
-**Its arithmetic is portable, not instruction-backed.** Each operation is evaluated in binary64 and
-rounded once to binary16. That gives the same correctly rounded half a packed-half instruction would
-produce. This library carries no packed-half backend, so what the lane delivers is half arithmetic's
-*numbers* rather than its *speed*. **No timing is claimed for it.**
+**The arithmetic is portable rather than hardware-backed.** Each step is evaluated in double
+precision and rounded once to 16 bits, which gives the same correctly rounded result a native 16-bit
+instruction would. This library carries no native 16-bit backend, so what the lane delivers is 16-bit
+arithmetic's *results* rather than its *speed*. **No timing is claimed for it.**
 
-**Ceiling: the exponent span.** The bound holds where the returned value is a normal half,
-`F_k(x) ≥ 2^-29`. Above that the return is subnormal, then exactly zero, by design. Order 8 reaches
-that crossing at about x = 30, order 4 at about x = 128, and order 3 at about x = 359. At orders 0
-and 1 it is the whole of binary16's argument range.
+**The limit is the exponent range.** The bound holds where the returned value is a normal 16-bit
+number, that is where it is at least 2^-29. Smaller than that, the return is a subnormal, then
+exactly zero, by design. Order 8 reaches that point at about x = 30, order 4 at about x = 128, and
+order 3 at about x = 359. At orders 0 and 1 it is the whole of the 16-bit argument range.
 
-A per-order rescale buys range and no accuracy. The rescale is exact, so the scaled lane is
-bit-identical to the unscaled one. No scale reaches past the wall either, because the ladder's own
-span grows like x to the n against a finite exponent range.
+Rescaling each order buys range and no accuracy. The rescaling is exact, so a rescaled lane returns
+bit-identical results to an unscaled one. No rescaling reaches past that limit either, because the
+range the recursion spans grows like x to the power n, against a fixed exponent range.
 
-## Region C, and where the boundary sits
+## Large arguments, and the boundary at x = 11.8998 and x = 28.9893
 
-Region C is a single closed form with no coefficients to truncate. **No multiplier relaxes it**, and
-its budget holds with slack at every rung.
+For x at or above 28.98933773882074 the library uses a single closed-form asymptotic result, with no
+stored coefficients. **No multiplier relaxes it**, and its bound holds with room to spare at every
+setting.
 
-Its accuracy is set by its lower boundary. Moving that boundary is an accuracy knob but **not a
-performance tier**: the branch costs the same wherever it starts, so moving it saves no work.
+Its accuracy is set by where the asymptotic form starts being used. Moving that start point trades
+accuracy against nothing: the evaluation costs the same wherever the boundary sits, so moving it
+saves no work.
 
-Below about x = 16 the branch sits outside its domain of validity. There the error grows smoothly,
-with no threshold at the edge — consecutive arguments differ by at most 0.6 of an order. Its **size**
-is real: relative error reaches 5.6e4 at order 32 just below the edge, five to eight orders past the
-branch's own 5.5e-14 budget. The branch is not wrong to be there. The boundary is simply where its
-validity ends, and a caller evaluating below it should expect that error.
+Below about x = 16 the asymptotic form is outside the range where it is valid, and the error grows
+smoothly there, with no sudden jump. Consecutive arguments differ by at most 0.6 of an order of
+magnitude. But the size of the error is real: just below x = 16, at order 32, the relative error
+reaches 5.6e4, which is five to eight orders of magnitude past the 5.5e-14 bound. The form is not
+wrong to be used there; that is simply where its validity ends, and a caller evaluating below x = 16
+should expect that error.
 
 ## What is not claimed
 
-**Throughput.** No timing taken so far supports a performance claim for any lane. Every one comes
-from a loaded machine with no tensor cores, and with a double-to-single throughput ratio near 1:32.
-**The performance question is open.** Answering it needs a timed pass on an unloaded machine and on
-a card chosen to show the difference; the packed-half advantage in particular is a property of the
-card. Until such a pass exists, no lane's cost may be assumed better than another's.
+**Speed.** No timing taken so far supports a speed claim for any lane. Every timing available was
+taken on a loaded machine, on a card with no tensor cores, and with a double-to-single throughput
+ratio near 1 to 32. **Performance is an open question.** Answering it needs a timed run on an
+unloaded machine and on a card chosen to show the difference; the packed-half lane's advantage in
+particular is a property of the card. Until then, no lane's cost may be assumed better than
+another's.
 
-**Tensor cores.** Not reachable from the packed lane, and the reason is shape rather than precision.
-Its work is a rank-one recurrence, one multiply and one divide per order, so there is no product of
-two matrices for a tensor core to take. The one matrix-shaped step, the region-A transform, does not
-carry the accuracy lanes with reduced-precision operands. **The ceiling of this technique is packed
-half arithmetic's, and no tensor-core path routes around it.**
+**Tensor cores.** The packed-half lane cannot use them, and the reason is its shape rather than its
+precision. Its work is a chain of one multiply and one divide per order, so there is no product of
+two matrices for a tensor core to compute. The one step that *is* matrix-shaped, the stored
+polynomial fits, does not stay accurate with reduced-precision inputs. **The limit of this lane is
+native 16-bit arithmetic's, and no tensor-core path avoids it.**
 
 Every accuracy figure on this page was measured from the code in this repository.
