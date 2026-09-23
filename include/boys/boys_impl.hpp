@@ -427,9 +427,20 @@ template <double kAccuracyMultiplier> void BoysAllOrdersImpl(int nmax, double x,
             // threshold table: the upward recursion from the extended seed
             // serves exactly the orders k with x >= kTierThresholds[k] - a
             // prefix (the thresholds are non-decreasing in n); the tail
-            // orders come from the per-order region-A fits. The per-order
-            // result out[k] is then bit-identical to BoysSingle(k, x) for
-            // every k (the single entry applies the same per-(n, x) rule).
+            // orders come from the per-order region-A fits. On that route
+            // out[k] is bit-identical to BoysSingle(k, x) for every k (the
+            // single entry applies the same per-(n, x) rule).
+            //
+            // The fallback below, taken when x is under the band's left edge
+            // and no order takes the extended seed, is the one case that is
+            // not: it seeds the downward recursion once, at nmax, and pays
+            // one fit where the per-order route would pay nmax + 1. So
+            // out[nmax] is still BoysSingle(nmax, x) bit for bit, while
+            // out[k] for k < nmax carries the recurrence's value rather than
+            // the fit's. The two readings of one cell differ by a few units
+            // in the last place of the result - the swept worst is 4 ULP and
+            // 3.34e-16 absolute over region A - and both are inside the bound
+            // this entry documents.
             int served = 0;
 
             while (served < nmax &&
