@@ -80,6 +80,20 @@ function(boys_strict_warnings target)
     endforeach()
     set_property(DIRECTORY APPEND PROPERTY BOYS_STRICT_TARGETS ${target})
 endfunction()
+
+# The header-only consumer check proves that the entries' template definitions
+# are reachable from the public headers, and it proves it by NOT linking the
+# library: with a library on its link line it would still compile, still run,
+# and prove nothing. Assert the absence here, so a later edit that links it
+# fails the configure on every leg instead of quietly retiring the check.
+function(boys_assert_no_linked_library target)
+    get_target_property(linked ${target} LINK_LIBRARIES)
+    if (linked)
+        message(FATAL_ERROR "boys: ${target} must link nothing - what it proves is that "
+            "the public headers alone suffice - but it links: ${linked}. Remove the link, "
+            "or the check stops proving what it exists to prove.")
+    endif()
+endfunction()
 set_property(DIRECTORY PROPERTY BOYS_STRICT_TARGETS "")
 
 if (BUILD_CUDA)
@@ -284,8 +298,60 @@ int main() {
     add_executable(boys-boundary-standalone tests/boys_boundary_standalone.cpp)
     boys_strict_warnings(boys-boundary-standalone)
 
+    # The CONSUMER CHECKS (tests/consumer_umbrella.cpp and
+    # tests/consumer_header_only.cpp). The suite above includes headers from
+    # src/ and links the library, so it cannot see the two defects a consumer
+    # meets first: a public header the umbrella does not reach, and an entry
+    # whose definition never left a .cpp file (a link error for every
+    # multiplier the library does not pre-instantiate). These two programs are
+    # consumers, and each is built so that its own defect has somewhere to
+    # show:
+    #
+    #   boys-consumer-umbrella  includes ONLY <boys/boys.hpp>, first include,
+    #     no internal header, and links the library. It exercises every entry
+    #     the public headers document - all three product modes, both QueryTier
+    #     overloads, both many-argument shapes, the fp16/bf16 lanes, the native
+    #     half lane - at multipliers the library does not pre-instantiate, and
+    #     judges every returned value against the bound its entry states, with
+    #     the committed 45-digit grid as the reference.
+    #
+    #   boys-consumer-header-only  proves the definitions really are reachable
+    #     from the headers: it names non-rung multipliers and links NOTHING.
+    #     Its meaning is the empty link line, so the target's link libraries
+    #     are asserted empty below rather than trusted.
+    #
+    # Neither target adds src/ to its include path (the library publishes
+    # include/ as PUBLIC and src/ as PRIVATE), and both say so: they carry an
+    # __has_include probe that fails the compile if the internal directory ever
+    # reaches their include path. The include path and the compile definitions
+    # of the header-only check are read from the library's own interface - the
+    # same ones a consumer inherits from linking boys::boys - so the two cannot
+    # drift apart.
+    add_executable(boys-consumer-umbrella tests/consumer_umbrella.cpp)
+    target_link_libraries(boys-consumer-umbrella PRIVATE boys)
+    target_compile_definitions(boys-consumer-umbrella PRIVATE
+        BoysConsumerReference="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/boys_reference.csv")
+    boys_strict_warnings(boys-consumer-umbrella)
+
+    get_target_property(boysConsumerIncludes boys INTERFACE_INCLUDE_DIRECTORIES)
+    get_target_property(boysConsumerDefines boys INTERFACE_COMPILE_DEFINITIONS)
+    if (NOT boysConsumerIncludes OR NOT boysConsumerDefines)
+        message(FATAL_ERROR "boys: the library publishes its consumer surface through "
+            "INTERFACE_INCLUDE_DIRECTORIES and INTERFACE_COMPILE_DEFINITIONS; the "
+            "header-only consumer check reads both and found one empty.")
+    endif()
+    add_executable(boys-consumer-header-only tests/consumer_header_only.cpp)
+    target_include_directories(boys-consumer-header-only PRIVATE ${boysConsumerIncludes})
+    target_compile_definitions(boys-consumer-header-only PRIVATE ${boysConsumerDefines}
+        BoysConsumerReference="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/boys_reference.csv")
+    target_compile_features(boys-consumer-header-only PRIVATE cxx_std_20)
+    boys_strict_warnings(boys-consumer-header-only)
+    boys_assert_no_linked_library(boys-consumer-header-only)
+
     add_test(NAME boys-tests COMMAND boys-tests)
     add_test(NAME boys-boundary-standalone COMMAND boys-boundary-standalone)
+    add_test(NAME boys-consumer-umbrella COMMAND boys-consumer-umbrella)
+    add_test(NAME boys-consumer-header-only COMMAND boys-consumer-header-only)
     # --strict: the gate fails on a claim whose evidence is not in the tree as
     # well as on one it measures exceeded, so a green ctest never means "every
     # documented claim is met at this revision" while a claim rest on a
