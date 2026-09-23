@@ -210,6 +210,13 @@ struct Accum {
     std::string lane;
     std::string region;
     double baseBound = 0.0;
+    // Whether any row of the report carries this slot's verdict. A slot
+    // measured for the record - a reading the tree has withdrawn and keeps
+    // re-runnable rather than deleting - is judged by no row, so it can be
+    // over its bound and still leave the gate green. The flag is what lets
+    // the two tables say so instead of leaving a reader to infer it from the
+    // RESULT line not counting the slot.
+    bool judged = true;
     std::size_t points = 0;
     std::size_t vacuous = 0;     // the bound alone exceeds |F_n(x)|
     std::size_t vacuousZero = 0; // ... and the returned value cannot hold it
@@ -241,11 +248,12 @@ std::vector<Accum>& Claims() {
     return claims;
 }
 
-int AddClaim(const char* lane, const char* region, double bound) {
+int AddClaim(const char* lane, const char* region, double bound, bool judged = true) {
     Accum a;
     a.lane = lane;
     a.region = region;
     a.baseBound = bound;
+    a.judged = judged;
     Claims().push_back(a);
     return static_cast<int>(Claims().size()) - 1;
 }
@@ -359,8 +367,9 @@ void Measure(int claim,
 
         if (a.failures <= kMaxReportedExceeded)
         {
-            std::printf("  EXCEEDED  %s / %s  n=%d x=%.17g  err=%.6g  bound=%.6g  "
+            std::printf("  EXCEEDED%s %s / %s  n=%d x=%.17g  err=%.6g  bound=%.6g  "
                         "ratio=%.4g  ref=%.6g (1e%d)\n",
+                        a.judged ? " " : " (record, not judged)",
                         a.lane.c_str(),
                         a.region.c_str(),
                         n,
@@ -648,7 +657,11 @@ void PrintClaim(const Accum& a) {
         std::snprintf(delivered, sizeof(delivered), "%.3g / %.3g", a.worstErr, a.worstBound);
     }
 
-    std::printf("  %-24s %-9s %8zu %8zu  %-24s %-24s %8zu %8zu\n",
+    // The trailing field is the one thing a summary row cannot show: whether
+    // the row has a verdict at all. A slot kept for the record has none, and
+    // its ratio can be above 1.0 in a green run, so the row says so rather
+    // than leaving it to be inferred from the RESULT line not counting it.
+    std::printf("  %-24s %-9s %8zu %8zu  %-24s %-24s %8zu %8zu%s\n",
                 a.lane.c_str(),
                 a.region.c_str(),
                 a.points,
@@ -656,7 +669,8 @@ void PrintClaim(const Accum& a) {
                 delivered,
                 location,
                 a.vacuous,
-                a.vacuousZero);
+                a.vacuousZero,
+                a.judged ? "" : "  record, not judged");
 }
 
 // One argument, every lane: what each entry returns beside the reference, so a
@@ -1078,8 +1092,12 @@ int main(int argc, char** argv) {
     const int kBf16PackedB = AddClaim("bf16 simd-half", "B", kBoundHalfBase);
     const int kBf16PackedC = AddClaim("bf16 simd-half", "C", kBoundHalfBase);
     // The withdrawn header claim, measured for the record and not judged:
-    // "the double single lane holds 1e-15 across every x < x0".
-    const int kHeaderA = AddClaim("double single", "header x<x0", kWithdrawnHeaderABound);
+    // "the double single lane holds 1e-15 across every x < x0". The last
+    // argument is what makes the slot's exceptions visible in the report
+    // rather than only here: no row carries this slot's verdict, so it is
+    // exceeded on every target that has ever run this gate and the run is
+    // still green.
+    const int kHeaderA = AddClaim("double single", "header x<x0", kWithdrawnHeaderABound, false);
     // The relaxed rungs: the documented budget at a rung is m times the m = 1
     // budget, and it differs per region for the single lane, so these slots
     // carry no single base bound.
@@ -2839,6 +2857,19 @@ int main(int argc, char** argv) {
                 floatWorstRelN,
                 floatWorstRelX);
 
+    // The trailing marker of a per-order row. A slot no row judges carries the
+    // reading's status on every row it prints, so a ratio above 1.0 in this
+    // table cannot be read as a failing claim: what the RESULT line leaves a
+    // reader to infer by not counting the slot, the row says outright.
+    const auto RowMark = [](const Accum& a, const OrderAccum& o) -> const char* {
+        if (!a.judged)
+        {
+            return o.failures > 0 ? "  EXCEEDED (record, not judged)" : "  record, not judged";
+        }
+
+        return o.failures > 0 ? "  EXCEEDED" : "";
+    };
+
     if (perOrder)
     {
         std::printf("\nper lane, per region, per order (delivered error beside the bound; "
@@ -2880,7 +2911,7 @@ int main(int argc, char** argv) {
                             o.worstBound,
                             o.worstRatio,
                             o.worstX,
-                            o.failures > 0 ? "  EXCEEDED" : "");
+                            RowMark(a, o));
             }
         }
     }
