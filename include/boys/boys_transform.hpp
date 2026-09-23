@@ -555,7 +555,17 @@ void RegionAProductBand(int nmax, const double* x, double* out, std::size_t coun
         {
             for (std::size_t s = 0; s < n; ++s)
             {
-                const double next = 2.0 * mapped[s] * upper[s] - lower[s];
+                // The recurrence's two roundings are fixed here rather than
+                // left to the compiler. Written as the bare product and
+                // difference this contracts to a single fused step wherever
+                // the target has FMA and the contraction setting allows it -
+                // the default on aarch64 and on any x86 build that passes
+                // -mfma, and not on MSVC or on the x86 baseline - so the same
+                // source would be two arithmetics and the delivered figure
+                // this lane publishes is the one below. The zero addend is
+                // the product rounded once and nothing more, which leaves a
+                // contraction pass nothing to fuse.
+                const double next = std::fma(2.0 * mapped[s], upper[s], 0.0) - lower[s];
                 lower[s] = upper[s];
                 upper[s] = next;
                 Value parts[kParts];
