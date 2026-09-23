@@ -9,9 +9,10 @@ Self-contained C++23 evaluation of the Boys function family
 F_n(x) = ∫₀¹ t^(2n) exp(−x t²) dt for n = 0..32.
 
 It ships scalar fp64 and fp32 lanes, an AVX2 vector tier reached through the same entries, fp16 and
-bf16 I/O wrappers, a native packed-half lane, and optional CUDA kernels. It depends on nothing
-outside the C++ standard library, the optional CUDA toolkit, and the committed generated tables.
-Every lane is validated against a committed 45-digit reference grid.
+bf16 I/O wrappers, a native packed-half lane, a matrix-product entry for region A that can run on
+tensor cores, and optional CUDA kernels. It depends on nothing outside the C++ standard library, the
+optional CUDA toolkit, and the committed generated tables. Every lane is validated against a
+committed 45-digit reference grid.
 
 **Full API documentation: <https://myamlak.github.io/boys/>**
 
@@ -78,6 +79,24 @@ entry returns a subnormal half, then zero, by design, and no accuracy is claimed
 that must be right at those orders and arguments wants the double or float lane. The entry covers
 region C only, so x must be at or above the region-C boundary, and there is no fallback to the table
 regions.
+
+Its range shrinks steeply with the order, and above order 8 it has none at all. **Orders 9 to 32 have
+no argument at which this lane returns a value inside its bound**, because the function is already
+below 2^-29 at the smallest argument the entry accepts. Orders 0 and 1 cover the whole 16-bit range,
+and orders 2 to 8 reach x of about 2636, 360, 129, 70, 47, 36 and 30.
+
+The **region-A transform** (`BoysRegionAProduct`) is a separate entry rather than a lane. It computes
+region A's fits as a matrix product instead of by the fitted recurrence — one product per band, all
+orders at once, for a batch of arguments — in an arithmetic mode the caller names: `ProductMode::kFp64`,
+`kTf32x3` or `kBf16x6`. It changes none of the lanes above. At fp64 it adds nothing measurable to the
+coefficients' own truncation, 1.11e-16 over the band. The two split modes deliver 1.92e-07 and
+1.95e-07, which is their 32-bit accumulator's floor rather than the operand split's: no amount of
+operand precision reaches 64-bit-grade accuracy on a 32-bit accumulator. **Those two bounds are
+arithmetic on a model of a 32-bit tensor-core accumulator, not a measurement of a card** — a tensor
+core's fused sum is less accurate than the model, never more, and **no speed is claimed for any mode**.
+A caller who seeds the downward recursion rather than reading values is held to a tighter
+requirement: at fp64 only orders 0 to 2 and 25 to 32 may seed, and the two split modes may not seed
+at all.
 
 Public function signatures and supported domains are stable within a major version. Bitwise outputs
 are not. Internal region thresholds, seed selection, recursion order and dispatch logic may change
