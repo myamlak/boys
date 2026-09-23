@@ -123,9 +123,13 @@ bound, so a caller who needs accuracy relative to their own argument should use 
 lane.
 
 **The margin is thin, and it is not the same for both formats.** Both figures below were measured at
-the default multiplier against the committed reference grid. For the 16-bit format the worst case is
-**0.999 of the bound**, a margin of 0.1 per cent. For the 16-bit brain-float format the worst case is
-**0.9994 of the bound**, a margin of 0.06 per cent. At that distance the representation term is very
+the default multiplier against a 45-digit reference, over every argument either format can represent
+and every order: a 16-bit input is a finite set, so that sweep is exhaustive rather than dense, and it
+is the instrument the two figures rest on. A sparser grid understates them — the committed reference
+grid reads 0.999 for the 16-bit format and 0.9994 for the brain-float one, and both figures here are
+worse. For the 16-bit format the worst case is **0.9993 of the bound**, a margin of 0.07 per cent.
+For the 16-bit brain-float format the worst case is **0.99992 of the bound**, a margin of 0.0085 per
+cent — eight times thinner than the 16-bit format's. At that distance the representation term is very
 nearly the whole bound, and the arithmetic term has almost nothing left to spend. One extra step of
 error anywhere in the lane therefore pushes a result over its bound. Treat this lane as inside its
 bound with nothing to spare.
