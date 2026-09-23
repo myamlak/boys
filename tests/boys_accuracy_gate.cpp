@@ -1254,7 +1254,6 @@ int main(int argc, char** argv) {
     {
         std::array<boys::F16, 33> out16{};
         std::array<boys::Bf16, 33> outb{};
-        std::size_t skipped16 = 0;
 
         for (int n = 0; n <= nmax; ++n)
         {
@@ -1274,9 +1273,6 @@ int main(int argc, char** argv) {
                             ref.decade16[k],
                             HalfBound(asDouble, kF16MantissaBits, kF16MinNormalExp),
                             Unrepresentable(asDouble, kF16MinNormalExp));
-                } else if (n == 0)
-                {
-                    ++skipped16;
                 }
 
                 const boys::Bf16 gotb = boys::BoysSingleBf16(n, boys::Bf16(static_cast<float>(ref.x[i])));
@@ -3089,14 +3085,24 @@ int main(int argc, char** argv) {
             rescaleChecked,
             rescaleViolations));
 
+    // The 8-wide half kernels exist only where the AVX2 tier is compiled, which
+    // is x86_64 by construction. On any other target the claim has no subject,
+    // so it is scoped to the targets that carry it rather than reported as
+    // evidence this revision failed to produce.
+#if defined(__x86_64__) || defined(_M_X64)
+    constexpr bool kSimdTierTarget = true;
+#else
+    constexpr bool kSimdTierTarget = false;
+#endif
+
     add("code.half_simd_budget",
         "the 8-wide half-I/O region kernels never drift from the certified scalar half lane "
-        "by a value the bound cannot absorb",
+        "by a value the bound cannot absorb, on the x86_64 targets that carry those kernels",
         "src/boys_simd.cpp comment on the shared half lanes",
-        driftCells == 0
-            ? Verdict::EvidenceAbsent
-            : ((driftOneSideOut == 0 && driftUnforgivenZero == 0) ? Verdict::Verified
-                                                                  : Verdict::Exceeded),
+        driftCells != 0
+            ? ((driftOneSideOut == 0 && driftUnforgivenZero == 0) ? Verdict::Verified
+                                                                  : Verdict::Exceeded)
+            : (kSimdTierTarget ? Verdict::EvidenceAbsent : Verdict::MetOverDomain),
         Fmt("body against the certified scalar half entry at the same cell, %zu cells over "
             "three regions, both formats, every order: worst divergence %.3g half-quanta at "
             "(n=%d, x=%.6g), which is a quanta count and not an error - at these magnitudes "
