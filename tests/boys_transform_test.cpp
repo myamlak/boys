@@ -9,6 +9,8 @@
 
 #include "boys/boys_transform.hpp"
 
+#include "boys_transform.hpp"   // the relaxed-width definitions
+
 
 #include <gtest/gtest.h>
 
@@ -362,4 +364,38 @@ TEST(BoysTransform, SplitModesAreInsideTheirBoundOnADenseSweep) {
 
     EXPECT_LE(sweep(boys::ProductMode::kTf32x3), kSplitBound);
     EXPECT_LE(sweep(boys::ProductMode::kBf16x6), kSplitBound);
+}
+
+// The multiplier's path: the band's fits truncate to one width every order in
+// the band admits, and the relaxed product stays inside the same bound. For
+// kFp64 the multiplier is live from m = 2 upward, so this is where a relaxed
+// width can be seen at all; the two split modes' floors are four orders above
+// the fit term and no documented multiplier moves them.
+TEST(BoysTransform, RelaxedMultiplierStaysInsideTheBound) {
+    constexpr double kMultiplier = 1024.0;
+    const std::vector<double> xs = BandArguments(boys::RegionABand::kA1);
+    constexpr int kNmax = boys::kMaxBoysOrder;
+
+    std::vector<double> out(xs.size() * (kNmax + 1));
+    boys::BoysRegionAProduct<boys::ProductMode::kFp64, kMultiplier>(
+        boys::RegionABand::kA1, kNmax, xs.data(), out.data(), xs.size());
+
+    double worst = 0.0;
+
+    for (std::size_t i = 0; i < xs.size(); ++i)
+    {
+        for (int n = 0; n <= kNmax; ++n)
+        {
+            worst = std::max(worst, std::abs(out[n * xs.size() + i] - Reference(n, xs[i])));
+        }
+    }
+
+    std::cout << "kFp64 at m = " << kMultiplier << ": worst " << worst << " (bound "
+              << kMultiplier * kFp64Bound << ")" << std::endl;
+    EXPECT_LE(worst, kMultiplier * kFp64Bound);
+
+    // The relaxed width is a compile-time fact of the instantiation, not a
+    // runtime switch: the two instantiations are different code.
+    EXPECT_LT(boys::detail::BandDegreeAtMultiplier<0>(kMultiplier),
+              boys::detail::BandDegreeAtMultiplier<0>(1.0));
 }
