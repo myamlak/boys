@@ -20,6 +20,8 @@ int BoysCudaUploadTables();
 int BoysCudaUploadEffTables(double m, const int* degA, const int* degB);
 int BoysCudaLaunchSingleF32(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
+int BoysCudaLaunchSingleF32Fast(
+    const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllNF32(int nmax, const double* x, float* out, std::size_t count, void* stream);
@@ -29,6 +31,8 @@ int BoysCudaLaunchAllOrdersF64(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllNF64(int nmax, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchSingleF32Eff(
+    const int* n, const double* x, float* out, std::size_t count, void* stream);
+int BoysCudaLaunchSingleF32EffFast(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32Eff(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
@@ -181,7 +185,7 @@ BoysStatus BoysCuda::InitializeTables() {
     return FromLaunchCode(BoysCudaUploadTables());
 }
 
-template <double kAccuracyMultiplier>
+template <double kAccuracyMultiplier, RegionBExp kExp>
 BoysStatus BoysCuda::SingleF32(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
@@ -189,11 +193,20 @@ BoysStatus BoysCuda::SingleF32(
         return BoysStatus::kDeviceError;
     }
 
+    // The exponential is part of the call's identity, not a run-time switch:
+    // each option is its own kernel with its own bound, and no path here
+    // substitutes one for the other.
     if constexpr (kAccuracyMultiplier == 1.0)
     {
         // Byte-identical to the full-accuracy path: the m = 1 instantiation
         // calls the existing kernel and cDeg tables.
-        return RunLaunch(BoysCudaLaunchSingleF32, n, x, out, count, stream);
+        if constexpr (kExp == RegionBExp::kFast)
+        {
+            return RunLaunch(BoysCudaLaunchSingleF32Fast, n, x, out, count, stream);
+        } else
+        {
+            return RunLaunch(BoysCudaLaunchSingleF32, n, x, out, count, stream);
+        }
     } else
     {
         const auto status = EnsureEffTables<kAccuracyMultiplier>();
@@ -203,7 +216,13 @@ BoysStatus BoysCuda::SingleF32(
             return status;
         }
 
-        return RunLaunch(BoysCudaLaunchSingleF32Eff, n, x, out, count, stream);
+        if constexpr (kExp == RegionBExp::kFast)
+        {
+            return RunLaunch(BoysCudaLaunchSingleF32EffFast, n, x, out, count, stream);
+        } else
+        {
+            return RunLaunch(BoysCudaLaunchSingleF32Eff, n, x, out, count, stream);
+        }
     }
 }
 
@@ -425,9 +444,14 @@ BoysStatus BoysCuda::AllNF16(int nmax, const F16* x, F16* out, std::size_t count
 // Explicit instantiations at the sampled multipliers. The entry definitions
 // live in this TU (the header stays CUDA-runtime-free), so the call sites in
 // other TUs link only the instantiations spelled out here — m = 1.0 first
-// (the full-accuracy pin), then the relaxation sample set.
+// (the full-accuracy pin), then the relaxation sample set. The f32 single
+// entry is instantiated once per calibrated (multiplier, exponential) pair it
+// offers; every other entry has one arithmetic and one instantiation per
+// multiplier.
 // ---------------------------------------------------------------------------
 template BoysStatus BoysCuda::SingleF32<1.0>(const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::SingleF32<1.0, RegionBExp::kFast>(
+    const int*, const double*, float*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF32<1.0>(
     const int*, const double*, float*, std::size_t, void*);
 template BoysStatus BoysCuda::AllNF32<1.0>(int, const double*, float*, std::size_t, void*);
@@ -442,6 +466,8 @@ template BoysStatus BoysCuda::AllOrdersF16<1.0>(const int*, const F16*, F16*, st
 template BoysStatus BoysCuda::AllNF16<1.0>(int, const F16*, F16*, std::size_t, void*);
 #endif
 template BoysStatus BoysCuda::SingleF32<2.0>(const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::SingleF32<2.0, RegionBExp::kFast>(
+    const int*, const double*, float*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF32<2.0>(
     const int*, const double*, float*, std::size_t, void*);
 template BoysStatus BoysCuda::AllNF32<2.0>(int, const double*, float*, std::size_t, void*);
@@ -456,6 +482,8 @@ template BoysStatus BoysCuda::AllOrdersF16<2.0>(const int*, const F16*, F16*, st
 template BoysStatus BoysCuda::AllNF16<2.0>(int, const F16*, F16*, std::size_t, void*);
 #endif
 template BoysStatus BoysCuda::SingleF32<10.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::SingleF32<10.0, RegionBExp::kFast>(
     const int*, const double*, float*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF32<10.0>(
     const int*, const double*, float*, std::size_t, void*);
@@ -472,6 +500,8 @@ template BoysStatus BoysCuda::AllNF16<10.0>(int, const F16*, F16*, std::size_t, 
 #endif
 template BoysStatus BoysCuda::SingleF32<100.0>(
     const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::SingleF32<100.0, RegionBExp::kFast>(
+    const int*, const double*, float*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF32<100.0>(
     const int*, const double*, float*, std::size_t, void*);
 template BoysStatus BoysCuda::AllNF32<100.0>(int, const double*, float*, std::size_t, void*);
@@ -486,6 +516,8 @@ template BoysStatus BoysCuda::AllOrdersF16<100.0>(const int*, const F16*, F16*, 
 template BoysStatus BoysCuda::AllNF16<100.0>(int, const F16*, F16*, std::size_t, void*);
 #endif
 template BoysStatus BoysCuda::SingleF32<1e4>(const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::SingleF32<1e4, RegionBExp::kFast>(
+    const int*, const double*, float*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF32<1e4>(
     const int*, const double*, float*, std::size_t, void*);
 template BoysStatus BoysCuda::AllNF32<1e4>(int, const double*, float*, std::size_t, void*);
@@ -500,6 +532,8 @@ template BoysStatus BoysCuda::AllOrdersF16<1e4>(const int*, const F16*, F16*, st
 template BoysStatus BoysCuda::AllNF16<1e4>(int, const F16*, F16*, std::size_t, void*);
 #endif
 template BoysStatus BoysCuda::SingleF32<1e8>(const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::SingleF32<1e8, RegionBExp::kFast>(
+    const int*, const double*, float*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF32<1e8>(
     const int*, const double*, float*, std::size_t, void*);
 template BoysStatus BoysCuda::AllNF32<1e8>(int, const double*, float*, std::size_t, void*);

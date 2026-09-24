@@ -304,8 +304,78 @@ template <double kM> void SweepFloatSingle() {
     PrintWorsts("float single", kM, worst);
 }
 
-template <double kM> void SweepFloatBatch() {
+// The half lanes' engine budget, as the f32 entries now take it: the policy is
+// a type, so naming the budget is naming a policy.
+using Fp16Budget = boys::EvalPolicy<boys::kDefaultFitRoute,
+                                    boys::kDefaultEvalScheme,
+                                    boys::BoysBudget::kFp16>;
+
+// The float lane with the half lanes' engine budget named. The budget picks the
+// degree table the relaxation truncates to, so it selects nothing at the
+// reference multiplier - the lane evaluates its full fits either way - and the
+// promise is the float lane's own bound at every multiplier: what the option
+// buys is fewer coefficients read, not a different bar. The sweep holds it to
+// that bound, and the m = 1 case is checked against the default entry bit for
+// bit, which is the row that would catch the option having reached the
+// certified lane's arithmetic rather than only its truncation.
+template <double kM> void SweepFloatSingleFp16Budget() {
     RegionWorsts worst;
+
+    for (const ReferenceRow& row : gReference)
+    {
+        const float value = BoysSingleF32<kM, Fp16Budget>(row.n, static_cast<float>(row.x));
+        const double bound = kM * RegionBound(RegionOf(row.x), LaneKind::kFloatSingle);
+        const double error = std::abs(static_cast<double>(value) - row.value);
+        EXPECT_LE(error, bound) << "m=" << kM << " n=" << row.n << " x=" << row.x
+                                << " got=" << value << " want=" << row.value;
+        worst.Update(error, row.x);
+
+        // The multiplier is a template parameter, so this is tested as a compile-time
+        // condition: MSVC reports a constant conditional expression under /W4, and this
+        // tree makes that an error.
+        if constexpr (kM == 1.0)
+        {
+            EXPECT_EQ(value, BoysSingleF32<1.0>(row.n, static_cast<float>(row.x)))
+                << "the reference multiplier: naming the budget must not move the certified "
+                   "lane, which reads no degree table there";
+        }
+    }
+
+    PrintWorsts("float single, fp16 budget", kM, worst);
+}
+
+template <double kM> void SweepFloatBatchFp16Budget() {
+    RegionWorsts worst;
+    std::vector<float> batch(boys::kMaxBoysOrder + 1);
+    std::vector<float> plain(batch.size());
+
+    for (const ReferenceRow& row : gReference)
+    {
+        BoysAllOrdersF32<kM, Fp16Budget>(
+            row.n, static_cast<float>(row.x), batch.data());
+        BoysAllOrdersF32<kM>(row.n, static_cast<float>(row.x), plain.data());
+
+        for (int k = 0; k <= row.n; ++k)
+        {
+            const double reference = gGrid.Value(k, row.x);
+            const double bound = kM * RegionBound(RegionOf(row.x), LaneKind::kFloatBatch);
+            const double error =
+                std::abs(static_cast<double>(batch[static_cast<std::size_t>(k)]) - reference);
+            EXPECT_LE(error, bound) << "m=" << kM << " batch F" << k << " at x=" << row.x;
+            worst.Update(error, row.x);
+
+            if constexpr (kM == 1.0)
+            {
+                EXPECT_EQ(batch[static_cast<std::size_t>(k)],
+                          plain[static_cast<std::size_t>(k)]);
+            }
+        }
+    }
+
+    PrintWorsts("float batch, fp16 budget", kM, worst);
+}
+
+template <double kM> void SweepFloatBatch() {    RegionWorsts worst;
     std::vector<float> batch(boys::kMaxBoysOrder + 1);
 
     for (const ReferenceRow& row : gReference)
@@ -328,6 +398,72 @@ template <double kM> void SweepFloatBatch() {
     PrintWorsts("float batch", kM, worst);
 }
 
+// The Horner rung, measured against the committed reference: the same sweep as
+// the default scheme's above, over the table the monomial degree rule is
+// certified on. The gate's stored-fit rows cover the m = 1 reading; this is
+// the reading a relaxed rung delivers, which is the one the truncation
+// decides.
+template <double kM> void SweepDoubleBatchHorner() {
+    using Policy = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>;
+    RegionWorsts worst;
+    std::vector<double> batch(boys::kMaxBoysOrder + 1);
+
+    for (const ReferenceRow& row : gReference)
+    {
+        boys::BoysAllOrders<kM, Policy>(row.n, row.x, batch.data());
+
+        for (int k = 0; k <= row.n; ++k)
+        {
+            const double reference = gGrid.Value(k, row.x);
+            const double bound = kM * RegionBound(RegionOf(row.x), LaneKind::kDoubleBatch);
+            const double error = std::abs(batch[static_cast<std::size_t>(k)] - reference);
+            EXPECT_LE(error, bound)
+                << "m=" << kM << " horner batch F" << k << " at x=" << row.x
+                << " got=" << batch[static_cast<std::size_t>(k)] << " want=" << reference;
+            worst.Update(error, row.x);
+        }
+    }
+
+    PrintWorsts("double batch, horner", kM, worst);
+}
+
+template <double kM> void SweepDoubleSingleHorner() {
+    using Policy = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>;
+    RegionWorsts worst;
+
+    for (const ReferenceRow& row : gReference)
+    {
+        const double value = boys::BoysSingle<kM, Policy>(row.n, row.x);
+        const double bound = kM * RegionBound(RegionOf(row.x), LaneKind::kDoubleSingle);
+        const double error = std::abs(value - row.value);
+        EXPECT_LE(error, bound) << "horner m=" << kM << " n=" << row.n << " x=" << row.x
+                                << " got=" << value << " want=" << row.value;
+        worst.Update(error, row.x);
+    }
+
+    PrintWorsts("double single, horner", kM, worst);
+}
+
+TEST(BoysAccuracyTest, DoubleBatchHornerRungsAgainstTheReferenceGrid) {
+    SweepDoubleBatchHorner<1.0>();
+    SweepDoubleBatchHorner<64.0>();
+    SweepDoubleBatchHorner<256.0>();
+    SweepDoubleBatchHorner<1024.0>();
+    SweepDoubleBatchHorner<4096.0>();
+    SweepDoubleBatchHorner<16384.0>();
+    SweepDoubleBatchHorner<65536.0>();
+}
+
+TEST(BoysAccuracyTest, DoubleSingleHornerRungsAgainstTheReferenceGrid) {
+    SweepDoubleSingleHorner<1.0>();
+    SweepDoubleSingleHorner<64.0>();
+    SweepDoubleSingleHorner<256.0>();
+    SweepDoubleSingleHorner<1024.0>();
+    SweepDoubleSingleHorner<4096.0>();
+    SweepDoubleSingleHorner<16384.0>();
+    SweepDoubleSingleHorner<65536.0>();
+}
+
 TEST(BoysAccuracyTest, DoubleSingleSampledMultipliers) {
     ForEachSampledMultiplier([]<double kM>() { SweepDoubleSingle<kM>(); });
 }
@@ -342,6 +478,17 @@ TEST(BoysAccuracyTest, FloatSingleSampledMultipliers) {
 
 TEST(BoysAccuracyTest, FloatBatchSampledMultipliers) {
     ForEachSampledMultiplier([]<double kM>() { SweepFloatBatch<kM>(); });
+}
+
+// The same two sweeps with the half lanes' engine budget named. Kept as their
+// own tests rather than folded in, so the default-multiplier sweeps above stay
+// the reading of the certified lane that they were.
+TEST(BoysAccuracyTest, FloatSingleSampledMultipliersFp16Budget) {
+    ForEachSampledMultiplier([]<double kM>() { SweepFloatSingleFp16Budget<kM>(); });
+}
+
+TEST(BoysAccuracyTest, FloatBatchSampledMultipliersFp16Budget) {
+    ForEachSampledMultiplier([]<double kM>() { SweepFloatBatchFp16Budget<kM>(); });
 }
 
 // ---------------------------------------------------------------------------
@@ -448,6 +595,172 @@ TEST(BoysAccuracyTest, EffectiveDegreesNonIncreasingInMultiplier) {
             }
         });
     });
+}
+
+// ---------------------------------------------------------------------------
+// A degree table is certified against the table its scheme sums
+// ---------------------------------------------------------------------------
+// A rung truncates one stored table, and what the truncation costs is the
+// 1-norm of the coefficients above d' *in that table*: |T_k(t)| <= 1 and
+// |t^k| <= 1 over the mapped interval, so either basis bounds its own dropped
+// series, and the two tables hold different numbers for the same fit. A degree
+// chosen on one table's tail and spent on the other's is therefore not
+// certified at all — its dropped tail is whatever the other table holds, which
+// for the monomial end of a Chebyshev fit runs orders of magnitude larger.
+// These rows are that statement as a measurement: for every shipped rung, every
+// piece and every order, either the entry is the full degree (it drops
+// nothing) or the tail of the table the basis names, times the path's
+// amplification, is inside the rung's budget.
+// ---------------------------------------------------------------------------
+
+using boys::detail::RegionAAmplification;
+using boys::detail::RegionABudget;
+using boys::detail::RegionBAmplification;
+using boys::detail::RegionBBudget;
+using boys::detail::RoleUsesBatchAmplification;
+using boys::detail::TailBasis;
+
+/// The region-A coefficient table a basis names.
+template <TailBasis kBasis> constexpr const auto& BasisTableA() {
+    if constexpr (kBasis == TailBasis::kMonomial)
+    {
+        return boys::detail::kMonoCoeffs;
+    } else
+    {
+        return boys::detail::kCoeffs;
+    }
+}
+
+/// The region-B coefficient table a basis names.
+template <TailBasis kBasis> constexpr const auto& BasisTableB() {
+    if constexpr (kBasis == TailBasis::kMonomial)
+    {
+        return boys::detail::kMonoBcoeffs;
+    } else
+    {
+        return boys::detail::kBcoeffs;
+    }
+}
+
+template <double kM, BoysRole kRole, TailBasis kBasis> void AssertBasisCertifiedA() {
+    constexpr auto degrees = RegionADegrees<kM, kRole, kBasis>();
+    constexpr const auto& table = BasisTableA<kBasis>();
+    const double budget = (kM - 1.0) * RegionABudget(kRole);
+
+    for (int order = 0; order <= boys::kMaxBoysOrder; ++order)
+    {
+        for (int p = boys::detail::kPieceStart[order]; p < boys::detail::kPieceStart[order + 1];
+             ++p)
+        {
+            const auto& piece = boys::detail::kPieces[static_cast<std::size_t>(p)];
+            const int d = degrees[static_cast<std::size_t>(p)];
+            EXPECT_TRUE(InEvaluatorDomain(d)) << "region-A piece " << p << " at m = " << kM;
+            EXPECT_LE(d, piece.deg) << "region-A piece " << p << " at m = " << kM;
+
+            if (d == piece.deg)
+            {
+                continue; // the fallback drops nothing
+            }
+
+            const double amplification =
+                RoleUsesBatchAmplification(kRole) ? RegionAAmplification(order, piece.b) : 1.0;
+            EXPECT_LE(boys::detail::CoefficientTail(
+                          table, static_cast<std::size_t>(piece.offset), piece.deg, d) *
+                          amplification,
+                      budget)
+                << "region-A piece " << p << " (order " << order << ", b = " << piece.b
+                << ") at m = " << kM << " truncates to " << d << ", and the tail of the "
+                << (kBasis == TailBasis::kMonomial ? "monomial" : "chebyshev")
+                << " table above it does not fit the budget";
+        }
+    }
+}
+
+template <double kM, BoysRole kRole, TailBasis kBasis> void AssertBasisCertifiedB() {
+    constexpr auto degrees = RegionBDegrees<kM, kRole, kBasis>();
+    constexpr const auto& table = BasisTableB<kBasis>();
+    const double budget = (kM - 1.0) * RegionBBudget(kRole);
+
+    for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+    {
+        const int d = degrees[static_cast<std::size_t>(n)];
+        EXPECT_TRUE(InEvaluatorDomain(d)) << "region-B order " << n << " at m = " << kM;
+        EXPECT_LE(d, boys::detail::kBDeg) << "region-B order " << n << " at m = " << kM;
+
+        if (d == boys::detail::kBDeg)
+        {
+            continue; // the fallback drops nothing
+        }
+
+        EXPECT_LE(boys::detail::CoefficientTail(table, 0, boys::detail::kBDeg, d) *
+                      RegionBAmplification(n),
+                  budget)
+            << "region-B order " << n << " at m = " << kM << " truncates to " << d
+            << ", and the tail of the "
+            << (kBasis == TailBasis::kMonomial ? "monomial" : "chebyshev")
+            << " table above it does not fit the budget (amplification " << RegionBAmplification(n)
+            << ")";
+    }
+}
+
+template <double kM> void AssertEveryRungCertified() {
+    AssertBasisCertifiedA<kM, BoysRole::kDoubleSingle, TailBasis::kChebyshev>();
+    AssertBasisCertifiedA<kM, BoysRole::kDoubleSingle, TailBasis::kMonomial>();
+    AssertBasisCertifiedA<kM, BoysRole::kDoubleBatch, TailBasis::kChebyshev>();
+    AssertBasisCertifiedA<kM, BoysRole::kDoubleBatch, TailBasis::kMonomial>();
+    AssertBasisCertifiedB<kM, BoysRole::kDoubleSingle, TailBasis::kChebyshev>();
+    AssertBasisCertifiedB<kM, BoysRole::kDoubleSingle, TailBasis::kMonomial>();
+    AssertBasisCertifiedB<kM, BoysRole::kDoubleBatch, TailBasis::kChebyshev>();
+    AssertBasisCertifiedB<kM, BoysRole::kDoubleBatch, TailBasis::kMonomial>();
+}
+
+TEST(BoysAccuracyTest, EveryRungDegreesFitTheTableItsSchemeSums) {
+    AssertEveryRungCertified<64.0>();
+    AssertEveryRungCertified<256.0>();
+    AssertEveryRungCertified<1024.0>();
+    AssertEveryRungCertified<4096.0>();
+    AssertEveryRungCertified<16384.0>();
+    AssertEveryRungCertified<65536.0>();
+}
+
+TEST(BoysAccuracyTest, BasisTablesAreNotInterchangeable) {
+    // The carriage of the basis through the degree tables: a rung's region-A
+    // and region-B tables must differ from the table of the other basis at
+    // m = 64, and both bases must give the full degrees at m = 1. A choice of
+    // basis that reached no table - one table shared by both, or a rule that
+    // always read the Chebyshev coefficients - would leave the Horner rung
+    // uncertified while every number above it stayed green.
+    constexpr auto chebA = RegionADegrees<64.0, BoysRole::kDoubleSingle, TailBasis::kChebyshev>();
+    constexpr auto monoA = RegionADegrees<64.0, BoysRole::kDoubleSingle, TailBasis::kMonomial>();
+    constexpr auto chebA1 = RegionADegrees<1.0, BoysRole::kDoubleSingle, TailBasis::kChebyshev>();
+    constexpr auto monoA1 = RegionADegrees<1.0, BoysRole::kDoubleSingle, TailBasis::kMonomial>();
+    constexpr auto chebB = RegionBDegrees<64.0, BoysRole::kDoubleBatch, TailBasis::kChebyshev>();
+    constexpr auto monoB = RegionBDegrees<64.0, BoysRole::kDoubleBatch, TailBasis::kMonomial>();
+    constexpr auto chebB1 = RegionBDegrees<1.0, BoysRole::kDoubleBatch, TailBasis::kChebyshev>();
+    constexpr auto monoB1 = RegionBDegrees<1.0, BoysRole::kDoubleBatch, TailBasis::kMonomial>();
+
+    ASSERT_EQ(chebA.size(), monoA.size());
+    ASSERT_EQ(chebB.size(), monoB.size());
+
+    std::size_t differA = 0;
+    std::size_t differB = 0;
+
+    for (std::size_t i = 0; i < chebA.size(); ++i)
+    {
+        differA += (chebA[i] != monoA[i]) ? 1U : 0U;
+        EXPECT_EQ(chebA1[i], monoA1[i])
+            << "m = 1 region-A index " << i << " must be the full degree in either basis";
+    }
+
+    for (std::size_t i = 0; i < chebB.size(); ++i)
+    {
+        differB += (chebB[i] != monoB[i]) ? 1U : 0U;
+        EXPECT_EQ(chebB1[i], monoB1[i])
+            << "m = 1 region-B index " << i << " must be the full degree in either basis";
+    }
+
+    EXPECT_GT(differA, 0U) << "at m = 64 the two region-A bases must not return one table";
+    EXPECT_GT(differB, 0U) << "at m = 64 the two region-B bases must not return one table";
 }
 
 // ---------------------------------------------------------------------------

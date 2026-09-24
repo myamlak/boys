@@ -157,6 +157,13 @@ std::string Report(const char* mode, boys::RegionABand band, const Worst& worst,
 // m = 1 and hold from m = 2, when that lane's own budget is 3e-7.
 constexpr double kFp64Bound = 1e-15;
 constexpr double kSplitBound = 2.5e-7;
+// The single-pass narrow modes' floors, from the same table. They are three
+// orders looser than the split modes' and the header says so: one product per
+// degree at an 11- or 8-bit operand is what a card computes without a split,
+// and what the split exists to avoid.
+constexpr double kTf32Bound = 5e-4;
+constexpr double kBf16Bound = 3e-3;
+constexpr double kFp16Bound = 5e-4;
 
 } // namespace
 
@@ -180,12 +187,159 @@ TEST(BoysTransform, DeliveredErrorPerMode) {
     }
 }
 
+// The single-pass narrow modes, held to their own floors in the same sweep. The
+// floors are three orders looser than the split modes' and are what the modes
+// cost: one product per degree instead of three or six. The mode is offered at
+// that error, not at the split's, and the header's table says which is which -
+// so a row here that read like the split modes' would be the failure.
+TEST(BoysTransform, DeliveredErrorPerSinglePassMode) {
+    for (boys::RegionABand band : {boys::RegionABand::kA1, boys::RegionABand::kA2})
+    {
+        const Worst tf32 = SweepBand<boys::ProductMode::kTf32>(band);
+        const Worst bf16 = SweepBand<boys::ProductMode::kBf16>(band);
+        const Worst fp16 = SweepBand<boys::ProductMode::kFp16>(band);
+
+        std::cout << Report("kTf32", band, tf32, kTf32Bound) << "\n"
+                  << Report("kBf16", band, bf16, kBf16Bound) << "\n"
+                  << Report("kFp16", band, fp16, kFp16Bound) << std::endl;
+
+        EXPECT_LE(tf32.error, kTf32Bound);
+        EXPECT_LE(bf16.error, kBf16Bound);
+        EXPECT_LE(fp16.error, kFp16Bound);
+    }
+}
+
+// tf32 and fp16 carry the same significand, and the band's operands are all
+// well inside binary16's exponent range, so the two modes are the same
+// arithmetic here and must return the same bits. The header claims the
+// coincidence in prose; this is the artifact behind it. A difference means
+// either the operand rounding or the accumulate format stopped being the same,
+// and either would make one of the two published floors wrong.
+TEST(BoysTransform, Tf32AndFp16CoincideOnRegionA) {
+    for (boys::RegionABand band : {boys::RegionABand::kA1, boys::RegionABand::kA2})
+    {
+        const std::vector<double> xs = BandArguments(band);
+        ASSERT_FALSE(xs.empty());
+
+        constexpr int kNmax = boys::kMaxBoysOrder;
+        std::vector<double> tf32(xs.size() * (kNmax + 1));
+        std::vector<double> fp16(tf32.size());
+
+        boys::BoysRegionAProduct<boys::ProductMode::kTf32>(
+            band, kNmax, xs.data(), tf32.data(), xs.size());
+        boys::BoysRegionAProduct<boys::ProductMode::kFp16>(
+            band, kNmax, xs.data(), fp16.data(), xs.size());
+
+        EXPECT_EQ(tf32, fp16);
+    }
+}
+
+// The mode report a consumer reads, held to the header's table and to the
+// enumeration: one row per enumerator, in order, with the delivered figure and
+// the floor the header publishes, and the certification column saying which
+// rows a card is held to. The single-pass modes and the split modes are
+// uncertified - their bounds are arithmetic on a model of an fp32 accumulator -
+// and kFp64 alone is certified, because an fp64 accumulator is an ordinary IEEE
+// double sum and that is the arithmetic the row's measurement ran.
+TEST(BoysTransform, ModeReportMatchesTheHeaderTable) {
+    const std::span<const boys::ProductModeInfo> rows = boys::BoysProductModes();
+
+    ASSERT_EQ(rows.size(), 6u);
+
+    struct Expected {
+        boys::ProductMode mode;
+        const char* name;
+        boys::ModeCertification certification;
+        int parts;
+        double fitTerm;
+        double floor;
+        double delivered;
+    };
+
+    const Expected expected[] = {
+        {boys::ProductMode::kFp64,
+         "fp64",
+         boys::ModeCertification::kCertified,
+         1,
+         1e-15,
+         0.0,
+         1.110e-16},
+        {boys::ProductMode::kTf32x3,
+         "3xtf32",
+         boys::ModeCertification::kUncertified,
+         2,
+         1e-15,
+         2.5e-7,
+         1.916e-07},
+        {boys::ProductMode::kBf16x6,
+         "6xbf16",
+         boys::ModeCertification::kUncertified,
+         3,
+         1e-15,
+         2.5e-7,
+         1.946e-07},
+        {boys::ProductMode::kTf32,
+         "tf32",
+         boys::ModeCertification::kUncertified,
+         1,
+         1e-15,
+         kTf32Bound,
+         4.4184e-04},
+        {boys::ProductMode::kBf16,
+         "bf16",
+         boys::ModeCertification::kUncertified,
+         1,
+         1e-15,
+         kBf16Bound,
+         2.7893e-03},
+        {boys::ProductMode::kFp16,
+         "fp16",
+         boys::ModeCertification::kUncertified,
+         1,
+         1e-15,
+         kFp16Bound,
+         4.4184e-04},
+    };
+
+    for (std::size_t i = 0; i < rows.size(); ++i)
+    {
+        SCOPED_TRACE(i);
+        EXPECT_EQ(rows[i].mode, expected[i].mode);
+        EXPECT_STREQ(rows[i].name, expected[i].name);
+        EXPECT_EQ(rows[i].certification, expected[i].certification);
+        EXPECT_EQ(rows[i].parts, expected[i].parts);
+        EXPECT_EQ(rows[i].fitTerm, expected[i].fitTerm);
+        EXPECT_EQ(rows[i].floor, expected[i].floor);
+        EXPECT_EQ(rows[i].delivered, expected[i].delivered);
+        EXPECT_NE(rows[i].model, nullptr);
+    }
+
+    // The rows are the enumeration's order and one per enumerator, so a mode
+    // added to the enumeration without a row is caught here rather than by a
+    // consumer finding it missing.
+    EXPECT_EQ(static_cast<int>(rows.back().mode) + 1, 6);
+    EXPECT_EQ(static_cast<int>(boys::ProductMode::kFp16) + 1, 6);
+
+    // Exactly one row is certified, and it is the fp64 one.
+    int certified = 0;
+
+    for (const boys::ProductModeInfo& row : rows)
+    {
+        if (row.certification == boys::ModeCertification::kCertified)
+        {
+            ++certified;
+            EXPECT_EQ(row.mode, boys::ProductMode::kFp64);
+        }
+    }
+
+    EXPECT_EQ(certified, 1);
+}
+
 // The accumulate format is the wall, not the operand: the split modes reuse the
 // double lane's table at fp32 precision, and no split reaches the double budget
 // however many parts it carries. A split mode that quietly started reaching
 // 1e-15 would be a different claim, not a better number.
-TEST(BoysTransform, SplitModesDoNotReachTheDoubleBudget) {
-    const Worst tf32 = SweepBand<boys::ProductMode::kTf32x3>(boys::RegionABand::kA1);
+TEST(BoysTransform, SplitModesDoNotReachTheDoubleBudget) {    const Worst tf32 = SweepBand<boys::ProductMode::kTf32x3>(boys::RegionABand::kA1);
     const Worst bf16 = SweepBand<boys::ProductMode::kBf16x6>(boys::RegionABand::kA1);
 
     EXPECT_GT(tf32.error, 1e-9);

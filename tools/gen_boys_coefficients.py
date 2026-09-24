@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the Boys-function Chebyshev coefficient tables and test reference data.
+"""Generate the Boys-function fit tables and test reference data.
 
 Reproduces include/boys/boys_coefficients.hpp (double and float lanes) and
 tests/data/boys_reference.csv from scratch, validating every fit
@@ -20,7 +20,7 @@ Method (the formula sources are keyed to CITATION.bib):
     Clenshaw recurrence (even/odd, T_{2j}(t) = T_j(v), T_{2j+1}(t) = t*D_j(v),
     v = 2t^2 - 1). The fits are WEIGHTED: the downward batch recursion
     amplifies the seed error by up to x^n / prod_{j=0}^{n-1}(j + 1/2)
-    (VikhamarSandberg2025, eqs. 18-23), so the
+    (VikhamarSandberg2026, eqs. 18-23), so the
     effective seed tolerance is tol / max(1, weight(x)).
   - Region B [x0, x1): one F0 fit + the upward recursion (Shavitt1963,
     Methods in Computational Physics 2, 1-45, 1963).
@@ -32,8 +32,15 @@ Method (the formula sources are keyed to CITATION.bib):
     x1 = 28.989337738820740 (the configuration validated end-to-end against
     the reference grid; the per-kmax table is printed for documentation).
     The published per-kmax boundary formula (the table's comparison column)
-    is VikhamarSandberg2025, Eqs. 25/13.
+    is VikhamarSandberg2026, Eqs. 25/13.
   - Float lane: same structure, tolerance 1e-7, degree cap 10.
+  - Region B carries a second, certified route beside the Chebyshev one: a
+    rational minimax fit, P(t)/Q(t), fitted by the Remez exchange over the
+    same interval and in the same mapped argument, and cross-checked against
+    Lawson's algorithm (with the Sanathanan-Koerner denominator weight). The
+    region-B routes' stored counts and delivered errors are measured in the
+    kernel's double arithmetic against the same reference the fits are
+    validated against, and emitted beside the tables.
 
 The DCT normalization is the standard one: c_0 gets 1/(deg+1), all other
 coefficients - including the top one - get 2/(deg+1). An earlier normalization
@@ -42,6 +49,7 @@ header must match this script's output byte for byte for a given tolerance
 configuration.
 """
 import argparse
+import math
 import os
 import shutil
 import subprocess
@@ -82,6 +90,17 @@ GRID_DPS = 60
 GRID_TAIL_FLOOR = mpf("1e-55")
 GRID_TERMS = 2000
 GRID_DIGITS = 45
+
+# Arguments per interval the scheme report sweeps when it measures what each
+# evaluation scheme delivers: an interval sweep finer than the reference grid's
+# own spacing on the same range, so the figure a row carries is at or above
+# what any grid in the tree can find.
+SCHEME_MEASURE_POINTS = 1024
+
+# The names the scheme report prints; the C++ enumeration carries the same two
+# in the same order.
+SCHEME_NAMES = ("split-clenshaw", "horner")
+LANE_NAMES = ("region A", "region B", "extended band")
 
 TOL_DOUBLE = mpf("5e-14")
 TOL_FLOAT = mpf("1e-7")
@@ -214,6 +233,129 @@ def clenshaw_double(cs, x, a, b):
     return even + t * odd
 
 
+def route_step(fused, a, b, c):
+    """One multiply-add as the kernel's arithmetic spells it: the fused step
+    rounds the sum once, the separate step rounds the product and then the
+    sum."""
+    return math.fma(a, b, c) if fused else a * b + c
+
+
+def clenshaw_route(cs, x, a, b, fused):
+    """The split Clenshaw recurrence in IEEE double with every step written as
+    the backend's multiply-add.
+
+    clenshaw_double is the fitting instrument and is left alone; this is the
+    measurement instrument, so a figure taken with it is the arithmetic the
+    kernel makes rather than the arithmetic that decided the fit."""
+    t = 2.0 * (x - a) / (b - a) - 1.0
+    if len(cs) == 1:
+        return cs[0]
+    if len(cs) == 2:
+        return route_step(fused, t, cs[1], cs[0])
+    v = route_step(fused, 2.0, t * t, -1.0)
+    two_v = v + v
+    even_cs = cs[0::2]
+    odd_cs = cs[1::2]
+    m_even = len(even_cs) - 1
+    b1 = even_cs[m_even]
+    b2 = 0.0
+    for k in range(m_even - 1, 0, -1):
+        b1, b2 = route_step(fused, two_v, b1, even_cs[k] - b2), b1
+    even = route_step(fused, v, b1, even_cs[0] - b2)
+    m_odd = len(odd_cs) - 1
+    if m_odd <= 0:
+        return route_step(fused, t, odd_cs[0], even)
+    o1 = odd_cs[m_odd]
+    o2 = 0.0
+    for k in range(m_odd - 1, 0, -1):
+        o1, o2 = route_step(fused, two_v, o1, odd_cs[k] - o2), o1
+    odd = route_step(fused, two_v - 1.0, o1, odd_cs[0] - o2)
+    return route_step(fused, t, odd, even)
+
+
+def cheb_to_monomial(cs):
+    """The monomial coefficients of the polynomial the Chebyshev coefficients
+    spell, ascending, converted in exact arithmetic.
+
+    T_0 = 1, T_1 = t, T_{k+1} = 2 t T_k - T_{k-1}, accumulated on the mpf
+    coefficients, so the single rounding is the one that stores the result: the
+    Chebyshev table and the monomial table are then the correctly rounded
+    doubles of one ideal polynomial, rather than a rounded table converted and
+    rounded a second time."""
+    n = len(cs)
+    mono = [mpf(0)] * n
+    prev = [mpf(0)] * n
+    prev[0] = mpf(1)  # T_0
+    cur = [mpf(0)] * n
+    if n > 1:
+        cur[1] = mpf(1)  # T_1
+    for k in range(n):
+        if cs[k]:
+            for j in range(n):
+                mono[j] += cs[k] * prev[j]
+        nxt = [mpf(0)] * n
+        if k + 1 < n:
+            for j in range(n - 1):
+                nxt[j + 1] = 2 * cur[j]
+            for j in range(n):
+                nxt[j] -= prev[j]
+        prev, cur = cur, nxt
+    return mono
+
+
+def horner_double(ms, t, fused):
+    """Horner on the monomial form, ascending coefficients, evaluated at the
+    mapped argument t in [-1, 1] so the conversion stays benign."""
+    acc = ms[-1]
+    for k in range(len(ms) - 2, -1, -1):
+        acc = route_step(fused, acc, t, ms[k])
+    return acc
+
+
+def scheme_bound(v):
+    """A swept maximum published as a bound: the smallest power of two
+    strictly above it.
+
+    A measured extreme is a reading and not a bound - a different grid reaches
+    past it - so the number the header publishes is this round-up. A row that
+    judges a sweep against it then compares a measurement with a value no grid
+    can reach by sampling differently, which is what keeps the row's verdict
+    about the scheme rather than about the two grids' luck. The round-up is at
+    most a factor of two."""
+    if v <= 0.0:
+        return 0.0
+    return math.ldexp(1.0, math.frexp(v)[1])
+
+
+def fit_delivered(cs, ms, n, a, b, npts):
+    """The worst |F_hat - F_n| each scheme reaches over [a, b], in each of the
+    two multiply-add routes, measured against the reference at every argument
+    and never against either fit's own residual.
+
+    The reference column is built once per argument, so the four figures differ
+    only by the summation and the arithmetic that carried it. Returns
+    [[scheme][route]] with route 0 fused and 1 separate."""
+    af = float(a)
+    bf = float(b)
+    worst = [[0.0, 0.0], [0.0, 0.0]]
+    for i in range(npts + 1):
+        x = af + (bf - af) * (i / npts)
+        if x >= bf:
+            x = math.nextafter(bf, 0.0)  # the pieces are half-open at b
+        ref = float(boys_ref(n, x))
+        t = 2.0 * (x - af) / (bf - af) - 1.0
+        cand = (
+            (clenshaw_route(cs, x, af, bf, True), clenshaw_route(cs, x, af, bf, False)),
+            (horner_double(ms, t, True), horner_double(ms, t, False)),
+        )
+        for scheme in (0, 1):
+            for route in (0, 1):
+                err = abs(cand[scheme][route] - ref)
+                if err > worst[scheme][route]:
+                    worst[scheme][route] = err
+    return worst
+
+
 def seed_weight(n, x):
     """Downward-recursion amplification bound: max(1, x^n / prod(j+1/2))."""
     p = mpf(1)
@@ -223,14 +365,17 @@ def seed_weight(n, x):
 
 
 def fit_interval(n, a, b, tol, maxdeg, weighted, degs=None):
-    """Returns (deg, [float coeffs]) or None; weighted=True fits region-A seeds.
-    degs overrides the degree ladder (the extended band's fit walks its own)."""
+    """Returns (deg, [float coeffs], [float monomial coeffs]) or None;
+    weighted=True fits region-A seeds. The monomial form is carried alongside
+    every accepted fit so the two evaluation schemes share one degree, one
+    interval and one set of pieces. degs overrides the degree ladder (the
+    extended band's fit walks its own)."""
     fmax = max(abs(boys_ref(n, x)) for x in grid(a, b, 8))
     if weighted:
         if max(fmax * seed_weight(n, x) for x in grid(a, b, 8)) < tol:
-            return (0, [0.0])
+            return (0, [0.0], [0.0])
     elif fmax < tol:
-        return (0, [0.0])
+        return (0, [0.0], [0.0])
     if degs is None:
         degs = (12, maxdeg) if maxdeg >= 12 else (maxdeg,)
     for deg in degs:
@@ -244,7 +389,7 @@ def fit_interval(n, a, b, tol, maxdeg, weighted, degs=None):
                 ok = False
                 break
         if ok:
-            return (deg, cd)
+            return (deg, cd, [float(c) for c in cheb_to_monomial(cm)])
     return None
 
 
@@ -271,8 +416,8 @@ def fit_order(n, region_b=False, f32=False):
             stack.append((m, b, depth + 1))
             stack.append((a, m, depth + 1))
         else:
-            deg, cd = r
-            pieces.append((float(a), float(b), deg, cd))
+            deg, cd, mono = r
+            pieces.append((float(a), float(b), deg, cd, mono))
     pieces.sort(key=lambda p: p[0])
     return pieces
 
@@ -390,7 +535,7 @@ def fit_extended_band(b_cheb=None):
                          degs=EXTENDED_DEG_LADDER)
         if r is None:
             raise RuntimeError(f"extended band: fit never converged on [{edge}, X0)")
-        deg, cd = r
+        deg, cd, mono = r
         gamma = mpf(2) ** -52  # the 1-ulp-exp form (the primary certificate)
         new_crossings = {k: extended_gen_crossing(k, edge, cd, gamma) for k in crossings}
         if all(abs(new_crossings[k] - crossings[k]) <= mpf("1e-12") for k in crossings):
@@ -410,16 +555,696 @@ def fit_extended_band(b_cheb=None):
         for k in disabled:
             crossings[k] = mpf("inf")
     if b_cheb is not None:
-        bdeg, bcs = b_cheb
+        bdeg, bcs, _bmono = b_cheb
         junction = abs(clenshaw_double(cd, float(X0), float(edge), float(X0))
                        - clenshaw_double(bcs, float(X0), float(X0), float(X1)))
         if junction > mpf("2e-14"):
             raise RuntimeError(f"extended band: kX0 junction check failed "
                                f"({junction} > 2e-14)")
-    return deg, cd, crossings
+    return deg, cd, mono, crossings
 
 
-def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb):
+# ---------------------------------------------------------------------------
+# The rational minimax region-B route
+# ---------------------------------------------------------------------------
+# Region B's seed is the one fit of the kernel that a rational approximation
+# serves as well as a polynomial one, so it is the one the library offers a
+# second certified route for. The route is fitted here, against the same
+# stable series every other fit in this file is validated against, and its
+# delivered error is measured in the double arithmetic the kernel evaluates it
+# in rather than in mpmath: a fit's own residual is not what a caller
+# receives, and the gap between the two is the whole reason this section
+# re-implements the kernel's evaluation below.
+#
+# Two textbook routes are run. The Remez exchange solves the linearized
+# equioscillation problem on a reference set and moves the set to the error's
+# extrema; Lawson's algorithm reaches the same linear problem through
+# iteratively reweighted least squares with the Sanathanan-Koerner denominator
+# weight. They share no machinery, so agreement between them is evidence the
+# error is near the best for that degree pair, and disagreement is not - the
+# exchange result is what ships, and the second is printed beside it.
+#
+# The fits are made in t = 2(x - X0)/(X1 - X0) - 1, the same mapped argument
+# the Chebyshev region-B fit uses: an affine change of variable maps the
+# rational family onto itself, so the best error over a degree pair is the
+# same in t as in x, and t keeps the linear systems well conditioned.
+
+# The exchange solves for its coefficients rather than projecting them, and the
+# reference set is a set of extrema rather than a set of nodes, so its linear
+# systems spend digits a DCT does not. 60 dps leaves the delivered error, a
+# 1e-14 quantity, about 45 digits of room.
+RAT_DPS = 60
+RAT_TAIL_FLOOR = mpf("1e-55")
+RAT_TERMS = 900
+
+# The degree pairs the scan visits: every numerator/denominator split whose
+# stored count is at most RAT_SCAN_MAX, and never more than RAT_K_MAX
+# denominator coefficients.
+RAT_SCAN_MIN = 8
+RAT_SCAN_MAX = 17
+RAT_K_MAX = 8
+
+# The certifying grid: RAT_NODES + 1 nodes uniform in t over [-1, 1]. The scan
+# reads every RAT_STRIDE-th node of it, so one reference build serves both
+# views and the scan's nodes are a subset of the certifying ones.
+RAT_NODES = 2000
+RAT_STRIDE = 5
+
+# The bar both region-B routes are placed against (the header's 5e-14 target
+# for the interval) and the figures the header states.
+RAT_BAR = mpf("5e-14")
+
+
+def rat_fma(a, b, c):
+    """a * b + c with the product exact and the sum rounded once.
+
+    Dekker's product split, so the fused step is the same operation on every
+    platform and on every Python the CI matrix carries: `math.fma` is 3.13 and
+    later, and the generated header is byte-compared on machines that need not
+    agree about which Python runs the check.
+    """
+    p = a * b
+    ah = a * 134217729.0  # 2^27 + 1
+    ah = ah - (ah - a)
+    al = a - ah
+    bh = b * 134217729.0
+    bh = bh - (bh - b)
+    bl = b - bh
+    err = ((ah * bh - p) + ah * bl + al * bh) + al * bl
+    s = p + c
+    bv = s - p
+    return s + (((p - (s - bv)) + (c - bv)) + err)
+
+
+def rat_horner_double(cs, t):
+    acc = cs[-1]
+    for c in reversed(cs[:-1]):
+        acc = rat_fma(acc, t, c)
+    return acc
+
+
+def rat_eval_double(p, q, t):
+    """The kernel's evaluation of the route: Horner in double, fused throughout."""
+    num = rat_horner_double(p, t)
+    den = rat_fma(rat_horner_double(q, t), t, 1.0) if q else 1.0
+    return num / den
+
+
+def clenshaw_split_double(cs, t):
+    """ClenshawSplit<ScalarFp64>, operation for operation.
+
+    The shipped header's split Clenshaw, transcribed so the region-B Chebyshev
+    route's delivered error is measured in the arithmetic the kernel runs it
+    in: the two routes are compared, so an evaluation the kernel does not
+    perform would compare the wrong pair.
+    """
+    deg = len(cs) - 1
+    if deg == 0:
+        return cs[0]
+    if deg == 1:
+        return rat_fma(t, cs[1], cs[0])
+    v = rat_fma(2.0, t * t, -1.0)
+    two_v = v + v
+    if deg == 2:
+        return rat_fma(t, cs[1], rat_fma(v, cs[2], cs[0]))
+    m = deg // 2
+    b1 = cs[2 * m]
+    b2 = 0.0
+    for k in range(m - 1, 0, -1):
+        b0 = rat_fma(two_v, b1, cs[2 * k] - b2)
+        b2 = b1
+        b1 = b0
+    even = rat_fma(v, b1, cs[0] - b2)
+    o1 = cs[2 * m - 1]
+    o2 = 0.0
+    for k in range(m - 2, 0, -1):
+        o0 = rat_fma(two_v, o1, cs[2 * k + 1] - o2)
+        o2 = o1
+        o1 = o0
+    odd = rat_fma(two_v - 1.0, o1, cs[1] - o2)
+    return rat_fma(t, odd, even)
+
+
+def region_b_seed_chebyshev(cs, x):
+    """RegionBSeed(x): the same mapped argument and the same split Clenshaw."""
+    t = 2.0 * (float(x) - float(X0)) / (float(X1) - float(X0)) - 1.0
+    return clenshaw_split_double(cs, t)
+
+
+def region_b_seed_rational(p, q, x):
+    t = 2.0 * (float(x) - float(X0)) / (float(X1) - float(X0)) - 1.0
+    return rat_eval_double(p, q, t)
+
+
+def rat_nodes():
+    """The certifying grid, in t and in x."""
+    ts = [-1 + 2 * mpf(i) / RAT_NODES for i in range(RAT_NODES + 1)]
+    xs = [X0 + (X1 - X0) * (t + 1) / 2 for t in ts]
+    return ts, xs
+
+
+def rat_reference(xs):
+    with mp.workdps(RAT_DPS):
+        return [boys_ref(0, x, RAT_TAIL_FLOOR, RAT_TERMS) for x in xs]
+
+
+def rat_horner(cs, t):
+    acc = mpf(0)
+    for c in reversed(cs):
+        acc = acc * t + c
+    return acc
+
+
+def rat_value(p, q, t):
+    """The rational value in mpmath, at the working precision."""
+    den = 1 + rat_horner(q, t) * t if q else mpf(1)
+    return rat_horner(p, t) / den
+
+
+def rat_reference_solve(ref, m, k, ts, fs, ws=None):
+    """The linearized equioscillation system on a reference set of grid indices.
+
+    p(t_i) - f_i * sum_j q_j t_i^j - (-1)^i E = f_i, with q_0 held at 1: the
+    denominator's constant term is the one normalization the family needs, and
+    fixing it at 1 keeps the problem linear.
+
+    A weight vector scales the p columns, the q columns and the right-hand side
+    of every row, so the solved fit equalizes the *weighted* error: the
+    equioscillation the exchange then drives is on w*(f - fit), which is the
+    problem a fit weighted against a downstream amplification grows into.
+    """
+    n = m + k + 1
+    a = mp.zeros(n + 1, n + 1)
+    rhs = mp.zeros(n + 1, 1)
+    for i, index in enumerate(ref):
+        t = ts[index]
+        fi = fs[index]
+        w = ws[index] if ws is not None else mpf(1)
+        for j in range(m + 1):
+            a[i, j] = w * t ** j
+        for j in range(1, k + 1):
+            a[i, m + j] = -w * fi * t ** j
+        a[i, n] = -mpf((-1) ** i)
+        rhs[i] = w * fi
+    sol = mp.lu_solve(a, rhs)
+    return ([sol[j] for j in range(m + 1)], [sol[m + j] for j in range(1, k + 1)], sol[n])
+
+
+def rat_extrema_indices(errs):
+    """Grid indices where the error is a local extremum, endpoints included."""
+    out = [0, len(errs) - 1]
+    for i in range(1, len(errs) - 1):
+        if (errs[i] >= errs[i - 1] and errs[i] >= errs[i + 1]) or \
+           (errs[i] <= errs[i - 1] and errs[i] <= errs[i + 1]):
+            out.append(i)
+    return sorted(set(out))
+
+
+def rat_alternating(idxs, errs, need):
+    """The largest-magnitude subset of `need` extrema whose signs alternate.
+
+    Greedy from the largest: the reference set of a rational exchange has to
+    alternate, and a set that does not is not a reference set at all.
+    """
+    chosen = []
+    for i in sorted(idxs, key=lambda i: -abs(errs[i])):
+        if len(chosen) == need:
+            break
+        cand = sorted(chosen + [i])
+        signs = [1 if errs[j] > 0 else -1 for j in cand]
+        if all(signs[c] != signs[c + 1] for c in range(len(signs) - 1)):
+            chosen = cand
+    return sorted(chosen)
+
+
+def rat_remez(m, k, indices, ts, fs, ws=None, iters=60):
+    """The remez exchange over a fixed grid; returns (worst, p, q) or None."""
+    n = m + k + 1
+    grid = [i for i in indices]
+    ref = sorted({min(grid, key=lambda i: abs(ts[i] - mp.cos(mp.pi * j / n)))
+                  for j in range(n + 1)})
+    if len(ref) != n + 1:
+        return None
+    best = None
+    stall = 0
+    for _ in range(iters):
+        try:
+            p, q, _ = rat_reference_solve(ref, m, k, ts, fs, ws)
+        except (ZeroDivisionError, ValueError):
+            break
+        errs = [(ws[i] if ws is not None else mpf(1)) * (fs[i] - rat_value(p, q, ts[i]))
+                for i in grid]
+        # A denominator that comes near zero inside the interval is not a fit,
+        # whatever its residual on the reference set: the kernel would divide
+        # by it.
+        if q:
+            dens = [abs(1 + rat_horner(q, ts[i]) * ts[i]) for i in grid]
+            if min(dens) < max(dens) * mpf("1e-3"):
+                break
+        mx = max(abs(e) for e in errs)
+        if best is None or mx < best[0]:
+            best = (mx, p, q)
+            stall = 0
+        else:
+            stall += 1
+            if stall > 3:
+                break
+        sel = rat_alternating(rat_extrema_indices(errs), errs, n + 1)
+        if len(sel) != n + 1:
+            break
+        if [grid[i] for i in sel] == ref:
+            break
+        ref = [grid[i] for i in sel]
+    return best
+
+
+def rat_lawson(m, k, indices, ts, fs, ws=None, outer=300):
+    """Lawson's algorithm with the Sanathanan-Koerner denominator weight.
+
+    The weight carried in `w` is both the target weight, seeded from `ws`, and
+    the SK factor the iteration multiplies in: the normal equations are built
+    from its square, so seeding it with a target weight is exactly what makes
+    the least-squares problem the weighted one.
+    """
+    nunk = (m + 1) + k
+    w = [(ws[i] if ws is not None else mpf(1)) for i in indices]
+    last = None
+    for _ in range(outer):
+        a = mp.zeros(nunk, nunk)
+        rhs = mp.zeros(nunk, 1)
+        for row, index in enumerate(indices):
+            t = ts[index]
+            fi = fs[index]
+            base = [t ** j for j in range(m + 1)] + [-fi * t ** j for j in range(1, k + 1)]
+            w2 = w[row] * w[row]
+            for r in range(nunk):
+                rhs[r] += w2 * base[r] * fi
+                for c in range(r, nunk):
+                    a[r, c] += w2 * base[r] * base[c]
+        for r in range(nunk):
+            for c in range(r):
+                a[r, c] = a[c, r]
+        try:
+            sol = mp.lu_solve(a, rhs)
+        except (ZeroDivisionError, ValueError):
+            return last
+        p = [sol[j] for j in range(m + 1)]
+        q = [sol[m + j] for j in range(1, k + 1)]
+        errs = []
+        for row, index in enumerate(indices):
+            t = ts[index]
+            den = 1 + rat_horner(q, t) * t
+            e = fs[index] - rat_horner(p, t) / den
+            if ws is not None:
+                e = ws[index] * e
+            errs.append(e)
+            w[row] = w[row] / abs(den)
+        mx = max(abs(e) for e in errs)
+        if mx == 0:
+            return last
+        w = [wi * (abs(e) / mx) for wi, e in zip(w, errs)]
+        nrm = max(w)
+        w = [wi / nrm for wi in w]
+        last = (mx, p, q)
+    return last
+
+
+def rat_delivered_error(p, q, xs, ref):
+    """The route's delivered worst |F0 - fit|, as the kernel evaluates it."""
+    worst = mpf(0)
+    at = None
+    for x, f in zip(xs, ref):
+        e = abs(mpf(region_b_seed_rational(p, q, x)) - f)
+        if e > worst:
+            worst, at = e, x
+    return worst, at
+
+
+def cheb_delivered_error(cs, xs, ref):
+    worst = mpf(0)
+    at = None
+    for x, f in zip(xs, ref):
+        e = abs(mpf(region_b_seed_chebyshev(cs, x)) - f)
+        if e > worst:
+            worst, at = e, x
+    return worst, at
+
+
+def rat_delivered_on(p, q, indices, xs, ref):
+    """The route's delivered worst |F0 - fit| over `indices`, kernel arithmetic."""
+    worst = mpf(0)
+    at = None
+    for i in indices:
+        e = abs(mpf(region_b_seed_rational(p, q, xs[i])) - ref[i])
+        if e > worst:
+            worst, at = e, xs[i]
+    return worst, at
+
+
+def rat_best(m, k, indices, ts, xs, ref, ws=None):
+    """Both routes to the same problem: the better fit, and every figure.
+
+    The exchange and Lawson share no machinery - the exchange solves the
+    equioscillation system on an alternating reference, Lawson reweights a
+    linear least-squares problem and iterates - and either can stall on a
+    given degree pair. So both run, both are reported, and the better fit is
+    the one offered for that pair. Returns (best, found), each found entry a
+    tuple of the route's name, its delivered error, the argument, and p, q.
+    """
+    found = []
+    r = rat_remez(m, k, indices, ts, ref, ws)
+    if r is not None:
+        _, p, q = r
+        d, at = rat_delivered_on(p, q, indices, xs, ref)
+        found.append(("Remez exchange", d, at, p, q))
+    l = rat_lawson(m, k, indices, ts, ref, ws)
+    if l is not None:
+        _, p, q = l
+        d, at = rat_delivered_on(p, q, indices, xs, ref)
+        found.append(("Lawson/SK", d, at, p, q))
+    if not found:
+        return None, []
+    return min(found, key=lambda f: f[1]), found
+
+
+def fit_region_b_rational(b_cheb):
+    with mp.workdps(RAT_DPS):
+        return _fit_region_b_rational(b_cheb)
+
+
+def _fit_region_b_rational(b_cheb):
+    """The rational route over the Chebyshev route's own interval.
+
+    Scans the degree pairs, refines the reaching candidates on the certifying
+    grid, and returns the smallest-stored one, with the Chebyshev route's own
+    delivered error measured beside it on the same grid against the same
+    reference.
+    """
+    ts, xs = rat_nodes()
+    ref = rat_reference(xs)
+    coarse = list(range(0, RAT_NODES + 1, RAT_STRIDE))
+
+    print(f"fitting the rational region-B route (both routes, {RAT_DPS} dps, "
+          f"bar {mp.nstr(RAT_BAR, 2)}) ...")
+    reaching = None
+    for stored in range(RAT_SCAN_MIN, RAT_SCAN_MAX + 1):
+        row = []
+        for k in range(1, min(RAT_K_MAX, stored - 2) + 1):
+            m = stored - 1 - k
+            best, _ = rat_best(m, k, coarse, ts, xs, ref)
+            if best is None:
+                row.append(f"[{m}/{k}]-")
+                continue
+            _, d, _, _, _ = best
+            row.append(f"[{m}/{k}]{mp.nstr(d, 3)}")
+            if d <= RAT_BAR and (reaching is None or stored < reaching[0]):
+                reaching = (stored, m, k)
+        print(f"  {stored:>2} stored: " + "  ".join(row))
+        if reaching is not None:
+            # The scan's job is the knee: the smallest count that reaches, and
+            # the count below it that does not. Everything above the knee is
+            # the question the refinement answers on a finer grid, so the scan
+            # stops here rather than sweeping counts nothing will use.
+            break
+    if reaching is None:
+        raise RuntimeError(f"rational route: no degree pair up to {RAT_SCAN_MAX} "
+                           f"stored coefficients reaches {mp.nstr(RAT_BAR, 2)} over "
+                           f"[{mp.nstr(X0, 17)}, {mp.nstr(X1, 17)}]")
+
+    stored, m, k = reaching
+    # The pairs at the reaching count, and the best pair one count below it,
+    # refined on the certifying grid. The one-below row is the knee itself: it
+    # is what says the count above is the smallest that reaches rather than the
+    # first the scan happened to try.
+    candidates = [(stored, stored - 1 - kk, kk)
+                  for kk in range(1, min(RAT_K_MAX, stored - 2) + 1)]
+    below = min(RAT_SCAN_MIN, stored - 1)
+    candidates += [(below, below - 1 - kk, kk)
+                   for kk in range(1, min(RAT_K_MAX, below - 2) + 1)]
+    full = list(range(RAT_NODES + 1))
+    rows = []
+    for total, mm, kk in candidates:
+        best, _ = rat_best(mm, kk, full, ts, xs, ref)
+        if best is None:
+            continue
+        who, d, at, p, q = best
+        rows.append((total, mm, kk, d, at, p, q, who))
+    if not rows:
+        raise RuntimeError("rational route: the refined fit never converged")
+
+    print(f"  refined on {RAT_NODES + 1} nodes against boys_ref at {RAT_DPS} digits, "
+          f"the better of the two routes taken per pair:")
+    for total, mm, kk, d, at, _, _, who in sorted(rows, key=lambda r: (r[0], r[3])):
+        print(f"    [{mm}/{kk}] {total} stored via {who}: delivered {mp.nstr(d, 6)} at "
+              f"x = {mp.nstr(at, 12)}"
+              f"{'  <= bar' if d <= RAT_BAR else '  OVER THE BAR'}")
+
+    ok = [r for r in rows if r[0] == stored and r[3] <= RAT_BAR]
+    if not ok:
+        raise RuntimeError(f"rational route: no pair at {stored} stored coefficients "
+                           f"reaches {mp.nstr(RAT_BAR, 2)} on the certifying grid")
+    if any(r[0] < stored and r[3] <= RAT_BAR for r in rows):
+        raise RuntimeError(f"rational route: a pair below {stored} stored coefficients "
+                           f"reaches {mp.nstr(RAT_BAR, 2)}, so the scan's knee is wrong")
+    total, m, k, delivered, at, p, q, who = min(ok, key=lambda r: r[3])
+
+    # The two routes' figures at the pair that ships, either one of which may
+    # be the one offered above: the gap is what says how close to the best fit
+    # for this pair the shipped one is, and a wide gap is a reason to distrust
+    # the pair rather than the route that won it.
+    _, both = rat_best(m, k, full, ts, xs, ref)
+    print(f"  both routes at the shipped pair [{m}/{k}]:")
+    for name, d, a, _, _ in both:
+        print(f"    {name:<16}: delivered {mp.nstr(d, 6)} at x = {mp.nstr(a, 12)}"
+              f"{'   <- shipped' if name == who else ''}")
+
+    bcs = b_cheb[1]
+    cheb_delivered, cheb_at = cheb_delivered_error(bcs, xs, ref)
+    print(f"  the two routes over the same interval and reference:")
+    print(f"    Chebyshev deg {b_cheb[0]} : {len(bcs):>2} stored, delivered "
+          f"{mp.nstr(cheb_delivered, 6)} at x = {mp.nstr(cheb_at, 12)}")
+    print(f"    rational [{m}/{k}]  : {total:>2} stored, delivered "
+          f"{mp.nstr(delivered, 6)} at x = {mp.nstr(at, 12)}")
+
+    return {
+        "m": m, "k": k, "p": p, "q": q, "stored": total,
+        "delivered": delivered, "cheb_delivered": cheb_delivered,
+        "cheb_stored": len(bcs), "bar": RAT_BAR,
+    }
+
+
+# ---------------------------------------------------------------------------
+# The region-A rational route
+# ---------------------------------------------------------------------------
+# Region A's shipped pieces are fitted weighted against the downward-recursion
+# amplification, and the route's pieces are fitted against the same weight: a
+# rational fitted to the unweighted problem would look leaner and stop being
+# the same problem. The criterion is what a consumer sees - the plain delivered
+# error in the kernel's arithmetic against the 60-digit reference - rather than
+# the weighted acceptance budget the truncation argument uses.
+#
+# The route's pieces share the shipped pieces' intervals, and its selector takes
+# them over per order rather than from zero: below an order's own region-A end
+# the shipped lane is documented at 1e-15, and a rational holding 3e-14 is not a
+# fit for it, so the route hands that order over at that argument and states the
+# lowest of those arguments instead of being stretched to share a domain it does
+# not serve.
+#
+# The bar a piece is accepted against is deliberately below the bar the row
+# publishes. The acceptance sweep and the check that certifies the row run on
+# different argument grids, so a piece accepted a hair under a published bar
+# could measure a hair over it on the certifying grid; the gap is what keeps the
+# published figure a promise rather than a coincidence of one grid.
+RAT_A_BOUND = mpf("3e-14")
+RAT_A_ACCEPT = mpf("2.5e-14")
+RAT_A_GRID = 400
+RAT_A_SCAN_STRIDE = 5
+RAT_A_SCAN_MAX = 22
+
+
+def rat_a_nodes(a, b, npts):
+    """The piece's grid, in the kernel's own double-mapped argument.
+
+    The kernel maps x to t in binary64 and then evaluates there, so the grid's
+    arguments, its mapped values and the reference are all binary64: a fit
+    certified against an exactly-mapped t would be certified for an evaluation
+    the kernel does not perform.
+    """
+    ad, bd = float(a), float(b)
+    xs = [ad + (bd - ad) * i / npts for i in range(npts + 1)]
+    ts = [mpf(2.0 * (x - ad) / (bd - ad) - 1.0) for x in xs]
+    return ts, xs
+
+
+def rat_a_delivered_on(p, q, ts, ref, indices):
+    """Delivered worst |F_n - fit| over `indices`, in the kernel's arithmetic."""
+    pd = [float(c) for c in p]
+    qd = [float(c) for c in q]
+    worst = mpf(0)
+    at = None
+    for i in indices:
+        e = abs(mpf(rat_eval_double(pd, qd, float(ts[i]))) - ref[i])
+        if e > worst:
+            worst, at = e, ts[i]
+    return worst, at
+
+
+def rat_a_best_at(ts, ref, ws, indices, total):
+    """The best pair at `total` stored over `indices`, by plain delivered error."""
+    best = None
+    for k in range(1, min(RAT_K_MAX, total - 2) + 1):
+        m = total - 1 - k
+        if m < 1:
+            continue
+        r = rat_remez(m, k, indices, ts, ref, ws)
+        if r is None:
+            continue
+        _, p, q = r
+        d, at = rat_a_delivered_on(p, q, ts, ref, indices)
+        if best is None or d < best[0]:
+            best = (d, m, k, p, q, at)
+    return best
+
+
+def rat_a_fit_piece(n, a, b, cs):
+    """The smallest stored pair holding RAT_A_ACCEPT on [a, b), and the control.
+
+    The count is first found on a stride subsample and then re-found on the
+    denser grid, because a count the subsample accepts and the dense grid
+    rejects is the subsample's error rather than the fit's; the search resumes
+    above such a count instead of taking it. Both the subsample and the dense
+    grid accept against the same tolerance, below the bar the row publishes.
+    """
+    ts, xs = rat_a_nodes(a, b, RAT_A_GRID)
+    with mp.workdps(RAT_DPS):
+        ref = [boys_ref(n, x, RAT_TAIL_FLOOR, RAT_TERMS) for x in xs]
+    ws = [seed_weight(n, x) for x in xs]
+    coarse = list(range(0, RAT_A_GRID + 1, RAT_A_SCAN_STRIDE))
+    full = list(range(RAT_A_GRID + 1))
+
+    # The shipped Chebyshev piece beside it: same interval, same mapped
+    # argument, same reference, same arithmetic, so the two stored counts and
+    # the two delivered errors are a comparison rather than two measurements.
+    # Each piece's error is also carried through the downward recursion's gain,
+    # which is the criterion the shipped pieces are fitted under and the
+    # rational pieces are not: the two weighted figures are what says whether a
+    # table could seed that recursion.
+    cds = [float(c) for c in cs]
+    cheb_worst = mpf(0)
+    cheb_at = None
+    cheb_gain_worst = mpf(0)
+    for i in full:
+        e = abs(mpf(clenshaw_split_double(cds, float(ts[i]))) - ref[i])
+        if e > cheb_worst:
+            cheb_worst, cheb_at = e, ts[i]
+        cheb_gain_worst = max(cheb_gain_worst, e * ws[i])
+
+    total = 6
+    while total <= RAT_A_SCAN_MAX:
+        accepted = None
+        for t in range(total, RAT_A_SCAN_MAX + 1):
+            r = rat_a_best_at(ts, ref, ws, coarse, t)
+            if r is not None and r[0] <= RAT_A_ACCEPT:
+                accepted = t
+                break
+        if accepted is None:
+            break
+        r = rat_a_best_at(ts, ref, ws, full, accepted)
+        if r is not None and r[0] <= RAT_A_ACCEPT:
+            d, m, k, p, q, at = r
+            pd = [float(c) for c in p]
+            qd = [float(c) for c in q]
+            gain_worst = mpf(0)
+            for i in full:
+                e = abs(mpf(rat_eval_double(pd, qd, float(ts[i]))) - ref[i]) * ws[i]
+                gain_worst = max(gain_worst, e)
+            return ({"m": m, "k": k, "p": p, "q": q, "stored": m + 1 + k,
+                     "delivered": d, "at": at, "gain": gain_worst},
+                    cheb_worst, cheb_at, cheb_gain_worst, len(cds))
+        total = accepted + 1
+    return None, cheb_worst, cheb_at, cheb_gain_worst, len(cds)
+
+
+def fit_region_a_rational(double_orders):
+    """The rational route's pieces, in the shipped table's own order."""
+    print(f"fitting the rational region-A route ({RAT_DPS} dps, accepted at "
+          f"{mp.nstr(RAT_A_ACCEPT, 2)} plain, bar {mp.nstr(RAT_A_BOUND, 2)}, "
+          f"fitted under the shipped weighting) ...")
+    pieces = []
+    stored = 0
+    delivered = mpf(0)
+    at = None
+    cheb_stored = 0
+    cheb_delivered = mpf(0)
+    cheb_at = None
+    gain = mpf(0)
+    gain_at = None
+    cheb_gain = mpf(0)
+    cheb_gain_at = None
+    over_gain = 0
+    cheb_over_gain = 0
+
+    for n in range(MAX_ORDER + 1):
+        row = []
+        for (a, b, deg, cs, _mono) in double_orders[n]:
+            with mp.workdps(RAT_DPS):
+                fit, cw, cat, cg, cst = rat_a_fit_piece(n, mpf(a), mpf(b), cs)
+            if fit is None:
+                raise RuntimeError(f"rational region-A route: F{n} on [{a}, {b}) "
+                                   f"reaches no stored count up to {RAT_A_SCAN_MAX} "
+                                   f"holding {mp.nstr(RAT_A_ACCEPT, 2)}")
+            pieces.append(fit)
+            stored += fit["stored"]
+            if fit["delivered"] > delivered:
+                delivered, at = fit["delivered"], fit["at"]
+            if fit["gain"] > gain:
+                gain, gain_at = fit["gain"], (n, mpf(a), mpf(b))
+            if fit["gain"] > RAT_A_ACCEPT:
+                over_gain += 1
+            cheb_stored += cst
+            if cw > cheb_delivered:
+                cheb_delivered, cheb_at = cw, cat
+            if cg > cheb_gain:
+                cheb_gain, cheb_gain_at = cg, (n, mpf(a), mpf(b))
+            if cg > RAT_A_ACCEPT:
+                cheb_over_gain += 1
+            row.append(f"F{n} [{mp.nstr(mpf(a), 6)}, {mp.nstr(mpf(b), 6)}) deg {deg} "
+                       f"({cst} stored, {mp.nstr(cw, 3)}, gain {mp.nstr(cg, 3)}) -> "
+                       f"[{fit['m']}/{fit['k']}] ({fit['stored']} stored, "
+                       f"{mp.nstr(fit['delivered'], 3)}, gain {mp.nstr(fit['gain'], 3)})")
+        print("  " + "\n  ".join(row))
+        sys.stdout.flush()
+
+    print(f"  region A: Chebyshev {cheb_stored} stored, delivered {mp.nstr(cheb_delivered, 6)} "
+          f"at x = {mp.nstr(cheb_at, 12)}")
+    print(f"  region A: rational  {stored} stored, delivered {mp.nstr(delivered, 6)} "
+          f"at x = {mp.nstr(at, 12)}")
+    print("  after the downward recursion's gain (max(1, x^n / prod(j+1/2)), the criterion "
+          "the shipped pieces are fitted under):")
+    print(f"    Chebyshev worst {mp.nstr(cheb_gain, 6)} at F{cheb_gain_at[0]} "
+          f"[{mp.nstr(cheb_gain_at[1], 6)}, {mp.nstr(cheb_gain_at[2], 6)}), "
+          f"{cheb_over_gain} of {len(pieces)} pieces over {mp.nstr(RAT_A_ACCEPT, 2)}")
+    print(f"    rational  worst {mp.nstr(gain, 6)} at F{gain_at[0]} "
+          f"[{mp.nstr(gain_at[1], 6)}, {mp.nstr(gain_at[2], 6)}), "
+          f"{over_gain} of {len(pieces)} pieces over {mp.nstr(RAT_A_ACCEPT, 2)}")
+    print(f"  the pieces cover [0, {mp.nstr(X0, 17)}); the rational selector takes over per "
+          f"order, from each order's own region-A end, the lowest of which is "
+          f"{mp.nstr(XNEW0, 17)} - above it the shipped lane is documented at 3e-14 and "
+          f"below it at 1e-15, a bound these pieces do not hold")
+    print(f"  every piece was accepted at {mp.nstr(RAT_A_ACCEPT, 2)} or below, so the "
+          f"{mp.nstr(RAT_A_BOUND, 2)} the rows publish carries headroom for the certifying "
+          f"sweep to disagree about")
+
+    return {
+        "pieces": pieces, "stored": stored, "delivered": delivered, "at": at,
+        "cheb_stored": cheb_stored, "cheb_delivered": cheb_delivered,
+        "cheb_at": cheb_at, "bound": RAT_A_BOUND,
+        "lo": XNEW0, "hi": X0,
+    }
+
+
+def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb,
+                 scheme_rows, rat_b, rat_a):
     with open(path, "w", newline="\n") as f:
         f.write("// Generated by tools/gen_boys_coefficients.py - DO NOT EDIT.\n")
         f.write("// Piecewise Chebyshev (split Clenshaw) fits of F_n(x), region A seeds\n")
@@ -436,15 +1261,31 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
         f.write(f"inline constexpr double kX1 = {fmt(X1)};\n\n")
 
         all_coeffs = []
+        all_mono = []
         meta = []
         for n in range(MAX_ORDER + 1):
-            for (a, b, deg, cs) in double_orders[n]:
+            for (a, b, deg, cs, ms) in double_orders[n]:
                 meta.append((n, a, b, deg, len(all_coeffs)))
                 all_coeffs.extend(fmt(c) for c in cs)
+                all_mono.extend(fmt(c) for c in ms)
         f.write("inline constexpr auto kCoeffs = std::to_array<double>({\n")
         for i in range(0, len(all_coeffs), 6):
             f.write("  " + ", ".join(all_coeffs[i:i + 6]) + ",\n")
         f.write("});\n\n")
+        # The monomial form of the same fits, one stored coefficient per
+        # Chebyshev coefficient: same pieces, same intervals, same degrees,
+        # same offsets, so an evaluation scheme picks a table and not a shape.
+        # Converted from the exact Chebyshev coefficients and rounded once, so
+        # both tables are the correctly rounded doubles of one ideal
+        # polynomial; the Horner route adds no error of its own to the fit.
+        f.write("// The same fits in monomial form, ascending, for the Horner\n")
+        f.write("// evaluation scheme: same pieces, degrees and offsets as kCoeffs.\n")
+        f.write("inline constexpr auto kMonoCoeffs = std::to_array<double>({\n")
+        for i in range(0, len(all_mono), 6):
+            f.write("  " + ", ".join(all_mono[i:i + 6]) + ",\n")
+        f.write("});\n")
+        f.write("static_assert(std::size(kMonoCoeffs) == std::size(kCoeffs),\n"
+                "              \"the monomial table must parallel the Chebyshev table\");\n\n")
         f.write("struct OrderPiece { double a, b; int deg; int offset; };\n")
         f.write("inline constexpr auto kPieces = std::to_array<OrderPiece>({\n")
         for (n, a, b, deg, off) in meta:
@@ -460,12 +1301,66 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
                 + ", ".join(map(str, starts)) + "});\n")
         f.write("static_assert(std::size(kPieceStart) == kMaxOrder + 2,\n"
                 "              \"piece-start table must cover kMaxOrder\");\n\n")
-        deg, cs = b_cheb
+
+        # The region-A rational route: one weighted minimax fit per shipped
+        # piece, over the piece's own interval and in the piece's own mapped
+        # argument, so the two routes are the same partition of the same region
+        # fitted two ways. Each piece stores its numerator's coefficients and
+        # then its denominator's q_1..q_k with q_0 held at 1, at
+        # kRatAOffset[piece]; the degree columns say how many of each.
+        rat_pieces = rat_a["pieces"]
+        assert len(rat_pieces) == len(meta), "rational region-A piece count"
+        a_coeffs = []
+        a_offset = []
+        a_numdeg = []
+        a_dendeg = []
+        for fit in rat_pieces:
+            a_offset.append(len(a_coeffs))
+            a_numdeg.append(fit["m"])
+            a_dendeg.append(fit["k"])
+            a_coeffs.extend(fmt(float(c)) for c in fit["p"])
+            a_coeffs.extend(fmt(float(c)) for c in fit["q"])
+        f.write("// The region-A rational route: a weighted minimax fit of each\n"
+                "// shipped piece's interval, evaluated as num / (1 + t*horner(q, t))\n"
+                "// in the same mapped argument the Chebyshev piece uses. It is an\n"
+                "// offered alternative, not a replacement: the Chebyshev tables\n"
+                "// above are the default route and are unchanged by its presence.\n")
+        f.write("inline constexpr auto kRatACoeffs = std::to_array<double>({\n")
+        for i in range(0, len(a_coeffs), 6):
+            f.write("  " + ", ".join(a_coeffs[i:i + 6]) + ",\n")
+        f.write("});\n")
+        f.write("inline constexpr auto kRatAOffset = std::to_array<int>({\n")
+        for i in range(0, len(a_offset), 12):
+            f.write("  " + ", ".join(str(v) for v in a_offset[i:i + 12]) + ",\n")
+        f.write("});\n")
+        f.write("inline constexpr auto kRatANumDeg = std::to_array<int>({\n")
+        for i in range(0, len(a_numdeg), 12):
+            f.write("  " + ", ".join(str(v) for v in a_numdeg[i:i + 12]) + ",\n")
+        f.write("});\n")
+        f.write("inline constexpr auto kRatADenDeg = std::to_array<int>({\n")
+        for i in range(0, len(a_dendeg), 12):
+            f.write("  " + ", ".join(str(v) for v in a_dendeg[i:i + 12]) + ",\n")
+        f.write("});\n")
+        f.write("static_assert(std::size(kRatAOffset) == std::size(kPieces)\n"
+                "                  && std::size(kRatANumDeg) == std::size(kPieces)\n"
+                "                  && std::size(kRatADenDeg) == std::size(kPieces),\n"
+                "              \"the rational region-A route must cover every piece\");\n\n")
+        f.write("// Where the route's selector takes over in region A: the lowest of the\n"
+                "// per-order ends of the region, which is the boundary the order is read\n"
+                "// from the band seed above and from its own fit below. The tables above\n"
+                "// still cover every piece from zero; this is the argument from which\n"
+                "// naming the route changes any value, and the report says so rather than\n"
+                "// claiming the wider domain the fits cover.\n")
+        f.write(f"inline constexpr double kRatARouteLo = {fmt(rat_a['lo'])};\n")
+        f.write(f"inline constexpr double kRatARouteHi = {fmt(rat_a['hi'])};\n\n")
+        deg, cs, mono = b_cheb
         f.write("inline constexpr auto kBcoeffs = std::to_array<double>({"
                 + ", ".join(fmt(c) for c in cs) + "});\n")
+        f.write("inline constexpr auto kMonoBcoeffs = std::to_array<double>({"
+                + ", ".join(fmt(c) for c in mono) + "});\n")
         f.write(f"inline constexpr int kBDeg = {deg};\n")
         f.write("\n")
-        ext_deg, ext_cs = ext_cheb
+        ext_deg, ext_cs, ext_mono = ext_cheb
         f.write("// The extended band (the per-range seed design): an F0 fit on\n")
         f.write("// [kExtendedBX0, kX0) evaluated by the same split Clenshaw; the\n")
         f.write("// upward recursion from it is certified per kmax tier - an order n\n")
@@ -476,6 +1371,10 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
         f.write("inline constexpr auto kExtendedBcoeffs = std::to_array<double>({\n")
         for i in range(0, len(ext_cs), 6):
             f.write("  " + ", ".join(fmt(c) for c in ext_cs[i:i + 6]) + ",\n")
+        f.write("});\n")
+        f.write("inline constexpr auto kMonoExtendedBcoeffs = std::to_array<double>({\n")
+        for i in range(0, len(ext_mono), 6):
+            f.write("  " + ", ".join(fmt(c) for c in ext_mono[i:i + 6]) + ",\n")
         f.write("});\n")
         f.write(f"inline constexpr int kExtendedBDeg = {ext_deg};\n")
         # The per-order dispatch threshold table: threshold[n] is the
@@ -491,6 +1390,97 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
         for i in range(0, len(thresholds), 6):
             f.write("  " + ", ".join(thresholds[i:i + 6]) + ",\n")
         f.write("});\n")
+        f.write("static_assert(kRatARouteLo == kTierThresholds[0],\n"
+                "              \"the rational region-A route takes over at the lowest \"\n"
+                "              \"per-order end of region A\");\n")
+        f.write("\n")
+
+        # The rational region-B route, beside the Chebyshev one it is an
+        # alternative to rather than a replacement for: same interval, same
+        # mapped argument, both held to the same bar.
+        p, q = rat_b["p"], rat_b["q"]
+        f.write("// The rational minimax region-B seed: p(t)/q(t) over the same\n")
+        f.write("// interval and in the same mapped argument t as kBcoeffs above.\n")
+        f.write("// q is stored as q_1..q_k with its constant term held at 1.\n")
+        f.write("inline constexpr auto kRatBnum = std::to_array<double>({\n")
+        for i in range(0, len(p), 3):
+            f.write("  " + ", ".join(fmt(c) for c in p[i:i + 3]) + ",\n")
+        f.write("});\n")
+        f.write(f"inline constexpr int kRatBnumDeg = {rat_b['m']};\n")
+        f.write("inline constexpr auto kRatBden = std::to_array<double>({\n")
+        for i in range(0, len(q), 3):
+            f.write("  " + ", ".join(fmt(c) for c in q[i:i + 3]) + ",\n")
+        f.write("});\n")
+        f.write(f"inline constexpr int kRatBdenDeg = {rat_b['k']};\n")
+        f.write("\n")
+        # The two routes as the generator measures them: the stored count each
+        # evaluates and the worst |F0 - fit| each reaches over [kX0, kX1], in
+        # the double arithmetic the kernel evaluates them in, against the same
+        # high-precision reference the fits themselves are validated against.
+        # A swept maximum on a finite grid, not a bound: the bar both are
+        # certified against is kRegionBFitBar, and both sit under it.
+        f.write("// The two region-B routes as the generator measures them: the stored\n")
+        f.write("// coefficients each evaluates and the worst |F0 - fit| each reaches\n")
+        f.write("// over [kX0, kX1], in the kernel's double arithmetic and against the\n")
+        f.write("// reference the fits are validated against. A swept maximum, not a\n")
+        f.write("// bound: the bar both routes are certified against is kRegionBFitBar.\n")
+        f.write(f"inline constexpr double kRegionBFitBar = {fmt(float(rat_b['bar']))};\n")
+        f.write(f"inline constexpr int kRegionBFitChebStored = {rat_b['cheb_stored']};\n")
+        f.write("inline constexpr double kRegionBFitChebDelivered = "
+                f"{fmt(float(rat_b['cheb_delivered']))};\n")
+        f.write(f"inline constexpr int kRegionBFitRatStored = {rat_b['stored']};\n")
+        f.write("inline constexpr double kRegionBFitRatDelivered = "
+                f"{fmt(float(rat_b['delivered']))};\n")
+        f.write("\n")
+        # The region-A route's two columns, measured the same way over the same
+        # domain: every shipped piece for the Chebyshev route, every route piece
+        # for the rational, against the same reference and in the same
+        # arithmetic, so the counts and the errors are one comparison.
+        f.write("// The two region-A routes as the generator measures them, over the\n"
+                "// domain the two tables cover - every order's own pieces, from zero to\n"
+                "// kX0: the stored coefficients each evaluates and the worst\n"
+                "// |F_n - fit| each reaches, swept on a stride-1 grid of each piece's own\n"
+                "// interval, in the kernel's double arithmetic and against the reference\n"
+                "// the fits are validated against. A swept maximum on a finite grid, not\n"
+                "// a bound: the bar both routes are certified against is kRegionAFitBar.\n"
+                "// The rational route's selector takes over at kRatARouteLo - the lowest\n"
+                "// of region A's per-order ends - and per order from that order's own\n"
+                "// end, which is where the lane stops reading the order from its own fit\n"
+                "// and documents the band's 3e-14 rather than the per-order 1e-15. Below\n"
+                "// such an end the lane is documented at 1e-15, which these pieces do not\n"
+                "// hold. The rational pieces were accepted below the bar rather than at\n"
+                "// it, so the bar survives a certifying sweep on a different grid.\n")
+        f.write(f"inline constexpr double kRegionAFitBar = {fmt(float(rat_a['bound']))};\n")
+        f.write(f"inline constexpr int kRegionAFitChebStored = {rat_a['cheb_stored']};\n")
+        f.write("inline constexpr double kRegionAFitChebDelivered = "
+                f"{fmt(float(rat_a['cheb_delivered']))};\n")
+        f.write(f"inline constexpr int kRegionAFitRatStored = {rat_a['stored']};\n")
+        f.write("inline constexpr double kRegionAFitRatDelivered = "
+                f"{fmt(float(rat_a['delivered']))};\n")
+        # The scheme report: one row per (evaluation scheme, stored fit), the
+        # degree and stored count that fit uses, and the bound each scheme was
+        # MEASURED to deliver on it in each multiply-add route. The rows are
+        # data: a scheme, a fit, a route or an end-to-end sweep added later is
+        # another row here and nothing else.
+        #
+        # The domain is the fit's own interval (region A: every piece of every
+        # order; region B: [kX0, kX1); the extended band: [kExtendedBX0, kX0)).
+        # Region C has no stored fit and no row.
+        f.write("// The evaluation schemes, one row per (scheme, stored fit): the\n")
+        f.write("// degree and stored count the fit uses, and the bound each scheme is\n")
+        f.write("// held to on it against the 60-digit reference, in each multiply-add\n")
+        f.write("// route. scheme 0 = split Clenshaw, 1 = Horner; lane 0 = region A\n")
+        f.write("// (kCoeffs), 1 = region B (kBcoeffs), 2 = the extended band\n")
+        f.write("// (kExtendedBcoeffs). Each bound is the worst error a sweep over the\n")
+        f.write("// fit's own interval reached, rounded up to the next power of two, so\n")
+        f.write("// it is a bound and not the sweep's reading.\n")
+        f.write("struct SchemeRow { int scheme, lane, region, deg, stored;\n")
+        f.write("                   double fused, separate; };\n")
+        f.write("inline constexpr auto kSchemeRows = std::to_array<SchemeRow>({\n")
+        for (scheme, lane, region, deg, stored, _fm, _sm, fb, sb) in scheme_rows:
+            f.write(f"  {{{scheme}, {lane}, {region}, {deg}, {stored}, {fmt(fb)}, "
+                    f"{fmt(sb)}}},\n")
+        f.write("});\n")
         f.write("\n}  // namespace boys::detail\n")
 
         # Float lane.
@@ -498,7 +1488,7 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
         all_coeffs = []
         meta = []
         for n in range(MAX_ORDER + 1):
-            for (a, b, deg, cs) in float_orders[n]:
+            for (a, b, deg, cs, _ms) in float_orders[n]:
                 meta.append((n, a, b, deg, len(all_coeffs)))
                 all_coeffs.extend(fmtf(c) for c in cs)
         f.write("inline constexpr auto kCoeffs = std::to_array<float>({\n")
@@ -520,7 +1510,7 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
                 + ", ".join(map(str, starts)) + "});\n")
         f.write("static_assert(std::size(kPieceStart) == kMaxOrder + 2,\n"
                 "              \"piece-start table must cover kMaxOrder\");\n\n")
-        deg, cs = b_cheb_f32
+        deg, cs, _ms = b_cheb_f32
         f.write("inline constexpr auto kBcoeffs = std::to_array<float>({"
                 + ", ".join(fmtf(c) for c in cs) + "});\n")
         f.write(f"inline constexpr int kBDeg = {deg};\n")
@@ -634,6 +1624,45 @@ def format_header(path):
     subprocess.run([find_clang_format(), "-i", path], check=True)
 
 
+def measure_scheme_rows(double_orders, b_cheb, ext_cheb, npts=SCHEME_MEASURE_POINTS):
+    """The delivered bound of every (evaluation scheme, stored fit) pair, in
+    each multiply-add route, measured against the reference over the fit's own
+    interval.
+
+    Rows are (scheme, lane, region, deg, stored, fused, separate, fused_bound,
+    separate_bound) with scheme 0 = split Clenshaw and 1 = Horner, lane 0 =
+    region A, 1 = region B, 2 = the extended band, and region the
+    AccuracyRegion the lane serves. The first pair is the swept maximum over
+    the measurement grid and is what the run prints; the second pair is that
+    maximum published as a bound and is what the header carries. Region A is
+    piecewise: its row carries the largest degree any piece uses and the worst
+    value over every piece of every order."""
+    worst_a = [[0.0, 0.0], [0.0, 0.0]]
+    deg_a = stored_a = 0
+    for n in range(MAX_ORDER + 1):
+        for (a, b, deg, cs, ms) in double_orders[n]:
+            w = fit_delivered(cs, ms, n, a, b, npts)
+            for scheme in (0, 1):
+                for route in (0, 1):
+                    worst_a[scheme][route] = max(worst_a[scheme][route], w[scheme][route])
+            if deg > deg_a:
+                deg_a, stored_a = deg, len(cs)
+    bdeg, bcs, bms = b_cheb
+    worst_b = fit_delivered(bcs, bms, 0, X0, X1, npts)
+    exdeg, excs, exms, _crossings = ext_cheb
+    worst_e = fit_delivered(excs, exms, 0, XNEW0, X0, npts)
+    rows = []
+    for scheme in (0, 1):
+        for (lane, region, deg, cs, w) in ((0, 0, deg_a, None, worst_a),
+                                           (1, 1, bdeg, bcs, worst_b),
+                                           (2, 0, exdeg, excs, worst_e)):
+            stored = stored_a if cs is None else len(cs)
+            rows.append((scheme, lane, region, deg, stored,
+                         w[scheme][0], w[scheme][1],
+                         scheme_bound(w[scheme][0]), scheme_bound(w[scheme][1])))
+    return rows
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--header", default="include/boys/boys_coefficients.hpp")
@@ -667,9 +1696,18 @@ def main():
     b_cheb = fit_order(0, region_b=True)
     b_cheb_f32 = fit_order(0, region_b=True, f32=True)
 
+    # The rational region-B route, over the interval the Chebyshev region-B fit
+    # was just given, so the two are compared on the same interval against the
+    # same reference.
+    rat_b = fit_region_b_rational(b_cheb)
+
+    # The rational region-A route, over the shipped pieces' own intervals, so
+    # the two routes over region A are compared piece for piece.
+    rat_a = fit_region_a_rational(double_orders)
+
     print("fitting the extended band seed (F0 on [XNEW0, X0), tol 5e-14; "
           "the fixed-point loop) ...")
-    ext_deg, ext_cs, ext_crossings = fit_extended_band(b_cheb=b_cheb)
+    ext_deg, ext_cs, ext_mono, ext_crossings = fit_extended_band(b_cheb=b_cheb)
     print(f"  extended band: deg {ext_deg}, {len(ext_cs)} coeffs")
     print("  generator-side certified crossings (1-ulp-exp model):")
     for k in (4, 8, 16, 32):
@@ -688,6 +1726,16 @@ def main():
                                f"crossing {mp.nstr(ext_crossings[k], 8)}")
     print("  hardcoded certified boundaries consistent with the converged model")
 
+    print("measuring what each evaluation scheme delivers on each stored fit "
+          f"({SCHEME_MEASURE_POINTS + 1} arguments per interval, both multiply-add "
+          "routes) ...")
+    scheme_rows = measure_scheme_rows(double_orders, b_cheb,
+                                      (ext_deg, ext_cs, ext_mono, ext_crossings))
+    for (scheme, lane, _region, deg, stored, fused, separate, fb, sb) in scheme_rows:
+        print(f"  {SCHEME_NAMES[scheme]:>14s}  {LANE_NAMES[lane]:>14s}  deg {deg:2d} "
+              f"({stored:2d} stored)  swept fused {fused:.3e} separate {separate:.3e}"
+              f"  published fused {fb:.3e} separate {sb:.3e}")
+
     if args.check:
         import tempfile
         # The scratch header lives next to the committed one: clang-format
@@ -699,7 +1747,7 @@ def main():
         tmp_reference = os.path.join(tempfile.gettempdir(), "boys_reference-check-tmp.csv")
         try:
             write_header(tmp_header, double_orders, float_orders, b_cheb, b_cheb_f32,
-                         (ext_deg, ext_cs))
+                         (ext_deg, ext_cs, ext_mono), scheme_rows, rat_b, rat_a)
             format_header(tmp_header)
             write_reference(tmp_reference)
             ok = True
@@ -717,7 +1765,7 @@ def main():
 
     os.makedirs(os.path.dirname(args.header) or ".", exist_ok=True)
     write_header(args.header, double_orders, float_orders, b_cheb, b_cheb_f32,
-                 (ext_deg, ext_cs))
+                 (ext_deg, ext_cs, ext_mono), scheme_rows, rat_b, rat_a)
     format_header(args.header)
     print(f"wrote {args.header}")
 

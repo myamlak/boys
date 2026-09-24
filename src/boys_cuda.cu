@@ -267,8 +267,41 @@ template <int kLane> __device__ __forceinline__ float DevSeedB32Eff(float x, int
 // ---------------------------------------------------------------------------
 // kernels
 // ---------------------------------------------------------------------------
+// The region-B exponential 0.5 e^{-x}, the one factor of that path a caller
+// can trade accuracy for speed on (RegionBExp, boys_cuda.hpp).
+//
+// The recurrence that consumes this value amplifies its error by the
+// condition number of the forward recursion, which is up to 7.6e4 at the
+// region-B boundary and falls as the argument grows. An approximation whose
+// relative error grows with the argument therefore fails a bound the same
+// approximation holds everywhere else, so what matters is not the ulp count at
+// one argument but whether that count stays flat.
+//
+//  - kFast is the hardware approximation with its argument-scaling residual
+//    removed. __expf(y) evaluates 2^fl(y log2 e), and the one rounding of that
+//    product is what makes its error grow with |y|; the residual
+//    fma(y, log2 e, -t) is exact, and 2^(t + d) = 2^t 2^d ~= 2^t (1 + d ln2),
+//    so two fused steps take the error back to the approximation's own few ulp,
+//    flat in the argument.
+//  - otherwise, the library routine, which is the arithmetic the batch bodies
+//    below compute: at m = 1 a single and a batch evaluation of the same (n, x)
+//    return the same bits outside region A.
+template <bool kFastExp> __device__ __forceinline__ float DevRegionBExp(float xx) {
+    if constexpr (kFastExp)
+    {
+        const float y = -xx;
+        const float t = y * 1.4426950408889634f; // log2(e), one rounding
+        const float d = __fmaf_rn(y, 1.4426950408889634f, -t); // its exact residual
+        return 0.5f * __expf(y) * __fmaf_rn(d, 0.6931471805599453f, 1.0f);
+    } else
+    {
+        return 0.5f * expf(-xx);
+    }
+}
+
 // __restrict__ on x/out: the buffers are distinct DeviceBuffers by construction,
 // and without it every out store would force nvcc to reload x (assumed aliasing).
+template <bool kFastExp>
 __global__ void BoysSingleF32Kernel(const int* n,
                                     const double* __restrict__ x,
                                     float* __restrict__ out,
@@ -292,7 +325,7 @@ __global__ void BoysSingleF32Kernel(const int* n,
     if (xx < static_cast<float>(kX1d))
     {
         float f = DevSeedB32(xx);
-        const float expx = 0.5f * __expf(-xx);
+        const float expx = DevRegionBExp<kFastExp>(xx);
 
         for (int l = 0; l < order; ++l)
         {
@@ -767,7 +800,7 @@ __global__ void BoysAllNF64KernelEff(int nmax, const double* x, double* out, siz
     DevAllOrdersF64Eff<kLane>(nmax, x[i], out, i, count);
 }
 
-template <int kLane>
+template <int kLane, bool kFastExp>
 __global__ void BoysSingleF32KernelEff(const int* n,
                                        const double* __restrict__ x,
                                        float* __restrict__ out,
@@ -791,7 +824,7 @@ __global__ void BoysSingleF32KernelEff(const int* n,
     if (xx < static_cast<float>(kX1d))
     {
         float f = DevSeedB32Eff<kLane>(xx, order);
-        const float expx = 0.5f * __expf(-xx);
+        const float expx = DevRegionBExp<kFastExp>(xx);
 
         for (int l = 0; l < order; ++l)
         {
@@ -1232,8 +1265,15 @@ int LaunchBlocks(std::size_t count) {
 
 extern "C" int BoysCudaLaunchSingleF32(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    BoysSingleF32Kernel<<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
-        n, x, out, count);
+    BoysSingleF32Kernel<false>
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchSingleF32Fast(
+    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    BoysSingleF32Kernel<true>
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
     return static_cast<int>(cudaGetLastError());
 }
 
@@ -1372,7 +1412,14 @@ extern "C" int BoysCudaLaunchAllNF64Eff(
 
 extern "C" int BoysCudaLaunchSingleF32Eff(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    BoysSingleF32KernelEff<2>
+    BoysSingleF32KernelEff<2, false>
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchSingleF32EffFast(
+    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    BoysSingleF32KernelEff<2, true>
         <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
     return static_cast<int>(cudaGetLastError());
 }

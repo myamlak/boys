@@ -9,6 +9,8 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
+#include <span>
 
 /// \file
 /// The region-A transform lane: the per-order Chebyshev fits of the double
@@ -37,6 +39,9 @@
 /// | \c kFp64 | fp64 | fp64 | 1 | pairwise, degree high to low |
 /// | \c kTf32x3 | fp32, carried as 2 tf32 parts | fp32 | 3 | pairwise, degree high to low |
 /// | \c kBf16x6 | fp32, carried as 3 bf16 parts | fp32 | 6 | pairwise, degree high to low |
+/// | \c kTf32 | tf32 | fp32 | 1 | pairwise, degree high to low |
+/// | \c kBf16 | bf16 | fp32 | 1 | pairwise, degree high to low |
+/// | \c kFp16 | fp16 | fp32 | 1 | pairwise, degree high to low |
 ///
 /// **The accumulate format is the binding choice of the two formats.** With an
 /// fp32 accumulator no operand precision reaches the double lane: splitting an
@@ -65,11 +70,24 @@
 /// With \c m the accuracy multiplier, over region A - both bands, every order
 /// 0..32, every argument of the band - the delivered error is at most
 ///
-/// | Mode | Bound | Delivered, worst over region A |
-/// |---|---|---|
-/// | \c kFp64 | \c m·1e-15 | 1.110e-16 |
-/// | \c kTf32x3 | \c m·1e-15 + 2.5e-7 | 1.916e-07 |
-/// | \c kBf16x6 | \c m·1e-15 + 2.5e-7 | 1.946e-07 |
+/// | Mode | Bound | Delivered, worst over region A | Certification |
+/// |---|---|---|---|
+/// | \c kFp64 | \c m·1e-15 | 1.110e-16 | certified |
+/// | \c kTf32x3 | \c m·1e-15 + 2.5e-7 | 1.916e-07 | uncertified |
+/// | \c kBf16x6 | \c m·1e-15 + 2.5e-7 | 1.946e-07 | uncertified |
+/// | \c kTf32 | \c m·1e-15 + 5e-4 | 4.4184e-04 | uncertified |
+/// | \c kBf16 | \c m·1e-15 + 3e-3 | 2.7893e-03 | uncertified |
+/// | \c kFp16 | \c m·1e-15 + 5e-4 | 4.4184e-04 | uncertified |
+///
+/// **The certification column is not a quality ranking and the bounds are not
+/// comparable across it.** Every row is measured; the column says what the
+/// measurement was of. The fp64 row's bound is a measurement of an ordinary
+/// IEEE double sum, which is the arithmetic the row names, so a caller may hold
+/// a result to it. The other five are arithmetic on a *model* of an fp32
+/// accumulator, and a card's fused sum is not that model, so their bounds are
+/// claims about the model and never about a card. `BoysProductModes` reports
+/// each mode's class so a caller can act on the distinction without reading
+/// this table.
 ///
 /// The delivered figures are the worst found, against the committed 45-digit
 /// reference grid and against a 200000-point sweep of the lower band's left
@@ -174,11 +192,12 @@ inline constexpr double kRegionAEnd = 11.899848152108484;
 
 /// The arithmetic mode of the region-A transform, as a compile-time parameter.
 ///
-/// The modes are the ones that carry a bound a caller can use. The single-pass
-/// narrow modes - tf32, bf16 and fp16 operands accumulated in fp32 - are
-/// deliberately absent: their error is ten to twelve orders past every budget
-/// this library states for the lanes they would serve, and a mode nobody can
-/// use is not a mode.
+/// A mode's bound is a statement about an arithmetic, and where that arithmetic
+/// ran is what decides whether the bound is a certification. Each mode is
+/// therefore reported with its certification (BoysProductModes) rather than
+/// only with its bound: a certified mode's bound was measured by the arithmetic
+/// the mode names, and an uncertified mode's bound is arithmetic on a model of
+/// an accumulator, which is a narrower claim than a card.
 ///
 /// \ingroup boys
 enum class ProductMode : int {
@@ -192,7 +211,62 @@ enum class ProductMode : int {
     /// An fp32 operand carried as three bf16 parts, six products, fp32
     /// accumulate.
     kBf16x6,
+    /// One tf32 operand, one product, fp32 accumulate: the single-pass mode a
+    /// tensor core computes without a split.
+    kTf32,
+    /// One bf16 operand, one product, fp32 accumulate.
+    kBf16,
+    /// One fp16 operand, one product, fp32 accumulate.
+    kFp16,
 };
+
+/// What a mode's bound is a measurement of.
+///
+/// The distinction is not a quality ranking: both classes are measured, and
+/// neither is a guess. It is a statement about what the number can be held
+/// against. A card's fused sum truncates and aligns its addends, which the
+/// models behind the uncertified modes do not do, so an uncertified bound can
+/// be wrong in the direction that matters and only hardware can settle it.
+///
+/// \ingroup boys
+enum class ModeCertification : std::uint8_t {
+    /// The bound was measured by the arithmetic the mode names, on a machine
+    /// that runs it. An fp64 accumulator is an ordinary IEEE double sum, which
+    /// is what makes the fp64 mode's bound a certification.
+    kCertified = 0,
+
+    /// The bound is arithmetic on a model of an accumulator this machine does
+    /// not have. It is a valid statement about the model and not about a card.
+    /// A green sweep of it is not evidence that a card is inside it.
+    kUncertified,
+};
+
+/// One region-A mode as a report states it.
+///
+/// \ingroup boys
+struct ProductModeInfo {
+    ProductMode mode; ///< the mode this row describes
+    const char* name; ///< the name a report prints for the mode
+    ModeCertification certification; ///< what the row's bound is a measurement of
+    const char* model; ///< the arithmetic or accumulator the bound is a claim about
+    int parts; ///< products per operand: 1, 2 or 3
+    double fitTerm; ///< the multiplier-scaled term of the bound: m * fitTerm
+    double floor; ///< the multiplier-independent floor the format adds
+    double delivered; ///< swept worst |F̂ − F| over region A at the reference multiplier
+};
+
+/// The region-A transform's arithmetic modes this build carries, one row each,
+/// with the bound and the certification of each, so a caller can ask what the
+/// modes are and which of their bounds a card is held to without reading the
+/// kernel.
+///
+/// The rows are in the enumeration's order. A row's bound over region A at
+/// multiplier \c m is `m * fitTerm + floor`.
+///
+/// \returns the modes, with their bounds and their certifications
+///
+/// \ingroup boys
+std::span<const ProductModeInfo> BoysProductModes() noexcept;
 
 /// F_0(x[i]) through F_nmax(x[i]) for a batch of arguments, region A, evaluated
 /// as one matrix product per band in the named mode's arithmetic.
@@ -256,6 +330,12 @@ extern template void BoysRegionAProduct<ProductMode::kFp64, kBoysFullAccuracyMul
 extern template void BoysRegionAProduct<ProductMode::kTf32x3, kBoysFullAccuracyMultiplier>(
     RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
 extern template void BoysRegionAProduct<ProductMode::kBf16x6, kBoysFullAccuracyMultiplier>(
+    RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
+extern template void BoysRegionAProduct<ProductMode::kTf32, kBoysFullAccuracyMultiplier>(
+    RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
+extern template void BoysRegionAProduct<ProductMode::kBf16, kBoysFullAccuracyMultiplier>(
+    RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
+extern template void BoysRegionAProduct<ProductMode::kFp16, kBoysFullAccuracyMultiplier>(
     RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
 
 // The kernel behind the entry declared above, defined here so that every
@@ -329,6 +409,26 @@ using Tf32x3Policy = ProductPolicy<11, 24, 2, float>;
 /// the bfloat16 emulation of the same product.
 using Bf16x6Policy = ProductPolicy<8, 24, 3, float>;
 
+/// One tf32 operand, one product, fp32 accumulate: the mode a tensor core
+/// computes without a split. The operand arrives as fp32 and is rounded once to
+/// the format, which is what Split does with one part.
+using Tf32Policy = ProductPolicy<11, 24, 1, float>;
+
+/// One bf16 operand, one product, fp32 accumulate.
+using Bf16Policy = ProductPolicy<8, 24, 1, float>;
+
+/// One fp16 operand, one product, fp32 accumulate.
+///
+/// This is the same arithmetic as Tf32Policy over region A, and the
+/// measurement in tools_tc/compare.py says so: both formats carry an 11-bit
+/// significand, the band's operands and basis values are all well inside
+/// binary16's exponent range, so the two round every product identically and
+/// their measured floors agree to every digit the sweep resolves. They are
+/// distinct names because a card's two instructions are distinct, and the name
+/// is what tells a report which one ran; a caller choosing between them on this
+/// lane is choosing an instruction, not a precision.
+using Fp16Policy = ProductPolicy<11, 24, 1, float>;
+
 /// The policy of a mode enumerator.
 template <ProductMode kMode> struct PolicyOf;
 
@@ -342,6 +442,18 @@ template <> struct PolicyOf<ProductMode::kTf32x3> {
 
 template <> struct PolicyOf<ProductMode::kBf16x6> {
     using Type = Bf16x6Policy;
+};
+
+template <> struct PolicyOf<ProductMode::kTf32> {
+    using Type = Tf32Policy;
+};
+
+template <> struct PolicyOf<ProductMode::kBf16> {
+    using Type = Bf16Policy;
+};
+
+template <> struct PolicyOf<ProductMode::kFp16> {
+    using Type = Fp16Policy;
 };
 
 // ---------------------------------------------------------------------------

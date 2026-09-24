@@ -1,5 +1,7 @@
 // The run-time accuracy tier's contract tests: AccuracyTier, QueryTier,
-// TierCoverage, AccuracyRegion, AccuracyComponent and BoysAllOrdersAtTier.
+// TierCoverage, AccuracyRegion, AccuracyComponent and BoysAllOrdersAtTier -
+// and, in section 5, the same surface's fit routes: FitRoute, FitRouteInfo,
+// BoysFitRoutes() and BoysAllOrdersWithRoute.
 //
 // The tier is a selector: it names one of the multipliers this kernel already
 // instantiates and routes a call to that instantiation at run time. Four
@@ -62,6 +64,7 @@
 #include <fstream>
 #include <gtest/gtest.h>
 #include <limits>
+#include <span>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -90,6 +93,7 @@ using boys::AccuracyRegion;
 using boys::AccuracyTier;
 using boys::BoysAllOrders;
 using boys::BoysAllOrdersAtTier;
+using boys::BoysAllOrdersWithRoute;
 using boys::QueryTier;
 using boys::TierCoverage;
 using boys::detail::BoysAllOrdersImpl;
@@ -147,7 +151,7 @@ template <double M> void LibraryPath(int nmax, double x, double* out) noexcept {
 
 // The same code compiled in this translation unit, for the cross-TU check.
 template <double M> void LocalPath(int nmax, double x, double* out) noexcept {
-    BoysAllOrdersImpl<M>(nmax, x, out);
+    BoysAllOrdersImpl<M, boys::EvalPolicy<>>(nmax, x, out);
 }
 
 using PathFn = void (*)(int, double, double*) noexcept;
@@ -1422,6 +1426,431 @@ TEST(Tier, BoundCoveredCellsAreCountedAndNamedRatherThanPassed) {
                 << ": every cell is bound-covered, so no cell of this region distinguishes a "
                 << "correct implementation from one that returns zero";
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 5. The certified fit routes: FitRoute, FitRouteInfo, BoysFitRoutes() and
+//    BoysAllOrdersWithRoute()
+// ---------------------------------------------------------------------------
+// A route is a way of serving a region rather than a rung of one design, so the
+// selector's contract is read off the report rather than transcribed: the tests
+// below take every interval, bound and served-domain boundary from
+// BoysFitRoutes() and assert the entry against it. Transcribing them here would
+// let the report drift from the code and stay green.
+//
+// What is asserted:
+//  * the report enumerates the routes, one row per route and region, with the
+//    figures a consumer reads - and no two rows describe the same pair twice;
+//  * every row delivers its own bound over the domain its selector serves,
+//    measured against the reference grid, with the bound-covered cells counted
+//    so a row that passes vacuously is visible;
+//  * naming a route changes nothing outside the domain its row states it serves
+//    - in particular nothing below the boundary a row names above its own left
+//    edge, which is the documented fallback for a fit that reaches further than
+//    its selector takes over;
+//  * the default route is the default entry bit for bit, and a value the
+//    enumeration does not name is the default route, so no caller is handed a
+//    fit they did not ask for.
+
+// The domain a row's selector serves: the fit may reach further left than this.
+double ServedFrom(const boys::FitRouteInfo& row) {
+    return std::max(row.lo, row.servesFrom);
+}
+
+TEST(Route, TheReportEnumeratesEveryRouteOverEveryRegionItServes) {
+    const std::span<const boys::FitRouteInfo> routes = boys::BoysFitRoutes();
+
+    ASSERT_FALSE(routes.empty()) << "no route is enumerated: a consumer cannot ask what exists";
+
+    for (const boys::FitRouteInfo& row : routes)
+    {
+        EXPECT_NE(row.name, nullptr);
+        EXPECT_GT(row.stored, 0) << row.name;
+        EXPECT_LT(row.lo, row.hi) << row.name;
+        EXPECT_GT(row.bound, 0.0) << row.name;
+        EXPECT_LE(row.delivered, row.bound)
+            << row.name << " region " << RegionName(row.region)
+            << ": the row reports a delivered figure above the bar it is certified against";
+        EXPECT_GE(row.servesFrom, row.lo)
+            << row.name << " region " << RegionName(row.region)
+            << ": a row's served domain cannot begin before its own fit does";
+        EXPECT_LT(row.servesFrom, row.hi) << row.name << " region " << RegionName(row.region);
+    }
+
+    // One row per route and region, and each region that has a fit has both
+    // routes: a consumer comparing two routes over one region needs both rows
+    // to exist. Region C has no stored fit - the asymptotic branch is a closed
+    // form with no coefficients to choose between - so it has no rows.
+    const std::array<AccuracyRegion, 2> fitted{{AccuracyRegion::kA, AccuracyRegion::kB}};
+
+    for (AccuracyRegion region : fitted)
+    {
+        std::size_t chebyshev = 0;
+        std::size_t rational = 0;
+
+        for (const boys::FitRouteInfo& row : routes)
+        {
+            if (row.region != region)
+            {
+                continue;
+            }
+
+            if (row.route == boys::FitRoute::kChebyshev)
+            {
+                ++chebyshev;
+            }
+
+            if (row.route == boys::FitRoute::kRationalMinimax)
+            {
+                ++rational;
+            }
+        }
+
+        EXPECT_EQ(chebyshev, 1u) << "region " << RegionName(region);
+        EXPECT_EQ(rational, 1u) << "region " << RegionName(region);
+    }
+
+    for (const boys::FitRouteInfo& row : routes)
+    {
+        EXPECT_NE(row.region, AccuracyRegion::kC)
+            << row.name << ": region C has no stored fit for a route to serve";
+    }
+
+    // The region-A rational row states a served domain that begins above its own
+    // fit's left edge, and no other row does. That row is the reason
+    // FitRouteInfo::servesFrom exists: below that argument the lane reads every
+    // order from its own fit and documents a tighter figure than the rational
+    // fits hold, so the row claims the narrower domain rather than the interval
+    // its table covers. The argument it names is the lowest of the per-order
+    // boundaries its selector hands orders over at, which is the extended band's
+    // left edge.
+    std::size_t narrowed = 0;
+
+    for (const boys::FitRouteInfo& row : routes)
+    {
+        if (row.servesFrom > row.lo)
+        {
+            ++narrowed;
+
+            EXPECT_EQ(row.region, AccuracyRegion::kA) << row.name;
+            EXPECT_EQ(row.route, boys::FitRoute::kRationalMinimax) << row.name;
+            EXPECT_DOUBLE_EQ(row.lo, 0.0) << row.name;
+            EXPECT_DOUBLE_EQ(row.servesFrom, boys::detail::kExtendedBX0)
+                << "the boundary the region-A rational row names is not the extended band's edge";
+        }
+    }
+
+    EXPECT_EQ(narrowed, 1u) << "the report should narrow exactly one row's served domain";
+}
+
+TEST(Route, EveryRowDeliversItsOwnBoundAtEveryReferenceArgumentItServes) {
+    const Grid& grid = Reference();
+
+    if (grid.xs.empty())
+    {
+        GTEST_SKIP() << "no reference grid";
+    }
+
+    const std::span<const boys::FitRouteInfo> routes = boys::BoysFitRoutes();
+    std::vector<double> out(static_cast<std::size_t>(boys::kMaxBoysOrder) + 1);
+
+    std::printf("\n%-20s %-7s %10s %10s %10s %14s\n",
+                "route",
+                "region",
+                "cells",
+                "met",
+                "bound-cov",
+                "worst/bound");
+    std::printf("%-20s %-7s %10s %10s %10s %14s\n", "", "", "", "", "", "(at n, x)");
+
+    for (const boys::FitRouteInfo& row : routes)
+    {
+        Sweep sweep;
+
+        for (std::size_t i = 0; i < grid.xs.size(); ++i)
+        {
+            const double x = grid.xs[i];
+
+            if (!(x >= ServedFrom(row) && x < row.hi))
+            {
+                continue;
+            }
+
+            BoysAllOrdersWithRoute(row.route, boys::kMaxBoysOrder, x, out.data());
+
+            for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+            {
+                const double ref = grid.values[static_cast<std::size_t>(n)][i];
+
+                if (std::isnan(ref))
+                {
+                    continue;
+                }
+
+                sweep.Note(std::fabs(out[static_cast<std::size_t>(n)] - ref), n, x, ref, row.bound);
+            }
+        }
+
+        std::printf("%-20s %-7s %10zu %10zu %10zu %14.3g (n=%d, x=%.6g)\n",
+                    row.name,
+                    RegionName(row.region),
+                    sweep.cells,
+                    sweep.met,
+                    sweep.bound_covered,
+                    sweep.worst / row.bound,
+                    sweep.worst_n,
+                    sweep.worst_x);
+
+        ASSERT_GT(sweep.cells, 0u)
+            << row.name << " region " << RegionName(row.region)
+            << ": no grid argument lies in the domain this row serves, so nothing was measured";
+        EXPECT_EQ(sweep.met, sweep.cells)
+            << row.name << " region " << RegionName(row.region) << ": worst " << sweep.worst
+            << " against " << row.bound << " at n = " << sweep.worst_n << ", x = " << sweep.worst_x;
+        EXPECT_LT(sweep.bound_covered, sweep.cells)
+            << row.name << " region " << RegionName(row.region)
+            << ": every cell is bound-covered, so returning zero would pass this row too";
+    }
+}
+
+TEST(Route, NamingARouteChangesNothingOutsideTheDomainItsRowServes) {
+    // The confinement contract, read off the report: outside the intervals its
+    // rows state, naming a route hands the caller the default entry's values bit
+    // for bit. Below the boundary the region-A rational row names, that is what
+    // keeps the tighter bound the lane documents there.
+    const Grid& grid = Reference();
+
+    if (grid.xs.empty())
+    {
+        GTEST_SKIP() << "no reference grid";
+    }
+
+    const std::span<const boys::FitRouteInfo> routes = boys::BoysFitRoutes();
+    std::vector<double> plain(static_cast<std::size_t>(boys::kMaxBoysOrder) + 1);
+    std::vector<double> got(static_cast<std::size_t>(boys::kMaxBoysOrder) + 1);
+
+    std::size_t outside = 0;
+    std::size_t inside = 0;
+    std::size_t belowBoundary = 0;
+
+    for (double x : grid.xs)
+    {
+        boys::BoysAllOrders(boys::kMaxBoysOrder, x, plain.data());
+        BoysAllOrdersWithRoute(
+            boys::FitRoute::kRationalMinimax, boys::kMaxBoysOrder, x, got.data());
+
+        bool served = false;
+
+        for (const boys::FitRouteInfo& row : routes)
+        {
+            if (x >= ServedFrom(row) && x < row.hi)
+            {
+                served = true;
+            }
+        }
+
+        const bool equal = BitwiseEqual(plain.data(), got.data(), boys::kMaxBoysOrder);
+
+        if (!served)
+        {
+            ++outside;
+            EXPECT_TRUE(equal) << "naming the rational route changed the values at x = " << x
+                               << ", which no row of BoysFitRoutes reports it serves";
+        } else
+        {
+            ++inside;
+        }
+
+        // The narrow statement, measured on its own so a failure names which one
+        // of the two moved: below the region-A rational row's boundary the
+        // entry's values are the default's.
+        for (const boys::FitRouteInfo& row : routes)
+        {
+            if (row.servesFrom <= row.lo || x >= row.servesFrom || x < row.lo)
+            {
+                continue;
+            }
+
+            ++belowBoundary;
+            EXPECT_TRUE(equal) << "naming the " << row.name
+                               << " route changed the values at x = " << x
+                               << ", below the boundary " << row.servesFrom << " its row names";
+        }
+    }
+
+    EXPECT_GT(outside, 0u) << "no grid argument lies outside every route's served domain";
+    EXPECT_GT(inside, 0u) << "no grid argument lies inside a route's served domain";
+    EXPECT_GT(belowBoundary, 0u)
+        << "the narrowed row's served-domain boundary was never exercised from below";
+}
+
+TEST(Route, AnOrderInsideTheServedDomainKeepsTheDefaultValueUntilItsOwnBoundary) {
+    // The region-A rational row serves per order, so the boundary it states is
+    // the lowest of a set. Above that boundary an order whose own region-A range
+    // has not ended yet is still read from its own fit by the lane, and the
+    // entry hands back the default's value for it rather than the route's - the
+    // property that keeps the lane's tighter per-order figure intact right up to
+    // the argument where the lane itself stops reading the order from its fit.
+    const Grid& grid = Reference();
+
+    if (grid.xs.empty())
+    {
+        GTEST_SKIP() << "no reference grid";
+    }
+
+    std::vector<double> plain(static_cast<std::size_t>(boys::kMaxBoysOrder) + 1);
+    std::vector<double> got(static_cast<std::size_t>(boys::kMaxBoysOrder) + 1);
+
+    std::size_t handed = 0;
+    std::size_t held = 0;
+
+    for (double x : grid.xs)
+    {
+        if (x < boys::detail::kRatARouteLo || x >= boys::detail::kRatARouteHi)
+        {
+            continue;
+        }
+
+        boys::BoysAllOrders(boys::kMaxBoysOrder, x, plain.data());
+        BoysAllOrdersWithRoute(
+            boys::FitRoute::kRationalMinimax, boys::kMaxBoysOrder, x, got.data());
+
+        for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+        {
+            const auto j = static_cast<std::size_t>(n);
+
+            if (x >= boys::detail::kTierThresholds[j])
+            {
+                ++handed;
+                continue;
+            }
+
+            ++held;
+            EXPECT_TRUE(got[j] == plain[j])
+                << "at x = " << x << ", order " << n
+                << " is still inside its own region-A range, and the entry changed it";
+        }
+    }
+
+    EXPECT_GT(handed, 0u) << "no grid argument handed any order to the route's own fit";
+    EXPECT_GT(held, 0u) << "no grid argument reached an order before its own region-A end";
+}
+
+TEST(Route, TheDefaultRouteAndAnUnnamedRouteAreTheDefaultEntry) {
+    const Grid& grid = Reference();
+
+    if (grid.xs.empty())
+    {
+        GTEST_SKIP() << "no reference grid";
+    }
+
+    // The default route is today's certified code, so it must be bit-identical
+    // to the default entry rather than merely close: a route selector that
+    // perturbed the default path would move every lane's measured figure.
+    const std::array<boys::FitRoute, 3> fallbacks{{
+        boys::FitRoute::kChebyshev,
+        static_cast<boys::FitRoute>(99),
+        static_cast<boys::FitRoute>(-1),
+    }};
+    std::vector<double> plain(static_cast<std::size_t>(boys::kMaxBoysOrder) + 1);
+    std::vector<double> got(static_cast<std::size_t>(boys::kMaxBoysOrder) + 1);
+
+    for (double x : grid.xs)
+    {
+        boys::BoysAllOrders(boys::kMaxBoysOrder, x, plain.data());
+
+        for (boys::FitRoute route : fallbacks)
+        {
+            std::fill(got.begin(), got.end(), std::nan(""));
+            BoysAllOrdersWithRoute(route, boys::kMaxBoysOrder, x, got.data());
+
+            for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+            {
+                ASSERT_FALSE(std::isnan(got[static_cast<std::size_t>(n)]))
+                    << "route " << static_cast<int>(route) << " left out[" << n
+                    << "] unwritten at x = " << x;
+            }
+
+            EXPECT_TRUE(BitwiseEqual(plain.data(), got.data(), boys::kMaxBoysOrder))
+                << "route " << static_cast<int>(route) << " at x = " << x
+                << " is not the default entry's values";
+        }
+    }
+}
+
+TEST(Route, EveryOrderIsWrittenWhateverNmaxAndRouteAreAsked) {
+    // The entry's shape contract: nmax + 1 values, every one of them written.
+    // Above the extended band's left edge the batch entry reads each order from
+    // that order's own fit, so its values carry no nmax: an nmax smaller than
+    // the order asked about must not truncate or change anything, and the route
+    // selector only picks fits, so it keeps that property. Below that edge the
+    // batch entry seeds one downward recursion at nmax (the documented
+    // fallback), so there the values do depend on nmax by design and only the
+    // shape is asserted.
+    const std::span<const boys::FitRouteInfo> routes = boys::BoysFitRoutes();
+    std::vector<double> batch(static_cast<std::size_t>(boys::kMaxBoysOrder) + 1);
+    std::vector<double> single(static_cast<std::size_t>(boys::kMaxBoysOrder) + 1);
+
+    const std::array<double, 8> xs{{
+        0.25,
+        1.5,
+        3.0,
+        6.5,
+        9.5,
+        11.5,
+        15.0,
+        40.0,
+    }};
+
+    for (boys::FitRoute route : {boys::FitRoute::kChebyshev, boys::FitRoute::kRationalMinimax})
+    {
+        for (double x : xs)
+        {
+            std::fill(batch.begin(), batch.end(), std::nan(""));
+            BoysAllOrdersWithRoute(route, boys::kMaxBoysOrder, x, batch.data());
+
+            for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+            {
+                EXPECT_FALSE(std::isnan(batch[static_cast<std::size_t>(n)]))
+                    << "route " << static_cast<int>(route) << " at x = " << x << ": out[" << n
+                    << "] was left unwritten";
+            }
+
+            const bool per_order = x >= boys::detail::kExtendedBX0;
+
+            for (int nmax = 0; nmax <= boys::kMaxBoysOrder; ++nmax)
+            {
+                std::fill(single.begin(), single.end(), std::nan(""));
+                BoysAllOrdersWithRoute(route, nmax, x, single.data());
+
+                for (int n = 0; n <= nmax; ++n)
+                {
+                    EXPECT_FALSE(std::isnan(single[static_cast<std::size_t>(n)]))
+                        << "route " << static_cast<int>(route) << " at x = " << x
+                        << ", nmax = " << nmax << ": out[" << n << "] was left unwritten";
+
+                    if (!per_order)
+                    {
+                        continue;
+                    }
+
+                    EXPECT_EQ(std::bit_cast<std::uint64_t>(single[static_cast<std::size_t>(n)]),
+                              std::bit_cast<std::uint64_t>(batch[static_cast<std::size_t>(n)]))
+                        << "route " << static_cast<int>(route) << " at x = " << x
+                        << ", nmax = " << nmax << ": out[" << n << "] depends on nmax";
+                }
+            }
+        }
+    }
+
+    // The routes the loop above covers are the ones the report names: a route
+    // added to the library without a row here would be exercised by nothing.
+    for (const boys::FitRouteInfo& row : routes)
+    {
+        EXPECT_TRUE(row.route == boys::FitRoute::kChebyshev ||
+                    row.route == boys::FitRoute::kRationalMinimax)
+            << row.name << ": a route this test does not sweep";
     }
 }
 

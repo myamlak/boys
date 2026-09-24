@@ -21,9 +21,11 @@ differs with it:
 | 11.899848152108484 ≤ x < 28.98933773882074 | a stored fit at the lowest order, then upward recursion |
 | x ≥ 28.98933773882074 | a closed-form asymptotic result |
 
-Below about x = 1.0855 every order is inside its own fit. Between that and x = 11.8998 the higher
-orders are served by recursion from a single fit — the lowest order's — which is slightly less
-accurate than the fits themselves.
+Below about x = 1.0855 the lowest orders are inside their own fits. The argument at which an
+order stops being read from its own fit rises with the order — 1.0855252345349333 for orders 0
+to 4, 2.015297705335114 for 5 to 8, 4.897870299825657 for 9 to 16 and 10.783587858916762 for 17
+to 32 — and past its own boundary an order is served by recursion from a single fit, the band
+seed, which is slightly less accurate than the fits themselves.
 
 **Two lanes do not hold over the whole range**, and their entries say where they stop: the half
 lanes return nothing usable once the result falls below their bound, and the packed-half lane covers
@@ -44,6 +46,61 @@ below about 1e-16 is reachable however the evaluation is arranged. The mathemati
 more accurate than the numbers storing them, but by how much depends on the piece: against the
 shipped coefficients the two are of the same order, the storage error usually a few times the
 truncation and on some pieces smaller than it.
+
+## The two fit routes
+
+The double lane's fits come in two routes, chosen per call with `BoysAllOrdersWithRoute` and
+reported by `BoysFitRoutes()`. Neither is a rung: a route is a way of serving a region, and the two
+hold the same bar over the same interval.
+
+| Route | Region | Fit covers | Selector serves from | Stored | Measured | Bar |
+|---|---|---|---|---|---|---|
+| chebyshev (default) | A | 0 | 0 | 1320 | 1.74e-16 | 3e-14 |
+| rational minimax | A | 0 | 1.0855252345349333 | 891 | 2.46e-14 | 3e-14 |
+| chebyshev (default) | B | 11.899848152108484 | 11.899848152108484 | 19 | 9.92e-15 | 5e-14 |
+| rational minimax | B | 11.899848152108484 | 11.899848152108484 | 12 | 4.46e-14 | 5e-14 |
+
+Region A's rows count the whole per-order table: one piece for each order over each of the region's
+two bands, so 66 pieces, and "stored" is their coefficients summed. Region B's rows are the one seed
+each route evaluates there, carried to higher orders by the region's own upward recursion.
+
+**The rational route in region A does not take over from zero, and it takes over per order.** Its
+pieces span the same intervals as the Chebyshev ones, but the lane stops reading an order from that
+order's own fit once the argument passes the order's own region-A end, and reaches it from the band
+seed instead, where the lane's figure is the band's 3e-14 rather than the order's 1e-15. So the route
+hands over each order at that order's own argument — 1.0855252345349333 for orders 0 to 4,
+2.015297705335114 for 5 to 8, 4.897870299825657 for 9 to 16 and 10.783587858916762 for 17 to 32 — and
+the row states the lowest of them, because that is the argument from which naming the route changes
+any value. Below its own boundary an order keeps the default lane's value exactly, so the tighter
+figure the lane documents there is untouched; above it the route holds the 3e-14 the lane documents
+there rather than a bar of its own.
+
+**The two region-A tables are not interchangeable, and their stored counts are not each other's
+substitute.** The default table's pieces do a second job: the batch entry's relaxed path seeds its
+downward recursion from the top order's piece over the whole of the region, and that recursion
+carries the seed's error down to F_0 with a gain of max(1, b^n / ∏(j+½)) at the piece's right end b —
+up to 1.04e5, at order 12 and the region's right end. The default pieces are fitted under a budget
+divided by that gain, which is why the table stores more than the plain figure its row reports would
+need, and why its 1320 is not what the same published bar would cost on its own. The rational pieces
+are read one order at a time, are held to the published bar and nothing tighter, and a piece fitted
+for the values alone does not survive that recursion: against the same reference and in the same
+arithmetic the rational table's worst error after the gain is 6.01e-12, where the default table's is
+1.04e-14, and 18 of the region's 66 rational pieces sit over the 2.5e-14 the shipped ones are fitted
+under against none of the default pieces. **The rational route buys the interval's values, not a
+seed.**
+
+**The comparison is not "12 against 19" in region A.** Region B's two rows are two seeds for one
+interval, so their stored counts sit directly against each other. In region A the rows count whole
+tables — 1320 coefficients across the region's 66 pieces against 891 — and what the pair says is
+that over the same intervals, against the same reference and in the same arithmetic, the default
+route's table holds 1.74e-16 while spending 1320, and the rational route holds 2.46e-14 with 891. A reader
+comparing the two counts is comparing a table fitted for the recursion's gain against one fitted for
+the values alone, and the honest reading is the one the two rows state between them: both hold the
+bar, and the rational route reaches it with fewer coefficients because it is asked for less.
+
+**A rational fit costs one division per order**, where the split-Clenshaw Chebyshev form is
+division-free. That is a real difference in the work, and which side of it a machine lands on is its
+divide-to-multiply throughput — so no speed is claimed for either route here.
 
 ## float
 
@@ -193,6 +250,244 @@ the double or float lane.
 Rescaling each order buys range and no accuracy. The rescaling is exact, so a rescaled lane returns
 bit-identical results to an unscaled one. No rescaling reaches past that limit either, because the
 range the recursion spans grows like x to the power n, against a fixed exponent range.
+
+## The multiply-add route: fused or separate
+
+The fits above are evaluated by a Chebyshev recurrence, and every step of that recurrence is one
+multiply-add. A multiply-add can be delivered two ways, and they are not the same arithmetic:
+
+- **fused** — the product is kept exact and the sum rounds once.
+- **separate** — the product rounds to the format, and then the sum rounds again: two roundings.
+
+**The two return different bits**, so which one a build runs is part of what every bound on this page
+is a claim about. All of them are the fused route's.
+
+**A target that has the fused instruction uses it.** There the fused step is one instruction and the
+separate route is two, to a less accurate answer, so the fused route is the default and a caller
+building for such a target need read no further.
+
+**A target that does not have it pays a call.** Written as a fused multiply-add, the step compiles to
+a call into the platform's math library. **That call is per multiply-add, not per value.** A fit of
+degree d costs d + 1 steps, and this library's fits run
+
+| Arguments | Steps per value |
+|---|---|
+| x < 1.0855252345349333 | 19 or 21, by order |
+| 1.0855252345349333 ≤ x < 11.899848152108484 | 25 |
+| 11.899848152108484 ≤ x < 28.98933773882074 | 19, once per value: the orders above 0 come from the upward recursion |
+| x ≥ 28.98933773882074 | 0 |
+
+for the double lane — the float lane's are 11 at every argument below 11.899848152108484 — so a
+plain x86-64 build, which is MSVC's default with no `/arch` flag, pays that many library calls for
+every value it evaluates. **No result changes; only the path to it.** A build with the fused
+instruction pays nothing extra and is unaffected.
+
+### the alternative, and its own measured bound
+
+    cmake -S . -B build -DBOYS_MULADD_SEPARATE=ON
+
+That build writes the multiply-add as a bare product-plus-add, which costs no call where there is no
+fused instruction to call. **It is a different arithmetic and therefore a different error**, so the
+figures below were measured at that route rather than carried over from the fused one. They are the
+worst cell of each lane's sweep of the committed reference grid, at the default multiplier, against
+the same independent reference the fused figures use.
+
+**They were taken on MSVC x64 at its default architecture, Release, and they name that build.** A
+target that contracts the bare form never reaches the separate route at all — the request is
+answered with the fused arithmetic and the table below does not apply to it. On a target that does
+not contract, the measured figures here are the ones the arithmetic gives, and a rebuild of this
+library on another compiler is a second measurement rather than a confirmation of this one.
+
+| lane | region | fused | separate | bound |
+|---|---|---|---|---|
+| double, single | x < 1.0855252345349333 | 2.22e-16 | 2.22e-16 | 1e-15 |
+| double, single | 1.0855252345349333 ≤ x < 11.899848152108484 | 3.22e-15 | 3.07e-15 | 3e-14 |
+| double, single | 11.899848152108484 ≤ x < 28.98933773882074 | 9.94e-15 | 9.94e-15 | 3e-14 |
+| double, single | x ≥ 28.98933773882074 | 5e-14 | 5e-14 | 5.5e-14 |
+| float, single | all arguments | 1.06e-07 | 1.24e-07 | 1.5e-07 |
+| float, batch | all arguments | 1.08e-07 | 1.08e-07 | 1.5e-07 |
+
+**No lane is held back on the fused route.** Every scalar lane holds its published bound at both
+routes, so the alternative is offered everywhere and no lane's figure is withdrawn. The float single
+entry is the one that moves furthest, from 0.705 of its bound to 0.824 at the default multiplier: a
+rise of 0.12 of a bound that is m·1.5e-7 and nothing else, which leaves 0.176 of it in hand. That is
+the tightest margin on this page and the one to watch if the float fits ever change.
+
+**Where a lane does not move, the reason differs.** Above x = 28.98933773882074 the closed form
+evaluates no multiply-add at all, so both routes land on the same bits. The float batch entry's worst
+cell is on the upward recursion, which is written as bare multiplies, subtractions and one division
+that no multiply-add route governs. And the double lane's worst cells at the smallest arguments and
+in the asymptotic region are not on a multiply-add either.
+
+**Three lanes are outside the choice entirely.** The half lanes
+evaluate in float and round to 16 bits once per value, so their multiply-adds are the float lane's —
+but the 16-bit representation term dominates every cell they measure, and the route's difference is
+orders below it, so the sweep finds the same worst cell on both routes. The AVX2 packed lanes name
+their instruction directly, so there is no route to select and no call to avoid. The packed-half
+lane's chain is one multiply and one divide per order, so it takes no fused step either.
+
+**The separate route does not remove every call, and the remainder is deliberate.** The transform
+lane's own product contains no fused step at all — its splits are exact by construction and its
+reduction is a plain add — but the recurrence that builds its basis matrix is a two-rounding
+subtraction by contract, and the published figure for that lane is the one that recurrence is
+evaluated at. One call per step of it remains. A build cannot have both those two roundings and no
+call on a target with no fused instruction, and the contract is the part that does not move.
+Separately, the report answers whether a bare product-plus-add contracts in a given build by
+evaluating one — once per report, not per value. A caller who needs every call gone wants a target
+that has the instruction.
+
+### what a build reports
+
+`BoysBackends()` prints the route beside the contraction measurement, so a caller can attribute a
+value to the arithmetic that produced it without reading the source:
+
+    muladd route : scalar-fp64 fused (bare product-plus-add does not contract here)
+    muladd route : scalar-fp32 fused (bare product-plus-add does not contract here)
+
+The second line is the measurement that decides the first. **A build that contracts a bare
+product-plus-add reports the fused route even when the separate route was asked for**, because on
+that build the bare form *is* the fused step and the two routes deliver the same bits; the separate
+route is a name a report prints only where it is really two roundings.
+
+### The evaluation scheme: split Clenshaw or Horner
+
+A stored fit is a polynomial, and the recurrence above is one way to sum it. The double single lane
+offers a second: the same fit, at the same degree over the same interval, evaluated by Horner's rule
+on the monomial form of the same coefficients. **Both are offered and neither replaces the other.**
+A call site that names no scheme is compiled exactly as it was before the second one existed, so the
+certified route is the default and its figures on this page are unchanged.
+
+The two schemes sum one polynomial at the full degree, so the stored fits' figures below are the
+same reading twice and differ only by the arithmetic that carried the sum.
+
+**They are not interchangeable under a multiplier, and the two schemes' relaxed rungs are different
+degree tables.** A rung truncates the table its scheme sums, and what a truncation costs is the
+1-norm of the coefficients it drops *in that table*: the split Clenshaw recurrence reads the
+Chebyshev coefficients, whose decay is the fit's accuracy, while Horner reads the monomial
+coefficients, which are the same fit's Taylor coefficients on the piece and whose high-order end runs
+larger by about 2^k. A degree the Chebyshev tail admits therefore drops a monomial tail orders of
+magnitude over the rung's budget, so each scheme's rung is certified against the tail of the table it
+reads — one criterion, two tables — and a degree table belongs to a basis rather than to a fit. The
+monomial table admits the smaller relaxation by a wide margin: at m = 64 it is no truncation at all
+on 63 of region A's 66 pieces and on 16 of the region-B seed's 33 per-order entries, and it reaches a
+majority of the region-A pieces only at m = 16384. **A rung is less accuracy for less work, so a
+smaller relaxation is a smaller error, not a worse one**: read the direction it runs. At m = 65536
+the split Clenshaw rung delivers 3.36e-09 at its worst cell and the Horner rung 4.16e-10, both inside
+m·5.5e-14, and the Horner figure is the smaller because that rung truncated less. Every rung this
+library offers is served and bounded at either scheme; what a looser rung buys at Horner is bounded
+by the same derivation, and the delivered figure beside each rung is the one to read.
+
+| scheme | stored fit | degree | stored | bound, fused route | bound, separate route |
+| --- | --- | --- | --- | --- | --- |
+| split Clenshaw | region A (per-order fits) | 20 | 21 | 4.441e-16 | 4.441e-16 |
+| split Clenshaw | region B seed | 18 | 19 | 1.421e-14 | 1.421e-14 |
+| split Clenshaw | extended band seed | 24 | 25 | 2.220e-16 | 2.220e-16 |
+| Horner | region A (per-order fits) | 20 | 21 | 2.220e-16 | 4.441e-16 |
+| Horner | region B seed | 18 | 19 | 1.421e-14 | 1.421e-14 |
+| Horner | extended band seed | 24 | 25 | 2.220e-16 | 2.220e-16 |
+
+Each bound is the worst error a sweep over the fit's own interval reached against the 60-digit
+reference, rounded up to the next power of two so that it is a bound rather than the sweep's reading.
+The monomial conversion is benign for the reason the fits are: the argument never leaves [−1, 1], so
+the conversion's conditioning cannot grow.
+
+**What the scheme reaches.** The double single lane at every multiplier: the per-order region-A fits,
+the region-B seed and the extended-band seed. **What it does not reach, and why.** Region C is
+evaluated by its closed form and stores no fit to sum, so it is the same arithmetic under either
+scheme. The half lanes, the packed region-A lane and the CUDA device lane are the split Clenshaw's
+and are not offered under the other scheme: the device kernels carry the Chebyshev tables only, and
+the packed region-A lane's kernel is bypassed under Horner, which costs the accelerated path and not
+the value.
+
+`BoysEvalSchemes()` and `BoysEvalSchemeFits()` answer what exists and what each scheme promises on
+each stored fit in the route in force, so a caller can ask without reading the kernel, and the
+accuracy gate carries one measured row per scheme and stored fit beside its own rows.
+
+**The scheme and the fit route compose.** A fit route names the fits that serve the regions and a
+scheme names the summation a fit's coefficients are read in; a call site selects the pair with one
+`EvalPolicy`, and every pair of the two enumerations is carried. The figures in this section are the
+Chebyshev family's, at either scheme. A route whose own fit has one stored form — the rational
+minimax family's monomial numerator and denominator — evaluates that fit the same way under either
+scheme, and the scheme still reaches the parts of a call the route's own fits do not serve, which
+are the shipped family's: a rational-route call at the Horner scheme is the rational fits over the
+intervals their rows report and the Horner sums outside them. Every argument of a pair is therefore
+covered by one of the two sections' measured rows — the route's row inside its served intervals, this
+section's row outside — and no pair states a bound that neither row carries.
+
+### The packing axis: which of a call's values share a vector
+
+A packed lane keeps four doubles in a register, and a call has to supply four of something. The two
+something this library has are the two axes a call shape has: four **arguments** at one order, and
+four **orders** at one argument. Neither replaces the other — they evaluate the same stored fits by
+the same arithmetic, and differ in which of a call's values the vector lanes hold.
+
+The batch entry `BoysAllOrders(nmax, x, out)` computes every order at one argument, so an
+across-arguments lane has one argument to put in its four lanes. The orders axis is the axis that
+entry actually has: `nmax + 1` values wide, and every one of them is a stored fit of its own. Naming
+it is a field of the policy every templated double-precision entry takes, `PackAxis::kOrders`, and
+the values it returns are the per-order region-A fits read one order at a time rather than reached
+from a seed by a recursion. `BoysPackAxes()` reports both members with the interval each one's
+packed lane evaluates.
+
+**The domain is region A, and its bounds are the fits' own.** The orders lane covers `0 <= x < kX0`
+and is certified against the per-order region-A bar, **|F̂ − F| ≤ m·1e-15**. At the certified split
+Clenshaw scheme its values are the across-arguments lane's values **bit for bit** — one exact
+comparison over 3,009 arguments and every order, 99,297 of 99,297 values, with no tolerance, because
+a reordered step or a coefficient read one index out would still return a plausible number. Past
+`kX0` the entry runs the certified scalar single lane one order at a time, so it is defined for
+every argument the library accepts; that path is bit-identical to `BoysSingle`, and the gate measures
+it over the whole reference grid rather than assuming it.
+
+**The fetch decides the ranking, and the counter decides the fetch.** Two coefficient fetches
+compute the same lane: one AVX2 gather, and four scalar loads joined by `_mm256_set_pd`. The two are
+**bit-identical over every scheme and every value** — the lane's own test asserts it — so this is a
+choice of instruction and of nothing else. Measured on one machine (Intel Core i7-9850H, Linux perf
+under WSL2, `instructions:u` and `uops_retired.retire_slots:u`), 2,048,000 calls of
+`BoysAllOrders(32, x, out)` over 1,024 log-uniform arguments in [1e-3, kX0) at 2,000 repetitions,
+67,584,000 output values:
+
+| route | instructions | retired slots | slots per call | slots per value |
+| --- | --- | --- | --- | --- |
+| shipped `BoysAllOrders` (a seed and a recursion) | 6,326,028,230 | 6,687,926,524 | 3,265.6 | 98.96 |
+| orders axis, composed fetch | 5,072,522,334 | **4,719,806,211** | 2,304.6 | 69.84 |
+| orders axis, gathered fetch | **4,154,092,317** | 9,550,724,437 | 4,662.9 | 141.33 |
+| across-arguments lane forced onto this shape | 30,369,673,181 | 27,806,856,380 | 13,577.6 | 411.38 |
+
+Read the two columns against each other. **The gathered variant retires the fewest instructions of
+any lane here and the most slots of any lane here**: it is the fastest by instruction count and the
+slowest by retired slots, and the shipped route sits between it and the composed one on both. The
+same code, the same values, the same accuracy — and the ranking inverts with the counter. Retired
+slots is the counter that decides, because a gather on this part of this microarchitecture is a
+microcode assist rather than a single retirement, and the composed form is what ships because of it.
+
+**The measured advantages, in the counter that decides.** The orders axis at the composed fetch
+retires **4,719,806,211** slots against the shipped entry's **6,687,926,524**, which is a ratio of
+**1.42**; against the across-arguments lane's **27,806,856,380** it is a ratio of **5.89**. Both are
+a function of the workload's size and are quoted with it: the same pair measured over 64 arguments
+per call gives 297,004,529 against 430,755,616, a ratio of 1.45, and over 4,096 it gives
+18,872,789,147 against 26,699,353,538, a ratio of 1.41.
+
+**Why, in the same units.** The composed fetch retires **4,719,806,211** slots where the gathered one
+retires **9,550,724,437**, a ratio of **2.02**, so the gather costs 2,358 more retired slots per call
+over the 2,048,000 calls measured. A call evaluates its 33 orders as 8 vector groups and one scalar
+tail, and each group performs one fetch per stored coefficient — 21 at the first band's degree 20 —
+which is 169 fetches a call here. So the gather's own excess is 2,358 / 169 = **13.95 retired slots
+per fetch**, which is the mechanism rather than the whole figure.
+
+**The re-measurement obligation.** A second packed path is re-measured whenever another axis moves,
+because every figure above is a property of one build's code and one machine's microarchitecture — a
+µop count is a fact about the CPU it was taken on, and nothing here generalises to another. This
+section states one machine, one counter pair and one call shape, and no time: a time taken on a
+loaded machine is not a measurement, and the two counters are. The route's own benchmark driver
+(`benchmarks/boys_across_orders_benchmark.cpp`, `BUILD_BENCHMARKS=ON`) prints the work it did and the
+worst deviation from the shipped entry beside each run, so a count can never be of a broken variant,
+and its header carries the exact command that reproduces the two columns.
+
+**What is refused.** The lane evaluates the shipped region-A piece table and reads no other family's
+tables, so naming the orders axis with the rational minimax route is refused where it is named. The
+plane entry and the fixed-order entry have one order to fill a vector lane with, so the orders axis
+is refused on those too. Each refusal names the combination and what is not certified about it; none
+falls back silently to another axis.
 
 ## Large arguments, and the boundaries at x = 11.8998 and x = 28.9893
 

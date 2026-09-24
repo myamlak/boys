@@ -32,6 +32,74 @@ enum class BoysStatus {
     kDeviceError, ///< a CUDA operation failed
 };
 
+/// How the f32 single entry evaluates the region-B exponential e^{-x} that its
+/// upward recursion carries.
+///
+/// The two options are two arithmetics with two measured bounds, and neither is
+/// a fallback for the other. What makes the choice worth stating is the
+/// recurrence that consumes the value. Its condition number — the ratio of the
+/// dominant solution of the homogeneous recurrence to the wanted one, which is
+/// what Gautschi's treatment of three-term recurrences is about (see
+/// CITATION.bib) — is 7.6e4 at the region-B boundary, n = 32, and falls as the
+/// argument grows. A seed error whose *relative* size grows with the argument
+/// therefore fails a bound over a band of region B at the highest order while
+/// holding it everywhere else, and the instrument that predicts that is that
+/// factor, not the ulp count at one argument.
+///
+///  - \c kAccurate is the library routine, and is the arithmetic the f32 batch
+///    entries already run: at m = 1 a single and a batch evaluation of the same
+///    (n, x) return the same bits outside region A. Its relative error is flat
+///    at 2 ulp, so its bound is the lane's, m * 1.5e-7, in every region.
+///  - \c kFast is the hardware approximation with its argument-scaling residual
+///    removed. The approximation evaluates 2^fl(y log2 e), so the one rounding
+///    of that product is what grows its error with |y|; the residual
+///    fma(y, log2 e, -t) is exact and 2^(t + d) = 2^t 2^d approximates
+///    2^t (1 + d log 2), so two fused steps take the error back to the
+///    approximation's own few ulp, flat in the argument. Its bound is the
+///    lane's plus its own seed's contribution, certified at 8e-8 — 0.41 of the
+///    lane's budget — which the condition number derives and the device gate's
+///    sweep confirms (5.0e-8 measured at m = 1).
+///
+/// **What the ulp count alone would have missed.** Without the correction the
+/// approximation carries (2 + floor(1.16 |x|)) ulp: fifteen at the region-B
+/// boundary, thirty-five at its far end. Multiplying by the amplification
+/// factor gives 2.30e-7 at n = 32 at the boundary, 1.53 times the lane's whole
+/// bound, and a failing band out to x = 12.07 at that order. Measured: 2.57e-7
+/// at the same argument, and three cells over the bound at m = 1. A returned
+/// value there also carries the opposite sign to the function — at
+/// x = 11.899847984313965, n = 32, the approximation returns
+/// -9.6178212061204249e-08 where F_32(x) = +1.6072968370095873e-07. That sign
+/// consequence is an inference from the magnitude bound plus the eventual
+/// domination of the unwanted solution, and it holds only where that solution
+/// has the opposite sign to the wanted one; the corrected form returns the
+/// value's sign, and the device gate's audit reports zero wrong-sign cells for
+/// it at m = 1.
+///
+/// The bare approximation is not offered at any multiplier. Its failing band is
+/// interior to region B — a caller cannot name a piece of a region — so there
+/// is no certified sub-range to restrict it to, and a bound that a wrong sign
+/// fits inside is not a bound for a consumer that reads the value rather than
+/// its distance from F_n(x). That is the whole of the exclusion: with the
+/// correction, both options hold their bounds in every region.
+///
+/// What separates the two is then the bound and not a counted cost: the
+/// corrected form's kernel is the same size statically as the accurate one (944
+/// instructions against 944 at m = 1, 976 against 976 on the relaxed lane),
+/// where the bare approximation is eight fewer and certified nowhere, and the
+/// exponential is evaluated once per element, outside the order loop. No speed
+/// is claimed for either option, and the accurate one carries the tighter
+/// bound of the two.
+///
+/// \ingroup boys
+enum class RegionBExp : int {
+    /// expf: the library routine, the batch bodies' arithmetic, 2 ulp.
+    kAccurate = 0,
+    /// The hardware approximation with its argument-scaling residual removed.
+    /// Pair it with the bound SingleF32 documents for it, and not with the
+    /// lane's.
+    kFast,
+};
+
 /// Device-side Boys evaluation over arrays of (n, x) inputs.
 ///
 /// The coefficient tables are uploaded on first use by any entry point
@@ -61,9 +129,35 @@ enum class BoysStatus {
 /// gets the nearest device behaviour by naming, at the call site, the largest
 /// instantiated m whose bound does not exceed the tier's own.
 ///
+/// **The device lane does not honour the multiply-add route, and this is a
+/// stated limitation rather than an untested property.** The host's routes are
+/// selected at build time (`BOYS_MULADD_SEPARATE`) and reported by
+/// `BoysBackends()`, whose `route` field is what the corresponding arithmetic
+/// was *measured* to deliver. The device kernels are not on that report and do
+/// not read the selection: they name the fused intrinsic (`__fma_rn`)
+/// directly, so the device arithmetic is fused whatever the host build
+/// selected, and a caller who asked for the separate route gets a second
+/// rounding on the host and a single one on the device. Nothing in a returned
+/// value shows it and no entry reports it — a caller has to read the kernel or
+/// know this paragraph.
+///
+/// This is a work item and not an impossibility. The fused intrinsic is what
+/// makes it unfixable today; a kernel written as a bare product-plus-add leaves
+/// the choice to the device compiler's own contraction setting, which is the
+/// same mechanism the host build uses to deliver the two routes, and the device
+/// lane would then honour the route the same way the scalar backends do. Until
+/// that lands, treat the device lane as fused unconditionally: it is the fused
+/// route's arithmetic, and the fused route's bounds are the ones its values
+/// hold, whatever the host build selected.
+///
 /// The three shapes per precision family: Single* (one order per argument),
 /// AllOrders* (all orders per argument, top order per element), AllN* (all
 /// orders at every argument, one common top order).
+///
+/// One entry carries a second axis. The f32 single entry's region-B
+/// exponential is a certified choice of arithmetic — two options, two measured
+/// bounds (RegionBExp) — where every other axis of this surface is a choice of
+/// shape or of accuracy multiplier.
 ///
 /// All entries are asynchronous: the kernel is queued on the caller's
 /// stream and the call returns once the launch is accepted (errors are
@@ -90,10 +184,26 @@ public:
     /// consumer hardware (double precision runs there at a fraction of
     /// single-precision throughput).
     ///
+    /// Two bounds, one per region-B exponential (RegionBExp), each derived from
+    /// the condition number of that region's recurrence and confirmed by the
+    /// device gate's sweep:
+    ///
+    ///  - \c RegionBExp::kAccurate, the default: |F̂ − F| ≤ m * 1.5e-7, the f32
+    ///    lane's documented bound, in every region. Measured at m = 1: 1.29e-7
+    ///    at its worst, 0.86 of the bound.
+    ///  - \c RegionBExp::kFast: |F̂ − F| ≤ m * 1.5e-7 + 8e-8 — the lane's bound
+    ///    plus the corrected seed's own contribution, which the recurrence's
+    ///    amplification caps at 8e-8. Measured at m = 1: 1.44e-7 at its worst,
+    ///    0.63 of that bound; the contribution itself is 5.0e-8, and the option
+    ///    returns the function's sign at every cell the gate audits.
+    ///
     /// \tparam kAccuracyMultiplier the accuracy multiplier: m = 1 is the
     ///   bit-identical full-accuracy path; m > 1 relaxes the asserted bound
-    ///   to m * 1.5e-7 (region B/C) via compile-time Chebyshev degree
-    ///   truncation. Monotone in m.
+    ///   to m * 1.5e-7 via compile-time Chebyshev degree truncation. Monotone
+    ///   in m.
+    /// \tparam kExp which region-B exponential the call runs. Both are
+    ///   certified at every multiplier this lane instantiates, each against its
+    ///   own bound above; nothing here substitutes one for the other.
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
     /// \param out    device array receiving F_n(x[i])
@@ -101,7 +211,8 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     ///
     /// \returns kDeviceError when the launch fails.
-    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
+              RegionBExp kExp = RegionBExp::kAccurate>
     static BoysStatus SingleF32(
         const int* n, const double* x, float* out, std::size_t count, void* stream);
 

@@ -3,8 +3,8 @@
 // The compile-time effective-degree machinery behind the accuracy-multiplier
 // parametrization.
 // The multiplier m relaxes each lane's *asserted*
-// per-region bounds B_region by truncating the Chebyshev seed fits to the
-// effective degree
+// per-region bounds B_region by truncating the seed fits to the effective
+// degree
 //
 //   d'(m) = min { d' in {0,1,2,4,6,...} : Delta(d') * A <= (m-1) * B_region },
 //   Delta(d') = sum_{k=d'+1}^{d} |c_k|   (the dropped-coefficient tail),
@@ -12,12 +12,50 @@
 // with A the path's seed-error amplification: 1 for the single-style lanes,
 // w(b) = max(1, b^n / prod(j+1/2)) at the piece's right end for the region-A
 // batch downward recursion, and prod(j+1/2)/x0^n for the region-B upward
-// recursion (worst at x = x0). |T_k(t)| <= 1 on the mapped interval, so the
-// truncation delta is <= Delta(d') exactly, and the delivered error is
-// <= base(m=1) + Delta*A <= m*B_region (the m = 1 base is the asserted
-// contract). Everything here is constexpr over the emitted tables: the
-// per-(order,piece) d' tables are compile-time constants per (m, lane role),
-// a-priori, never tuned.
+// recursion (worst at x = x0). Everything here is constexpr over the emitted
+// tables: the per-(order,piece) d' tables are compile-time constants per
+// (m, lane role, basis), a-priori, never tuned.
+//
+// Why the tail has to be the one the summation reads. A stored fit is one
+// polynomial carried twice over the same pieces - the Chebyshev table a
+// Clenshaw recurrence reads and the monomial table Horner's rule reads - and
+// the two tables' coefficients are different numbers describing it. What a
+// truncation costs is the 1-norm of the coefficients it drops, and that holds
+// in either basis for the same reason: every basis function is at most one in
+// modulus on the mapped interval (|T_k(t)| <= 1, |t^k| <= 1 for |t| <= 1), so
+// the dropped series is at most Delta(d') wherever it is summed. The two
+// tables are not interchangeable in that sum. A Chebyshev fit's coefficients
+// decay with the fit's accuracy; the same fit's monomial coefficients are its
+// Taylor coefficients on the piece and their high-order end is larger by
+// about 2^k, so a degree the Chebyshev tail admits can drop a monomial tail
+// several orders of magnitude over budget. The tail must therefore come from
+// the table the scheme reads: TailBasis names which, and EffectiveDegree is
+// the one scan over it.
+//
+// The summation's own rounding. Horner at degree d' returns
+// sum_{k<=d'} c_k t^k (1 + theta_k) with |theta_k| <= gamma_{k+1},
+// gamma_k = k*u/(1-ku): the backward form, in which the coefficient at step k
+// carries the perturbation of the k+1 roundings at or below it. So the sum's
+// error over the exact truncated polynomial is at most
+//   R(d') = sum_{k<=d'} |c_k| gamma_{k+1} <= gamma_{d'+1} sum_{k<=d'} |c_k|.
+// R(d') is non-decreasing in d' - every term added is non-negative - so
+// R(d') <= R(d) and the rung's summation rounds no more than the m = 1 lane's
+// does. It is the m = 1 lane's rounding that the m = 1 base is asserted to
+// carry, and the criterion spends nothing on the rung's.
+//
+// Why no constant rounding term belongs in the criterion. Bounding the rung's
+// rounding and the m = 1 lane's independently and adding both would put a term
+// in the criterion that does not fall to zero at d' = d, and such a criterion
+// would refuse the full degree - which is provably wrong, because at d' = d
+// the rung runs the m = 1 summation over the same coefficients bit for bit,
+// and its delivered error is the m = 1 lane's, inside B_region by the
+// contract. A criterion that can refuse a degree it must admit is not a
+// criterion. So the shape is the m = 1 base, asserted and measured, plus the
+// one term the truncation adds: Delta(d') * A.
+//
+// Delta(d) = 0, so the scan always reaches the full degree: no rung is left
+// without an admissible one, and the fallback is the m = 1 summation, whose
+// error the rung's own bound already covers.
 //
 // The lane roles pair the region budgets with the amplification each lane
 // pays (the m = 1 asserted bounds):
@@ -57,6 +95,20 @@ enum class BoysRole {
     kF32Batch,
     kF32Fp16Single,
     kF32Fp16Batch,
+};
+
+/// The coefficient table a truncation drops from. A fit is carried once per
+/// scheme that sums it and the tables hold different numbers over the same
+/// pieces, so the basis is part of the degree table's identity: the tail of
+/// kCoeffs says nothing about the value HornerMono returns, and vice versa.
+enum class TailBasis {
+    /// The Chebyshev tables — kCoeffs, kBcoeffs and their single-precision
+    /// pair — which the split Clenshaw recurrence reads.
+    kChebyshev,
+
+    /// The monomial tables — kMonoCoeffs and kMonoBcoeffs — which are the
+    /// double lane's Horner form.
+    kMonomial,
 };
 
 /// Region-A asserted budget of the role (the m = 1 contract).
@@ -147,7 +199,9 @@ constexpr double RegionBAmplification(int order) noexcept {
 // fixed kX0 worst case region B's RegionBAmplification assumes) - named
 // future work; the m > 1 branch keeps the region-A treatment in the band.
 
-/// The dropped-coefficient tail Delta(d') = sum_{k=d'+1}^{deg} |c_k|.
+/// The dropped-coefficient tail Delta(d') = sum_{k=d'+1}^{deg} |c_k|, over
+/// whichever table is handed in: the scan is basis-blind, and the basis is
+/// which table reaches it.
 template <typename CoeffArray>
 constexpr double CoefficientTail(const CoeffArray& coeffs,
                                  std::size_t offset,
@@ -169,8 +223,10 @@ constexpr double CoefficientTail(const CoeffArray& coeffs,
 /// degree 0/1/2 are special-cased by the evaluator, even degrees >= 4 are
 /// the split-Clenshaw domain; the scan returns deg (no truncation) when
 /// nothing smaller is admissible, so the m = 1 path is today's path by
-/// construction. kAccuracyMultiplier is a runtime quantity here so the CUDA
-/// host side can fill tables for an arbitrary m.
+/// construction. Delta(deg) = 0, so the fallback is always admissible and the
+/// returned degree is never one whose tail the budget cannot carry.
+/// kAccuracyMultiplier is a runtime quantity here so the CUDA host side can
+/// fill tables for an arbitrary m.
 template <typename CoeffArray>
 constexpr int EffectiveDegree(const CoeffArray& coeffs,
                               std::size_t offset,
@@ -197,14 +253,20 @@ constexpr int EffectiveDegree(const CoeffArray& coeffs,
 }
 
 #if !defined(__CUDACC__)
-// The per-(m, role) compile-time d' tables. The degree tables are flat
+// The per-(m, role, basis) compile-time d' tables. The degree tables are flat
 // std::array<int, ...> (one entry per region-A piece / per order for
 // region B; the flat form keeps the tables constexpr on MSVC). The NTTP
 // forms are instantiation-local constants — zero mutable state on the CPU
 // path.
-template <double kAccuracyMultiplier, BoysRole kRole> constexpr auto RegionADegrees() noexcept {
+template <double kAccuracyMultiplier, BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
+constexpr auto RegionADegrees() noexcept {
+    static_assert(kBasis == TailBasis::kChebyshev || RoleUsesDoubleTables(kRole),
+                  "the single-precision lanes store one coefficient table, the Chebyshev "
+                  "one, so a monomial tail has no table to be read from there");
+
     if constexpr (RoleUsesDoubleTables(kRole))
     {
+        constexpr const auto& coeffs = (kBasis == TailBasis::kChebyshev) ? kCoeffs : kMonoCoeffs;
         std::array<int, std::size(kPieces)> degrees{};
 
         for (int order = 0; order <= kMaxOrder; ++order)
@@ -215,7 +277,7 @@ template <double kAccuracyMultiplier, BoysRole kRole> constexpr auto RegionADegr
                 const double amplification =
                     RoleUsesBatchAmplification(kRole) ? RegionAAmplification(order, piece.b) : 1.0;
                 degrees[static_cast<std::size_t>(p)] =
-                    EffectiveDegree(kCoeffs,
+                    EffectiveDegree(coeffs,
                                     static_cast<std::size_t>(piece.offset),
                                     piece.deg,
                                     kAccuracyMultiplier,
@@ -250,14 +312,21 @@ template <double kAccuracyMultiplier, BoysRole kRole> constexpr auto RegionADegr
     }
 }
 
-template <double kAccuracyMultiplier, BoysRole kRole> constexpr auto RegionBDegrees() noexcept {
+template <double kAccuracyMultiplier, BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
+constexpr auto RegionBDegrees() noexcept {
+    static_assert(kBasis == TailBasis::kChebyshev || kRole == BoysRole::kDoubleSingle ||
+                      kRole == BoysRole::kDoubleBatch,
+                  "the single-precision lanes store one coefficient table, the Chebyshev "
+                  "one, so a monomial tail has no table to be read from there");
+
     if constexpr (kRole == BoysRole::kDoubleSingle || kRole == BoysRole::kDoubleBatch)
     {
+        constexpr const auto& coeffs = (kBasis == TailBasis::kChebyshev) ? kBcoeffs : kMonoBcoeffs;
         std::array<int, kMaxOrder + 1> degrees{};
 
         for (int order = 0; order <= kMaxOrder; ++order)
         {
-            degrees[static_cast<std::size_t>(order)] = EffectiveDegree(kBcoeffs,
+            degrees[static_cast<std::size_t>(order)] = EffectiveDegree(coeffs,
                                                                        0,
                                                                        kBDeg,
                                                                        kAccuracyMultiplier,

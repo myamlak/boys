@@ -132,6 +132,8 @@ add_library(boys
     src/boys.cpp
     src/boys_c.cpp
     src/boys_half_native.cpp
+    src/boys_orders_simd.cpp
+    src/boys_probe.cpp
     src/boys_simd.cpp
     src/boys_transform.cpp)
 add_library(boys::boys ALIAS boys)
@@ -139,6 +141,39 @@ target_include_directories(boys PUBLIC include PRIVATE src)
 target_compile_features(boys PUBLIC cxx_std_20)
 target_compile_definitions(boys PUBLIC BoysFp16=1)
 boys_strict_warnings(boys)
+
+# --- The multiply-add route -------------------------------------------------
+# The scalar lanes' fused multiply-add is an instruction where the target has
+# one and a call into the C runtime where it does not, and a Clenshaw
+# evaluation costs deg + 1 fused steps — so on a plain x86-64 build that leaves
+# the fused route in force, every value the table regions return pays that many
+# calls, 19 to 25 of them for the double lane and 11 for the float lane. The
+# packed lanes are unaffected: src/boys_simd.cpp is compiled with the fused
+# instruction regardless of the global flags. OFF is the certified arithmetic:
+# the published bounds are the fused route's, and the fused route is what every
+# release, every CI leg and the accuracy gate are judged at.
+#
+# ON selects the separate route instead: the product rounds and then the sum
+# rounds, two roundings rather than one, written so that no target pays a call
+# for it. It is a different arithmetic with its own delivered figures, which
+# the accuracy gate prints per lane; docs/lane-contract.md carries them beside
+# the fused route's. The definition is PUBLIC because every entry is
+# header-defined: a consumer that instantiates a kernel in its own translation
+# unit compiles the same arithmetic the library reports, and a consumer that
+# does not gets it from the library's own instantiations.
+option(BOYS_MULADD_SEPARATE
+    "Build the scalar multiply-add at the two-rounding route, which costs no \
+call on a target without the fused instruction"
+    OFF)
+
+if (BOYS_MULADD_SEPARATE)
+    target_compile_definitions(boys PUBLIC BOYS_MULADD_SEPARATE=1)
+    message(STATUS "boys: scalar multiply-add route = separate (two roundings, "
+        "no call); the published bounds are the fused route's — see "
+        "docs/lane-contract.md for this route's measured figures.")
+else()
+    message(STATUS "boys: scalar multiply-add route = fused (one rounding)")
+endif()
 
 # --- Architecture gate (the AVX2 tier is x86_64-only) ------------------------
 # The probe is a configure-time compiler check rather than a lookup on
@@ -165,11 +200,11 @@ if (BOYS_ARCH_X86_64)
         # AVX2 intrinsics live in the SIMD TU only (F16C comes with /arch:AVX2);
         # the entry points are runtime-checked via BoysAvx2Available(), which
         # requires the FMA feature bit because the kernels are FMA chains.
-        set_source_files_properties(src/boys_simd.cpp PROPERTIES
+        set_source_files_properties(src/boys_simd.cpp src/boys_orders_simd.cpp PROPERTIES
             COMPILE_OPTIONS "/arch:AVX2")
     else()
         # GCC does not imply F16C via -mavx2.
-        set_source_files_properties(src/boys_simd.cpp PROPERTIES
+        set_source_files_properties(src/boys_simd.cpp src/boys_orders_simd.cpp PROPERTIES
             COMPILE_OPTIONS "-mavx2;-mfma;-mf16c")
     endif()
 else()
@@ -190,10 +225,12 @@ if (BOYS_BUILD_TESTS)
         tests/boys_tier_test.cpp
         tests/boys_fixed_n_test.cpp
         tests/boys_all_n_test.cpp
+        tests/boys_across_orders_test.cpp
         tests/boys_c_test.cpp
         tests/f16_test.cpp
         tests/boys_half_native_test.cpp
         tests/boys_backend_test.cpp
+        tests/boys_probe_test.cpp
         tests/boys_transform_test.cpp)
     target_link_libraries(boys-tests PRIVATE boys gtest gtest_main)
     target_include_directories(boys-tests PRIVATE src)
@@ -282,6 +319,52 @@ int main() {
     unset(CMAKE_REQUIRED_FLAGS)
     unset(CMAKE_REQUIRED_INCLUDES)
 
+    # The route-refusal probe. The many-argument and fixed-order entries do not
+    # carry the rational minimax route: their region bodies evaluate the shipped
+    # seed and the shipped per-order fits directly, so the route would be
+    # accepted and the shipped values returned under its name. They refuse it
+    # where the call is named, which is the one kind of property this gate
+    # cannot measure by calling - the call it would make does not build. It is
+    # measured by making the call in a probe instead, so "refused" is a result
+    # the gate reports rather than a sentence in a header, and a revision that
+    # stopped refusing fails the row that reports it.
+    #
+    # STATIC_LIBRARY again, for the same reason as the tier probe: this asks
+    # whether the declarations accept the policy, not whether this build links
+    # the definitions.
+    unset(BOYS_GATE_BATCH_ACCEPTS_ROUTE CACHE)
+    set(_boys_probe_target_type "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
+    set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+    set(CMAKE_REQUIRED_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    if (MSVC)
+        set(CMAKE_REQUIRED_FLAGS "/std:c++20 /EHsc")
+    else()
+        set(CMAKE_REQUIRED_FLAGS "-std=c++20")
+    endif()
+    check_cxx_source_compiles("
+#include <boys/boys.hpp>
+int main() {
+    double out[33] = {};
+    const double x = 1.0;
+    boys::BoysAllN<1.0, boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(1, &x, out, 1);
+    boys::BoysAllN<1.0, boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(
+        1, &x, out, 1, boys::BoysSortedArgs{});
+    boys::BoysFixedN<1.0, boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(0, &x, out, 1);
+    return 0;
+}
+" BOYS_GATE_BATCH_ACCEPTS_ROUTE)
+    set(CMAKE_TRY_COMPILE_TARGET_TYPE "${_boys_probe_target_type}")
+    unset(_boys_probe_target_type)
+    unset(CMAKE_REQUIRED_FLAGS)
+    unset(CMAKE_REQUIRED_INCLUDES)
+
+    if (NOT BOYS_GATE_BATCH_ACCEPTS_ROUTE)
+        target_compile_definitions(boys-accuracy-gate PRIVATE BOYS_GATE_BATCH_REFUSES_ROUTE=1)
+        message(STATUS "boys: the batch and fixed-order entries refuse a route they do not carry")
+    else()
+        message(STATUS "boys: a route the batch or fixed-order entry does not carry is ACCEPTED")
+    endif()
+
     if (BOYS_GATE_HAS_TIER)
         target_compile_definitions(boys-accuracy-gate PRIVATE BOYS_GATE_TIER=1)
         message(STATUS "boys: the accuracy gate will measure the run-time accuracy tier")
@@ -361,6 +444,18 @@ int main() {
     set_tests_properties(boys-boundary-standalone PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
 
+    # The option probe's driver: measures this build's evaluation options on
+    # the machine it is run on and prints what it found, refusal included (see
+    # the file preamble). Not a test and not registered as one — its result is
+    # a property of the host and the clock, and a leg that failed because the
+    # runner was busy would be a leg that failed for the wrong reason. Built
+    # with the tests so that a tree which builds them still exercises the
+    # probe's compilability; the numbers come from a local run.
+    add_executable(boys-option-probe benchmarks/boys_option_probe.cpp)
+    target_link_libraries(boys-option-probe PRIVATE boys)
+    target_compile_features(boys-option-probe PRIVATE cxx_std_20)
+    boys_strict_warnings(boys-option-probe)
+
     # The dispatch assertion: each CI leg states what BoysAvx2Available() MUST
     # report for its architecture (1 on x86_64, 0 on arm64) and the probe fails
     # the leg if it disagrees. It is worth more than the rest of the matrix
@@ -384,6 +479,65 @@ int main() {
         boys_strict_warnings(boys-avx2-probe)
         add_test(NAME boys-avx2-probe COMMAND boys-avx2-probe)
     endif()
+
+    # --- Build-fact probe ----------------------------------------------------
+    # tests/boys_build_facts.cpp states what this build is: the instruction sets
+    # it targets, whether a bare `a * b + c` written in it is a single rounding,
+    # whether the library's own objects call an out-of-line fma, and the
+    # arithmetic backends the build carries. docs/build-facts.md records the
+    # answers per CI leg and says what a consumer should read into them.
+    #
+    # Every fact is deterministic, which is why the probe takes no clock
+    # readings: a duration taken on a shared runner is a distribution across
+    # ephemeral machines, not a fact, and none of these facts needs one. The
+    # two paths this target is handed are what make the binary fact readable
+    # from inside the build - the artifact to inspect, and the tool that reads
+    # its symbol table. Both are decided here rather than looked up at run time
+    # because the compiler is what knows them: link.exe carries dumpbin's /dump
+    # mode on every MSVC install, and a GNU or Clang toolchain names its own nm
+    # or objdump. A toolchain that names none leaves both empty, and the probe
+    # reports the route as unestablished instead of guessing it.
+    set(BOYS_FACTS_CONFIG "${CMAKE_BUILD_TYPE}")
+    if (NOT BOYS_FACTS_CONFIG)
+        set(BOYS_FACTS_CONFIG "$<CONFIG>")
+    endif()
+    if (MSVC)
+        set(BOYS_FACTS_SYMBOL_TOOL "${CMAKE_LINKER}")
+        set(BOYS_FACTS_SYMBOL_MODE "msvc-dump")
+    else()
+        find_program(BOYS_FACTS_SYMBOL_BINARY NAMES llvm-nm nm objdump)
+        if (BOYS_FACTS_SYMBOL_BINARY)
+            set(BOYS_FACTS_SYMBOL_TOOL "${BOYS_FACTS_SYMBOL_BINARY}")
+            get_filename_component(BOYS_FACTS_SYMBOL_NAME
+                "${BOYS_FACTS_SYMBOL_BINARY}" NAME)
+            if (BOYS_FACTS_SYMBOL_NAME MATCHES "objdump")
+                set(BOYS_FACTS_SYMBOL_MODE "objdump-symbols")
+            else()
+                set(BOYS_FACTS_SYMBOL_MODE "nm-undefined")
+            endif()
+        else()
+            set(BOYS_FACTS_SYMBOL_TOOL "")
+            set(BOYS_FACTS_SYMBOL_MODE "")
+        endif()
+    endif()
+
+    add_executable(boys-build-facts tests/boys_build_facts.cpp)
+    target_link_libraries(boys-build-facts PRIVATE boys)
+    target_compile_features(boys-build-facts PRIVATE cxx_std_23)
+    target_compile_definitions(boys-build-facts PRIVATE
+        BOYS_FACTS_CONFIG="${BOYS_FACTS_CONFIG}"
+        BOYS_FACTS_LIB="$<TARGET_FILE:boys>"
+        BOYS_FACTS_SYMBOL_TOOL="${BOYS_FACTS_SYMBOL_TOOL}"
+        BOYS_FACTS_SYMBOL_MODE="${BOYS_FACTS_SYMBOL_MODE}")
+    boys_strict_warnings(boys-build-facts)
+
+    # Registered as a ctest case too, so a plain `ctest` runs it on every leg
+    # that runs the suite - the sanitizer leg included, where it is the probe's
+    # own file and process handling that is under the sanitizers. It is the
+    # recorded-table check (--check) that the legs run as its own step: that one
+    # needs the table's path, and its verdict is about the table rather than
+    # about this program.
+    add_test(NAME boys-build-facts COMMAND boys-build-facts)
 endif()
 
 # --- CUDA lane (optional; needs the toolkit) --------------------------------
@@ -411,6 +565,24 @@ if (BUILD_CUDA)
         target_include_directories(boys-cuda-tests PRIVATE src)
         boys_strict_warnings(boys-cuda-tests)
         add_test(NAME boys-cuda-tests COMMAND boys-cuda-tests)
+
+        # The DEVICE GATE (tests/boys_cuda_accuracy_gate.cpp) measures every
+        # documented device bound against the CPU gate's own committed
+        # high-precision reference - not against the CPU lane, which is what
+        # the suite's cross-lane comparison does and where two errors can
+        # cancel. It reports the CPU gate's row shape and names the card it
+        # measured, so a figure pasted into a report says which arithmetic
+        # produced it. It is a local gate for the same reason the CUDA lane is
+        # one: it needs the device.
+        add_executable(boys-cuda-accuracy-gate tests/boys_cuda_accuracy_gate.cpp)
+        target_link_libraries(boys-cuda-accuracy-gate PRIVATE boys-cuda boys)
+        target_include_directories(boys-cuda-accuracy-gate PRIVATE src)
+        target_compile_features(boys-cuda-accuracy-gate PRIVATE cxx_std_23)
+        target_compile_definitions(boys-cuda-accuracy-gate PRIVATE
+            BoysDataDir="${CMAKE_CURRENT_SOURCE_DIR}/tests/data"
+            BoysGateRevision="${BOYS_GATE_REVISION}")
+        boys_strict_warnings(boys-cuda-accuracy-gate)
+        add_test(NAME boys-cuda-accuracy-gate COMMAND boys-cuda-accuracy-gate)
     endif()
 endif()
 
@@ -445,6 +617,18 @@ if (BUILD_BENCHMARKS)
     target_compile_definitions(boys-all-n-benchmark PRIVATE BoysFp16=1)
     target_compile_features(boys-all-n-benchmark PRIVATE cxx_std_23)
     boys_strict_warnings(boys-all-n-benchmark)
+
+    # The across-orders lane's driver. Portable: it calls the lane's private
+    # header and no intrinsic of its own, so the same source answers on the
+    # Linux lanes, where the platform's instruction counter is available and
+    # a count per call can be read without a clock.
+    add_executable(boys-across-orders-benchmark
+        benchmarks/boys_across_orders_benchmark.cpp)
+    target_link_libraries(boys-across-orders-benchmark PRIVATE boys)
+    target_include_directories(boys-across-orders-benchmark PRIVATE src)
+    target_compile_definitions(boys-across-orders-benchmark PRIVATE BoysFp16=1)
+    target_compile_features(boys-across-orders-benchmark PRIVATE cxx_std_23)
+    boys_strict_warnings(boys-across-orders-benchmark)
 
     # The AVX2 timing harness is x86_64-only, like the tier it measures. It is
     # a local-only target (never a CI leg), so on a non-x86_64 host it is

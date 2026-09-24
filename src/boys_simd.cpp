@@ -1087,8 +1087,8 @@ std::size_t AppendPackedBackends(BackendInfo* out) noexcept {
         return 0;
     }
 
-    out[0] = BackendInfo{Avx2Fp64::kName, Avx2Fp64::Contracts()};
-    out[1] = BackendInfo{Avx2Fp32::kName, Avx2Fp32::Contracts()};
+    out[0] = BackendInfo{Avx2Fp64::kName, Avx2Fp64::Contracts(), Avx2Fp64::kRoute};
+    out[1] = BackendInfo{Avx2Fp32::kName, Avx2Fp32::Contracts(), Avx2Fp32::kRoute};
     return 2;
 #else
     (void)out;
