@@ -34,10 +34,15 @@
 ///  - region B  [x0, x1): a single F0 fit plus upward recursion;
 ///  - region C  [x1, inf): the asymptotic form 1/2 sqrt(pi/x) and upward
 ///    recursion;
-/// with x0/x1 chosen so that the maximum absolute error stays at or below
-/// 5e-14 (double) / 1.5e-7 (float, the certified F32 bound) across n = 0..32
-/// — validated against a 45-digit mpmath reference grid, and reproduced by
-/// tools/gen_boys_coefficients.py.
+/// with x0/x1 and the fit degrees placed against a 5e-14 target (double) /
+/// 1e-7 (float) across n = 0..32 — validated against a 45-digit mpmath
+/// reference grid, and reproduced by tools/gen_boys_coefficients.py. Those
+/// targets are what the placement is chosen against, not what a caller
+/// receives: the delivered bounds are the contract table's below, 5.5e-14 and
+/// 1.5e-7, which carry the headroom the targets do not. The double lane's
+/// measured region-C worst sits on its target rather than under it —
+/// 5.0000e-14, order 32 at the region-C boundary x1, which is why the table
+/// states 5.5e-14 and not 5e-14.
 ///
 /// The lane split is deliberate: consumer GPUs run double precision at 1/32
 /// of single-precision throughput (measured on a Quadro T1000: the float

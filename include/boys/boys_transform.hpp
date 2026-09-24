@@ -72,12 +72,17 @@
 ///
 /// The delivered figures are the worst found, against the committed 45-digit
 /// reference grid and against a 200000-point sweep of the lower band's left
-/// end, where these modes are worst. The \c kFp64 figure is the fitted
-/// polynomial's own truncation: the product adds nothing measurable to what the
-/// coefficients already cost, and it is the same figure the shipped split
-/// Clenshaw delivers. The two split-mode figures are their format's floor. The
-/// sweep is what found them - the grid alone samples 1.24e-07 and 1.37e-07 at
-/// those modes and understates the worst by about 1.5 times.
+/// end, where these modes are worst. The 200000 is that sweep's own size and
+/// not the size of the suite's: the dense-sweep test in the tree runs 20000
+/// points of the same form, which is a coarser instrument and reports a
+/// correspondingly lower worst, so its printed number and the figures above
+/// are not the same measurement and the difference is the grid rather than
+/// the lane. The \c kFp64 figure is the fitted polynomial's own truncation:
+/// the product adds nothing measurable to what the coefficients already cost,
+/// and it is the same figure the shipped split Clenshaw delivers. The two
+/// split-mode figures are their format's floor. The sweep is what found them -
+/// the grid alone samples 1.24e-07 and 1.37e-07 at those modes and understates
+/// the worst by about 1.5 times.
 ///
 /// **The multiplier does not move the ceiling, and for the two split modes it
 /// does not move the bound either.** A mode's floor is its format's, which no
@@ -550,7 +555,17 @@ void RegionAProductBand(int nmax, const double* x, double* out, std::size_t coun
         {
             for (std::size_t s = 0; s < n; ++s)
             {
-                const double next = 2.0 * mapped[s] * upper[s] - lower[s];
+                // The recurrence's two roundings are fixed here rather than
+                // left to the compiler. Written as the bare product and
+                // difference this contracts to a single fused step wherever
+                // the target has FMA and the contraction setting allows it -
+                // the default on aarch64 and on any x86 build that passes
+                // -mfma, and not on MSVC or on the x86 baseline - so the same
+                // source would be two arithmetics and the delivered figure
+                // this lane publishes is the one below. The zero addend is
+                // the product rounded once and nothing more, which leaves a
+                // contraction pass nothing to fuse.
+                const double next = std::fma(2.0 * mapped[s], upper[s], 0.0) - lower[s];
                 lower[s] = upper[s];
                 upper[s] = next;
                 Value parts[kParts];
