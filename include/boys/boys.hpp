@@ -8,6 +8,7 @@
 #endif
 
 #include "boys/accuracy.hpp"
+#include "boys/backend.hpp"
 #include "boys/boys_transform.hpp"
 
 /// \defgroup boys Boys-function kernel

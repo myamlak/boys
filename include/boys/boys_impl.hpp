@@ -27,6 +27,7 @@
 // the entries are header-defined; the API reference documents the entries.
 
 #include "boys/accuracy.hpp"
+#include "boys/backend.hpp"
 #include "boys/boys_coefficients.hpp"
 #include "boys/boys_effective_degrees.hpp"
 
@@ -68,25 +69,37 @@ inline const detail::OrderPiece& FindPiece(int order, double x) noexcept {
     return detail::kPieces[last - 1];
 }
 
+// The even/odd split Clenshaw evaluation of a Chebyshev sum, in the arithmetic
+// of backend B and at its width. One body, one arithmetic per instantiation:
+// the lanes differ in the width of their values and in nothing else here, and
+// the mapped argument t is the caller's, because the lanes map it differently
+// on purpose.
+//
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters): (deg, t) reads naturally.
-inline double ClenshawSplit(const double* c, int deg, double t) noexcept {
+template <backend::ArithmeticBackend B>
+typename B::Packed
+ClenshawSplit(const typename B::Value* c, int deg, typename B::Packed t) noexcept {
+    using V = typename B::Value;
+    using P = typename B::Packed;
+
     if (deg == 0)
     {
-        return c[0];
+        return B::Broadcast(c[0]);
     }
 
     if (deg == 1)
     {
-        return std::fma(t, c[1], c[0]);
+        return B::MulAdd(t, B::Broadcast(c[1]), B::Broadcast(c[0]));
     }
 
-    const double v = std::fma(2.0, t * t, -1.0);
-    const double twoV = v + v;
+    const P v = B::MulAdd(B::Broadcast(V{2}), B::Mul(t, t), B::Broadcast(-V{1}));
+    const P twoV = B::Add(v, v);
 
     if (deg == 2)
     {
         // T_2(t) = 2t^2 - 1 = v; the even/odd split below assumes deg >= 4.
-        return std::fma(t, c[1], std::fma(v, c[2], c[0]));
+        return B::MulAdd(
+            t, B::Broadcast(c[1]), B::MulAdd(v, B::Broadcast(c[2]), B::Broadcast(c[0])));
     }
 
     // The odd part below is the Clenshaw finalization for the D family with
@@ -97,31 +110,31 @@ inline double ClenshawSplit(const double* c, int deg, double t) noexcept {
 
     // Even part: coefficients c[0], c[2], ..., c[2m].
     const int m = deg / 2;
-    double b1 = c[std::ptrdiff_t{2} * m];
-    double b2 = 0.0;
+    P b1 = B::Broadcast(c[std::ptrdiff_t{2} * m]);
+    P b2 = B::Broadcast(V{0});
 
     for (int k = m - 1; k >= 1; --k)
     {
-        const double b0 = std::fma(twoV, b1, c[std::ptrdiff_t{2} * k] - b2);
+        const P b0 = B::MulAdd(twoV, b1, B::Sub(B::Broadcast(c[std::ptrdiff_t{2} * k]), b2));
         b2 = b1;
         b1 = b0;
     }
 
-    const double even = std::fma(v, b1, c[0] - b2);
+    const P even = B::MulAdd(v, b1, B::Sub(B::Broadcast(c[0]), b2));
 
     // Odd part: coefficients c[1], c[3], ..., c[2m-1] with the D recurrence.
-    double o1 = c[2 * m - 1];
-    double o2 = 0.0;
+    P o1 = B::Broadcast(c[2 * m - 1]);
+    P o2 = B::Broadcast(V{0});
 
     for (int k = m - 2; k >= 1; --k)
     {
-        const double o0 = std::fma(twoV, o1, c[std::ptrdiff_t{2} * k + 1] - o2);
+        const P o0 = B::MulAdd(twoV, o1, B::Sub(B::Broadcast(c[std::ptrdiff_t{2} * k + 1]), o2));
         o2 = o1;
         o1 = o0;
     }
 
-    const double odd = std::fma(twoV - 1.0, o1, c[1] - o2);
-    return std::fma(t, odd, even);
+    const P odd = B::MulAdd(B::Sub(twoV, B::Broadcast(V{1})), o1, B::Sub(B::Broadcast(c[1]), o2));
+    return B::MulAdd(t, odd, even);
 }
 
 // Region-A seed F_order(x) via the split Clenshaw evaluation.
@@ -129,13 +142,13 @@ inline double ChebyshevValue(int order, double x) noexcept {
     const detail::OrderPiece& piece = FindPiece(order, x);
     const double* c = detail::kCoeffs.data() + piece.offset;
     const double t = 2.0 * (x - piece.a) / (piece.b - piece.a) - 1.0;
-    return ClenshawSplit(c, piece.deg, t);
+    return ClenshawSplit<backend::ScalarFp64>(c, piece.deg, t);
 }
 
 // Region-B seed F_0(x), valid on [kX0, kX1).
 inline double RegionBSeed(double x) noexcept {
     const double t = 2.0 * (x - kX0) / (kX1 - kX0) - 1.0;
-    return ClenshawSplit(detail::kBcoeffs.data(), detail::kBDeg, t);
+    return ClenshawSplit<backend::ScalarFp64>(detail::kBcoeffs.data(), detail::kBDeg, t);
 }
 
 // The extended band's per-(n, x) dispatch (the pure-function rule): an
@@ -160,7 +173,8 @@ inline double RegionBSeed(double x) noexcept {
 // their existing dispatch untouched.
 inline double RegionBExtendedSeed(double x) noexcept {
     const double t = 2.0 * (x - kExtendedBX0) / (kX0 - kExtendedBX0) - 1.0;
-    return ClenshawSplit(detail::kExtendedBcoeffs.data(), detail::kExtendedBDeg, t);
+    return ClenshawSplit<backend::ScalarFp64>(
+        detail::kExtendedBcoeffs.data(), detail::kExtendedBDeg, t);
 }
 
 // ---------------------------------------------------------------------------
@@ -183,56 +197,6 @@ inline const detail::f32::OrderPiece& FindPieceF32(int order, float x) noexcept 
     return detail::f32::kPieces[last - 1];
 }
 
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): (deg, t) reads naturally.
-inline float ClenshawSplitF32(const float* c, int deg, float t) noexcept {
-    if (deg == 0)
-    {
-        return c[0];
-    }
-
-    if (deg == 1)
-    {
-        return std::fmaf(t, c[1], c[0]);
-    }
-
-    const float v = std::fmaf(2.0f, t * t, -1.0f);
-    const float twoV = v + v;
-
-    if (deg == 2)
-    {
-        // T_2(t) = 2t^2 - 1 = v; the even/odd split below assumes deg >= 4.
-        return std::fmaf(t, c[1], std::fmaf(v, c[2], c[0]));
-    }
-
-    assert(deg >= 4 && deg % 2 == 0); // see ClenshawSplit
-
-    const int m = deg / 2;
-    float b1 = c[std::ptrdiff_t{2} * m];
-    float b2 = 0.0f;
-
-    for (int k = m - 1; k >= 1; --k)
-    {
-        const float b0 = std::fmaf(twoV, b1, c[std::ptrdiff_t{2} * k] - b2);
-        b2 = b1;
-        b1 = b0;
-    }
-
-    const float even = std::fmaf(v, b1, c[0] - b2);
-
-    float o1 = c[2 * m - 1];
-    float o2 = 0.0f;
-
-    for (int k = m - 2; k >= 1; --k)
-    {
-        const float o0 = std::fmaf(twoV, o1, c[std::ptrdiff_t{2} * k + 1] - o2);
-        o2 = o1;
-        o1 = o0;
-    }
-
-    const float odd = std::fmaf(twoV - 1.0f, o1, c[1] - o2);
-    return std::fmaf(t, odd, even);
-}
-
 // Float-lane region-A seed; see ChebyshevValue.
 // Forced inline: the m = 1 F32-single engine must keep the full-accuracy
 // code shape (piece scan inlined); with two call sites (the kFloat and the
@@ -250,7 +214,7 @@ BoysForceInline float ChebyshevValueF32(int order, float x) noexcept {
     const detail::f32::OrderPiece& piece = FindPieceF32(order, x);
     const float* c = detail::f32::kCoeffs.data() + piece.offset;
     const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
-    return ClenshawSplitF32(c, piece.deg, t);
+    return ClenshawSplit<backend::ScalarFp32>(c, piece.deg, t);
 }
 
 #undef BoysForceInline
@@ -258,7 +222,7 @@ BoysForceInline float ChebyshevValueF32(int order, float x) noexcept {
 // Float-lane region-B seed; see RegionBSeed.
 inline float RegionBSeedF32(float x) noexcept {
     const float t = 2.0f * (x - static_cast<float>(kX0)) / static_cast<float>(kX1 - kX0) - 1.0f;
-    return ClenshawSplitF32(detail::f32::kBcoeffs.data(), detail::f32::kBDeg, t);
+    return ClenshawSplit<backend::ScalarFp32>(detail::f32::kBcoeffs.data(), detail::f32::kBDeg, t);
 }
 
 // ---------------------------------------------------------------------------
@@ -272,7 +236,7 @@ double ChebyshevValueWithDegrees(int order, double x, const DegreesArray& degree
     const std::ptrdiff_t index = &piece - detail::kPieces.data();
     const double* c = detail::kCoeffs.data() + piece.offset;
     const double t = 2.0 * (x - piece.a) / (piece.b - piece.a) - 1.0;
-    return ClenshawSplit(c, degrees[static_cast<std::size_t>(index)], t);
+    return ClenshawSplit<backend::ScalarFp64>(c, degrees[static_cast<std::size_t>(index)], t);
 }
 
 template <typename DegreesArray>
@@ -281,17 +245,17 @@ float ChebyshevValueF32WithDegrees(int order, float x, const DegreesArray& degre
     const std::ptrdiff_t index = &piece - detail::f32::kPieces.data();
     const float* c = detail::f32::kCoeffs.data() + piece.offset;
     const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
-    return ClenshawSplitF32(c, degrees[static_cast<std::size_t>(index)], t);
+    return ClenshawSplit<backend::ScalarFp32>(c, degrees[static_cast<std::size_t>(index)], t);
 }
 
 inline double RegionBSeedWithDegrees(double x, int degree) noexcept {
     const double t = 2.0 * (x - kX0) / (kX1 - kX0) - 1.0;
-    return ClenshawSplit(detail::kBcoeffs.data(), degree, t);
+    return ClenshawSplit<backend::ScalarFp64>(detail::kBcoeffs.data(), degree, t);
 }
 
 inline float RegionBSeedF32WithDegrees(float x, int degree) noexcept {
     const float t = 2.0f * (x - static_cast<float>(kX0)) / static_cast<float>(kX1 - kX0) - 1.0f;
-    return ClenshawSplitF32(detail::f32::kBcoeffs.data(), degree, t);
+    return ClenshawSplit<backend::ScalarFp32>(detail::f32::kBcoeffs.data(), degree, t);
 }
 
 // ---------------------------------------------------------------------------

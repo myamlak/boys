@@ -2,6 +2,8 @@
 
 #include "boys/boys_impl.hpp"
 
+#include "boys_backend_registry.hpp"
+
 // Boys function kernel. Region structure (fixed kmax=32 boundaries, the
 // configuration validated end-to-end against the mpmath reference grid):
 //   A: [0, x0)   per-order Chebyshev fits, split Clenshaw (division-free, FMA)
@@ -126,3 +128,27 @@ void BoysAllOrdersAtTier(AccuracyTier tier, int nmax, double x, double* out) noe
 }
 
 } // namespace boys
+
+// The arithmetic backends this build carries, as a report prints them.
+//
+// This translation unit answers for the scalar pair, because this is where the
+// scalar arithmetic is compiled: the same flags a consumer's own code gets, and
+// not the packed flags src/boys_simd.cpp carries. A contraction fact measured
+// in the SIMD unit would describe that unit's arithmetic and would be printed
+// beside the scalar lanes' values, which is the one thing the table must not
+// do. The packed entries are appended by the unit that owns them.
+namespace boys::backend {
+
+std::span<const BackendInfo> BoysBackends() noexcept {
+    static const std::span<const BackendInfo> kBackends = [] {
+        static BackendInfo info[4];
+        std::size_t n = 0;
+        info[n++] = BackendInfo{ScalarFp64::kName, ScalarFp64::Contracts()};
+        info[n++] = BackendInfo{ScalarFp32::kName, ScalarFp32::Contracts()};
+        n += detail::AppendPackedBackends(info + n);
+        return std::span<const BackendInfo>(info, n);
+    }();
+    return kBackends;
+}
+
+} // namespace boys::backend

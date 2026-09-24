@@ -64,6 +64,12 @@
 
 #endif
 
+// The packed arithmetic backends this TU's kernels are written against; see
+// the headers for why they are named here rather than in include/boys/ and for
+// why this unit, and not another, answers for their contraction.
+#include "boys_backend_registry.hpp"
+#include "boys_backend_simd.hpp"
+
 #if BOYS_SIMD_X86
 
 #include <immintrin.h>
@@ -230,182 +236,72 @@ private:
     double _coefficients[kNumPoints + 1][8]{};
 };
 
-// Split Clenshaw (even/odd), 4-wide, half-depth FMA chains. See boys.cpp for
+// Split Clenshaw (even/odd), packed, half-depth FMA chains. See boys.cpp for
 // the scalar derivation; T_{2j+1}(t) = t * D_j(v) with the D recurrence.
+//
+// One body for every packed width and precision: which multiply-add a step
+// uses, and how many roundings it makes, is the backend's, and the body below
+// is written once against it. What stays here is the mapped argument, which is
+// the packed lanes' own form - the interval reached with a single fused step
+// rather than the scalar lanes' two - because that is a choice of the lane
+// rather than of the width.
+template <backend::ArithmeticBackend B, typename Piece>
+typename B::Packed RegionAClenshaw(const typename B::Value* c,
+                                   const Piece& piece,
+                                   int deg,
+                                   typename B::Packed xv) noexcept {
+    using V = typename B::Value;
+    const typename B::Packed t = B::MulAdd(B::Sub(xv, B::Broadcast(piece.a)),
+                                           B::Broadcast(V{2} / (piece.b - piece.a)),
+                                           B::Broadcast(-V{1}));
+    return ClenshawSplit<B>(c + piece.offset, deg, t);
+}
+
+// The region-B seed, at a compile-time degree where kDeg >= 0 and at the
+// caller's where it is not. The compile-time form is the m = 1 entry's: the
+// constant bound is what lets MSVC unroll the odd/even recurrences and inline
+// the kernel into the RegionB loop, which is the full-accuracy code shape.
+template <backend::ArithmeticBackend B, int kDeg>
+typename B::Packed RegionBClenshaw(const typename B::Value* c,
+                                   int deg,
+                                   typename B::Packed xv) noexcept {
+    using V = typename B::Value;
+    const V lo = static_cast<V>(kX0);
+    const V span = static_cast<V>(kX1 - kX0);
+    const typename B::Packed t = B::MulAdd(B::Sub(xv, B::Broadcast(lo)),
+                                           B::Broadcast(V{2} / span), B::Broadcast(-V{1}));
+    const int d = (kDeg >= 0) ? kDeg : deg;
+    return ClenshawSplit<B>(c, d, t);
+}
+
 // 4-wide split Clenshaw for one piece; even deg >= 4 only (see boys.cpp).
-__m256d Clenshaw4SplitDeg(const detail::OrderPiece& piece, int deg, __m256d xv) noexcept {
-    const double* c = detail::kCoeffs.data() + piece.offset;
-
-    __m256d t = _mm256_sub_pd(xv, _mm256_set1_pd(piece.a));
-    t = _mm256_fmadd_pd(t, _mm256_set1_pd(2.0 / (piece.b - piece.a)), _mm256_set1_pd(-1.0));
-
-    if (deg == 0)
-    {
-        return _mm256_set1_pd(c[0]);
-    }
-
-    if (deg == 1)
-    {
-        return _mm256_fmadd_pd(t, _mm256_set1_pd(c[1]), _mm256_set1_pd(c[0]));
-    }
-
-    const __m256d v =
-        _mm256_fmsub_pd(_mm256_set1_pd(2.0), _mm256_mul_pd(t, t), _mm256_set1_pd(1.0));
-    const __m256d twoV = _mm256_add_pd(v, v);
-
-    const int m = deg / 2;
-    __m256d b1 = _mm256_set1_pd(c[std::ptrdiff_t{2} * m]);
-    __m256d b2 = _mm256_setzero_pd();
-
-    for (int k = m - 1; k >= 1; --k)
-    {
-        const __m256d b0 =
-            _mm256_fmadd_pd(twoV, b1, _mm256_sub_pd(_mm256_set1_pd(c[std::ptrdiff_t{2} * k]), b2));
-        b2 = b1;
-        b1 = b0;
-    }
-
-    const __m256d even = _mm256_fmadd_pd(v, b1, _mm256_sub_pd(_mm256_set1_pd(c[0]), b2));
-
-    __m256d o1 = _mm256_set1_pd(c[2 * m - 1]);
-    __m256d o2 = _mm256_setzero_pd();
-
-    for (int k = m - 2; k >= 1; --k)
-    {
-        const __m256d o0 = _mm256_fmadd_pd(
-            twoV, o1, _mm256_sub_pd(_mm256_set1_pd(c[std::ptrdiff_t{2} * k + 1]), o2));
-        o2 = o1;
-        o1 = o0;
-    }
-
-    const __m256d odd = _mm256_fmadd_pd(
-        _mm256_sub_pd(twoV, _mm256_set1_pd(1.0)), o1, _mm256_sub_pd(_mm256_set1_pd(c[1]), o2));
-    return _mm256_fmadd_pd(t, odd, even);
+inline __m256d Clenshaw4SplitDeg(const detail::OrderPiece& piece, int deg, __m256d xv) noexcept {
+    return RegionAClenshaw<backend::Avx2Fp64>(detail::kCoeffs.data(), piece, deg, xv);
 }
 
 // The m = 1 entry: the piece's full degree, as before the parametrization.
-__m256d Clenshaw4Split(const detail::OrderPiece& piece, __m256d xv) noexcept {
+inline __m256d Clenshaw4Split(const detail::OrderPiece& piece, __m256d xv) noexcept {
     return Clenshaw4SplitDeg(piece, piece.deg, xv);
 }
 
-// 4-wide region-B F0 seed at a compile-time degree. The m = 1 entry uses the
-// full fit degree kBDeg through this template: the constant bound lets MSVC
-// unroll the odd/even recurrences and inline the kernel into the RegionB loop
-// (the full-accuracy code shape; the bit-identity pin).
-template <int kDeg> __m256d ClenshawB4K(__m256d xv) noexcept {
-    const double* c = detail::kBcoeffs.data();
-
-    __m256d t = _mm256_sub_pd(xv, _mm256_set1_pd(kX0));
-    t = _mm256_fmadd_pd(t, _mm256_set1_pd(2.0 / (kX1 - kX0)), _mm256_set1_pd(-1.0));
-
-    if constexpr (kDeg == 0)
-    {
-        return _mm256_set1_pd(c[0]);
-    }
-
-    if constexpr (kDeg == 1)
-    {
-        return _mm256_fmadd_pd(t, _mm256_set1_pd(c[1]), _mm256_set1_pd(c[0]));
-    }
-
-    const __m256d v =
-        _mm256_fmsub_pd(_mm256_set1_pd(2.0), _mm256_mul_pd(t, t), _mm256_set1_pd(1.0));
-    const __m256d twoV = _mm256_add_pd(v, v);
-
-    const int m = kDeg / 2;
-    __m256d b1 = _mm256_set1_pd(c[std::ptrdiff_t{2} * m]);
-    __m256d b2 = _mm256_setzero_pd();
-
-    for (int k = m - 1; k >= 1; --k)
-    {
-        const __m256d b0 =
-            _mm256_fmadd_pd(twoV, b1, _mm256_sub_pd(_mm256_set1_pd(c[std::ptrdiff_t{2} * k]), b2));
-        b2 = b1;
-        b1 = b0;
-    }
-
-    const __m256d even = _mm256_fmadd_pd(v, b1, _mm256_sub_pd(_mm256_set1_pd(c[0]), b2));
-
-    __m256d o1 = _mm256_set1_pd(c[2 * m - 1]);
-    __m256d o2 = _mm256_setzero_pd();
-
-    for (int k = m - 2; k >= 1; --k)
-    {
-        const __m256d o0 = _mm256_fmadd_pd(
-            twoV, o1, _mm256_sub_pd(_mm256_set1_pd(c[std::ptrdiff_t{2} * k + 1]), o2));
-        o2 = o1;
-        o1 = o0;
-    }
-
-    const __m256d odd = _mm256_fmadd_pd(
-        _mm256_sub_pd(twoV, _mm256_set1_pd(1.0)), o1, _mm256_sub_pd(_mm256_set1_pd(c[1]), o2));
-    return _mm256_fmadd_pd(t, odd, even);
+// The m = 1 entry: the fit's full degree, known at compile time.
+inline __m256d ClenshawB4(__m256d xv) noexcept {
+    return RegionBClenshaw<backend::Avx2Fp64, detail::kBDeg>(detail::kBcoeffs.data(), 0, xv);
 }
 
-// 4-wide region-B F0 seed at a runtime degree. Used by the relaxed-m
-// (kAccuracyMultiplier > 1) RegionB loop only; the data-dependent loop is not
-// inlined, which is the documented relaxed-path cost.
+// 4-wide region-B F0 seed at a runtime degree, for the relaxed RegionB loop
+// only; the data-dependent loop is not inlined, which is the documented
+// relaxed-path cost.
 //
 // The library instantiates the SIMD region entry points at m = 1 only (the
 // relaxed set is compiled for the scalar entries in boys_c.cpp), so in this
 // TU that caller sits in the discarded arm of an `if constexpr` and GCC/Clang
 // see a defined-but-unused internal function. It is kept because it is the
-// relaxed SIMD path's seed — an instantiation added here would use it — and
-// it is marked so the discard stays visible as a fact about the instantiation
-// set rather than a warning this tree suppresses wholesale.
-[[maybe_unused]] __m256d ClenshawB4Deg(int deg, __m256d xv) noexcept {
-    const double* c = detail::kBcoeffs.data();
-
-    __m256d t = _mm256_sub_pd(xv, _mm256_set1_pd(kX0));
-    t = _mm256_fmadd_pd(t, _mm256_set1_pd(2.0 / (kX1 - kX0)), _mm256_set1_pd(-1.0));
-
-    if (deg == 0)
-    {
-        return _mm256_set1_pd(c[0]);
-    }
-
-    if (deg == 1)
-    {
-        return _mm256_fmadd_pd(t, _mm256_set1_pd(c[1]), _mm256_set1_pd(c[0]));
-    }
-
-    const __m256d v =
-        _mm256_fmsub_pd(_mm256_set1_pd(2.0), _mm256_mul_pd(t, t), _mm256_set1_pd(1.0));
-    const __m256d twoV = _mm256_add_pd(v, v);
-
-    const int m = deg / 2;
-    __m256d b1 = _mm256_set1_pd(c[std::ptrdiff_t{2} * m]);
-    __m256d b2 = _mm256_setzero_pd();
-
-    for (int k = m - 1; k >= 1; --k)
-    {
-        const __m256d b0 =
-            _mm256_fmadd_pd(twoV, b1, _mm256_sub_pd(_mm256_set1_pd(c[std::ptrdiff_t{2} * k]), b2));
-        b2 = b1;
-        b1 = b0;
-    }
-
-    const __m256d even = _mm256_fmadd_pd(v, b1, _mm256_sub_pd(_mm256_set1_pd(c[0]), b2));
-
-    __m256d o1 = _mm256_set1_pd(c[2 * m - 1]);
-    __m256d o2 = _mm256_setzero_pd();
-
-    for (int k = m - 2; k >= 1; --k)
-    {
-        const __m256d o0 = _mm256_fmadd_pd(
-            twoV, o1, _mm256_sub_pd(_mm256_set1_pd(c[std::ptrdiff_t{2} * k + 1]), o2));
-        o2 = o1;
-        o1 = o0;
-    }
-
-    const __m256d odd = _mm256_fmadd_pd(
-        _mm256_sub_pd(twoV, _mm256_set1_pd(1.0)), o1, _mm256_sub_pd(_mm256_set1_pd(c[1]), o2));
-    return _mm256_fmadd_pd(t, odd, even);
-}
-
-// The m = 1 entry: the fit's full degree.
-__m256d ClenshawB4(__m256d xv) noexcept {
-    return ClenshawB4K<detail::kBDeg>(xv);
+// relaxed SIMD path's seed - an instantiation added here would use it - and it
+// is marked so the discard stays visible as a fact about the instantiation set
+// rather than a warning this tree suppresses wholesale.
+[[maybe_unused]] inline __m256d ClenshawB4Deg(int deg, __m256d xv) noexcept {
+    return RegionBClenshaw<backend::Avx2Fp64, -1>(detail::kBcoeffs.data(), deg, xv);
 }
 
 } // namespace
@@ -590,120 +486,30 @@ bool DetectF16c() noexcept {
 #endif
 }
 
-// 8-wide fp32 Clenshaw over one piece, at the given degree; the float mirror
-// of Clenshaw4SplitDeg (same even/odd split, FMA chains — the generator only
-// emits even degrees, see boys.cpp).
-__m256 Clenshaw8SplitF32Deg(const detail::f32::OrderPiece& piece, int deg, __m256 xv) noexcept {
-    const float* c = detail::f32::kCoeffs.data() + piece.offset;
-
-    __m256 t = _mm256_sub_ps(xv, _mm256_set1_ps(piece.a));
-    t = _mm256_fmadd_ps(t, _mm256_set1_ps(2.0f / (piece.b - piece.a)), _mm256_set1_ps(-1.0f));
-
-    if (deg == 0)
-    {
-        return _mm256_set1_ps(c[0]);
-    }
-
-    if (deg == 1)
-    {
-        return _mm256_fmadd_ps(t, _mm256_set1_ps(c[1]), _mm256_set1_ps(c[0]));
-    }
-
-    const __m256 v =
-        _mm256_fmsub_ps(_mm256_set1_ps(2.0f), _mm256_mul_ps(t, t), _mm256_set1_ps(1.0f));
-    const __m256 twoV = _mm256_add_ps(v, v);
-
-    const int m = deg / 2;
-    __m256 b1 = _mm256_set1_ps(c[std::ptrdiff_t{2} * m]);
-    __m256 b2 = _mm256_setzero_ps();
-
-    for (int k = m - 1; k >= 1; --k)
-    {
-        const __m256 b0 =
-            _mm256_fmadd_ps(twoV, b1, _mm256_sub_ps(_mm256_set1_ps(c[std::ptrdiff_t{2} * k]), b2));
-        b2 = b1;
-        b1 = b0;
-    }
-
-    const __m256 even = _mm256_fmadd_ps(v, b1, _mm256_sub_ps(_mm256_set1_ps(c[0]), b2));
-
-    __m256 o1 = _mm256_set1_ps(c[2 * m - 1]);
-    __m256 o2 = _mm256_setzero_ps();
-
-    for (int k = m - 2; k >= 1; --k)
-    {
-        const __m256 o0 = _mm256_fmadd_ps(
-            twoV, o1, _mm256_sub_ps(_mm256_set1_ps(c[std::ptrdiff_t{2} * k + 1]), o2));
-        o2 = o1;
-        o1 = o0;
-    }
-
-    const __m256 odd = _mm256_fmadd_ps(
-        _mm256_sub_ps(twoV, _mm256_set1_ps(1.0f)), o1, _mm256_sub_ps(_mm256_set1_ps(c[1]), o2));
-    return _mm256_fmadd_ps(t, odd, even);
+// 8-wide fp32 Clenshaw over one piece, at the given degree: the float
+// instantiation of the same body the double lane runs (same even/odd split,
+// FMA chains - the generator only emits even degrees, see boys.cpp).
+inline __m256 Clenshaw8SplitF32Deg(const detail::f32::OrderPiece& piece,
+                                   int deg,
+                                   __m256 xv) noexcept {
+    return RegionAClenshaw<backend::Avx2Fp32>(detail::f32::kCoeffs.data(), piece, deg, xv);
 }
 
 // The m = 1 entry: the piece's full degree.
-__m256 Clenshaw8SplitF32(const detail::f32::OrderPiece& piece, __m256 xv) noexcept {
+inline __m256 Clenshaw8SplitF32(const detail::f32::OrderPiece& piece, __m256 xv) noexcept {
     return Clenshaw8SplitF32Deg(piece, piece.deg, xv);
 }
 
-// 8-wide region-B F0 seed (float lane), at the given degree.
-__m256 ClenshawB8F32Deg(int deg, __m256 xv) noexcept {
-    const float* c = detail::f32::kBcoeffs.data();
-
-    const float x0 = static_cast<float>(kX0);
-    const float span = static_cast<float>(kX1 - kX0);
-    __m256 t = _mm256_sub_ps(xv, _mm256_set1_ps(x0));
-    t = _mm256_fmadd_ps(t, _mm256_set1_ps(2.0f / span), _mm256_set1_ps(-1.0f));
-
-    if (deg == 0)
-    {
-        return _mm256_set1_ps(c[0]);
-    }
-
-    if (deg == 1)
-    {
-        return _mm256_fmadd_ps(t, _mm256_set1_ps(c[1]), _mm256_set1_ps(c[0]));
-    }
-
-    const __m256 v =
-        _mm256_fmsub_ps(_mm256_set1_ps(2.0f), _mm256_mul_ps(t, t), _mm256_set1_ps(1.0f));
-    const __m256 twoV = _mm256_add_ps(v, v);
-
-    const int m = deg / 2;
-    __m256 b1 = _mm256_set1_ps(c[std::ptrdiff_t{2} * m]);
-    __m256 b2 = _mm256_setzero_ps();
-
-    for (int k = m - 1; k >= 1; --k)
-    {
-        const __m256 b0 =
-            _mm256_fmadd_ps(twoV, b1, _mm256_sub_ps(_mm256_set1_ps(c[std::ptrdiff_t{2} * k]), b2));
-        b2 = b1;
-        b1 = b0;
-    }
-
-    const __m256 even = _mm256_fmadd_ps(v, b1, _mm256_sub_ps(_mm256_set1_ps(c[0]), b2));
-
-    __m256 o1 = _mm256_set1_ps(c[2 * m - 1]);
-    __m256 o2 = _mm256_setzero_ps();
-
-    for (int k = m - 2; k >= 1; --k)
-    {
-        const __m256 o0 = _mm256_fmadd_ps(
-            twoV, o1, _mm256_sub_ps(_mm256_set1_ps(c[std::ptrdiff_t{2} * k + 1]), o2));
-        o2 = o1;
-        o1 = o0;
-    }
-
-    const __m256 odd = _mm256_fmadd_ps(
-        _mm256_sub_ps(twoV, _mm256_set1_ps(1.0f)), o1, _mm256_sub_ps(_mm256_set1_ps(c[1]), o2));
-    return _mm256_fmadd_ps(t, odd, even);
+// The m = 1 entry: the fit's full degree, known at compile time.
+inline __m256 ClenshawB8F32(__m256 xv) noexcept {
+    return RegionBClenshaw<backend::Avx2Fp32, detail::f32::kBDeg>(
+        detail::f32::kBcoeffs.data(), 0, xv);
 }
 
-// The m = 1 entry: the fit's full degree.
-__m256 ClenshawB8F32(__m256 xv) noexcept {
-    return ClenshawB8F32Deg(detail::f32::kBDeg, xv);
+// The relaxed entry: the caller's degree; see ClenshawB4Deg.
+[[maybe_unused]] inline __m256 ClenshawB8F32Deg(int deg, __m256 xv) noexcept {
+    return RegionBClenshaw<backend::Avx2Fp32, -1>(
+        detail::f32::kBcoeffs.data(), deg, xv);
 }
 
 // e^{-x} for 8 floats from the double Taylor table (two 4-wide evaluations):
@@ -1265,3 +1071,30 @@ template void BoysRegionCSimdBf16<kBoysFullAccuracyMultiplier>(int n,
 #endif // BoysFp16
 
 } // namespace boys::detail
+
+// The packed half of the backend table. The flags that separate this unit from
+// the rest of the library are also what makes its contraction answer different
+// from the scalar one, so this entry is measured here and not there; the pair
+// is listed only where the tier is both compiled in and available at run time,
+// because the probe executes the instructions it measures.
+namespace boys::backend {
+namespace detail {
+
+std::size_t AppendPackedBackends(BackendInfo* out) noexcept {
+#if BOYS_SIMD_X86
+    if (!BoysAvx2Available())
+    {
+        return 0;
+    }
+
+    out[0] = BackendInfo{Avx2Fp64::kName, Avx2Fp64::Contracts()};
+    out[1] = BackendInfo{Avx2Fp32::kName, Avx2Fp32::Contracts()};
+    return 2;
+#else
+    (void)out;
+    return 0;
+#endif
+}
+
+} // namespace detail
+} // namespace boys::backend
