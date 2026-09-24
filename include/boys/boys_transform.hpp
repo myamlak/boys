@@ -1,6 +1,7 @@
 #pragma once
 
 #include "boys/accuracy.hpp"
+#include "boys/backend.hpp"
 #include "boys/boys_coefficients.hpp"
 #include "boys/boys_effective_degrees.hpp"
 
@@ -555,17 +556,13 @@ void RegionAProductBand(int nmax, const double* x, double* out, std::size_t coun
         {
             for (std::size_t s = 0; s < n; ++s)
             {
-                // The recurrence's two roundings are fixed here rather than
-                // left to the compiler. Written as the bare product and
-                // difference this contracts to a single fused step wherever
-                // the target has FMA and the contraction setting allows it -
-                // the default on aarch64 and on any x86 build that passes
-                // -mfma, and not on MSVC or on the x86 baseline - so the same
-                // source would be two arithmetics and the delivered figure
-                // this lane publishes is the one below. The zero addend is
-                // the product rounded once and nothing more, which leaves a
-                // contraction pass nothing to fuse.
-                const double next = std::fma(2.0 * mapped[s], upper[s], 0.0) - lower[s];
+                // Two roundings, stated by the arithmetic rather than left to
+                // the build: MulSub rounds the product and then the
+                // difference whatever the target contracts. The delivered
+                // figure this lane publishes is the one the recurrence is
+                // evaluated at, and it is not the fused one.
+                const double next =
+                    backend::ScalarFp64::MulSub(2.0 * mapped[s], upper[s], lower[s]);
                 lower[s] = upper[s];
                 upper[s] = next;
                 Value parts[kParts];

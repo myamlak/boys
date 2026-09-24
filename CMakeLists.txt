@@ -193,6 +193,7 @@ if (BOYS_BUILD_TESTS)
         tests/boys_c_test.cpp
         tests/f16_test.cpp
         tests/boys_half_native_test.cpp
+        tests/boys_backend_test.cpp
         tests/boys_transform_test.cpp)
     target_link_libraries(boys-tests PRIVATE boys gtest gtest_main)
     target_include_directories(boys-tests PRIVATE src)
