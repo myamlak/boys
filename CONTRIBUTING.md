@@ -23,9 +23,10 @@ reproducibility evidence behind the documented accuracy contract.
 
    A change that needs a budget relaxed is a change to the contract. Open an issue for the
    maintainer first, and do not put it in a pull request.
-2. **No internal references, ever.** Comments, commit messages and docs must not reference internal
-   decision numbers, internal document paths, stage or track names, or any private repository. The
-   only sanctioned citations are published ones: the entries of `CITATION.bib`.
+2. **Write for a reader who has only this repository.** A citation a reader cannot follow is worse
+   than no citation, because it implies a reference that is missing. Where you would have pointed at
+   something they cannot open, name the measurement, the reasoning or the result instead. The
+   citations that are always safe are the published ones: the entries of `CITATION.bib`.
 3. **Regeneration is local-only.** The committed tables and reference grid are the source of truth
    for the build and for CI. The generator verifies them byte-for-byte through `--check`. Never
    commit regenerated tables without running `--check`, and never wire regeneration into CI.
@@ -71,8 +72,8 @@ before merge.
   `std::span`. Raw arrays only where an ABI mandates them.
 - **Errors:** no exceptions. The CPU lanes are total functions with documented preconditions. The
   CUDA lane reports through the `BoysError` enum. New fallible surfaces follow the same pattern.
-- **Comments:** brief, self-contained and why-focused. Ground rule 2 limits what may be cited; the
-  reasoning itself always stays.
+- **Comments:** brief, self-contained and why-focused. The reasoning always stays; only the pointer
+  to somewhere the reader cannot go is dropped.
 
 ## Tests
 
@@ -85,8 +86,7 @@ before merge.
 
 ## What never goes in
 
-- Anything referencing the private source repository: internal paths, decision numbers, stage or
-  track names, or person-specific internal notes.
+- Anything a reader of this repository cannot open, per ground rule 2.
 - Vendored code beyond the in-tree GoogleTest and Google Benchmark trees and the generated tables.
 - Generated-table or reference-grid edits without `--check` evidence.
 - Licence-unattributed third-party code or data.
