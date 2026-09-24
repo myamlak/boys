@@ -261,6 +261,45 @@ property of the CPU it was taken on, and a time taken on a loaded machine is not
 the finding that decides the design, that the same lane's gathered coefficient fetch is the fastest
 of the three by instruction count and the slowest by retired slots.
 
+#### The float lane's routes
+
+The float lane's region-A table and its region-B seed are its own, and they come in the same two
+routes. They are selected with `BoysSingleF32WithRoute`, which is `BoysSingleF32` with one thing
+changed — which fit supplies the lane's region-A seed and its region-B seed — and `BoysFitRoutesF32()`
+reports them the way `BoysFitRoutes()` reports the double lane's. Region C holds no coefficient under
+either route, so naming one there changes nothing.
+
+The float lane's rational route covers the whole of region A from zero: the lane reads every order
+from its own fit over the region, so there is no band boundary for a selector to take over at and
+the row states no `servesFrom` above zero.
+
+| Route | Region | Interval | Stored | Measured | Bar |
+|---|---|---|---|---|---|
+| chebyshev (default) | A | [0, 11.899848152108484) | 1067 | 1.06e-07 | 1.5e-07 |
+| rational minimax | A | [0, 11.899848152108484) | 525 | 1.11e-07 | 1.5e-07 |
+| chebyshev (default) | B | [11.899848152108484, 28.98933773882074) | 11 | 2.77e-08 | 1.5e-07 |
+| rational minimax | B | [11.899848152108484, 28.98933773882074) | 6 | 7.50e-08 | 1.5e-07 |
+
+The measured column is the accuracy gate's own worst over the committed reference grid, on the
+entry the row names, every order 0..32 and every sample of the row's interval; the gate prints the
+same sweep beside it. Both routes hold the lane's own bound, and the two region-A rows are the
+comparison: the same interval, the same reference, the same arithmetic, 525 stored coefficients
+against 1067. The rational route's pieces are its own cover of each order's interval rather than the
+Chebyshev table's breaks, and both were accepted against the same criterion — half the lane's
+tolerance, weighted by the downward recursion's gain, **on the coefficients as they are stored**,
+because at this target the binary32 rounding is part of the fit and not a last-digit detail.
+
+**The stored counts are upper bounds and not minima.** The degree search is a scan that stops at the
+first count holding the target, not an exhaustive minimax search over the family, so a cheaper cover
+of the same intervals may exist; the counts above are what the search found, and a reader comparing
+them is comparing what the two tables cost as generated.
+
+**Region B is the other direction.** There the rational seed stores 6 coefficients against the
+Chebyshev seed's 11 and delivers 7.50e-08 against 2.77e-08. Half the coefficients at more error is a
+trade, not an improvement, and which side of it a caller wants depends on what their machine charges
+for a coefficient fetch; **no speed is claimed in either direction**. A caller that needs the
+accuracy should read the two measured figures and pick; the default is unchanged, value for value.
+
 Public function signatures and supported domains are stable within a major version. Bitwise outputs
 are not. Internal region thresholds, seed selection, recursion order and dispatch logic may change
 between minor releases, as long as the bounds above hold. Byte-for-byte reproducibility requires

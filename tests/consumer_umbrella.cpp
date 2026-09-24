@@ -1262,6 +1262,92 @@ void CheckFitRoutes(Report& report, const std::vector<Cell>& cells) {
     Covered("boys::BoysAllOrdersWithRoute");
 }
 
+/// The float lane's fit routes, reached the same way: every figure this file
+/// judges a row by comes from BoysFitRoutesF32's own row rather than from a
+/// number carried here, so the report and the entry cannot agree with each
+/// other and both be wrong.
+void CheckFitRoutesF32(Report& report, const std::vector<Cell>& cells) {
+    const std::span<const boys::FitRouteInfo> routes = boys::BoysFitRoutesF32();
+    const std::vector<double> args = DistinctArgs(cells);
+
+    Require(report, !routes.empty(), "BoysFitRoutesF32 reports the routes this build carries");
+
+    bool chebyshev = false;
+    bool rational = false;
+
+    for (const boys::FitRouteInfo& row : routes)
+    {
+        Require(report, row.name != nullptr && row.name[0] != '\0', "a float route row names its route");
+        Require(report, row.lo < row.hi, "a float route row states a non-empty interval");
+        Require(report,
+                row.servesFrom >= row.lo && row.servesFrom < row.hi,
+                "a float route row's served domain is inside the interval its fit covers");
+        Require(report, row.stored > 0, "a float route row states the coefficients its fit stores");
+        Require(report,
+                row.delivered <= row.bound,
+                "a float route row's bar covers the error it reports delivering");
+
+        chebyshev = chebyshev || row.route == boys::FitRoute::kChebyshev;
+        rational = rational || row.route == boys::FitRoute::kRationalMinimax;
+
+        const std::string name =
+            std::string("BoysSingleF32WithRoute(") + row.name +
+            (row.region == boys::AccuracyRegion::kA ? ", region A)" : ", region B)");
+        NewRule(name);
+        std::size_t changed = 0;
+        std::size_t unknownDiff = 0;
+
+        for (const double x : args)
+        {
+            if (x < row.servesFrom || x >= row.hi)
+            {
+                continue;
+            }
+
+            const float xf = static_cast<float>(x);
+
+            for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+            {
+                const float plain = boys::BoysSingleF32(n, xf);
+                const float selected = boys::BoysSingleF32WithRoute(row.route, n, xf);
+                const float unknown =
+                    boys::BoysSingleF32WithRoute(static_cast<boys::FitRoute>(99), n, xf);
+
+                Require(report,
+                        std::isfinite(selected),
+                        "a float route row's entry returns a finite value over the domain it "
+                        "serves");
+
+                if (selected != plain)
+                {
+                    ++changed;
+                }
+
+                if (unknown != plain)
+                {
+                    ++unknownDiff;
+                }
+            }
+        }
+
+        // The default route is the default entry by construction, so only a
+        // row that names a different fit is required to change a value.
+        Require(report,
+                row.route == boys::FitRoute::kChebyshev || changed > 0,
+                "naming a float route other than the default changes values inside the domain "
+                "its own row serves");
+        Require(report,
+                unknownDiff == 0,
+                "an unnamed route value is the default entry, bit for bit, on the float lane");
+    }
+
+    Require(report, chebyshev, "BoysFitRoutesF32 carries the default route");
+    Require(report, rational, "BoysFitRoutesF32 carries the rational route");
+
+    Covered("boys::BoysSingleF32WithRoute");
+    Covered("boys::BoysFitRoutesF32");
+}
+
 /// The many-argument entry in all four of its documented shapes: the
 /// workspace-supplied call, the internally allocated one, the sorted-argument
 /// overload, and arguments in the wrong order.
@@ -2174,6 +2260,7 @@ int main(int argc, char** argv) {
     CheckEvalSchemes(report, cells);
     CheckDoubleLanes(report, cells);
     CheckFitRoutes(report, cells);
+    CheckFitRoutesF32(report, cells);
     CheckManyArgumentLanes(report, cells);
     CheckPerElementOrderLanes(report, cells);
     CheckTierLane(cells);

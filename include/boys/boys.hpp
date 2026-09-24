@@ -698,9 +698,10 @@ double BoysSingleAtTier(AccuracyTier tier, int n, double x) noexcept;
 ///         denominator pair is cut by the same criterion, which reads a pair's
 ///         dropped orders as the two terms a quotient's perturbation has rather
 ///         than as one coefficient sum. Both routes are carried, at either
-///         scheme; the entries that reach their values through the shipped
-///         fits' own path rather than through the policy are the ones that
-///         refuse the rational route, and they say so where the call is named
+///         scheme; the entries of this lane that reach their values through
+///         the shipped fits' own path rather than through the policy are the
+///         ones that refuse the rational route, and they say so where the call
+///         is named
 /// \tparam Policy the evaluation policy (\c EvalPolicy): the fit route, the
 ///         scheme its coefficients are summed in, and a single-precision
 ///         engine's budget, selected together. The default is the Chebyshev
@@ -1101,6 +1102,57 @@ void BoysAllOrdersF32(int nmax, float x, float* out) noexcept;
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
           EvalPolicyLike Policy = EvalPolicy<>>
 void BoysAllNF32(int nmax, const float* x, float* out, std::size_t count) noexcept;
+
+/// F_n(x) in single precision at a run-time-selected fit route — the
+/// single-precision single entry's contract (|F̂ − F| ≤ 1.5e-7), with the
+/// named route's fits serving the intervals they cover.
+///
+/// This is \c BoysSingleF32 with one thing changed: which fit supplies the
+/// lane's region-A seed and its region-B seed. The route is a property of the
+/// float lane's own tables, so it is offered on the entry that reads them;
+/// \c BoysAllOrdersF32 seeds its region-A recursion from the double lane's
+/// fits and carries no route selector.
+///
+/// The route selects fits and changes nothing else. Region C holds no
+/// coefficient under either route, and an argument there is the default
+/// entry's value bit for bit. Outside the intervals the route reports in
+/// \c BoysFitRoutesF32 the same holds, so a caller who names a route and a
+/// caller who does not are handed the same numbers wherever the route does
+/// not reach.
+///
+/// The two routes are alternatives and not rungs: the rational route holds
+/// half the stored coefficients over region A and delivers more error than
+/// the Chebyshev route at the same bar, so which of the two is cheaper is a
+/// property of the caller's machine rather than of the tables. Both are
+/// certified against the lane's own bound.
+///
+/// The multiplier is the reference one: this entry selects a fit, not a rung.
+///
+/// A route this build does not serve evaluates at the default route, the same
+/// fallback the \c FitRoute enumeration's contract describes.
+///
+/// \param route the fit route, a property of this call only
+/// \param n     order, 0..kMaxBoysOrder
+/// \param x     argument, >= 0
+/// \returns     F_n(x)
+///
+/// \ingroup boys
+float BoysSingleF32WithRoute(FitRoute route, int n, float x) noexcept;
+
+/// The certified fit routes this build carries for the single-precision lane,
+/// one row per route and region, so a caller can ask what options exist, what
+/// each promises and over what interval without reading this header's tables.
+///
+/// The rows are the float lane's own and not the double lane's: that lane's
+/// region-A table is its own and its route covers the whole of region A,
+/// where the double lane's rational route takes over from a boundary above
+/// zero. Every route in the fixed order below is served by this build.
+///
+/// \returns the routes, in a fixed order: \c kChebyshev over region A, then
+///          \c kRationalMinimax over region A, then the same two over region B.
+///
+/// \ingroup boys
+std::span<const FitRouteInfo> BoysFitRoutesF32() noexcept;
 
 /// True if the CPU executes AVX2 with FMA; the SIMD entry points below require it.
 ///

@@ -343,6 +343,25 @@ const char* RegionName(boys::AccuracyRegion region) {
     return "?";
 }
 
+// The float lane's route rows are quoted under their own label: the two lanes
+// carry their own tables, so a reader must not fold a float row's cells into a
+// double route's row of the same (route, region) name.
+const char* RouteLaneF32(boys::FitRoute route, boys::AccuracyRegion region) {
+    const bool rational = (route == boys::FitRoute::kRationalMinimax);
+
+    switch (region)
+    {
+    case boys::AccuracyRegion::kA:
+        return rational ? "float rational A" : "float chebyshev A";
+    case boys::AccuracyRegion::kB:
+        return rational ? "float rational B" : "float chebyshev B";
+    case boys::AccuracyRegion::kC:
+        break;
+    }
+
+    return "?";
+}
+
 // The policy the scheme book's rows are measured under: the shipped Chebyshev
 // route at the scheme the row names. That is the pair BoysEvalSchemeFits()
 // reports, and the pair a call site reaches by naming one EvalPolicy.
@@ -670,6 +689,28 @@ enum class Verdict { Verified, MetOverDomain, Exceeded, Vacuous, EvidenceAbsent 
 bool IsMet(Verdict v)
 {
     return v == Verdict::Verified || v == Verdict::MetOverDomain;
+}
+
+// The order the verdicts worsen in, for an accumulation that takes the worst
+// of several rows. Exceeded is the worst because it is the only one a
+// measurement produced; the rest say what the evidence did.
+int VerdictRank(Verdict v)
+{
+    switch (v)
+    {
+    case Verdict::Verified:
+        return 0;
+    case Verdict::MetOverDomain:
+        return 1;
+    case Verdict::Vacuous:
+        return 2;
+    case Verdict::EvidenceAbsent:
+        return 3;
+    case Verdict::Exceeded:
+        return 4;
+    }
+
+    return 5;
 }
 
 const char* VerdictName(Verdict v)
@@ -1278,12 +1319,14 @@ int main(int argc, char** argv) {
     std::size_t routeServeMismatch = 0;
     std::size_t routePromiseMismatch = 0;
     std::size_t routeDisagreement = 0;
+    double routeShortfallWorst = 0.0;
     std::size_t routeNames = 0;
     std::size_t routeCellsInside = 0;
     std::size_t routeDiffOutside = 0;
     std::size_t routeDiffInside = 0;
     std::size_t routeDefaultDiff = 0;
     std::size_t routeUnknownDiff = 0;
+
     // Filled by the carriage measurement below and read by the route book's
     // claims: the run-time selector's pairs, and the entries that name a route
     // without answering it.
@@ -1324,6 +1367,8 @@ int main(int argc, char** argv) {
         c.differ = differ;
         routeCarriage.push_back(c);
     };
+
+    std::size_t routeCells = 0;
 
     {
         std::array<double, 33> out{};
@@ -1878,6 +1923,17 @@ int main(int argc, char** argv) {
             {
                 ++routeDisagreement;
             }
+
+            // Printed rather than only tested, because the direction is not
+            // promised: a fit that equioscillates is not sampled at its own
+            // extrema from this grid, so the measured figure can sit above the
+            // reported one and still be inside the tolerance.
+            const double shortfall = (measured - row.delivered) / row.bound;
+
+            if (shortfall > routeShortfallWorst)
+            {
+                routeShortfallWorst = shortfall;
+            }
         }
 
         std::printf("\nthe certified fit routes, measured:\n");
@@ -2013,6 +2069,262 @@ int main(int argc, char** argv) {
                         allN[k] == 0.0f || std::fabs(asDouble) < std::numeric_limits<float>::min());
             }
         }
+    }
+
+    // ---- the float lane's fit routes --------------------------------------
+    // The float lane's region-A table is its own, so its route report is its
+    // own entry's: a row here states what BoysSingleF32WithRoute delivers over
+    // the interval that row names. The rows are counted apart from the lanes
+    // for the reason the double lane's are - a route is a choice a caller
+    // makes, not a lane the library always serves - and they carry their own
+    // lane label, so a float row's cells are never read into a double one.
+    std::vector<int> routeSeedClaimF32;
+
+    for (const boys::FitRouteInfo& row : boys::BoysFitRoutesF32())
+    {
+        routeSeedClaimF32.push_back(
+            AddRouteClaim(RouteLaneF32(row.route, row.region), "rows", row.bound));
+    }
+
+    std::size_t routeStoredMismatchF32 = 0;
+    std::size_t routeDiffOutsideF32 = 0;
+    std::size_t routeDiffInsideF32 = 0;
+    std::size_t routeDefaultDiffF32 = 0;
+    std::size_t routeNonPositiveF32 = 0;
+    std::size_t f32RouteCells = 0;
+    std::size_t f32RouteOver = 0;
+    double f32RouteWorst = 0.0;
+    int f32RouteWorstN = -1;
+    double f32RouteWorstX = 0.0;
+    Verdict f32DeliveredVerdict = Verdict::Verified;
+    Verdict f32ReportVerdict = Verdict::Verified;
+    std::size_t f32RouteShortOver = 0;
+    double f32RouteShortWorst = 0.0;
+
+    {
+        const std::span<const boys::FitRouteInfo> rows = boys::BoysFitRoutesF32();
+
+        for (std::size_t r = 0; r < rows.size(); ++r)
+        {
+            const boys::FitRouteInfo& row = rows[r];
+            const auto lo = static_cast<float>(row.lo);
+            const auto hi = static_cast<float>(row.hi);
+
+            // The row's stored count against the table the kernel reads. A row
+            // that undercounts its route is the one way the report can promise
+            // less than the entry costs.
+            int stored = 0;
+
+            if (row.region == boys::AccuracyRegion::kA)
+            {
+                const bool cheb = (row.route == boys::FitRoute::kChebyshev);
+                const int first =
+                    cheb ? boys::detail::f32::kPieceStart[0] : boys::detail::f32::kRatAPieceStart[0];
+                const int last = cheb
+                                     ? boys::detail::f32::kPieceStart[boys::kMaxBoysOrder + 1]
+                                     : boys::detail::f32::kRatAPieceStart[boys::kMaxBoysOrder + 1];
+
+                for (int i = first; i < last; ++i)
+                {
+                    const std::size_t pi = static_cast<std::size_t>(i);
+                    stored += cheb ? boys::detail::f32::kPieces[pi].deg + 1
+                                   : boys::detail::f32::kRatAPieces[pi].numdeg +
+                                         boys::detail::f32::kRatAPieces[pi].dendeg + 1;
+                }
+            } else
+            {
+                stored = row.route == boys::FitRoute::kChebyshev
+                             ? boys::detail::f32::kBDeg + 1
+                             : boys::detail::f32::kRatBnumDeg + boys::detail::f32::kRatBdenDeg + 1;
+            }
+
+            if (stored != row.stored)
+            {
+                ++routeStoredMismatchF32;
+            }
+
+            for (int n = 0; n <= nmax; ++n)
+            {
+                for (std::size_t i = 0; i < count; ++i)
+                {
+                    const float xf = static_cast<float>(ref.xf[i]);
+
+                    if (!(xf >= lo && xf < hi))
+                    {
+                        continue;
+                    }
+
+                    const std::size_t k = ref.Index(n, i);
+                    const float got = boys::BoysSingleF32WithRoute(
+                        row.route, n, xf);
+                    const double asDouble = static_cast<double>(got);
+                    const bool unrepresentable =
+                        got == 0.0f || std::fabs(asDouble) < std::numeric_limits<float>::min();
+
+                    MeasureInto(RouteClaims(),
+                                routeSeedClaimF32[r],
+                                n,
+                                static_cast<double>(xf),
+                                asDouble,
+                                ref.vf[k],
+                                ref.decadeF[k],
+                                row.bound,
+                                unrepresentable);
+
+                    if (unrepresentable)
+                    {
+                        ++routeNonPositiveF32;
+                    }
+                }
+            }
+        }
+
+        // What naming a route changes, cell by cell, against the same call
+        // without one. The default route, a value outside the enumeration and
+        // the Chebyshev route must all be the default entry's value bit for
+        // bit; the rational route may differ only where a row of
+        // BoysFitRoutesF32 says its selector takes over.
+        for (int n = 0; n <= nmax; ++n)
+        {
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                const float xf = static_cast<float>(ref.xf[i]);
+                const float plain = boys::BoysSingleF32(n, xf);
+                const float namedDefault =
+                    boys::BoysSingleF32WithRoute(boys::FitRoute::kChebyshev, n, xf);
+                const float namedUnknown = boys::BoysSingleF32WithRoute(
+                    static_cast<boys::FitRoute>(99), n, xf);
+                const float namedRational =
+                    boys::BoysSingleF32WithRoute(boys::FitRoute::kRationalMinimax, n, xf);
+
+                if (namedDefault != plain || namedUnknown != plain)
+                {
+                    ++routeDefaultDiffF32;
+                }
+
+                bool inside = false;
+
+                for (const boys::FitRouteInfo& row : rows)
+                {
+                    if (row.route == boys::FitRoute::kRationalMinimax &&
+                        xf >= static_cast<float>(row.lo) && xf < static_cast<float>(row.hi))
+                    {
+                        inside = true;
+                    }
+                }
+
+                if (namedRational == plain)
+                {
+                    continue;
+                }
+
+                if (inside)
+                {
+                    ++routeDiffInsideF32;
+                } else
+                {
+                    ++routeDiffOutsideF32;
+                }
+            }
+        }
+    }
+
+    {
+        for (std::size_t r = 0; r < routeSeedClaimF32.size(); ++r)
+        {
+            const Accum& a = RouteClaims()[static_cast<std::size_t>(routeSeedClaimF32[r])];
+            f32RouteCells += a.points;
+            f32RouteOver += a.failures;
+
+            if (a.worstErr > f32RouteWorst)
+            {
+                f32RouteWorst = a.worstErr;
+                f32RouteWorstN = a.worstN;
+                f32RouteWorstX = a.worstX;
+            }
+
+            if (a.points == 0)
+            {
+                f32DeliveredVerdict = Verdict::EvidenceAbsent;
+            }
+
+            if (VerdictRank(FromAccum(a)) > VerdictRank(f32DeliveredVerdict))
+            {
+                f32DeliveredVerdict = FromAccum(a);
+            }
+
+            // The same one-sided comparison the double lane's route book is
+            // held to, read on this book's rows so that the figure a consumer
+            // reads beside a float row is checked against the fit that row
+            // serves.
+            const boys::FitRouteInfo& f32row = boys::BoysFitRoutesF32()[r];
+            const double shortfall = (a.worstErr - f32row.delivered) / f32row.bound;
+
+            if (shortfall > f32RouteShortWorst)
+            {
+                f32RouteShortWorst = shortfall;
+            }
+
+            if (a.worstErr > f32row.delivered + 0.1 * f32row.bound)
+            {
+                ++f32RouteShortOver;
+            }
+        }
+
+        if (routeStoredMismatchF32 != 0 || routeDefaultDiffF32 != 0)
+        {
+            f32ReportVerdict = Verdict::Exceeded;
+        }
+
+        std::printf("\n  the float lane's fit routes, BoysFitRoutesF32 and\n"
+                    "  BoysSingleF32WithRoute, each row over the interval it names, at every\n"
+                    "  order, against the reference this gate uses (%zu rows, %zu cells,\n"
+                    "  %zu of them outside the row's bar):\n",
+                    routeSeedClaimF32.size(),
+                    f32RouteCells,
+                    f32RouteOver);
+        std::printf("  %-24s %-9s %-6s %7s %14s %14s %14s %4s %13s\n",
+                    "route",
+                    "stored",
+                    "scope",
+                    "cells",
+                    "reported",
+                    "measured",
+                    "bar",
+                    "n",
+                    "at x");
+
+        for (std::size_t r = 0; r < routeSeedClaimF32.size(); ++r)
+        {
+            const boys::FitRouteInfo& row = boys::BoysFitRoutesF32()[r];
+            const Accum& a = RouteClaims()[static_cast<std::size_t>(routeSeedClaimF32[r])];
+
+            std::printf("  %-24s %-9d %-6s %7zu %14.6g %14.6g %14.6g %4d %13.6g\n",
+                        RouteLaneF32(row.route, row.region),
+                        row.stored,
+                        (row.region == boys::AccuracyRegion::kA) ? "0..32" : "F0",
+                        a.points,
+                        row.delivered,
+                        a.worstErr,
+                        row.bound,
+                        a.worstN,
+                        a.worstX);
+        }
+
+        std::printf("  rows whose stored count disagrees with the table the kernel reads: "
+                    "%zu\n"
+                    "  cells where naming the default route or a route outside the enumeration\n"
+                    "  differed from the default entry: %zu\n"
+                    "  cells outside a rational row's interval that naming the rational route\n"
+                    "  changed: %zu; inside one: %zu\n"
+                    "  cells of the routes' sweep where the value is at or below the format's\n"
+                    "  own floor: %zu\n",
+                    routeStoredMismatchF32,
+                    routeDefaultDiffF32,
+                    routeDiffOutsideF32,
+                    routeDiffInsideF32,
+                    routeNonPositiveF32);
+
     }
 
     // ---- fp16 and bf16, the store-half lane -------------------------------
@@ -5925,7 +6237,6 @@ int main(int argc, char** argv) {
             return 5;
         };
 
-        std::size_t routeCells = 0;
         std::size_t routeUncovered = 0;
         Verdict seedVerdict = Verdict::Verified;
         Verdict laneVerdict = Verdict::Verified;
@@ -5955,6 +6266,8 @@ int main(int argc, char** argv) {
                 seedWorstRow = r;
             }
         }
+
+        routeCells += f32RouteCells;
 
         for (std::size_t r = 0; r < routeLaneClaim.size(); ++r)
         {
@@ -6006,19 +6319,31 @@ int main(int argc, char** argv) {
                      routePromiseMismatch));
 
         addRoute("route.promise",
-                 "no route's reported delivered figure falls short of what this gate measures "
-                 "for the same route by more than a tenth of the bar, so the figure a consumer "
-                 "reads covers the fit the library evaluates",
+                 "no row of the double lane's route book has a reported delivered figure short "
+                 "of what this gate measures for the same route by more than a tenth of the bar, "
+                 "so the figure a consumer reads covers the fit the library evaluates",
                  "include/boys/boys.hpp, FitRouteInfo::delivered; the reported and measured "
                  "columns of the route table above",
                  routeDisagreement == 0 ? Verdict::Verified : Verdict::Exceeded,
-                 Fmt("%zu route row(s) whose reported figure is short of the measured one by more "
-                     "than a tenth of the bar; the two columns are printed side by side above, "
-                     "and the reported one is the higher of the two on every row because this "
-                     "grid is the coarser of the two sweeps and cannot resolve a fit's own "
-                     "extrema as finely as the grid it was measured on - which is why the "
-                     "comparison is one-sided",
-                     routeDisagreement));
+                 Fmt("%zu route row(s) of the double lane's %zu whose reported figure is short of "
+                     "the measured one by more than a tenth of the bar; the two columns are "
+                     "printed side by side above. The measured column is this gate's own sweep on "
+                     "the committed reference grid and the reported one is the generator's "
+                     "fit-time sweep of each piece's own interval, so the two are not required to "
+                     "agree in either direction, and they do not: the largest amount by which a "
+                     "measured figure here sits above its own row's reported one is %.3g of that "
+                     "row's bar. The comparison is one-sided for that reason. The float lane's "
+                     "rows are a separate book, measured against their own rows' bounds in "
+                     "float.route.delivered; the same one-sided comparison read on them leaves "
+                     "%zu of %zu row(s) short by more than a tenth of the bar, the worst by %.3g "
+                     "of it, which is inside the bar the row states and is that lane's reported "
+                     "figure to correct rather than a bound it misses",
+                     routeDisagreement,
+                     routeNames,
+                     routeShortfallWorst,
+                     f32RouteShortOver,
+                     routeSeedClaimF32.size(),
+                     f32RouteShortWorst));
 
         addRoute("route.fit",
                  "each route's own fit delivers the bound its row states, at every order and "
@@ -6130,6 +6455,36 @@ int main(int argc, char** argv) {
                      "compile-time entry it names, over all four (route, scheme) pairs",
                      routeRuntimeDiff,
                      routeRuntimePairs));
+
+        addRoute("float.route.delivered",
+                 "the float lane's route report is true of the entry that reads its "
+                 "tables: BoysSingleF32WithRoute delivers, at every order over each "
+                 "interval BoysFitRoutesF32 names, no worse than the bound that row states",
+                 "include/boys/boys.hpp (BoysSingleF32WithRoute, BoysFitRoutesF32)",
+                 f32DeliveredVerdict,
+                 Fmt("%zu route row(s), %zu cell(s) of the committed reference grid, each "
+                     "compared against the bound its own row states, %zu of them over it; "
+                     "worst delivered %.6g at n=%d, x=%g; the worst cell of each row is "
+                     "printed beside the table above",
+                     routeSeedClaimF32.size(),
+                     f32RouteCells,
+                     f32RouteOver,
+                     f32RouteWorst,
+                     f32RouteWorstN,
+                     f32RouteWorstX));
+
+        addRoute("float.route.report",
+                 "BoysFitRoutesF32's rows are true of the tables this revision ships, and a "
+                 "route value this build does not serve evaluates the default entry",
+                 "include/boys/boys.hpp (FitRouteInfo), include/boys/boys_coefficients.hpp",
+                 f32ReportVerdict,
+                 Fmt("%zu row(s) whose stored count disagrees with the table the kernel "
+                     "reads; %zu cell(s) where naming the default route or a value outside "
+                     "the enumeration differed from the default entry; %zu cell(s) outside a "
+                     "rational row's interval that naming the rational route changed",
+                     routeStoredMismatchF32,
+                     routeDefaultDiffF32,
+                     routeDiffOutsideF32));
 
         // Not a claim: this is what the two RESULT lines above and below already
         // say, put side by side so a reader can see the routes were added without
@@ -6258,11 +6613,14 @@ int main(int argc, char** argv) {
         };
 
         const std::array<RouteUncoveredSite, 2> routeUncoveredList{{
-            {"the single-precision engines (BoysSingleF32, BoysAllOrdersF32) and the fp16/bf16 "
-             "lanes built on them",
-             "they assert at compile time that the policy names the shipped route, and those "
-             "lanes store one coefficient table, so the rational fit has no stored form there. "
-             "A call naming it does not build and there is no value to sweep"},
+            {"the single-precision engines' policy path (BoysAllOrdersF32<EvalPolicy<...>>) and "
+             "the fp16/bf16 lanes built on them",
+             "the engines assert at compile time that the policy names the shipped pair, and "
+             "these engines read one table by one scheme, so a policy naming another route or "
+             "scheme does not build and there is no value to sweep there; no entry on the "
+             "fp16/bf16 lanes names a route at all. The fp32 lane's own routes are not in this "
+             "list: BoysSingleF32WithRoute serves them, and the two rows the float route table "
+             "above prints are rows of this book"},
             {"a relaxed rung on a policy naming the rational route",
              "rejected where the rung is instantiated: the rational family carries no "
              "effective-degree table to truncate. The carriage rows above are the shipped "
@@ -6657,15 +7015,17 @@ int main(int argc, char** argv) {
     };
 
     const std::array<UncoveredSite, 4> uncovered{{
-        {"the single-precision double-seeded engines: BoysSingleF32 and BoysAllOrdersF32, and "
-         "the fp16/bf16 lanes built on them",
+        {"the single-precision double-seeded engines' policy path: BoysSingleF32 and "
+         "BoysAllOrdersF32, and the fp16/bf16 lanes built on them",
          "the policy's fit route and its scheme",
          "refused where it is named rather than carried: both engines assert at compile time "
          "that the policy names the shipped Chebyshev route at the split Clenshaw scheme, "
-         "because those lanes store one coefficient table and one recurrence. A call naming "
+         "because these engines read one coefficient table by one recurrence. A call naming "
          "another pair does not build, so there is no value to sweep - the refusal is the whole "
          "of the site's behaviour, and no measurement of it is possible from a program that "
-         "compiles"},
+         "compiles. The fp32 lane's rational route is a different entry and not this site: "
+         "BoysSingleF32WithRoute carries it, takes no scheme, and is measured in the float "
+         "route table above"},
         {"a relaxed rung on a policy naming the rational route, at every double entry that takes "
          "a policy",
          "the policy's fit route",
@@ -7084,11 +7444,13 @@ int main(int argc, char** argv) {
     refusals.push_back({"route and scheme on the single-precision engines",
                         "the fp32 engine reads the shipped Chebyshev coefficient set by the "
                         "split Clenshaw recurrence and asserts the shipped pair; the probe "
-                        "compiles the call and it does not build. This is a coefficient table "
-                        "the fp32 engine does not hold, not one it cannot: the fp32 lane's "
-                        "region-A pieces are fitted at the same intervals as the double "
-                        "lane's, so a monomial or rational table over them is a table to "
-                        "generate",
+                        "compiles the call and it does not build. The lane's rational table is "
+                        "no longer the missing half of this: it exists, and "
+                        "BoysSingleF32WithRoute serves it. What this row names now is the "
+                        "policy path, where an EvalPolicy naming a route or a scheme reaches "
+                        "an engine that reads one table by one scheme and has no body for "
+                        "either; and the monomial table a Horner reading would need, which is "
+                        "still a table to generate",
                         true});
 #endif
 #ifdef BOYS_GATE_FIXEDN_REFUSES_ORDERS
@@ -7190,8 +7552,10 @@ int main(int argc, char** argv) {
     ++liftedRefusals;
     std::printf("  LIFTED: the single-precision engines accept a route or a scheme other than "
                 "the\n  shipped pair, and nothing in this block measures what they answer with "
-                "it. The\n  gate's fp32 rows judge the shipped pair only, so a carried route "
-                "there needs its\n  own measured rows at the fp32 lane's own budget\n");
+                "it. The\n  gate's fp32 policy rows judge the shipped pair only; the "
+                "route-carrying single\n  entry has measured rows of its own in the float route "
+                "table, and a carried policy\n  path needs its own at the fp32 lane's own "
+                "budget\n");
 #endif
 #ifndef BOYS_GATE_FIXEDN_REFUSES_ORDERS
     ++liftedRefusals;

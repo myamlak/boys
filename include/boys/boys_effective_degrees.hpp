@@ -505,8 +505,8 @@ constexpr void RationalPairCut(const NumArray& num,
 template <double kAccuracyMultiplier, BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
 constexpr auto RegionADegrees() noexcept {
     static_assert(kBasis == TailBasis::kChebyshev || RoleUsesDoubleTables(kRole),
-                  "the single-precision lanes store one coefficient table, the Chebyshev "
-                  "one, so a monomial tail has no table to be read from there");
+                  "the single-precision lanes hold no monomial coefficient table, so a "
+                  "monomial tail has no table to be read from there");
 
     if constexpr (RoleUsesDoubleTables(kRole))
     {
@@ -560,8 +560,8 @@ template <double kAccuracyMultiplier, BoysRole kRole, TailBasis kBasis = TailBas
 constexpr auto RegionBDegrees() noexcept {
     static_assert(kBasis == TailBasis::kChebyshev || kRole == BoysRole::kDoubleSingle ||
                       kRole == BoysRole::kDoubleBatch,
-                  "the single-precision lanes store one coefficient table, the Chebyshev "
-                  "one, so a monomial tail has no table to be read from there");
+                  "the single-precision lanes hold no monomial coefficient table, so a "
+                  "monomial tail has no table to be read from there");
 
     if constexpr (kRole == BoysRole::kDoubleSingle || kRole == BoysRole::kDoubleBatch)
     {

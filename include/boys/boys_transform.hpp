@@ -430,7 +430,20 @@ using Bf16Policy = ProductPolicy<8, 24, 1, float>;
 using Fp16Policy = ProductPolicy<11, 24, 1, float>;
 
 /// The policy of a mode enumerator.
-template <ProductMode kMode> struct PolicyOf;
+///
+/// The primary template is the refusal, not a default: a mode the specializations
+/// below do not name has no policy, and this is where that is said in a
+/// sentence rather than left to an incomplete type. A mode that fell through to
+/// another mode's policy would be evaluated in arithmetic it does not name and
+/// would be held to a bound its own row does not state, which is the one thing
+/// the mode axis must not do.
+template <ProductMode kMode> struct PolicyOf {
+    static_assert(kMode == ProductMode::kFp64 || kMode == ProductMode::kTf32x3 ||
+                      kMode == ProductMode::kBf16x6,
+                  "a product mode outside the ProductMode enumeration is not a mode this "
+                  "library carries: name ProductMode::kFp64, ProductMode::kTf32x3 or "
+                  "ProductMode::kBf16x6");
+};
 
 template <> struct PolicyOf<ProductMode::kFp64> {
     using Type = Fp64Policy;

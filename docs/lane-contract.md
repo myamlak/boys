@@ -176,6 +176,30 @@ about 6e-8 relative. The bound is 1.5e-7 absolute, so for values of order one th
 factor of about two and a half of each other. Much smaller values are bounded loosely, because an
 absolute bound says less about a small number than a relative one would.
 
+**The single entry carries two fit routes, and both hold the bound above.** `BoysSingleF32WithRoute`
+is `BoysSingleF32` with the fits that supply the lane's region-A seed and region-B seed selected
+instead of fixed, and `BoysFitRoutesF32` reports them. The measured column is the gate's own sweep of
+the committed reference, every order and every sample of the row's interval.
+
+| Route | Region | Interval | Stored | Measured | Bar |
+|---|---|---|---|---|---|
+| chebyshev (default) | A | 0 | 1067 | 1.06e-07 | 1.5e-07 |
+| rational minimax | A | 0 | 525 | 1.11e-07 | 1.5e-07 |
+| chebyshev (default) | B | 11.899848152108484 | 11 | 2.77e-08 | 1.5e-07 |
+| rational minimax | B | 11.899848152108484 | 6 | 7.50e-08 | 1.5e-07 |
+
+Region A's rows count the lane's whole per-order table over [0, 11.899848152108484), 97 pieces
+against the rational route's 52, and both routes cover that interval from zero: this lane reads each
+order from its own fit across the region, so it has no band boundary at which a selector would take
+over, and the row does not name one.
+
+**The stored counts are upper bounds, not minima.** Each count is the first the degree scan found
+holding the target, not the family's minimum, so a cheaper cover may exist. **The two routes are a
+trade and not a ranking**: region A stores 525 coefficients against 1067 and delivers 1.11e-07
+against 1.06e-07, and region B stores 6 against 11 and delivers 7.50e-08 against 2.77e-08. Half the
+coefficients at more error is worth having on a machine that pays for coefficient fetches and not on
+one that does not, and no measurement here ranks the two.
+
 ## the region-A transform lane
 
 A separate entry computes the fits of region A as a matrix product instead of by the fitted

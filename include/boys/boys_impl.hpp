@@ -574,6 +574,145 @@ inline float RegionBSeedF32WithDegrees(float x, int degree) noexcept {
 }
 
 // ---------------------------------------------------------------------------
+// The float lane's fit routes
+// ---------------------------------------------------------------------------
+// A float-lane single-order call reads a coefficient in exactly two places:
+// the region-A seed and the region-B seed. This names which pair of fits
+// those two are. They are alternatives rather than rungs of one design - the
+// Chebyshev tables are the default and the route the lane has always been
+// certified with, and naming the rational one changes the coefficients those
+// two intervals are evaluated from and nothing else.
+//
+// The rational route's pieces are the family's own cover of each order's
+// interval rather than the Chebyshev table's breaks, because a cover places
+// its breaks where its own fit needs them; the two routes therefore read
+// different piece tables at the same mapped argument.
+
+// Rational-route piece lookup; see FindPieceF32.
+inline const detail::f32::RatPiece& FindRatPieceF32(int order, float x) noexcept {
+    const int first = detail::f32::kRatAPieceStart[order];
+    const int last = detail::f32::kRatAPieceStart[order + 1];
+
+    for (int i = first; i < last - 1; ++i)
+    {
+        if (x < detail::f32::kRatAPieces[i].b)
+        {
+            return detail::f32::kRatAPieces[i];
+        }
+    }
+
+    return detail::f32::kRatAPieces[last - 1];
+}
+
+// Region-A seed of the rational route: the stored numerator over one plus t
+// times the stored denominator, read by Horner in the lane's own arithmetic.
+// The mapped argument is the expression ChebyshevValueF32 evaluates, so the
+// two routes' fits are read at one t.
+inline float RationalValueF32(int order, float x) noexcept {
+    const detail::f32::RatPiece& piece = FindRatPieceF32(order, x);
+    const float* c = detail::f32::kRatACoeffs.data() + piece.offset;
+    const int m = piece.numdeg;
+    const int k = piece.dendeg;
+    const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
+    float num = c[m];
+
+    for (int j = m - 1; j >= 0; --j)
+    {
+        num = backend::ScalarFp32::MulAdd(num, t, c[j]);
+    }
+
+    if (k == 0)
+    {
+        return num;
+    }
+
+    float den = c[m + k];
+
+    for (int j = k - 1; j >= 1; --j)
+    {
+        den = backend::ScalarFp32::MulAdd(den, t, c[m + j]);
+    }
+
+    return num / backend::ScalarFp32::MulAdd(den, t, 1.0f);
+}
+
+// Region-B seed of the rational route; see RegionBSeedF32.
+inline float RegionBSeedRationalF32(float x) noexcept {
+    const float t = 2.0f * (x - static_cast<float>(kX0)) / static_cast<float>(kX1 - kX0) - 1.0f;
+    float num = detail::f32::kRatBnum[detail::f32::kRatBnumDeg];
+
+    for (int j = detail::f32::kRatBnumDeg - 1; j >= 0; --j)
+    {
+        num = backend::ScalarFp32::MulAdd(num, t, detail::f32::kRatBnum[j]);
+    }
+
+    float den = detail::f32::kRatBden[detail::f32::kRatBdenDeg - 1];
+
+    for (int j = detail::f32::kRatBdenDeg - 2; j >= 0; --j)
+    {
+        den = backend::ScalarFp32::MulAdd(den, t, detail::f32::kRatBden[j]);
+    }
+
+    den = backend::ScalarFp32::MulAdd(den, t, 1.0f);
+    return num / den;
+}
+
+// The two routes as one float-lane call reads them. Each policy forwards to
+// the helper above, so the default policy's arithmetic is the shipped one
+// operation for operation.
+struct ChebyshevFit32 {
+    static float EvalOrder(int n, float x) noexcept { return ChebyshevValueF32(n, x); }
+    static float RegionBSeed(float x) noexcept { return RegionBSeedF32(x); }
+};
+
+struct RationalFit32 {
+    static float EvalOrder(int n, float x) noexcept { return RationalValueF32(n, x); }
+    static float RegionBSeed(float x) noexcept { return RegionBSeedRationalF32(x); }
+};
+
+// The float lane's single-order body over a fit policy: one body, so the
+// route names the two fits and changes nothing else. Region C reads no
+// coefficient at all and is the same three lines under either route.
+template <typename Fit>
+float SingleOrderF32Body(int n, float x) noexcept {
+    if (x == 0.0f)
+    {
+        return 1.0f / (2.0f * static_cast<float>(n) + 1.0f);
+    }
+
+    const float x0 = static_cast<float>(kX0);
+    const float x1 = static_cast<float>(kX1);
+
+    if (x < x0)
+    {
+        return Fit::EvalOrder(n, x);
+    }
+
+    float f = Fit::RegionBSeed(x);
+
+    if (x < x1)
+    {
+        const float expx = 0.5f * std::exp(-x);
+
+        for (int l = 0; l < n; ++l)
+        {
+            f = ((static_cast<float>(l) + 0.5f) * f - expx) / x;
+        }
+
+        return f;
+    }
+
+    f = kBoysHalfSqrtPiF32 / std::sqrt(x);
+
+    for (int l = 0; l < n; ++l)
+    {
+        f = (static_cast<float>(l) + 0.5f) * f / x;
+    }
+
+    return f;
+}
+
+// ---------------------------------------------------------------------------
 // The bodies: one per entry shape, over the policy a call site selected
 // ---------------------------------------------------------------------------
 // A body takes the policy as its ONE selection parameter and reads the axes as
@@ -1150,17 +1289,19 @@ void BoysFixedNImpl(
 // is the double recursion's; the float band is measured, not certified.
 //
 // The lanes hold the shipped route's single-precision fits and its split
-// Clenshaw recurrence, and carry no monomial or rational coefficient set, so
-// the policy reaches this engine as its budget alone: another route or another
-// scheme is rejected here rather than silently evaluated at this one.
+// Clenshaw recurrence and no monomial coefficient set, and the rational set
+// they hold is served by BoysSingleF32WithRoute rather than through a policy,
+// so the policy reaches this engine as its budget alone: another route or
+// another scheme is rejected here rather than silently evaluated at this one.
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 float BoysSingleF32Impl(int n, float x) noexcept {
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
     static_assert(Policy::kRoute == kDefaultFitRoute && Policy::kScheme == kDefaultEvalScheme,
                   "the single-precision lanes evaluate the shipped Chebyshev fits by the split "
-                  "Clenshaw recurrence: the monomial and rational coefficient sets are the "
-                  "double lane's");
+                  "Clenshaw recurrence and this engine reads one table by one scheme: the "
+                  "rational set is served by BoysSingleF32WithRoute, which takes no scheme, and "
+                  "the monomial set is the double lane's");
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(x >= 0.0f);
 
@@ -1252,8 +1393,9 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
     static_assert(Policy::kRoute == kDefaultFitRoute && Policy::kScheme == kDefaultEvalScheme,
                   "the single-precision lanes evaluate the shipped Chebyshev fits by the split "
-                  "Clenshaw recurrence: the monomial and rational coefficient sets are the "
-                  "double lane's");
+                  "Clenshaw recurrence and this engine reads one table by one scheme: the "
+                  "rational set is served by BoysSingleF32WithRoute, which takes no scheme, and "
+                  "the monomial set is the double lane's");
     assert(nmax >= 0 && nmax <= kMaxBoysOrder);
     assert(x >= 0.0f);
     assert(out != nullptr);
