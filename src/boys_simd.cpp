@@ -65,7 +65,9 @@
 #endif
 
 // The packed arithmetic backends this TU's kernels are written against; see
-// the header for why they are named here rather than in include/boys/.
+// the headers for why they are named here rather than in include/boys/ and for
+// why this unit, and not another, answers for their contraction.
+#include "boys_backend_registry.hpp"
 #include "boys_backend_simd.hpp"
 
 #if BOYS_SIMD_X86
@@ -1070,35 +1072,29 @@ template void BoysRegionCSimdBf16<kBoysFullAccuracyMultiplier>(int n,
 
 } // namespace boys::detail
 
-// The arithmetic backends this build carries, as a report prints them. The
-// packed pair is listed only where the tier is both compiled in and available
-// at run time, because their probe executes the instructions it measures.
+// The packed half of the backend table. The flags that separate this unit from
+// the rest of the library are also what makes its contraction answer different
+// from the scalar one, so this entry is measured here and not there; the pair
+// is listed only where the tier is both compiled in and available at run time,
+// because the probe executes the instructions it measures.
 namespace boys::backend {
+namespace detail {
 
-std::span<const BackendInfo> BoysBackends() noexcept {
+std::size_t AppendPackedBackends(BackendInfo* out) noexcept {
 #if BOYS_SIMD_X86
-    static const std::span<const BackendInfo> kBackends = [] {
-        static BackendInfo info[4];
-        std::size_t n = 0;
-        info[n++] = BackendInfo{ScalarFp64::kName, ScalarFp64::Contracts()};
-        info[n++] = BackendInfo{ScalarFp32::kName, ScalarFp32::Contracts()};
+    if (!BoysAvx2Available())
+    {
+        return 0;
+    }
 
-        if (BoysAvx2Available())
-        {
-            info[n++] = BackendInfo{Avx2Fp64::kName, Avx2Fp64::Contracts()};
-            info[n++] = BackendInfo{Avx2Fp32::kName, Avx2Fp32::Contracts()};
-        }
-
-        return std::span<const BackendInfo>(info, n);
-    }();
-    return kBackends;
+    out[0] = BackendInfo{Avx2Fp64::kName, Avx2Fp64::Contracts()};
+    out[1] = BackendInfo{Avx2Fp32::kName, Avx2Fp32::Contracts()};
+    return 2;
 #else
-    static const BackendInfo kInfo[] = {
-        BackendInfo{ScalarFp64::kName, ScalarFp64::Contracts()},
-        BackendInfo{ScalarFp32::kName, ScalarFp32::Contracts()},
-    };
-    return kInfo;
+    (void)out;
+    return 0;
 #endif
 }
 
+} // namespace detail
 } // namespace boys::backend

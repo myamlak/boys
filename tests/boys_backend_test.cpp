@@ -159,6 +159,14 @@ TEST(BackendTest, TheCarriedBackendsAreEnumeratedAndNamed) {
 
 // The reported contraction flag is the one the header gives for the
 // arithmetic carrying that name, so the report and the arithmetic agree.
+//
+// This is the check that the report describes the arithmetic the scalar lanes
+// actually run. Contraction belongs to a compiled translation unit, and the
+// library has more than one flag context: src/boys_simd.cpp carries the packed
+// flags, everything else does not. A table measured in the packed unit would
+// print that unit's answer beside the scalar lanes' values, so this compares
+// the report against the same arithmetic measured where a scalar kernel would
+// be compiled — which is what this file is.
 TEST(BackendTest, ReportedContractionMatchesTheArithmetic) {
     const std::span<const BackendInfo> backends = BoysBackends();
     ASSERT_GE(backends.size(), 2u);

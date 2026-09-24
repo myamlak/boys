@@ -25,9 +25,13 @@
 ///    roundings says MulSub and gets them on every build.
 ///
 /// Contracts() reports whether a bare `a * b + c` in a backend's arithmetic is
-/// a single rounding in the build at hand. It is measured rather than
-/// declared, because contraction is a property of the target and the flags
-/// rather than of the source.
+/// a single rounding. It is measured rather than declared, because contraction
+/// follows from the target and the flags rather than from the source — and it
+/// is therefore a property of one compiled translation unit, not of the
+/// library as a whole. Each backend's Contracts() answers for the unit that
+/// calls it; BackendInfo carries the answer measured where that backend's
+/// kernels are compiled, so the table describes the arithmetic the lanes
+/// actually run rather than some other unit's.
 ///
 /// \ingroup boys
 
@@ -75,6 +79,12 @@ namespace detail {
 /// The fused multiply-add of one scalar type, spelled for that type: the
 /// single-precision form is the single-precision operation, not the
 /// double-precision one narrowed afterwards.
+///
+/// \param a the multiplicand
+/// \param b the multiplier
+/// \param c the addend
+///
+/// \returns `a * b + c` with the product exact and the sum rounded once
 template <typename T>
 T Fused(T a, T b, T c) noexcept {
     if constexpr (std::is_same_v<T, float>)
@@ -110,22 +120,49 @@ struct Scalar {
     /// Values per packed operand.
     static constexpr std::size_t kWidth = 1;
 
+    /// The name a report prints this arithmetic under.
     static constexpr const char* kName =
         std::is_same_v<T, float> ? "scalar-fp32" : "scalar-fp64";
 
+    /// \param p one stored value
+    ///
+    /// \returns it as a packed operand
     static Packed Load(const Storage* p) noexcept { return *p; }
 
+    /// \param p where the value is written
+    /// \param v the value to write
     static void Store(Storage* p, Packed v) noexcept { *p = v; }
 
+    /// \param v the value to replicate
+    ///
+    /// \returns `v` in the one lane there is
     static Packed Broadcast(Value v) noexcept { return v; }
 
+    /// \param a the multiplicand
+    /// \param b the multiplier
+    ///
+    /// \returns `a * b`, one rounding
     static Packed Mul(Packed a, Packed b) noexcept { return a * b; }
 
+    /// \param a the augend
+    /// \param b the addend
+    ///
+    /// \returns `a + b`, one rounding
     static Packed Add(Packed a, Packed b) noexcept { return a + b; }
 
+    /// \param a the minuend
+    /// \param b the subtrahend
+    ///
+    /// \returns `a - b`, one rounding
     static Packed Sub(Packed a, Packed b) noexcept { return a - b; }
 
     /// `a * b + c`, fused: the product is exact and the sum rounds once.
+    ///
+    /// \param a the multiplicand
+    /// \param b the multiplier
+    /// \param c the addend
+    ///
+    /// \returns the fused result, one rounding
     static Packed MulAdd(Packed a, Packed b, Packed c) noexcept {
         return detail::Fused(a, b, c);
     }
@@ -138,12 +175,22 @@ struct Scalar {
     /// -mfma — so the same source would be two arithmetics. The zero addend is
     /// the product rounded once and nothing more, leaving a contraction pass
     /// nothing to fuse.
+    ///
+    /// \param a the multiplicand
+    /// \param b the multiplier
+    /// \param c the subtrahend
+    ///
+    /// \returns `a * b - c` with two roundings
     static Packed MulSub(Packed a, Packed b, Packed c) noexcept {
         return detail::Fused(a, b, Packed{0}) - c;
     }
 
     /// Whether a bare `a * b + c` written in this arithmetic is a single
-    /// rounding in this build; see the file comment.
+    /// rounding, as the translation unit that calls this compiles it. The
+    /// answer is the asking unit's because contraction follows from that
+    /// unit's target and flags; see the file comment.
+    ///
+    /// \returns whether the bare form and the fused step agree here
     static bool Contracts() noexcept;
 };
 
@@ -165,6 +212,8 @@ namespace detail {
 /// lands 2^-54 away in double and 2^-26 in single. The operands are read
 /// through volatile so the compiler evaluates the expression rather than the
 /// constant.
+///
+/// \returns whether the bare step and the fused step agree here
 template <typename T>
 bool MeasureContraction() noexcept {
     constexpr int kShift = std::numeric_limits<T>::digits / 2 + 1;
