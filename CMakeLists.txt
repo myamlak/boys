@@ -576,7 +576,11 @@ int main() {
     add_executable(boys-consumer-umbrella tests/consumer_umbrella.cpp)
     target_link_libraries(boys-consumer-umbrella PRIVATE boys)
     target_compile_definitions(boys-consumer-umbrella PRIVATE
-        BoysConsumerReference="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/boys_reference.csv")
+        BoysConsumerReference="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/boys_reference.csv"
+        # The version the build was configured at, so the consumer check can
+        # assert the header a caller reads agrees with project(boys VERSION ...)
+        # instead of the two being two answers to one question.
+        BoysExpectedVersion="${PROJECT_VERSION}")
     boys_strict_warnings(boys-consumer-umbrella)
 
     get_target_property(boysConsumerIncludes boys INTERFACE_INCLUDE_DIRECTORIES)

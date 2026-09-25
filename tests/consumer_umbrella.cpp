@@ -66,6 +66,13 @@
     "this consumer check is compiled with src/ on its include path; it no longer proves that a consumer can build against the public headers alone"
 #endif
 
+// The build's own version, so the check can assert that the header a caller
+// reads agrees with the project() call rather than the two being two answers.
+// A build that drops the definition would otherwise skip the check silently.
+#ifndef BoysExpectedVersion
+#error "this consumer check needs BoysExpectedVersion (the project version of the build it runs in); the boys-consumer-umbrella target carries it"
+#endif
+
 namespace {
 
 // --- the check's framework --------------------------------------------------
@@ -663,6 +670,26 @@ void CheckConstants(Report& report) {
     Require(report,
             boys::kHalfNativeScaleExponent == 15,
             "kHalfNativeScaleExponent is the documented 2^15 scale");
+
+    // The version a caller reads is the version the build was configured at.
+    // The build carries that value (BoysExpectedVersion, from the project()
+    // call), so a release that bumps one and not the other fails here rather
+    // than shipping two answers to "which version is this?".
+    int major = 0;
+    int minor = 0;
+    int patch = 0;
+    std::sscanf(BoysExpectedVersion, "%d.%d.%d", &major, &minor, &patch);
+    Require(report,
+            boys::kVersionMajor == major && boys::kVersionMinor == minor &&
+                boys::kVersionPatch == patch,
+            "the version constants are the version the build was configured at");
+    char spelled[64];
+    std::snprintf(spelled, sizeof(spelled), "%d.%d.%d", major, minor, patch);
+    Require(report,
+            std::string(boys::VersionString()) == spelled,
+            "VersionString() spells the same version as the constants");
+    Covered("boys::VersionString");
+    Covered("boys::kVersionMajor");
     Covered("boys::kMaxBoysOrder");
     Covered("boys::kBoysFullAccuracyMultiplier");
     Covered("boys::RegionABand");

@@ -796,6 +796,10 @@ double BoysSingleImpl(int n, double x) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(x >= 0.0);
 
+    // m = 1 is the full-accuracy body selected at compile time: no branch,
+    // indirection or runtime dispatch sits on that path, and a relaxed rung is
+    // a separate instantiation taken one branch below rather than a test the
+    // full-accuracy call pays for.
     if constexpr (kAccuracyMultiplier == 1.0)
     {
         return SingleOrder<Policy>(n, x);

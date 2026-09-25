@@ -12,6 +12,7 @@
 #include "boys/accuracy.hpp"
 #include "boys/backend.hpp"
 #include "boys/boys_transform.hpp"
+#include "boys/version.hpp"
 
 /// \defgroup boys Boys-function kernel
 ///
@@ -114,28 +115,25 @@
 /// lane is region C only.
 ///
 /// i.e. |F̂_n(x) − F_n(x)| ≤ m·B_region per lane and region, with B_region the
-/// asserted per-region bounds above (measured). **m = 1 is bit-identical
-/// to the certified lanes**:
-/// the default instantiations select the full-accuracy bodies verbatim — no
-/// branch, indirection, or runtime dispatch anywhere on the m = 1 path, and
-/// all existing call sites compile unchanged. Relaxation (m > 1) truncates
-/// the seed fits to the certified effective degree
-/// d'(m) = min{d' : Δ(d')·A ≤ (m−1)·B_region}, Δ(d') = Σ_{k>d'}|c_k| the
-/// dropped-coefficient tail and A the path's seed-error amplification — a-priori bounded, never
-/// tuned; the delivered error ≤ m·B_region follows from the m = 1
-/// asserted bound plus the tail bound. **The tail is the one the scheme's
-/// summation reads**: a fit is stored once per scheme that sums it, the two
-/// tables hold different numbers, and each scheme's rung is certified against
-/// its own (see boys_effective_degrees.hpp). The full degree is always
-/// admissible, so every rung is served at every scheme; a basis whose tail is
-/// the larger one truncates less, not wrongly. The contract and the work are
-/// **monotone in m** (d' is non-increasing in m); pointwise error is
-/// explicitly NOT guaranteed monotone — a larger m may occasionally change a
-/// pointwise error, but never beyond the m·B_region envelope. Region C has
-/// no relaxable resource; its contract holds with slack at every m.
-/// Instantiations with kAccuracyMultiplier < 1.0 are compile-time errors.
-/// The CUDA lane's relaxed path holds one degree table per process (filled
-/// once per m, the InitializeTables thread-safety contract). The fp16/bf16
+/// asserted per-region bounds above (measured). **m = 1 costs nothing extra and
+/// matches the certified lanes bit for bit** — the default instantiations are
+/// the full-accuracy bodies, and every existing call site compiles unchanged.
+/// **Larger m trades a looser bound for less work**: the rung is a separate
+/// instantiation of the same entry, cut to a degree the criterion certifies for
+/// that multiplier, and the full degree is always admissible, so every rung is
+/// served at every scheme. The contract and the work are **monotone in m**;
+/// pointwise error is explicitly NOT guaranteed monotone — a larger m may
+/// occasionally change a pointwise error, but never beyond the m·B_region
+/// envelope. Region C has no relaxable resource; its contract holds with slack
+/// at every m. Instantiations with kAccuracyMultiplier < 1.0 are compile-time
+/// errors.
+///
+/// **How a rung is derived** — the degree criterion, the dropped-coefficient
+/// tail it is spent on, the per-path seed-error amplification it is certified
+/// against, and why that tail is the one the scheme's own summation reads — is
+/// stated beside the machinery that applies it, in boys_effective_degrees.hpp.
+/// The CUDA lane's relaxed path holds one degree table per process (filled once
+/// per m, the InitializeTables thread-safety contract). The fp16/bf16
 /// m·1e-7 + ½ULP base above is the suite-asserted bound — strictly stronger
 /// than the float lanes' documented 1.5e-7 + ½ULP: the suite tolerance's
 /// 1e-7 base is the fp16 lanes' asserted base, not the float budget.
