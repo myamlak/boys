@@ -659,6 +659,14 @@ TEST(BoysAcrossOrders, TheRationalRouteOnTheAxisIsTheRoutesOwnReading) {
 // not - so each scheme is held to the reading its own table supports: the
 // values move where a degree was cut, and are the reference multiplier's bit
 // for bit where none was.
+//
+// The fallback is that per-order lane's body, compiled in the packed unit
+// rather than in this file, and region B's recurrence ends each step in a
+// multiply and a subtract that a compiler may round as one operation or as two.
+// Where the two units choose differently, the readings part by the last bits of
+// that recurrence - so the fallback's identity is held bit for bit where the
+// arithmetic fixes it and to a stated slack where the build decides it, with the
+// count and the worst printed either way.
 TEST(BoysAcrossOrders, TheRelaxedRungOnTheAxisIsTheRungsOwnReading) {
     const std::vector<double> grid = RegionAGrid();
     std::vector<double> rung(static_cast<std::size_t>(kNmax) + 1);
@@ -722,16 +730,22 @@ TEST(BoysAcrossOrders, TheRelaxedRungOnTheAxisIsTheRungsOwnReading) {
         // Past the lane's interval the entry runs the certified scalar single
         // lane at the same multiplier, one order at a time, so a rung is defined
         // for every argument the library accepts and its values there are the
-        // rung's per-order lane's, bit for bit.
-        const double arguments[] = {boys::detail::kX0,
-                                    boys::detail::kX0 + 1e-9,
-                                    20.0,
-                                    boys::detail::kX1,
-                                    31.0,
-                                    200.0};
+        // rung's per-order lane's. Past kX1 that recurrence reads no fit at all
+        // and only multiplies and divides, so no build can round one of its steps
+        // two ways and the two readings have to agree bit for bit. Inside region
+        // B the step is a multiply and a subtract, which a compiler may fuse into
+        // one rounding, and the packed unit and this file make that choice
+        // separately - the packed unit's flags only make it likelier to differ.
+        // There the same comparison is bounded instead, and the count and the
+        // worst are printed rather than assumed away.
+        constexpr double kFallbackArithmeticSlack = 1e-14;
+        const double pastRegionB[] = {boys::detail::kX1, 31.0, 200.0};
+        const double insideRegionB[] = {boys::detail::kX0, boys::detail::kX0 + 1e-9, 20.0};
+
+        std::size_t compared = 0;
         std::size_t differing = 0;
 
-        for (double x : arguments)
+        for (double x : pastRegionB)
         {
             boys::BoysAllOrders<kRungMultiplier, OrdersPolicy<kScheme>>(kNmax, x, rung.data());
 
@@ -739,6 +753,7 @@ TEST(BoysAcrossOrders, TheRelaxedRungOnTheAxisIsTheRungsOwnReading) {
             {
                 const double single =
                     boys::BoysSingle<kRungMultiplier, PerOrderPolicy<kScheme>>(l, x);
+                ++compared;
 
                 if (!SameBits(rung[static_cast<std::size_t>(l)], single))
                 {
@@ -747,8 +762,92 @@ TEST(BoysAcrossOrders, TheRelaxedRungOnTheAxisIsTheRungsOwnReading) {
             }
         }
 
-        EXPECT_EQ(differing, 0u) << name << ": the rung's fallback is not the certified scalar "
-                                 << "single lane at the rung";
+        std::printf("  rung m = %g fallback past kX1, %-14s: %zu of %zu order values bit-identical "
+                    "to the rung's per-order lane\n",
+                    kRungMultiplier,
+                    name,
+                    compared - differing,
+                    compared);
+
+        EXPECT_EQ(differing, 0u) << name << ": past kX1 this recurrence multiplies and divides and "
+                                 << "never adds, so a build cannot round it two ways and the "
+                                 << "fallback has to be the rung's per-order lane bit for bit";
+
+        // Inside region B the slack stands in for the rounding the two units may
+        // disagree about, measured at 1.6e-16 over both schemes here and set an
+        // order above that. What tells a wrong reading from a licence is the
+        // moved count, not the slack: both its readings come from one unit, so no
+        // rounding stands between them, and the rung's own region-B table parts
+        // from the reference multiplier's by 1.5e-12 at kX0 and 1.4e-13 at 20.
+        constexpr auto kCutB =
+            boys::detail::RegionBDegrees<kRungMultiplier,
+                                         boys::detail::BoysRole::kDoubleSingle,
+                                         boys::detail::SchemeTailBasis<kScheme>()>();
+        std::size_t cutOrders = 0;
+
+        for (int order = 0; order <= kNmax; ++order)
+        {
+            if (kCutB[static_cast<std::size_t>(order)] < boys::detail::kBDeg)
+            {
+                ++cutOrders;
+            }
+        }
+
+        std::size_t insideCompared = 0;
+        std::size_t insideDiffering = 0;
+        std::size_t moved = 0;
+        double worst = 0.0;
+
+        for (double x : insideRegionB)
+        {
+            boys::BoysAllOrders<kRungMultiplier, OrdersPolicy<kScheme>>(kNmax, x, rung.data());
+            boys::BoysAllOrders<1.0, OrdersPolicy<kScheme>>(kNmax, x, reference.data());
+
+            for (int l = 0; l <= kNmax; ++l)
+            {
+                const double atRung = rung[static_cast<std::size_t>(l)];
+                const double single =
+                    boys::BoysSingle<kRungMultiplier, PerOrderPolicy<kScheme>>(l, x);
+                ++insideCompared;
+
+                if (!SameBits(atRung, reference[static_cast<std::size_t>(l)]))
+                {
+                    ++moved;
+                }
+
+                if (!SameBits(atRung, single))
+                {
+                    ++insideDiffering;
+                    worst = std::max(worst, std::abs(atRung - single));
+                }
+            }
+        }
+
+        std::printf("  rung m = %g fallback inside region B, %-14s: %zu of %zu order values "
+                    "bit-identical to the rung's per-order lane, worst %e; the rung cut %zu of %d "
+                    "seed degrees and moved %zu of %zu values against the reference rung\n",
+                    kRungMultiplier,
+                    name,
+                    insideCompared - insideDiffering,
+                    insideCompared,
+                    worst,
+                    cutOrders,
+                    kNmax + 1,
+                    moved,
+                    insideCompared);
+
+        EXPECT_LE(worst, kFallbackArithmeticSlack)
+            << name << ": the fallback inside region B is further from the rung's per-order lane "
+            << "than the rounding two compilations of it may differ by";
+
+        if (cutOrders == 0)
+        {
+            EXPECT_EQ(moved, 0u) << name << ": the region-B seed table is certified whole at this "
+                                 << "rung, so the values have to be the reference rung's";
+        } else
+        {
+            EXPECT_GT(moved, 0u) << name << ": the multiplier did not reach the region-B seed";
+        }
     };
 
     countMoved.template operator()<boys::EvalScheme::kSplitClenshaw>("split clenshaw");
