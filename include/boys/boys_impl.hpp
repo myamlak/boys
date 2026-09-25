@@ -898,10 +898,11 @@ void BoysFixedNImpl(
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
     RequireShippedRouteOnFixedEntry<Policy>();
     static_assert(Policy::kPack == PackAxis::kArguments,
-                  "this entry evaluates one order at every argument of an array, so its wide "
-                  "axis is the arguments and the orders axis has one value to fill a vector "
-                  "lane with: the axis this library carries on this shape is the arguments "
-                  "axis");
+                  "the orders axis cannot be formed on this entry: a packed lane keeps four "
+                  "orders of one argument in a register, and this call produces exactly one "
+                  "order at every argument of the array, so there are not four orders here to "
+                  "fill a lane with - the wide dimension it does have is count, and that is the "
+                  "arguments axis");
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(x != nullptr);
     assert(out != nullptr);
@@ -1690,8 +1691,16 @@ void BoysAllNRun(int nmax,
     // The packed region-A lane holds the shipped route's Chebyshev
     // coefficients and its split Clenshaw recurrence, so another route or
     // another scheme takes the scalar body here rather than the lane's values.
+    //
+    // BoysRegionASimd packs four ARGUMENTS of one order, so the grouped kernel
+    // is the arguments axis's and only the arguments axis's: a call naming the
+    // orders axis is served one argument at a time by the entry's per-argument
+    // path, and its lane packs four orders of one argument instead. The
+    // condition is stated rather than inherited from that path, because which
+    // axis a packed lane fills is the property this kernel implements.
     if constexpr (kAccuracyMultiplier == 1.0 && Policy::kRoute == kDefaultFitRoute &&
-                  Policy::kScheme == EvalScheme::kSplitClenshaw)
+                  Policy::kScheme == EvalScheme::kSplitClenshaw &&
+                  Policy::kPack == PackAxis::kArguments)
     {
         // The lane serves region A below the crossover order; at and above it
         // the scalar body is the faster of the two.
@@ -1754,20 +1763,92 @@ void BoysAllNRunPerArgument(int nmax,
     }
 }
 
+// The plane entry's arguments-axis shape: the dispatch read off the argument
+// line, the sort over it, and one kernel per homogeneous run. Declared before
+// the two entry wrappers that dispatch to it.
+template <double kAccuracyMultiplier, EvalPolicyLike Policy>
+void BoysAllNPartitionedImpl(int nmax,
+                             const double* x,
+                             double* out,
+                             std::size_t count,
+                             std::size_t* workspace) noexcept;
+
+template <double kAccuracyMultiplier, EvalPolicyLike Policy>
+void BoysAllNSortedPartitionedImpl(int nmax,
+                                   const double* x,
+                                   double* out,
+                                   std::size_t count) noexcept;
+
+// The plane entry. Two shapes serve it, and which one a call takes is the
+// packing axis it names, because the axis is what says what a vector lane is
+// filled with:
+//
+//   the arguments axis  an arguments-axis lane keeps four arguments of one
+//                       order in a register, so the entry partitions its
+//                       arguments by the interval their answer comes from and
+//                       hands each homogeneous run to the shape that serves it.
+//                       That is BoysAllNPartitionedImpl below, and it is the
+//                       shipped shape.
+//   the orders axis     an orders-axis lane keeps four orders of ONE argument
+//                       in a register, which is this entry's call shape one
+//                       argument at a time - out[k * count + i] is F_k(x[i]),
+//                       so an argument's whole order vector is already what the
+//                       entry writes. There is nothing for the region grouping
+//                       to group, and the body is the all-orders entry's own,
+//                       which is where the packed orders lane is dispatched.
+//
+// The orders axis is carried here at the reference multiplier only, and the
+// refusal above it is the engine's own, stated once where the lane is
+// dispatched (BoysAllOrdersImpl): the packed orders lane evaluates every
+// stored fit at its full degree and reads no effective-degree table, so it
+// carries no rung. Carrying the axis on this entry does not change that, and
+// this entry does not restate it.
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 void BoysAllNImpl(int nmax,
                   const double* x,
                   double* out,
                   std::size_t count,
                   std::size_t* workspace) noexcept {
+    static_assert(kAccuracyMultiplier >= 1.0,
+                  "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
+    assert(nmax >= 0 && nmax <= kMaxBoysOrder);
+    assert(count == 0 || x != nullptr);
+    assert(count == 0 || out != nullptr);
+
+    if (count == 0)
+    {
+        return;
+    }
+
+    if constexpr (Policy::kPack == PackAxis::kOrders)
+    {
+        // The grouping scratch is the arguments axis's: this path partitions
+        // nothing and takes none of it.
+        static_cast<void>(workspace);
+        BoysAllNRunPerArgument<kAccuracyMultiplier, Policy>(nmax, x, out, count);
+    }
+    else
+    {
+        BoysAllNPartitionedImpl<kAccuracyMultiplier, Policy>(nmax, x, out, count, workspace);
+    }
+}
+
+// The plane entry's arguments-axis shape: the dispatch read off the argument
+// line, the sort over it, and one kernel per homogeneous run.
+template <double kAccuracyMultiplier, EvalPolicyLike Policy>
+void BoysAllNPartitionedImpl(int nmax,
+                             const double* x,
+                             double* out,
+                             std::size_t count,
+                             std::size_t* workspace) noexcept {
     RequireShippedRouteOnBatchEntry<Policy>();
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
     static_assert(Policy::kPack == PackAxis::kArguments,
-                  "the plane entry partitions its arguments by region and dispatches each group "
-                  "to the arguments axis, so it is not carried on the orders axis: the entry "
-                  "that is carried there is the all-orders one, whose call shape has the orders "
-                  "to fill a vector with");
+                  "this is the plane entry's arguments-axis shape: it partitions its arguments "
+                  "by region and dispatches each group to a lane that packs four arguments. A "
+                  "call naming the orders axis is served by BoysAllNImpl's per-argument path, "
+                  "whose lane packs four orders of one argument");
     assert(nmax >= 0 && nmax <= kMaxBoysOrder);
     assert(count == 0 || x != nullptr);
     assert(count == 0 || out != nullptr);
@@ -1838,19 +1919,50 @@ void BoysAllNImpl(int nmax,
     delete[] owned;
 }
 
+// The sorted overload, split the same way and for the same reason: the
+// ordering the caller declared is what makes the arguments-axis grouping free,
+// so it is a fact about that shape's input and not about this entry. A call
+// naming the orders axis takes the per-argument path and neither reads nor
+// needs the ordering, which is why the overload accepts the axis without
+// asking the caller for anything it does not already promise.
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 void BoysAllNSortedImpl(int nmax,
                         const double* x,
                         double* out,
                         std::size_t count) noexcept {
+    static_assert(kAccuracyMultiplier >= 1.0,
+                  "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
+    assert(nmax >= 0 && nmax <= kMaxBoysOrder);
+    assert(count == 0 || x != nullptr);
+    assert(count == 0 || out != nullptr);
+
+    if (count == 0)
+    {
+        return;
+    }
+
+    if constexpr (Policy::kPack == PackAxis::kOrders)
+    {
+        BoysAllNRunPerArgument<kAccuracyMultiplier, Policy>(nmax, x, out, count);
+    }
+    else
+    {
+        BoysAllNSortedPartitionedImpl<kAccuracyMultiplier, Policy>(nmax, x, out, count);
+    }
+}
+
+template <double kAccuracyMultiplier, EvalPolicyLike Policy>
+void BoysAllNSortedPartitionedImpl(int nmax,
+                                   const double* x,
+                                   double* out,
+                                   std::size_t count) noexcept {
     RequireShippedRouteOnBatchEntry<Policy>();
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
     static_assert(Policy::kPack == PackAxis::kArguments,
-                  "the plane entry partitions its arguments by region and dispatches each group "
-                  "to the arguments axis, so it is not carried on the orders axis: the entry "
-                  "that is carried there is the all-orders one, whose call shape has the orders "
-                  "to fill a vector with");
+                  "this is the sorted overload's arguments-axis shape: the ordering the caller "
+                  "declared is what makes its grouping free. A call naming the orders axis is "
+                  "served by BoysAllNSortedImpl's per-argument path, which needs no grouping");
     assert(nmax >= 0 && nmax <= kMaxBoysOrder);
     assert(count == 0 || x != nullptr);
     assert(count == 0 || out != nullptr);

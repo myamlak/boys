@@ -189,6 +189,22 @@ orders at one argument there — which is the axis `BoysAllOrders(nmax, x, out)`
 that entry computes every order at a single argument. `BoysPackAxes()` reports both, with the
 interval each one's packed lane evaluates.
 
+Every entry whose call shape has four orders to offer carries the orders axis, and there are two of
+them: `BoysAllOrders`, and `BoysAllN`, whose planes are `out[k * count + i] = F_k(x[i])` — so an
+argument's whole order vector is already what that entry writes. A plane call naming the axis takes
+the entry's per-argument path and returns the all-orders entry's values under it **bit for bit**,
+asserted with no tolerance, because the two call shapes reach one body. What the axis trades on the
+plane entry is the region grouping: the shipped path groups the arguments by dispatch interval to
+feed a lane that packs four *arguments*, and an orders-axis call has one argument to pack and so
+nothing to group.
+
+Two calls cannot form the axis, and both are refused where the call is named rather than answered.
+`BoysFixedN` computes exactly one order at every argument of an array: a packed lane keeps four
+orders, and this call has one, so there are not four to fill a lane with — that is the entry's
+signature and not a body nobody built. And a relaxed multiplier on the axis is refused at every entry
+that carries it, because the packed orders lane evaluates every stored fit at its full degree and
+reads no effective-degree table, so it carries no rung.
+
 The orders axis covers region A, `0 <= x < 11.899848152108484`, at the same per-order fits and the
 same `m·1e-15` bar the scalar region-A path holds. At the split Clenshaw scheme its values are the
 across-arguments lane's values bit for bit, order for order; past that interval the entry runs the

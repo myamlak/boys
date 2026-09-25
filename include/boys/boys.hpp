@@ -647,6 +647,15 @@ void BoysAllOrders(int nmax, double x, double* out) noexcept;
 ///         Chebyshev fits: the rational route is carried on the all-orders
 ///         entries, not on this one, so a policy naming it is rejected there
 ///         rather than answered with the other route's values
+///
+///         The packing axis is not an axis of this shape, and that is the
+///         entry's signature rather than a body nobody built. A packed lane
+///         keeps four doubles in a register, and this entry produces ONE order
+///         at every argument of the array: there are not four orders here to
+///         fill a lane with, and the wide dimension the call does have - count
+///         - is a different axis, served by the vector tier the batch entries
+///         reach. Naming PackAxis::kOrders is therefore rejected at the call
+///         site, which is what the assertion says
 /// \param n      order, 0..kMaxBoysOrder - the batch's single fixed order
 /// \param x      array of count arguments, each >= 0
 /// \param out    receives F_n(x[i]) at out[i * stride]
@@ -734,6 +743,19 @@ constexpr std::size_t BoysAllNWorkspaceSize(std::size_t count) noexcept
 ///         rational route is carried on the per-argument entries, which take
 ///         their fit from the policy, so a policy naming it here is rejected
 ///         at the call site rather than answered with the shipped fits
+///
+///         The packing axis is carried here too, and the orders axis is the
+///         shape this entry's layout already has: out[k * count + i] is F_k of
+///         one argument, so the entry's per-argument path is its body, and the
+///         packed lane that fills a register with four orders of that argument
+///         is the all-orders entry's. Naming the axis trades the region
+///         grouping for it - the grouping exists to feed a lane that packs four
+///         arguments, which an orders-axis call has no use for - so a call
+///         naming it takes the per-argument path and that axis's own lane. It
+///         is carried at the reference multiplier only: the packed orders lane
+///         evaluates every stored fit at its full degree and reads no
+///         effective-degree table, so it carries no rung, and a relaxed
+///         multiplier on that axis is refused where the lane is dispatched
 /// \param nmax      highest order, 0..kMaxBoysOrder
 /// \param x         array of count arguments, each >= 0
 /// \param out       receives count * (nmax + 1) doubles, out[k * count + i] = F_k(x[i])
@@ -763,6 +785,19 @@ void BoysAllN(int nmax,
 ///         rational route is carried on the per-argument entries, which take
 ///         their fit from the policy, so a policy naming it here is rejected
 ///         at the call site rather than answered with the shipped fits
+///
+///         The packing axis is carried here too, and the orders axis is the
+///         shape this entry's layout already has: out[k * count + i] is F_k of
+///         one argument, so the entry's per-argument path is its body, and the
+///         packed lane that fills a register with four orders of that argument
+///         is the all-orders entry's. Naming the axis trades the region
+///         grouping for it - the grouping exists to feed a lane that packs four
+///         arguments, which an orders-axis call has no use for - so a call
+///         naming it takes the per-argument path and that axis's own lane. It
+///         is carried at the reference multiplier only: the packed orders lane
+///         evaluates every stored fit at its full degree and reads no
+///         effective-degree table, so it carries no rung, and a relaxed
+///         multiplier on that axis is refused where the lane is dispatched
 /// \param nmax   highest order, 0..kMaxBoysOrder
 /// \param x      array of count arguments, non-decreasing, each >= 0
 /// \param out    receives count * (nmax + 1) doubles, out[k * count + i] = F_k(x[i])

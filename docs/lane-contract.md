@@ -429,6 +429,26 @@ the values it returns are the per-order region-A fits read one order at a time r
 from a seed by a recursion. `BoysPackAxes()` reports both members with the interval each one's
 packed lane evaluates.
 
+**Which entries carry it, and which call shapes cannot.** The axis needs four orders to fill a lane,
+and this library has two call shapes that have them. `BoysAllOrders` is one. `BoysAllN` is the other:
+its layout is `out[k * count + i] = F_k(x[i])`, so an argument's whole order vector is what the entry
+writes, and the axis is the shape it already has. A plane call naming the axis takes the entry's
+per-argument path — the all-orders entry's own body — and returns that entry's values under the axis
+**bit for bit**, which the entry's suite asserts with no tolerance; what it gives up is the region
+grouping, which exists to feed a lane that packs four *arguments* and has nothing to group when the
+call has one argument to pack. The gate measures the axis on both shapes, and both rows read the same
+figures because there is one arithmetic between them.
+
+Two calls are refused where they are named, and both are measured by compiling the call in a
+configure probe rather than by quoting an assertion. `BoysFixedN` produces exactly one order at every
+argument of an array: a packed lane keeps four orders of one argument, the call has one, and no
+revision of that entry produces four — the axis cannot be formed on it, which is a property of the
+call and not a table nobody built. A relaxed multiplier on the axis is a different kind of refusal: it
+is refused because the packed orders lane evaluates every stored fit at its full degree and reads no
+effective-degree table, so it carries no rung. That is a table that has not been derived, and it is
+owed rather than impossible — the rung is the same dropped-tail criterion the shipped route's rungs
+are truncated by, applied at the degree the lane reads.
+
 **The domain is region A, and its bounds are the fits' own.** The orders lane covers `0 <= x < kX0`
 and is certified against the per-order region-A bar, **|F̂ − F| ≤ m·1e-15**. At the certified split
 Clenshaw scheme its values are the across-arguments lane's values **bit for bit** — one exact

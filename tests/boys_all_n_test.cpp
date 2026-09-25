@@ -36,6 +36,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <random>
@@ -678,6 +679,221 @@ TEST(BoysAllNTest, WorkspaceEquivalenceAtSampledMultipliers) {
             EXPECT_EQ(out[slot], want[slot]) << "m=" << kM << " slot " << slot;
         }
     });
+}
+
+// ---------------------------------------------------------------------------
+// The orders axis on this entry
+// ---------------------------------------------------------------------------
+// The plane entry's call shape has both wide dimensions: an argument's whole
+// order vector (out[k * count + i] is F_k(x[i])) and an order's whole argument
+// array. A packed lane keeps four doubles in a register, so which of the two it
+// holds is the packing axis, and this entry carries both. The axis reaches the
+// per-argument path, whose body is the all-orders entry's own, so what the
+// tests below hold is that the surface and that path are the same code - and
+// that the region grouping, which exists to feed the arguments-axis lane, is
+// not taken when the axis named packs orders instead.
+
+namespace {
+
+// The policy the orders axis is named with on this entry.
+template <boys::EvalScheme kScheme>
+using OrdersAxisPolicy =
+    boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
+                     boys::PackAxis::kOrders>;
+
+bool SameBits(double a, double b) {
+    return std::memcmp(&a, &b, sizeof(double)) == 0;
+}
+
+// The entry's values under the orders axis, over one argument array, in the
+// plane layout.
+template <boys::EvalScheme kScheme>
+std::vector<double> RunOrdersAxis(const std::vector<double>& xs, int nmax, bool sortedOverload) {
+    const std::size_t count = xs.size();
+    std::vector<double> out(count * (static_cast<std::size_t>(nmax) + 1));
+
+    if (sortedOverload)
+    {
+        BoysAllN<1.0, OrdersAxisPolicy<kScheme>>(
+            nmax, xs.data(), out.data(), count, BoysSortedArgs{});
+    } else
+    {
+        BoysAllN<1.0, OrdersAxisPolicy<kScheme>>(nmax, xs.data(), out.data(), count);
+    }
+
+    return out;
+}
+
+} // namespace
+
+// The default policy still names the shipped axis, so a call site that names no
+// axis compiles the entry it always did.
+static_assert(boys::EvalPolicy<>{}.kPack == boys::PackAxis::kArguments,
+              "the default axis moved: a call site that names no axis must compile the "
+              "shipped path");
+static_assert(OrdersAxisPolicy<boys::EvalScheme::kSplitClenshaw>::kPack == boys::PackAxis::kOrders,
+              "the policy does not name the orders axis");
+
+// The surface and the engine are the same code: every plane cell is the
+// all-orders entry's value at that argument, bit for bit, under either scheme
+// and on both overloads.
+TEST(BoysAllNTest, OrdersAxisIsThePerArgumentEntryBitForBit) {
+    const std::vector<double> xs = gGrid.xs;
+    const int nmax = boys::kMaxBoysOrder;
+    const std::size_t count = xs.size();
+
+    for (const bool sortedOverload : {false, true})
+    {
+        const std::vector<double> planes =
+            RunOrdersAxis<boys::EvalScheme::kSplitClenshaw>(xs, nmax, sortedOverload);
+        const std::vector<double> horner =
+            RunOrdersAxis<boys::EvalScheme::kHorner>(xs, nmax, sortedOverload);
+        std::size_t differingClenshaw = 0;
+        std::size_t differingHorner = 0;
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            std::vector<double> row(static_cast<std::size_t>(nmax) + 1);
+            boys::BoysAllOrders<1.0, OrdersAxisPolicy<boys::EvalScheme::kSplitClenshaw>>(
+                nmax, xs[i], row.data());
+
+            for (int l = 0; l <= nmax; ++l)
+            {
+                const std::size_t slot = static_cast<std::size_t>(l) * count + i;
+
+                if (!SameBits(planes[slot], row[static_cast<std::size_t>(l)]))
+                {
+                    ++differingClenshaw;
+                }
+            }
+
+            std::vector<double> rowH(static_cast<std::size_t>(nmax) + 1);
+            boys::BoysAllOrders<1.0, OrdersAxisPolicy<boys::EvalScheme::kHorner>>(
+                nmax, xs[i], rowH.data());
+
+            for (int l = 0; l <= nmax; ++l)
+            {
+                const std::size_t slot = static_cast<std::size_t>(l) * count + i;
+
+                if (!SameBits(horner[slot], rowH[static_cast<std::size_t>(l)]))
+                {
+                    ++differingHorner;
+                }
+            }
+        }
+
+        EXPECT_EQ(differingClenshaw, 0u)
+            << "sorted overload = " << sortedOverload
+            << ": the plane entry and the all-orders entry have parted on the orders axis";
+        EXPECT_EQ(differingHorner, 0u) << "sorted overload = " << sortedOverload;
+    }
+}
+
+// Past the packed lane's own interval the axis runs the certified scalar single
+// lane one order at a time, and that is asserted exactly rather than against a
+// tolerance: the fallback's whole claim is that its values are that lane's.
+TEST(BoysAllNTest, OrdersAxisIsDefinedPastItsOwnDomain) {
+    const std::vector<double> xs = {0.0, kX0, kX0 + 1e-9, 20.0, kX1, 31.0, 200.0};
+    const int nmax = boys::kMaxBoysOrder;
+    const std::size_t count = xs.size();
+    const std::vector<double> planes =
+        RunOrdersAxis<boys::EvalScheme::kSplitClenshaw>(xs, nmax, false);
+    std::size_t differing = 0;
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        for (int l = 0; l <= nmax; ++l)
+        {
+            const double single = boys::BoysSingle(l, xs[i]);
+            const std::size_t slot = static_cast<std::size_t>(l) * count + i;
+
+            if (!SameBits(planes[slot], single))
+            {
+                ++differing;
+            }
+        }
+    }
+
+    EXPECT_EQ(differing, 0u) << "the axis's fallback is not the certified scalar single lane";
+}
+
+// The axis is reachable: naming it changes the values a caller receives in
+// region A, which is the whole of what the option is. The two answers differ
+// because the shipped entry reaches most region-A orders by a recursion from
+// the batch seed where this axis evaluates each order's own fit - and both are
+// inside the entry's own bound, so what moves is which of two certified values
+// a caller gets.
+TEST(BoysAllNTest, OrdersAxisChangesTheRegionAValuesAndStaysInsideTheBound) {
+    const int nmax = boys::kMaxBoysOrder;
+    const std::size_t count = gGrid.xs.size();
+    const std::vector<double> shipped = RunEntry<1.0>(gGrid, false, true);
+    const std::vector<double> axes =
+        RunOrdersAxis<boys::EvalScheme::kSplitClenshaw>(gGrid.xs, nmax, true);
+    std::size_t differingInA = 0;
+    std::size_t cellsInA = 0;
+    double worstAlongTheAxis = 0.0;
+
+    for (const ReferenceRow& row : gGrid.rows)
+    {
+        if (!(row.x < kX0))
+        {
+            continue;
+        }
+
+        const std::size_t i = ArgumentIndex(gGrid, row.x, false);
+        const std::size_t slot = static_cast<std::size_t>(row.n) * count + i;
+        ++cellsInA;
+
+        if (!SameBits(axes[slot], shipped[slot]))
+        {
+            ++differingInA;
+        }
+
+        // Both values are certified, so the axis's own error is measured here
+        // rather than assumed: against the committed reference, at the packed
+        // lane's per-order bar over the interval the lane evaluates.
+        worstAlongTheAxis = std::max(worstAlongTheAxis, std::abs(axes[slot] - row.value));
+    }
+
+    EXPECT_GT(cellsInA, 0u);
+    EXPECT_GT(differingInA, 0u)
+        << "the axis names a lane whose values are the shipped entry's: the option is not "
+           "reachable";
+    EXPECT_LE(worstAlongTheAxis, kGroupedBudget)
+        << "worst delivered " << worstAlongTheAxis << " over the packed lane's own bar";
+}
+
+// The region grouping is the arguments axis's and is not taken here: the same
+// arguments shuffled, in ascending order, and through the sorted overload all
+// return the same planes, because an orders-axis call evaluates each argument
+// on its own and has nothing to group.
+TEST(BoysAllNTest, OrdersAxisTakesNoRegionGrouping) {
+    const std::size_t count = gGrid.xs.size();
+    const int nmax = boys::kMaxBoysOrder;
+    const std::vector<double> ascending = RunOrdersAxis<boys::EvalScheme::kSplitClenshaw>(
+        gGrid.xs, nmax, false);
+
+    std::vector<double> shuffledOut(count * (static_cast<std::size_t>(nmax) + 1));
+    BoysAllN<1.0, OrdersAxisPolicy<boys::EvalScheme::kSplitClenshaw>>(
+        nmax, gShuffle.xs.data(), shuffledOut.data(), count);
+    std::size_t differingShuffled = 0;
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        const std::size_t j = ArgumentIndex(gGrid, gGrid.xs[i], true);
+
+        for (int l = 0; l <= nmax; ++l)
+        {
+            const std::size_t slot = static_cast<std::size_t>(l) * count;
+
+            if (!SameBits(ascending[slot + i], shuffledOut[slot + j]))
+            {
+                ++differingShuffled;
+            }
+        }
+    }
+
+    EXPECT_EQ(differingShuffled, 0u) << "the axis's values moved with the argument order";
 }
 
 } // namespace

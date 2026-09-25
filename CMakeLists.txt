@@ -365,6 +365,147 @@ int main() {
         message(STATUS "boys: a route the batch or fixed-order entry does not carry is ACCEPTED")
     endif()
 
+    # The orders axis's two limits, each measured the same way: by compiling the
+    # call and finding that it does not build. Both are properties of a call
+    # shape rather than of a value, so no run can show them - what a run would
+    # show is that the library answered, which is the failure mode.
+    #
+    #   the fixed-order entry  a packed lane keeps four ORDERS of one argument,
+    #                          and a fixed-order call produces exactly one order
+    #                          at every argument: there are not four orders to
+    #                          fill a lane with, so the axis cannot be formed
+    #                          there at all.
+    #   a relaxed multiplier   the packed orders lane evaluates every stored fit
+    #                          at its full degree and reads no effective-degree
+    #                          table, so it carries no rung.
+    #
+    # One probe per limit, and deliberately not one probe for both: a single
+    # call that fails to build would report the same thing whether one limit
+    # held or the other did, so a revision that lifted one of them would keep
+    # the other's row green for the wrong reason.
+    unset(BOYS_GATE_FIXEDN_ACCEPTS_ORDERS CACHE)
+    unset(BOYS_GATE_ORDERS_RUNG_ACCEPTED CACHE)
+    set(_boys_probe_target_type "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
+    set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+    set(CMAKE_REQUIRED_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    if (MSVC)
+        set(CMAKE_REQUIRED_FLAGS "/std:c++20 /EHsc")
+    else()
+        set(CMAKE_REQUIRED_FLAGS "-std=c++20")
+    endif()
+    check_cxx_source_compiles("
+#include <boys/boys.hpp>
+int main() {
+    double out[33] = {};
+    const double x = 1.0;
+    using OrdersAxis = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
+                                        boys::BoysBudget::kFloat, boys::PackAxis::kOrders>;
+    boys::BoysFixedN<1.0, OrdersAxis>(0, &x, out, 1);
+    return 0;
+}
+" BOYS_GATE_FIXEDN_ACCEPTS_ORDERS)
+    check_cxx_source_compiles("
+#include <boys/boys.hpp>
+int main() {
+    double out[33] = {};
+    const double x = 1.0;
+    using OrdersAxis = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
+                                        boys::BoysBudget::kFloat, boys::PackAxis::kOrders>;
+    boys::BoysAllN<64.0, OrdersAxis>(1, &x, out, 1);
+    return 0;
+}
+" BOYS_GATE_ORDERS_RUNG_ACCEPTED)
+    set(CMAKE_TRY_COMPILE_TARGET_TYPE "${_boys_probe_target_type}")
+    unset(_boys_probe_target_type)
+    unset(CMAKE_REQUIRED_FLAGS)
+    unset(CMAKE_REQUIRED_INCLUDES)
+
+    if (NOT BOYS_GATE_FIXEDN_ACCEPTS_ORDERS)
+        target_compile_definitions(boys-accuracy-gate PRIVATE BOYS_GATE_FIXEDN_REFUSES_ORDERS=1)
+    endif()
+
+    if (NOT BOYS_GATE_ORDERS_RUNG_ACCEPTED)
+        target_compile_definitions(boys-accuracy-gate PRIVATE BOYS_GATE_ORDERS_REFUSES_RUNG=1)
+    endif()
+
+    if (BOYS_GATE_FIXEDN_ACCEPTS_ORDERS)
+        message(STATUS "boys: the orders axis on BoysFixedN is ACCEPTED by the probe — a call "
+            "shape with no orders to pack takes an orders-axis policy")
+    else()
+        message(STATUS "boys: the orders axis on BoysFixedN is REFUSED, measured by compiling "
+            "the call")
+    endif()
+
+    if (BOYS_GATE_ORDERS_RUNG_ACCEPTED)
+        message(STATUS "boys: the orders axis at a relaxed multiplier is ACCEPTED by the probe")
+    else()
+        message(STATUS "boys: the orders axis at a relaxed multiplier is REFUSED, measured by "
+            "compiling the call")
+    endif()
+
+    if (BOYS_GATE_RATIONAL_RUNG_ACCEPTED)
+        message(STATUS "boys: the rational route at a relaxed rung is ACCEPTED by the probe")
+    else()
+        message(STATUS "boys: the rational route at a relaxed rung is REFUSED, measured by "
+            "compiling the call")
+    endif()
+
+    if (BOYS_GATE_F32_PAIR_ACCEPTED)
+        message(STATUS "boys: the single-precision engines accept another route or scheme")
+    else()
+        message(STATUS "boys: the single-precision engines REFUSE another route or scheme, "
+            "measured by compiling the call")
+    endif()
+
+    # The other two refusals this gate's record carries, each measured by
+    # compiling the call it names rather than by quoting the assertion that
+    # states it. A refusal the library asserts and cannot show is the same
+    # sentence the record forbids: citing our own refusal as the reason a bound
+    # is not owed. Both of these are refusals the gate reports as owed work, so
+    # what the probe establishes is narrower than for the two above - it says
+    # the call does not build, not that it cannot.
+    unset(BOYS_GATE_RATIONAL_RUNG_ACCEPTED CACHE)
+    unset(BOYS_GATE_F32_PAIR_ACCEPTED CACHE)
+    set(_boys_probe_target_type "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
+    set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+    set(CMAKE_REQUIRED_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    if (MSVC)
+        set(CMAKE_REQUIRED_FLAGS "/std:c++20 /EHsc")
+    else()
+        set(CMAKE_REQUIRED_FLAGS "-std=c++20")
+    endif()
+    check_cxx_source_compiles("
+#include <boys/boys.hpp>
+int main() {
+    double out[33] = {};
+    boys::BoysAllOrders<64.0, boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(1, 1.0, out);
+    return 0;
+}
+" BOYS_GATE_RATIONAL_RUNG_ACCEPTED)
+    check_cxx_source_compiles("
+#include <boys/boys.hpp>
+int main() {
+    float out[33] = {};
+    boys::BoysAllOrdersF32<1.0, boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(1, 1.0f, out);
+    boys::BoysAllOrdersF32<1.0,
+                           boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>>(
+        1, 1.0f, out);
+    return 0;
+}
+" BOYS_GATE_F32_PAIR_ACCEPTED)
+    set(CMAKE_TRY_COMPILE_TARGET_TYPE "${_boys_probe_target_type}")
+    unset(_boys_probe_target_type)
+    unset(CMAKE_REQUIRED_FLAGS)
+    unset(CMAKE_REQUIRED_INCLUDES)
+
+    if (NOT BOYS_GATE_RATIONAL_RUNG_ACCEPTED)
+        target_compile_definitions(boys-accuracy-gate PRIVATE BOYS_GATE_REFUSES_RATIONAL_RUNG=1)
+    endif()
+
+    if (NOT BOYS_GATE_F32_PAIR_ACCEPTED)
+        target_compile_definitions(boys-accuracy-gate PRIVATE BOYS_GATE_REFUSES_F32_PAIR=1)
+    endif()
+
     if (BOYS_GATE_HAS_TIER)
         target_compile_definitions(boys-accuracy-gate PRIVATE BOYS_GATE_TIER=1)
         message(STATUS "boys: the accuracy gate will measure the run-time accuracy tier")

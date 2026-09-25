@@ -3700,6 +3700,93 @@ int main(int argc, char** argv) {
     sweepPackAxis.template operator()<boys::EvalScheme::kSplitClenshaw>();
     sweepPackAxis.template operator()<boys::EvalScheme::kHorner>();
 
+    // The same axis on the plane entry, which carries it too. The rows are the
+    // all-orders entry's rows at the same bounds, and deliberately so: naming
+    // the axis on either entry returns the same values, because the plane
+    // entry's per-argument path IS the all-orders entry's body. What the two
+    // rows measure is therefore not the arithmetic - there is one arithmetic -
+    // but that the axis is carried on the second call shape at all, which is
+    // the thing that was refused before and is a claim about the surface.
+    //
+    // The row is judged on the plane entry's own contract, which is the double
+    // batch row: m*5.5e-14 in every region, and inside the packed lane's
+    // interval the tighter per-order bar the lane's fits are certified at, the
+    // same two figures the all-orders rows use. The cells are the same grid
+    // cells, reached through the plane layout instead of the order vector.
+    std::vector<int> packPlaneSlots;
+
+    for (const boys::EvalSchemeInfo& info : boys::BoysEvalSchemes())
+    {
+        packPlaneSlots.push_back(
+            AddPackClaim(info.name, "orders axis on the plane entry, region A", kBoundSingleA));
+        packPlaneSlots.push_back(
+            AddPackClaim(info.name, "orders axis on the plane entry, A..C", kBoundDoubleBatch));
+    }
+
+    const auto sweepPlanePackAxis = [&]<boys::EvalScheme kScheme>() {
+        for (std::size_t row = 0; row < packSchemes.size(); ++row)
+        {
+            if (packSchemes[row] != kScheme)
+            {
+                continue;
+            }
+
+            const std::size_t regionASlot = static_cast<std::size_t>(packPlaneSlots[2 * row]);
+            const std::size_t wholeGridSlot = static_cast<std::size_t>(packPlaneSlots[2 * row + 1]);
+            std::vector<double> planes(count * (static_cast<std::size_t>(nmax) + 1));
+
+            boys::BoysAllN<1.0, OrdersPackPolicy<kScheme>>(
+                nmax, ref.x.data(), planes.data(), count);
+
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                const double x = ref.x[i];
+
+                for (int n = 0; n <= nmax; ++n)
+                {
+                    const std::size_t k = ref.Index(n, i);
+                    const double got = planes[static_cast<std::size_t>(n) * count + i];
+
+                    if (x < boys::detail::kX0)
+                    {
+                        // Same two-arithmetic split as the all-orders rows: the
+                        // packed lane where the host has one, the certified
+                        // scalar single lane where it has not, and the packed
+                        // lane's own bar where it ran.
+                        const double regionABound =
+                            boys::BoysAvx2Available() ? kBoundSingleA : SingleBound(x);
+
+                        MeasureAt(PackClaims()[regionASlot],
+                                  n,
+                                  x,
+                                  got,
+                                  ref.v[k],
+                                  ref.decade[k],
+                                  regionABound,
+                                  Unrepresentable(got, -1022));
+                    }
+
+                    // The plane entry's whole-grid row is the batch bound, not
+                    // the single lane's per-region table: a plane call promises
+                    // the batch row everywhere, and past the lane's interval it
+                    // runs the certified scalar single lane one order at a
+                    // time, which is far inside that.
+                    MeasureAt(PackClaims()[wholeGridSlot],
+                              n,
+                              x,
+                              got,
+                              ref.v[k],
+                              ref.decade[k],
+                              kBoundDoubleBatch,
+                              Unrepresentable(got, -1022));
+                }
+            }
+        }
+    };
+
+    sweepPlanePackAxis.template operator()<boys::EvalScheme::kSplitClenshaw>();
+    sweepPlanePackAxis.template operator()<boys::EvalScheme::kHorner>();
+
     std::printf("\naccuracy gate, revision %s\n", BoysGateRevision);
     std::printf("  reference: %s (%zu arguments per order, %zu orders, %s)\n",
                 reference.c_str(),
@@ -6521,15 +6608,46 @@ int main(int argc, char** argv) {
                         "the probe compiles the call and it does not build",
                         true});
 #endif
+#ifdef BOYS_GATE_REFUSES_RATIONAL_RUNG
     refusals.push_back({"rational route at a relaxed rung",
                         "a relaxed rung truncates the shipped fits to their certified "
                         "effective degrees and the rational family carries no such table; "
-                        "the refusal is a static assertion in RequireShippedRoute",
-                        false});
+                        "the probe compiles the call and it does not build. This is a table "
+                        "nobody has derived, not a combination that cannot exist: the shipped "
+                        "rational fits are a minimax pair per interval, and a rung of them is "
+                        "another pair at the degree the rung needs",
+                        true});
+#endif
+#ifdef BOYS_GATE_REFUSES_F32_PAIR
     refusals.push_back({"route and scheme on the single-precision engines",
-                        "those lanes store one coefficient table and one recurrence and assert "
-                        "the shipped pair; the refusal is a static assertion in both engines",
-                        false});
+                        "the fp32 engine reads the shipped Chebyshev coefficient set by the "
+                        "split Clenshaw recurrence and asserts the shipped pair; the probe "
+                        "compiles the call and it does not build. This is a coefficient table "
+                        "the fp32 engine does not hold, not one it cannot: the fp32 lane's "
+                        "region-A pieces are fitted at the same intervals as the double "
+                        "lane's, so a monomial or rational table over them is a table to "
+                        "generate",
+                        true});
+#endif
+#ifdef BOYS_GATE_FIXEDN_REFUSES_ORDERS
+    refusals.push_back({"orders axis on BoysFixedN",
+                        "a packed lane keeps four orders of one argument and this call "
+                        "produces exactly one order at every argument of the array, so there "
+                        "are not four orders on this shape to fill a lane with; the probe "
+                        "compiles the call and it does not build. This one is a property of "
+                        "the call and not a table nobody built: no revision of this entry "
+                        "produces four orders for the axis to pack",
+                        true});
+#endif
+#ifdef BOYS_GATE_ORDERS_REFUSES_RUNG
+    refusals.push_back({"orders axis at a relaxed rung",
+                        "the packed orders lane evaluates every stored fit at its full degree "
+                        "and reads no effective-degree table, so it carries no rung; the "
+                        "probe compiles the call and it does not build. This is the same table "
+                        "the shipped route's rungs are truncated from, applied at the full "
+                        "degree the lane reads, so it is owed rather than impossible",
+                        true});
+#endif
 
     // ---- what the check found ----------------------------------------------
     std::size_t optionMissing = 0;
@@ -6576,11 +6694,57 @@ int main(int argc, char** argv) {
         }
     }
 
-    std::printf("  limits the library states at the call site (%zu). NONE of these is an "
-                "impossibility:\n  each is a table or a body that has not been built, so each "
-                "is an outstanding work\n  item and counts with the outstanding combinations "
-                "below and not against them.\n  %zu of them are backed by a probe that compiles "
-                "the refused call and the rest\n  name the static assertion that states it\n",
+    // The other direction, and the one this block must not be quiet about: a
+    // refusal whose probe COMPILED the call is a limit this revision does not
+    // have. That is not a defect in itself - a capability landing is the point
+    // - but a capability that lands while nothing measures it is a silent hole,
+    // and silence is the thing this block exists to prevent. So a lifted
+    // refusal fails here and names the book that has to carry the row before
+    // the gate can go green again.
+    std::size_t liftedRefusals = 0;
+
+#ifndef BOYS_GATE_BATCH_REFUSES_ROUTE
+    ++liftedRefusals;
+    std::printf("  LIFTED: the batch and fixed-order entries accept a policy naming the rational "
+                "route,\n  and no row in this gate measures what they answer with it. The route "
+                "book's\n  carriage rows measure the per-argument entries; a batch entry that "
+                "takes the route\n  needs rows of its own before the selection means "
+                "anything\n");
+#endif
+#ifndef BOYS_GATE_REFUSES_RATIONAL_RUNG
+    ++liftedRefusals;
+    std::printf("  LIFTED: the rational route runs at a relaxed rung, and the combination block "
+                "above\n  is where that is measured - read its OWED list and its count: if the "
+                "twelve are\n  still owed, the table landed without the rows that certify "
+                "it\n");
+#endif
+#ifndef BOYS_GATE_REFUSES_F32_PAIR
+    ++liftedRefusals;
+    std::printf("  LIFTED: the single-precision engines accept a route or a scheme other than "
+                "the\n  shipped pair, and nothing in this block measures what they answer with "
+                "it. The\n  gate's fp32 rows judge the shipped pair only, so a carried route "
+                "there needs its\n  own measured rows at the fp32 lane's own budget\n");
+#endif
+#ifndef BOYS_GATE_FIXEDN_REFUSES_ORDERS
+    ++liftedRefusals;
+    std::printf("  LIFTED: BoysFixedN accepts the orders axis, which its call shape has no "
+                "orders to\n  fill - a value this entry cannot produce under any revision of it. "
+                "A revision\n  that reaches this line has changed what the entry is\n");
+#endif
+#ifndef BOYS_GATE_ORDERS_REFUSES_RUNG
+    ++liftedRefusals;
+    std::printf("  LIFTED: the orders axis runs at a relaxed multiplier, and the packing-axis "
+                "rows\n  above measure the axis at the reference multiplier only. Carrying a "
+                "rung on it\n  needs the effective-degree table the lane reads, and a row that "
+                "measures it\n");
+#endif
+
+    std::printf("  limits the library states at the call site (%zu). Each row's own line says "
+                "which of\n  the two it is: a table or a body that has not been built, which is "
+                "an outstanding work\n  item and counts with the outstanding combinations below, "
+                "or a shape the call cannot\n  have. The two are not the same debt and are not "
+                "counted the same.\n  %zu of them are backed by a probe that compiles the "
+                "refused call and the rest\n  name the static assertion that states it\n",
                 refusals.size(),
                 refusals.size() - unbackedRefusals);
 
@@ -6591,6 +6755,16 @@ int main(int argc, char** argv) {
                     r.why,
                     r.backed ? "configure probe (compiled and refused)"
                              : "a static assertion in the header, named above");
+    }
+
+    if (liftedRefusals > 0)
+    {
+        std::printf("  FAIL (%zu limit(s) this revision does not have and no row that measures "
+                    "what stands\n  in their place: a capability that lands without a measured "
+                    "bound is exactly the\n  silent gap this block exists to catch, so it fails "
+                    "on silence)\n",
+                    liftedRefusals);
+        failed = true;
     }
 
     // ---- the combinations --------------------------------------------------
@@ -6936,8 +7110,9 @@ int main(int argc, char** argv) {
     }
 
     std::printf("\nthe packing-axis rows: which of a call's values a packed lane carries, "
-                "measured through the all-orders entry the axis is carried on, against the "
-                "committed reference\n");
+                "measured through the two entries the axis is carried on - the all-orders entry, "
+                "whose call shape is four orders of one\nargument, and the plane entry, whose "
+                "call shape has both - against the committed reference\n");
     std::printf("  %-16s %-20s %9s %-22s %-22s %7s  %-22s %s\n",
                 "axis",
                 "row",
@@ -6989,6 +7164,24 @@ int main(int argc, char** argv) {
                 "whole grid, A..C",
                 kBoundSingleC,
                 PackClaims()[static_cast<std::size_t>(packSlots[2 * row + 1])]);
+    }
+
+    // The plane entry's rows, beside the all-orders entry's and not folded into
+    // them: the axis's values are the same on the two shapes - the plane
+    // entry's per-argument path is the all-orders entry's body - so the rows
+    // are the same two questions asked of a different call. Keeping them apart
+    // is what lets a reader see that the axis is carried on both.
+    for (std::size_t row = 0; row < packSchemes.size(); ++row)
+    {
+        const char* axis = boys::EvalSchemeName(packSchemes[row]);
+        packRow(axis,
+                "plane entry, region A",
+                kBoundSingleA,
+                PackClaims()[static_cast<std::size_t>(packPlaneSlots[2 * row])]);
+        packRow(axis,
+                "plane entry, A..C",
+                kBoundDoubleBatch,
+                PackClaims()[static_cast<std::size_t>(packPlaneSlots[2 * row + 1])]);
     }
 
     std::printf("  %s\n", std::string(160, '-').c_str());
