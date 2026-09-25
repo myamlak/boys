@@ -706,8 +706,8 @@ void Conclude(DeviceProbeClass& clause,
     if (ordered.empty())
     {
         clause.reason = Text("no entry of this class produced a figure that resolved above the "
-                             "%s it was measured against and held across its repetition control, so "
-                             "there is nothing to order",
+                             "%s it was measured against and held across its repetition control, "
+                             "so there is nothing to order",
                              live.empty() ? "instrument" : "kernel without the call");
         clause.confidence =
             Text("CANNOT DETERMINE: %zu of %zu entries in this class were measured and none "
@@ -868,8 +868,8 @@ void Conclude(DeviceProbeClass& clause,
                          leader->spread);
     clause.confidence =
         Text("HIGH: the nearest rival in this class is at least %.2f%% behind, beyond the %.2f%% "
-             "this pair can be ordered at (canary spread %.2f%%, leader's own passes spread %.2f%%, "
-             "the rival's %.2f%%)",
+             "this pair can be ordered at (canary spread %.2f%%, leader's own passes "
+             "spread %.2f%%, the rival's %.2f%%)",
              100.0 * (nearest->nsPerArgument / leader->nsPerArgument - 1.0),
              100.0 * nearestThreshold,
              canarySpreadPercent,
@@ -1161,10 +1161,10 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
         measurement.documentedBound = info.bound;
     }
 
-    std::vector<std::vector<double>> passCost(entries.size(),
-                                              std::vector<double>(static_cast<std::size_t>(
-                                                                      clamped.passes),
-                                                                  std::numeric_limits<double>::infinity()));
+    const std::size_t passCount = static_cast<std::size_t>(clamped.passes);
+    std::vector<std::vector<double>> passCost(
+        entries.size(),
+        std::vector<double>(passCount, std::numeric_limits<double>::infinity()));
     std::vector<std::vector<double>> passBaseline(passCost);
 
     // --- Warm-up. The first launch of a kernel pays one-time costs that are
@@ -1282,7 +1282,8 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
 
             for (std::size_t e = 0; e < entries.size(); ++e)
             {
-                const double with = PerArgument(withThisPass[e], clamped.repetitions, clamped.count);
+                const double with =
+                    PerArgument(withThisPass[e], clamped.repetitions, clamped.count);
                 // A subtraction that comes out at or below zero is the entry's
                 // arithmetic inside the noise of its own baseline: the row is a
                 // cost and cannot be below zero, and the report says separately
@@ -1548,8 +1549,8 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
             } else if (!TimeRegion(floorRequest, floorMs))
             {
                 report.control.note += "; the device-side floor could not be timed on this run, so "
-                                       "how much of that figure is launch rather than arithmetic is "
-                                       "not established here";
+                                       "how much of that figure is launch rather than arithmetic "
+                                       "is not established here";
             } else
             {
                 report.control.nsPerLaunchFloor =
@@ -1593,8 +1594,8 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
             }
         } else
         {
-            report.control.note = "no launched entry produced a figure, so there was nothing to put "
-                                  "the launched route's repetition control through";
+            report.control.note = "no launched entry produced a figure, so there was nothing to "
+                                  "put the launched route's repetition control through";
         }
 
         if (fastestSubtracted != nullptr && CheckRow(*fastestSubtracted, &report.deviceCallControl))
@@ -1607,8 +1608,8 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
                 // already subtracted out of the figure being checked.
                 report.deviceCallControl.note += "; nothing launched by this library is inside "
                                                  "either half of this row, so the floor that "
-                                                 "applies to the launched route does not apply here "
-                                                 "- the row's own baseline is what it was "
+                                                 "applies to the launched route does not apply "
+                                                 "here - the row's own baseline is what it was "
                                                  "subtracted against, and it is reported above.";
             }
         } else
@@ -1727,7 +1728,8 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
                  report.device.architectures.c_str());
 
     text += "\n  workload:\n";
-    text += Text("    %zu arguments, log-uniform over [%.3g, %.3g], each carrying its own highest\n",
+    text += Text("    %zu arguments, log-uniform over [%.3g, %.3g], each carrying its own "
+                 "highest\n",
                  report.workloadCount,
                  report.options.xLo,
                  report.options.xHi);
