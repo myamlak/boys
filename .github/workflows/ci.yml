@@ -296,7 +296,13 @@ jobs:
   linux-x86:
     name: linux-x86 ${{ matrix.compiler }} ${{ matrix.build_type }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # One leg of this job carries the generator, which re-derives the committed
+    # tables at full precision and is by far the longest step anywhere in the
+    # matrix - the rest of this leg is about seventy seconds. A ceiling that
+    # truncates it would report a real check as a failure, so this job's limit
+    # is set above what that step costs rather than at the round number the
+    # other jobs share.
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -362,8 +368,37 @@ jobs:
       # binaries, same exit statuses as the ctest step above.
       - name: Verdicts (accuracy gate and consumer checks)
         run: ctest --test-dir build -V -R 'boys-accuracy-gate|boys-consumer-'
-      - name: Generator byte-identity (a fresh generation, compared byte for byte)
+      # The generator re-derives the committed tables at full precision, and it
+      # is the longest step anywhere in this matrix. Its inputs are the
+      # generator itself and the two artefacts it produces: it reads no other
+      # file, and the region boundaries it works to are its own constants rather
+      # than anything it is given. So a revision touching none of those three
+      # cannot have changed its answer, and re-deriving it would be proving
+      # something that could not have moved.
+      #
+      # The default is to RUN. The skip happens only when the comparison against
+      # the base revision succeeded AND the changed files it named are none of
+      # the three - so an unknown base, a shallow clone or a failed fetch all
+      # fall back to running the check rather than to skipping it.
+      - name: Did the generator's inputs change?
+        id: gen
         if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          run=yes
+          if [ -n "$base" ] && [ "$base" != "0000000000000000000000000000000000000000" ]; then
+            if git fetch --quiet --depth=1 origin "$base" 2>/dev/null &&
+               changed="$(git diff --name-only FETCH_HEAD HEAD 2>/dev/null)"; then
+              if ! printf '%s\n' "$changed" |
+                   grep -qE '^(tools/gen_boys_coefficients\.py|include/boys/boys_coefficients\.hpp|tests/data/boys_reference\.csv)$'; then
+                run=no
+              fi
+            fi
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "generator byte-identity will run: $run"
+      - name: Generator byte-identity (a fresh generation, compared byte for byte)
+        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' && steps.gen.outputs.run == 'yes' }}
         env:
           CLANG_FORMAT: ${{ github.workspace }}/.venv/bin/clang-format
         run: |
