@@ -380,35 +380,22 @@ jobs:
       # the base revision succeeded AND the changed files it named are none of
       # the three - so an unknown base, a shallow clone or a failed fetch all
       # fall back to running the check rather than to skipping it.
-      - name: Did the generator's inputs change?
-        id: gen
+      # The check asks whether the committed tables are consistent with the
+      # generator: the generated header records a digest of its own output and a
+      # digest of the generator that produced it, and this recomputes both. That
+      # needs no re-derivation, so it costs a hash rather than the hours a fresh
+      # generation and a byte-by-byte comparison cost - which is why there is no
+      # gating here. A gate shrinks how often the check runs; this removes the
+      # reason it was expensive.
+      #
+      # Both halves matter and catch different drift: editing a coefficient by
+      # hand leaves the recorded output digest unmatched, and changing the
+      # generator without regenerating leaves the recorded generator digest
+      # unmatched. The accuracy gate is what holds the tables themselves to their
+      # measured bounds against the 45-digit reference, so provenance and
+      # correctness are separate claims rather than one check doing both.
+      - name: Generator consistency (the recorded digests, recomputed)
         if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
-        run: |
-          # The question is not which files the history touched - that needs a
-          # commit range, and a range against a pull request's base names every
-          # file the pull request ever touched, so it always finds these. The
-          # question is whether these three files DIFFER from the base
-          # revision's. Asked that way it needs no history at all, and the
-          # answer is the same whichever end of the comparison moves: an empty
-          # diff means the committed tables and the generator are the base's,
-          # and the base's are already verified.
-          base="${{ github.event.pull_request.base.sha || github.event.before }}"
-          run=yes
-          if [ -n "$base" ] && [ "$base" != "0000000000000000000000000000000000000000" ]; then
-            if git fetch --quiet --depth=1 origin "$base" 2>/dev/null &&
-               changed="$(git diff --name-only FETCH_HEAD HEAD -- \
-                            tools/gen_boys_coefficients.py \
-                            include/boys/boys_coefficients.hpp \
-                            tests/data/boys_reference.csv 2>/dev/null)"; then
-              if [ -z "$changed" ]; then
-                run=no
-              fi
-            fi
-          fi
-          echo "run=$run" >> "$GITHUB_OUTPUT"
-          echo "generator byte-identity will run: $run"
-      - name: Generator byte-identity (a fresh generation, compared byte for byte)
-        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' && steps.gen.outputs.run == 'yes' }}
         env:
           CLANG_FORMAT: ${{ github.workspace }}/.venv/bin/clang-format
         run: |
