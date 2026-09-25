@@ -99,6 +99,9 @@ int BoysDoubleBatch(int nmax, int count, const double* x, double* out);
 
 /** F_0(x[i])..F_nmax(x[i]) in single precision; contract as BoysDoubleBatch.
  *
+ * Routes to the library's single-precision all-N batch entry, so the C caller
+ * and the C++ caller receive the same values and the same lane contract.
+ *
  * \param nmax  highest order, 0..BOYS_MAX_ORDER
  * \param count number of arguments
  * \param x     arguments, each >= 0
@@ -108,6 +111,30 @@ int BoysDoubleBatch(int nmax, int count, const double* x, double* out);
  * x[i] is negative or NaN.
  */
 int BoysFloatBatch(int nmax, int count, const float* x, float* out);
+
+/** F_0(x[i])..F_n[i](x[i]) in double precision for count arguments, the top
+ * order of each argument supplied as an array.
+ *
+ * Output layout: out[k * count + i] = F_k(x[i]) for k = 0..n[i] - the
+ * order-major planes of BoysDoubleBatch, with each argument's column stopping
+ * at that argument's own top order. Cells above an argument's top order are
+ * left as the caller left them. x must hold count elements; out must hold
+ * count * (1 + the largest n[i]) elements; a zero count is a no-op.
+ *
+ * This is the C surface's entry of the shape a shell-quartet caller has, where
+ * each quartet of a batch carries its own highest order: it needs no padding of
+ * the arguments to a common top order. The C++ surface's spelling of the same
+ * call is boys::BoysAllNAtOrders.
+ *
+ * \param n     top order per argument, each 0..BOYS_MAX_ORDER
+ * \param count number of arguments
+ * \param x     arguments, each >= 0
+ * \param out   receives the planes
+ * \returns BOYS_SUCCESS, or BOYS_ERROR_INVALID_ARGUMENT when count < 0,
+ * (count > 0 and (n, x or out is NULL)), or any n[i] is outside
+ * [0, BOYS_MAX_ORDER], or any x[i] is negative or NaN.
+ */
+int BoysDoubleBatchAtOrders(const int* n, int count, const double* x, double* out);
 
 #ifdef __cplusplus
 } /* extern "C" */

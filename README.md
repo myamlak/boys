@@ -42,6 +42,12 @@ int main()
 
     // Already non-decreasing? Say so and skip the sort.
     boys::BoysAllN(32, x, planes.data(), 3, boys::BoysSortedArgs{});
+
+    // Each argument its own highest order — the shape a shell-quartet batch
+    // has. The planes are the same, each column stopping at its own n[i];
+    // the cells above n[i] are left as the caller left them.
+    const int n[3] = {4, 12, 7};
+    boys::BoysAllNAtOrders(n, x, planes.data(), 3);
 }
 ```
 
@@ -56,7 +62,7 @@ over part of the range than over the rest. Every figure below holds for **all** 
 | Lane | Error bound |
 |---|---|
 | double single | ≤ m·5.5e-14 everywhere; ≤ m·3e-14 below x = 11.899848152108484; ≤ m·1e-15 below about x = 1.0855 |
-| double batch | ≤ m·5.5e-14 |
+| double batch, whether the top order is the batch's or each argument's | ≤ m·5.5e-14 |
 | float single / batch | ≤ m·1.5e-7 |
 | fp16 / bf16 | ≤ m·1e-7 + ½ ULP |
 | native half, x ≥ 28.984375 | ≤ 8 ULP of the returned value |

@@ -35,9 +35,13 @@ template void BoysAllN<kBoysFullAccuracyMultiplier>(
     int nmax, const double* x, double* out, std::size_t count, std::size_t* workspace) noexcept;
 template void BoysAllN<kBoysFullAccuracyMultiplier>(
     int nmax, const double* x, double* out, std::size_t count, BoysSortedArgs) noexcept;
+template void BoysAllNAtOrders<kBoysFullAccuracyMultiplier>(
+    const int* n, const double* x, double* out, std::size_t count) noexcept;
 template float BoysSingleF32<kBoysFullAccuracyMultiplier, EvalPolicy<>>(int n, float x) noexcept;
 template void BoysAllOrdersF32<kBoysFullAccuracyMultiplier, EvalPolicy<>>(
     int nmax, float x, float* out) noexcept;
+template void BoysAllNF32<kBoysFullAccuracyMultiplier, EvalPolicy<>>(
+    int nmax, const float* x, float* out, std::size_t count) noexcept;
 
 #if BoysFp16
 template F16 BoysSingleF16<kBoysFullAccuracyMultiplier>(int n, F16 x) noexcept;

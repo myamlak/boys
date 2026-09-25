@@ -940,6 +940,63 @@ template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
 void BoysAllN(
     int nmax, const double* x, double* out, std::size_t count, BoysSortedArgs) noexcept;
 
+/// F_0(x_i)..F_n[i](x_i) for an array of arguments, double precision — every
+/// order up to each argument's OWN top order, the tops arriving as an array.
+///
+/// This is the shape a shell-quartet consumer actually has. A quartet carries
+/// its own highest order, so a batch of quartets is a batch of differing tops,
+/// and BoysAllN — one common nmax for the whole batch — makes such a caller
+/// choose between padding every quartet up to the batch's largest top order,
+/// paying for the orders nobody asked for, and calling the library once per
+/// quartet. This entry takes the tops as an array, so the caller does neither.
+/// It is the CPU spelling of the device lane's per-element-order batch
+/// (BoysCuda::AllOrdersF64), which is what lets one kernel be written against
+/// both lanes.
+///
+/// Layout: order-major planes as BoysAllN — out[k * count + i] = F_k(x[i]) —
+/// with each column stopping at its own order. Every cell of argument i's
+/// column at or below n[i] is written, and **every cell above it is left
+/// untouched**: out[k * count + i] for k > n[i] keeps whatever the caller put
+/// there, so a caller may pre-fill those cells with the value its own
+/// contraction wants to multiply by (a zero, or an earlier group's result) and
+/// know it survives the call. Writing only the orders that were asked for is
+/// the entry's point rather than a saving inside the recursion: a plane above
+/// an argument's own top order has no reader.
+///
+/// The output holds count * (nmax + 1) doubles, nmax being the largest of the
+/// n[i]. That is the caller's own array, so the caller sizes the buffer from
+/// what it already has, and no padding of either the arguments or the output is
+/// involved.
+///
+/// Accuracy: every returned value satisfies the double batch lane's documented
+/// per-region bound, |F̂ − F| ≤ m·5.5e-14 (the contract table in the file
+/// preamble). Each column is the per-argument all-orders body run at that
+/// argument's own top order: out[k * count + i] is the value, bit for bit, that
+/// BoysAllOrders(n[i], x[i], out) returns at out[k].
+///
+/// Threading: single-threaded and pure, like every entry in this library — see
+/// the threading paragraph in the file preamble. A caller that wants the work
+/// spread over threads divides its argument array and calls this entry from its
+/// own threads; distinct batches share nothing.
+///
+/// \tparam kAccuracyMultiplier see BoysSingle
+/// \tparam Policy see BoysSingle. This entry runs the per-argument all-orders
+///         body, so it takes the same policies that entry takes
+/// \param n     array of count top orders, each 0..kMaxBoysOrder
+/// \param x     array of count arguments, each >= 0
+/// \param out   receives the planes: out[k * count + i] = F_k(x[i]) for
+///              k = 0..n[i], every cell above n[i] untouched
+/// \param count number of arguments; may be 0 (no writes)
+///
+/// \pre x must hold count values and n count orders; out must hold
+///      count * (1 + max_i n[i]) doubles when count > 0; x and out must not
+///      overlap
+///
+/// \ingroup boys
+template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
+          EvalPolicyLike Policy = EvalPolicy<>>
+void BoysAllNAtOrders(const int* n, const double* x, double* out, std::size_t count) noexcept;
+
 /// Whether the packed region-A lane serves a call whose policy names this
 /// scheme.
 ///
@@ -1001,6 +1058,49 @@ float BoysSingleF32(int n, float x) noexcept;
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
           EvalPolicyLike Policy = EvalPolicy<>>
 void BoysAllOrdersF32(int nmax, float x, float* out) noexcept;
+
+/// F_0(x_i)..F_nmax(x_i) for an array of arguments, single precision — the
+/// float lane's entry of the shape BoysAllN has in the double lane.
+///
+/// Layout and totality as BoysAllN: out[k * count + i] = F_k(x[i]), order-major
+/// planes, the output holding count * (nmax + 1) floats. The same shape exists on
+/// the device (BoysCuda::AllNF32), and before this entry it existed on the CPU
+/// only as a loop a caller wrote for itself — which is what the C surface's
+/// BoysFloatBatch was — so a consumer porting a batch between the lanes had a
+/// call on one side and its own loop on the other.
+///
+/// What it is not is a grouping entry. The packed region-A lane the double batch
+/// hands its low-order runs to is an AVX2 kernel over doubles; the float lane has
+/// no packed region kernel of its own, so there is no run for this entry to
+/// group and it evaluates the per-argument all-orders body at each argument. The
+/// entry is the shape, and no speed is claimed for it over the same loop written
+/// at the call site.
+///
+/// Accuracy: |F̂ − F| ≤ m·1.5e-7 per value, the float lane's bound, which is the
+/// same in every region (the contract table in the file preamble) — the bound
+/// BoysAllOrdersF32 meets, and each column is that entry's value at the same
+/// (nmax, x[i]) bit for bit.
+///
+/// Threading: single-threaded and pure, like every entry in this library — see
+/// the threading paragraph in the file preamble. A caller that wants the work
+/// spread over threads divides its argument array and calls this entry from its
+/// own threads; distinct batches share nothing.
+///
+/// \tparam kAccuracyMultiplier see BoysSingle
+/// \tparam Policy see BoysSingleF32: the engine budget is the axis this lane
+///         reads, and it selects nothing at the reference multiplier
+/// \param nmax  highest order, 0..kMaxBoysOrder
+/// \param x     array of count arguments, each >= 0
+/// \param out   receives count * (nmax + 1) floats, out[k * count + i] = F_k(x[i])
+/// \param count number of arguments; may be 0 (no writes)
+///
+/// \pre x must hold count values, out count * (nmax + 1), and the two must not
+///      overlap
+///
+/// \ingroup boys
+template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
+          EvalPolicyLike Policy = EvalPolicy<>>
+void BoysAllNF32(int nmax, const float* x, float* out, std::size_t count) noexcept;
 
 /// True if the CPU executes AVX2 with FMA; the SIMD entry points below require it.
 ///
@@ -1165,10 +1265,14 @@ extern template void BoysAllN<kBoysFullAccuracyMultiplier>(
     int nmax, const double* x, double* out, std::size_t count, std::size_t* workspace) noexcept;
 extern template void BoysAllN<kBoysFullAccuracyMultiplier>(
     int nmax, const double* x, double* out, std::size_t count, BoysSortedArgs) noexcept;
+extern template void BoysAllNAtOrders<kBoysFullAccuracyMultiplier>(
+    const int* n, const double* x, double* out, std::size_t count) noexcept;
 extern template float BoysSingleF32<kBoysFullAccuracyMultiplier, EvalPolicy<>>(
     int n, float x) noexcept;
 extern template void BoysAllOrdersF32<kBoysFullAccuracyMultiplier, EvalPolicy<>>(
     int nmax, float x, float* out) noexcept;
+extern template void BoysAllNF32<kBoysFullAccuracyMultiplier, EvalPolicy<>>(
+    int nmax, const float* x, float* out, std::size_t count) noexcept;
 
 #if BoysFp16
 extern template F16 BoysSingleF16<kBoysFullAccuracyMultiplier>(int n, F16 x) noexcept;
