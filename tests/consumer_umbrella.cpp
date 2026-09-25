@@ -703,10 +703,31 @@ void CheckConstants(Report& report) {
     // The build carries that value (BoysExpectedVersion, from the project()
     // call), so a release that bumps one and not the other fails here rather
     // than shipping two answers to "which version is this?".
+    // Parsed by hand rather than with sscanf: MSVC deprecates sscanf and this
+    // tree builds with warnings as errors, so a portable parser is cheaper than
+    // a suppression. The format is the project() call's, three dot-separated
+    // decimal components and nothing else.
     int major = 0;
     int minor = 0;
     int patch = 0;
-    std::sscanf(BoysExpectedVersion, "%d.%d.%d", &major, &minor, &patch);
+    {
+        int* parts[] = {&major, &minor, &patch};
+        const char* p = BoysExpectedVersion;
+
+        for (int i = 0; i < 3 && *p != '\0'; ++i)
+        {
+            while (*p == '.')
+            {
+                ++p;
+            }
+
+            while (*p >= '0' && *p <= '9')
+            {
+                *parts[i] = *parts[i] * 10 + (*p - '0');
+                ++p;
+            }
+        }
+    }
     Require(report,
             boys::kVersionMajor == major && boys::kVersionMinor == minor &&
                 boys::kVersionPatch == patch,
