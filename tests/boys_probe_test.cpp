@@ -573,4 +573,85 @@ TEST(ProbeTest, TheTextStatesWhatTheResultIsAbout) {
     }
 }
 
+// A caller who names a set is answered about that set: the options measured are
+// the ones named, and the text scopes its fastest option to those rather than
+// to the library.
+TEST(ProbeTest, NamingASetMeasuresOnlyThatSet) {
+    const OptionProbeReport all = boys::RunOptionProbe(Untimed());
+    ASSERT_GT(all.measurements.size(), 1u)
+        << "this build must offer more than one option for a subset to be narrower";
+
+    ProbeOptions options = Untimed();
+    options.only = {all.measurements.front().name, all.measurements.back().name};
+
+    const OptionProbeReport subset = boys::RunOptionProbe(options);
+
+    ASSERT_EQ(subset.measurements.size(), 2u);
+    EXPECT_EQ(subset.measurements.front().name, all.measurements.front().name);
+    EXPECT_EQ(subset.measurements.back().name, all.measurements.back().name);
+
+    const std::string text = boys::FormatOptionProbe(subset);
+    EXPECT_NE(text.find("not of the library"), std::string::npos);
+}
+
+// Naming every option measures the same set as naming none, so the default a
+// caller who has not chosen yet gets is the library's whole option space.
+TEST(ProbeTest, NamingEveryOptionIsTheSameSetAsNamingNone) {
+    const OptionProbeReport all = boys::RunOptionProbe(Untimed());
+
+    std::vector<std::string> names;
+    for (const OptionProbeMeasurement& measurement : all.measurements)
+    {
+        names.push_back(measurement.name);
+    }
+
+    ProbeOptions named = Untimed();
+    named.only = names;
+
+    const OptionProbeReport namedRun = boys::RunOptionProbe(named);
+
+    EXPECT_EQ(namedRun.measurements.size(), all.measurements.size());
+    EXPECT_EQ(namedRun.unoffered.size(), all.unoffered.size());
+    EXPECT_TRUE(namedRun.notAnOption.empty());
+}
+
+// A name that is no option of this library is reported rather than quietly
+// measuring nothing, because an empty report otherwise reads as a machine on
+// which nothing is fast.
+TEST(ProbeTest, ANameThatIsNoOptionIsReported) {
+    ProbeOptions options = Untimed();
+    options.only = {"batch-fp64-that-never-was"};
+
+    const OptionProbeReport report = boys::RunOptionProbe(options);
+
+    EXPECT_TRUE(report.measurements.empty());
+    ASSERT_EQ(report.notAnOption.size(), 1u);
+    EXPECT_EQ(report.notAnOption.front(), "batch-fp64-that-never-was");
+
+    const std::string text = boys::FormatOptionProbe(report);
+    EXPECT_NE(text.find("batch-fp64-that-never-was"), std::string::npos);
+    EXPECT_NE(text.find("no option of this library"), std::string::npos);
+}
+
+// A name this build cannot serve is a build fact, and is kept apart from a name
+// that is no option at all.
+TEST(ProbeTest, ASetThisBuildCannotServeIsNotAMisspelling) {
+    const OptionProbeReport all = boys::RunOptionProbe(Untimed());
+
+    if (all.unoffered.empty())
+    {
+        GTEST_SKIP() << "this build offers every option, so no unoffered name exists to ask for";
+    }
+
+    ProbeOptions options = Untimed();
+    options.only = {all.unoffered.front()};
+
+    const OptionProbeReport report = boys::RunOptionProbe(options);
+
+    ASSERT_EQ(report.unoffered.size(), 1u);
+    EXPECT_EQ(report.unoffered.front(), all.unoffered.front());
+    EXPECT_TRUE(report.notAnOption.empty()) << "an unoffered option is a build fact, not a typo";
+    EXPECT_TRUE(report.measurements.empty());
+}
+
 } // namespace

@@ -1028,7 +1028,46 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
     Buffers buffers = MakeBuffers(work);
     report.orderRuns = work.runOrder.size();
     report.largestRun = work.largestRun;
-    const std::vector<Option> options_ = EnumerateOptions(report.backends, report.unoffered);
+    std::vector<Option> options_ = EnumerateOptions(report.backends, report.unoffered);
+
+    // A caller who names a set is answered about that set, and every conclusion
+    // below is drawn from what was measured, so the set is narrowed before
+    // anything is measured rather than filtered out of the report afterwards.
+    // A name that is no option of this library is recorded rather than silently
+    // measuring nothing, because an empty report otherwise reads as a machine
+    // on which nothing is fast.
+    if (!options.only.empty())
+    {
+        const auto asked = [&](const std::string& name) {
+            return std::find(options.only.begin(), options.only.end(), name) != options.only.end();
+        };
+
+        for (const std::string& name : options.only)
+        {
+            const bool known =
+                std::any_of(options_.begin(),
+                            options_.end(),
+                            [&](const Option& tried) { return tried.name == name; }) ||
+                std::find(report.unoffered.begin(), report.unoffered.end(), name) !=
+                    report.unoffered.end();
+
+            if (!known)
+            {
+                report.notAnOption.push_back(name);
+            }
+        }
+
+        options_.erase(std::remove_if(options_.begin(),
+                                      options_.end(),
+                                      [&](const Option& tried) { return !asked(tried.name); }),
+                       options_.end());
+        report.unoffered.erase(
+            std::remove_if(report.unoffered.begin(),
+                           report.unoffered.end(),
+                           [&](const std::string& name) { return !asked(name); }),
+            report.unoffered.end());
+    }
+
     report.measurements.resize(options_.size());
     std::vector<std::vector<double>> passCost(options.passes);
 
@@ -1198,14 +1237,16 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
             : 0.0;
 
     text += "boys option probe — this result is about this machine, this build and this process.\n";
-    text += Text("  machine: %d logical processors | AVX2+FMA tier: %s\n", report.logicalProcessors,
+    text += Text("  machine: %d logical processors | AVX2+FMA tier: %s\n",
+                 report.logicalProcessors,
                  report.avx2 ? "present" : "absent");
     text += "  arithmetic backends this build carries, and whether a bare a*b+c written in each\n";
     text += "  is a single rounding here:\n";
 
     for (const backend::BackendInfo& entry : report.backends)
     {
-        text += Text("    %-14s contracts=%s\n", entry.name != nullptr ? entry.name : "(unnamed)",
+        text += Text("    %-14s contracts=%s\n",
+                     entry.name != nullptr ? entry.name : "(unnamed)",
                      entry.contracts ? "yes" : "no");
     }
 
@@ -1227,6 +1268,18 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
                  report.options.calibrationSeconds);
     text += Text("            stay within %.1f%% of each other\n",
                  report.options.canarySpreadThreshold);
+
+    if (!report.options.only.empty())
+    {
+        text += "  measured set: named by the caller, so the fastest option below is the fastest\n";
+        text += "            of these and not of the library:\n";
+
+        for (const std::string& name : report.options.only)
+        {
+            text += Text("              %s\n", name.c_str());
+        }
+    }
+
     text += "  canary: a fixed-work integer spin with no floating point, so the arithmetic\n";
     text += "            question above cannot change the instrument's own cost. ";
     text += Text("Its quiet floor\n            here is the fastest of the %d runs of it in the "
@@ -1299,11 +1352,16 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
         if (measurement.measured)
         {
             text += Text("  %-19s %-13s %-9s %8.2f  %6.2fx  %2d/%d  %6.1f  %11.3e  %10.3g  %s\n",
-                         measurement.name.c_str(), measurement.arithmetic.c_str(),
-                         measurement.contracts ? "yes" : "no", measurement.nsPerArgument,
-                         measurement.spread, measurement.cleanPasses,
+                         measurement.name.c_str(),
+                         measurement.arithmetic.c_str(),
+                         measurement.contracts ? "yes" : "no",
+                         measurement.nsPerArgument,
+                         measurement.spread,
+                         measurement.cleanPasses,
                          measurement.cleanPasses + measurement.disturbedPasses,
-                         measurement.loadAtMinimum, measurement.maxError, measurement.bound,
+                         measurement.loadAtMinimum,
+                         measurement.maxError,
+                         measurement.bound,
                          verdict.c_str());
         } else
         {
@@ -1312,6 +1370,17 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
                          measurement.contracts ? "yes" : "no", "-", "-", measurement.cleanPasses,
                          measurement.cleanPasses + measurement.disturbedPasses, "-",
                          measurement.maxError, measurement.bound, verdict.c_str());
+        }
+    }
+
+    if (!report.notAnOption.empty())
+    {
+        text += "\nnames asked for that are no option of this library, so nothing was measured "
+                "for them:\n";
+
+        for (const std::string& name : report.notAnOption)
+        {
+            text += Text("  %s\n", name.c_str());
         }
     }
 

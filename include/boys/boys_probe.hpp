@@ -168,6 +168,17 @@ struct ProbeOptions {
     /// probe then orders is decided by the measured resolution, not by this
     /// number, so a lenient bar here costs no honesty.
     double canarySpreadThreshold = 5.0;
+
+    /// The options to measure, named as the report prints them. Empty measures
+    /// every option this build offers, which is what a caller who has not
+    /// chosen yet wants.
+    ///
+    /// Naming a set narrows every figure and every conclusion below to that
+    /// set: the fastest option reported is then the fastest of the ones asked
+    /// for. A name that is no option of this library is reported apart from one
+    /// this build cannot serve, so a misspelling is told apart from a build
+    /// fact rather than read as a machine on which nothing is fast.
+    std::vector<std::string> only;
 };
 
 /// One timed pass and the canary readings that decide whether its figures may be
@@ -323,6 +334,12 @@ struct OptionProbeReport {
     /// Options the library offers on other builds but not on this one, because
     /// this build's backend table does not carry the arithmetic they run in.
     std::vector<std::string> unoffered;
+
+    /// Names the caller asked for that are no option of this library at all.
+    /// Kept apart from the unoffered list above, which holds options the library
+    /// has and this build cannot serve: a name here is a misspelling, and
+    /// nothing was measured for it.
+    std::vector<std::string> notAnOption;
 
     /// Order runs the workload's arguments fall into: the number of calls the
     /// grouped options make for one pass, and the shape the per-argument
