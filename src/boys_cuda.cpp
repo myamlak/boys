@@ -132,6 +132,13 @@ constexpr int kRelaxedStride = detail::kPieceStart[detail::kMaxOrder + 1] >
 std::array<int, kEffLaneCount*(kEffMaxOrder + 1) * kEffMaxPieces> gEffDegA{};
 std::array<int, kEffLaneCount*(kEffMaxOrder + 1)> gEffDegB{};
 
+// Which multiplier the host-side tables above were last computed for. It is a
+// record of the HOST computation and not of what the device holds: residency on
+// a device is the upload's question, and its guard names the device as well as
+// the multiplier. Answering residency here would skip the upload a second
+// device still needs, and that device's kernels would read a zero table.
+double gEffCachedM = -1.0;
+
 template <double kAccuracyMultiplier, detail::BoysRole kRole, bool kDoublePieces>
 void FillEffLane(int lane) {
     static constexpr auto kDegreesA = detail::RegionADegrees<kAccuracyMultiplier, kRole>();
@@ -162,20 +169,21 @@ void FillEffLane(int lane) {
 // piece table even for the float/fp16 batch lanes (RoleUsesDoubleTables —
 // the downward recursion amplifies float seed errors beyond their budgets).
 template <double kAccuracyMultiplier> BoysStatus EnsureEffTables() {
-    // Whether the tables are already resident is the .cu's answer and not a
-    // cache kept here: a cache keyed on m alone cannot see a device switch, and
-    // would then report one device's tables as another's.
-    if (BoysCudaEffTablesResident(kAccuracyMultiplier) == 1)
+    // The host-side degree tables depend on the multiplier alone, so they are
+    // computed once per multiplier. Whether the device already holds them is
+    // the upload's question, and its guard names the device as well as the
+    // multiplier: answering it here would skip the upload a second device
+    // still needs, and that device's kernels would read a zero table.
+    if (gEffCachedM != kAccuracyMultiplier)
     {
-        return BoysStatus::kSuccess;
+        FillEffLane<kAccuracyMultiplier, detail::BoysRole::kDoubleSingle, true>(0);
+        FillEffLane<kAccuracyMultiplier, detail::BoysRole::kDoubleBatch, true>(1);
+        FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Single, false>(2);
+        FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Batch, true>(3);
+        FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Fp16Single, false>(4);
+        FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Fp16Batch, true>(5);
+        gEffCachedM = kAccuracyMultiplier;
     }
-
-    FillEffLane<kAccuracyMultiplier, detail::BoysRole::kDoubleSingle, true>(0);
-    FillEffLane<kAccuracyMultiplier, detail::BoysRole::kDoubleBatch, true>(1);
-    FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Single, false>(2);
-    FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Batch, true>(3);
-    FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Fp16Single, false>(4);
-    FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Fp16Batch, true>(5);
 
     return FromLaunchCode(
         BoysCudaUploadEffTables(kAccuracyMultiplier, gEffDegA.data(), gEffDegB.data()));

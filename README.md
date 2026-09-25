@@ -357,6 +357,56 @@ than assumed — it prints `CANNOT DETERMINE` and names what it could not separa
 noise. `boys::RunOptionProbe` is the entry and `boys::ProbeOptions` moves the workload to your basis;
 the text it prints says the result is about the machine it ran on.
 
+## Which CUDA entry is cheapest on your card
+
+A CUDA ranking is a statement about a card, not about the library: a part whose documented ratio of
+single- to double-precision throughput is 2 orders the fp64 and fp32 lanes differently from one whose
+ratio is 32, and a card whose compute capability predates the bf16 tensor instructions has no tensor
+path at all. So the CUDA lane ships the same kind of measurement. `boys::RunDeviceOptionProbe` takes
+a device ordinal, establishes that device's context before it allocates anything, and returns a
+`boys::DeviceProbeReport` — the card's name and compute capability in the returned data, one figure
+per entry with the spread it was taken under, one conclusion per question class with the resolution
+that class was ordered at, and the entries it could not separate. `boys-device-probe` is a thin
+driver over it for the terminal:
+
+    cmake -S . -B build-cuda -DBUILD_CUDA=ON
+    cmake --build build-cuda --target boys-device-probe
+    ./build-cuda/Release/boys-device-probe     # the config directory is your generator's
+
+The figures are device time only. The arguments and the output are uploaded and allocated once,
+before the first clock, and every figure is a CUDA event pair around many back-to-back launches into
+those resident buffers, divided by the number of launches and by the number of arguments — so neither
+the transfer nor the host's submission of a launch is what is being timed. The entries a caller
+reaches through `boys_cuda.hpp` are timed as the library's own kernel; the device-callable entries of
+`boys_cuda_device.hpp`, which are meant to run inside the caller's kernel, are timed by subtraction —
+the caller's kernel with the call in it, less the same kernel with the call removed and the traffic
+kept — and the report names which method produced each row.
+
+Two checks say what the timer is and is not measuring, and both are reported rather than assumed. One
+entry is timed at two very different numbers of launches per region. A cost that repeats with the
+launch rather than with the call is divided by a different number at each count, so it would move the
+figure; a row whose figure moves further than that run can place the row is set aside and the class
+falls to the next entry rather than shipping it. And a kernel launched the same way that does no Boys
+arithmetic at all gives the floor per launch, which the report states as a fraction of the fastest
+launched figure's own cost per call: on a platform whose host submission is expensive, a workload too
+small to carry its own launch is a workload whose ranking is of the launcher. Raising
+`boys::DeviceProbeOptions::count` is what answers that.
+
+`boys::DeviceProbeStatus` is how a bad device is reported — an ordinal that does not exist is a
+status and not a crash, and the call does not throw for it.
+
+Measuring a device other than the one the caller has been using does not disturb the caller's. The
+probe sets its device before it allocates or uploads anything, and puts the calling thread's device
+back before it returns. Every table is uploaded to whichever device is current when it is uploaded
+and is guarded on that device, so a copy another device already holds is never written over and a
+device the caller had already set up is not re-uploaded: the two devices' tables stay resident side
+by side and each keeps its own. The one trace the probe leaves is the lane's record of which device
+the tables last went to, which now names the device it measured — and that record is read by the
+guard that compares it against the current device, so the caller's next call on their own device
+uploads the same tables once more. That is redundant work rather than changed state, and it is
+idempotent by construction: a record left naming another device makes an upload happen, never makes
+one be skipped.
+
 ## Supported platforms
 
 Every row below is a CI leg that runs on every push to `main` and every pull request. The

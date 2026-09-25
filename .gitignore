@@ -1,5 +1,6 @@
 # Build outputs
 /build/
+/build-*/
 
 # Visual Studio IDE files
 /.vs/
