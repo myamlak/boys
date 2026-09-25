@@ -501,15 +501,19 @@ grouping, which exists to feed a lane that packs four *arguments* and has nothin
 call has one argument to pack. The gate measures the axis on both shapes, and both rows read the same
 figures because there is one arithmetic between them.
 
-Two calls are refused where they are named, and both are measured by compiling the call in a
-configure probe rather than by quoting an assertion. `BoysFixedN` produces exactly one order at every
-argument of an array: a packed lane keeps four orders of one argument, the call has one, and no
-revision of that entry produces four — the axis cannot be formed on it, which is a property of the
-call and not a table nobody built. A relaxed multiplier on the axis is a different kind of refusal: it
-is refused because the packed orders lane evaluates every stored fit at its full degree and reads no
-effective-degree table, so it carries no rung. That is a table that has not been derived, and it is
-owed rather than impossible — the rung is the same dropped-tail criterion the shipped route's rungs
-are truncated by, applied at the degree the lane reads.
+One call is refused where it is named, and it is measured by compiling the call in a configure probe
+rather than by quoting an assertion. `BoysFixedN` produces exactly one order at every argument of an
+array: a packed lane keeps four orders of one argument, the call has one, and no revision of that
+entry produces four — the axis cannot be formed on it, which is a property of the call and not a table
+nobody built.
+
+A relaxed multiplier on the axis, and a route other than the shipped one, were limits of the other
+kind — a table the lane did not carry — and both are built. The effective-degree table the lane reads
+at a rung is the same dropped-tail criterion this library's other rungs are truncated by, applied at
+the degree the lane reads; and the rational route's region-A fits cover the same per-order intervals
+as the shipped piece table, so the lane reads them where it read that one. The gate's packing book
+measures every rung the tier enumeration declares, on both routes, through both entries that carry the
+axis, each against the figure that combination documents.
 
 **The domain is region A, and its bounds are the fits' own.** The orders lane covers `0 <= x < kX0`
 and is certified against the per-order region-A bar, **|F̂ − F| ≤ m·1e-15**. At the certified split
@@ -565,12 +569,13 @@ loaded machine is not a measurement, and the two counters are. The route's own b
 worst deviation from the shipped entry beside each run, so a count can never be of a broken variant,
 and its header carries the exact command that reproduces the two columns.
 
-**What is refused.** The lane evaluates the shipped region-A piece table and reads no other family's
-tables, so naming the orders axis with the rational minimax route is refused where it is named, and
-the refusal is measured by a configure probe that compiles exactly that call. The plane entry and the
-fixed-order entry have one order to fill a vector lane with, so the orders axis cannot be formed on
-those at all — that is the entries' signature and not a body nobody built. Each limit names the
-combination and what is not certified about it; none falls back silently to another axis.
+**What the lane reads.** The lane evaluates the stored fit the policy names: the shipped Chebyshev
+piece table on the shipped route, the rational route's region-A pairs where that route is named —
+their pieces cover the same per-order intervals — and each fit at the degree the multiplier's
+effective-degree table cuts it to. `BoysFixedN` has one order to fill a vector lane with, so the
+orders axis cannot be formed on it at all — that is the entry's signature and not a body nobody
+built. Each limit names the combination and what is not certified about it; none falls back silently
+to another axis.
 
 ## Large arguments, and the boundaries at x = 11.8998 and x = 28.9893
 
