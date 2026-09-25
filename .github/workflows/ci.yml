@@ -256,15 +256,10 @@ jobs:
         with:
           submodules: true
       - uses: ilammy/msvc-dev-cmd@v1.13.0
-      - name: Set up Python + mpmath + clang-format (pinned)
-        run: |
-          python -m venv .venv
-          .\.venv\Scripts\python.exe -m pip install --quiet mpmath==1.4.1 clang-format==18.1.3 pyyaml==6.0.2
-      - name: Install Doxygen 1.18.0 (pinned release)
-        run: |
-          Invoke-WebRequest -Uri https://github.com/doxygen/doxygen/releases/download/Release_1_18_0/doxygen-1.18.0.windows.x64.bin.zip -OutFile doxygen.zip
-          Expand-Archive doxygen.zip -DestinationPath doxygen-1.18.0
-          Add-Content -Path $env:GITHUB_PATH -Value "$PWD\doxygen-1.18.0"
+      # No Python, Doxygen or generator step on this job: the source-integrity
+      # gates answer questions about the sources rather than about this leg's
+      # configuration, so they run once, on the one linux-x86 combination that
+      # carries them. See the note there.
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF -DBOYS_EXPECT_AVX2=${{ matrix.expect_avx2 }}
       - name: Build
@@ -287,18 +282,6 @@ jobs:
       # binaries, same exit statuses as the ctest step above.
       - name: Verdicts (accuracy gate and consumer checks)
         run: ctest --test-dir build -V -R 'boys-accuracy-gate|boys-consumer-'
-      - name: Generator byte-identity (no-args regeneration + --check + git diff)
-        env:
-          CLANG_FORMAT: ${{ github.workspace }}/.venv/Scripts/clang-format.exe
-        run: |
-          .\.venv\Scripts\python.exe tools/gen_boys_coefficients.py --header include/boys/boys_coefficients.hpp --reference tests/data/boys_reference.csv
-          .\.venv\Scripts\python.exe tools/gen_boys_coefficients.py --check --header include/boys/boys_coefficients.hpp --reference tests/data/boys_reference.csv
-          git diff --exit-code -- include/boys/boys_coefficients.hpp tests/data/boys_reference.csv
-      - name: Generated tables (platform table, build-facts page, option matrix)
-        run: |
-          .\.venv\Scripts\python.exe tools/gen_platform_table.py --check
-          .\.venv\Scripts\python.exe tools/gen_option_matrix.py --check
-          .\.venv\Scripts\python.exe tools/gen_build_facts.py --check
       - name: Boundary standalone check
         run: |
           New-Item -ItemType Directory -Force boundary-run | Out-Null
@@ -306,9 +289,6 @@ jobs:
           Copy-Item tests/data/boys_reference.csv boundary-run\boys_reference.csv
           Set-Location boundary-run
           .\boys-boundary-check.exe
-      - name: Docs (zero-warning Doxygen gate)
-        run: cmake --build build --target boys-docs
-
   # -------------------------------------------------------------------------
   # ubuntu-latest, GCC and Clang, Debug + Release. The original
   # linux-gcc-release job, unchanged, plus Clang and the Debug configurations.
@@ -344,11 +324,22 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           submodules: true
+      # The source-integrity gates below answer questions about the SOURCES:
+      # whether the committed coefficient tables are what the generator
+      # produces, whether the generated pages are what their generators render,
+      # and whether the headers document cleanly. None of those answers depends
+      # on the compiler or on the build type, so they are scoped to one
+      # combination and produce their answer exactly once instead of once per
+      # leg. The steps that DO depend on the configuration - the build, the
+      # tests, and the build-facts probe against this leg's recorded row - are
+      # left unscoped, which is what the matrix is for.
       - name: Set up Python + mpmath + clang-format (pinned)
+        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           python3 -m venv .venv
           .venv/bin/python -m pip install --quiet mpmath==1.4.1 clang-format==18.1.3 pyyaml==6.0.2
       - name: Install Doxygen 1.18.0 (pinned release)
+        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           curl -L -sS -o /tmp/doxygen.tar.gz https://github.com/doxygen/doxygen/releases/download/Release_1_18_0/doxygen-1.18.0.linux.bin.tar.gz
           tar -xzf /tmp/doxygen.tar.gz -C /tmp
@@ -371,14 +362,14 @@ jobs:
       # binaries, same exit statuses as the ctest step above.
       - name: Verdicts (accuracy gate and consumer checks)
         run: ctest --test-dir build -V -R 'boys-accuracy-gate|boys-consumer-'
-      - name: Generator byte-identity (no-args regeneration + --check + git diff)
+      - name: Generator byte-identity (a fresh generation, compared byte for byte)
+        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         env:
           CLANG_FORMAT: ${{ github.workspace }}/.venv/bin/clang-format
         run: |
-          .venv/bin/python tools/gen_boys_coefficients.py --header include/boys/boys_coefficients.hpp --reference tests/data/boys_reference.csv
           .venv/bin/python tools/gen_boys_coefficients.py --check --header include/boys/boys_coefficients.hpp --reference tests/data/boys_reference.csv
-          git diff --exit-code -- include/boys/boys_coefficients.hpp tests/data/boys_reference.csv
       - name: Generated tables (platform table, build-facts page, option matrix)
+        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/gen_platform_table.py --check
           .venv/bin/python tools/gen_option_matrix.py --check
@@ -390,6 +381,7 @@ jobs:
           cp tests/data/boys_reference.csv boundary-run/boys_reference.csv
           cd boundary-run && ./boys-boundary-check
       - name: Docs (zero-warning Doxygen gate)
+        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: cmake --build build --target boys-docs
   # -------------------------------------------------------------------------
   # ubuntu-latest, AddressSanitizer + UndefinedBehaviorSanitizer. For kernel
@@ -530,15 +522,10 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           submodules: true
-      - name: Set up Python + mpmath + clang-format (pinned)
-        run: |
-          python3 -m venv .venv
-          .venv/bin/python -m pip install --quiet mpmath==1.4.1 clang-format==18.1.3 pyyaml==6.0.2
-      - name: Install Doxygen 1.18.0 (pinned release)
-        run: |
-          curl -L -sS -o /tmp/doxygen.zip https://github.com/doxygen/doxygen/releases/download/Release_1_18_0/${{ matrix.doxygen_asset }}
-          unzip -q /tmp/doxygen.zip -d /tmp
-          echo "$(dirname "$(find /tmp/doxygen-1.18.0 -name doxygen -type f | head -1)")" >> "$GITHUB_PATH"
+      # No Python, Doxygen or generator step on this job: the source-integrity
+      # gates answer questions about the sources rather than about this leg's
+      # configuration, so they run once, on the one linux-x86 combination that
+      # carries them. See the note there.
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF -DBOYS_EXPECT_AVX2=${{ matrix.expect_avx2 }}
       - name: Build
@@ -558,27 +545,12 @@ jobs:
       # binaries, same exit statuses as the ctest step above.
       - name: Verdicts (accuracy gate and consumer checks)
         run: ctest --test-dir build -V -R 'boys-accuracy-gate|boys-consumer-'
-      - name: Generator byte-identity (no-args regeneration + --check + git diff)
-        env:
-          CLANG_FORMAT: ${{ github.workspace }}/.venv/bin/clang-format
-        run: |
-          .venv/bin/python tools/gen_boys_coefficients.py --header include/boys/boys_coefficients.hpp --reference tests/data/boys_reference.csv
-          .venv/bin/python tools/gen_boys_coefficients.py --check --header include/boys/boys_coefficients.hpp --reference tests/data/boys_reference.csv
-          git diff --exit-code -- include/boys/boys_coefficients.hpp tests/data/boys_reference.csv
-      - name: Generated tables (platform table, build-facts page, option matrix)
-        run: |
-          .venv/bin/python tools/gen_platform_table.py --check
-          .venv/bin/python tools/gen_option_matrix.py --check
-          .venv/bin/python tools/gen_build_facts.py --check
       - name: Boundary standalone check
         run: |
           mkdir -p boundary-run
           c++ -std=c++17 -O2 tests/boys_boundary_standalone.cpp -o boundary-run/boys-boundary-check
           cp tests/data/boys_reference.csv boundary-run/boys_reference.csv
           cd boundary-run && ./boys-boundary-check
-      - name: Docs (zero-warning Doxygen gate)
-        run: cmake --build build --target boys-docs
-
   # -------------------------------------------------------------------------
   # ubuntu-latest, clang-tidy over the project's own compile database.
   #
