@@ -16,6 +16,7 @@
 #include "boys/boys_cuda_probe.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <gtest/gtest.h>
 #include <string>
@@ -135,6 +136,35 @@ TEST(DeviceProbe, AVerdictNamesOnlyEntriesItMeasured) {
         EXPECT_EQ(named->question, clause.question);
         EXPECT_GT(clause.resolution, 0.0);
         EXPECT_FALSE(clause.confidence.empty());
+    }
+}
+
+/// A control that agrees has two figures to compare. A count at which the
+/// subtraction resolved no cost leaves a zero, and a zero is not a second
+/// reading: a control that called that agreement would be passing on no
+/// evidence, which is the one thing this check exists to prevent.
+TEST(DeviceProbe, AControlAgreesOnlyBetweenTwoFigures) {
+    DeviceProbeOptions options = Small();
+    options.passes = 1;
+    options.canarySpreadThreshold = 1.0e9;
+
+    const DeviceProbeReport report = boys::RunDeviceOptionProbe(options);
+
+    ASSERT_EQ(report.status, DeviceProbeStatus::kSuccess);
+
+    const boys::DeviceProbeRepetitionControl* controls[] = {&report.control,
+                                                            &report.deviceCallControl};
+
+    for (const boys::DeviceProbeRepetitionControl* control : controls)
+    {
+        if (control->entry.empty() || !control->agrees)
+        {
+            continue;
+        }
+
+        EXPECT_GT(control->nsPerArgumentLow, 0.0) << control->entry;
+        EXPECT_GT(control->nsPerArgumentHigh, 0.0) << control->entry;
+        EXPECT_TRUE(std::isfinite(control->difference)) << control->entry;
     }
 }
 

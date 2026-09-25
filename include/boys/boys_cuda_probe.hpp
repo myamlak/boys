@@ -406,8 +406,10 @@ struct DeviceProbeMeasurement {
     /// the launch rather than with the call survived into it — for a launched row
     /// that is the launch, and for a subtracted row it is the halves' own noise
     /// amplified by the ratio between the difference and the readings it came
-    /// from. Such a row is not ordered: the class lists it in \c notOrdered and
-    /// falls to the next row.
+    /// from. It is also false when one of the two counts left no figure to
+    /// compare, which establishes nothing either way rather than establishing
+    /// agreement. Such a row is not ordered: the class lists it in \c notOrdered
+    /// and falls to the next row.
     bool repetitionAgrees = true;
 
     /// The repetition control's own sentence about this row, empty when it was
@@ -519,13 +521,17 @@ struct DeviceProbeRepetitionControl {
     double nsPerArgumentBaselineHigh = 0.0;
 
     /// The two figures' disagreement, as a fraction of the faster of them.
+    /// Infinite when one of the two counts produced no figure to compare — the
+    /// subtraction at that count resolved nothing — which is not a disagreement
+    /// of zero and must not be read as one.
     double difference = 0.0;
 
     /// Whether the two counts agreed within the resolution the run measured —
     /// the larger of the canary's widest admitted spread and this row's own
-    /// spread across its clean passes. False means a fixed cost per call survived
-    /// into the figures at the repetition count they were taken at, and the
-    /// report says so rather than shipping them.
+    /// spread across its clean passes. False means either that a fixed cost per
+    /// call survived into the figures at the repetition count they were taken at,
+    /// or that one count left nothing to compare; the note says which, and the
+    /// report sets the row aside rather than shipping it.
     bool agrees = false;
 
     /// The resolution the two counts were judged against, as a fraction. Carried

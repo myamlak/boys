@@ -602,16 +602,37 @@ bool RunRepetitionControl(const EntryInfo& info,
     }
 
     const double smaller = std::min(out.nsPerArgumentLow, out.nsPerArgumentHigh);
+    // A count at which the subtraction resolved nothing leaves no second figure
+    // to compare, and the one outcome that must never come out of that is
+    // agreement: the control would be passing without evidence, and this is the
+    // check the whole subtraction route rests on. The difference is infinite
+    // rather than zero, so the data says what the note says.
+    const bool resolved = smaller > 0.0;
 
-    out.difference =
-        smaller > 0.0
-            ? std::fabs(out.nsPerArgumentHigh - out.nsPerArgumentLow) / smaller
-            : 0.0;
+    out.difference = resolved
+                         ? std::fabs(out.nsPerArgumentHigh - out.nsPerArgumentLow) / smaller
+                         : std::numeric_limits<double>::infinity();
     // The resolution this run measured for that row is what the two counts are
     // judged against: a run that could not place that row has no yardstick for
     // its repetition counts either, and the control says so rather than inventing
     // a bar here.
     out.agrees = judgedAgainst > 0.0 && out.difference <= judgedAgainst;
+
+    const std::string comparison =
+        resolved
+            ? Text("a disagreement of %.2f%%, %s the %.2f%% this row can be placed at (the "
+                   "canary's widest admitted spread and this row's own passes together), which is "
+                   "the check that a cost repeating with the launch rather than with the call did "
+                   "not survive into the figures at the repetition count they were taken at",
+                   100.0 * out.difference,
+                   out.agrees ? "inside" : "OUTSIDE",
+                   100.0 * judgedAgainst)
+            : Text("no disagreement to report, because at %d launches the subtraction resolved no "
+                   "cost at all: there is no second figure to set beside the one at %d launches, "
+                   "so this control has not established that the figure holds as the launches are "
+                   "repeated and the row is not ordered on it",
+                   clamped.controlRepetitionsHigh,
+                   clamped.controlRepetitionsLow);
 
     const std::string halves =
         subtracted
@@ -629,20 +650,14 @@ bool RunRepetitionControl(const EntryInfo& info,
                    "than two");
 
     out.note = Text("'%s' on the %s route at %d and %d launches gives %.3f against %.3f "
-                    "ns/argument, a disagreement of %.2f%%, %s the %.2f%% this row can be placed "
-                    "at (the canary's widest admitted spread and this row's own passes together), "
-                    "which is the check that a cost repeating with the launch rather than with the "
-                    "call did not survive into the figures at the repetition count they were taken "
-                    "at; %s",
+                    "ns/argument: %s; %s",
                     row.name.c_str(),
                     row.route.c_str(),
                     clamped.controlRepetitionsLow,
                     clamped.controlRepetitionsHigh,
                     out.nsPerArgumentLow,
                     out.nsPerArgumentHigh,
-                    100.0 * out.difference,
-                    out.agrees ? "inside" : "OUTSIDE",
-                    100.0 * judgedAgainst,
+                    comparison.c_str(),
                     halves.c_str());
     return true;
 }
@@ -1774,7 +1789,7 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
 
     text += "\nentries - ns/argument is device time per argument, transfer and host submission "
             "excluded\n";
-    text += "  entry                     precision  shape        route      ns/arg   minus    "
+    text += "  entry                     precision  shape        route      ns/arg     minus    "
             "spread  clean  bound      method\n";
 
     for (const DeviceProbeMeasurement& measurement : report.measurements)
@@ -1786,7 +1801,7 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
 
         if (!measurement.measured)
         {
-            text += Text("  %-24s %-10s %-11s %-10s %8s  %-7s  %6s  %2d/%d  %8.2g  %s\n",
+            text += Text("  %-24s %-10s %-11s %-10s %10s  %-7s  %6s  %2d/%d  %8.2g  %s\n",
                          measurement.name.c_str(),
                          measurement.precision.c_str(),
                          measurement.shape.c_str(),
@@ -1802,7 +1817,27 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
             continue;
         }
 
-        text += Text("  %-24s %-10s %-11s %-10s %8.3f  %-7s  %6.2fx  %2d/%d  %8.2g  %s\n",
+        // An in-kernel row whose subtraction did not clear its own baseline has no
+        // figure, and printing the zero it came out at would read as a free call:
+        // the class this row belongs to sets it aside, so the table says the same.
+        if (!measurement.subtractionResolved)
+        {
+            text += Text("  %-24s %-10s %-11s %-10s %10s  %-7s  %6.2fx  %2d/%d  %8.2g  %s\n",
+                         measurement.name.c_str(),
+                         measurement.precision.c_str(),
+                         measurement.shape.c_str(),
+                         measurement.route.c_str(),
+                         "unresolved",
+                         baseline.c_str(),
+                         measurement.spread,
+                         measurement.cleanPasses,
+                         report.options.passes,
+                         measurement.documentedBound,
+                         "caller kernel, subtracted");
+            continue;
+        }
+
+        text += Text("  %-24s %-10s %-11s %-10s %10.3f  %-7s  %6.2fx  %2d/%d  %8.2g  %s\n",
                      measurement.name.c_str(),
                      measurement.precision.c_str(),
                      measurement.shape.c_str(),
@@ -1821,7 +1856,8 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
             "kernel with\n  the call removed and the traffic kept, in the round the figure came "
             "from. A launched row\n  has no minus column because nothing was subtracted from it. "
             "The ns/arg column is the\n  difference between the region that held the call and "
-            "that figure.\n";
+            "that figure, and it reads\n  unresolved for an in-kernel row whose difference did "
+            "not clear its own baseline.\n";
 
     if (!report.unoffered.empty())
     {
@@ -1886,10 +1922,18 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
                          control.nsPerArgumentBaselineHigh);
         }
 
-        text += Text("  disagreement %.2f%%: %s the %.2f%% this row can be placed at\n",
-                     100.0 * control.difference,
-                     control.agrees ? "AGREES within" : "DOES NOT AGREE within",
-                     100.0 * control.judgedAgainst);
+        if (std::isfinite(control.difference))
+        {
+            text += Text("  disagreement %.2f%%: %s the %.2f%% this row can be placed at\n",
+                         100.0 * control.difference,
+                         control.agrees ? "AGREES within" : "DOES NOT AGREE within",
+                         100.0 * control.judgedAgainst);
+        } else
+        {
+            text += Text("  no disagreement: the %d-launch reading resolved no cost, so NOT "
+                         "AGREED\n",
+                         control.repetitionsHigh);
+        }
 
         if (withFloor)
         {
