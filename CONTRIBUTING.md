@@ -31,6 +31,12 @@ reproducibility evidence behind the documented accuracy contract.
    for the build and for CI. The generator verifies them byte-for-byte through `--check`. Never
    commit regenerated tables without running `--check`, and never wire regeneration into CI.
 4. **Small, reviewable changes.** One logical change per pull request.
+5. **Every figure has one home.** The README states each lane's bound and the command that measures
+   it; the per-lane detail — the fit routes and their stored counts, the packing axis and its
+   measured counts, the multiply-add route's own bounds — lives in `docs/lane-contract.md`, and the
+   README summarises it and links to it. A table copied into both is a table that will disagree with
+   itself, so a figure belongs where a reader who wants to check it would look, and everywhere else
+   gets the summary and the link.
 
 ## Build and test
 
