@@ -10,16 +10,29 @@ Every bound here is stated as an **absolute** error — |computed − true| — 
 otherwise. The packed-half lane's bound is relative, and the half lanes' bound is absolute plus a
 term that depends on the size of the result.
 
+Every figure on this page is measured by a program in this tree, and the command below prints the
+comparison for the machine you run it on:
+
+    cmake --build <build> --target boys-accuracy-gate
+    <build>/Release/boys-accuracy-gate --strict      # the config directory is your generator's
+
+It sweeps the documented entries over the committed reference grid and prints, lane by lane and
+region by region, the worst error the lane delivered beside the bound claimed, ending in
+`PASS: every documented claim met at this revision` or in the numbers of the claims that did not hold
+and a non-zero status. `--per-order` extends it to every order and `--probe n x` to a single cell.
+`ctest` runs the same binary as one of its tests, but a passing `ctest` prints only how long the test
+took.
+
 ## How the argument affects the bound
 
 The library evaluates the function differently at different argument sizes, and the error bound
 differs with it:
 
-| Arguments | How they are evaluated |
-|---|---|
-| x < 11.899848152108484 | stored polynomial fits |
-| 11.899848152108484 ≤ x < 28.98933773882074 | a stored fit at the lowest order, then upward recursion |
-| x ≥ 28.98933773882074 | a closed-form asymptotic result |
+| Arguments | Region | How they are evaluated |
+|---|---|---|
+| x < 11.899848152108484 | A | stored polynomial fits |
+| 11.899848152108484 ≤ x < 28.98933773882074 | B | a stored fit at the lowest order, then upward recursion |
+| x ≥ 28.98933773882074 | C | a closed-form asymptotic result |
 
 Below about x = 1.0855 the lowest orders are inside their own fits. The argument at which an
 order stops being read from its own fit rises with the order — 1.0855252345349333 for orders 0
@@ -105,6 +118,22 @@ bar, and the rational route reaches it with fewer coefficients because it is ask
 **A rational fit costs one division per order**, where the split-Clenshaw Chebyshev form is
 division-free. That is a real difference in the work, and which side of it a machine lands on is its
 divide-to-multiply throughput — so no speed is claimed for either route here.
+
+**The route is carried on every entry.** `BoysSingle`, `BoysAllOrders`, `BoysAllN` and `BoysFixedN`
+all take the route the policy names, and each answers with the route's own fits rather than with the
+shipped ones under its name: the two shapes that reach their values by a path of their own — the
+plane entry's region-grouped path and the fixed-order entry's shaped path — are the shipped route's,
+and a call naming the rational route is served by the per-argument body instead, which reads its fit
+from the policy. The gate measures the carriage as a difference in the values rather than as a
+sentence about the surface: naming the route changes what four entries return over the interval the
+route's rows cover, and naming the default changes nothing.
+
+**What the carriage delivers.** `BoysAllN` and `BoysFixedN` are swept over the whole committed grid,
+every order, and judged against the named route's own bar for the region the argument falls in —
+113,388 cells, worst delivered 5e-14 at n = 32, x = 28.98933773882074, no cell over. That bar is the
+route's, not the entry's, so the row is the stronger of the two statements: the route's region-A row
+promises 3e-14 where the entry promises 5.5e-14, and the entry holds the tighter figure over the
+region, including the arguments below the route's own selector where the shipped lane answers.
 
 ### The rung, per route
 

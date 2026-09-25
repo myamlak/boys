@@ -6,6 +6,35 @@ the same entries, fp16/bf16 I/O, a native packed-half lane, and optional CUDA la
 
 Source and quick start: the [GitHub repository](https://github.com/myamlak/boys).
 
+Two pages go with this reference, and both are meant to be read before a signature is:
+
+- \subpage md_docs_2consumer-perspective "Choosing a lane: how much accuracy the calculation needs"
+- \subpage md_docs_2lane-contract "The per-lane contract: where each bound holds, and where it stops"
+
+## The words this library uses
+
+Seven words carry the design, and each means here something narrower than it means elsewhere:
+
+- **lane** — an entry together with the arithmetic behind it: the fp64 entries are "the double lane",
+  the packed binary16 ones "the native half lane". A bound is always a statement about one lane.
+- **region** — an interval of the argument x. There are three: **A** below x = 11.899848152108484,
+  **B** from there to x = 28.98933773882074, **C** at or above it. Each is evaluated differently, so
+  a bound is stated per lane *and* region.
+- **route** — a table of stored fits serving a region. The double lane ships two, the Chebyshev fits
+  that are the default and a rational minimax alternative. Naming one with
+  \ref boys::BoysAllOrdersWithRoute changes only the fits that serve the intervals its rows report.
+- **rung** (and its synonym **tier**) — how far a call's stored fit is cut. A call names a
+  multiplier, 1 by default and up to 65536; the rung is the cut the library certifies for it, which
+  loosens the bound and reduces the work. The words are the same thing from two sides: the caller
+  names a multiplier, the library reads a rung (\ref boys::AccuracyTier).
+- **scheme** — the summation a stored Chebyshev fit is read in, split Clenshaw or Horner. It is the
+  second field of \ref boys::EvalPolicy and changes values only where the default fit answers.
+- **axis** (the packing axis) — which of a call's values share a vector register: four arguments at
+  one order, the shipped axis, or four orders at one argument (\ref boys::PackAxis).
+- **gate** — a program in this tree that measures the documented claims against the committed
+  reference and fails when one does not hold. `boys-accuracy-gate` is the accuracy one; the platform,
+  option-matrix and device legs have gates of their own.
+
 ## Entry points
 
 All CPU entries are `noexcept` and total. Their preconditions are n in [0, 32], x >= 0, and output
@@ -128,6 +157,21 @@ agreement with `BoysSingle` is exact where the build does not contract that form
 single lane's bound everywhere; a contracting build may fuse at one call site and not at another, so
 the entry's report prints how many of its comparisons were bit-for-bit equal.
 [the per-lane contract](lane-contract.md) carries the counts.
+
+### Checking these figures
+
+The measurement is in this tree. Build it and run it:
+
+    cmake --build <build> --target boys-accuracy-gate
+    <build>/Release/boys-accuracy-gate --strict      # the config directory is your generator's
+
+It sweeps the documented entries over the committed reference grid (33 orders × 1718 arguments,
+56,694 points) and prints, lane by lane and region by region, the worst error the lane delivered
+beside the bound it claims. The run ends in `PASS: every documented claim met at this revision`, or
+in the numbers of the claims that did not hold and a non-zero status. `--per-order` extends the
+comparison to every order, and `--probe n x` prints one cell from every lane for one argument.
+`ctest` runs the same binary as one of its tests, but a passing `ctest` prints only how long the test
+took.
 
 The double lane's stored fits come in two routes — the Chebyshev fits that are the default, and a
 rational minimax alternative — and \ref boys::BoysFitRoutes reports each one's interval, the

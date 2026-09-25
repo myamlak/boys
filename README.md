@@ -3,18 +3,17 @@
 [![CI](https://github.com/myamlak/boys/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/myamlak/boys/actions/workflows/ci.yml)
 [![docs](https://github.com/myamlak/boys/actions/workflows/docs.yml/badge.svg)](https://github.com/myamlak/boys/actions/workflows/docs.yml)
 [![license](https://img.shields.io/badge/license-BSD--3--Clause-blue)](LICENSE)
-[![version](https://img.shields.io/github/v/tag/myamlak/boys)](https://github.com/myamlak/boys/tags)
+[![version](https://img.shields.io/github/v/tag/myamlak/boys?label=latest%20release%20tag)](https://github.com/myamlak/boys/tags)
 
 Self-contained C++23 evaluation of the Boys function family
-F_n(x) = ∫₀¹ t^(2n) exp(−x t²) dt for n = 0..32.
+F_n(x) = ∫₀¹ t^(2n) exp(−x t²) dt for n = 0..32 — the integral an electronic-structure program
+evaluates at every order a shell quartet can ask for.
 
-It ships scalar fp64 and fp32 lanes, an AVX2 vector tier reached through the same entries, fp16 and
-bf16 I/O wrappers, a native packed-half lane, a matrix-product entry for region A that can run on
+It ships the function in double and single precision, scalar and vectorised, with 16-bit storage
+wrappers, a packed-half variant, an entry that evaluates a batch of arguments as a matrix product for
 tensor cores, and optional CUDA kernels. It depends on nothing outside the C++ standard library, the
-optional CUDA toolkit, and the committed generated tables. Every lane is validated against a
-committed 45-digit reference grid.
-
-**Full API documentation: <https://myamlak.github.io/boys/>**
+optional CUDA toolkit, and tables generated and committed with the source. Every entry is checked
+against a reference grid computed to 45 digits.
 
 ## Quick start
 
@@ -22,6 +21,20 @@ committed 45-digit reference grid.
     cmake -S . -B build
     cmake --build build
     ctest --test-dir build --output-on-failure
+
+The tests are quiet when they pass: `ctest` prints a green line per test and nothing about what was
+checked. To see the accuracy figures themselves, see [Check the figures
+yourself](#check-the-figures-yourself) below.
+
+For a one-file program against an already-built tree, compile and run it like this:
+
+    g++ -std=c++23 -I include try.cpp -L build -lboys -o try
+    ./try
+
+The public headers need C++20 — that is the library's declared requirement, `cxx_std_20` on the
+`boys` target; the tree's own tests are built as C++23. So `-std=c++20` compiles this same program.
+On Windows with the Visual Studio generator the library lands in `build/Release/`, and the CMake
+route below is the one that finds it without flags.
 
 ```cpp
 #include <boys/boys.hpp>
@@ -50,6 +63,17 @@ int main()
     boys::BoysAllNAtOrders(n, x, planes.data(), 3);
 }
 ```
+
+**Choosing a lane.** [docs/consumer-perspective.md](docs/consumer-perspective.md) — how much accuracy
+an integral calculation actually needs, and which of the library's evaluation lanes that leaves to
+choose between.
+
+**The accuracy contract.** [What each lane guarantees](#accuracy-contract) — the bound, and the
+command that measures it on your machine.
+
+The words this library uses — *lane*, *region*, *route*, *rung*, *tier*, *scheme*, *axis*, *gate* —
+are defined on the documentation's landing page, together with the full API reference:
+<https://myamlak.github.io/boys/>.
 
 ## Accuracy contract
 
@@ -166,88 +190,76 @@ The GPU and CPU float lanes agree to within 3.5e-7. That is a cross-lane stateme
 |GPU − CPU| and not a bound on either lane's distance from F_n(x): the default CUDA fp32 entry is
 held to 1.5e-7 above, and the fast option's looser bound is not covered by the 3.5e-7 figure.
 
+### Check the figures yourself
+
+Every figure above is measured, and the measurement ships in this tree. Build the gate and run it:
+
+    cmake -S . -B build
+    cmake --build build --target boys-accuracy-gate
+    ./build/Release/boys-accuracy-gate --strict      # the config directory is your generator's
+
+It sweeps the documented entries over the committed reference grid — 33 orders × 1718 arguments,
+56,694 points — and prints, lane by lane and region by region, the worst error the lane delivered
+beside the bound it claims. `--per-order` adds the same comparison order by order, naming the cells
+the bound actually binds on; `--probe n x` prints one cell from every lane for one argument.
+
+The run ends with a verdict line and an exit status: `PASS: every documented claim met at this
+revision`, or the numbers of the claims that did not hold, with a non-zero status. `ctest` runs this
+binary as one of its tests, but a passing `ctest` prints only how long the test took — the table is
+in this binary's own output.
+
+Run at revision 1e6887d, it printed this (an excerpt; the full run carries one row per lane and
+region):
+
+| Lane | Region | Worst delivered | Bound claimed |
+|---|---|---|---|
+| double single | A | 2.22e-16 | 1e-15 |
+| double single | band | 3.22e-15 | 3e-14 |
+| double single | B | 9.94e-15 | 3e-14 |
+| double single | C | 5e-14 | 5.5e-14 |
+| float single | all | 1.06e-07 | 1.5e-07 |
+| fp16 store-half | single | 0.000122 | 0.000122 |
+| bf16 store-half | single | 0.000976 | 0.000977 |
+
+and ended `PASS: every documented claim met at this revision`.
+
+The gate's region labels are the ones above: `A` is the part of the double lane's range below
+x = 1.0855252345349333, where it claims ≤ 1e-15; `band` is the rest of the range below
+x = 11.899848152108484, where it claims ≤ 3e-14; and `B` and `C` are the two regions beyond that.
+
+### Arguments outside the documented domain
+
+Every entry takes n in [0, 32], x ≥ 0, and output spans of the documented size. What a caller gets
+for stepping outside that is not the same on every surface:
+
+| Surface | What a violation does |
+|---|---|
+| C++ (`boys::`) | The check is `assert` from `<cassert>` — the call aborts in a build with assertions enabled, and a build with them cleared has no check at all. Nothing in this tree defines or clears `NDEBUG`, so a Release build gets it from the toolchain's own release flags, and a caller who wants the check keeps it by compiling this library with `NDEBUG` undefined. There is no fallback value and no clamping: an order outside [0, 32] indexes the order-dependent tables out of bounds, which is why every bound above reads "for every supported n, x". |
+| C (`boys_c.h`) | Every entry validates and returns a status instead: `BOYS_ERROR_INVALID_ARGUMENT` (1) for an order outside [0, 32], a negative or NaN x, or a null pointer, and `BOYS_ERROR_UNSUPPORTED_MULTIPLIER` (2) for a multiplier outside the sampled set its header lists. No abort and no undefined behaviour. |
+| CUDA | The single, batch and all-N entries return `boys::BoysStatus`, whose `kInvalidArgument` is the same validation as the C surface's; the device-callable entries take their orders as template arguments, so an order outside the range does not compile. |
+| Native half (`BoysAllOrdersHalf2`, `BoysAllNF16Native`) | Same `assert`, and one precondition of its own: the entry covers region C only, so an x below the region-C boundary is a violation rather than a fallback to the table regions. |
+| Output spans | The caller sizes them. A span shorter than the call writes is an out-of-bounds write with no check on any surface, and no entry reallocates or truncates. |
+
 ### Fit routes
 
 The double lane's stored fits come in two routes, and a caller picks one per call with
 `BoysAllOrdersWithRoute`. `BoysFitRoutes()` reports them: for each route and region, the interval
 its fit covers, the argument its selector takes over at, how many coefficients it stores, the worst
 error it was measured to deliver, and the bar it is certified against. Both routes hold the same bar
-over the same interval; they differ in what they store to do it. `FitRoute` names the choice, and
-the default route is the fits this library has always shipped, value for value.
+over the same interval; they differ in what they store to do it. The routes are alternatives, not
+rungs: naming one changes only the fits that serve the intervals its rows report, and everywhere else
+the entry runs the default route and returns its values bit for bit, so the lane's tighter per-order
+1e-15 is untouched. A route name the build does not serve evaluates the default route rather than
+returning something the caller did not ask for. **No speed is claimed for either route.**
 
-The routes are alternatives, not rungs: naming one changes only the fits that serve the intervals
-its rows report. Everywhere else — outside them, and below the argument the region-A rational row
-names — the entry runs the default route and returns its values bit for bit, so the lane's tighter
-per-order 1e-15 is untouched. A route name the build does not serve evaluates the default route
-rather than returning something the caller did not ask for.
+The route composes with the evaluation scheme and with the accuracy multiplier into one `EvalPolicy`,
+which every templated double-precision entry takes, and `BoysAllOrdersAtTier(tier, route, scheme,
+...)` — with `BoysSingleAtTier` on the single-order shape — names the selectors at run time.
 
-| Route | Region | Interval | Stored | Measured | Bar |
-|---|---|---|---|---|---|
-| chebyshev (default) | A | [0, 11.899848152108484) | 1320 | 1.74e-16 | 3e-14 |
-| rational minimax | A | [0, 11.899848152108484), from x = 1.0855252345349333 | 891 | 2.46e-14 | 3e-14 |
-| chebyshev (default) | B | [11.899848152108484, 28.98933773882074) | 19 | 9.92e-15 | 5e-14 |
-| rational minimax | B | [11.899848152108484, 28.98933773882074) | 12 | 4.46e-14 | 5e-14 |
-
-Region A's two rows are the whole per-order table, one piece per order per band, and they are what
-the two routes are compared on: the same intervals, the same reference, the same arithmetic. The
-rational row's fit covers the same interval from zero, but its selector takes over per order, from
-that order's own argument, because that is where the lane stops reading the order from its own fit
-and reaches it from the band seed instead, at the band's figure rather than the order's. Below that
-argument the order keeps the default route's value exactly. The argument in the row is the lowest of
-those boundaries, and they are the same per-order arguments the lane's own dispatch uses. Region B's
-two rows are the one seed each route evaluates there.
-
-The default table's pieces do a second job that the rational route's do not: the batch entry's
-relaxed path seeds its downward recursion from the top order's piece, and that recursion carries the
-seed's error down to F_0 with a gain that grows with the argument — up to 1.04e5 near the right end
-of the region, at order 12. The default pieces are fitted to hold their error after that gain, which
-is why the table stores more than the plain figure its row reports would need, and why its stored
-count is not the count the same bar alone would need. The rational route's pieces are read one order
-at a time and take no recursion; **they are held to the bar its row states and not to the tighter
-criterion that fitting for the recursion's gain would impose**, and a piece fitted for values alone
-does not survive being used as that seed. Naming the rational route buys the interval's values, not a
-recursion seed.
-
-**No speed is claimed for either route.** A rational costs one division per order where the
-Chebyshev form is division-free, so which is cheaper depends on the machine's divide-to-multiply
-throughput, and the measurements that would settle it have not been taken. The routes are offered
-because they are different shapes, not because one is known to be faster.
-
-The route and the evaluation scheme compose: they are the two fields of one `EvalPolicy`, which every
-templated double-precision entry takes as its second parameter, and `BoysAllOrdersWithRoute` names
-both at run time. The route names the fits; the scheme names the summation the Chebyshev
-coefficients are read in, and it reaches the parts of a call the named route's own fits do not serve.
-A route whose own fit has one stored form — the rational minimax family — evaluates that fit the same
-way under either scheme, so naming a scheme changes the values only where the shipped family answers.
-Calls that name no policy at all compile the default pair, which is the Chebyshev route by the split
-Clenshaw recurrence.
-
-**The multiplier is a third selector, and it acts on the named route.** A rung cuts the route's own
-stored fit to the degrees a criterion certifies for that multiplier, and the two routes' criteria
-read different tables: the Chebyshev family's is a cut of its stored coefficient series, and the
-rational family's a cut of its stored numerator and denominator pair. So the pair of selectors is a
-combination rather than a redundancy, and it is offered on every entry, named at run time by
-`BoysAllOrdersAtTier(tier, route, scheme, ...)`, and on the single-order shape by
-`BoysSingleAtTier` with the same selectors. Each rung of each route carries a measured
-bound on the committed reference: [docs/lane-contract.md](docs/lane-contract.md) states what the two
-criteria derive and publishes the figures the gate measures, including the one that says the
-rational route's own rungs do not truncate at these six multipliers.
-
-**The route is carried on every entry.** `BoysSingle`, `BoysAllOrders`, `BoysAllN` and `BoysFixedN`
-all take the route the policy names, and each answers with the route's own fits rather than with the
-shipped ones under its name: the two shapes that reach their values by a path of their own — the
-plane entry's region-grouped path and the fixed-order entry's shaped path — are the shipped route's,
-and a call naming the rational route is served by the per-argument body instead, which reads its fit
-from the policy. The gate measures the carriage as a difference in the values rather than as a
-sentence about the surface: naming the route changes what four entries return over the interval the
-route's rows cover, and naming the default changes nothing.
-
-It also measures the delivery: `BoysAllN` and `BoysFixedN` are swept over the whole committed grid,
-every order, and judged against the named route's own bar for the region the argument falls in —
-113,388 cells, worst delivered 5e-14 at n = 32, x = 28.98933773882074, no cell over. That bar is the
-route's, not the entry's, so the row is the stronger of the two statements: the route's region-A row
-promises 3e-14 where the entry promises 5.5e-14, and the entry holds the tighter figure over the
-region, including the arguments below the route's own selector where the shipped lane answers.
+[docs/lane-contract.md](docs/lane-contract.md#the-two-fit-routes) carries this in full: the table of
+routes with each one's stored count, measured error and bar; each route's rung and the criterion that
+derives it; which entries carry a route and what that carriage delivers; and why the rational route
+buys the interval's values and not a recursion seed.
 
 ### The packing axis
 
@@ -256,16 +268,17 @@ something is a choice, and it is the fourth field of `EvalPolicy`: `PackAxis::kA
 shipped axis, puts four arguments at one order in a register, and `PackAxis::kOrders` puts four
 orders at one argument there — which is the axis `BoysAllOrders(nmax, x, out)` actually has, since
 that entry computes every order at a single argument. `BoysPackAxes()` reports both, with the
-interval each one's packed lane evaluates.
+interval each one's packed lane evaluates. The orders axis covers region A at the same per-order fits
+and the same ≤ m·1e-15 bar the scalar region-A path holds, and naming it changes the region-A values
+a caller receives — the shipped entry reaches most orders by a recursion from a seed where this lane
+evaluates each order's own fit — with both inside the bound.
 
-Every entry whose call shape has four orders to offer carries the orders axis, and there are two of
-them: `BoysAllOrders`, and `BoysAllN`, whose planes are `out[k * count + i] = F_k(x[i])` — so an
-argument's whole order vector is already what that entry writes. A plane call naming the axis takes
-the entry's per-argument path and returns the all-orders entry's values under it **bit for bit**,
-asserted with no tolerance, because the two call shapes reach one body. What the axis trades on the
-plane entry is the region grouping: the shipped path groups the arguments by dispatch interval to
-feed a lane that packs four *arguments*, and an orders-axis call has one argument to pack and so
-nothing to group.
+[docs/lane-contract.md](docs/lane-contract.md#the-packing-axis-which-of-a-calls-values-share-a-vector)
+carries the axis in full: which entries carry it, which two calls cannot form it and why they are
+refused, what it gives up on the plane entry, and the measured count — the two coefficient fetches,
+the counter that decides between them, and the command that reproduces the figures. **No time is
+claimed for it, here or anywhere: a µop count is a property of the CPU it was taken on, and a time
+taken on a loaded machine is not a measurement.**
 
 One call cannot form the axis, and it is refused where the call is named rather than answered.
 `BoysFixedN` computes exactly one order at every argument of an array: a packed lane keeps four
@@ -279,31 +292,28 @@ cover the same per-order intervals as the shipped table. The gate's packing book
 row for every rung the tier enumeration declares, on both routes, at both schemes, through both
 entries that carry the axis, and names the worst cell of each.
 
-The orders axis covers region A, `0 <= x < 11.899848152108484`, at the same per-order fits and the
-same `m·1e-15` bar the scalar region-A path holds. At the split Clenshaw scheme its values are the
-across-arguments lane's values bit for bit, order for order; past that interval the entry runs the
-certified scalar lane one order at a time, so it answers for every argument the library accepts.
-Naming it changes the region-A values a caller receives — the shipped entry reaches most orders by a
-recursion from a seed where this lane evaluates each order's own fit — and both are inside the bound.
+**Reporting a suspected violation.** Open an issue with the exact `(n, x)`, the lane and the region,
+and run `./build/Release/boys-accuracy-gate --strict` first — it prints the delivered error beside
+the bound for every lane and region and ends in a verdict, so an issue can quote the line that
+failed rather than describe it. If you suspect the generated tables,
+`python3 tools/gen_boys_coefficients.py --check` re-derives them and the reference grid and reports
+any drift, and `ctest --test-dir build --output-on-failure` runs the whole suite.
 
-Measured on one machine (Intel Core i7-9850H, Linux `perf`, `uops_retired.retire_slots:u`), over
-2,048,000 calls of `BoysAllOrders(32, x, out)` at 1,024 arguments in region A: the orders axis
-retires **4,719,806,211** slots against the shipped entry's **6,687,926,524**, a ratio of **1.42**,
-and against the across-arguments lane forced onto that shape it retires **4,719,806,211** against
-**27,806,856,380**, a ratio of **5.89**. **No time is claimed, here or anywhere: a µop count is a
-property of the CPU it was taken on, and a time taken on a loaded machine is not a measurement.**
-`docs/lane-contract.md` carries the full table, both counters and the reproducing command — including
-the finding that decides the design, that the same lane's gathered coefficient fetch is the fastest
-of the three by instruction count and the slowest by retired slots.
+## Version
+
+This tree is **version 2.0.0**. That number is written down once, in `CMakeLists.txt`'s
+`project(boys VERSION ...)`, and the test suite fails if anything else disagrees with it. A caller
+reads it at run time through `boys::VersionString()`, or as the constants `boys::kVersionMajor`,
+`boys::kVersionMinor` and `boys::kVersionPatch`, in `boys/version.hpp` (included by
+`boys/boys.hpp`).
+
+The version badge at the top of this file shows the latest *release tag*. It names the same version
+when a release is cut, and can be older than the tree you are reading.
 
 Public function signatures and supported domains are stable within a major version. Bitwise outputs
 are not. Internal region thresholds, seed selection, recursion order and dispatch logic may change
 between minor releases, as long as the bounds above hold. Byte-for-byte reproducibility requires
 pinning the release tag, the compiler and the build flags.
-
-**Reporting a suspected violation.** Open an issue with the exact `(n, x)`, the lane and the region.
-Reproduce it first with `ctest --test-dir build --output-on-failure`. If you suspect the generated
-tables, add `python3 tools/gen_boys_coefficients.py --check`.
 
 ## Building and consuming
 

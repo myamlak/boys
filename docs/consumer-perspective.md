@@ -1,5 +1,9 @@
 # Choosing a lane
 
+This note is written for a reader who has not built the library yet and has not chosen anything yet:
+the words it needs — *lane*, *region*, *rung* — are defined on [the API reference's landing
+page](mainpage.md), and what follows is about the choice rather than about the code.
+
 `docs/lane-contract.md` states what each lane guarantees and where it stops. This note is about the
 other half of the choice: how much accuracy your calculation actually needs, and where reduced
 precision earns its place.
