@@ -387,8 +387,13 @@ jobs:
           base="${{ github.event.pull_request.base.sha || github.event.before }}"
           run=yes
           if [ -n "$base" ] && [ "$base" != "0000000000000000000000000000000000000000" ]; then
+            # The files THIS revision touched, asked as a commit range rather
+            # than as a tree-to-tree diff: a diff against the base answers a
+            # different question - everything that differs between two trees,
+            # including everything the base branch did meanwhile - so it names
+            # these files on every run and the skip would never fire.
             if git fetch --quiet --depth=1 origin "$base" 2>/dev/null &&
-               changed="$(git diff --name-only FETCH_HEAD HEAD 2>/dev/null)"; then
+               changed="$(git log --name-only --format= "$base"..HEAD 2>/dev/null)"; then
               if ! printf '%s\n' "$changed" |
                    grep -qE '^(tools/gen_boys_coefficients\.py|include/boys/boys_coefficients\.hpp|tests/data/boys_reference\.csv)$'; then
                 run=no
