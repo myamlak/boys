@@ -689,10 +689,14 @@ void BoysAllOrders(int nmax, double x, double* out) noexcept;
 /// alignof(double), and the two arrays must not overlap.
 ///
 /// \tparam kAccuracyMultiplier see BoysSingle
-/// \tparam Policy see BoysSingle. The fixed-order entry evaluates the shipped
-///         Chebyshev fits: the rational route is carried on the all-orders
-///         entries, not on this one, so a policy naming it is rejected there
-///         rather than answered with the other route's values
+/// \tparam Policy see BoysSingle. The fixed-order entry carries the fit route:
+///         a call naming a route other than the shipped one is answered by the
+///         per-argument single entry, once per argument, which is the body this
+///         entry's own m = 1 path already mirrors region for region - so the
+///         bit-identity the documentation claims between this entry and
+///         BoysSingle is, on the route, exact by construction. The shaped path
+///         below stays the shipped route's, which is the one the bit-identity
+///         pin is about
 ///
 ///         The packing axis is not an axis of this shape, and that is the
 ///         entry's signature rather than a body nobody built. A packed lane
@@ -784,11 +788,15 @@ constexpr std::size_t BoysAllNWorkspaceSize(std::size_t count) noexcept
 /// grouped-path speed-up.
 ///
 /// \tparam kAccuracyMultiplier see BoysSingle
-/// \tparam Policy see BoysSingle. The many-argument entry evaluates the shipped
-///         seed and the shipped per-order fits as its own region bodies: the
-///         rational route is carried on the per-argument entries, which take
-///         their fit from the policy, so a policy naming it here is rejected
-///         at the call site rather than answered with the shipped fits
+/// \tparam Policy see BoysSingle. The many-argument entry carries the fit route
+///         as well as the packing axis, and by the same shape: the route is a
+///         property of the fit a value is read from, so a call naming the
+///         rational route takes the entry's per-argument path, whose body is
+///         the all-orders entry's own and takes its fit from the policy. What
+///         the partitioned shape does not carry is the route and not the
+///         value - both shapes answer inside this entry's own bound, and the
+///         per-argument path is the one that reads each order from its own fit
+///         where the partitioned shape reaches most orders by a recursion
 ///
 ///         The packing axis is carried here too, and the orders axis is the
 ///         shape this entry's layout already has: out[k * count + i] is F_k of
@@ -826,11 +834,15 @@ void BoysAllN(int nmax,
 /// order — the sort is skipped rather than paid for.
 ///
 /// \tparam kAccuracyMultiplier see BoysSingle
-/// \tparam Policy see BoysSingle. The many-argument entry evaluates the shipped
-///         seed and the shipped per-order fits as its own region bodies: the
-///         rational route is carried on the per-argument entries, which take
-///         their fit from the policy, so a policy naming it here is rejected
-///         at the call site rather than answered with the shipped fits
+/// \tparam Policy see BoysSingle. The many-argument entry carries the fit route
+///         as well as the packing axis, and by the same shape: the route is a
+///         property of the fit a value is read from, so a call naming the
+///         rational route takes the entry's per-argument path, whose body is
+///         the all-orders entry's own and takes its fit from the policy. What
+///         the partitioned shape does not carry is the route and not the
+///         value - both shapes answer inside this entry's own bound, and the
+///         per-argument path is the one that reads each order from its own fit
+///         where the partitioned shape reaches most orders by a recursion
 ///
 ///         The packing axis is carried here too, and the orders axis is the
 ///         shape this entry's layout already has: out[k * count + i] is F_k of

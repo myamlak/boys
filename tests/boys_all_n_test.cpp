@@ -896,4 +896,70 @@ TEST(BoysAllNTest, OrdersAxisTakesNoRegionGrouping) {
     EXPECT_EQ(differingShuffled, 0u) << "the axis's values moved with the argument order";
 }
 
+// The route is carried on this entry too, and by the same shape the orders axis
+// takes: the per-argument path, whose body is the all-orders entry's own. So a
+// plane call naming the rational route returns that entry's planes under the
+// route, bit for bit - and the route's values differ from the shipped ones over
+// the intervals its rows cover, which is what makes the carriage a measurement
+// rather than a sentence about the surface.
+TEST(BoysAllNTest, TheRationalRouteIsCarriedAndIsThePerArgumentEntry) {
+    const int nmax = boys::kMaxBoysOrder;
+    const std::size_t count = gGrid.xs.size();
+    std::vector<double> got(count * (static_cast<std::size_t>(nmax) + 1));
+    boys::BoysAllN<1.0, boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(
+        nmax, gGrid.xs.data(), got.data(), count);
+    std::size_t differingFromEntry = 0;
+    std::size_t differingFromShipped = 0;
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        std::array<double, 33> rational{};
+        std::array<double, 33> shipped{};
+        boys::BoysAllOrders<1.0, boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(
+            nmax, gGrid.xs[i], rational.data());
+        boys::BoysAllOrders<1.0, boys::EvalPolicy<>>(nmax, gGrid.xs[i], shipped.data());
+
+        for (int l = 0; l <= nmax; ++l)
+        {
+            const std::size_t slot = static_cast<std::size_t>(l) * count + i;
+            const std::size_t n = static_cast<std::size_t>(l);
+
+            if (!SameBits(got[slot], rational[n]))
+            {
+                ++differingFromEntry;
+            }
+
+            if (!SameBits(rational[n], shipped[n]))
+            {
+                ++differingFromShipped;
+            }
+        }
+    }
+
+    EXPECT_EQ(differingFromEntry, 0u)
+        << "the plane entry's route carriage is not the per-argument all-orders body";
+    EXPECT_GT(differingFromShipped, 0u)
+        << "the rational route returns the shipped values: the carriage is not reachable";
+}
+
+TEST(BoysAllNTest, TheDefaultRouteIsUnchangedByTheRouteAxis) {
+    const int nmax = boys::kMaxBoysOrder;
+    const std::size_t count = gGrid.xs.size();
+    std::vector<double> got(count * (static_cast<std::size_t>(nmax) + 1));
+    boys::BoysAllN<1.0, boys::EvalPolicy<boys::FitRoute::kChebyshev>>(
+        nmax, gGrid.xs.data(), got.data(), count);
+    const std::vector<double> plain = RunEntry<1.0>(gGrid, false, true);
+    std::size_t differing = 0;
+
+    for (std::size_t k = 0; k < got.size(); ++k)
+    {
+        if (!SameBits(got[k], plain[k]))
+        {
+            ++differing;
+        }
+    }
+
+    EXPECT_EQ(differing, 0u) << "naming the default route explicitly moved a value";
+}
+
 } // namespace

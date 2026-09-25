@@ -457,6 +457,14 @@ int main() {
             "measured by compiling the call")
     endif()
 
+    if (NOT BOYS_GATE_ORDERS_ROUTE_ACCEPTED)
+        target_compile_definitions(boys-accuracy-gate PRIVATE BOYS_GATE_ORDERS_REFUSES_ROUTE=1)
+        message(STATUS "boys: the orders axis with a route other than the shipped one is REFUSED, "
+            "measured by compiling the call")
+    else()
+        message(STATUS "boys: the orders axis ACCEPTS another route")
+    endif()
+
     # The other two refusals this gate's record carries, each measured by
     # compiling the call it names rather than by quoting the assertion that
     # states it. A refusal the library asserts and cannot show is the same
@@ -493,6 +501,19 @@ int main() {
     return 0;
 }
 " BOYS_GATE_F32_PAIR_ACCEPTED)
+    unset(BOYS_GATE_ORDERS_ROUTE_ACCEPTED CACHE)
+    check_cxx_source_compiles("
+#include <boys/boys.hpp>
+int main() {
+    double out[33] = {};
+    using OrdersRational = boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+                                            boys::EvalScheme::kSplitClenshaw,
+                                            boys::BoysBudget::kFloat,
+                                            boys::PackAxis::kOrders>;
+    boys::BoysAllOrders<1.0, OrdersRational>(1, 1.0, out);
+    return 0;
+}
+" BOYS_GATE_ORDERS_ROUTE_ACCEPTED)
     set(CMAKE_TRY_COMPILE_TARGET_TYPE "${_boys_probe_target_type}")
     unset(_boys_probe_target_type)
     unset(CMAKE_REQUIRED_FLAGS)

@@ -764,43 +764,25 @@ double SingleOrder(int n, double x) noexcept {
 // The per-argument entries do not ask for it, because their bodies take the fit
 // from the policy: they carry either route at either rung, and the rational one
 // through RationalFitAtRung.
+// The route the region-partitioned batch shapes carry: the shipped one, at
+// every rung. Their region bodies evaluate the shipped seed and the shipped
+// per-order fits as their own, arriving at a value by a path of their own - the
+// downward recursion from a top order's stored piece, the upward recursion from
+// a stored seed - so a policy naming another route takes the entry's
+// per-argument path instead, which is the body that reads its fit from the
+// policy. The assertion states which shape this is, and the entry's dispatch is
+// where the choice is made; nothing falls back silently, because the
+// per-argument path is the entry's own second shape and not another route's
+// values.
 template <EvalPolicyLike Policy>
 constexpr void RequireShippedRoute() noexcept
 {
     static_assert(Policy::kRoute == kDefaultFitRoute,
                   "this body reaches its values through the shipped fits' own path - the "
                   "downward recursion from a stored piece, or the upward recursion from a "
-                  "stored seed - and reads the shipped tables through it: the rational minimax "
-                  "route is carried on the per-argument entries, which take their fit from the "
-                  "policy, and a policy naming it here is rejected rather than answered with "
-                  "the shipped fits under the other route's name");
-}
-
-// The many-argument batch entries' route: the shipped one, at every rung.
-// Their region bodies evaluate the shipped seed and per-order fits as their
-// own, so another route is refused where the call is named rather than
-// answered with the shipped fits under the other route's name.
-template <EvalPolicyLike Policy>
-constexpr void RequireShippedRouteOnBatchEntry() noexcept
-{
-    static_assert(Policy::kRoute == kDefaultFitRoute,
-                  "the many-argument batch entry evaluates the shipped seed and the shipped "
-                  "per-order fits as its own bodies: the rational minimax route is carried on "
-                  "the per-argument entries, which take their fit from the policy, and a "
-                  "policy naming it here is rejected rather than answered with the shipped "
-                  "fits");
-}
-
-// The fixed-order vector entry's route: the shipped one, at every rung. Same
-// reason and same refusal as the batch entry's.
-template <EvalPolicyLike Policy>
-constexpr void RequireShippedRouteOnFixedEntry() noexcept
-{
-    static_assert(Policy::kRoute == kDefaultFitRoute,
-                  "the fixed-order entry evaluates the shipped Chebyshev fits: the rational "
-                  "route is carried on the all-orders entries, not on this one, so a policy "
-                  "naming it is rejected there rather than answered with the other route's "
-                  "values");
+                  "stored seed - and reads the shipped tables through it: a policy naming "
+                  "another route is served by the shape that takes its fit from the policy "
+                  "instead, and this shape is not instantiated for one");
 }
 
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
@@ -1013,7 +995,6 @@ void BoysFixedNImpl(
     int n, const double* x, double* out, std::size_t count, std::size_t stride) noexcept {
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
-    RequireShippedRouteOnFixedEntry<Policy>();
     static_assert(Policy::kPack == PackAxis::kArguments,
                   "the orders axis cannot be formed on this entry: a packed lane keeps four "
                   "orders of one argument in a register, and this call produces exactly one "
@@ -1024,6 +1005,25 @@ void BoysFixedNImpl(
     assert(x != nullptr);
     assert(out != nullptr);
     assert(stride >= 1);
+
+    if constexpr (Policy::kRoute != kDefaultFitRoute)
+    {
+        // The fixed-order entry carries the route too, and by the entry that
+        // takes its fit from the policy: one order at every argument of an
+        // array is the per-argument single entry called once per argument -
+        // which is the body this entry's own m = 1 path already mirrors
+        // verbatim, region for region, so naming a route makes the identity the
+        // documentation already claims exact by construction rather than by
+        // inspection. The shaped body below is the bit-identity pin's, and the
+        // shipped route keeps it.
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            assert(x[i] >= 0.0);
+            out[i * stride] = BoysSingleImpl<kAccuracyMultiplier, Policy>(n, x[i]);
+        }
+
+        return;
+    }
 
     if constexpr (kAccuracyMultiplier == 1.0)
     {
@@ -1897,29 +1897,35 @@ void BoysAllNSortedPartitionedImpl(int nmax,
                                    std::size_t count) noexcept;
 
 // The plane entry. Two shapes serve it, and which one a call takes is the
-// packing axis it names, because the axis is what says what a vector lane is
-// filled with:
+// selectors it names, because each says what the call can be evaluated by:
 //
-//   the arguments axis  an arguments-axis lane keeps four arguments of one
-//                       order in a register, so the entry partitions its
+//   the region-partitioned shape  an arguments-axis lane keeps four arguments
+//                       of one order in a register, so the entry partitions its
 //                       arguments by the interval their answer comes from and
 //                       hands each homogeneous run to the shape that serves it.
-//                       That is BoysAllNPartitionedImpl below, and it is the
-//                       shipped shape.
-//   the orders axis     an orders-axis lane keeps four orders of ONE argument
-//                       in a register, which is this entry's call shape one
-//                       argument at a time - out[k * count + i] is F_k(x[i]),
-//                       so an argument's whole order vector is already what the
-//                       entry writes. There is nothing for the region grouping
-//                       to group, and the body is the all-orders entry's own,
-//                       which is where the packed orders lane is dispatched.
+//                       That shape evaluates the shipped fits as its own body,
+//                       so it is what the shipped route and the arguments axis
+//                       are served by. It is BoysAllNPartitionedImpl below.
+//   the per-argument shape  every other call. An orders-axis lane keeps four
+//                       orders of ONE argument in a register, which is this
+//                       entry's call shape one argument at a time -
+//                       out[k * count + i] is F_k(x[i]), so an argument's whole
+//                       order vector is already what the entry writes - and a
+//                       route other than the shipped one is carried by the
+//                       all-orders entry's body, which takes its fit from the
+//                       policy. Both are the per-argument path, so both are
+//                       served by it, and neither has anything for the region
+//                       grouping to group.
 //
-// The orders axis is carried here at the reference multiplier only, and the
-// refusal above it is the engine's own, stated once where the lane is
-// dispatched (BoysAllOrdersImpl): the packed orders lane evaluates every
-// stored fit at its full degree and reads no effective-degree table, so it
-// carries no rung. Carrying the axis on this entry does not change that, and
-// this entry does not restate it.
+// Every value either shape returns is inside the bound the entry documents:
+// the partitioned shape's region-A lane answers at the per-order region-A bar,
+// the per-argument body is the all-orders entry's own, and that entry's bound
+// is this entry's.
+//
+// A relaxed multiplier on the orders axis is refused in the engine itself
+// (BoysAllOrdersImpl), and the route reaches its rung there too, so this entry
+// states neither: it dispatches, and the engine's assertions are the ones that
+// decide.
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 void BoysAllNImpl(int nmax,
                   const double* x,
@@ -1937,9 +1943,9 @@ void BoysAllNImpl(int nmax,
         return;
     }
 
-    if constexpr (Policy::kPack == PackAxis::kOrders)
+    if constexpr (Policy::kPack == PackAxis::kOrders || Policy::kRoute != kDefaultFitRoute)
     {
-        // The grouping scratch is the arguments axis's: this path partitions
+        // The grouping scratch is the partitioned shape's: this path partitions
         // nothing and takes none of it.
         static_cast<void>(workspace);
         BoysAllNRunPerArgument<kAccuracyMultiplier, Policy>(nmax, x, out, count);
@@ -1958,14 +1964,14 @@ void BoysAllNPartitionedImpl(int nmax,
                              double* out,
                              std::size_t count,
                              std::size_t* workspace) noexcept {
-    RequireShippedRouteOnBatchEntry<Policy>();
+    RequireShippedRoute<Policy>();
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
     static_assert(Policy::kPack == PackAxis::kArguments,
                   "this is the plane entry's arguments-axis shape: it partitions its arguments "
                   "by region and dispatches each group to a lane that packs four arguments. A "
-                  "call naming the orders axis is served by BoysAllNImpl's per-argument path, "
-                  "whose lane packs four orders of one argument");
+                  "call naming the orders axis, or a route other than the shipped one, is "
+                  "served by BoysAllNImpl's per-argument path");
     assert(nmax >= 0 && nmax <= kMaxBoysOrder);
     assert(count == 0 || x != nullptr);
     assert(count == 0 || out != nullptr);
@@ -2037,11 +2043,12 @@ void BoysAllNPartitionedImpl(int nmax,
 }
 
 // The sorted overload, split the same way and for the same reason: the
-// ordering the caller declared is what makes the arguments-axis grouping free,
-// so it is a fact about that shape's input and not about this entry. A call
-// naming the orders axis takes the per-argument path and neither reads nor
-// needs the ordering, which is why the overload accepts the axis without
-// asking the caller for anything it does not already promise.
+// ordering the caller declared is what makes the partitioned shape's grouping
+// free, so it is a fact about that shape's input and not about this entry. A
+// call naming the orders axis, or a route other than the shipped one, takes the
+// per-argument path, which neither reads nor needs the ordering - which is why
+// the overload accepts both without asking the caller for anything it does not
+// already promise.
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 void BoysAllNSortedImpl(int nmax,
                         const double* x,
@@ -2058,7 +2065,7 @@ void BoysAllNSortedImpl(int nmax,
         return;
     }
 
-    if constexpr (Policy::kPack == PackAxis::kOrders)
+    if constexpr (Policy::kPack == PackAxis::kOrders || Policy::kRoute != kDefaultFitRoute)
     {
         BoysAllNRunPerArgument<kAccuracyMultiplier, Policy>(nmax, x, out, count);
     }
@@ -2073,13 +2080,14 @@ void BoysAllNSortedPartitionedImpl(int nmax,
                                    const double* x,
                                    double* out,
                                    std::size_t count) noexcept {
-    RequireShippedRouteOnBatchEntry<Policy>();
+    RequireShippedRoute<Policy>();
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
     static_assert(Policy::kPack == PackAxis::kArguments,
                   "this is the sorted overload's arguments-axis shape: the ordering the caller "
-                  "declared is what makes its grouping free. A call naming the orders axis is "
-                  "served by BoysAllNSortedImpl's per-argument path, which needs no grouping");
+                  "declared is what makes its grouping free. A call naming the orders axis, or "
+                  "a route other than the shipped one, is served by BoysAllNSortedImpl's "
+                  "per-argument path, which needs no grouping");
     assert(nmax >= 0 && nmax <= kMaxBoysOrder);
     assert(count == 0 || x != nullptr);
     assert(count == 0 || out != nullptr);

@@ -566,10 +566,11 @@ worst deviation from the shipped entry beside each run, so a count can never be 
 and its header carries the exact command that reproduces the two columns.
 
 **What is refused.** The lane evaluates the shipped region-A piece table and reads no other family's
-tables, so naming the orders axis with the rational minimax route is refused where it is named. The
-plane entry and the fixed-order entry have one order to fill a vector lane with, so the orders axis
-is refused on those too. Each refusal names the combination and what is not certified about it; none
-falls back silently to another axis.
+tables, so naming the orders axis with the rational minimax route is refused where it is named, and
+the refusal is measured by a configure probe that compiles exactly that call. The plane entry and the
+fixed-order entry have one order to fill a vector lane with, so the orders axis cannot be formed on
+those at all — that is the entries' signature and not a body nobody built. Each limit names the
+combination and what is not certified about it; none falls back silently to another axis.
 
 ## Large arguments, and the boundaries at x = 11.8998 and x = 28.9893
 

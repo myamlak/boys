@@ -1235,6 +1235,17 @@ int main(int argc, char** argv) {
     std::size_t routeCarriageNamed = 0;
     std::size_t routeCarriageControls = 0;
 
+    // The route held to its own bar through the entries a consumer actually
+    // calls with a many-argument or fixed-order shape. The route book's own
+    // rows measure the per-argument entries, and a carriage row says only that
+    // the other two answer the route; what a consumer needs is the figure, so
+    // it is measured here and published as its own claim.
+    std::size_t routeEntryCells = 0;
+    std::size_t routeEntryOver = 0;
+    double routeEntryWorst = 0.0;
+    int routeEntryWorstN = -1;
+    double routeEntryWorstX = 0.0;
+
     // One row per entry a named route was measured through: the arguments the
     // route's selector takes over, and how many of those the entry answered with
     // a different value once the route was named.
@@ -1510,11 +1521,67 @@ int main(int argc, char** argv) {
             const auto orders = countOrders.template operator()<boys::FitRoute::kRationalMinimax>();
             routeCarriedBy("BoysAllOrders", orders.first, orders.second);
 
-            // The many-argument and fixed-order entries are not read here: they do
-            // not carry the route, they refuse the policy that names it, and a
-            // call naming it does not build. That refusal is measured by the
-            // configure probe, which compiles exactly those calls, rather than
-            // by a call this gate cannot make.
+            // The many-argument and fixed-order entries carry the route too, on
+            // the shapes that take their fit from the policy: the plane entry's
+            // per-argument path and the fixed-order entry's per-argument call.
+            // Measured the same way as the two rows above - the values a call
+            // returns with the route named, against the same call with none - so
+            // a carriage claim here is a difference in the values and not a
+            // sentence about the surface.
+            const auto countPlane = [&]<boys::FitRoute kRoute>() {
+                std::size_t cells = 0;
+                std::size_t differ = 0;
+                const std::size_t planeSize =
+                    permArgs.size() * (static_cast<std::size_t>(nmax) + 1);
+                std::vector<double> a(planeSize);
+                std::vector<double> b(planeSize);
+                boys::BoysAllN<1.0, boys::EvalPolicy<kRoute>>(
+                    nmax, permArgs.data(), a.data(), permArgs.size());
+                boys::BoysAllN<1.0, boys::EvalPolicy<>>(
+                    nmax, permArgs.data(), b.data(), permArgs.size());
+
+                for (std::size_t k = 0; k < planeSize; ++k)
+                {
+                    ++cells;
+
+                    if (std::memcmp(&a[k], &b[k], sizeof(double)) != 0)
+                    {
+                        ++differ;
+                    }
+                }
+
+                return std::pair<std::size_t, std::size_t>(cells, differ);
+            };
+
+            const auto countFixed = [&]<boys::FitRoute kRoute>() {
+                std::size_t cells = 0;
+                std::size_t differ = 0;
+
+                for (const std::size_t i : servedArgs)
+                {
+                    for (int n = 0; n <= nmax; ++n)
+                    {
+                        ++cells;
+                        double a = 0.0;
+                        double b = 0.0;
+                        boys::BoysFixedN<1.0, boys::EvalPolicy<kRoute>>(n, &ref.x[i], &a, 1);
+                        boys::BoysFixedN<1.0, boys::EvalPolicy<>>(n, &ref.x[i], &b, 1);
+
+                        if (std::memcmp(&a, &b, sizeof(double)) != 0)
+                        {
+                            ++differ;
+                        }
+                    }
+                }
+
+                return std::pair<std::size_t, std::size_t>(cells, differ);
+            };
+
+            const auto plane = countPlane.template operator()<boys::FitRoute::kRationalMinimax>();
+            routeCarriedBy("BoysAllN", plane.first, plane.second);
+            const auto fixed = countFixed.template operator()<boys::FitRoute::kRationalMinimax>();
+            routeCarriedBy("BoysFixedN", fixed.first, fixed.second);
+
             const auto singleDefault =
                 countSingle.template operator()<boys::FitRoute::kChebyshev>();
             routeCarriedBy("BoysSingle, the default route named",
@@ -1524,6 +1591,90 @@ int main(int argc, char** argv) {
             routeCarriedBy("BoysAllOrders, the default route named",
                            ordersDefault.first,
                            ordersDefault.second);
+            const auto planeDefault =
+                countPlane.template operator()<boys::FitRoute::kChebyshev>();
+            routeCarriedBy("BoysAllN, the default route named",
+                           planeDefault.first,
+                           planeDefault.second);
+            const auto fixedDefault =
+                countFixed.template operator()<boys::FitRoute::kChebyshev>();
+            routeCarriedBy("BoysFixedN, the default route named",
+                           fixedDefault.first,
+                           fixedDefault.second);
+        }
+
+        // ---- the route's bar through the entries that carry it --------------
+        // The bar is the route's own for the region the argument falls in, read
+        // off BoysFitRoutes rather than repeated here, so a row whose bar moved
+        // would move this one with it. Both entries are swept over the whole
+        // committed grid: the plane entry in one call, the fixed-order entry one
+        // order at a time over the same arguments.
+        {
+            const auto rationalBar = [](boys::AccuracyRegion region) {
+                for (const boys::FitRouteInfo& row : boys::BoysFitRoutes())
+                {
+                    if (row.route == boys::FitRoute::kRationalMinimax && row.region == region)
+                    {
+                        return row.bound;
+                    }
+                }
+
+                return kBoundDoubleBatch;
+            };
+
+            const auto judgeEntryCell = [&](int n, double x, double got, std::size_t k) {
+                const double bar = (x < boys::detail::kX0)   ? rationalBar(boys::AccuracyRegion::kA)
+                                   : (x < boys::detail::kX1) ? rationalBar(boys::AccuracyRegion::kB)
+                                                             : kBoundDoubleBatch;
+                const double err = std::abs(got - ref.v[k]);
+                ++routeEntryCells;
+
+                if (err > bar)
+                {
+                    ++routeEntryOver;
+                }
+
+                if (err > routeEntryWorst)
+                {
+                    routeEntryWorst = err;
+                    routeEntryWorstN = n;
+                    routeEntryWorstX = x;
+                }
+            };
+
+            std::vector<double> planes(count * (static_cast<std::size_t>(nmax) + 1));
+            boys::BoysAllN<1.0, boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(
+                nmax, ref.x.data(), planes.data(), count);
+
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                for (int n = 0; n <= nmax; ++n)
+                {
+                    judgeEntryCell(n,
+                                   ref.x[i],
+                                   planes[static_cast<std::size_t>(n) * count + i],
+                                   ref.Index(n, i));
+                }
+            }
+
+            std::vector<double> columns(count * (static_cast<std::size_t>(nmax) + 1));
+
+            for (int n = 0; n <= nmax; ++n)
+            {
+                boys::BoysFixedN<1.0, boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(
+                    n, ref.x.data(), columns.data() + static_cast<std::size_t>(n) * count, count);
+            }
+
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                for (int n = 0; n <= nmax; ++n)
+                {
+                    judgeEntryCell(n,
+                                   ref.x[i],
+                                   columns[static_cast<std::size_t>(n) * count + i],
+                                   ref.Index(n, i));
+                }
+            }
         }
 
         // ---- the run-time selector's two-argument form ----------------------
@@ -5671,6 +5822,26 @@ int main(int argc, char** argv) {
                      routeCarriageNamed - routeCarriageMissed,
                      routeCarriageNamed));
 
+        addRoute("route.entries",
+                 "the many-argument and fixed-order entries deliver the bar the named route's "
+                 "row states, over the whole grid and every order, not only over the arguments "
+                 "its selector takes over",
+                 "include/boys/boys.hpp, BoysAllN and BoysFixedN \\tparam Policy; "
+                 "src/boys.cpp, BoysFitRoutes",
+                 routeEntryOver == 0 ? Verdict::Verified : Verdict::Exceeded,
+                 Fmt("%zu cell(s) over the committed reference grid, every order 0..%d, the "
+                     "plane entry in one call and the fixed-order entry one order at a time; "
+                     "worst delivered %.6g at n=%d, x=%g against the route's own bar for the "
+                     "region the argument falls in, %zu cell(s) over it. The bar is read off "
+                     "BoysFitRoutes rather than repeated, so a row whose bar moved moves this "
+                     "one with it",
+                     routeEntryCells,
+                     nmax,
+                     routeEntryWorst,
+                     routeEntryWorstN,
+                     routeEntryWorstX,
+                     routeEntryOver));
+
         addRoute("route.runtime",
                  "the run-time selector's route-and-scheme form answers each pair as the "
                  "compile-time entry for that pair does, value for value",
@@ -5749,9 +5920,10 @@ int main(int argc, char** argv) {
         std::printf("  %-38s %s\n", "BoysAllN sorted", "refused at the call site - the call does not build");
         std::printf("  %-38s %s\n", "BoysFixedN", "refused at the call site - the call does not build");
 #else
-        std::printf("\n  NOT REFUSED: a batch or fixed-order entry accepts a route it does not "
-                    "carry, and\n  this build's probe compiled such a call - the selection is "
-                    "taken and not honoured\n");
+        std::printf("\n  CARRIED, measured by the carriage rows above rather than by a probe: "
+                    "every entry\n  that names a route is answered by the route's own fits. The "
+                    "probe still runs - it is\n  what says which of these two lines prints - "
+                    "and this revision is the one where the\n  call builds\n");
 #endif
 
         std::printf("\nthe certified fit routes, each with one verdict:\n");
@@ -6651,6 +6823,16 @@ int main(int argc, char** argv) {
                         "produces four orders for the axis to pack",
                         true});
 #endif
+#ifdef BOYS_GATE_ORDERS_REFUSES_ROUTE
+    refusals.push_back({"orders axis with a route other than the shipped one",
+                        "the packed orders lane reads the shipped region-A piece table and "
+                        "nothing else, so it carries no other family's fits; the probe compiles "
+                        "the call and it does not build. This is a table the lane does not "
+                        "hold, not one it cannot: the rational route's region-A fits cover the "
+                        "same per-order intervals, so an orders-axis reading of them is a "
+                        "coefficient table to place",
+                        true});
+#endif
 #ifdef BOYS_GATE_ORDERS_REFUSES_RUNG
     refusals.push_back({"orders axis at a relaxed rung",
                         "the packed orders lane evaluates every stored fit at its full degree "
@@ -6716,12 +6898,15 @@ int main(int argc, char** argv) {
     std::size_t liftedRefusals = 0;
 
 #ifndef BOYS_GATE_BATCH_REFUSES_ROUTE
-    ++liftedRefusals;
-    std::printf("  LIFTED: the batch and fixed-order entries accept a policy naming the rational "
-                "route,\n  and no row in this gate measures what they answer with it. The route "
-                "book's\n  carriage rows measure the per-argument entries; a batch entry that "
-                "takes the route\n  needs rows of its own before the selection means "
-                "anything\n");
+    // The refusal is gone: the entries compile the call and the route-carriage
+    // rows below measure what they answer with it. Nothing is silent - the
+    // probe decides which of the two lines prints, and the carriage count is
+    // the second reading of the same fact.
+    std::printf("  CARRIED: the batch and fixed-order entries compile a policy naming the "
+                "rational\n  route, and the route-carriage rows below measure what they answer "
+                "with it: a\n  value of the route's own, not the shipped fits under its "
+                "name. The probe is the\n  reading that says so; a revision that dropped the "
+                "carriage would print the refusal\n  instead\n");
 #endif
 #ifndef BOYS_GATE_REFUSES_F32_PAIR
     ++liftedRefusals;

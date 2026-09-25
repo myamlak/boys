@@ -190,11 +190,27 @@ Clenshaw recurrence.
 stored fit to the degrees a criterion certifies for that multiplier, and the two routes' criteria
 read different tables: the Chebyshev family's is a cut of its stored coefficient series, and the
 rational family's a cut of its stored numerator and denominator pair. So the pair of selectors is a
-combination rather than a redundancy, and it is offered on the per-argument entries and named at run
-time by `BoysAllOrdersAtTier(tier, route, scheme, ...)`. Each rung of each route carries a measured
+combination rather than a redundancy, and it is offered on every entry, named at run time by
+`BoysAllOrdersAtTier(tier, route, scheme, ...)`. Each rung of each route carries a measured
 bound on the committed reference: [docs/lane-contract.md](docs/lane-contract.md) states what the two
 criteria derive and publishes the figures the gate measures, including the one that says the
 rational route's own rungs do not truncate at these six multipliers.
+
+**The route is carried on every entry.** `BoysSingle`, `BoysAllOrders`, `BoysAllN` and `BoysFixedN`
+all take the route the policy names, and each answers with the route's own fits rather than with the
+shipped ones under its name: the two shapes that reach their values by a path of their own — the
+plane entry's region-grouped path and the fixed-order entry's shaped path — are the shipped route's,
+and a call naming the rational route is served by the per-argument body instead, which reads its fit
+from the policy. The gate measures the carriage as a difference in the values rather than as a
+sentence about the surface: naming the route changes what four entries return over the interval the
+route's rows cover, and naming the default changes nothing.
+
+It also measures the delivery: `BoysAllN` and `BoysFixedN` are swept over the whole committed grid,
+every order, and judged against the named route's own bar for the region the argument falls in —
+113,388 cells, worst delivered 5e-14 at n = 32, x = 28.98933773882074, no cell over. That bar is the
+route's, not the entry's, so the row is the stronger of the two statements: the route's region-A row
+promises 3e-14 where the entry promises 5.5e-14, and the entry holds the tighter figure over the
+region, including the arguments below the route's own selector where the shipped lane answers.
 
 ### The packing axis
 

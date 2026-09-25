@@ -19,8 +19,8 @@ region C. See the accuracy contract below.
 |---|---|
 | \ref boys::BoysSingle, \ref boys::BoysAllOrders | scalar fp64, single argument / order batch F_0..F_nmax |
 | \ref boys::BoysAllOrdersWithRoute, \ref boys::BoysFitRoutes | the double batch at a named fit route (\ref boys::FitRoute), and the report of which routes exist, what each promises and over what interval; the route composes with an accuracy rung (\ref boys::AccuracyTier) through \ref boys::BoysAllOrdersAtTier's route-carrying overload |
-| \ref boys::BoysFixedN | fp64, one order over an array of arguments, strided |
-| \ref boys::BoysAllN | fp64, all nmax + 1 orders over an array of arguments, order-major planes; classifies, groups and dispatches internally (\ref boys::BoysSortedArgs skips the sort for a non-decreasing array) |
+| \ref boys::BoysFixedN | fp64, one order over an array of arguments, strided; takes a fit route through its policy |
+| \ref boys::BoysAllN | fp64, all nmax + 1 orders over an array of arguments, order-major planes; classifies, groups and dispatches internally (\ref boys::BoysSortedArgs skips the sort for a non-decreasing array); takes a fit route and a packing axis through its policy |
 | \ref boys::BoysSingleF32, \ref boys::BoysAllOrdersF32 | scalar fp32 (the batch form seeds in double) |
 | \ref boys::BoysSingleF16, \ref boys::BoysAllOrdersF16, \ref boys::BoysSingleBf16, \ref boys::BoysAllOrdersBf16 | fp16/bf16 scalar I/O around the fp32 engine |
 | \ref boys::BoysAllOrdersHalf2, \ref boys::BoysAllNF16Native | native half: region C's ladder in packed binary16 (\ref boys::Half2), one correctly rounded half operation per step, two arguments to a register, results scaled by 2^15 (\ref boys::kHalfNativeScaleExponent) |
