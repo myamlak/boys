@@ -736,7 +736,15 @@ if (BUILD_CUDA)
         # measured, so a figure pasted into a report says which arithmetic
         # produced it. It is a local gate for the same reason the CUDA lane is
         # one: it needs the device.
-        add_executable(boys-cuda-accuracy-gate tests/boys_cuda_accuracy_gate.cpp)
+        # tests/boys_cuda_device_demo.cu carries the consumer side of the
+        # device-callable entries (boys_cuda_device.hpp): kernels that form x
+        # per thread and call the entries from inside themselves. It is built
+        # into this gate rather than into the library because it is a consumer
+        # of the public headers, and it is the only thing here that proves a
+        # consumer's own kernel can reach the arithmetic.
+        add_executable(boys-cuda-accuracy-gate
+            tests/boys_cuda_accuracy_gate.cpp
+            tests/boys_cuda_device_demo.cu)
         target_link_libraries(boys-cuda-accuracy-gate PRIVATE boys-cuda boys)
         target_include_directories(boys-cuda-accuracy-gate PRIVATE src)
         target_compile_features(boys-cuda-accuracy-gate PRIVATE cxx_std_23)

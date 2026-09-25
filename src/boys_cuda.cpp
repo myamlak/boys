@@ -17,6 +17,7 @@
 
 extern "C" {
 int BoysCudaUploadTables();
+int BoysCudaDeviceTableAddresses(void** out);
 int BoysCudaUploadEffTables(double m, const int* degA, const int* degB);
 int BoysCudaLaunchSingleF32(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
@@ -183,6 +184,46 @@ template <double kAccuracyMultiplier> BoysStatus EnsureEffTables() {
 
 BoysStatus BoysCuda::InitializeTables() {
     return FromLaunchCode(BoysCudaUploadTables());
+}
+
+BoysStatus BoysCuda::DeviceTables(BoysDeviceTables* out) {
+    if (out == nullptr)
+    {
+        return BoysStatus::kInvalidArgument;
+    }
+
+    // The address order BoysCudaDeviceTableAddresses fills, one slot per
+    // symbol: the double lane's pieceStart, offset, a, b, deg, coeffs and
+    // region-B seed, then the float lane's seven. Both sides state the order;
+    // the .cu cannot name this type and this file cannot name a symbol.
+    void* addresses[14] = {};
+    const BoysStatus status = FromLaunchCode(BoysCudaDeviceTableAddresses(addresses));
+
+    if (status != BoysStatus::kSuccess)
+    {
+        return status;
+    }
+
+    BoysDeviceTables tables;
+    tables.pieceStart = static_cast<const int*>(addresses[0]);
+    tables.pieceOffset = static_cast<const int*>(addresses[1]);
+    tables.pieceA = static_cast<const double*>(addresses[2]);
+    tables.pieceB = static_cast<const double*>(addresses[3]);
+    tables.pieceDeg = static_cast<const int*>(addresses[4]);
+    tables.coeffs = static_cast<const double*>(addresses[5]);
+    tables.bSeedCoeffs = static_cast<const double*>(addresses[6]);
+    tables.bSeedDeg = detail::kBDeg;
+    tables.pieceStart32 = static_cast<const int*>(addresses[7]);
+    tables.pieceOffset32 = static_cast<const int*>(addresses[8]);
+    tables.pieceA32 = static_cast<const float*>(addresses[9]);
+    tables.pieceB32 = static_cast<const float*>(addresses[10]);
+    tables.pieceDeg32 = static_cast<const int*>(addresses[11]);
+    tables.coeffs32 = static_cast<const float*>(addresses[12]);
+    tables.bSeedCoeffs32 = static_cast<const float*>(addresses[13]);
+    tables.bSeedDeg32 = detail::f32::kBDeg;
+
+    *out = tables;
+    return BoysStatus::kSuccess;
 }
 
 template <double kAccuracyMultiplier, RegionBExp kExp>

@@ -106,10 +106,10 @@ A caller who seeds the downward recursion rather than reading values is held to 
 requirement: at fp64 only orders 0 to 2 and 25 to 32 may seed, and the two split modes may not seed
 at all.
 
-The **CUDA fp32 lane's single entry** takes a certified choice of region-B exponential
-(`boys::RegionBExp`), and each choice carries its own bound. `RegionBExp::kAccurate` is the default
-and the arithmetic the batch entries already run. `RegionBExp::kFast` is the hardware approximation
-with its argument-scaling residual removed.
+The **CUDA fp32 lane's single entries** — the batch one and the device-callable one — take a
+certified choice of region-B exponential (`boys::RegionBExp`), and each choice carries its own
+bound. `RegionBExp::kAccurate` is the default and the arithmetic the batch entries already run.
+`RegionBExp::kFast` is the hardware approximation with its argument-scaling residual removed.
 
 The correction is what the recurrence asks for, and the recurrence is what makes the choice
 non-trivial: its condition number is 7.6e4 at the region-B boundary at order 32, so an error in the
