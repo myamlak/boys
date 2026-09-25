@@ -47,6 +47,19 @@ ctest --test-dir build --output-on-failure
 Optional: `-DBUILD_BENCHMARKS=ON` for the benchmark drivers, which are default ON locally, and
 `-DBUILD_CUDA=ON` for the CUDA lane, which needs the CUDA toolkit and is local-only.
 
+The accuracy gate, which re-measures every documented bound against the committed reference grid and
+prints the comparison lane by lane and region by region:
+
+```bash
+cmake --build build --target boys-accuracy-gate
+./build/Release/boys-accuracy-gate --strict      # the config directory is your generator's
+```
+
+It exits non-zero, naming each claim it could not confirm, if any figure in the documents is not
+verified at the revision you are on — so it is the command to run before changing a bound, a
+threshold, or a fitted table. `ctest` runs it as one of its tests, but a passing `ctest` prints only
+how long the test took: the figures are in this binary's own output.
+
 Regeneration check, which is local and never CI:
 
 ```bash
@@ -108,6 +121,11 @@ licences are listed in THIRD_PARTY_NOTICES.md.
   domain and budget.
 - **PATCH** — no intended public-API or numerical-result change. If a change can alter any returned
   bit for any supported input, it is at least minor.
+
+The version is written down once, in the top-level `project(boys VERSION ...)`, and it reaches a
+caller through `boys/version.hpp`. The release tag and that `project()` call name the same version —
+the consumer check compiles against the project value and asserts the header agrees — so a release
+bumps the one place, and a tag that disagrees with it is a mistake rather than a second answer.
 
 The public numerical contract is that for every supported n, x, lane and region the returned value
 satisfies |F̂_n(x) − F_n(x)| ≤ m·B_region at the documented m. Public function signatures and
