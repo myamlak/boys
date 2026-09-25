@@ -856,8 +856,8 @@ double BoysSingleImpl(int n, double x) noexcept {
 // Named by BoysAllOrdersImpl below, so it is declared before it. The call there
 // passes a dependent template argument but arguments of fundamental type, so
 // neither lookup at the point of definition nor ADL at instantiation finds the
-// declaration near the end of this file. Its default argument is set there.
-template <EvalScheme kScheme>
+// declaration near the end of this file. Its default arguments are set there.
+template <EvalScheme kScheme, double kAccuracyMultiplier, FitRoute kRoute>
 void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept;
 
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
@@ -868,26 +868,23 @@ void BoysAllOrdersImpl(int nmax, double x, double* out) noexcept {
     assert(x >= 0.0);
     assert(out != nullptr);
 
-    if constexpr (kAccuracyMultiplier == 1.0)
+    if constexpr (Policy::kPack == PackAxis::kOrders)
     {
-        if constexpr (Policy::kPack == PackAxis::kOrders)
-        {
-            static_assert(Policy::kRoute == kDefaultFitRoute,
-                          "the across-orders packed lane reads the shipped region-A piece table "
-                          "and nothing else: the rational minimax route's fits are not carried "
-                          "on that axis, so naming the two together is not a combination this "
-                          "library serves");
-            BoysAllOrdersPacked<Policy::kScheme>(nmax, x, out);
-        } else
-        {
-            AllOrdersBody<Policy>(nmax, x, out);
-        }
+        static_assert(Policy::kRoute == FitRoute::kChebyshev ||
+                          Policy::kRoute == FitRoute::kRationalMinimax,
+                      "a policy naming a route outside the FitRoute enumeration is not one this "
+                      "library serves: name FitRoute::kChebyshev or FitRoute::kRationalMinimax");
+        // The across-orders packed lane carries every combination the axis
+        // offers: either route's region-A fits, and any rung. The three choices
+        // reach the lane as its template arguments, so what the entry answers
+        // inside the packed interval, outside it, and on a host without the
+        // vector tier is one policy's answer throughout.
+        BoysAllOrdersPacked<Policy::kScheme, kAccuracyMultiplier, Policy::kRoute>(nmax, x, out);
+    } else if constexpr (kAccuracyMultiplier == 1.0)
+    {
+        AllOrdersBody<Policy>(nmax, x, out);
     } else if constexpr (Policy::kRoute == FitRoute::kRationalMinimax)
     {
-        static_assert(Policy::kPack == PackAxis::kArguments,
-                      "the across-orders packed lane reads the shipped region-A piece table and "
-                      "nothing else, so it carries no rung of either route: a relaxed multiplier "
-                      "on the orders axis is not a combination this library serves");
         // A rung of the rational route: the route's own body at the pair the
         // rung's criterion certifies, exactly as the single-order entry runs it.
         // The rung is not the polynomial rung's shape - seed at the top order
@@ -900,11 +897,6 @@ void BoysAllOrdersImpl(int nmax, double x, double* out) noexcept {
         static_assert(Policy::kRoute == kDefaultFitRoute,
                       "a policy naming a route outside the FitRoute enumeration is not one this "
                       "library serves: name FitRoute::kChebyshev or FitRoute::kRationalMinimax");
-        static_assert(Policy::kPack == PackAxis::kArguments,
-                      "the across-orders packed lane evaluates every stored fit at its full "
-                      "degree and reads no effective-degree table, so it carries no rung: a "
-                      "relaxed multiplier on the orders axis is not a combination this library "
-                      "serves");
         static constexpr auto kDegreesA = RegionADegrees<kAccuracyMultiplier,
                                                          BoysRole::kDoubleBatch,
                                                          SchemeTailBasis<Policy::kScheme>()>();
@@ -1506,14 +1498,77 @@ extern template void BoysRegionCSimdBf16<kBoysFullAccuracyMultiplier>(
 // measured; the gathered fetch is kept beside it so the pair stays measurable.
 //
 // Below kX0 only. Past it the entry runs the certified scalar single lane one
-// order at a time, which is a defined answer inside the entry's own bound
-// rather than the packed lane.
-template <EvalScheme kScheme = kDefaultEvalScheme>
+// order at a time - at the policy the caller named, so a relaxed multiplier
+// falls back to that rung of that route rather than to the reference one -
+// which is a defined answer inside the entry's own bound rather than the packed
+// lane.
+//
+// The three choices a policy makes reach the lane as template arguments: the
+// scheme picks which polynomial table and which summation the shipped route's
+// fits are read with, the route picks which region-A fits the lane carries, and
+// the accuracy multiplier picks the degree a fit is read at. The definition and
+// its instantiations are in boys_orders_simd.cpp.
+template <EvalScheme kScheme = kDefaultEvalScheme,
+          double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
+          FitRoute kRoute = kDefaultFitRoute>
 void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept;
 
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme>(
+extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 1.0, FitRoute::kChebyshev>(
     int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<EvalScheme::kHorner>(
+extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 64.0, FitRoute::kChebyshev>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 256.0, FitRoute::kChebyshev>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 1024.0, FitRoute::kChebyshev>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 4096.0, FitRoute::kChebyshev>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 16384.0, FitRoute::kChebyshev>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 65536.0, FitRoute::kChebyshev>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 1.0, FitRoute::kRationalMinimax>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 64.0, FitRoute::kRationalMinimax>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 256.0, FitRoute::kRationalMinimax>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 1024.0, FitRoute::kRationalMinimax>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 4096.0, FitRoute::kRationalMinimax>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 16384.0, FitRoute::kRationalMinimax>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 65536.0, FitRoute::kRationalMinimax>(
+    int nmax, double x, double* out) noexcept;
+
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 1.0, FitRoute::kChebyshev>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 64.0, FitRoute::kChebyshev>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 256.0, FitRoute::kChebyshev>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 1024.0, FitRoute::kChebyshev>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 4096.0, FitRoute::kChebyshev>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 16384.0, FitRoute::kChebyshev>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 65536.0, FitRoute::kChebyshev>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 1.0, FitRoute::kRationalMinimax>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 64.0, FitRoute::kRationalMinimax>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 256.0, FitRoute::kRationalMinimax>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 1024.0, FitRoute::kRationalMinimax>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 4096.0, FitRoute::kRationalMinimax>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 16384.0, FitRoute::kRationalMinimax>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 65536.0, FitRoute::kRationalMinimax>(
     int nmax, double x, double* out) noexcept;
 
 // ---------------------------------------------------------------------------
@@ -1959,10 +2014,10 @@ void BoysAllNSortedPartitionedImpl(int nmax,
 // the per-argument body is the all-orders entry's own, and that entry's bound
 // is this entry's.
 //
-// A relaxed multiplier on the orders axis is refused in the engine itself
-// (BoysAllOrdersImpl), and the route reaches its rung there too, so this entry
-// states neither: it dispatches, and the engine's assertions are the ones that
-// decide.
+// A relaxed multiplier on the orders axis reaches its rung the same way the
+// shipped axis's does, in the engine itself (BoysAllOrdersImpl), and the route
+// reaches its rung there too, so this entry states neither: it dispatches, and
+// the engine is where both are answered.
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 void BoysAllNImpl(int nmax,
                   const double* x,

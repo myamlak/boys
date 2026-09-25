@@ -4189,6 +4189,282 @@ int main(int argc, char** argv) {
     sweepPlanePackAxis.template operator()<boys::EvalScheme::kSplitClenshaw>();
     sweepPlanePackAxis.template operator()<boys::EvalScheme::kHorner>();
 
+    // ---- the rest of the axis: every rung, on both routes -------------------
+    // The reference rows above are the axis at the reference multiplier of the
+    // shipped route. The axis answers more than that - each route's region-A
+    // fits at each rung the tier enumeration declares, at either scheme, on
+    // either call shape - and an option a caller can name with no measured row
+    // beside it is exactly the silent gap this book exists to catch. So every
+    // one of them is measured here, through the same two entries, against the
+    // same reference and with the worst cell named.
+    //
+    // The bound a row is judged at is the reference row's own figure times the
+    // multiplier, which is the entry's documented m*B_region read on this call
+    // shape: the shipped route's per-order fits are certified at the single
+    // lane's region-A bar, and the rational route's pairs at the batch figure
+    // the route's own selector rows are judged at. Where the host has no packed
+    // lane the entry is the certified scalar single lane, whose same per-region
+    // budget is the figure the reference row falls back to as well.
+    struct OpenedRow {
+        const char* axis = "";
+        std::string row;
+        double bound = 0.0;
+        std::size_t slot = 0;
+    };
+
+    std::vector<OpenedRow> openedRows;
+
+    // The four rows one combination publishes, in the order the slots below are
+    // addressed by: the all-orders entry over the packed lane's own interval and
+    // over the whole committed grid, then the plane entry's same two. "pl" marks
+    // the plane entry's rows in the report.
+    const char* const kRowKind[4] = {"A", "A..C", "pl A", "pl A..C"};
+
+    // The route a combination reads its region-A fits from, printed beside the
+    // multiplier. Every row above this block measured the shipped route; the
+    // rational route is the one the orders axis did not carry.
+    const char* const kRouteTag[2] = {"cheb", "rat"};
+
+    // A claim records the pointers it is handed rather than copying them, so a
+    // row's label has to outlive the loop that makes it. A fixed array of
+    // strings does: its elements are built once and never moved afterwards.
+    std::array<std::string, 7u * 2u * 4u> openedLabels{};
+
+    for (std::size_t rungIdx = 0; rungIdx < 7; ++rungIdx)
+    {
+        const double m = boys::AccuracyMultiplier(static_cast<boys::AccuracyTier>(rungIdx));
+
+        for (std::size_t routeIdx = 0; routeIdx < 2; ++routeIdx)
+        {
+            for (std::size_t kind = 0; kind < 4; ++kind)
+            {
+                openedLabels[(rungIdx * 2u + routeIdx) * 4u + kind] =
+                    Fmt("m=%g %s %s", m, kRouteTag[routeIdx], kRowKind[kind]);
+            }
+        }
+    }
+
+    // One slot per combination, addressed by the tuple the entry names: rung,
+    // route, scheme, entry and region, in that order. The reference rows' own
+    // eight are not in this book - they are the rows above - so their slots stay
+    // at -1, which no measurement below reads.
+    std::vector<int> openedSlots(7u * 2u * 2u * 2u * 2u, -1);
+
+    const auto openedSlot = [](std::size_t rungIdx,
+                               std::size_t routeIdx,
+                               std::size_t schemeIdx,
+                               std::size_t entry,
+                               std::size_t region) {
+        return static_cast<std::size_t>(((rungIdx * 2u + routeIdx) * 2u + schemeIdx) * 2u + entry) *
+                   2u +
+               region;
+    };
+
+    for (std::size_t rungIdx = 0; rungIdx < 7; ++rungIdx)
+    {
+        const double m = boys::AccuracyMultiplier(static_cast<boys::AccuracyTier>(rungIdx));
+
+        for (std::size_t routeIdx = 0; routeIdx < 2; ++routeIdx)
+        {
+            if (rungIdx == 0 && routeIdx == 0)
+            {
+                continue; // the shipped route at the reference multiplier: the rows above
+            }
+
+            // The figure a row is published at, which is the largest figure any
+            // of its own cells is judged at. Inside the packed lane's interval
+            // that figure is the bar the rung's fits are cut for - the single
+            // lane's per-order region-A budget for the shipped route's table,
+            // the batch role's for the rational one, which is what its pair
+            // criterion spends - both times m, because a rung may spend the
+            // whole relaxed budget on top of the full-degree fit's own error.
+            // The whole grid is the tier's own documented m * 5.5e-14, which is
+            // the figure every other rung row in this report is judged at. Where
+            // the host has no packed lane the region-A rows are the certified
+            // scalar single lane's, whose loosest region-A figure at the same
+            // multiplier is the band's.
+            const double packedBar = (routeIdx == 1) ? kBoundDoubleBatch : kBoundSingleA;
+            const double regionARow = boys::BoysAvx2Available()
+                                          ? m * packedBar
+                                          : m * std::max(packedBar, kBoundSingleBand);
+            const double rowBound[4] = {regionARow,
+                                        m * kBoundSingleC,
+                                        regionARow,
+                                        m * kBoundDoubleBatch};
+
+            for (std::size_t schemeIdx = 0; schemeIdx < 2; ++schemeIdx)
+            {
+                const char* axis = boys::EvalSchemeName(static_cast<boys::EvalScheme>(schemeIdx));
+
+                for (std::size_t entry = 0; entry < 2; ++entry)
+                {
+                    for (std::size_t region = 0; region < 2; ++region)
+                    {
+                        const std::size_t at = entry * 2u + region;
+                        const std::size_t label = (rungIdx * 2u + routeIdx) * 4u + at;
+                        const int slot = AddPackClaim(axis,
+                                                      openedLabels[label].c_str(),
+                                                      rowBound[at]);
+
+                        openedSlots[openedSlot(rungIdx, routeIdx, schemeIdx, entry, region)] = slot;
+                        openedRows.push_back(OpenedRow{axis,
+                                                       openedLabels[label],
+                                                       rowBound[at],
+                                                       static_cast<std::size_t>(slot)});
+                    }
+                }
+            }
+        }
+    }
+
+    // What a cell of an opened row is judged against, by route and by host. The
+    // shipped route's rows are the rows above asked at a rung, so they are
+    // judged the way those are: the packed lane's per-order bar inside its own
+    // interval and the scalar single lane's per-region budgets everywhere else,
+    // which past the lane's interval is the arithmetic the entry runs. The
+    // rational route is judged at the tier's own documented m * 5.5e-14: its
+    // region-A fits hold a wider bar than the shipped table's, on every host,
+    // and below the band's left edge both routes answer from that table, so one
+    // figure covers the row.
+    const auto openedRegionABound = [&](double x, std::size_t routeIdx, double m) {
+        if (routeIdx == 1)
+        {
+            return m * kBoundDoubleBatch;
+        }
+
+        return boys::BoysAvx2Available() ? m * kBoundSingleA : m * SingleBound(x);
+    };
+
+    const auto openedGridBound = [&](double x, std::size_t routeIdx, double m) {
+        return (routeIdx == 1) ? m * kBoundDoubleBatch : m * SingleBound(x);
+    };
+
+    // One combination, measured through both entries that can carry the axis:
+    // the all-orders entry one argument at a time, and the plane entry in one
+    // call over the whole committed grid. Each answers the same two questions
+    // about its own layout - the packed lane's interval at the bar the rung's
+    // fits are cut for, and every argument of the grid at the entry's own
+    // documented figure - so a combination is four rows and all four are swept
+    // here, each with the worst cell recorded against it.
+    const auto measureOpened =
+        [&]<boys::EvalScheme kScheme, std::size_t kRung, boys::FitRoute kRoute>() {
+            constexpr double kMultiplier =
+                boys::AccuracyMultiplier(static_cast<boys::AccuracyTier>(kRung));
+            constexpr std::size_t kSchemeIdx = static_cast<std::size_t>(kScheme);
+            constexpr std::size_t kRouteIdx = static_cast<std::size_t>(kRoute);
+            using Policy =
+                boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFloat, boys::PackAxis::kOrders>;
+
+            const std::size_t ordersRegionA = openedSlot(kRung, kRouteIdx, kSchemeIdx, 0, 0);
+            const std::size_t ordersGrid = openedSlot(kRung, kRouteIdx, kSchemeIdx, 0, 1);
+            const std::size_t planeRegionA = openedSlot(kRung, kRouteIdx, kSchemeIdx, 1, 0);
+            const std::size_t planeGrid = openedSlot(kRung, kRouteIdx, kSchemeIdx, 1, 1);
+            std::vector<double> planes(count * (static_cast<std::size_t>(nmax) + 1));
+
+            boys::BoysAllN<kMultiplier, Policy>(nmax, ref.x.data(), planes.data(), count);
+
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                const double x = ref.x[i];
+                std::array<double, 33> out{};
+                boys::BoysAllOrders<kMultiplier, Policy>(nmax, x, out.data());
+
+                const double ordersGridBound = openedGridBound(x, kRouteIdx, kMultiplier);
+                const double planeGridBound = kMultiplier * kBoundDoubleBatch;
+
+                for (int n = 0; n <= nmax; ++n)
+                {
+                    const std::size_t k = ref.Index(n, i);
+                    const std::size_t j = static_cast<std::size_t>(n);
+                    const double viaOrders = out[j];
+                    const double viaPlane = planes[j * count + i];
+
+                    if (x < boys::detail::kX0)
+                    {
+                        const double regionABound =
+                            openedRegionABound(x, kRouteIdx, kMultiplier);
+
+                        MeasureAt(PackClaims()[ordersRegionA],
+                                  n,
+                                  x,
+                                  viaOrders,
+                                  ref.v[k],
+                                  ref.decade[k],
+                                  regionABound,
+                                  Unrepresentable(viaOrders, -1022));
+                        MeasureAt(PackClaims()[planeRegionA],
+                                  n,
+                                  x,
+                                  viaPlane,
+                                  ref.v[k],
+                                  ref.decade[k],
+                                  regionABound,
+                                  Unrepresentable(viaPlane, -1022));
+                    }
+
+                    // The plane entry's whole-grid row is the batch figure rather
+                    // than the single lane's per-region table: a plane call
+                    // promises the batch row in every region, and past the lane's
+                    // interval it runs the certified scalar single lane one order
+                    // at a time, which is far inside that.
+                    MeasureAt(PackClaims()[ordersGrid],
+                              n,
+                              x,
+                              viaOrders,
+                              ref.v[k],
+                              ref.decade[k],
+                              ordersGridBound,
+                              Unrepresentable(viaOrders, -1022));
+                    MeasureAt(PackClaims()[planeGrid],
+                              n,
+                              x,
+                              viaPlane,
+                              ref.v[k],
+                              ref.decade[k],
+                              planeGridBound,
+                              Unrepresentable(viaPlane, -1022));
+                }
+            }
+        };
+
+    // Every combination the axis answers beyond the rows above: each rung the
+    // tier enumeration declares, on each route, at each scheme. Named rather
+    // than looped, because the multiplier is a template argument - the entries
+    // are instantiated per multiplier - and a reader comparing two rows can see
+    // which two they are.
+    constexpr auto kSplit = boys::EvalScheme::kSplitClenshaw;
+    constexpr auto kHorner = boys::EvalScheme::kHorner;
+    constexpr auto kCheb = boys::FitRoute::kChebyshev;
+    constexpr auto kRat = boys::FitRoute::kRationalMinimax;
+
+    measureOpened.template operator()<kSplit, 0u, kRat>();
+    measureOpened.template operator()<kSplit, 1u, kCheb>();
+    measureOpened.template operator()<kSplit, 1u, kRat>();
+    measureOpened.template operator()<kSplit, 2u, kCheb>();
+    measureOpened.template operator()<kSplit, 2u, kRat>();
+    measureOpened.template operator()<kSplit, 3u, kCheb>();
+    measureOpened.template operator()<kSplit, 3u, kRat>();
+    measureOpened.template operator()<kSplit, 4u, kCheb>();
+    measureOpened.template operator()<kSplit, 4u, kRat>();
+    measureOpened.template operator()<kSplit, 5u, kCheb>();
+    measureOpened.template operator()<kSplit, 5u, kRat>();
+    measureOpened.template operator()<kSplit, 6u, kCheb>();
+    measureOpened.template operator()<kSplit, 6u, kRat>();
+
+    measureOpened.template operator()<kHorner, 0u, kRat>();
+    measureOpened.template operator()<kHorner, 1u, kCheb>();
+    measureOpened.template operator()<kHorner, 1u, kRat>();
+    measureOpened.template operator()<kHorner, 2u, kCheb>();
+    measureOpened.template operator()<kHorner, 2u, kRat>();
+    measureOpened.template operator()<kHorner, 3u, kCheb>();
+    measureOpened.template operator()<kHorner, 3u, kRat>();
+    measureOpened.template operator()<kHorner, 4u, kCheb>();
+    measureOpened.template operator()<kHorner, 4u, kRat>();
+    measureOpened.template operator()<kHorner, 5u, kCheb>();
+    measureOpened.template operator()<kHorner, 5u, kRat>();
+    measureOpened.template operator()<kHorner, 6u, kCheb>();
+    measureOpened.template operator()<kHorner, 6u, kRat>();
+
     std::printf("\naccuracy gate, revision %s\n", BoysGateRevision);
     std::printf("  reference: %s (%zu arguments per order, %zu orders, %s)\n",
                 reference.c_str(),
@@ -7101,25 +7377,6 @@ int main(int argc, char** argv) {
                         "produces four orders for the axis to pack",
                         true});
 #endif
-#ifdef BOYS_GATE_ORDERS_REFUSES_ROUTE
-    refusals.push_back({"orders axis with a route other than the shipped one",
-                        "the packed orders lane reads the shipped region-A piece table and "
-                        "nothing else, so it carries no other family's fits; the probe compiles "
-                        "the call and it does not build. This is a table the lane does not "
-                        "hold, not one it cannot: the rational route's region-A fits cover the "
-                        "same per-order intervals, so an orders-axis reading of them is a "
-                        "coefficient table to place",
-                        true});
-#endif
-#ifdef BOYS_GATE_ORDERS_REFUSES_RUNG
-    refusals.push_back({"orders axis at a relaxed rung",
-                        "the packed orders lane evaluates every stored fit at its full degree "
-                        "and reads no effective-degree table, so it carries no rung; the "
-                        "probe compiles the call and it does not build. This is the same table "
-                        "the shipped route's rungs are truncated from, applied at the full "
-                        "degree the lane reads, so it is owed rather than impossible",
-                        true});
-#endif
 
     // ---- what the check found ----------------------------------------------
     std::size_t optionMissing = 0;
@@ -7199,13 +7456,21 @@ int main(int argc, char** argv) {
                 "orders to\n  fill - a value this entry cannot produce under any revision of it. "
                 "A revision\n  that reaches this line has changed what the entry is\n");
 #endif
-#ifndef BOYS_GATE_ORDERS_REFUSES_RUNG
-    ++liftedRefusals;
-    std::printf("  LIFTED: the orders axis runs at a relaxed multiplier, and the packing-axis "
-                "rows\n  above measure the axis at the reference multiplier only. Carrying a "
-                "rung on it\n  needs the effective-degree table the lane reads, and a row that "
-                "measures it\n");
-#endif
+    // The orders axis carried two limits until this revision, and both are gone:
+    // it answers a relaxed multiplier and it answers a route other than the
+    // shipped one. Neither landing is silent - the packing-axis rows above
+    // measure every rung on both routes, through both entries that carry the
+    // axis, each against the figure that combination documents - so the lines
+    // here name where those rows are rather than what is missing, the way the
+    // route-carriage line above does.
+    std::printf("  CARRIED: the orders axis runs at a relaxed multiplier: the effective-degree\n"
+                "  table it reads is the cut this library's other lanes' rungs are truncated\n"
+                "  from, applied at the full degree the lane reads, and the packing-axis rows\n"
+                "  above measure every rung the tier enumeration declares\n");
+    std::printf("  CARRIED: the orders axis reads a route other than the shipped one: the\n"
+                "  rational route's region-A fits cover the same per-order intervals as the\n"
+                "  shipped piece table, and the packing-axis rows above measure them on both\n"
+                "  entries the axis is carried on\n");
 
     std::printf("  limits the library states at the call site (%zu). Each row's own line says "
                 "which of\n  the two it is: a table or a body that has not been built, which is "
@@ -7636,6 +7901,20 @@ int main(int argc, char** argv) {
                 "plane entry, A..C",
                 kBoundDoubleBatch,
                 PackClaims()[static_cast<std::size_t>(packPlaneSlots[2 * row + 1])]);
+    }
+
+    // The rest of the axis: every rung the tier enumeration declares, on both
+    // routes, at both schemes, on both entries. A row's name is the multiplier,
+    // the route its region-A fits were read from (cheb, rat), and which entry
+    // and interval it covers - "A" is inside the packed lane's own interval,
+    // "A..C" the whole committed grid, and "pl" marks the plane entry's rows.
+    // Every one of them is judged at the figure printed beside it, which is the
+    // figure that entry documents for that combination, times the multiplier.
+    std::printf("  %s\n", std::string(160, '-').c_str());
+
+    for (const OpenedRow& row : openedRows)
+    {
+        packRow(row.axis, row.row.c_str(), row.bound, PackClaims()[row.slot]);
     }
 
     std::printf("  %s\n", std::string(160, '-').c_str());

@@ -267,12 +267,17 @@ plane entry is the region grouping: the shipped path groups the arguments by dis
 feed a lane that packs four *arguments*, and an orders-axis call has one argument to pack and so
 nothing to group.
 
-Two calls cannot form the axis, and both are refused where the call is named rather than answered.
+One call cannot form the axis, and it is refused where the call is named rather than answered.
 `BoysFixedN` computes exactly one order at every argument of an array: a packed lane keeps four
 orders, and this call has one, so there are not four to fill a lane with — that is the entry's
-signature and not a body nobody built. And a relaxed multiplier on the axis is refused at every entry
-that carries it, because the packed orders lane evaluates every stored fit at its full degree and
-reads no effective-degree table, so it carries no rung.
+signature and not a body nobody built.
+
+Every other combination the axis names is built and measured. A relaxed multiplier is answered by the
+same effective-degree cut this library's other rungs are truncated by, applied at the degree the lane
+reads; a route other than the shipped one is answered by that route's own region-A fits, whose pieces
+cover the same per-order intervals as the shipped table. The gate's packing book carries a measured
+row for every rung the tier enumeration declares, on both routes, at both schemes, through both
+entries that carry the axis, and names the worst cell of each.
 
 The orders axis covers region A, `0 <= x < 11.899848152108484`, at the same per-order fits and the
 same `m·1e-15` bar the scalar region-A path holds. At the split Clenshaw scheme its values are the

@@ -875,11 +875,9 @@ constexpr std::size_t BoysAllNWorkspaceSize(std::size_t count) noexcept
 ///         is the all-orders entry's. Naming the axis trades the region
 ///         grouping for it - the grouping exists to feed a lane that packs four
 ///         arguments, which an orders-axis call has no use for - so a call
-///         naming it takes the per-argument path and that axis's own lane. It
-///         is carried at the reference multiplier only: the packed orders lane
-///         evaluates every stored fit at its full degree and reads no
-///         effective-degree table, so it carries no rung, and a relaxed
-///         multiplier on that axis is refused where the lane is dispatched
+///         naming it takes the per-argument path and that axis's own lane. The
+///         axis carries every rung the tier enumeration declares and either
+///         route, at m·B_region as this entry does
 /// \param nmax      highest order, 0..kMaxBoysOrder
 /// \param x         array of count arguments, each >= 0
 /// \param out       receives count * (nmax + 1) doubles, out[k * count + i] = F_k(x[i])
@@ -921,11 +919,9 @@ void BoysAllN(int nmax,
 ///         is the all-orders entry's. Naming the axis trades the region
 ///         grouping for it - the grouping exists to feed a lane that packs four
 ///         arguments, which an orders-axis call has no use for - so a call
-///         naming it takes the per-argument path and that axis's own lane. It
-///         is carried at the reference multiplier only: the packed orders lane
-///         evaluates every stored fit at its full degree and reads no
-///         effective-degree table, so it carries no rung, and a relaxed
-///         multiplier on that axis is refused where the lane is dispatched
+///         naming it takes the per-argument path and that axis's own lane. The
+///         axis carries every rung the tier enumeration declares and either
+///         route, at m·B_region as this entry does
 /// \param nmax   highest order, 0..kMaxBoysOrder
 /// \param x      array of count arguments, non-decreasing, each >= 0
 /// \param out    receives count * (nmax + 1) doubles, out[k * count + i] = F_k(x[i])

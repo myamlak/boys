@@ -161,9 +161,11 @@ inline constexpr EvalScheme kDefaultEvalScheme = EvalScheme::kSplitClenshaw;
 /// hold and therefore in what a caller pays.
 ///
 /// The axis is one field of an \c EvalPolicy, like the fit route and the
-/// scheme. Naming the orders axis on an entry that has one order, or on the
-/// plane entry that partitions its arguments before dispatching, is a
-/// combination this library does not carry and is refused where it is named.
+/// scheme. Naming the orders axis on an entry that has one order is a
+/// combination this library does not carry and is refused where it is named:
+/// a packed lane keeps four orders of one argument and such a call produces
+/// one. The plane entry carries the axis as well, trading the region grouping
+/// that exists to feed the across-arguments lane for it.
 ///
 /// \ingroup boys
 enum class PackAxis : std::uint8_t {
