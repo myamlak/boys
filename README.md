@@ -80,6 +80,32 @@ criterion certifies, and the figure that makes the outcome checkable, are in
 [docs/lane-contract.md](docs/lane-contract.md). The C surface takes a sampled set instead, listed in
 its own header.
 
+The rows above are bounds, and a bound is not the figure a lane delivers. Two lanes are delivered at
+a different figure depending on one property of the build — whether the compiler fuses a bare
+product-plus-add into a single rounding. **The architecture does not decide it**: of the six
+configurations measured, gcc and AppleClang on arm64 contract one and MSVC on arm64 does not, so the
+MSVC arm64 build delivers the x86-64 figures rather than its own architecture's. At the default
+multiplier, against the committed reference grid:
+
+| lane | region | contracted | not contracted | bound |
+|---|---|---|---|---|
+| double, single | 1.0855 ≤ x < 11.8998 | 3.29e-15 | 3.22e-15 | 3e-14 |
+| float, single | all arguments | 1.29e-07 | 1.06e-07 | 1.5e-07 |
+| float, batch | all arguments | 1.29e-07 | 1.08e-07 | 1.5e-07 |
+
+Those three rows are the whole of what moves: the double lane's other three regions deliver the same
+worst cell, to the digit, on both arithmetics. The not-contracted column is measured on MSVC on
+arm64, MSVC on x86-64, clang on x86-64 and AppleClang on x86-64; the contracted column on AppleClang
+on arm64, and reproduced on x86-64 by building with `-mfma`.
+
+Every bound holds either way, and the configure step **measures** which arithmetic a build runs by
+compiling and running a bare product-plus-add rather than inferring it from the architecture name;
+the report prints the answer. The `BoysFixedN` entry's agreement with `BoysSingle` is exact where the
+build does not contract that form and inside the single lane's bound everywhere. A contracting build
+may fuse at one call site and not at another, so the entry's report prints how many of its
+comparisons were bit-for-bit equal, and [docs/lane-contract.md](docs/lane-contract.md) carries the
+counts.
+
 The fp16 and bf16 rows are fp16 *I/O* around the fp32 engine, so their error is the engine's.
 
 The native half lane (`BoysAllOrdersHalf2`, `BoysAllNF16Native`) is a different thing. It evaluates

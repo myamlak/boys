@@ -175,6 +175,96 @@ else()
     message(STATUS "boys: scalar multiply-add route = fused (one rounding)")
 endif()
 
+# --- What this target does with a bare product-plus-add ----------------------
+# Whether `a * b + c` written bare rounds once or twice follows from the target
+# and the flags rather than from the source, and it is not a detail: it decides
+# whether the multiply-add route above is one arithmetic or two.
+# aarch64 has the fused instruction in its baseline, x86-64 does not unless
+# -mfma is passed, MSVC never contracts under its default /fp:precise, and gcc
+# and clang contract by default — so the same source is a different arithmetic
+# on two machines, and a bound is a statement about one of them.
+#
+# Measured rather than inferred from the architecture name. The probe evaluates
+# the bare step the library's own run-time measurement uses —
+# (1 + 2^-27)^2 - (1 + 2^-26), which is 2^-54 when the step is fused and 0 when
+# it is two roundings — and asks whether the bare form reached the fused value.
+# Both readings are volatile so the expression is evaluated rather than folded,
+# and the addend is chosen so the two cannot coincide: a probe whose own two
+# references agree has measured nothing, and reports the answer that claims
+# least rather than the one it cannot see. The claims that answer decides are
+# checked against the run-time measurement in the consumer check, so a configure
+# that got it wrong is a failing test rather than a quiet one.
+#
+# It carries the build's own flags, the configuration's included.
+# -ffp-contract is a licence rather than an instruction and gcc acts on it from
+# -O2 up, so a probe compiled at -O1 would report no contraction for a Release
+# build that contracts — a wrong answer in the direction that hides the
+# difference. It compiles and runs for the same reason: what the target's own
+# arithmetic does is not a question a compile-only check can answer, and a
+# cross-compiling configure cannot answer it at all.
+#
+# One decision, read as BOYS_SCALAR_CONTRACTS. The definition is PUBLIC for the
+# reason BoysFp16 is: every scalar entry is header-defined, so a consumer that
+# instantiates a kernel in its own translation unit compiles its own arithmetic,
+# and the claims that arithmetic carries are then compiled against the answer
+# this configure measured rather than against an assumption about the host. It
+# is left undefined where no answer was measured, so a build that has not
+# measured contraction is a build that claims the least.
+if (NOT CMAKE_CROSSCOMPILING)
+include(CheckCXXSourceRuns)
+unset(BOYS_SCALAR_CONTRACTS CACHE)
+set(_boys_contract_flags "${CMAKE_CXX_FLAGS} -std=c++20")
+if (CMAKE_BUILD_TYPE)
+    string(TOUPPER "${CMAKE_BUILD_TYPE}" _boys_contract_config)
+    string(APPEND _boys_contract_flags " ${CMAKE_CXX_FLAGS_${_boys_contract_config}}")
+    unset(_boys_contract_config)
+endif()
+set(_boys_contract_saved_flags "${CMAKE_REQUIRED_FLAGS}")
+set(CMAKE_REQUIRED_FLAGS "${_boys_contract_flags}")
+check_cxx_source_runs("
+#include <cmath>
+
+int main() {
+    volatile double a = 1.0 + 0x1p-27;
+    volatile double b = 1.0 + 0x1p-27;
+    volatile double c = -(1.0 + 0x1p-26);
+    volatile double product = a * b;
+    const double bare = a * b + c;
+    const double fused = std::fma(a, b, c);
+    const double separate = product + c;
+
+    if (fused == separate) {
+        return 1;
+    }
+
+    return bare == fused ? 0 : 1;
+}
+" BOYS_SCALAR_CONTRACTS)
+set(CMAKE_REQUIRED_FLAGS "${_boys_contract_saved_flags}")
+unset(_boys_contract_saved_flags)
+unset(_boys_contract_flags)
+endif()
+
+# 1 and 0 are the two measured answers and both are defined, so a reader asks the
+# value rather than whether the name exists. Neither is defined where no answer
+# was measured: a build that has not measured contraction does not get to assert
+# the claims the answer decides, and the tri-state is what keeps it from
+# inheriting the one that would be wrong rather than the one that claims least.
+if (BOYS_SCALAR_CONTRACTS)
+    target_compile_definitions(boys PUBLIC BOYS_SCALAR_CONTRACTS=1)
+    message(STATUS "boys: this target contracts a bare product-plus-add (one rounding) — "
+        "the scalar lanes' two multiply-add routes are one arithmetic here, and the "
+        "claims a build carries are compiled against that answer.")
+elseif (NOT CMAKE_CROSSCOMPILING)
+    target_compile_definitions(boys PUBLIC BOYS_SCALAR_CONTRACTS=0)
+    message(STATUS "boys: this target does not contract a bare product-plus-add (two "
+        "roundings) — the scalar lanes' two routes are two arithmetics here, and the "
+        "claims a build carries are compiled against that answer.")
+else()
+    message(STATUS "boys: contraction is not measured in a cross-compiling configure — "
+        "no claims are compiled against it and BoysBackends() reports it at run time.")
+endif()
+
 # --- Architecture gate (the AVX2 tier is x86_64-only) ------------------------
 # The probe is a configure-time compiler check rather than a lookup on
 # CMAKE_SYSTEM_PROCESSOR: the compiler is the thing that has to accept

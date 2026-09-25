@@ -28,7 +28,22 @@
 //    and the entry (the fp32 and fp16 lanes round their argument, the native
 //    half lane returns 2^15 F_k), the comparison is made against the certified
 //    double lane at the same converted argument, and the rule's name states the
-//    bound that composition carries.
+//    bound that composition carries;
+//
+//  * the claims that hold on one arithmetic and not on another are compiled
+//    against the answer this build's configure measured rather than against the
+//    host's architecture, which does not decide the question: MSVC on aarch64
+//    does not contract a bare product-plus-add and gcc on the same architecture
+//    does, while on x86-64 no compiler measured contracts one without -mfma.
+//    Two entries that evaluate the same recurrence from the same source are not
+//    thereby guaranteed the same bits, because whether that bare form is one
+//    rounding or two is a licence the compiler holds per call site. The two
+//    entries' values agree at every cell swept here on every host measured, and
+//    that is asserted wherever the run happens. The strided shape's offsets are
+//    exact by construction only where the bare form is two roundings, so there
+//    the bound is asserted on every build and the exact offset on the builds
+//    whose configure measured that. Both counts are printed either way, so an
+//    abstention is a visible figure rather than a silent one.
 //
 // The output is one line per rule - cells judged, the worst measured error as a
 // fraction of the bound, and where that cell is - so a green run states what it
@@ -86,6 +101,13 @@ struct Rule {
 struct Report {
     std::size_t assertions = 0;
     std::size_t failed = 0;
+
+    /// The bit-for-bit comparisons this run made of an entry's exact form, and
+    /// how many held. Printed on every build; a count below the other is how a
+    /// host that parts company with the exact form is named by a figure rather
+    /// than by a silent pass.
+    std::size_t exactCompared = 0;
+    std::size_t exactHeld = 0;
 };
 
 /// A deque, not a vector: the checks hold a reference to a rule while they
@@ -140,6 +162,12 @@ void Require(Report& report, bool ok, const char* what) {
         ++report.failed;
         std::printf("  FAILED %s\n", what);
     }
+}
+
+/// Count one bit-for-bit comparison of an entry's exact form.
+void Compare(Report& report, bool holds) {
+    ++report.exactCompared;
+    report.exactHeld += holds ? 1 : 0;
 }
 
 /// A rule registered up front, so the verdict lists every rule the check
@@ -680,6 +708,19 @@ void CheckConstants(Report& report) {
     Require(report, !first, "BoysAvx2Available() reports false on a non-x86_64 target");
 #endif
     Covered("boys::BoysAvx2Available");
+
+    // The library publishes whether this build contracts a bare
+    // product-plus-add, measured once when the build was configured, and the
+    // lane claims below are compiled against that answer. It is a statement
+    // about one translation unit's arithmetic, so it is checked here in the
+    // unit that makes those claims: a build whose flags reached this file but
+    // not the measurement would otherwise assert the other arithmetic's claim
+    // and be green for it.
+#if defined(BOYS_SCALAR_CONTRACTS)
+    Require(report,
+            boys::backend::ScalarFp64::Contracts() == (BOYS_SCALAR_CONTRACTS != 0),
+            "the configure-time contraction measurement is this translation unit's");
+#endif
 }
 
 struct TierSpec {
@@ -970,10 +1011,21 @@ void CheckDoubleLanes(Report& report, const std::vector<Cell>& cells) {
                 }
             }
 
-            // Documented: each output element of the fixed-order entry is
-            // bit-identical to BoysSingle at the same multiplier, order and
-            // argument, and carries the single lane's per-region bound.
-            std::size_t differing = 0;
+            // Documented: each output element of the fixed-order entry carries
+            // the single lane's per-region bound at the same multiplier, order
+            // and argument, and is that entry's value bit for bit.
+            //
+            // Same recurrence, same source - which is why the values agree - but
+            // the same source is not the same bits: whether a bare
+            // product-plus-add in it is one rounding or two is a licence the
+            // compiler holds per call site. The equality is asserted here on
+            // every build, because it has held at every cell this check has swept
+            // on every host measured; the bound is asserted beside it so a host
+            // where the equality stops holding is still judged on what the lane
+            // promises there.
+            const std::size_t comparedBefore = report.exactCompared;
+            const std::size_t heldBefore = report.exactHeld;
+            std::size_t outsideBound = 0;
 
             for (const Cell& cell : cells)
             {
@@ -986,30 +1038,56 @@ void CheckDoubleLanes(Report& report, const std::vector<Cell>& cells) {
                 FixedN(m, cell.n, &x, &plain, 1, 1);
                 Judge(fixed, plain, cell.value, SingleBound(cell.x, m), cell.n, cell.x);
 
-                if (plain != Single(m, cell.n, x))
+                const double singleValue = Single(m, cell.n, x);
+
+                if (std::abs(plain - singleValue) > SingleBound(cell.x, m))
                 {
-                    ++differing;
+                    ++outsideBound;
                 }
+
+                Compare(report, plain == singleValue);
             }
 
-            Require(
-                report, differing == 0, "BoysFixedN returns what BoysSingle returns, bit for bit");
+            Require(report,
+                    outsideBound == 0,
+                    "BoysFixedN returns what BoysSingle returns inside the single lane's bound");
+            Require(report,
+                    report.exactHeld - heldBefore == report.exactCompared - comparedBefore,
+                    "BoysFixedN returns what BoysSingle returns, bit for bit");
 
             // Documented: out[i * stride] = F_n(x[i]), so the same value lands
             // at offset 0 of a stride-1 call and offset 0 and 3 of a stride-3
-            // one, and the slots between them are the caller's, untouched.
+            // one, and the slots between them are the caller's, untouched. The
+            // value itself is the single lane's by the paragraph above, so the
+            // two claims below are split the same way: the bound on every build,
+            // the exact offset on the builds whose bare product-plus-add is two
+            // roundings. This shape is the one place the difference has been
+            // measured: a call with two arguments and a gap is not the same
+            // generated code as a call with one, and on a contracting build the
+            // compiler fused the recurrence at one of the two and not at the
+            // other, which moves the value by one unit in the last place.
             const double two[2] = {x, x * 0.5 + 0.25};
             const double one = Single(m, 3, x);
+            const double other = Single(m, 3, two[1]);
             double strided[7];
             std::fill(std::begin(strided), std::end(strided), kUnwritten);
             FixedN(m, 3, two, strided, 2, 3);
-            Require(report, strided[0] == one, "a stride of 3 writes the first value at offset 0");
+            Require(report,
+                    std::abs(strided[0] - one) <= SingleBound(x, m),
+                    "a stride of 3 writes the first value inside the single lane's bound");
             Require(report,
                     strided[1] == kUnwritten && strided[2] == kUnwritten,
                     "a stride of 3 leaves the padding between values untouched");
             Require(report,
-                    strided[3] == Single(m, 3, two[1]),
-                    "a stride of 3 writes the second value at offset 3");
+                    std::abs(strided[3] - other) <= SingleBound(two[1], m),
+                    "a stride of 3 writes the second value inside the single lane's bound");
+            Compare(report, strided[0] == one);
+            Compare(report, strided[3] == other);
+#if defined(BOYS_SCALAR_CONTRACTS) && BOYS_SCALAR_CONTRACTS == 0
+            Require(report, strided[0] == one, "a stride of 3 writes the first value at offset 0");
+            Require(
+                report, strided[3] == other, "a stride of 3 writes the second value at offset 3");
+#endif
 
             // Documented: count may be 0, and then nothing is written.
             double untouched[2] = {kUnwritten, kUnwritten};
@@ -2189,6 +2267,12 @@ int main(int argc, char** argv) {
                 report.assertions,
                 report.failed,
                 gCovered.size());
+    // The two entries that share a recurrence, compared bit for bit and counted
+    // rather than only asserted, so a host that parts company with the exact
+    // form on a build this run did not assert it for is named here by a figure.
+    std::printf("  fixed-order against single-lane, bit for bit: %zu compared, %zu agreed\n",
+                report.exactCompared,
+                report.exactHeld);
 
     return report.failed == 0 ? 0 : 1;
 }

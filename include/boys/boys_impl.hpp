@@ -982,14 +982,19 @@ void BoysAllOrdersImpl(int nmax, double x, double* out) noexcept {
 // order (the batch shape of angular-momentum-grouped inner loops; the
 // strided output layout belongs to the public surface in boys.hpp). The
 // region bodies below mirror BoysSingleImpl's verbatim - the m = 1 branch
-// is the certified scalar single-lane code (the bit-identity pin), the
-// relaxed branch the same bodies at the single-lane effective degrees
-// (BoysRole::kDoubleSingle) - so every output element is bit-identical to
-// the corresponding BoysSingle call by construction; keep the two engines'
-// bodies in lockstep. The region dispatch is per element: mixed-region
-// arguments need no pre-partitioning (the portable shape). The
-// dispatch-once-per-batch region structure lives in the AVX2 region-sorted
-// lanes (boys_simd.cpp), whose callers partition by region first.
+// is the certified scalar single-lane code, the relaxed branch the same
+// bodies at the single-lane effective degrees (BoysRole::kDoubleSingle) -
+// so every output element returns the corresponding BoysSingle call's
+// value, and the same bits on a build whose bare product-plus-add is two
+// roundings. On a build that contracts that form the compiler decides per
+// call site whether to fuse it, and this call shape is not the single
+// entry's: a value can move by a unit in the last place and no further.
+// Keep the two engines' bodies in lockstep - identical source is what holds
+// them inside one bound, and it is all that holds them together. The region
+// dispatch is per element: mixed-region arguments need no pre-partitioning
+// (the portable shape). The dispatch-once-per-batch region structure lives
+// in the AVX2 region-sorted lanes (boys_simd.cpp), whose callers partition
+// by region first.
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 void BoysFixedNImpl(
     int n, const double* x, double* out, std::size_t count, std::size_t stride) noexcept {
