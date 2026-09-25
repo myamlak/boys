@@ -260,6 +260,50 @@ property of the CPU it was taken on, and a time taken on a loaded machine is not
 `docs/lane-contract.md` carries the full table, both counters and the reproducing command — including
 the finding that decides the design, that the same lane's gathered coefficient fetch is the fastest
 of the three by instruction count and the slowest by retired slots.
+### Interval granularity
+
+How narrowly the fitted domain is cut into pieces is the fourth field of `EvalPolicy`, and it is a
+choice with a price on each side. A narrower piece needs a lower degree to hold the same bound —
+halving a piece buys about `2^d` in the truncation, so **splitting is the lever and more degree is
+not** — and the cost is that a table of narrow pieces stores more in total and needs a piece lookup
+per call. Two partitions are offered and no spectrum between them: `FitGranularity::kShipped`, which
+is the committed table and the default, and `FitGranularity::kNarrow`, a deliberately narrower
+partition of region B's seed derived from the proved truncation bound at the quantum-chemistry
+target of 1e-14. `tools/gen_boys_coefficients.py --derive-partition` prints the design law's answer:
+the narrow partition is five pieces of width 2.86 to 4.95 at degree 10, **11 stored coefficients
+against the shipped seed's 19** for each evaluation, with the table growing from 19 to 55.
+
+**Narrowing is a trade and not a saving.** The coefficients an evaluation reads fall from 19 to 11
+and the table a consumer carries grows from 19 to 55, with a piece lookup on every call. A consumer
+whose cost is per evaluation gains; one whose cost is the table gains nothing and pays the lookup.
+
+**The member is certified.** Measured against the committed high-precision reference over the
+interval its own pieces cover, `FitGranularity::kNarrow` delivers a worst absolute error of 7.2e-16
+at n = 0, against a published bound of 8.9e-16 — the coefficient an evaluation reads falls by eight
+and the error falls with it, both because the partition is derived from the proved bound at the 1e-14
+target where the shipped seed was placed by sampling at 5e-14. The narrow partition's own gate rows
+carry that measurement and its carrying fraction; they are counted apart from every other row the
+gate reports, so nothing the library already published moves.
+
+**The axis is a selection over region B**, which is the interval the truncation bound decides on its
+own. Region A's pieces seed the batch entry's downward recursion under a gain that peaks at 1.04e5,
+a criterion that bound does not carry, so region A and the extended band are the same fits at either
+granularity and **region A's narrow partition is outstanding work**.
+
+**Where a combination has no narrow table it is refused where it is named**, with the reason, rather
+than answered from the shipped table: the rational minimax route (one numerator/denominator pair over
+the whole interval), the relaxed rungs `m > 1` (which truncate the shipped fits to certified
+effective degrees), and the single-precision lanes (which hold one coefficient set). The two
+partitions are different fits of the same function over the same interval, so a substitution would
+return the shipped values under the narrow partition's name.
+
+The proved bound is what the partition is derived from, and it needs no sampling: for this function
+`|F_n(z)| ≤ F_n(Re z)` holds exactly, so the max modulus on a Bernstein ellipse is at most its value
+at the ellipse's leftmost point, and Trefethen's interpolant bound gives the truncation. Its
+computation reproduces the figures this tree's generator carries from an earlier instrument
+(6.4676e-16 and 3.14e-18, to five significant figures), and `docs/lane-contract.md` states the
+derivation, the full trade curve and a quoted "19 → 7" measurement **that does not survive the
+check**: at width 17.09/7 the target needs degree 10, not degree 6.
 
 Public function signatures and supported domains are stable within a major version. Bitwise outputs
 are not. Internal region thresholds, seed selection, recursion order and dispatch logic may change

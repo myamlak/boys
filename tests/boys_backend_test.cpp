@@ -243,3 +243,36 @@ TEST(BackendTest, ThePackedPairAppearsExactlyWithTheVectorTier) {
 }
 
 } // namespace
+
+// ---------------------------------------------------------------------------
+// The selection axes on the policy
+// ---------------------------------------------------------------------------
+// Every axis the entries select is one field of EvalPolicy, and every field has
+// its own default. What the entries do with an axis is their own business; what
+// is pinned here is that the defaults are the shipped ones, so a call site that
+// names no axis compiles the code it always did, and that the axes report
+// themselves by name.
+static_assert(boys::EvalPolicy<>{}.kRoute == boys::FitRoute::kChebyshev,
+              "the default fit route moved");
+static_assert(boys::EvalPolicy<>{}.kScheme == boys::EvalScheme::kSplitClenshaw,
+              "the default evaluation scheme moved");
+static_assert(boys::EvalPolicy<>{}.kBudget == boys::BoysBudget::kFloat,
+              "the default engine budget moved");
+static_assert(boys::EvalPolicy<>{}.kGranularity == boys::FitGranularity::kShipped,
+              "the default partition moved: a call site that names none must compile the "
+              "committed tables");
+
+// Naming the narrow partition is answered from its own tables; the combinations
+// that have no narrow table are refused where they are named rather than
+// answered from the shipped one. Those refusals are static_asserts inside
+// RouteFit, the relaxed rungs' RequireShippedPartition and the single-precision
+// lanes, and a refusal cannot be exercised by a test that has to compile: what
+// is pinned here is the default, and the refusals are stated in the headers and
+// in the contract document. The member itself is measured in the accuracy gate
+// and reached through the public entries in the consumer umbrella.
+TEST(BackendTest, ThePartitionNamesRoundTrip) {
+    EXPECT_STREQ(boys::GranularityName(boys::FitGranularity::kShipped), "shipped");
+    EXPECT_STREQ(boys::GranularityName(boys::FitGranularity::kNarrow), "narrow");
+    EXPECT_STRNE(boys::GranularityName(boys::FitGranularity::kShipped),
+                 boys::GranularityName(boys::FitGranularity::kNarrow));
+}

@@ -1406,8 +1406,9 @@ int main(int argc, char** argv) {
                         const double got =
                             (row.route == boys::FitRoute::kRationalMinimax)
                                 ? boys::detail::RegionAValue<boys::detail::RationalFit>(n, x)
-                                : boys::detail::RegionAValue<
-                                      boys::detail::ChebyshevFit<boys::kDefaultEvalScheme>>(n, x);
+                                : boys::detail::RegionAValue<boys::detail::ChebyshevFit<
+                                      boys::kDefaultEvalScheme,
+                                      boys::kDefaultFitGranularity>>(n, x);
                         const std::size_t k = ref.Index(n, i);
 
                         MeasureInto(RouteClaims(),

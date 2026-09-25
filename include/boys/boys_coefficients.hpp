@@ -1359,6 +1359,94 @@ inline constexpr auto kMonoBcoeffs = std::to_array<double>({1.95999835362743235e
                                                             4.97200355888535751e-09});
 inline constexpr int kBDeg = 18;
 
+// The narrow partition of region B: the same interval [kX0, kX1) cut
+// into 5 pieces at degree 10, each as wide as the proved a-priori
+// truncation bound lets it be at the 1e-14 target (see --derive-partition).
+// One evaluation reads kNarrowBDeg + 1 coefficients from the one piece the
+// argument falls in, against the shipped seed's kBDeg + 1 from its single
+// row - a trade of coefficients per evaluation against table rows, not a
+// saving: the table is kNarrowBPieces rows where the shipped seed is one.
+// Every piece is at the same degree, so piece i's coefficients start at
+// i * (kNarrowBDeg + 1) and no offset table is stored. The shipped seed's
+// coefficients above are untouched by this and are the same bytes whether
+// or not the partition is named.
+//
+// Region A and the extended band are not partitioned here: their pieces seed
+// the batch entry's downward recursion under a gain this bound does not
+// carry, so the axis is a selection over region B alone.
+inline constexpr int kNarrowBDeg = 10;
+inline constexpr int kNarrowBPieces = 5;
+inline constexpr auto kNarrowBEdges = std::to_array<double>({
+    1.18998481521084845e+01,
+    1.47565972936548526e+01,
+    1.81617914116462273e+01,
+    2.22530631612206200e+01,
+    2.72005301067822884e+01,
+    2.89893377388207405e+01,
+});
+inline constexpr auto kNarrowBcoeffs = std::to_array<double>({
+    2.43275733172444747e-01,  -1.30780869974390455e-02, 5.27131804753238785e-04,
+    -2.35993207730265750e-05, 1.10824361617760170e-06,  -5.33941015788932897e-08,
+    2.60587659078169396e-09,  -1.27569969022558669e-10, 6.20854885242995248e-12,
+    -2.97869918145889385e-13, 1.39539131094623682e-14,  2.18885124759239630e-01,
+    -1.13553891242002998e-02, 4.41722821077659934e-04,  -1.90906408138047215e-05,
+    8.66218810209002211e-07,  -4.04131456080350730e-08, 1.91868158785327656e-09,
+    -9.20916210545340539e-11, 4.44522336470433439e-12,  -2.14699532657012453e-13,
+    1.02989884268026363e-14,  1.97527613404974101e-01,  -1.00270234120385156e-02,
+    3.81666593581714774e-04,  -1.61409830001873098e-05, 7.16726474456664109e-07,
+    -3.27338601277349529e-08, 1.52256392383633656e-09,  -7.17242610445433365e-11,
+    3.40949840165492572e-12,  -1.63094435848301113e-13, 7.81293907839911691e-15,
+    1.78558170747196876e-01,  -8.95699251605452072e-03, 3.36910741357037769e-04,
+    -1.40799854281014982e-05, 6.17830978438499714e-07,  -2.78847504691499511e-08,
+    1.28182568474410818e-09,  -5.96883019823907642e-11, 2.80602517455490812e-12,
+    -1.32880624094473249e-13, 6.31396942946336833e-15,  1.67229733725985874e-01,
+    -2.66264318900359849e-03, 3.17954176573485690e-05,  -4.21862859938678248e-07,
+    5.87714532815237857e-09,  -8.42161822994371594e-11, 1.22911711162466284e-12,
+    -1.81716512924011418e-14, 2.71237859571291605e-16,  -4.07856999885273973e-18,
+    6.16740771990168127e-20,
+});
+inline constexpr auto kNarrowBMonoCoeffs = std::to_array<double>({
+    2.42749707011625682e-01,  -1.30075551153189077e-02, 1.04544436837982315e-03,
+    -9.33365092344035216e-05, 8.74185463931443853e-06,  -8.40146468536405122e-07,
+    8.18142907814747416e-08,  -7.99290494459172224e-09, 7.76833244330922114e-10,
+    -7.62546990453476826e-11, 7.14440351204473253e-12,  2.18444266242725504e-01,
+    -1.12983186247778752e-02, 8.76550286210030965e-04,  -7.55594317098933242e-05,
+    6.83836088159804201e-06,  -6.36388818368561132e-07, 6.02713684969785648e-08,
+    -5.77019681667974013e-09, 5.55805885495847461e-10,  -5.49630803601951879e-11,
+    5.27308207452294981e-12,  1.97146662018704621e-01,  -9.97876363173661601e-03,
+    7.57626672805103364e-04,  -6.39132517854807260e-05, 5.66127112187780149e-06,
+    -5.15779101603056858e-07, 4.78579644637069157e-08,  -4.49641031180215206e-09,
+    4.26415233391479607e-10,  -4.17521755771650849e-11, 4.00022480814034786e-12,
+    1.78221876557792314e-01,  -8.91489156690037331e-03, 6.68901818271785790e-04,
+    -5.57655733022591126e-05, 4.88156663308043803e-06,  -4.39528322113980267e-07,
+    4.03071511128864070e-08,  -3.74351208739459245e-09, 3.51089341473315099e-10,
+    -3.40174397681851517e-11, 3.23275234788524458e-12,  1.67197944184244995e-01,
+    -2.66137802137752935e-03, 6.35438402675034020e-05,  -1.68576813323176806e-06,
+    4.69582083772489428e-08,  -1.34542545378848511e-09, 3.92623797549054210e-11,
+    -1.16063642639433384e-12, 3.46395032063105835e-14,  -1.04411391970630137e-15,
+    3.15771275258966081e-17,
+});
+static_assert(std::size(kNarrowBEdges) == kNarrowBPieces + 1 &&
+                  std::size(kNarrowBcoeffs) == kNarrowBPieces * (kNarrowBDeg + 1) &&
+                  std::size(kNarrowBMonoCoeffs) == std::size(kNarrowBcoeffs),
+              "the narrow partition's pieces must tile [kX0, kX1)");
+
+// The narrow partition's certification rows, the same shape as the
+// scheme rows below and measured the same way: the bound each scheme
+// delivers on it in each multiply-add route, worst over its pieces,
+// published as a power-of-two round-up so it bounds a sweep and not
+// only the one that measured it. Counted apart from the shipped rows
+// because it is a second partition and not a row of the first.
+struct NarrowRow {
+    int scheme, deg, stored;
+    double fused, separate;
+};
+
+inline constexpr auto kNarrowRows = std::to_array<NarrowRow>({
+    {0, 10, 55, 8.88178419700125232e-16, 8.88178419700125232e-16},
+    {1, 10, 55, 8.88178419700125232e-16, 8.88178419700125232e-16},
+});
+
 // The extended band (the per-range seed design): an F0 fit on
 // [kExtendedBX0, kX0) evaluated by the same split Clenshaw; the
 // upward recursion from it is certified per kmax tier - an order n

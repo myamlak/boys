@@ -163,6 +163,107 @@ per order — the pieces are fitted for the values alone and do not survive the 
 recursion's gain — so a cut's error reaches the value it was read for with nothing in between.
 Region B reads its seed at order 0 and carries it up, so its cut pays the same `A_B(n)` the shipped
 seed's does.
+## Interval granularity: how narrowly the fitted domain is cut
+
+A stored fit is a polynomial over one interval, and the interval's width is the lever on its degree:
+the truncation bound carries the half-width as roughly `(h / 2d)^d`, so **halving a piece buys about
+`2^d`**, while raising the degree at a fixed width buys far less, because the optimal ellipse
+parameter falls as the degree rises and partly cancels the gain. **Splitting is the design move;
+more degree is not.** The library offers two partitions and no spectrum between them, and the
+shipped one is the default.
+
+**What narrower pieces buy, and what they cost.** They cut the number of coefficients an evaluation
+reads, not the size of the table: a narrower piece needs a lower degree, and there are more of them.
+The choice is therefore between work per call and storage plus a piece lookup per call, and neither
+partition is a rung of the other.
+
+**The shipped partition.** Region A: two equal-width bands per order, at degree 20 and degree 18 —
+40 stored coefficients per order, 1320 across the whole table. Region B: one seed fit, degree 18,
+19 stored. Read against the a-priori truncation bound below at the quantum-chemistry target of
+1e-14: region A's two bands hold 3.14e-18 and 2.58e-18, and the extended-band seed holds 5.98e-18 —
+all far inside the target. **The region-B seed is the one piece the bound does not cover: 1.36e-13,
+above the target**, and the piece's *measured* truncation is 9.92e-15, inside it. So the shipped
+seed meets the target by measurement and misses it by the bound, and that gap is the honest
+statement of where the shipped design stands against a 1e-14 target.
+
+**Where the bound comes from.** For F_n the analytic continuation carries an exact majorant:
+`|F_n(z)| ≤ F_n(Re z)` by the triangle inequality applied to the integral representation, and F_n
+decreases in its real argument, so on the Bernstein ellipse of `[a, b]` at parameter `rho` the
+maximum modulus is at most `F_n(c − (h/2)(rho + 1/rho))` — the ellipse's leftmost point, with
+`c = (a + b)/2` and `h = (b − a)/2`. Trefethen's interpolant bound then gives
+
+    E(n, a, b, d) = min over rho > 1 of 2 · F_n(c − (h/2)(rho + 1/rho)) · rho^(−d) / (rho − 1),
+
+and **nothing in it samples the function**. The script that generates the tables computes it
+(`tools/gen_boys_coefficients.py --derive-partition`), and the anchor that says the computation is
+right is that it reproduces, to five significant figures, the two figures the script's own comments
+carry from an independent earlier instrument: 6.4676e-16 for F_0 on `[0, 5.94992407605424223]` at
+degree 18, and 3.14e-18 at degree 20. Its series also agrees with the fit path's own stable series
+to a worst relative difference of 2.4e-26.
+
+**The derived narrower partition.** Equalising the bound at 1e-14 and walking `[11.8998481521,
+28.9893377388)` left to right gives, per degree:
+
+| degree per piece | pieces | stored in total | read per evaluation |
+| --- | --- | --- | --- |
+| 10 | 5 | 55 | 11 |
+| 12 | 3 | 39 | 13 |
+| 14 | 2 | 30 | 15 |
+| 16 | 2 | 34 | 17 |
+| 18 | 2 | 38 | 19 |
+| 20 | 1 | 21 | 21 |
+
+The narrow member is the first row: five pieces of width 2.86, 3.41, 4.09, 4.95 and 1.79, each
+holding 1e-14 by the bound, **11 stored against the shipped seed's 19** — the coefficient count an
+evaluation reads falls by 8, and the table grows from 19 to 55.
+
+**What the member measures, and why it is not the narrowing that buys it.** The committed tables are
+the first row, and over the interval their pieces cover the seed delivers a worst absolute error of
+7.21645e-16 at n = 0 against the committed reference — published as the bound 8.88178e-16, the
+round-up the stored rows use. The shipped seed's own row reads 9.9365e-15 against its published
+1.42109e-14, so 9.9365e-15 / 7.21645e-16 = 13.8 is how much smaller the narrow member's error is.
+**That difference is the derivation and not the split**: the shipped seed was placed by bisecting on a sampled
+residual at a 5e-14 tolerance, while the narrow pieces are placed by the proved bound at 1e-14, and a
+tighter criterion is what the accuracy difference measures. What the split buys is reaching that
+tighter criterion at *eleven* coefficients an evaluation rather than nineteen — the bound is
+conservative by a factor near 14 at this width (see the degree ladder above), so the 1e-14 the pieces
+are solved for is not the 1e-14 they deliver.
+
+**The trade, stated as a trade.** A consumer trades coefficients read per evaluation (19 → 11)
+against table size (19 → 55) and a piece lookup per call. Nothing about it is a saving, and a
+consumer whose cost is the table should not take it.
+
+**And a figure that does not survive the check.** A measurement quoted for this axis says that
+narrowing the region-B seed from width 17.09 to one seventh of that cuts the requirement from 19
+stored to 7. **That is not what the proved bound says, and it is not what a measurement says
+either.** At width 2.4413557 — seventeen point zero nine divided by seven — a degree-6 fit of F_0
+delivers a worst measured error of 5.15e-11 and its a-priori bound is 8.57e-10, which is four to
+five orders worse than 1e-14. The degree that reaches the target at that width is 10, at 11 stored.
+The figures that do agree are these. At degree 6 the bound is 8.57068e-10 against a measured
+5.14888e-11, a ratio of 16.6; at degree 8 it is 1.39861e-12 against 8.95157e-14, a ratio of 15.6;
+at degree 10 it is 2.01396e-15 against 1.41743e-16, a ratio of 14.2. A consistent factor is what a
+bound that is conservative rather than vacuous looks like. **7 stored is what a width-2.44 piece
+needs at a target near 1e-10, not at 1e-14, and the denominator here is 5.14888e-11 / 8.57068e-10
+— the measured truncation over the bound.**
+
+**The option is exposed, certified, and refused where it has no tables.** `FitGranularity::kNarrow`
+is a field of `EvalPolicy` and a name the report can print. Its tables are the generated header's,
+reachable through the same entries as the shipped partition, and its certification is the accuracy
+gate's own block: four measured rows over region B — the partition's seed at n = 0 held to the bound
+the header publishes for it, and the public entry over the region at every order held to the lane's
+documented region-B budget — with two further rows that the pieces tile the region and that naming
+the member changes the answer over region B and nowhere else. They are counted apart from the lane
+book and from the shipped scheme rows, so neither of those totals moves, and the block reports its
+own carrying fraction, 16834 / 16864 = 99.8% of its cells able to discriminate.
+
+**What is refused is the combinations with no narrow table**, at compile time and where they are
+named: the rational minimax route, which is one numerator/denominator pair over the whole interval
+and has no partition of it; the relaxed rungs `m > 1`, whose region-B seed is a per-order effective
+degree of the shipped row and has no counterpart among pieces that are all at one degree; and the
+single-precision lanes, which hold one coefficient set and no narrow one. Each is a static assertion
+with the reason, and none of them falls back: the two partitions are different fits of the same
+function over the same interval, so a substitution would return the shipped numbers under the narrow
+partition's name.
 
 ## float
 

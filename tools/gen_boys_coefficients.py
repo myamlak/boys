@@ -422,6 +422,401 @@ def fit_order(n, region_b=False, f32=False):
     return pieces
 
 
+# ---------------------------------------------------------------------------
+# The a-priori truncation bound, and the partition it derives
+# ---------------------------------------------------------------------------
+# The bands this script ships were placed by bisecting on a sampled residual:
+# fit_interval accepts an interval when a 9-point sweep of the fitted series
+# against boys_ref is inside the budget, and fit_order splits at the midpoint
+# when it is not. That answers "is this good enough". The bound below answers
+# the other question the same mathematics answers - "how wide may a band be, at
+# what degree, to reach a target" - and it does it without sampling anything.
+#
+# **The bound.** F_n is entire, and its integral representation gives an exact
+# majorant on every vertical line of the complex plane:
+#
+#     |F_n(z)| = |int_0^1 t^(2n) e^(-z t^2) dt|
+#              <= int_0^1 t^(2n) e^(-Re(z) t^2) dt = F_n(Re z),
+#
+# the triangle inequality applied to the integrand, and F_n decreases in its
+# real argument. The Bernstein ellipse of [a, b] at parameter rho has its
+# leftmost point at c - (h/2)(rho + 1/rho), with c = (a + b)/2 and
+# h = (b - a)/2, so
+#
+#     M(rho) = max_{z on E_rho} |F_n(z)| <= F_n(c - (h/2)(rho + 1/rho))
+#
+# with no sampling and no asymptotic regime, and no appeal to the leftmost
+# point being where |F_n| is largest: the majorant holds everywhere on the
+# ellipse and the ellipse's least real part is at that point. Trefethen's
+# interpolant bound (Approximation Theory and Approximation Practice, ch. 8)
+# then gives
+#
+#     E(order, a, b, deg) = min_{rho > 1} K * M(rho) * rho^-deg / (rho - 1),
+#
+# with K = 2, the interpolant bound's own constant. Every rho gives an upper
+# bound on the degree-deg interpolant's truncation error over [a, b], so their
+# minimum is one too.
+#
+# The extended band's seed design doubled that constant to 4 for its own
+# purposes (its comment says why: it charges the aliasing at the tail's own
+# size rather than at the operator norm a decaying tail never attains). The
+# derived partition below is computed at the design law's own constant, and
+# BOUND_K is a parameter rather than a literal so that the doubled reading can
+# be taken as well: a partition derived at 4 is a partition derived against a
+# looser bound, so it is narrower everywhere and reaches its target with room.
+#
+# **What E does not bound, and why a derived table is still measured.** E is
+# the truncation of the fit. It is not the rounding of the stored coefficients,
+# and it is not any amplification a recursion downstream applies to the fit: a
+# piece that seeds a downward recursion is held to a budget divided by that
+# recursion's gain, which is a different criterion from the values alone. So a
+# partition derived here is a partition of the FIT, its stored counts are what
+# the fit costs, and the error a caller receives is measured separately rather
+# than read off E.
+BOUND_K = 2
+
+
+def boys_entire(order, z):
+    """F_order(z) for complex z, by the entire series sum_k (-z)^k/(k!(2n+2k+1)).
+
+    boys_ref above is the fit path's reference and takes a real non-negative
+    argument. The ellipse bound needs the analytic continuation: the ellipse's
+    leftmost point is negative at every rho the bound is minimised at, and
+    F_n grows there rather than decaying. The series is the continuation's own
+    definition, needs no regime, and its terms are all of one sign at negative
+    real z. At positive real z the terms alternate, so the caller's working
+    precision must carry the cancellation: the largest term is of order e^z and
+    the value of order 1/z, which is the DPS the derivation runs at.
+    """
+    if z == 0:
+        return mpf(1) / (2 * order + 1)
+    # The terms peak near k = |z|; this cap reaches well past the peak and the
+    # early break stops the tail once it can no longer move the working
+    # precision.
+    az = float(abs(z))
+    cap = int(4 * az) + 40
+    # At positive real z the terms alternate and their largest is of order
+    # e^z, so the sum loses about z/log(10) digits to cancellation. The working
+    # precision carries that rather than the caller having to know it; at the
+    # ellipse's leftmost point, which is where the bound evaluates, z is
+    # negative and the terms do not alternate at all.
+    extra = int(az) if z > 0 else 0
+    with mp.workdps(mp.dps + extra):
+        s = mpf(0)
+        p = mpf(1)  # (-z)^k / k!
+        for k in range(cap):
+            s += p / (2 * order + 2 * k + 1)
+            if k > az + 8 and abs(p) < abs(s) * mpf("1e-40"):
+                break
+            p *= -z / (k + 1)
+        return s
+
+
+def boys_entire_real(order, x):
+    """F_order at real x, by the all-positive series (V&S eq. 26)."""
+    return boys_ref(order, x)
+
+
+def apriori_truncation_bound(order, a, b, deg, K=BOUND_K):
+    """The proved truncation bound of a degree-deg fit of F_order over [a, b].
+
+    Returns (bound, rho) - the minimising parameter is reported because it is
+    the design law's own quantity: rho* sits near 2 deg / h, so the band a
+    degree can carry is set by the band's WIDTH and by almost nothing else.
+    """
+    c = (a + b) / 2
+    h = (b - a) / 2
+
+    def at(rho):
+        leftmost = c - h * (rho + 1 / rho) / 2
+        return K * abs(boys_entire(order, leftmost)) * rho ** (-deg) / (rho - 1)
+
+    # The design law puts the minimiser near rho0 = 2 (deg + 1) / h, to within
+    # about a third where the ellipse stays left of the origin. The bound is
+    # 1/(rho - 1)-shaped below that and e^(h rho/2) rho^-deg-shaped above it, so
+    # a log-spaced scan of a decade either side brackets the minimum and a
+    # golden-section refines the bracket. The scan is bounded rather than
+    # searched to convergence because every evaluation at a rho far from the
+    # minimum costs a series whose argument grows with rho.
+    rho0 = 2 * (deg + 1) / h
+    lo, hi = rho0 / 8, rho0 * 8
+    if lo <= 1:
+        lo = mpf("1.0000001")
+    n = 16
+    best, best_i = None, 0
+    for i in range(n + 1):
+        rho = lo * (hi / lo) ** (mpf(i) / n)
+        v = at(rho)
+        if best is None or v < best:
+            best, best_i = v, i
+    left = lo * (hi / lo) ** (mpf(max(best_i - 1, 0)) / n)
+    right = lo * (hi / lo) ** (mpf(min(best_i + 1, n)) / n)
+
+    # Golden-section on [left, right]: the interval is a bracket because the
+    # scan found its minimum strictly inside it.
+    invphi = (math.sqrt(5) - 1) / 2
+    x1, x2 = right - invphi * (right - left), left + invphi * (right - left)
+    f1, f2 = at(x1), at(x2)
+    for _ in range(40):
+        if f1 < f2:
+            right, x2, f2 = x2, x1, f1
+            x1 = right - invphi * (right - left)
+            f1 = at(x1)
+        else:
+            left, x1, f1 = x1, x2, f2
+            x2 = left + invphi * (right - left)
+            f2 = at(x2)
+    rho = (left + right) / 2
+    return min(best, at(rho)), rho
+
+
+def solve_right_edge(order, a, hi, target, deg, K=BOUND_K):
+    """The widest b in (a, hi] with E(order, a, b, deg) <= target.
+
+    E is non-decreasing in b - every rho's majorant grows with the interval's
+    half-width - so bisection applies, and the predicate is checked for
+    monotonicity at the bracket's ends rather than assumed.
+    """
+    if apriori_truncation_bound(order, a, hi, deg, K)[0] <= target:
+        return hi
+    lo, up = a, hi
+    for _ in range(48):
+        mid = (lo + up) / 2
+        if mid <= lo or mid >= up:
+            break
+        if apriori_truncation_bound(order, a, mid, deg, K)[0] <= target:
+            lo = mid
+        else:
+            up = mid
+    return lo
+
+
+def equalise_partition(order, lo, hi, target, deg, K=BOUND_K):
+    """Walk [lo, hi) left to right, each piece as wide as deg and target allow.
+
+    This is the fixed point of "equalise the bound": every piece carries the
+    same truncation bound and they are as wide as it lets them be, which makes
+    the widths grow with the argument because the function decays. Nothing here
+    samples the function.
+    """
+    pieces = []
+    a = lo
+    while a < hi:
+        b = solve_right_edge(order, a, hi, target, deg, K)
+        if b <= a:
+            raise RuntimeError(f"degree {deg} cannot reach {target} at F{order} from {a}")
+        pieces.append((a, b))
+        a = b
+    return pieces
+
+
+def derived_partition(order, lo, hi, target, degrees, K=BOUND_K):
+    """The (degree, pieces, stored) trade over a ladder, and its minimum.
+
+    stored counts one fit per piece: a partition at a fixed degree stores
+    (deg + 1) coefficients on every one of its pieces.
+    """
+    rows = []
+    for deg in degrees:
+        pieces = equalise_partition(order, lo, hi, target, deg, K)
+        rows.append((deg, len(pieces), len(pieces) * (deg + 1), pieces))
+    best = min(rows, key=lambda r: r[2])
+    return rows, best
+
+
+# The degree ladder the derived partition is reported over. The low end is
+# where narrow pieces are cheapest per piece and most expensive in total, so the
+# ladder stops where the piece count stops being a table anyone would store.
+DERIVE_DEGREES = (10, 12, 14, 16, 18, 20, 24)
+
+
+def derive_partition_report(target):
+    """Print the design law's output over the intervals the shipped fits serve.
+
+    Region B is the interval the bound alone decides: it is one F_0 fit with no
+    per-order weighting and no recursion downstream of it at the arguments the
+    seam sits at, so a partition derived here is a partition of the fit and
+    nothing else. Region A's pieces are a different case and the report says so
+    rather than deriving them: they seed the batch entry's downward recursion
+    and are held to a budget divided by that recursion's gain, which is a
+    criterion this bound does not carry.
+    """
+    # The self-check that the continuation is the function it claims to be:
+    # boys_entire is the ellipse bound's own evaluator and boys_ref is the fit
+    # path's, and at real non-negative arguments the two must agree. A reader
+    # who doubts the majorant can run this line rather than take it.
+    worst = mpf(0)
+    for order in (0, 1, 4, 12, 32):
+        for x in ("0.001", "0.5", "5.94992407605424223", "11.899848152108484",
+                  "20.0", "28.989337738820740"):
+            a, b = boys_entire(order, mpf(x)), boys_ref(order, mpf(x))
+            worst = max(worst, abs(a - b) / abs(b))
+    print(f"the bound's series against the fit path's reference: worst relative "
+          f"difference {mp.nstr(worst, 3)} over the orders and arguments checked")
+    print(f"the anchor: E(0, [0, 5.94992407605424223], 18) = "
+          f"{mp.nstr(apriori_truncation_bound(0, mpf(0), mpf('5.94992407605424223'), 18)[0], 6)}"
+          f", which is the figure the first band's degree was raised at")
+    print()
+    print(f"the a-priori truncation bound, derived at target {mp.nstr(target, 3)}")
+    print("  E(order, a, b, deg) = min over rho > 1 of "
+          f"K M(rho) rho^-deg / (rho - 1), K = {BOUND_K},")
+    print("  M(rho) <= F_order(c - (h/2)(rho + 1/rho)), which holds exactly: "
+          "|F(z)| <= F(Re z)")
+    print("  by the triangle inequality on the integral, and the ellipse's leftmost "
+          "point is where Re z is least. Nothing here samples the function.")
+    print()
+
+    print("the shipped pieces, read against that bound:")
+    for tag, order, lo, hi, deg, stored in (
+            ("region A band 1 ", 0, mpf(0), mpf("5.94992407605424223"), 20, 21),
+            ("region A band 2 ", 0, mpf("5.94992407605424223"), X0, 18, 19),
+            ("region B seed   ", 0, X0, X1, 18, 19),
+            ("extended band   ", 0, XNEW0, X0, 24, 25)):
+        e, rho = apriori_truncation_bound(order, lo, hi, deg)
+        print(f"  {tag} [{mp.nstr(lo, 10)}, {mp.nstr(hi, 10)})  width "
+              f"{mp.nstr(hi - lo, 8):>10s}  degree {deg:2d}  stored {stored:5d}  "
+              f"E = {mp.nstr(e, 5):>11s}  rho* = {mp.nstr(rho, 4)}")
+        print(f"      at or under the target: {e <= target}")
+    print()
+
+    print(f"the derived partition of region B [{mp.nstr(X0, 10)}, {mp.nstr(X1, 10)}), "
+          f"width {mp.nstr(X1 - X0, 8)}:")
+    rows, best = derived_partition(0, X0, X1, target, DERIVE_DEGREES)
+    for deg, pieces, stored, pieces_list in rows:
+        widths = [b - a for a, b in pieces_list]
+        print(f"  degree {deg:2d}: {pieces:2d} pieces, {stored:4d} stored, "
+              f"{deg + 1:2d} read per evaluation, width {mp.nstr(min(widths), 6)} .. "
+              f"{mp.nstr(max(widths), 6)}")
+    print(f"  fewest stored at this target: degree {best[0]}, {best[1]} piece(s), "
+          f"{best[2]} stored")
+    print()
+    print(f"the narrow granularity's partition is the ladder's narrowest row, degree "
+          f"{DERIVE_DEGREES[0]}: every piece reads {DERIVE_DEGREES[0] + 1} stored "
+          "coefficients")
+    print(f"against the shipped seed's 19, at the same target, piece by piece:")
+    narrow = [r for r in rows if r[0] == DERIVE_DEGREES[0]][0]
+    for a, b in narrow[3]:
+        e, _ = apriori_truncation_bound(0, a, b, narrow[0])
+        print(f"  [{mp.nstr(a, 12)}, {mp.nstr(b, 12)})  width {mp.nstr(b - a, 8):>10s}  "
+              f"stored {narrow[0] + 1:2d}  E = {mp.nstr(e, 4)}")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# The narrow partition of region B, as stored tables
+# ---------------------------------------------------------------------------
+# The derived partition is a design law; this is the member that ships it. The
+# same interval the shipped seed serves, cut into the pieces the proved bound
+# gives at NARROW_TARGET and NARROW_DEG, each piece a Chebyshev interpolant of
+# the same degree - so one evaluation reads NARROW_DEG + 1 coefficients instead
+# of the shipped seed's MAX_DEG_DOUBLE + 1, and the table it reads them from is
+# one row per piece instead of one row.
+#
+# That is a trade and not a saving, and the header's own comment says so: the
+# coefficients per evaluation fall and the table grows by the piece count. A
+# consumer whose cost is per evaluation takes it; one whose cost is the table
+# does not. Nothing here narrows region A - its pieces seed the batch entry's
+# downward recursion under a gain this bound does not carry - so region A and
+# the extended band are the same fits at either granularity, and the axis is a
+# selection over region B alone.
+#
+# The pieces are derived, not bisected: equalise_partition walks the interval
+# left to right placing each piece as wide as the bound lets it be, so the
+# widths grow with the argument and the last piece is short because the
+# interval ends. The delivered error is measured rather than read off the
+# bound, for the reason the derivation's own comment gives.
+NARROW_TARGET = mpf("1e-14")
+NARROW_DEG = DERIVE_DEGREES[0]
+NARROW_SCHEMES = len(SCHEME_NAMES)
+
+
+def narrow_region_b():
+    """Region B's narrow partition as stored fits, with their measured bound.
+
+    Returns the pieces (each a, b, deg, Chebyshev coefficients, monomial
+    coefficients) and, per (scheme, multiply-add route), the worst delivered
+    error over every piece, the same way the shipped fits are measured. The
+    pieces are fitted on the derived mpf edges and stored as the doubles the
+    kernel reads, exactly as region A's pieces are.
+    """
+    pieces = []
+    for a, b in equalise_partition(0, X0, X1, NARROW_TARGET, NARROW_DEG):
+        cm = cheb_coeffs(0, a, b, NARROW_DEG)
+        pieces.append((float(a), float(b), NARROW_DEG,
+                       [float(c) for c in cm],
+                       [float(c) for c in cheb_to_monomial(cm)]))
+    worst = [[0.0, 0.0] for _ in range(NARROW_SCHEMES)]
+    for (_a, _b, _deg, cs, ms) in pieces:
+        w = fit_delivered(cs, ms, 0, _a, _b, SCHEME_MEASURE_POINTS)
+        for scheme in range(NARROW_SCHEMES):
+            for route in (0, 1):
+                worst[scheme][route] = max(worst[scheme][route], w[scheme][route])
+    bounds = [[scheme_bound(worst[s][r]) for r in (0, 1)]
+              for s in range(NARROW_SCHEMES)]
+    return {"pieces": pieces, "worst": worst, "bounds": bounds}
+
+
+def narrow_block_lines(narrow, indent=""):
+    """The narrow partition's tables as the header writes them.
+
+    A separate function because the block is reproduced on its own: the full
+    generation is hours and this block is seconds, so --narrow-only writes
+    these lines and the block's byte-identity is checked without the rest of
+    the table. write_header writes the same lines, so the two cannot drift.
+    """
+    pieces = narrow["pieces"]
+    deg = pieces[0][2]
+    lines = [
+        "// The narrow partition of region B: the same interval [kX0, kX1) cut",
+        f"// into {len(pieces)} pieces at degree {deg}, each as wide as the proved a-priori",
+        "// truncation bound lets it be at the 1e-14 target (see --derive-partition).",
+        "// One evaluation reads kNarrowBDeg + 1 coefficients from the one piece the",
+        "// argument falls in, against the shipped seed's kBDeg + 1 from its single",
+        "// row - a trade of coefficients per evaluation against table rows, not a",
+        "// saving: the table is kNarrowBPieces rows where the shipped seed is one.",
+        "// Every piece is at the same degree, so piece i's coefficients start at",
+        "// i * (kNarrowBDeg + 1) and no offset table is stored. The shipped seed's",
+        "// coefficients above are untouched by this and are the same bytes whether",
+        "// or not the partition is named.",
+        "//",
+        "// Region A and the extended band are not partitioned here: their pieces seed",
+        "// the batch entry's downward recursion under a gain this bound does not",
+        "// carry, so the axis is a selection over region B alone.",
+        f"inline constexpr int kNarrowBDeg = {deg};",
+        f"inline constexpr int kNarrowBPieces = {len(pieces)};",
+    ]
+    edges = [fmt(pieces[0][0])] + [fmt(p[1]) for p in pieces]
+    lines.append("inline constexpr auto kNarrowBEdges = std::to_array<double>({")
+    lines.append("  " + ", ".join(edges) + ",")
+    lines.append("});")
+    for name, index in (("kNarrowBcoeffs", 3), ("kNarrowBMonoCoeffs", 4)):
+        values = [fmt(c) for p in pieces for c in p[index]]
+        lines.append(f"inline constexpr auto {name} = std::to_array<double>({{")
+        for i in range(0, len(values), 6):
+            lines.append("  " + ", ".join(values[i:i + 6]) + ",")
+        lines.append("});")
+    lines.append("static_assert(std::size(kNarrowBEdges) == kNarrowBPieces + 1\n"
+                 "                  && std::size(kNarrowBcoeffs) == kNarrowBPieces * (kNarrowBDeg + 1)\n"
+                 "                  && std::size(kNarrowBMonoCoeffs) == std::size(kNarrowBcoeffs),\n"
+                 "              \"the narrow partition's pieces must tile [kX0, kX1)\");")
+    lines.append("")
+    lines.append("// The narrow partition's certification rows, the same shape as the")
+    lines.append("// scheme rows below and measured the same way: the bound each scheme")
+    lines.append("// delivers on it in each multiply-add route, worst over its pieces,")
+    lines.append("// published as a power-of-two round-up so it bounds a sweep and not")
+    lines.append("// only the one that measured it. Counted apart from the shipped rows")
+    lines.append("// because it is a second partition and not a row of the first.")
+    lines.append("struct NarrowRow { int scheme, deg, stored;")
+    lines.append("                   double fused, separate; };")
+    lines.append("inline constexpr auto kNarrowRows = std::to_array<NarrowRow>({")
+    for scheme in range(NARROW_SCHEMES):
+        bounds = narrow["bounds"][scheme]
+        lines.append(f"  {{{scheme}, {deg}, {len(pieces) * (deg + 1)}, {fmt(bounds[0])}, "
+                     f"{fmt(bounds[1])}}},")
+    lines.append("});")
+    return [indent + line if line else line for line in lines]
+
+
 def fmt(v):
     return f"{v:.17e}"
 
@@ -1244,7 +1639,7 @@ def fit_region_a_rational(double_orders):
 
 
 def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb,
-                 scheme_rows, rat_b, rat_a):
+                 scheme_rows, rat_b, rat_a, narrow):
     with open(path, "w", newline="\n") as f:
         f.write("// Generated by tools/gen_boys_coefficients.py - DO NOT EDIT.\n")
         f.write("// Piecewise Chebyshev (split Clenshaw) fits of F_n(x), region A seeds\n")
@@ -1359,6 +1754,11 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
         f.write("inline constexpr auto kMonoBcoeffs = std::to_array<double>({"
                 + ", ".join(fmt(c) for c in mono) + "});\n")
         f.write(f"inline constexpr int kBDeg = {deg};\n")
+        f.write("\n")
+        # The narrow partition of the same interval, beside the shipped seed
+        # rather than in place of it. See narrow_block_lines.
+        for line in narrow_block_lines(narrow):
+            f.write(line + "\n")
         f.write("\n")
         ext_deg, ext_cs, ext_mono = ext_cheb
         f.write("// The extended band (the per-range seed design): an F0 fit on\n")
@@ -1672,11 +2072,59 @@ def main():
     parser.add_argument("--check", action="store_true",
                         help="verify the committed header/CSV are byte-identical to a "
                              "fresh generation (exits nonzero on drift)")
+    parser.add_argument("--derive-partition", action="store_true",
+                        help="derive a narrow partition from the proved truncation bound at "
+                             "the quantum-chemistry target and print it, without fitting "
+                             "anything (the design rule the bands are placed by)")
+    parser.add_argument("--narrow-only", action="store_true",
+                        help="fit only the narrow partition of region B and write its "
+                             "header block to --narrow-out, formatted, without fitting "
+                             "the rest of the table (the block's byte-identity check "
+                             "without the hours-long full generation)")
+    parser.add_argument("--narrow-out", default="",
+                        help="where --narrow-only writes the block (default a scratch "
+                             "name beside the committed header; clang-format must find "
+                             "the repo .clang-format, so keep it inside the tree)")
+    parser.add_argument("--derive-target", default="1e-14",
+                        help="the target --derive-partition derives against (default the "
+                             "quantum-chemistry 1e-14)")
     args = parser.parse_args()
+
+    if args.derive_partition:
+        return derive_partition_report(mpf(args.derive_target))
 
     if args.reference_only:
         os.makedirs(os.path.dirname(args.reference) or ".", exist_ok=True)
         write_reference(args.reference)
+        return 0
+
+    if args.narrow_only:
+        # The narrow partition's block alone. The full generation fits every
+        # order of both lanes and both rational routes and takes hours; this
+        # block is five degree-10 fits, so the block is reproduced on its own
+        # and compared against the committed header's own lines without
+        # waiting for the rest of the table. narrow_block_lines is shared with
+        # write_header, which is what keeps the two from drifting.
+        narrow = narrow_region_b()
+        print(f"the narrow partition of region B: {len(narrow['pieces'])} pieces, "
+              f"degree {narrow['pieces'][0][2]}, "
+              f"{len(narrow['pieces']) * (narrow['pieces'][0][2] + 1)} stored")
+        for (a, b, _deg, _cs, _ms) in narrow["pieces"]:
+            print(f"  [{a!r}, {b!r})  width {b - a:.8f}")
+        for scheme in range(NARROW_SCHEMES):
+            print(f"  {SCHEME_NAMES[scheme]:14s} worst {narrow['worst'][scheme][0]:.6e} / "
+                  f"{narrow['worst'][scheme][1]:.6e} (fused / separate), bound "
+                  f"{narrow['bounds'][scheme][0]:.6e}")
+        narrow_out = args.narrow_out or (args.header + ".narrow-tmp.hpp")
+        os.makedirs(os.path.dirname(narrow_out) or ".", exist_ok=True)
+        with open(narrow_out, "w", newline="\n") as f:
+            f.write("#include <array>\n#include <cstddef>\n\n"
+                    "namespace boys::detail {\n\n")
+            for line in narrow_block_lines(narrow):
+                f.write(line + "\n")
+            f.write("\n}  // namespace boys::detail\n")
+        format_header(narrow_out)
+        print(f"wrote {narrow_out}")
         return 0
 
     print("fitting double lane (weighted region-A seeds, tol 5e-14, deg<=18) ...")
@@ -1695,6 +2143,16 @@ def main():
     print("fitting region B seeds ...")
     b_cheb = fit_order(0, region_b=True)
     b_cheb_f32 = fit_order(0, region_b=True, f32=True)
+
+    print(f"fitting the narrow partition of region B (derived at "
+          f"{mp.nstr(NARROW_TARGET, 3)}, degree {NARROW_DEG}) ...")
+    narrow = narrow_region_b()
+    for (a, b, _deg, _cs, _ms) in narrow["pieces"]:
+        print(f"  [{a!r}, {b!r})  width {b - a:.8f}")
+    for scheme in range(NARROW_SCHEMES):
+        print(f"  {SCHEME_NAMES[scheme]:14s} worst {narrow['worst'][scheme][0]:.6e} / "
+              f"{narrow['worst'][scheme][1]:.6e} (fused / separate), bound "
+              f"{narrow['bounds'][scheme][0]:.6e}")
 
     # The rational region-B route, over the interval the Chebyshev region-B fit
     # was just given, so the two are compared on the same interval against the
@@ -1747,7 +2205,7 @@ def main():
         tmp_reference = os.path.join(tempfile.gettempdir(), "boys_reference-check-tmp.csv")
         try:
             write_header(tmp_header, double_orders, float_orders, b_cheb, b_cheb_f32,
-                         (ext_deg, ext_cs, ext_mono), scheme_rows, rat_b, rat_a)
+                         (ext_deg, ext_cs, ext_mono), scheme_rows, rat_b, rat_a, narrow)
             format_header(tmp_header)
             write_reference(tmp_reference)
             ok = True
@@ -1765,7 +2223,7 @@ def main():
 
     os.makedirs(os.path.dirname(args.header) or ".", exist_ok=True)
     write_header(args.header, double_orders, float_orders, b_cheb, b_cheb_f32,
-                 (ext_deg, ext_cs, ext_mono), scheme_rows, rat_b, rat_a)
+                 (ext_deg, ext_cs, ext_mono), scheme_rows, rat_b, rat_a, narrow)
     format_header(args.header)
     print(f"wrote {args.header}")
 

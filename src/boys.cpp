@@ -471,6 +471,18 @@ const char* PackAxisName(PackAxis axis) noexcept {
     return "unknown";
 }
 
+const char* GranularityName(FitGranularity granularity) noexcept {
+    switch (granularity)
+    {
+    case FitGranularity::kShipped:
+        return "shipped";
+    case FitGranularity::kNarrow:
+        return "narrow";
+    }
+
+    return "unknown";
+}
+
 std::span<const PackAxisInfo> BoysPackAxes() noexcept {
     // Both members evaluate the region-A per-order fits of the double lane, so
     // both are certified against that region's bar. The packed lanes cover

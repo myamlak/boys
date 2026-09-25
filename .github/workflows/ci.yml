@@ -287,6 +287,21 @@ jobs:
       # binaries, same exit statuses as the ctest step above.
       - name: Verdicts (accuracy gate and consumer checks)
         run: ctest --test-dir build -V -R 'boys-accuracy-gate|boys-consumer-'
+      # Every accuracy figure in this library is stated in one multiply-add
+      # route, and the route is a property of the build rather than of the
+      # source: the same tree compiled with BOYS_MULADD_SEPARATE delivers
+      # different figures and a different set of published bounds. The gate
+      # judges each evaluation option against the bound the route in force
+      # carries and prints which route that is, so the tree that exercises the
+      # other route has to be built and run rather than reasoned about. One
+      # extra tree, one target, one configuration of the matrix: a step, not a
+      # job.
+      - name: Multiply-add route (the separate-route tree, accuracy gate)
+        if: matrix.build_type == 'Release'
+        run: |
+          cmake -S . -B build-separate -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF -DBOYS_MULADD_SEPARATE=ON
+          cmake --build build-separate --target boys-accuracy-gate
+          .\build-separate\boys-accuracy-gate.exe --strict
       - name: Generator byte-identity (no-args regeneration + --check + git diff)
         env:
           CLANG_FORMAT: ${{ github.workspace }}/.venv/Scripts/clang-format.exe
@@ -371,6 +386,15 @@ jobs:
       # binaries, same exit statuses as the ctest step above.
       - name: Verdicts (accuracy gate and consumer checks)
         run: ctest --test-dir build -V -R 'boys-accuracy-gate|boys-consumer-'
+      # The other multiply-add route, in this leg's own compiler: see the same
+      # step in the windows-msvc job. GCC Release only, so the other three
+      # configurations of this matrix keep the cost they had.
+      - name: Multiply-add route (the separate-route tree, accuracy gate)
+        if: matrix.compiler == 'gcc' && matrix.build_type == 'Release'
+        run: |
+          cmake -S . -B build-separate -DCMAKE_BUILD_TYPE=Release -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF -DBOYS_EXPECT_AVX2=1 -DBOYS_MULADD_SEPARATE=ON
+          cmake --build build-separate -j 4 --target boys-accuracy-gate
+          ./build-separate/boys-accuracy-gate --strict
       - name: Generator byte-identity (no-args regeneration + --check + git diff)
         env:
           CLANG_FORMAT: ${{ github.workspace }}/.venv/bin/clang-format
