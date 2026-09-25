@@ -384,21 +384,23 @@ jobs:
         id: gen
         if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
-          # The revision this push started from. On a pull request that is the
-          # head as it was BEFORE the push, not the base branch: the base branch
-          # is the other end of the whole pull request, so a range against it
-          # names every file the pull request ever touched - including the
-          # committed tables - and the skip would never fire. On a push event it
-          # is likewise the previous tip, so one expression serves both. An
-          # absent or all-zero value means there is nothing to compare against,
-          # and the check runs.
-          base="${{ github.event.before }}"
+          # The question is not which files the history touched - that needs a
+          # commit range, and a range against a pull request's base names every
+          # file the pull request ever touched, so it always finds these. The
+          # question is whether these three files DIFFER from the base
+          # revision's. Asked that way it needs no history at all, and the
+          # answer is the same whichever end of the comparison moves: an empty
+          # diff means the committed tables and the generator are the base's,
+          # and the base's are already verified.
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
           run=yes
           if [ -n "$base" ] && [ "$base" != "0000000000000000000000000000000000000000" ]; then
             if git fetch --quiet --depth=1 origin "$base" 2>/dev/null &&
-               changed="$(git log --name-only --format= "$base"..HEAD 2>/dev/null)"; then
-              if ! printf '%s\n' "$changed" |
-                   grep -qE '^(tools/gen_boys_coefficients\.py|include/boys/boys_coefficients\.hpp|tests/data/boys_reference\.csv)$'; then
+               changed="$(git diff --name-only FETCH_HEAD HEAD -- \
+                            tools/gen_boys_coefficients.py \
+                            include/boys/boys_coefficients.hpp \
+                            tests/data/boys_reference.csv 2>/dev/null)"; then
+              if [ -z "$changed" ]; then
                 run=no
               fi
             fi
