@@ -61,6 +61,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <limits>
@@ -2126,6 +2127,157 @@ TEST(Rung, TheRationalRungIsTheRoutesOwnAnswerAndNotTheDefaultEntries) {
     std::printf("\nthe rational rung differs from the default entry's rung in %zu of %zu cell(s)\n",
                 differ,
                 cells);
+}
+
+// ---------------------------------------------------------------------------
+// 3. The same tier on the single-order shape
+// ---------------------------------------------------------------------------
+// An engine that reads one order at a time cannot reach a rung through an entry
+// that computes every order, so the single-order shape has its own run-time
+// entry. What is held here is that it selects, not that it exists: the value the
+// run-time entry returns is the compile-time lane's at the multiplier the tier
+// names, bit for bit, because a switch that reached the wrong body would still
+// deliver something inside every bound in this file.
+
+namespace {
+
+using SingleFn = double (*)(int, double) noexcept;
+
+template <double M> double LibrarySingle(int n, double x) noexcept {
+    return boys::BoysSingle<M>(n, x);
+}
+
+template <double M> double LibrarySingleRational(int n, double x) noexcept {
+    return boys::BoysSingle<M, boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(n, x);
+}
+
+constexpr std::array<SingleFn, 7> kLibrarySingles{{
+    &LibrarySingle<boys::kBoysFullAccuracyMultiplier>,
+    &LibrarySingle<64.0>,
+    &LibrarySingle<256.0>,
+    &LibrarySingle<1024.0>,
+    &LibrarySingle<4096.0>,
+    &LibrarySingle<16384.0>,
+    &LibrarySingle<65536.0>,
+}};
+
+constexpr std::array<SingleFn, 7> kLibraryRationalSingles{{
+    &LibrarySingleRational<boys::kBoysFullAccuracyMultiplier>,
+    &LibrarySingleRational<64.0>,
+    &LibrarySingleRational<256.0>,
+    &LibrarySingleRational<1024.0>,
+    &LibrarySingleRational<4096.0>,
+    &LibrarySingleRational<16384.0>,
+    &LibrarySingleRational<65536.0>,
+}};
+
+constexpr std::array<double, 9> kSingleArgs{{
+    0.0, 1e-8, 0.001, 0.5, 1.0855252345349333, 3.0, 11.899848152108484, 20.0, 200.0,
+}};
+
+} // namespace
+
+TEST(Tier, TheSingleOrderRungIsTheCompileTimeLaneAtItsMultiplier) {
+    std::size_t cells = 0;
+    std::size_t mismatch = 0;
+
+    for (std::size_t r = 0; r < kRungs.size(); ++r)
+    {
+        for (const double x : kSingleArgs)
+        {
+            for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+            {
+                ++cells;
+                const double got = boys::BoysSingleAtTier(kRungs[r].tier, n, x);
+                const double want = kLibrarySingles[r](n, x);
+
+                if (std::memcmp(&got, &want, sizeof(double)) != 0)
+                {
+                    ++mismatch;
+                }
+            }
+        }
+    }
+
+    EXPECT_GT(cells, 0u);
+    EXPECT_EQ(mismatch, 0u)
+        << "BoysSingleAtTier is not the compile-time lane at the multiplier its tier names";
+}
+
+TEST(Tier, TheSingleOrderRungCarriesTheRouteAtRunTime) {
+    std::size_t cells = 0;
+    std::size_t mismatch = 0;
+    std::size_t differ = 0;
+
+    for (std::size_t r = 0; r < kRungs.size(); ++r)
+    {
+        for (const double x : kSingleArgs)
+        {
+            for (int n = 0; n <= boys::kMaxBoysOrder; n += 4)
+            {
+                ++cells;
+                const double got = boys::BoysSingleAtTier(
+                    kRungs[r].tier, boys::FitRoute::kRationalMinimax, boys::EvalScheme::kSplitClenshaw, n, x);
+                const double want = kLibraryRationalSingles[r](n, x);
+
+                if (std::memcmp(&got, &want, sizeof(double)) != 0)
+                {
+                    ++mismatch;
+                }
+
+                const double shipped = kLibrarySingles[r](n, x);
+
+                if (std::memcmp(&want, &shipped, sizeof(double)) != 0)
+                {
+                    ++differ;
+                }            }
+        }
+    }
+
+    EXPECT_GT(cells, 0u);
+    EXPECT_EQ(mismatch, 0u) << "the run-time route does not select the route's own fits";
+    EXPECT_GT(differ, 0u)
+        << "the rational route is not reachable at run time on the single-order shape: it "
+           "answers the default route's values everywhere";
+}
+
+TEST(Tier, TheSingleOrderEntryAgreesWithTheBatchEntryAtTheSameRung) {
+    // The two shapes are different calls and are not required to be equal - the
+    // batch entry seeds at the top order and recurses down where this one reads
+    // its own fit - so what is held is only that both stay inside the contract
+    // at the same rung, which is the claim a caller reading one order cares
+    // about.
+    std::size_t over = 0;
+    std::size_t cells = 0;
+
+    for (std::size_t r = 0; r < kRungs.size(); ++r)
+    {
+        for (const double x : kSingleArgs)
+        {
+            std::array<double, 33> batch{};
+            boys::BoysAllOrdersAtTier(kRungs[r].tier, boys::kMaxBoysOrder, x, batch.data());
+            const double bound = kRungs[r].multiplier * DeclaredReachable(kRungs[r].tier, AccuracyRegion::kA);
+
+            if (x >= boys::detail::kX0)
+            {
+                continue;
+            }
+
+            for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+            {
+                ++cells;
+
+                if (std::abs(boys::BoysSingleAtTier(kRungs[r].tier, n, x) - batch[static_cast<std::size_t>(n)]) >
+                    bound)
+                {
+                    ++over;
+                }
+            }
+        }
+    }
+
+    EXPECT_GT(cells, 0u);
+    EXPECT_EQ(over, 0u) << "the two shapes have parted by more than the rung's own bound";
 }
 
 } // namespace

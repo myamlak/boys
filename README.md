@@ -191,7 +191,8 @@ stored fit to the degrees a criterion certifies for that multiplier, and the two
 read different tables: the Chebyshev family's is a cut of its stored coefficient series, and the
 rational family's a cut of its stored numerator and denominator pair. So the pair of selectors is a
 combination rather than a redundancy, and it is offered on every entry, named at run time by
-`BoysAllOrdersAtTier(tier, route, scheme, ...)`. Each rung of each route carries a measured
+`BoysAllOrdersAtTier(tier, route, scheme, ...)`, and on the single-order shape by
+`BoysSingleAtTier` with the same selectors. Each rung of each route carries a measured
 bound on the committed reference: [docs/lane-contract.md](docs/lane-contract.md) states what the two
 criteria derive and publishes the figures the gate measures, including the one that says the
 rational route's own rungs do not truncate at these six multipliers.

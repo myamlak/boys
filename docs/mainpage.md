@@ -19,6 +19,7 @@ region C. See the accuracy contract below.
 |---|---|
 | \ref boys::BoysSingle, \ref boys::BoysAllOrders | scalar fp64, single argument / order batch F_0..F_nmax |
 | \ref boys::BoysAllOrdersWithRoute, \ref boys::BoysFitRoutes | the double batch at a named fit route (\ref boys::FitRoute), and the report of which routes exist, what each promises and over what interval; the route composes with an accuracy rung (\ref boys::AccuracyTier) through \ref boys::BoysAllOrdersAtTier's route-carrying overload |
+| \ref boys::BoysSingleAtTier, \ref boys::BoysAllOrdersAtTier | one order, or every order at one argument, at a run-time-selected tier and — on the batch entry — a run-time-selected route and scheme; the single-order entry exists because a rung is a property of the call shape an engine reads, and an engine that reads one order cannot reach it through an entry that computes every order |
 | \ref boys::BoysFixedN | fp64, one order over an array of arguments, strided; takes a fit route through its policy |
 | \ref boys::BoysAllN | fp64, all nmax + 1 orders over an array of arguments, order-major planes; classifies, groups and dispatches internally (\ref boys::BoysSortedArgs skips the sort for a non-decreasing array); takes a fit route and a packing axis through its policy |
 | \ref boys::BoysSingleF32, \ref boys::BoysAllOrdersF32 | scalar fp32 (the batch form seeds in double) |

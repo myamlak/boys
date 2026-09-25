@@ -620,6 +620,71 @@ void BoysAllOrdersAtTier(
 void BoysAllOrdersAtTier(
     AccuracyTier tier, FitRoute route, int nmax, double x, double* out) noexcept;
 
+/// F_n(x) in double precision at a run-time-selected tier, and optionally a
+/// run-time-selected route and scheme; the single-order entry's contract — the
+/// \c "double single" rows of the table in the file preamble, |F̂ − F| ≤
+/// m·B_region per region with m = AccuracyMultiplier(tier).
+///
+/// The batch entry's rung is a run-time choice already; this is the same choice
+/// on the single-order shape, and it exists because the shape is a different
+/// call: an integral engine that reads one order at a time cannot reach the
+/// rung through an entry that computes every order. The route and the scheme
+/// are named here for the same reason they are named on the batch entry — a
+/// rung is a cut of the named route's own fits, so a caller who wants the
+/// rational route's rung has to be able to say both.
+///
+/// One branch selects the rung, then the rung's own body runs, exactly as in
+/// the templated entry: the values are those of \c BoysSingle<m, Policy> at the
+/// multiplier the tier names, bit for bit, and the reference tier is the
+/// template default. A tier or a route this build does not serve is the
+/// fallback the rest of the surface takes for it, so a caller who records the
+/// multiplier \c AccuracyMultiplier reported beside these values is recording
+/// the accuracy they were computed at.
+///
+/// \param tier   the tier
+/// \param route  the fit route; the default route by default
+/// \param scheme the evaluation scheme; the reference scheme by default
+/// \param n      order, 0..kMaxBoysOrder
+/// \param x      argument, >= 0
+/// \returns      F_n(x)
+///
+/// \ingroup boys
+double BoysSingleAtTier(AccuracyTier tier, FitRoute route, EvalScheme scheme, int n,
+                        double x) noexcept;
+
+/// The same entry with the reference scheme named for the route; see the
+/// scheme-carrying overload above.
+///
+/// \param tier  the tier
+/// \param route the fit route
+/// \param n     order, 0..kMaxBoysOrder
+/// \param x     argument, >= 0
+/// \returns     F_n(x)
+///
+/// \ingroup boys
+double BoysSingleAtTier(AccuracyTier tier, FitRoute route, int n, double x) noexcept;
+
+/// The same entry with the default route and a named scheme.
+///
+/// \param tier   the tier
+/// \param scheme the evaluation scheme
+/// \param n      order, 0..kMaxBoysOrder
+/// \param x      argument, >= 0
+/// \returns      F_n(x)
+///
+/// \ingroup boys
+double BoysSingleAtTier(AccuracyTier tier, EvalScheme scheme, int n, double x) noexcept;
+
+/// F_n(x) at a run-time-selected tier, on the default route and scheme.
+///
+/// \param tier the tier
+/// \param n    order, 0..kMaxBoysOrder
+/// \param x    argument, >= 0
+/// \returns    F_n(x)
+///
+/// \ingroup boys
+double BoysSingleAtTier(AccuracyTier tier, int n, double x) noexcept;
+
 /// F_n(x) in double precision, |F̂ − F| ≤ m·B_region per region (contract
 /// table in the file preamble; m = kAccuracyMultiplier).
 ///

@@ -2425,6 +2425,121 @@ int main(int argc, char** argv) {
     }
 #endif
 
+    // ---- the same tier on the single-order shape ----------------------------
+    // A rung is a run-time choice, and the shape a caller reads one order from
+    // is a different call: an engine that reads a single order cannot reach the
+    // rung through an entry that computes every order. So the single-order
+    // run-time entry is measured against the single lane's own contract, per
+    // region, and the two things held are the two no static-lane row covers -
+    // the rung the caller names is the rung that runs, and the route named at
+    // run time is reachable on this shape too.
+    std::size_t tierSingleCells = 0;
+    std::size_t tierSingleFailures = 0;
+    double tierSingleWorstRatio = 0.0;
+    std::size_t tierSingleWorstRung = 0;
+    int tierSingleWorstOrder = -1;
+    double tierSingleWorstX = 0.0;
+    double tierSingleWorstErr = 0.0;
+    double tierSingleWorstBound = 0.0;
+    std::size_t tierSingleStaticMismatch = 0;
+    std::size_t tierSingleRationalCells = 0;
+    std::size_t tierSingleRationalDiffer = 0;
+
+    {
+        const std::array<boys::AccuracyTier, 7> rungs{
+            boys::AccuracyTier::kReference,   boys::AccuracyTier::kRelaxed64,
+            boys::AccuracyTier::kRelaxed256,  boys::AccuracyTier::kRelaxed1024,
+            boys::AccuracyTier::kRelaxed4096, boys::AccuracyTier::kRelaxed16384,
+            boys::AccuracyTier::kRelaxed65536};
+
+        // The compile-time lane at each rung, which the run-time entry has to
+        // be: one switch can reach the wrong body, and a wrong body is a
+        // last-place difference inside the bound the row is judged on, so the
+        // comparison is exact rather than a tolerance.
+        const auto staticRung = [&](std::size_t r, int n, double x) -> double {
+            switch (r)
+            {
+            case 0:
+                return boys::BoysSingle<1.0>(n, x);
+            case 1:
+                return boys::BoysSingle<64.0>(n, x);
+            case 2:
+                return boys::BoysSingle<256.0>(n, x);
+            case 3:
+                return boys::BoysSingle<1024.0>(n, x);
+            case 4:
+                return boys::BoysSingle<4096.0>(n, x);
+            case 5:
+                return boys::BoysSingle<16384.0>(n, x);
+            default:
+                return boys::BoysSingle<65536.0>(n, x);
+            }
+        };
+
+        for (std::size_t r = 0; r < rungs.size(); ++r)
+        {
+            const double m = boys::AccuracyMultiplier(rungs[r]);
+
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                const double x = ref.x[i];
+                const double bound = m * SingleBound(x);
+
+                for (int n = 0; n <= nmax; ++n)
+                {
+                    const std::size_t k = ref.Index(n, i);
+                    const double got = boys::BoysSingleAtTier(rungs[r], n, x);
+                    const double err = std::abs(got - ref.v[k]);
+                    ++tierSingleCells;
+
+                    if (err > bound)
+                    {
+                        ++tierSingleFailures;
+                    }
+
+                    if (err / bound > tierSingleWorstRatio)
+                    {
+                        tierSingleWorstRatio = err / bound;
+                        tierSingleWorstRung = r;
+                        tierSingleWorstOrder = n;
+                        tierSingleWorstX = x;
+                        tierSingleWorstErr = err;
+                        tierSingleWorstBound = bound;
+                    }
+
+                    const double want = staticRung(r, n, x);
+
+                    if (std::memcmp(&got, &want, sizeof(double)) != 0)
+                    {
+                        ++tierSingleStaticMismatch;
+                    }
+
+                    // The route named at run time, on this shape: the same
+                    // rung, the rational route against the default one. Counted
+                    // as a difference because that is what carriage is.
+                    if (n == 0 || (n % 8) == 0)
+                    {
+                        const double rational = boys::BoysSingleAtTier(
+                            rungs[r], boys::FitRoute::kRationalMinimax, boys::EvalScheme::kSplitClenshaw, n, x);
+                        ++tierSingleRationalCells;
+
+                        if (std::memcmp(&rational, &got, sizeof(double)) != 0)
+                        {
+                            ++tierSingleRationalDiffer;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+
+    //
+    // Three things are measured apart, because the lane publishes them as three
+    // claims: the bound where the return is a normal half (its domain), the
+    // points past that domain's ceiling (counted, never passed), and the
+    // packing itself, which the error cannot show - see the distribution
+    // counters, which a widen-compute-round-once lane cannot produce.
     // ---- the native packed half lane, if this revision carries it -----------
     // Region C only, one precondition (x >= the lane's own fp16 rounding of x1),
     // no fallback and no multiplier, returning 2^15 * F_k(x) so that the whole
@@ -4933,11 +5048,17 @@ int main(int argc, char** argv) {
 
         add("tier.rung.bound",
             "the run-time accuracy tier: |F_hat - F| <= m * B_region per value, m = "
-            "AccuracyMultiplier(tier), for every rung from kReference to kRelaxed65536 - the "
-            "all-orders entry's own row, m * 5.5e-14 flat",
-            "include/boys/boys.hpp, BoysAllOrdersAtTier; README, the double batch row",
+            "AccuracyMultiplier(tier), for every rung from kReference to kRelaxed65536 - on the "
+            "all-orders entry against its own row, m * 5.5e-14 flat, and on the single-order "
+            "entry against the single lane's per-region table times m, with the rung the caller "
+            "names being the rung that runs on both",
+            "include/boys/boys.hpp, BoysAllOrdersAtTier and BoysSingleAtTier; README, the "
+            "double batch and double single rows",
             tierCells == 0 ? Verdict::EvidenceAbsent
-                           : (tierFailures == 0 ? Verdict::Verified : Verdict::Exceeded),
+                           : ((tierFailures == 0 && tierSingleFailures == 0 &&
+                               tierSingleStaticMismatch == 0)
+                                  ? Verdict::Verified
+                                  : Verdict::Exceeded),
             tierCells == 0
                 ? std::string("this revision carries no BoysAllOrdersAtTier, so no rung of the "
                               "run-time tier is measured here; the compile-time rungs at m=64 "
@@ -4953,7 +5074,17 @@ int main(int argc, char** argv) {
                       "that reading at %.4g, so it is the relaxed rungs and not the certified "
                       "one that the strict reading fails; the sentence, not the kernel, is what "
                       "names the wrong table: the tier's own QueryTier bases regions A and B on "
-                      "the batch bound, which is the reading judged here",
+                      "the batch bound, which is the reading judged here. On the single-order "
+                      "shape, which is a different call and needs its own entry: seven rungs "
+                      "over %zu cells against the single lane's per-region table times m, %.4g "
+                      "of budget at the worst (rung %zu, n=%d, x=%.6g: delivered %.6g against "
+                      "%.6g), %zu cell(s) outside it, and %zu cell(s) where the run-time entry "
+                      "differs from BoysSingle at the multiplier its tier names - the last "
+                      "count is what says the rung that was asked for is the rung that ran, "
+                      "since a switch that reached the wrong body would still land inside "
+                      "every bound here. The route named at run time is reachable on that "
+                      "shape too: %zu of %zu sampled cells differ between the rational route "
+                      "and the default one at the same rung",
                       tierCells,
                       tierWorstRatio,
                       tierWorstRungOf,
@@ -4975,7 +5106,18 @@ int main(int argc, char** argv) {
                       tierStrictErr,
                       tierStrictBound,
                       tierStrictCells,
-                      tierStrictRefRatio));
+                      tierStrictRefRatio,
+                      tierSingleCells,
+                      tierSingleWorstRatio,
+                      tierSingleWorstRung,
+                      tierSingleWorstOrder,
+                      tierSingleWorstX,
+                      tierSingleWorstErr,
+                      tierSingleWorstBound,
+                      tierSingleFailures,
+                      tierSingleStaticMismatch,
+                      tierSingleRationalDiffer,
+                      tierSingleRationalCells));
 
         add("tier.query.sound",
             "QueryTier's report is true of the values this revision delivers: a tier reported as "

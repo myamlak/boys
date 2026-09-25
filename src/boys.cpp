@@ -140,6 +140,79 @@ void BoysAllOrdersAtTier(AccuracyTier tier, int nmax, double x, double* out) noe
     AllOrdersAtTier<EvalPolicy<>>(tier, nmax, x, out);
 }
 
+namespace {
+
+// The single-order tier dispatch, the same shape as the batch one above: the
+// policy is the compile-time choice and the tier stays the switch. It exists
+// because the shape is a different call - an engine that reads one order at a
+// time cannot reach a rung through an entry that computes every order - and not
+// because the rung means anything different here.
+template <EvalPolicyLike Policy>
+double SingleAtTier(AccuracyTier tier, int n, double x) noexcept {
+    switch (tier)
+    {
+    case AccuracyTier::kReference:
+        return BoysSingle<kBoysFullAccuracyMultiplier, Policy>(n, x);
+    case AccuracyTier::kRelaxed64:
+        return BoysSingle<64.0, Policy>(n, x);
+    case AccuracyTier::kRelaxed256:
+        return BoysSingle<256.0, Policy>(n, x);
+    case AccuracyTier::kRelaxed1024:
+        return BoysSingle<1024.0, Policy>(n, x);
+    case AccuracyTier::kRelaxed4096:
+        return BoysSingle<4096.0, Policy>(n, x);
+    case AccuracyTier::kRelaxed16384:
+        return BoysSingle<16384.0, Policy>(n, x);
+    case AccuracyTier::kRelaxed65536:
+        return BoysSingle<65536.0, Policy>(n, x);
+
+    default:
+        break;
+    }
+
+    // A tier this build does not serve: the reference multiplier, the same
+    // fallback the batch entry takes and for the same reason - it is the one
+    // rung that is never coarser than any tier this build can name, and
+    // AccuracyMultiplier reports it, so the number a caller records beside this
+    // value is the accuracy it was computed at.
+    return BoysSingle<kBoysFullAccuracyMultiplier, Policy>(n, x);
+}
+
+} // namespace
+
+double BoysSingleAtTier(AccuracyTier tier, int n, double x) noexcept {
+    return SingleAtTier<EvalPolicy<>>(tier, n, x);
+}
+
+double BoysSingleAtTier(AccuracyTier tier, EvalScheme scheme, int n, double x) noexcept {
+    if (scheme == EvalScheme::kHorner)
+    {
+        return SingleAtTier<EvalPolicy<kDefaultFitRoute, EvalScheme::kHorner>>(tier, n, x);
+    }
+
+    return SingleAtTier<EvalPolicy<>>(tier, n, x);
+}
+
+double BoysSingleAtTier(AccuracyTier tier, FitRoute route, int n, double x) noexcept {
+    return BoysSingleAtTier(tier, route, kDefaultEvalScheme, n, x);
+}
+
+double BoysSingleAtTier(
+    AccuracyTier tier, FitRoute route, EvalScheme scheme, int n, double x) noexcept {
+    if (route == FitRoute::kRationalMinimax)
+    {
+        if (scheme == EvalScheme::kHorner)
+        {
+            return SingleAtTier<EvalPolicy<FitRoute::kRationalMinimax, EvalScheme::kHorner>>(
+                tier, n, x);
+        }
+
+        return SingleAtTier<EvalPolicy<FitRoute::kRationalMinimax, kDefaultEvalScheme>>(tier, n, x);
+    }
+
+    return BoysSingleAtTier(tier, scheme, n, x);
+}
+
 void BoysAllOrdersAtTier(
     AccuracyTier tier, EvalScheme scheme, int nmax, double x, double* out) noexcept {
     if (scheme == EvalScheme::kHorner)
