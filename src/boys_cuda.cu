@@ -1101,10 +1101,23 @@ extern "C" int BoysCudaLaunchAllNF16(
 int gEffDevice = -1;
 double gEffM = -1.0;
 
-// Whether the effective-degree tables already resident are this multiplier's on
-// this device, so the host layer can skip recomputing and re-uploading them
-// without having to keep a cache of its own — one that could not see the
-// device, and would report the tables of a device it is no longer on.
+// Whether this multiplier's tables are resident on this device, given the
+// record of what was last uploaded and where. The record carries the device as
+// well as the multiplier because cDegEff and cBDegEff are per-device copies: a
+// comparison on the multiplier alone would answer for a device that has never
+// held them, and a device no upload has reached reads zero-initialized
+// constants. The device arrives as an argument rather than from a call so that
+// every row of the comparison is exercisable on one card, the row that matters
+// included — record naming device 0, caller asking about device 1, same
+// multiplier, which must answer not resident.
+extern "C" int BoysCudaEffTablesResidentOn(
+    int device, double m, int recordedDevice, double recordedM) {
+    return (device == recordedDevice && m == recordedM) ? 1 : 0;
+}
+
+// The same question for the device the calling thread is on. A query that
+// cannot name a device answers not resident, which costs an upload rather than
+// returning a wrong answer.
 extern "C" int BoysCudaEffTablesResident(double m) {
     int device = 0;
 
@@ -1113,7 +1126,7 @@ extern "C" int BoysCudaEffTablesResident(double m) {
         return 0;
     }
 
-    return (gEffDevice == device && gEffM == m) ? 1 : 0;
+    return BoysCudaEffTablesResidentOn(device, m, gEffDevice, gEffM);
 }
 
 extern "C" int BoysCudaUploadEffTables(double m, const int* degA, const int* degB) {
@@ -1124,7 +1137,7 @@ extern "C" int BoysCudaUploadEffTables(double m, const int* degA, const int* deg
         return 2;
     }
 
-    if (gEffDevice == device && gEffM == m)
+    if (BoysCudaEffTablesResidentOn(device, m, gEffDevice, gEffM) == 1)
     {
         return 0;
     }

@@ -169,11 +169,20 @@ void FillEffLane(int lane) {
 // piece table even for the float/fp16 batch lanes (RoleUsesDoubleTables —
 // the downward recursion amplifies float seed errors beyond their budgets).
 template <double kAccuracyMultiplier> BoysStatus EnsureEffTables() {
-    // The host-side degree tables depend on the multiplier alone, so they are
-    // computed once per multiplier. Whether the device already holds them is
-    // the upload's question, and its guard names the device as well as the
-    // multiplier: answering it here would skip the upload a second device
-    // still needs, and that device's kernels would read a zero table.
+    // Whether the device in hand already holds these tables is the .cu's
+    // question and not a cache kept here: a cache keyed on the multiplier alone
+    // cannot see a device switch, and would report one device's tables as
+    // another's. The record the answer is read from names the device, so asking
+    // it is what keeps a second device from being served the first one's
+    // answer.
+    if (BoysCudaEffTablesResident(kAccuracyMultiplier) == 1)
+    {
+        return BoysStatus::kSuccess;
+    }
+
+    // The host-side tables depend on the multiplier alone, so they are computed
+    // once per multiplier. The upload decides for itself as well: it answers for
+    // whichever device it is about to write to, whatever its caller believed.
     if (gEffCachedM != kAccuracyMultiplier)
     {
         FillEffLane<kAccuracyMultiplier, detail::BoysRole::kDoubleSingle, true>(0);

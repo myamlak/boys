@@ -16,6 +16,13 @@
 #include "boys/f16.hpp"
 #endif
 
+// The lane's residency comparison (src/boys_cuda.cu), reached here to assert its
+// rows directly: the arguments are the device in hand and the multiplier asked
+// for, then the record of what was last uploaded and where. Both arrive as
+// arguments, so the assertion needs no second card and no CUDA call.
+extern "C" int BoysCudaEffTablesResidentOn(
+    int device, double m, int recordedDevice, double recordedM);
+
 namespace {
 
 constexpr std::size_t kCount = 1u << 16;
@@ -1004,3 +1011,18 @@ TEST(BoysCudaTest, AllNChecksTheOrder) {
     ASSERT_EQ(boys::BoysCuda::AllNF16(-1, &y, &y, 0, nullptr), boys::BoysStatus::kInvalidArgument);
 }
 #endif // BoysFp16
+
+TEST(BoysCudaTest, EffTableResidencyNamesTheDevice) {
+    // The effective-degree tables are per-device copies of __constant__
+    // symbols, so a record compared on the multiplier alone would answer for a
+    // device that has never held them, and a device no upload has reached reads
+    // zero-initialized tables. The row that decides it is the second: the same
+    // multiplier on another device, which must not be answered as resident.
+    EXPECT_EQ(BoysCudaEffTablesResidentOn(0, 2.0, 0, 2.0), 1);
+    EXPECT_EQ(BoysCudaEffTablesResidentOn(1, 2.0, 0, 2.0), 0);
+    EXPECT_EQ(BoysCudaEffTablesResidentOn(0, 2.0, 1, 2.0), 0);
+    EXPECT_EQ(BoysCudaEffTablesResidentOn(0, 10.0, 0, 2.0), 0);
+
+    // Before any upload the record names no device and no multiplier.
+    EXPECT_EQ(BoysCudaEffTablesResidentOn(0, 2.0, -1, -1.0), 0);
+}
