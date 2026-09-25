@@ -2,8 +2,9 @@
 
 /// \file
 /// What a caller hands the CUDA lane's entries: the handle the device-callable
-/// Boys entries read (boys_cuda_device.hpp), and the one arithmetic option the
-/// single entries of that lane take.
+/// Boys entries read (boys_cuda_device.hpp), the one arithmetic option the
+/// single entries of that lane take, and the lanes the handle's relaxed degree
+/// tables are cut into.
 ///
 /// Kept free of CUDA runtime headers, so the C++ side of the CUDA lane
 /// (boys_cuda.hpp) can name these types in a signature without dragging a CUDA
@@ -90,9 +91,46 @@ enum class RegionBExp : int {
     kFast,
 };
 
+/// The six degree tables an entry can read.
+///
+/// Relaxation is a property of a lane and not of a precision: two lanes of one
+/// precision carry different seed-error amplifications, so the same multiplier
+/// buys them different effective degrees, and the region-A and region-B tables
+/// of each are cut separately. This names the six, in the order the handle's
+/// relaxed degree arrays hold them.
+///
+/// It is a naming of that layout and not a choice a caller makes. An entry
+/// reads the table of the lane it serves, and the lane is a property of the
+/// entry: no call takes one of these as an argument, and a caller reaches the
+/// arithmetic of a different lane by calling a different entry.
+///
+/// \ingroup boys
+enum class BoysDeviceLane : int {
+    /// The double single entry. Region A and region B are both the double piece
+    /// table, and neither path amplifies the seed.
+    kF64Single = 0,
+    /// The double family entries: the runtime-top-order ladder, the fixed-top-
+    /// order ladder and the sink. Region A is the double piece table under the
+    /// downward recursion's amplification, region B the order-0 entry.
+    kF64Batch,
+    /// The float single entry. Region A and region B are both the float piece
+    /// table, and neither path amplifies the seed.
+    kF32Single,
+    /// The three float family entries: as kF64Batch, except that region A is
+    /// still the double piece table — the region-A seed is computed in double
+    /// whatever precision the entry returns — and region B is the float piece
+    /// table's order-0 entry.
+    kF32Batch,
+    /// The fp16 single entry: as kF32Single, under the fp16 lane's budget.
+    kF16Single,
+    /// The three fp16 family entries: as kF32Batch, under the fp16 lane's
+    /// budget.
+    kF16Batch,
+};
+
 /// The tables a device-callable entry reads (boys_cuda_device.hpp).
 ///
-/// Plain data — device pointers and two degrees — and the same for every
+/// Plain data — device pointers and three degrees — and the same for every
 /// precision: one handle serves the double, float and fp16 entries, and it is
 /// the caller's to copy around, since it owns nothing. Fill it with
 /// BoysCuda::DeviceTables, then pass it by value into a kernel and hand it to
@@ -107,6 +145,32 @@ enum class RegionBExp : int {
 /// The fields are not a layout a caller writes to or reads from: the entries
 /// read them, and their names are here so that a reader of a kernel signature
 /// can see what the argument is. Only the library fills a handle.
+///
+/// **Two rungs, not one.** The full-accuracy degree tables are the handle's own
+/// fields and are resident from the first upload. The relaxed degree tables are
+/// a second set, resident for one multiplier at a time — the one the last
+/// BoysCuda::DeviceTables call named, on the same per-(device, m) upload the
+/// batch entries share — and the entries report a rung they have no tables for
+/// rather than running the full-accuracy arithmetic under a relaxed name. What
+/// the two arrays below hold is where those tables are; which rung they hold is
+/// library state, and relaxedRung is the address of it, so an entry reads the
+/// resident rung rather than a value copied into the handle when it was filled.
+/// That is what makes a retired handle report itself: filling a handle for a
+/// rung does not disturb any other handle, but it does retire the rung the
+/// previous one named, and every entry asked for that rung then says so instead
+/// of reading tables that have since been overwritten.
+///
+/// The full-accuracy tables are not in that image and are never retired: a call
+/// that names m = 1 leaves whatever relaxed rung is resident in place, because
+/// it has nothing to make resident.
+///
+/// The price of the second set is device memory and not constant-bank space:
+/// the six region-A tables are 582 ints and the six region-B tables 198, so
+/// 3120 bytes of the device's global memory stand behind the three fields
+/// below, plus the eight bytes of the resident-rung scalar relaxedRung points
+/// at, once for the whole process. The handle itself grows by thirteen
+/// pointers — 104 bytes, from 128 to 232 — because the relaxed tables are
+/// addressed once per call rather than held inline.
 ///
 /// \ingroup boys
 struct BoysDeviceTables {
@@ -134,6 +198,22 @@ struct BoysDeviceTables {
     const float* coeffs32 = nullptr;      ///< the float lane's coefficient pool
     const float* bSeedCoeffs32 = nullptr; ///< the region-B seed's coefficients
     int bSeedDeg32 = 0;                   ///< the region-B seed's degree
+
+    /// The accuracy multiplier the relaxed degree tables are currently cut for,
+    /// read per call. Zero when no relaxed rung has been made resident; the
+    /// library owns the value and no caller writes it.
+    const double* relaxedRung = nullptr;
+    /// [lane] The relaxed region-A effective degrees, in the indexing the table
+    /// above uses: piece \c p of order \c n is the entry
+    /// \c pieceStart[n] + \c p, and the lane's own piece-start table is the one
+    /// its region-A seed reads its coefficients with. Indexed by
+    /// BoysDeviceLane.
+    const int* relaxedDegA[6] = {};
+    /// [lane] The relaxed region-B effective degrees, kMaxBoysOrder + 1 per
+    /// lane, indexed by BoysDeviceLane. The single lanes read the entry for the
+    /// order the recursion has reached and the batch lanes the order-0 entry,
+    /// for the reason their region-B bounds state.
+    const int* relaxedDegB[6] = {};
 };
 
 } // namespace boys

@@ -26,10 +26,10 @@
 // The card is named rather than assumed. A delivered figure describes the
 // arithmetic this device executes; a weaker or stronger double unit changes
 // what a bound costs and not what it is, so the bounds transfer between cards
-// and the delivered figures do not. The relaxed instantiations are measured
-// too, because the header asserts a bound for them: the device has no
-// per-call accuracy parameter, so each multiplier is a lane of its own, and
-// each sweep launches the instantiation its row names.
+// and the delivered figures do not. Every rung is measured, because the header
+// asserts a bound for every rung: the batch entries are swept once per
+// multiplier, each sweep launching the instantiation its row names, and the
+// device-callable entries once per rung with the rung named at the call.
 //
 // One entry carries two certified options rather than one arithmetic: the f32
 // single entry's region-B exponential. It is swept once per option, against the
@@ -49,12 +49,28 @@
 // gate chose exact, so the value measured is the reference's own. The entries
 // that are one body reached through different shapes are additionally compared
 // with each other bit for bit, which is a stronger statement than a bound and
-// is reported beside the rows. These entries are the m = 1 arithmetic - the
-// bit-identical path; the relaxed instantiations are the batch entries' - so
-// each carries one bound and no rung.
+// is reported beside the rows.
+//
+// Each of those entries takes the rung as a run-time argument, so each is swept
+// at every rung the lane instantiates - held to m * the m = 1 bound of its
+// precision, which is the relaxation the contract states - and at every rung
+// every device entry is compared bit for bit with the batch entry of the same
+// precision and the same rung, because the two are one arithmetic reached two
+// ways and no bound can say so. A rung is resident only while the last
+// BoysCuda::DeviceTables call named it, and the refusal that follows from that
+// is exercised beside the order and capacity refusals.
+//
+// The fp64 device entries are additionally measured against the 45-digit
+// reference grid (tests/data/boys_reference.csv), whose arguments are the region
+// boundaries and a logarithmic sweep rather than the gate grid's 1718. That grid
+// carries one argument column, so only the double entries can be measured on it:
+// a float or fp16 row needs the reference at the rounded argument, and the
+// rounded columns are the gate grid's and not this one's. Both references are
+// named, with their argument counts, in the report.
 //
 // Run:  cmake --build <build> --config Release --target boys-cuda-accuracy-gate
 //       <build>/Release/boys-cuda-accuracy-gate [--reference <grid.csv>]
+//                                                      [--digit-reference <grid.csv>]
 // Exits non-zero when any measured cell is over its bound.
 
 #include "boys/boys.hpp"
@@ -128,9 +144,22 @@ constexpr double kFastExpContribution = 8e-8;
 // The fp16 entries' bound is the header's: m * 1e-7 + 1/2 ULP of the returned
 // value, which is what HalfBound computes at m = 1.
 
-// The multipliers the header names as instantiated (a call is fixed at the m
-// its instantiation was built with), in the order the rows print.
-constexpr const char* kRelaxedNames[] = {"2", "10", "100", "1e4", "1e8"};
+// The rungs the lane instantiates, in the order the rows print: the multiplier
+// and the name a row's label carries for it. m = 1 is the unlabelled row, which
+// a lane's plain name already means. The batch entries take one of these as a
+// template argument and the device-callable entries as a run-time argument, and
+// both read the degree tables cut for it.
+struct Rung {
+    double multiplier;
+    const char* name;
+};
+
+constexpr Rung kRungs[] = {{1.0, nullptr},
+                           {2.0, "2"},
+                           {10.0, "10"},
+                           {100.0, "100"},
+                           {1e4, "1e4"},
+                           {1e8, "1e8"}};
 
 // The smallest positive normal float: below it a returned value is the
 // format's floor rather than arithmetic, which is what the relative-error side
@@ -341,6 +370,112 @@ SortedArgs SortArgs(const Reference& ref) {
 
 std::string Label(const char* lane, const char* rung) {
     return rung == nullptr ? std::string(lane) : std::string(lane) + " m=" + rung;
+}
+
+// The same rung, on a phrase rather than on a lane name.
+std::string ShapeLabel(const char* what, const char* rung) {
+    return rung == nullptr ? std::string(what) : std::string(what) + " (m=" + rung + ")";
+}
+
+// The committed 45-digit grid (tests/data/boys_reference.csv), the reference the
+// CPU tests call definitive: F_n at the double its x column states, to 45 digits.
+// Its arguments are the region boundaries and a logarithmic sweep rather than
+// the gate grid's 1718, so it is also where the fp64 entries are pointed at the
+// boundaries. One argument column means only an fp64 entry can be measured on
+// it: a float or fp16 row needs the reference at the argument the entry actually
+// evaluated, and the rounded columns belong to the gate grid.
+struct DigitGrid {
+    std::vector<int> n;
+    std::vector<double> x;
+    std::vector<double> v;
+    std::vector<int> decade;
+    std::size_t count = 0;
+    std::size_t cells = 0;
+};
+
+DigitGrid LoadDigitGrid(const std::string& path) {
+    std::ifstream in(path);
+
+    if (!in)
+    {
+        std::fprintf(stderr, "cuda gate: cannot open the 45-digit grid: %s\n", path.c_str());
+        std::exit(2);
+    }
+
+    DigitGrid grid;
+    std::string line;
+    std::getline(in, line); // header
+
+    while (std::getline(in, line))
+    {
+        if (line.empty())
+        {
+            continue;
+        }
+
+        const std::vector<std::string> f = Split(line);
+
+        if (f.size() < 3)
+        {
+            continue;
+        }
+
+        const double value = std::strtod(f[2].c_str(), nullptr);
+        grid.n.push_back(std::atoi(f[0].c_str()));
+        grid.x.push_back(std::strtod(f[1].c_str(), nullptr));
+        grid.v.push_back(value);
+        grid.decade.push_back(value == 0.0 ? 0
+                                           : static_cast<int>(
+                                                 std::floor(std::log10(std::abs(value)))));
+    }
+
+    grid.cells = grid.n.size();
+
+    if (grid.cells == 0)
+    {
+        std::fprintf(stderr, "cuda gate: the 45-digit grid is empty: %s\n", path.c_str());
+        std::exit(2);
+    }
+
+    // The rows are order-major with one shared argument list, which is what lets
+    // the element index be the reference's own: the first block defines the
+    // arguments and every later block repeats them.
+    std::size_t block = 0;
+
+    while (block < grid.cells && grid.n[block] == 0)
+    {
+        ++block;
+    }
+
+    if (block == 0)
+    {
+        std::fprintf(stderr, "cuda gate: the 45-digit grid has no order-0 block: %s\n",
+                     path.c_str());
+        std::exit(2);
+    }
+
+    grid.count = block;
+
+    if (grid.count * static_cast<std::size_t>(boys::kMaxBoysOrder + 1) != grid.cells)
+    {
+        std::fprintf(stderr,
+                     "cuda gate: the 45-digit grid is not %d orders x %zu arguments: %zu rows\n",
+                     boys::kMaxBoysOrder + 1,
+                     grid.count,
+                     grid.cells);
+        std::exit(2);
+    }
+
+    for (std::size_t k = 0; k < grid.cells; ++k)
+    {
+        if (grid.n[k] != static_cast<int>(k / grid.count) || grid.x[k] != grid.x[k % grid.count])
+        {
+            std::fprintf(stderr, "cuda gate: the 45-digit grid is not rectangular at row %zu\n", k);
+            std::exit(2);
+        }
+    }
+
+    return grid;
 }
 
 // ---------------------------------------------------------------------------
@@ -1007,7 +1142,9 @@ void CheckDemo(int error, const char* what) {
 }
 
 // Which row each device entry's cells are measured into. One entry per row
-// except the double single lane, whose bound is published per region.
+// except the double single lane, whose bound is published per region, and one
+// set of rows per rung: the multiplier is an argument of the call, so the same
+// entry's cells at two rungs are two claims with two bounds.
 struct DeviceSlots {
     int singleA = -1;
     int singleBand = -1;
@@ -1027,13 +1164,206 @@ struct DeviceSlots {
     int each16 = -1;
 };
 
-// Every device entry, measured against the grid through the consumer kernels of
-// tests/boys_cuda_device_demo.cu. These entries are the m = 1 arithmetic, so
-// each row holds the m = 1 bound of its precision and there is no rung to sweep.
+// The rows one rung's device cells are measured into, at that rung's bound:
+// every documented device bound is m times the m = 1 figure, so a relaxed row
+// that held the m = 1 bound would be asserting what it was relaxed out of.
+DeviceSlots DeviceClaimSet(const char* rung, double multiplier) {
+    DeviceSlots slots;
+    const std::string single = Label("device single f64", rung);
+    const std::string orders64 = Label("device all-orders f64", rung);
+    const std::string allN64 = Label("device all-n f64", rung);
+    const std::string each64 = Label("device each-order f64", rung);
+    const std::string single32 = Label("device single f32", rung);
+    const std::string single32Fast = Label("device single f32 (fast exp)", rung);
+    const std::string orders32 = Label("device all-orders f32", rung);
+    const std::string allN32 = Label("device all-n f32", rung);
+    const std::string each32 = Label("device each-order f32", rung);
+    const std::string single16 = Label("device single f16", rung);
+    const std::string orders16 = Label("device all-orders f16", rung);
+    const std::string allN16 = Label("device all-n f16", rung);
+    const std::string each16 = Label("device each-order f16", rung);
+
+    slots.singleA = AddClaim(single.c_str(), "A", multiplier * kBoundSingleA);
+    slots.singleBand = AddClaim(single.c_str(), "band", multiplier * kBoundSingleBand);
+    slots.singleB = AddClaim(single.c_str(), "B", multiplier * kBoundSingleB);
+    slots.singleC = AddClaim(single.c_str(), "C", multiplier * kBoundSingleC);
+    slots.orders64 = AddClaim(orders64.c_str(), "A..C", multiplier * kBoundDoubleBatch);
+    slots.allN64 = AddClaim(allN64.c_str(), "A..C", multiplier * kBoundDoubleBatch);
+    slots.each64 = AddClaim(each64.c_str(), "A..C", multiplier * kBoundDoubleBatch);
+    slots.single32 = AddClaim(single32.c_str(), "A..C", multiplier * kBoundFloat);
+    // The fast option's own bound: the lane's m * 1.5e-7 plus the corrected
+    // seed's contribution, which the option carries at every rung.
+    slots.single32Fast =
+        AddClaim(single32Fast.c_str(), "A..C", multiplier * kBoundFloat + kFastExpContribution);
+    slots.orders32 = AddClaim(orders32.c_str(), "A..C", multiplier * kBoundFloat);
+    slots.allN32 = AddClaim(allN32.c_str(), "A..C", multiplier * kBoundFloat);
+    slots.each32 = AddClaim(each32.c_str(), "A..C", multiplier * kBoundFloat);
+    slots.single16 = AddClaim(single16.c_str(), "A..C", multiplier * kBoundHalfBase);
+    slots.orders16 = AddClaim(orders16.c_str(), "A..C", multiplier * kBoundHalfBase);
+    slots.allN16 = AddClaim(allN16.c_str(), "A..C", multiplier * kBoundHalfBase);
+    slots.each16 = AddClaim(each16.c_str(), "A..C", multiplier * kBoundHalfBase);
+    return slots;
+}
+
+// A device entry and the batch entry of the same precision at the same rung:
+// one arithmetic reached two ways - the same degree tables, the same inlined
+// body, a lane object that reads the caller's handle instead of a __constant__
+// symbol. A bound cannot say that, and the header claims it, so every value the
+// device call wrote is compared bit for bit against the batch entry launched on
+// the same orders and the same arguments. A divergence is a defect in one of
+// the two routes, not a looser bound, so it stops the gate at the cell it was
+// found at.
+struct RungAgreement {
+    std::string what;
+    std::size_t identical = 0;
+    std::size_t values = 0;
+};
+
+std::vector<RungAgreement>& RungAgreements() {
+    static std::vector<RungAgreement> agreements;
+    return agreements;
+}
+
+[[noreturn]] void Disagree(const std::string& what,
+                           std::size_t cell,
+                           int order,
+                           double x,
+                           double device,
+                           double batch) {
+    std::fprintf(stderr,
+                 "cuda gate: %s disagree at element %zu, order %d, grid argument x=%.17g:"
+                 " %.17g against %.17g\n",
+                 what.c_str(),
+                 cell,
+                 order,
+                 x,
+                 device,
+                 batch);
+    std::exit(2);
+}
+
+// One value per element on both sides: the single entries, whose output is
+// indexed by the cell the demo kernel formed its argument in.
+template <typename T>
+void AgreeRungCells(const std::string& what,
+                    const std::vector<T>& device,
+                    const std::vector<T>& batch,
+                    const Reference& ref) {
+    RungAgreement agreement;
+    agreement.what = what;
+
+    for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+    {
+        for (std::size_t i = 0; i < ref.count; ++i)
+        {
+            const std::size_t e = ref.Index(n, i);
+            ++agreement.values;
+
+            if (device[e] == batch[e])
+            {
+                ++agreement.identical;
+                continue;
+            }
+
+            Disagree(what, e, n, ref.x[i], static_cast<double>(device[e]),
+                     static_cast<double>(batch[e]));
+        }
+    }
+
+    RungAgreements().push_back(agreement);
+}
+
+// One top order's ladder against the batch entry launched at that same top
+// order. Region A descends from the top order, so two top orders are two chains
+// of rounding and the comparison has to be made within one top order; the
+// counts land in the caller's agreement row, because the statement is about the
+// entry rather than about the order.
+template <typename T>
+void AgreeRungOrder(RungAgreement& agreement,
+                    const std::vector<T>& device,
+                    const std::vector<T>& batch,
+                    const std::vector<double>& args,
+                    int top) {
+    const std::size_t count = args.size();
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        const std::size_t e = static_cast<std::size_t>(top) * count + i;
+
+        for (int l = 0; l <= top; ++l)
+        {
+            const std::size_t deviceSlot = FamilySlot(e, l);
+            const std::size_t batchSlot = static_cast<std::size_t>(l) * count + i;
+            ++agreement.values;
+
+            if (device[deviceSlot] == batch[batchSlot])
+            {
+                ++agreement.identical;
+                continue;
+            }
+
+            Disagree(agreement.what,
+                     e,
+                     l,
+                     args[i],
+                     static_cast<double>(device[deviceSlot]),
+                     static_cast<double>(batch[batchSlot]));
+        }
+    }
+}
+
+// Every order of a family. The device call writes the element's own block and
+// the batch entry the order-major plane, so the two indexings are compared
+// through the element: `deviceTop` is the highest order this comparison covers,
+// which is the element's own top order for the shapes that descend from it and
+// kMaxBoysOrder for the shape that descends from kMaxBoysOrder at every
+// argument. A slot above that is one neither call wrote.
+template <typename T>
+void AgreeRungFamily(const std::string& what,
+                     const std::vector<T>& device,
+                     const std::vector<T>& batch,
+                     const std::vector<int>& orders,
+                     const Reference& ref,
+                     bool uniformTop) {
+    RungAgreement agreement;
+    agreement.what = what;
+    const std::size_t cells = ref.count * (static_cast<std::size_t>(boys::kMaxBoysOrder) + 1);
+
+    for (std::size_t e = 0; e < cells; ++e)
+    {
+        const int top = uniformTop ? boys::kMaxBoysOrder : orders[e];
+        const std::size_t i = e % ref.count;
+
+        for (int l = 0; l <= top; ++l)
+        {
+            const std::size_t deviceSlot = FamilySlot(e, l);
+            const std::size_t batchSlot = static_cast<std::size_t>(l) * ref.count + i;
+            ++agreement.values;
+
+            if (device[deviceSlot] == batch[batchSlot])
+            {
+                ++agreement.identical;
+                continue;
+            }
+
+            Disagree(what, e, l, ref.x[i], static_cast<double>(device[deviceSlot]),
+                     static_cast<double>(batch[batchSlot]));
+        }
+    }
+
+    RungAgreements().push_back(agreement);
+}
+
+// Every device entry at one rung, measured against the grid through the consumer
+// kernels of tests/boys_cuda_device_demo.cu, and compared bit for bit with the
+// batch entry of the same rung.
+template <double kMultiplier>
 void SweepDevice(const Reference& ref,
                  const Grid& grid,
+                 const SortedArgs& sorted,
                  const boys::BoysDeviceTables& tables,
-                 const DeviceSlots& slots) {
+                 const DeviceSlots& slots,
+                 const char* rung) {
     const std::size_t count = ref.count;
     const int nmax = boys::kMaxBoysOrder;
     const std::size_t cells = grid.cells;
@@ -1060,7 +1390,8 @@ void SweepDevice(const Reference& ref,
                                          dD2.get(),
                                          dOut.get(),
                                          cells,
-                                         dStatus.get()),
+                                         dStatus.get(),
+                                         kMultiplier),
                   "BoysDeviceDemoSingle64");
         std::vector<double> out(cells);
         std::vector<int> status(cells);
@@ -1084,6 +1415,25 @@ void SweepDevice(const Reference& ref,
                         Claims()[static_cast<std::size_t>(slot)].baseBound,
                         Unrepresentable(out[e], -1022));
             }
+        }
+
+        // The batch single entry on the same orders and the same arguments.
+        {
+            DevBuf<int> dNb(cells);
+            DevBuf<double> dXb(cells);
+            DevBuf<double> dOutb(cells);
+            dNb.Upload(grid.n);
+            dXb.Upload(grid.x);
+            CheckLaunch(boys::BoysCuda::SingleF64<kMultiplier>(
+                            dNb.get(), dXb.get(), dOutb.get(), cells, nullptr),
+                        "SingleF64 (one arithmetic)");
+            std::vector<double> batch(cells);
+            dOutb.Download(batch);
+            Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+            AgreeRungCells(ShapeLabel("device single f64 and batch single f64", rung),
+                           out,
+                           batch,
+                           ref);
         }
     }
 
@@ -1119,10 +1469,16 @@ void SweepDevice(const Reference& ref,
                                          dLadder.get(),
                                          cells,
                                          nmax + 1,
-                                         dStatusLadder.get()),
+                                         dStatusLadder.get(),
+                                         kMultiplier),
                   "BoysDeviceDemoLadder64");
-        CheckDemo(BoysDeviceDemoAllN64(
-                      &tables, dRho.get(), dD2.get(), dAllN.get(), cells, dStatusAllN.get()),
+        CheckDemo(BoysDeviceDemoAllN64(&tables,
+                                       dRho.get(),
+                                       dD2.get(),
+                                       dAllN.get(),
+                                       cells,
+                                       dStatusAllN.get(),
+                                       kMultiplier),
                   "BoysDeviceDemoAllN64");
         CheckDemo(BoysDeviceDemoEach64(&tables,
                                        dN.get(),
@@ -1130,7 +1486,8 @@ void SweepDevice(const Reference& ref,
                                        dD2.get(),
                                        dEach.get(),
                                        cells,
-                                       dStatusEach.get()),
+                                       dStatusEach.get(),
+                                       kMultiplier),
                   "BoysDeviceDemoEach64");
         std::vector<double> ladder(family);
         std::vector<double> allN(family);
@@ -1171,8 +1528,81 @@ void SweepDevice(const Reference& ref,
             }
         }
 
-        Agree("device all-orders f64 and device each-order f64", ladder, each, ref, nmax);
-        AgreeFixedTopOrder("device all-n f64 and device all-orders f64", allN, ladder, ref, nmax);
+        // The batch entries of the same rung on the same orders and the same
+        // arguments, element for element. The single entry is launched over the
+        // whole element list, so its element is the device's element. The
+        // ladders are launched once per top order, because a ladder descends
+        // from the order it is named; the all-n entry takes its arguments
+        // non-decreasing, so its plane is permuted back to the reference order
+        // before the comparison.
+        {
+            RungAgreement ladderAgreement;
+            RungAgreement eachAgreement;
+            ladderAgreement.what =
+                ShapeLabel("device all-orders f64 and batch all-orders f64", rung);
+            eachAgreement.what = ShapeLabel("device each-order f64 and batch all-orders f64", rung);
+            {
+                DevBuf<int> dNb(count);
+                DevBuf<double> dXb(count);
+                DevBuf<double> dOutb(cells);
+                dXb.Upload(grid.x);
+                std::vector<double> batch(cells);
+
+                for (int top = 0; top <= nmax; ++top)
+                {
+                    const std::vector<int> hostN(count, top);
+                    dNb.Upload(hostN);
+                    CheckLaunch(boys::BoysCuda::AllOrdersF64<kMultiplier>(
+                                    dNb.get(), dXb.get(), dOutb.get(), count, nullptr),
+                                "AllOrdersF64 (one arithmetic)");
+                    dOutb.Download(batch);
+                    Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+                    AgreeRungOrder(ladderAgreement, ladder, batch, ref.x, top);
+                    AgreeRungOrder(eachAgreement, each, batch, ref.x, top);
+                }
+            }
+
+            RungAgreements().push_back(ladderAgreement);
+            RungAgreements().push_back(eachAgreement);
+
+            DevBuf<double> dXs(count);
+            DevBuf<double> dOuts(cells);
+            dXs.Upload(sorted.x);
+            CheckLaunch(boys::BoysCuda::AllNF64<kMultiplier>(
+                            nmax, dXs.get(), dOuts.get(), count, nullptr),
+                        "AllNF64 (one arithmetic)");
+            std::vector<double> rawSorted(cells);
+            dOuts.Download(rawSorted);
+            Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+
+            std::vector<double> batchSorted(cells);
+            for (int l = 0; l <= nmax; ++l)
+            {
+                for (std::size_t j = 0; j < count; ++j)
+                {
+                    const std::size_t plane = static_cast<std::size_t>(l) * count;
+                    batchSorted[plane + sorted.order[j]] = rawSorted[plane + j];
+                }
+            }
+
+            AgreeRungFamily(ShapeLabel("device all-n f64 and batch all-n f64", rung),
+                            allN,
+                            batchSorted,
+                            grid.n,
+                            ref,
+                            true);
+        }
+
+        Agree(ShapeLabel("device all-orders f64 and device each-order f64", rung),
+              ladder,
+              each,
+              ref,
+              nmax);
+        AgreeFixedTopOrder(ShapeLabel("device all-n f64 and device all-orders f64", rung),
+                           allN,
+                           ladder,
+                           ref,
+                           nmax);
     }
 
     // The float shapes. The lane evaluates at the reference's own xf column:
@@ -1205,7 +1635,8 @@ void SweepDevice(const Reference& ref,
                                          dD2.get(),
                                          dSingle.get(),
                                          cells,
-                                         dStatus.get()),
+                                         dStatus.get(),
+                                         kMultiplier),
                   "BoysDeviceDemoSingle32");
         CheckDemo(BoysDeviceDemoSingle32Fast(&tables,
                                              dN.get(),
@@ -1213,7 +1644,8 @@ void SweepDevice(const Reference& ref,
                                              dD2.get(),
                                              dSingleFast.get(),
                                              cells,
-                                             dStatus.get()),
+                                             dStatus.get(),
+                                             kMultiplier),
                   "BoysDeviceDemoSingle32Fast");
         CheckDemo(BoysDeviceDemoLadder32(&tables,
                                          dN.get(),
@@ -1222,10 +1654,16 @@ void SweepDevice(const Reference& ref,
                                          dLadder.get(),
                                          cells,
                                          nmax + 1,
-                                         dStatus.get()),
+                                         dStatus.get(),
+                                         kMultiplier),
                   "BoysDeviceDemoLadder32");
-        CheckDemo(BoysDeviceDemoAllN32(
-                      &tables, dRho.get(), dD2.get(), dAllN.get(), cells, dStatus.get()),
+        CheckDemo(BoysDeviceDemoAllN32(&tables,
+                                       dRho.get(),
+                                       dD2.get(),
+                                       dAllN.get(),
+                                       cells,
+                                       dStatus.get(),
+                                       kMultiplier),
                   "BoysDeviceDemoAllN32");
         CheckDemo(BoysDeviceDemoEach32(&tables,
                                        dN.get(),
@@ -1233,7 +1671,8 @@ void SweepDevice(const Reference& ref,
                                        dD2.get(),
                                        dEach.get(),
                                        cells,
-                                       dStatus.get()),
+                                       dStatus.get(),
+                                       kMultiplier),
                   "BoysDeviceDemoEach32");
         std::vector<float> single(cells);
         std::vector<float> singleFast(cells);
@@ -1266,7 +1705,7 @@ void SweepDevice(const Reference& ref,
         // go into their own row under the bound its own option carries, and the
         // difference between the two returns is the audit's contribution term.
         ExpAudit audit;
-        audit.lane = "device single f32 (fast exp)";
+        audit.lane = ShapeLabel("device single f32 (fast exp)", rung);
 
         for (int n = 0; n <= nmax; ++n)
         {
@@ -1282,7 +1721,7 @@ void SweepDevice(const Reference& ref,
                         widenedFast,
                         ref.vf[e],
                         ref.decadeF[e],
-                        kBoundFloat + kFastExpContribution,
+                        kMultiplier * kBoundFloat + kFastExpContribution,
                         fastUnrepresentable);
 
                 const double accurate = Widen(single[e]).first;
@@ -1325,8 +1764,105 @@ void SweepDevice(const Reference& ref,
 
         ExpAudits().push_back(audit);
 
-        Agree("device all-orders f32 and device each-order f32", ladder, each, ref, nmax);
-        AgreeFixedTopOrder("device all-n f32 and device all-orders f32", allN, ladder, ref, nmax);
+        // The batch entries of the same rung, on the same orders and the same
+        // arguments, element for element, as in the f64 block above.
+        {
+            {
+                DevBuf<int> dNb(cells);
+                DevBuf<double> dXb(cells);
+                DevBuf<float> dOutb(cells);
+                dNb.Upload(grid.n);
+                dXb.Upload(grid.x);
+                CheckLaunch(boys::BoysCuda::SingleF32<kMultiplier>(
+                                dNb.get(), dXb.get(), dOutb.get(), cells, nullptr),
+                            "SingleF32 (one arithmetic)");
+                std::vector<float> batchSingle(cells);
+                dOutb.Download(batchSingle);
+                CheckLaunch(boys::BoysCuda::SingleF32<kMultiplier, boys::RegionBExp::kFast>(
+                                dNb.get(), dXb.get(), dOutb.get(), cells, nullptr),
+                            "SingleF32 (one arithmetic)");
+                std::vector<float> batchSingleFast(cells);
+                dOutb.Download(batchSingleFast);
+                Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+                AgreeRungCells(ShapeLabel("device single f32 and batch single f32", rung),
+                               single,
+                               batchSingle,
+                               ref);
+                AgreeRungCells(
+                    ShapeLabel("device single f32 (fast exp) and batch single f32 (fast exp)",
+                               rung),
+                    singleFast,
+                    batchSingleFast,
+                    ref);
+            }
+
+            RungAgreement ladderAgreement;
+            RungAgreement eachAgreement;
+            ladderAgreement.what =
+                ShapeLabel("device all-orders f32 and batch all-orders f32", rung);
+            eachAgreement.what = ShapeLabel("device each-order f32 and batch all-orders f32", rung);
+            {
+                DevBuf<int> dNb(count);
+                DevBuf<double> dXb(count);
+                DevBuf<float> dOutb(cells);
+                dXb.Upload(grid.x);
+                std::vector<float> batch(cells);
+
+                for (int top = 0; top <= nmax; ++top)
+                {
+                    const std::vector<int> hostN(count, top);
+                    dNb.Upload(hostN);
+                    CheckLaunch(boys::BoysCuda::AllOrdersF32<kMultiplier>(
+                                    dNb.get(), dXb.get(), dOutb.get(), count, nullptr),
+                                "AllOrdersF32 (one arithmetic)");
+                    dOutb.Download(batch);
+                    Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+                    AgreeRungOrder(ladderAgreement, ladder, batch, ref.xf, top);
+                    AgreeRungOrder(eachAgreement, each, batch, ref.xf, top);
+                }
+            }
+
+            RungAgreements().push_back(ladderAgreement);
+            RungAgreements().push_back(eachAgreement);
+
+            DevBuf<double> dXs(count);
+            DevBuf<float> dOuts(cells);
+            dXs.Upload(sorted.x);
+            CheckLaunch(boys::BoysCuda::AllNF32<kMultiplier>(
+                            nmax, dXs.get(), dOuts.get(), count, nullptr),
+                        "AllNF32 (one arithmetic)");
+            std::vector<float> rawSorted(cells);
+            dOuts.Download(rawSorted);
+            Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+
+            std::vector<float> batchSorted(cells);
+            for (int l = 0; l <= nmax; ++l)
+            {
+                for (std::size_t j = 0; j < count; ++j)
+                {
+                    const std::size_t plane = static_cast<std::size_t>(l) * count;
+                    batchSorted[plane + sorted.order[j]] = rawSorted[plane + j];
+                }
+            }
+
+            AgreeRungFamily(ShapeLabel("device all-n f32 and batch all-n f32", rung),
+                            allN,
+                            batchSorted,
+                            grid.n,
+                            ref,
+                            true);
+        }
+
+        Agree(ShapeLabel("device all-orders f32 and device each-order f32", rung),
+              ladder,
+              each,
+              ref,
+              nmax);
+        AgreeFixedTopOrder(ShapeLabel("device all-n f32 and device all-orders f32", rung),
+                           allN,
+                           ladder,
+                           ref,
+                           nmax);
     }
 
     // The fp16 shapes, at the half value of the argument the grid carries, with
@@ -1356,7 +1892,8 @@ void SweepDevice(const Reference& ref,
                                          dD2.get(),
                                          static_cast<void*>(dSingle.get()),
                                          cells,
-                                         dStatus.get()),
+                                         dStatus.get(),
+                                         kMultiplier),
                   "BoysDeviceDemoSingle16");
         CheckDemo(BoysDeviceDemoLadder16(&tables,
                                          dN.get(),
@@ -1365,14 +1902,16 @@ void SweepDevice(const Reference& ref,
                                          static_cast<void*>(dLadder.get()),
                                          cells,
                                          nmax + 1,
-                                         dStatus.get()),
+                                         dStatus.get(),
+                                         kMultiplier),
                   "BoysDeviceDemoLadder16");
         CheckDemo(BoysDeviceDemoAllN16(&tables,
                                        dRho.get(),
                                        dD2.get(),
                                        static_cast<void*>(dAllN.get()),
                                        cells,
-                                       dStatus.get()),
+                                       dStatus.get(),
+                                       kMultiplier),
                   "BoysDeviceDemoAllN16");
         CheckDemo(BoysDeviceDemoEach16(&tables,
                                        dN.get(),
@@ -1380,7 +1919,8 @@ void SweepDevice(const Reference& ref,
                                        dD2.get(),
                                        static_cast<void*>(dEach.get()),
                                        cells,
-                                       dStatus.get()),
+                                       dStatus.get(),
+                                       kMultiplier),
                   "BoysDeviceDemoEach16");
         std::vector<boys::F16> single(cells);
         std::vector<boys::F16> ladder(family);
@@ -1402,7 +1942,7 @@ void SweepDevice(const Reference& ref,
                     got,
                     ref.v16[ref.Index(n, i)],
                     ref.decade16[ref.Index(n, i)],
-                    HalfBoundAt(got, 1.0),
+                    HalfBoundAt(got, kMultiplier),
                     Unrepresentable(got, kF16MinNormalExp));
         };
 
@@ -1427,9 +1967,318 @@ void SweepDevice(const Reference& ref,
             }
         }
 
-        Agree("device all-orders f16 and device each-order f16", ladder, each, ref, nmax);
-        AgreeFixedTopOrder("device all-n f16 and device all-orders f16", allN, ladder, ref, nmax);
+        // The batch entries of the same rung, on the same orders and the same
+        // arguments, element for element, as in the f64 block above. The fp16
+        // batch entries take their argument in fp16 already, which is the value
+        // the grid carries and the demo kernels form.
+        {
+            {
+                DevBuf<int> dNb(cells);
+                DevBuf<boys::F16> dXb(cells);
+                DevBuf<boys::F16> dOutb(cells);
+                dNb.Upload(grid.n);
+                dXb.Upload(grid.x16);
+                CheckLaunch(boys::BoysCuda::SingleF16<kMultiplier>(
+                                dNb.get(), dXb.get(), dOutb.get(), cells, nullptr),
+                            "SingleF16 (one arithmetic)");
+                std::vector<boys::F16> batchSingle(cells);
+                dOutb.Download(batchSingle);
+                Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+                AgreeRungCells(ShapeLabel("device single f16 and batch single f16", rung),
+                               single,
+                               batchSingle,
+                               ref);
+            }
+
+            RungAgreement ladderAgreement;
+            RungAgreement eachAgreement;
+            ladderAgreement.what =
+                ShapeLabel("device all-orders f16 and batch all-orders f16", rung);
+            eachAgreement.what = ShapeLabel("device each-order f16 and batch all-orders f16", rung);
+            {
+                DevBuf<int> dNb(count);
+                DevBuf<boys::F16> dXb(count);
+                DevBuf<boys::F16> dOutb(cells);
+                std::vector<boys::F16> hostX(count);
+
+                for (std::size_t i = 0; i < count; ++i)
+                {
+                    hostX[i] = boys::F16(static_cast<float>(ref.x[i]));
+                }
+
+                dXb.Upload(hostX);
+                std::vector<boys::F16> batch(cells);
+
+                for (int top = 0; top <= nmax; ++top)
+                {
+                    const std::vector<int> hostN(count, top);
+                    dNb.Upload(hostN);
+                    CheckLaunch(boys::BoysCuda::AllOrdersF16<kMultiplier>(
+                                    dNb.get(), dXb.get(), dOutb.get(), count, nullptr),
+                                "AllOrdersF16 (one arithmetic)");
+                    dOutb.Download(batch);
+                    Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+                    AgreeRungOrder(ladderAgreement, ladder, batch, ref.x16, top);
+                    AgreeRungOrder(eachAgreement, each, batch, ref.x16, top);
+                }
+            }
+
+            RungAgreements().push_back(ladderAgreement);
+            RungAgreements().push_back(eachAgreement);
+
+            DevBuf<boys::F16> dXs(count);
+            DevBuf<boys::F16> dOuts(cells);
+            std::vector<boys::F16> hostSorted(count);
+
+            for (std::size_t j = 0; j < count; ++j)
+            {
+                hostSorted[j] = boys::F16(static_cast<float>(ref.x[sorted.order[j]]));
+            }
+
+            dXs.Upload(hostSorted);
+            CheckLaunch(boys::BoysCuda::AllNF16<kMultiplier>(
+                            nmax, dXs.get(), dOuts.get(), count, nullptr),
+                        "AllNF16 (one arithmetic)");
+            std::vector<boys::F16> rawSorted(cells);
+            dOuts.Download(rawSorted);
+            Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+
+            std::vector<boys::F16> batchSorted(cells);
+            for (int l = 0; l <= nmax; ++l)
+            {
+                for (std::size_t j = 0; j < count; ++j)
+                {
+                    const std::size_t plane = static_cast<std::size_t>(l) * count;
+                    batchSorted[plane + sorted.order[j]] = rawSorted[plane + j];
+                }
+            }
+
+            AgreeRungFamily(ShapeLabel("device all-n f16 and batch all-n f16", rung),
+                            allN,
+                            batchSorted,
+                            grid.n,
+                            ref,
+                            true);
+        }
+
+        Agree(ShapeLabel("device all-orders f16 and device each-order f16", rung),
+              ladder,
+              each,
+              ref,
+              nmax);
+        AgreeFixedTopOrder(ShapeLabel("device all-n f16 and device all-orders f16", rung),
+                           allN,
+                           ladder,
+                           ref,
+                           nmax);
     }
+}
+
+// One rung's fp64 entries on the 45-digit grid. The cells are measured into the
+// entry's own row as well as into the accumulator below, so a cell over bound
+// here fails the gate like every other cell; the accumulator is what names the
+// worst cell this grid produced, which the shared row cannot say once it holds
+// both grids' cells.
+struct DigitRow {
+    std::string rung;
+    Accum cell;
+};
+
+std::vector<DigitRow>& DigitRows() {
+    static std::vector<DigitRow> rows;
+    return rows;
+}
+
+template <double kMultiplier>
+void SweepDigit64(const DigitGrid& digits,
+                  const boys::BoysDeviceTables& tables,
+                  const DeviceSlots& slots,
+                  const char* rung) {
+    const int nmax = boys::kMaxBoysOrder;
+    const std::size_t count = digits.count;
+    const std::size_t cells = digits.cells;
+    const std::size_t family = cells * (static_cast<std::size_t>(nmax) + 1);
+    const int success = BoysDeviceDemoStatusSuccess();
+    const int singleSlots[4] = {slots.singleA, slots.singleBand, slots.singleB, slots.singleC};
+    const double singleBounds[4] = {kMultiplier * kBoundSingleA,
+                                    kMultiplier * kBoundSingleBand,
+                                    kMultiplier * kBoundSingleB,
+                                    kMultiplier * kBoundSingleC};
+    const double familyBound = kMultiplier * kBoundDoubleBatch;
+
+    // Every thread forms its own argument as rho * d2, exactly as the kernels of
+    // the gate grid's sweep do: rho is a power of two, so the product is the
+    // grid's own argument to the last bit and the value measured is the
+    // reference's own.
+    std::vector<double> hostRho(cells);
+    std::vector<double> hostD2(cells);
+
+    for (std::size_t e = 0; e < cells; ++e)
+    {
+        const double rho = std::ldexp(1.0, static_cast<int>((e % count) % 9) - 4);
+        hostRho[e] = rho;
+        hostD2[e] = digits.x[e] / rho;
+
+        if (rho * hostD2[e] != digits.x[e])
+        {
+            std::fprintf(stderr,
+                         "cuda gate: the factor pair is not exact at 45-digit row %zu: %.17g *"
+                         " %.17g != %.17g\n",
+                         e,
+                         rho,
+                         hostD2[e],
+                         digits.x[e]);
+            std::exit(2);
+        }
+    }
+
+    DigitRow single;
+    DigitRow orders;
+    DigitRow each;
+    DigitRow allN;
+    single.rung = rung == nullptr ? "1" : rung;
+    orders.rung = single.rung;
+    each.rung = single.rung;
+    allN.rung = single.rung;
+    single.cell.lane = "device single f64";
+    orders.cell.lane = "device all-orders f64";
+    each.cell.lane = "device each-order f64";
+    allN.cell.lane = "device all-n f64";
+
+    // The two accumulations of one reading: the shared row, judged with every
+    // other cell, and this grid's own, which the table below prints.
+    const auto measure = [&](Accum& local,
+                             int slot,
+                             int n,
+                             double x,
+                             double got,
+                             double refValue,
+                             int refDecade,
+                             double bound,
+                             bool unrepresentable) {
+        Measure(slot, n, x, got, refValue, refDecade, bound, unrepresentable);
+        MeasureAt(local, n, x, got, refValue, refDecade, bound, unrepresentable);
+    };
+
+    {
+        DevBuf<int> dN(cells);
+        DevBuf<double> dRho(cells);
+        DevBuf<double> dD2(cells);
+        DevBuf<double> dSingle(cells);
+        DevBuf<double> dLadder(family);
+        DevBuf<double> dEach(family);
+        DevBuf<double> dAllN(family);
+        DevBuf<int> dStatus(cells);
+        dN.Upload(digits.n);
+        dRho.Upload(hostRho);
+        dD2.Upload(hostD2);
+        std::vector<double> hostZero(family, 0.0);
+        std::vector<int> hostStatus(cells, -1);
+        dSingle.Upload(std::vector<double>(cells, 0.0));
+        dLadder.Upload(hostZero);
+        dEach.Upload(hostZero);
+        dAllN.Upload(hostZero);
+        dStatus.Upload(hostStatus);
+        CheckDemo(BoysDeviceDemoSingle64(&tables,
+                                         dN.get(),
+                                         dRho.get(),
+                                         dD2.get(),
+                                         dSingle.get(),
+                                         cells,
+                                         dStatus.get(),
+                                         kMultiplier),
+                  "BoysDeviceDemoSingle64 (45-digit grid)");
+        CheckDemo(BoysDeviceDemoLadder64(&tables,
+                                         dN.get(),
+                                         dRho.get(),
+                                         dD2.get(),
+                                         dLadder.get(),
+                                         cells,
+                                         nmax + 1,
+                                         dStatus.get(),
+                                         kMultiplier),
+                  "BoysDeviceDemoLadder64 (45-digit grid)");
+        CheckDemo(BoysDeviceDemoEach64(&tables,
+                                       dN.get(),
+                                       dRho.get(),
+                                       dD2.get(),
+                                       dEach.get(),
+                                       cells,
+                                       dStatus.get(),
+                                       kMultiplier),
+                  "BoysDeviceDemoEach64 (45-digit grid)");
+        CheckDemo(BoysDeviceDemoAllN64(&tables,
+                                       dRho.get(),
+                                       dD2.get(),
+                                       dAllN.get(),
+                                       cells,
+                                       dStatus.get(),
+                                       kMultiplier),
+                  "BoysDeviceDemoAllN64 (45-digit grid)");
+        std::vector<double> gotSingle(cells);
+        std::vector<double> gotLadder(family);
+        std::vector<double> gotEach(family);
+        std::vector<double> gotAllN(family);
+        std::vector<int> status(cells);
+        dSingle.Download(gotSingle);
+        dLadder.Download(gotLadder);
+        dEach.Download(gotEach);
+        dAllN.Download(gotAllN);
+        dStatus.Download(status);
+        Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+        ExpectStatus(status, cells, success, "the fp64 device entries on the 45-digit grid");
+
+        for (std::size_t e = 0; e < cells; ++e)
+        {
+            const int n = digits.n[e];
+            const double x = digits.x[e];
+            const double refValue = digits.v[e];
+            const int refDecade = digits.decade[e];
+            const int region = SingleClaim(x);
+
+            measure(single.cell,
+                    singleSlots[region],
+                    n,
+                    x,
+                    gotSingle[e],
+                    refValue,
+                    refDecade,
+                    singleBounds[region],
+                    Unrepresentable(gotSingle[e], -1022));
+            measure(orders.cell,
+                    slots.orders64,
+                    n,
+                    x,
+                    gotLadder[FamilySlot(e, n)],
+                    refValue,
+                    refDecade,
+                    familyBound,
+                    Unrepresentable(gotLadder[FamilySlot(e, n)], -1022));
+            measure(each.cell,
+                    slots.each64,
+                    n,
+                    x,
+                    gotEach[FamilySlot(e, n)],
+                    refValue,
+                    refDecade,
+                    familyBound,
+                    Unrepresentable(gotEach[FamilySlot(e, n)], -1022));
+            measure(allN.cell,
+                    slots.allN64,
+                    n,
+                    x,
+                    gotAllN[FamilySlot(e, n)],
+                    refValue,
+                    refDecade,
+                    familyBound,
+                    Unrepresentable(gotAllN[FamilySlot(e, n)], -1022));
+        }
+    }
+
+    DigitRows().push_back(std::move(single));
+    DigitRows().push_back(std::move(orders));
+    DigitRows().push_back(std::move(each));
+    DigitRows().push_back(std::move(allN));
 }
 
 // The refusals, per shape where the shapes differ and per precision where they
@@ -1622,6 +2471,336 @@ void CheckRefusals(const boys::BoysDeviceTables& tables) {
 
     ladder16(nmax, nmax, tooSmall);
 #endif // BoysFp16
+}
+
+// One shape run at one named rung, with the status the call must return and
+// whether it must write. The sentinel is what separates a refusal from a silent
+// fallback - an entry that reported a refusal and still wrote would leave its
+// output changed, and one that wrote without reporting would leave the status
+// clean - and it is also what separates an accepted call from a refusal this
+// check mis-read, since a call that is served must leave the sentinel behind.
+//
+// The tally counts the probes that came back as required, so the report can
+// state that the path was exercised rather than only that the gate exited zero.
+std::size_t& RetiredRungProbes() {
+    static std::size_t probes = 0;
+    return probes;
+}
+
+std::size_t& ServedRungProbes() {
+    static std::size_t probes = 0;
+    return probes;
+}
+
+template <typename T, typename Launch>
+void ProbeOnce(const char* label,
+               const char* what,
+               std::size_t elements,
+               std::size_t slots,
+               const T& sentinel,
+               int want,
+               bool wrote,
+               std::size_t& tally,
+               Launch&& launch) {
+    const std::string name = std::string(what) + " at " + label;
+    std::vector<T> hostOut(slots, sentinel);
+    std::vector<int> hostStatus(elements, -1);
+    DevBuf<T> dOut(slots);
+    DevBuf<int> dStatus(elements);
+    dOut.Upload(hostOut);
+    dStatus.Upload(hostStatus);
+    CheckDemo(launch(dOut.get(), dStatus.get()), name.c_str());
+    std::vector<T> out(slots);
+    std::vector<int> status(elements);
+    dOut.Download(out);
+    dStatus.Download(status);
+    Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+    ExpectStatus(status, elements, want, name.c_str());
+    ReportSentinel(out, sentinel, wrote, name.c_str());
+    ++tally;
+}
+
+// Every shape run at one named rung, with the status each must return and
+// whether it must write. One function carries both halves of the rung contract
+// as a consumer meets it: a rung that is not resident, which must refuse at
+// every shape rather than read whatever the tables now hold, and m = 1 while a
+// relaxed rung is resident, which must be served at every shape because it
+// reads the handle's own tables and never the resident one. Every lane is
+// covered, and every shape, because both decisions are made per lane and the
+// shapes reach them through different bodies.
+void CheckRungCalls(const boys::BoysDeviceTables& tables,
+                    double multiplier,
+                    int want,
+                    bool wrote,
+                    const char* label,
+                    std::size_t& tally) {
+    const int nmax = boys::kMaxBoysOrder;
+    const std::size_t count = 2;
+    const std::size_t family = count * (static_cast<std::size_t>(nmax) + 1);
+    const double sentinel = -12345.0;
+    const double x = 3.5;
+    const std::vector<int> hostOrder(count, nmax);
+    const std::vector<double> hostRho(count, 1.0);
+    const std::vector<double> hostD2(count, x);
+    std::vector<int> hostStatus(count, -1);
+    DevBuf<int> dN(count);
+    DevBuf<double> dRho(count);
+    DevBuf<double> dD2(count);
+    DevBuf<int> dStatus(count);
+    dN.Upload(hostOrder);
+    dRho.Upload(hostRho);
+    dD2.Upload(hostD2);
+    dStatus.Upload(hostStatus);
+
+    ProbeOnce(label,
+              "BoysDeviceSingleF64",
+              count,
+              count,
+              sentinel,
+              want,
+              wrote,
+              tally,
+              [&](double* out, int* status) {
+                  return BoysDeviceDemoSingle64(&tables,
+                                                dN.get(),
+                                                dRho.get(),
+                                                dD2.get(),
+                                                out,
+                                                count,
+                                                status,
+                                                multiplier);
+              });
+    ProbeOnce(label,
+              "BoysDeviceAllOrdersF64",
+              count,
+              family,
+              sentinel,
+              want,
+              wrote,
+              tally,
+              [&](double* out, int* status) {
+                  return BoysDeviceDemoLadder64(&tables,
+                                                dN.get(),
+                                                dRho.get(),
+                                                dD2.get(),
+                                                out,
+                                                count,
+                                                nmax + 1,
+                                                status,
+                                                multiplier);
+              });
+    ProbeOnce(label,
+              "BoysDeviceAllNF64",
+              count,
+              family,
+              sentinel,
+              want,
+              wrote,
+              tally,
+              [&](double* out, int* status) {
+                  return BoysDeviceDemoAllN64(
+                      &tables, dRho.get(), dD2.get(), out, count, status, multiplier);
+              });
+    ProbeOnce(label,
+              "BoysDeviceEachOrderF64",
+              count,
+              family,
+              sentinel,
+              want,
+              wrote,
+              tally,
+              [&](double* out, int* status) {
+                  return BoysDeviceDemoEach64(&tables,
+                                              dN.get(),
+                                              dRho.get(),
+                                              dD2.get(),
+                                              out,
+                                              count,
+                                              status,
+                                              multiplier);
+              });
+
+    ProbeOnce(label,
+              "BoysDeviceSingleF32",
+              count,
+              count,
+              0.0f,
+              want,
+              wrote,
+              tally,
+              [&](float* out, int* status) {
+                  return BoysDeviceDemoSingle32(&tables,
+                                                dN.get(),
+                                                dRho.get(),
+                                                dD2.get(),
+                                                out,
+                                                count,
+                                                status,
+                                                multiplier);
+              });
+    ProbeOnce(label,
+              "BoysDeviceSingleF32 (fast exp)",
+              count,
+              count,
+              0.0f,
+              want,
+              wrote,
+              tally,
+              [&](float* out, int* status) {
+                  return BoysDeviceDemoSingle32Fast(&tables,
+                                                    dN.get(),
+                                                    dRho.get(),
+                                                    dD2.get(),
+                                                    out,
+                                                    count,
+                                                    status,
+                                                    multiplier);
+              });
+    ProbeOnce(label,
+              "BoysDeviceAllOrdersF32",
+              count,
+              family,
+              0.0f,
+              want,
+              wrote,
+              tally,
+              [&](float* out, int* status) {
+                  return BoysDeviceDemoLadder32(&tables,
+                                                dN.get(),
+                                                dRho.get(),
+                                                dD2.get(),
+                                                out,
+                                                count,
+                                                nmax + 1,
+                                                status,
+                                                multiplier);
+              });
+    ProbeOnce(label,
+              "BoysDeviceAllNF32",
+              count,
+              family,
+              0.0f,
+              want,
+              wrote,
+              tally,
+              [&](float* out, int* status) {
+                  return BoysDeviceDemoAllN32(
+                      &tables, dRho.get(), dD2.get(), out, count, status, multiplier);
+              });
+    ProbeOnce(label,
+              "BoysDeviceEachOrderF32",
+              count,
+              family,
+              0.0f,
+              want,
+              wrote,
+              tally,
+              [&](float* out, int* status) {
+                  return BoysDeviceDemoEach32(&tables,
+                                              dN.get(),
+                                              dRho.get(),
+                                              dD2.get(),
+                                              out,
+                                              count,
+                                              status,
+                                              multiplier);
+              });
+
+#if BoysFp16
+    const boys::F16 halfSentinel(static_cast<float>(sentinel));
+
+    ProbeOnce(label,
+              "BoysDeviceSingleF16",
+              count,
+              count,
+              halfSentinel,
+              want,
+              wrote,
+              tally,
+              [&](boys::F16* out, int* status) {
+                  return BoysDeviceDemoSingle16(&tables,
+                                                dN.get(),
+                                                dRho.get(),
+                                                dD2.get(),
+                                                static_cast<void*>(out),
+                                                count,
+                                                status,
+                                                multiplier);
+              });
+    ProbeOnce(label,
+              "BoysDeviceAllOrdersF16",
+              count,
+              family,
+              halfSentinel,
+              want,
+              wrote,
+              tally,
+              [&](boys::F16* out, int* status) {
+                  return BoysDeviceDemoLadder16(&tables,
+                                                dN.get(),
+                                                dRho.get(),
+                                                dD2.get(),
+                                                static_cast<void*>(out),
+                                                count,
+                                                nmax + 1,
+                                                status,
+                                                multiplier);
+              });
+    ProbeOnce(label,
+              "BoysDeviceAllNF16",
+              count,
+              family,
+              halfSentinel,
+              want,
+              wrote,
+              tally,
+              [&](boys::F16* out, int* status) {
+                  return BoysDeviceDemoAllN16(&tables,
+                                              dRho.get(),
+                                              dD2.get(),
+                                              static_cast<void*>(out),
+                                              count,
+                                              status,
+                                              multiplier);
+              });
+    ProbeOnce(label,
+              "BoysDeviceEachOrderF16",
+              count,
+              family,
+              halfSentinel,
+              want,
+              wrote,
+              tally,
+              [&](boys::F16* out, int* status) {
+                  return BoysDeviceDemoEach16(&tables,
+                                              dN.get(),
+                                              dRho.get(),
+                                              dD2.get(),
+                                              static_cast<void*>(out),
+                                              count,
+                                              status,
+                                              multiplier);
+              });
+#endif // BoysFp16
+}
+
+// One rung of the device-callable entries: the handle filled at that rung, the
+// rows that rung's cells are measured into, and every entry through the
+// consumer's kernels. Filling the handle at the rung is what makes it the
+// resident one; the sweep at m = 1 is unaffected by a relaxed rung being
+// resident, because that entry reads the m = 1 tables and never the resident
+// rung's.
+template <double kMultiplier>
+void SweepRung(const Reference& ref,
+               const Grid& grid,
+               const SortedArgs& sorted,
+               const DigitGrid& digits,
+               const char* rung) {
+    boys::BoysDeviceTables tables{};
+    CheckLaunch(boys::BoysCuda::DeviceTables<kMultiplier>(&tables), "DeviceTables");
+    const DeviceSlots slots = DeviceClaimSet(rung, kMultiplier);
+    SweepDevice<kMultiplier>(ref, grid, sorted, tables, slots, rung);
+    SweepDigit64<kMultiplier>(digits, tables, slots, rung);
 }
 
 // One cell, every entry: what each device entry returns beside the reference,
@@ -1966,6 +3145,7 @@ void RunProbe(const Reference& ref,
 
 int main(int argc, char** argv) {
     std::string reference = std::string(BoysDataDir) + "/boys_accuracy_gate_reference.csv";
+    std::string digitReference = std::string(BoysDataDir) + "/boys_reference.csv";
     int probeN = -1;
     double probeX = 0.0;
 
@@ -1976,6 +3156,10 @@ int main(int argc, char** argv) {
         if (arg == "--reference" && i + 1 < argc)
         {
             reference = argv[++i];
+        }
+        else if (arg == "--digit-reference" && i + 1 < argc)
+        {
+            digitReference = argv[++i];
         }
         else if (arg == "--probe" && i + 2 < argc)
         {
@@ -2007,6 +3191,7 @@ int main(int argc, char** argv) {
     Check(cudaSetDevice(0), "cudaSetDevice");
 
     const Reference ref = LoadReference(reference);
+    const DigitGrid digits = LoadDigitGrid(digitReference);
     const Grid grid = MakeGrid(ref);
     const SortedArgs sorted = SortArgs(ref);
     CheckLaunch(boys::BoysCuda::InitializeTables(), "InitializeTables");
@@ -2058,39 +3243,45 @@ int main(int argc, char** argv) {
                     "cuda single f32 (fast exp)");
     SweepHalf<1.0>(ref, grid, sorted, slotHalfSingle, slotHalfOrders, slotHalfAllN);
 
-    SweepRelaxed<2.0>(ref, grid, sorted, kRelaxedNames[0]);
-    SweepRelaxed<10.0>(ref, grid, sorted, kRelaxedNames[1]);
-    SweepRelaxed<100.0>(ref, grid, sorted, kRelaxedNames[2]);
-    SweepRelaxed<1e4>(ref, grid, sorted, kRelaxedNames[3]);
-    SweepRelaxed<1e8>(ref, grid, sorted, kRelaxedNames[4]);
+    SweepRelaxed<2.0>(ref, grid, sorted, kRungs[1].name);
+    SweepRelaxed<10.0>(ref, grid, sorted, kRungs[2].name);
+    SweepRelaxed<100.0>(ref, grid, sorted, kRungs[3].name);
+    SweepRelaxed<1e4>(ref, grid, sorted, kRungs[4].name);
+    SweepRelaxed<1e8>(ref, grid, sorted, kRungs[5].name);
 
-    // The device-callable entries. Their bounds are the ones the batch rows
-    // above are held to, because they are the same arithmetic at m = 1: these
-    // entries are the bit-identical path and have no relaxed instantiation, so
-    // each entry has one row and no rung.
-    DeviceSlots device;
-    device.singleA = AddClaim("device single f64", "A", kBoundSingleA);
-    device.singleBand = AddClaim("device single f64", "band", kBoundSingleBand);
-    device.singleB = AddClaim("device single f64", "B", kBoundSingleB);
-    device.singleC = AddClaim("device single f64", "C", kBoundSingleC);
-    device.orders64 = AddClaim("device all-orders f64", "A..C", kBoundDoubleBatch);
-    device.allN64 = AddClaim("device all-n f64", "A..C", kBoundDoubleBatch);
-    device.each64 = AddClaim("device each-order f64", "A..C", kBoundDoubleBatch);
-    device.single32 = AddClaim("device single f32", "A..C", kBoundFloat);
-    // The device single entry's fast region-B exponential, the same certified
-    // option the batch single row above carries and the same bound with it.
-    device.single32Fast =
-        AddClaim("device single f32 (fast exp)", "A..C", kBoundFloat + kFastExpContribution);
-    device.orders32 = AddClaim("device all-orders f32", "A..C", kBoundFloat);
-    device.allN32 = AddClaim("device all-n f32", "A..C", kBoundFloat);
-    device.each32 = AddClaim("device each-order f32", "A..C", kBoundFloat);
-    device.single16 = AddClaim("device single f16", "A..C", kBoundHalfBase);
-    device.orders16 = AddClaim("device all-orders f16", "A..C", kBoundHalfBase);
-    device.allN16 = AddClaim("device all-n f16", "A..C", kBoundHalfBase);
-    device.each16 = AddClaim("device each-order f16", "A..C", kBoundHalfBase);
-
-    SweepDevice(ref, grid, tables, device);
+    // The device-callable entries: one set of rows per rung, one handle per
+    // rung, and the same consumer kernels every time. Every documented device
+    // bound is a claim about the rung the caller names, so the rung is swept
+    // like any other option - a relaxed rung held to the m = 1 bound would be
+    // asserting exactly what it was relaxed out of. The order and the capacity
+    // refusals are exercised first, while m = 1 is resident, and the retired
+    // rung after the last upload, when every other rung has stopped being the
+    // one the tables hold.
     CheckRefusals(tables);
+    SweepRung<1.0>(ref, grid, sorted, digits, kRungs[0].name);
+    SweepRung<2.0>(ref, grid, sorted, digits, kRungs[1].name);
+    SweepRung<10.0>(ref, grid, sorted, digits, kRungs[2].name);
+    SweepRung<100.0>(ref, grid, sorted, digits, kRungs[3].name);
+    SweepRung<1e4>(ref, grid, sorted, digits, kRungs[4].name);
+    SweepRung<1e8>(ref, grid, sorted, digits, kRungs[5].name);
+    // A rung that was resident earlier in the run and is not any more: the last
+    // upload left 1e8 resident, so m = 2 is a rung whose degree tables have been
+    // replaced. It is refused rather than run against the tables that replaced
+    // them. Every shape is then run once more at m = 1, which is still served -
+    // the full-accuracy tables are the handle's own and no upload retires them -
+    // so the refusal is one rung of the surface and not the surface closing.
+    CheckRungCalls(tables,
+                   2.0,
+                   BoysDeviceDemoStatusMultiplierNotResident(),
+                   false,
+                   "m=2",
+                   RetiredRungProbes());
+    CheckRungCalls(tables,
+                   boys::kBoysFullAccuracyMultiplier,
+                   BoysDeviceDemoStatusSuccess(),
+                   true,
+                   "m=1 while m=1e8 is resident",
+                   ServedRungProbes());
 
     Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
 
@@ -2105,6 +3296,11 @@ int main(int argc, char** argv) {
                 ref.orderCount,
                 ref.count,
                 ref.orderCount * ref.count);
+    std::printf("45-digit     : %s\n", digitReference.c_str());
+    std::printf("               %zu orders x %zu arguments = %zu points per fp64 entry\n",
+                static_cast<std::size_t>(boys::kMaxBoysOrder) + 1,
+                digits.count,
+                digits.cells);
     std::printf("boundaries   : x_ext=%.17g  x0=%.17g  x1=%.17g\n",
                 boys::detail::kExtendedBX0,
                 boys::detail::kX0,
@@ -2116,7 +3312,9 @@ int main(int argc, char** argv) {
                 "               README \"CUDA fp32, RegionBExp::kFast | <= m*1.5e-7 + 8e-8 - the"
                 " lane's\n"
                 "               budget plus the corrected seed's own contribution\",\n"
-                "               boys_cuda.hpp \"m * 1e-7 + 1/2 ULP\" for the fp16 entries\n");
+                "               boys_cuda.hpp \"m * 1e-7 + 1/2 ULP\" for the fp16 entries\n"
+                "               the device entries at every rung: m times the same figure, which\n"
+                "               is the relaxation the multiplier is for\n");
 
     std::printf("\n  lane                     region   points     real  delivered / bound        "
                 "worst cell               vacuous   zeros\n");
@@ -2143,6 +3341,96 @@ int main(int argc, char** argv) {
         }
     }
 
+    // A device entry and the batch entry of the same precision at the same rung
+    // are one arithmetic reached two ways: the same degree tables, the same
+    // inlined body, a lane object that reads the caller's handle where the
+    // batch kernel reads a __constant__ symbol. No bound can say that, so every
+    // value the device call wrote is compared bit for bit with the batch entry
+    // of the same rung.
+    if (!RungAgreements().empty())
+    {
+        std::printf("\n  the device entries against the batch entries of the same rung, one\n"
+                    "  arithmetic reached two ways, compared bit for bit over every value a call\n"
+                    "  writes - the single shapes per cell, the family shapes per order:\n");
+        std::printf("  %-64s %s\n", "device entry against batch entry", "identical values");
+
+        for (const RungAgreement& a : RungAgreements())
+        {
+            std::printf("  %-64s %zu / %zu\n", a.what.c_str(), a.identical, a.values);
+        }
+    }
+
+    // What a consumer sees when it names a rung the tables do not hold: every
+    // shape refuses, the status says which refusal it is, and no output slot is
+    // written. A silent fallback would show up here as a written slot or as a
+    // clean status on a call that could not be served. The same shapes are then
+    // run at m = 1, which is the other half of the same contract: the rung the
+    // caller named is the only thing that decides.
+    if (RetiredRungProbes() != 0 && ServedRungProbes() != 0)
+    {
+        std::printf("\n  the rung, from the consumer kernels: %zu shapes run at m = %s while\n"
+                    "  m = %s is resident, and the same %zu shapes run at m = 1 beside them.\n"
+                    "  The first refused: every element of every shape reported\n"
+                    "  kMultiplierNotResident and every output slot still held its sentinel, so\n"
+                    "  the rung is a value the caller branches on. The second was served: every\n"
+                    "  element reported kSuccess and every slot was written, because m = 1 reads\n"
+                    "  the handle's own tables and no upload retires them. The order and the\n"
+                    "  capacity refusals were exercised the same way, while m = %g was resident.\n",
+                    RetiredRungProbes(),
+                    kRungs[1].name,
+                    kRungs[5].name,
+                    ServedRungProbes(),
+                    kRungs[0].multiplier);
+    }
+
+    // The 45-digit grid beside the gate grid. Its cells are counted in the rows
+    // above, so a cell over bound here fails the gate with them; this table is
+    // what names the worst cell that grid produced at each rung, which a row
+    // holding both grids' cells cannot say.
+    if (!DigitRows().empty())
+    {
+        std::printf("\n  the fp64 device entries on the 45-digit grid as well, at the bound of\n"
+                    "  their own row and counted in it: the same entries and the same bounds, a\n"
+                    "  second reference whose values carry no format rounding and whose arguments\n"
+                    "  are the region boundaries and a logarithmic sweep:\n");
+        std::printf("  %-6s %-24s %8s %8s  %-24s %s\n",
+                    "rung",
+                    "entry",
+                    "points",
+                    "real",
+                    "delivered / bound",
+                    "worst cell");
+
+        for (const DigitRow& r : DigitRows())
+        {
+            char delivered[64] = "-";
+            char location[96] = "-";
+
+            if (r.cell.worstN >= 0)
+            {
+                std::snprintf(delivered,
+                              sizeof(delivered),
+                              "%.3g / %.3g",
+                              r.cell.worstErr,
+                              r.cell.worstBound);
+                std::snprintf(location,
+                              sizeof(location),
+                              "%.3g (n=%d, x=%.6g)",
+                              r.cell.worstRatio,
+                              r.cell.worstN,
+                              r.cell.worstX);
+            }
+
+            std::printf("  %-6s %-24s %8zu %8zu  %-24s %s\n",
+                        r.rung.c_str(),
+                        r.cell.lane.c_str(),
+                        r.cell.points,
+                        r.cell.points - r.cell.vacuous,
+                        delivered,
+                        location);
+        }
+    }
+
     // The fast option's row is a bound on the distance from F_n(x) and not on
     // the direction, and the seed it carries is a correction of the hardware
     // approximation rather than the approximation itself. The audit is what
@@ -2158,7 +3446,7 @@ int main(int argc, char** argv) {
             "  on the same grid at the same multiplier. Its bound's second term is the\n"
             "  contribution below, capped by the recurrence's amplification; the wrong-sign\n"
             "  count is the audit for the return of the defect the correction removes.\n");
-        std::printf("  %-32s %-26s %-16s %s\n",
+        std::printf("  %-38s %-26s %-16s %s\n",
                     "lane",
                     "contribution",
                     "wrong sign",
@@ -2192,7 +3480,7 @@ int main(int argc, char** argv) {
                 std::snprintf(relative, sizeof(relative), "-");
             }
 
-            std::printf("  %-32s %-26s %-16s %s\n", a.lane.c_str(), contribution, wrong, relative);
+            std::printf("  %-38s %-26s %-16s %s\n", a.lane.c_str(), contribution, wrong, relative);
         }
     }
 

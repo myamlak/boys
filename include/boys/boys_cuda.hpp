@@ -37,30 +37,37 @@ enum class BoysStatus {
 ///
 /// The coefficient tables are uploaded on first use by any entry point
 /// (idempotent per device; switching devices re-uploads automatically).
-/// The relaxed-multiplier degree tables are uploaded once per (device, m)
-/// on the first call at that m — InitializeTables and the entries are
-/// safe to call from multiple host threads.
+/// InitializeTables and the entries are safe to call from multiple host
+/// threads.
 ///
-/// Accuracy is a compile-time property of the call: the entry's
+/// Accuracy is a compile-time property of a batch call: the entry's
 /// kAccuracyMultiplier selects the certified degree table its instantiation
 /// is built with, which is why the first call at a new m uploads that
-/// instantiation's tables. The lane has no per-call accuracy parameter, and
-/// the multiplier is monotonically relaxing exactly as the CPU lanes
-/// document it.
+/// instantiation's tables. The multiplier is monotonically relaxing exactly as
+/// the CPU lanes document it, and the rungs this lane instantiates are
+/// 1, 2, 10, 100, 1e4 and 1e8 — a finer set than the CPU tier lane's at the low
+/// end and coarser at the top.
 ///
-/// That is the one place the device surface is narrower than the CPU's. The
-/// CPU's double lane takes an accuracy tier as a per-call argument
-/// (BoysAllOrdersAtTier — one argument, all orders) over the rungs m = 1, 64,
-/// 256, 1024, 4096, 16384, 65536, and answers "what would this tier deliver
-/// here" before the call (QueryTier, AccuracyMultiplier, TierCoverage, which
-/// names the region component that would limit it). The device has no such
-/// parameter: a call is fixed at the m its instantiation was built with
-/// (1, 2, 10, 100, 1e4, 1e8 — a finer set than the CPU's at the low end,
-/// coarser at the top), the entry cannot be handed a tier at run time, and
-/// nothing here reports what an m delivers: that is m * B_region from the
-/// contract table, which the caller computes. A caller carrying a CPU tier
-/// gets the nearest device behaviour by naming, at the call site, the largest
-/// instantiated m whose bound does not exceed the tier's own.
+/// The device-callable entries (boys_cuda_device.hpp) are at once the wider
+/// surface and the narrower one. Wider, because each takes the multiplier as a
+/// run-time argument and reads the rung the caller names, so one compiled entry
+/// serves every rung. Narrower, because what those rungs are is the one handle's
+/// tables, and one relaxed rung of them is resident at a time: filling a handle
+/// at a relaxed rung replaces the resident one, and an entry asked for a rung
+/// that is not resident returns BoysDeviceStatus::kMultiplierNotResident and
+/// writes nothing — a value the caller branches on, not a silent choice of
+/// whichever rung happens to be resident. A call at
+/// kBoysFullAccuracyMultiplier reads tables that are always uploaded, so it is
+/// served whatever rung is resident and does not depend on that choice.
+///
+/// What neither surface has is the CPU double lane's per-call tier machinery:
+/// BoysAllOrdersAtTier (one tier, all orders), QueryTier, AccuracyMultiplier and
+/// TierCoverage, the last of which names the region component that would limit a
+/// tier. No device entry reports what an m delivers, because m is the input and
+/// not a selection from a table: the answer is m * B_region from the contract,
+/// which the caller computes. A caller carrying a CPU tier gets the nearest
+/// device behaviour by choosing, at the call site, the largest instantiated m
+/// whose bound does not exceed the tier's own.
 ///
 /// **The device lane does not honour the multiply-add route, and this is a
 /// stated limitation rather than an untested property.** The host's routes are
@@ -119,18 +126,33 @@ public:
     /// Fills the handle the device-callable entries read
     /// (boys_cuda_device.hpp) for the current device, uploading the tables if
     /// they are not uploaded yet — idempotent, on the same terms as
-    /// InitializeTables.
+    /// InitializeTables. An entry reads this handle at the rung this call
+    /// named.
     ///
-    /// The handle it fills is the full-accuracy (m = 1) tables. The entries
-    /// that read it are the full-accuracy arithmetic, and the class contract
-    /// states why the accuracy multiplier does not reach them.
+    /// The handle's full-accuracy tables are uploaded by the call whatever
+    /// multiplier it names, and they are the whole of what a call at
+    /// kBoysFullAccuracyMultiplier needs: it has no relaxed table to make
+    /// resident and leaves whatever rung already is, so a caller may fill one
+    /// handle at a relaxed rung and then run both rungs through it.
     ///
+    /// One relaxed rung is resident at a time, process-wide per device. Filling
+    /// a handle at a relaxed rung replaces the resident one, and every entry
+    /// then asked for the rung it replaced returns
+    /// BoysDeviceStatus::kMultiplierNotResident rather than reading tables that
+    /// now hold another rung. A caller that wants a relaxed rung makes it
+    /// resident here before the kernel that reads it is launched.
+    ///
+    /// \tparam kAccuracyMultiplier the rung to make resident, one of the
+    ///   multipliers this lane instantiates (1, 2, 10, 100, 1e4, 1e8), matched
+    ///   against the entries' own multiplier argument exactly.
     /// \param out the handle to fill; untouched when the call fails
     ///
     /// \pre \c out is a valid pointer to one BoysDeviceTables.
     ///
     /// \returns kSuccess after filling \c out with the current device's table
-    /// addresses, or kDeviceError when the upload or an address query fails.
+    /// addresses and, for a relaxed rung, after that rung's degree tables are
+    /// resident; kDeviceError when the upload or an address query fails.
+    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus DeviceTables(BoysDeviceTables* out);
 
     /// F_n(x[i]) in single precision — the recommended GPU lane on
@@ -253,8 +275,9 @@ public:
     /// This is the entry the CPU's run-time tier entry is shaped like
     /// (BoysAllOrdersAtTier is one argument, all orders, double), and it takes
     /// no tier: the multiplier is the template argument below, fixed where the
-    /// call site names it. The class contract states the whole of that
-    /// asymmetry.
+    /// call site names it, and the entry cannot be handed one at run time. The
+    /// device-callable entry of the same shape (BoysDeviceAllOrdersF64) can, and
+    /// the class contract states what that costs it.
     ///
     /// \tparam kAccuracyMultiplier as SingleF64; the batch relaxation covers
     ///   the whole output family via the order-0 region-B entry.

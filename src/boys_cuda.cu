@@ -94,6 +94,28 @@ __device__ int dDeg32[kPiecesTotal32];
 __device__ float dCoeffs32[kMaxCoeffs];
 __device__ float dBSeed32[24];
 
+// The relaxed degrees, in the same flat form and one set for the whole device:
+// one rung is resident at a time, so a table per rung is not what a caller can
+// have. The stride is the larger of the two lanes' piece counts, so one lane
+// axis serves both piece tables; a lane's own entries are indexed with the
+// piece-start table its region-A seed reads its coefficients with, exactly as
+// the full-accuracy table above is.
+//
+// The lane order is cDegEff's: 0 double single, 1 double batch, 2 float single,
+// 3 float batch, 4 fp16 single, 5 fp16 batch. Lanes 0, 1, 3 and 5 are indexed by
+// the double piece table (the batch lanes' region-A seed is computed in double
+// whatever precision they return — RoleUsesDoubleTables) and lanes 2 and 4 by
+// the float one.
+constexpr int kRelaxedPieces = kPiecesTotal > kPiecesTotal32 ? kPiecesTotal : kPiecesTotal32;
+
+__device__ int dDegEff[kEffLaneCount * kRelaxedPieces];
+__device__ int dBDegEff[kEffLaneCount * (detail::kMaxOrder + 1)];
+// The rung the two arrays above are cut for, zero when none has been uploaded.
+// It is read through the handle a consumer holds rather than copied into it, so
+// a handle filled for one rung reports itself as retired when another rung
+// replaces it instead of running tables that have since been overwritten.
+__device__ double dRelaxedM;
+
 // ---------------------------------------------------------------------------
 // the lanes: what the kernels below hand the shared arithmetic
 // ---------------------------------------------------------------------------
@@ -947,10 +969,11 @@ extern "C" int BoysCudaUploadTables() {
 
 // The addresses of the flat device image, in the order the status layer fills
 // BoysDeviceTables (boys_cuda.hpp): the double lane's pieceStart, offset, a, b,
-// deg, coeffs and region-B seed, then the float lane's seven. The status layer
-// cannot name a CUDA symbol, so the order is the seam between this file and
-// boys_cuda.cpp and both sides state it. Uploads first, so a caller that
-// skipped InitializeTables still gets a table rather than a null pointer.
+// deg, coeffs and region-B seed, then the float lane's seven, then the relaxed
+// image's three. The status layer cannot name a CUDA symbol, so the order is
+// the seam between this file and boys_cuda.cpp and both sides state it.
+// Uploads first, so a caller that skipped InitializeTables still gets a table
+// rather than a null pointer.
 extern "C" int BoysCudaDeviceTableAddresses(void** out) {
     const int uploaded = BoysCudaUploadTables();
 
@@ -964,12 +987,13 @@ extern "C" int BoysCudaDeviceTableAddresses(void** out) {
     // T = void**, which hands the runtime the address of the array slot instead
     // of the address of the variable. A const void* value matches the
     // non-template overload, which is the one that resolves a symbol.
-    const void* const symbols[] = {&dPieceStart, &dOffset,     &dA,         &dB,
-                                  &dDeg,        &dCoeffs,     &dBSeed,     &dPieceStart32,
-                                  &dOffset32,   &dA32,        &dB32,       &dDeg32,
-                                  &dCoeffs32,   &dBSeed32};
+    const void* const symbols[] = {&dPieceStart, &dOffset,     &dA,       &dB,
+                                  &dDeg,        &dCoeffs,     &dBSeed,   &dPieceStart32,
+                                  &dOffset32,   &dA32,        &dB32,     &dDeg32,
+                                  &dCoeffs32,   &dBSeed32,    &dRelaxedM, &dDegEff,
+                                  &dBDegEff};
 
-    for (int i = 0; i < 14; ++i)
+    for (int i = 0; i < 17; ++i)
     {
         const cudaError_t got = cudaGetSymbolAddress(&out[i], symbols[i]);
 
@@ -1077,6 +1101,21 @@ extern "C" int BoysCudaLaunchAllNF16(
 int gEffDevice = -1;
 double gEffM = -1.0;
 
+// Whether the effective-degree tables already resident are this multiplier's on
+// this device, so the host layer can skip recomputing and re-uploading them
+// without having to keep a cache of its own — one that could not see the
+// device, and would report the tables of a device it is no longer on.
+extern "C" int BoysCudaEffTablesResident(double m) {
+    int device = 0;
+
+    if (cudaGetDevice(&device) != cudaSuccess)
+    {
+        return 0;
+    }
+
+    return (gEffDevice == device && gEffM == m) ? 1 : 0;
+}
+
 extern "C" int BoysCudaUploadEffTables(double m, const int* degA, const int* degB) {
     int device = 0;
 
@@ -1097,6 +1136,61 @@ extern "C" int BoysCudaUploadEffTables(double m, const int* degA, const int* deg
     }
 
     if (cudaMemcpyToSymbol(cBDegEff, degB, kEffLaneCount * 33 * sizeof(int)) != cudaSuccess)
+    {
+        return 2;
+    }
+
+    // The flat image the device entries read (dDegEff/dBDegEff), cut from the
+    // same tables the constant arrays just took: a lane's piece p of order n is
+    // the flat entry pieceStart[order] + p of that lane, which is the indexing
+    // the handle's own piece-start pointer gives a consumer. The host hands the
+    // degrees in the order-major layout the batch kernels read, so this is the
+    // one place the two layouts meet.
+    static int flatA[kEffLaneCount * kRelaxedPieces];
+    static int flatB[kEffLaneCount * 33];
+    const int* const lanePieceStart[kEffLaneCount] = {detail::kPieceStart.data(),
+                                                      detail::kPieceStart.data(),
+                                                      detail::f32::kPieceStart.data(),
+                                                      detail::kPieceStart.data(),
+                                                      detail::f32::kPieceStart.data(),
+                                                      detail::kPieceStart.data()};
+
+    for (int lane = 0; lane < kEffLaneCount; ++lane)
+    {
+        const int* const pieceStart = lanePieceStart[lane];
+
+        for (int order = 0; order <= detail::kMaxOrder; ++order)
+        {
+            for (int p = pieceStart[order]; p < pieceStart[order + 1]; ++p)
+            {
+                flatA[lane * kRelaxedPieces + p] =
+                    degA[(lane * 33 + order) * kMaxPieces + (p - pieceStart[order])];
+            }
+
+            flatB[lane * 33 + order] = degB[lane * 33 + order];
+        }
+    }
+
+    if (cudaMemcpyToSymbol(dDegEff, flatA, sizeof(flatA)) != cudaSuccess)
+    {
+        return 2;
+    }
+
+    if (cudaMemcpyToSymbol(dBDegEff, flatB, sizeof(flatB)) != cudaSuccess)
+    {
+        return 2;
+    }
+
+    // The rung goes last, after a sync: an entry that reads a rung it can serve
+    // must not be able to observe the tables of the rung before it.
+    const cudaError_t tableSync = cudaStreamSynchronize(static_cast<cudaStream_t>(0));
+
+    if (tableSync != cudaSuccess)
+    {
+        return static_cast<int>(tableSync);
+    }
+
+    if (cudaMemcpyToSymbol(dRelaxedM, &m, sizeof(m)) != cudaSuccess)
     {
         return 2;
     }
