@@ -266,21 +266,21 @@ struct RouteFit {
     static_assert(kRoute == FitRoute::kChebyshev || kRoute == FitRoute::kRationalMinimax,
                   "a fit route outside the FitRoute enumeration is not a route the library "
                   "carries: name FitRoute::kChebyshev or FitRoute::kRationalMinimax");
-    using Type = ChebyshevFit<kScheme>;
+    using Type = ChebyshevFit<kScheme>; ///< the fit family the pair resolves to
 };
 
 /// The Chebyshev family: it holds both coefficient sets, so either scheme is
 /// defined for it.
 template <EvalScheme kScheme>
 struct RouteFit<FitRoute::kChebyshev, kScheme> {
-    using Type = ChebyshevFit<kScheme>;
+    using Type = ChebyshevFit<kScheme>; ///< the fit family the pair resolves to
 };
 
 /// The rational family: one fit under either scheme, because its coefficients
 /// are a monomial numerator and denominator with no Chebyshev form to sum.
 template <EvalScheme kScheme>
 struct RouteFit<FitRoute::kRationalMinimax, kScheme> {
-    using Type = RationalFit;
+    using Type = RationalFit; ///< the fit family the pair resolves to, either scheme
 };
 
 } // namespace detail

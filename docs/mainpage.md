@@ -25,6 +25,7 @@ region C. See the accuracy contract below.
 | \ref boys::BoysSingleF16, \ref boys::BoysAllOrdersF16, \ref boys::BoysSingleBf16, \ref boys::BoysAllOrdersBf16 | fp16/bf16 scalar I/O around the fp32 engine |
 | \ref boys::BoysAllOrdersHalf2, \ref boys::BoysAllNF16Native | native half: region C's ladder in packed binary16 (\ref boys::Half2), one correctly rounded half operation per step, two arguments to a register, results scaled by 2^15 (\ref boys::kHalfNativeScaleExponent) |
 | \ref boys::BoysCuda::InitializeTables, \ref boys::BoysCuda::SingleF32, \ref boys::BoysCuda::AllOrdersF32, \ref boys::BoysCuda::AllNF32, \ref boys::BoysCuda::SingleF64, \ref boys::BoysCuda::AllOrdersF64, \ref boys::BoysCuda::AllNF64, \ref boys::BoysCuda::SingleF16, \ref boys::BoysCuda::AllOrdersF16, \ref boys::BoysCuda::AllNF16 | CUDA lane (optional build); device arrays with an opaque stream handle; the tables upload on first use, and `InitializeTables` is an optional warm-up; `AllOrders*` is the all-orders batch at a per-element order, while `AllN*` is the device \ref boys::BoysAllN (one top order for the batch, order-major planes) and takes non-decreasing arguments, since it never sorts |
+| \ref boys::BoysDeviceSingleF64, \ref boys::BoysDeviceAllOrdersF64, \ref boys::BoysDeviceAllNF64, \ref boys::BoysDeviceEachOrderF64 (and the f32 and fp16 siblings), \ref boys::BoysCuda::DeviceTables, \ref boys::BoysDeviceTables | CUDA lane, device-callable (`boys/boys_cuda_device.hpp`): the same arithmetic as `__device__` functions a caller's own kernel calls, at one argument the calling thread holds, so a fused integral kernel needs no round trip through global memory. `BoysCuda::DeviceTables` fills the \ref boys::BoysDeviceTables handle the entries take; the header is the whole of what the caller's build pays — no relocatable device code, no device link step, no library on the device side, and the arithmetic is inlined into the calling kernel |
 
 ## Measuring the options on this machine
 
@@ -95,7 +96,9 @@ The CUDA fp32 lane's single entry is the one device entry that takes a second, c
 region-B exponential it evaluates (see \ref boys::RegionBExp). Both options ship with a bound of
 their own, derived from the condition number of the region-B recurrence and confirmed by the device
 gate's sweep; the bare hardware approximation, whose relative error grows with the argument, is not
-offered at any multiplier.
+offered at any multiplier. The batch single entry takes the option as an argument and the
+device-callable one as a template argument, since there it replaces an arithmetic inside the
+caller's own kernel rather than branching within one.
 
 "ULP" is the last representable digit of the result in the format concerned.
 
