@@ -49,6 +49,7 @@ header must match this script's output byte for byte for a given tolerance
 configuration.
 """
 import argparse
+import concurrent.futures
 import math
 import os
 import shutil
@@ -158,6 +159,87 @@ TIER_BOUNDARIES_CERTIFIED = [
     mpf("4.897870299825657"),   # kmax 16: the 1-ulp-exp certified crossing
     mpf("10.783587858916762"),  # kmax 32: the 1-ulp-exp certified crossing
 ]
+
+# ---------------------------------------------------------------------------
+# Worker processes
+# ---------------------------------------------------------------------------
+# Almost nothing here waits on anything else here: one order's fits, one
+# lane's pieces, the degree pairs a rational scan visits and the delivered
+# errors a sweep measures are independent jobs, and each is a walk through
+# high-precision mpmath - which is why a serial run of this script is an hour
+# of clock rather than the second a build step would be. The jobs go to a
+# process pool and come back in submission order, so the tables are a function
+# of the work and not of the machine's core count: one worker runs the same
+# jobs in one process and writes the same bytes.
+#
+# A worker starts fresh, so it is either told what it needs or carries what it
+# needs with it - mpmath's precision is per-process state that a spawn does
+# not pass on, and every value that crosses the boundary is a plain number, a
+# list of them, or an mpmath value, all of which pickle exactly.
+
+JOBS = None  # --jobs; None means one worker per CPU
+
+
+def worker_count():
+    if JOBS is not None:
+        return max(1, JOBS)
+    return os.cpu_count() or 1
+
+
+def run_jobs(fn, jobs):
+    """Run fn over jobs; the results come back in submission order.
+
+    That order is part of the answer. Every caller reduces these results with
+    a scan - a running maximum, a running total, the first piece that set one
+    - and a reduction over completion order would put a different number in
+    the tables on a machine with a different core count. map() returns them in
+    the order the loop it replaces produced them, and one worker is that loop.
+    """
+    jobs = list(jobs)
+    if len(jobs) <= 1 or worker_count() <= 1:
+        return [fn(spec) for spec in jobs]
+    with concurrent.futures.ProcessPoolExecutor(
+            max_workers=min(worker_count(), len(jobs))) as pool:
+        return list(pool.map(fn, jobs))
+
+
+def _fit_order_job(spec):
+    """One order's fits, in a worker process."""
+    n, f32, region_b = spec
+    return fit_order(n, f32=f32, region_b=region_b)
+
+
+def _fit_delivered_job(spec):
+    """One piece's delivered error under both schemes and both routes."""
+    cs, ms, n, a, b, npts = spec
+    return fit_delivered(cs, ms, n, a, b, npts)
+
+
+def _rat_best_job(spec):
+    """One degree pair of a rational scan, in a worker process.
+
+    The grid, the mapped arguments and the reference travel with the job: they
+    are the same for every pair a scan visits, and shipping a few hundred
+    kilobytes costs a fraction of a second against the minutes a pair's own
+    fit costs.
+    """
+    m, k, indices, ts, xs, ref, ws = spec
+    mp.dps = RAT_DPS  # the scan's working precision; a spawn does not carry it
+    return rat_best(m, k, indices, ts, xs, ref, ws)
+
+
+def _rat_a_piece_job(spec):
+    """One region-A piece's rational fit, in a worker process.
+
+    The piece's grid, its reference and its weights are built here rather than
+    shipped. They are four hundred mpmath values each and they are a function
+    of this job's own arguments, so the worker computes exactly what the loop
+    it replaces computed at that piece - no other piece shares them, and the
+    argument the tables are written from is the one this job was given.
+    """
+    n, a, b, cs = spec
+    with mp.workdps(RAT_DPS):
+        return rat_a_fit_piece(n, mpf(a), mpf(b), cs)
 
 
 @lru_cache(maxsize=1 << 20)
@@ -828,24 +910,34 @@ def rat_lawson(m, k, indices, ts, fs, ws=None, outer=300):
     """
     nunk = (m + 1) + k
     w = [(ws[i] if ws is not None else mpf(1)) for i in indices]
+    # A row's powers and the value they are fitted to are the same on every
+    # one of the outer iterations - only the weight the iteration carries
+    # moves - so they are built once, from the same expressions, and read back
+    # three hundred times instead of recomputed three hundred times.
+    bases = [[t ** j for j in range(m + 1)] + [-fi * t ** j for j in range(1, k + 1)]
+             for t, fi in ((ts[i], fs[i]) for i in indices)]
     last = None
     for _ in range(outer):
-        a = mp.zeros(nunk, nunk)
+        a = [[mpf(0) for _ in range(nunk)] for _ in range(nunk)]
         rhs = mp.zeros(nunk, 1)
-        for row, index in enumerate(indices):
-            t = ts[index]
-            fi = fs[index]
-            base = [t ** j for j in range(m + 1)] + [-fi * t ** j for j in range(1, k + 1)]
+        for row, base in enumerate(bases):
+            fi = fs[indices[row]]
             w2 = w[row] * w[row]
+            # w2 * base[r] is the same for every c it is multiplied into, so
+            # it is taken once per row: the products below are the ones the
+            # loop made before, with the row's own rounding in the same place.
+            g = [w2 * br for br in base]
             for r in range(nunk):
-                rhs[r] += w2 * base[r] * fi
+                rhs[r] += g[r] * fi
+                arow = a[r]
                 for c in range(r, nunk):
-                    a[r, c] += w2 * base[r] * base[c]
+                    arow[c] += g[r] * base[c]
         for r in range(nunk):
+            arow = a[r]
             for c in range(r):
-                a[r, c] = a[c, r]
+                arow[c] = a[c][r]
         try:
-            sol = mp.lu_solve(a, rhs)
+            sol = mp.lu_solve(mp.matrix(a), rhs)
         except (ZeroDivisionError, ValueError):
             return last
         p = [sol[j] for j in range(m + 1)]
@@ -949,9 +1041,11 @@ def _fit_region_b_rational(b_cheb):
     reaching = None
     for stored in range(RAT_SCAN_MIN, RAT_SCAN_MAX + 1):
         row = []
-        for k in range(1, min(RAT_K_MAX, stored - 2) + 1):
+        ks = list(range(1, min(RAT_K_MAX, stored - 2) + 1))
+        found = run_jobs(_rat_best_job,
+                         [(stored - 1 - k, k, coarse, ts, xs, ref, None) for k in ks])
+        for k, (best, _) in zip(ks, found):
             m = stored - 1 - k
-            best, _ = rat_best(m, k, coarse, ts, xs, ref)
             if best is None:
                 row.append(f"[{m}/{k}]-")
                 continue
@@ -982,11 +1076,17 @@ def _fit_region_b_rational(b_cheb):
     candidates += [(below, below - 1 - kk, kk)
                    for kk in range(1, min(RAT_K_MAX, below - 2) + 1)]
     full = list(range(RAT_NODES + 1))
+    refined = run_jobs(_rat_best_job,
+                       [(mm, kk, full, ts, xs, ref, None) for _, mm, kk in candidates])
     rows = []
-    for total, mm, kk in candidates:
-        best, _ = rat_best(mm, kk, full, ts, xs, ref)
+    # The pair that ships in the end is one of these candidates, so the figures
+    # for it are already in the batch: they are kept here, keyed by the pair,
+    # and read back below instead of being computed a second time.
+    seen = {}
+    for (total, mm, kk), (best, _both) in zip(candidates, refined):
         if best is None:
             continue
+        seen[(mm, kk)] = (best, _both)
         who, d, at, p, q = best
         rows.append((total, mm, kk, d, at, p, q, who))
     if not rows:
@@ -1011,8 +1111,10 @@ def _fit_region_b_rational(b_cheb):
     # The two routes' figures at the pair that ships, either one of which may
     # be the one offered above: the gap is what says how close to the best fit
     # for this pair the shipped one is, and a wide gap is a reason to distrust
-    # the pair rather than the route that won it.
-    _, both = rat_best(m, k, full, ts, xs, ref)
+    # the pair rather than the route that won it. Both routes at this pair were
+    # run as one of the candidates above, so the second run of the same job
+    # would return the same numbers: the batch's own result is read back.
+    _, both = seen[(m, k)]
     print(f"  both routes at the shipped pair [{m}/{k}]:")
     for name, d, a, _, _ in both:
         print(f"    {name:<16}: delivered {mp.nstr(d, 6)} at x = {mp.nstr(a, 12)}"
@@ -1184,11 +1286,19 @@ def fit_region_a_rational(double_orders):
     over_gain = 0
     cheb_over_gain = 0
 
+    # Every piece of every order is its own fit over its own interval, so the
+    # whole lane is one batch of jobs and the walk below reads their results
+    # back in order: the same pieces, reduced the same way, from the same
+    # order they were computed in when this was a nested loop.
+    fitted = iter(run_jobs(
+        _rat_a_piece_job,
+        [(n, a, b, cs)
+         for n in range(MAX_ORDER + 1) for (a, b, _deg, cs, _mono) in double_orders[n]]))
+
     for n in range(MAX_ORDER + 1):
         row = []
         for (a, b, deg, cs, _mono) in double_orders[n]:
-            with mp.workdps(RAT_DPS):
-                fit, cw, cat, cg, cst = rat_a_fit_piece(n, mpf(a), mpf(b), cs)
+            fit, cw, cat, cg, cst = next(fitted)
             if fit is None:
                 raise RuntimeError(f"rational region-A route: F{n} on [{a}, {b}) "
                                    f"reaches no stored count up to {RAT_A_SCAN_MAX} "
@@ -1639,14 +1749,16 @@ def measure_scheme_rows(double_orders, b_cheb, ext_cheb, npts=SCHEME_MEASURE_POI
     value over every piece of every order."""
     worst_a = [[0.0, 0.0], [0.0, 0.0]]
     deg_a = stored_a = 0
-    for n in range(MAX_ORDER + 1):
-        for (a, b, deg, cs, ms) in double_orders[n]:
-            w = fit_delivered(cs, ms, n, a, b, npts)
-            for scheme in (0, 1):
-                for route in (0, 1):
-                    worst_a[scheme][route] = max(worst_a[scheme][route], w[scheme][route])
-            if deg > deg_a:
-                deg_a, stored_a = deg, len(cs)
+    pieces = [(n, a, b, deg, cs, ms)
+              for n in range(MAX_ORDER + 1) for (a, b, deg, cs, ms) in double_orders[n]]
+    delivs = run_jobs(_fit_delivered_job,
+                      [(cs, ms, n, a, b, npts) for (n, a, b, _deg, cs, ms) in pieces])
+    for (n, a, b, deg, cs, _ms), w in zip(pieces, delivs):
+        for scheme in (0, 1):
+            for route in (0, 1):
+                worst_a[scheme][route] = max(worst_a[scheme][route], w[scheme][route])
+        if deg > deg_a:
+            deg_a, stored_a = deg, len(cs)
     bdeg, bcs, bms = b_cheb
     worst_b = fit_delivered(bcs, bms, 0, X0, X1, npts)
     exdeg, excs, exms, _crossings = ext_cheb
@@ -1672,7 +1784,14 @@ def main():
     parser.add_argument("--check", action="store_true",
                         help="verify the committed header/CSV are byte-identical to a "
                              "fresh generation (exits nonzero on drift)")
+    parser.add_argument("--jobs", type=int, default=None,
+                        help="worker processes for the independent fits (default: one "
+                             "per CPU; 1 keeps the whole run in one process, which is "
+                             "the same computation and the same tables)")
     args = parser.parse_args()
+
+    global JOBS
+    JOBS = args.jobs
 
     if args.reference_only:
         os.makedirs(os.path.dirname(args.reference) or ".", exist_ok=True)
@@ -1680,17 +1799,14 @@ def main():
         return 0
 
     print("fitting double lane (weighted region-A seeds, tol 5e-14, deg<=18) ...")
-    double_orders = []
-    for n in range(MAX_ORDER + 1):
-        pieces = fit_order(n)
-        double_orders.append(pieces)
+    double_orders = run_jobs(_fit_order_job,
+                             [(n, False, False) for n in range(MAX_ORDER + 1)])
+    for n, pieces in enumerate(double_orders):
         print(f"  F{n:2d}: {len(pieces)} intervals, {sum(len(p[3]) for p in pieces)} coeffs")
 
     print("fitting float lane (weighted region-A seeds, tol 1e-7, deg<=10) ...")
-    float_orders = []
-    for n in range(MAX_ORDER + 1):
-        pieces = fit_order(n, f32=True)
-        float_orders.append(pieces)
+    float_orders = run_jobs(_fit_order_job,
+                            [(n, True, False) for n in range(MAX_ORDER + 1)])
 
     print("fitting region B seeds ...")
     b_cheb = fit_order(0, region_b=True)
