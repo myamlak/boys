@@ -167,9 +167,10 @@ enum class BoysDeviceLane : int {
 /// The price of the second set is device memory and not constant-bank space:
 /// the six region-A tables are 582 ints and the six region-B tables 198, so
 /// 3120 bytes of the device's global memory stand behind the three fields
-/// below, once, for the whole process. The handle itself grows by thirteen
-/// pointers — 104 bytes, to 224 — because the relaxed tables are addressed once
-/// per call rather than held inline.
+/// below, plus the eight bytes of the resident-rung scalar relaxedRung points
+/// at, once for the whole process. The handle itself grows by thirteen
+/// pointers — 104 bytes, from 128 to 232 — because the relaxed tables are
+/// addressed once per call rather than held inline.
 ///
 /// \ingroup boys
 struct BoysDeviceTables {
