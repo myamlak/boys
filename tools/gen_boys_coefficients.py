@@ -236,8 +236,15 @@ def clenshaw_double(cs, x, a, b):
 def route_step(fused, a, b, c):
     """One multiply-add as the kernel's arithmetic spells it: the fused step
     rounds the sum once, the separate step rounds the product and then the
-    sum."""
-    return math.fma(a, b, c) if fused else a * b + c
+    sum.
+
+    The fused step is spelled by rat_fma rather than by math.fma, for the same
+    reason that function exists: math.fma is Python 3.13 and later, and this
+    script's output is byte-compared on machines that need not run the same
+    Python. The two are the same operation - rat_fma recovers the product
+    exactly and rounds the sum once, which is what a fused multiply-add is.
+    """
+    return rat_fma(a, b, c) if fused else a * b + c
 
 
 def clenshaw_route(cs, x, a, b, fused):
