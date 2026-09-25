@@ -1024,8 +1024,11 @@ void BoysFixedNImpl(
 
         return;
     }
-
-    if constexpr (kAccuracyMultiplier == 1.0)
+    // The two selections are alternatives and not two independent tests: the
+    // branch above returns whenever it is taken, so saying so here is what the
+    // code already means - and it is the difference between a compiler reading
+    // the block below as discarded and reading it as unreachable.
+    else if constexpr (kAccuracyMultiplier == 1.0)
     {
         for (std::size_t i = 0; i < count; ++i)
         {
