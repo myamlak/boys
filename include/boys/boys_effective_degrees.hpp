@@ -252,6 +252,250 @@ constexpr int EffectiveDegree(const CoeffArray& coeffs,
     return deg;
 }
 
+// ---------------------------------------------------------------------------
+// The rational pair's own truncation
+// ---------------------------------------------------------------------------
+// A stored rational piece is a numerator P(t) = sum_{j<=m} p_j t^j and a
+// denominator Q(t) = 1 + sum_{1<=j<=k} q_j t^j over one piece of region A's
+// partition, and the region-B seed is one such pair over the whole of region B.
+// A lower-order pair cuts both at one order d': m' = min(d', m) and
+// k' = min(d', k). What the cut costs is not a coefficient sum, because the
+// value is a quotient. With dP = P - P' and dQ = Q - Q' the dropped parts,
+//
+//   R - R' = P/Q - P'/Q'
+//          = ((P' + dP) Q' - P' (Q' + dQ)) / (Q Q')
+//          = dP/Q - R' * dQ/Q,
+//
+// which is exact. Every basis function of the mapped argument is at most one in
+// modulus on [-1, 1], so |dP(t)| <= DP(d') = sum_{j>m'} |p_j| and
+// |dQ(t)| <= DQ(d') = sum_{j>k'} |q_j| over the piece; |Q(t)| >= Qlo by the
+// floor below; and |R'(t)| <= sum_{j<=m'} |p_j| / inf|Q'| <= SP / (Qlo - DQ(d')),
+// using |Q'| >= |Q| - |dQ| >= Qlo - DQ(d') and |P'| <= SP = sum_{j<=m} |p_j|.
+// The pairwise tail is therefore
+//
+//   Delta(d') = ( DP(d') + (SP / (Qlo - DQ(d'))) * DQ(d') ) / Qlo,
+//
+// two terms because a quotient's perturbation has two: the numerator's own
+// dropped tail against the denominator's floor, and the denominator's dropped
+// tail carried by the pair's value scale. Neither is a coefficient sum on its
+// own, and the second is why a pair cannot be read as one series: cutting the
+// denominator moves every value the pair returns, and how far it moves them is
+// the pair's own size rather than a stored number.
+//
+// Qlo, the denominator's floor over the piece. Q does not vanish on these
+// intervals - a pair whose denominator did would not approximate anything there
+// - but sum_j |q_j| exceeds 1 on the shipped pieces, so the triangle bound
+// 1 - sum_j |q_j| says nothing. The floor is taken from Q's own values on a
+// grid, less what Q can move between grid points: with h the spacing of an
+// N-point grid over [-1, 1] and |Q'| <= sum_j j|q_j| on it,
+//
+//   Qlo = min_i |Q(t_i)| - (sum_j j |q_j|) * h / 2.
+//
+// A Qlo at or below DQ(d') makes that cut inadmissible rather than admissible:
+// the pair's own value scale is then unbounded by this argument, and the cut is
+// skipped like one outside the evaluator's domain.
+//
+// The cut is in the same domain as the polynomial scan, and the fallback is the
+// same shape. At d' = max(m, k) the cut is the whole pair, Delta = 0 exactly
+// because dP = dQ = 0, so the scan always has an admissible order and the
+// returned pair is never one the budget cannot carry. That is this family's
+// answer to the polynomial side's Delta(deg) = 0: the rational equivalent is a
+// pair cut to itself, which returns the shipped pair's value bit for bit.
+
+/// The number of grid intervals the denominator's floor is bounded on: an
+/// a-priori constant of the criterion, not of any one piece.
+inline constexpr int kPairFloorGrid = 64;
+
+/// SP, the sum of the numerator's stored coefficients, which is the pair's
+/// value scale: |P(t)| <= SP on the mapped interval.
+template <typename CoeffArray>
+constexpr double NumeratorScale(const CoeffArray& coeffs, std::size_t offset, int numDeg) noexcept {
+    double scale = 0.0;
+
+    for (int j = 0; j <= numDeg; ++j)
+    {
+        const double c = static_cast<double>(coeffs[offset + static_cast<std::size_t>(j)]);
+        scale += (c >= 0.0) ? c : -c;
+    }
+
+    return scale;
+}
+
+/// Qlo: the denominator's floor over the mapped interval, from the grid bound
+/// above. den[denOffset + j - 1] holds q_j for j = 1..denDeg, and
+/// Q(t) = 1 + sum_j q_j t^j.
+template <typename CoeffArray>
+constexpr double DenominatorFloor(const CoeffArray& den,
+                                  std::size_t denOffset,
+                                  int denDeg) noexcept {
+    double slope = 0.0;
+
+    for (int j = 1; j <= denDeg; ++j)
+    {
+        const double c = static_cast<double>(den[denOffset + static_cast<std::size_t>(j - 1)]);
+        slope += static_cast<double>(j) * ((c >= 0.0) ? c : -c);
+    }
+
+    double lowest = 0.0;
+    bool seen = false;
+
+    for (int i = 0; i <= kPairFloorGrid; ++i)
+    {
+        const double t = -1.0 + 2.0 * static_cast<double>(i) / kPairFloorGrid;
+        // Q's own Horner: the constant term is the denominator's held one, so it
+        // is added after the last coefficient rather than before the first.
+        double value = 0.0;
+
+        for (int j = denDeg; j >= 1; --j)
+        {
+            value =
+                value * t + static_cast<double>(den[denOffset + static_cast<std::size_t>(j - 1)]);
+        }
+
+        value = value * t + 1.0;
+
+        const double magnitude = value >= 0.0 ? value : -value;
+
+        if (!seen || magnitude < lowest)
+        {
+            lowest = magnitude;
+            seen = true;
+        }
+    }
+
+    return lowest - slope * (2.0 / kPairFloorGrid) * 0.5;
+}
+
+/// The pair's dropped-order measure at one cut, with the two cut-INDEPENDENT
+/// operands of the criterion passed in. `Qlo` and `SP` are properties of the
+/// stored pair rather than of the order it is read at, and a caller that scans
+/// every candidate cut asks the same two questions once per cut otherwise - the
+/// floor is a 65-point grid. Passing them in is what keeps the whole table
+/// inside a compiler's constant-expression step budget; the value returned is
+/// identical to the three-argument form's, because neither operand depends on
+/// \p dPrime.
+template <typename NumArray, typename DenArray>
+constexpr double RationalPairTailAt(const NumArray& num,
+                                    std::size_t numOffset,
+                                    const DenArray& den,
+                                    std::size_t denOffset,
+                                    int numDeg,
+                                    int denDeg,
+                                    int dPrime,
+                                    double floor,
+                                    double scale,
+                                    bool& admissible) noexcept {
+    const int numPrime = dPrime < numDeg ? dPrime : numDeg;
+    const int denPrime = dPrime < denDeg ? dPrime : denDeg;
+    double droppedNum = 0.0;
+
+    for (int j = numPrime + 1; j <= numDeg; ++j)
+    {
+        const double c = static_cast<double>(num[numOffset + static_cast<std::size_t>(j)]);
+        droppedNum += (c >= 0.0) ? c : -c;
+    }
+
+    double droppedDen = 0.0;
+
+    for (int j = denPrime + 1; j <= denDeg; ++j)
+    {
+        const double c = static_cast<double>(den[denOffset + static_cast<std::size_t>(j - 1)]);
+        droppedDen += (c >= 0.0) ? c : -c;
+    }
+
+    const double floorAtCut = floor - droppedDen;
+
+    if (floorAtCut <= 0.0)
+    {
+        admissible = false;
+        return 0.0;
+    }
+
+    admissible = true;
+
+    return (droppedNum + (scale / floorAtCut) * droppedDen) / (floorAtCut + droppedDen);
+}
+
+/// The pair's dropped-order measure at one cut; see the block comment above.
+/// A cut whose floor does not clear the denominator's own dropped tail has no
+/// bound under this argument at all - the pair's value scale is then unbounded
+/// by it - and \p admissible reports that rather than a number, so the caller
+/// skips the cut instead of accepting a tail that does not mean anything.
+///
+/// This form takes the two operands from the pair itself, which is what a
+/// caller measuring one cut wants; `RationalPairTailAt` is the same measure
+/// with them supplied.
+template <typename NumArray, typename DenArray>
+constexpr double RationalPairTail(const NumArray& num,
+                                  std::size_t numOffset,
+                                  const DenArray& den,
+                                  std::size_t denOffset,
+                                  int numDeg,
+                                  int denDeg,
+                                  int dPrime,
+                                  bool& admissible) noexcept {
+    return RationalPairTailAt(num,
+                              numOffset,
+                              den,
+                              denOffset,
+                              numDeg,
+                              denDeg,
+                              dPrime,
+                              DenominatorFloor(den, denOffset, denDeg),
+                              NumeratorScale(num, numOffset, numDeg),
+                              admissible);
+}
+
+/// The pair's effective cut: the smallest admissible order in the evaluator's
+/// domain {0,1,2,4,6,...}, which truncates the numerator and the denominator
+/// together. The full pair is the fallback and is admissible by construction
+/// (its dropped parts are both empty, so it costs nothing).
+/// kAccuracyMultiplier is a runtime quantity here, as it is on the polynomial
+/// side, so a table can be filled for an arbitrary m.
+template <typename NumArray, typename DenArray>
+constexpr void RationalPairCut(const NumArray& num,
+                               std::size_t numOffset,
+                               const DenArray& den,
+                               std::size_t denOffset,
+                               int numDeg,
+                               int denDeg,
+                               double m,
+                               double amplification,
+                               double bRegion,
+                               int& outNumDeg,
+                               int& outDenDeg) noexcept {
+    const double budget = (m - 1.0) * bRegion;
+    const int full = numDeg > denDeg ? numDeg : denDeg;
+
+    // The two cut-independent operands, taken once for the pair: the
+    // denominator's floor and the numerator's scale. Every candidate cut below
+    // asks the same two questions, and the floor is a 65-point grid.
+    const double floor = DenominatorFloor(den, denOffset, denDeg);
+    const double scale = NumeratorScale(num, numOffset, numDeg);
+
+    for (int dPrime = 0; dPrime <= full; ++dPrime)
+    {
+        if (dPrime == 3 || (dPrime > 2 && dPrime % 2 != 0))
+        {
+            continue; // outside the evaluator's domain
+        }
+
+        bool admissible = false;
+        const double tail = RationalPairTailAt(
+            num, numOffset, den, denOffset, numDeg, denDeg, dPrime, floor, scale, admissible);
+
+        if (admissible && tail * amplification <= budget)
+        {
+            outNumDeg = dPrime < numDeg ? dPrime : numDeg;
+            outDenDeg = dPrime < denDeg ? dPrime : denDeg;
+            return;
+        }
+    }
+
+    outNumDeg = numDeg;
+    outDenDeg = denDeg;
+}
+
 #if !defined(__CUDACC__)
 // The per-(m, role, basis) compile-time d' tables. The degree tables are flat
 // std::array<int, ...> (one entry per region-A piece / per order for
@@ -351,6 +595,99 @@ constexpr auto RegionBDegrees() noexcept {
 
         return degrees;
     }
+}
+
+// The rational pair tables at a rung: per region-A piece and per region-B
+// order, the numerator and the denominator degree the pair criterion certifies.
+// Two flat int arrays rather than one of pairs, for the same reason the
+// polynomial tables are flat.
+//
+// The amplification each region's cut pays is the path's own, and the rational
+// route's path is not the shipped one:
+//
+//  - Region A reads one piece per order. The lane contract's finding that a
+//    piece fitted for the values alone does not survive the batch downward
+//    recursion's gain is why the route is read this way, and it is what makes
+//    A = 1 here rather than the batch role's w(b): the cut's error reaches the
+//    value the piece was read for with nothing in between, where the shipped
+//    route's seed reaches F_0 through the recursion and is amplified by it.
+//  - Region B reads its seed at order 0 and carries it up, so its cut pays the
+//    shipped table's own A_B(n) = prod_{j<n}(j+1/2) / kX0^n.
+//
+// The budget is the batch role's region budget at both: the tier the rung is
+// named by documents m * 5.5e-14 in every region, so the m = 1 base the
+// criterion spends is that bound's own base.
+struct RationalRegionAPairs {
+    std::array<int, std::size(kPieces)> num{};
+    std::array<int, std::size(kPieces)> den{};
+};
+
+struct RationalRegionBPairs {
+    std::array<int, kMaxOrder + 1> num{};
+    std::array<int, kMaxOrder + 1> den{};
+};
+
+template <double kAccuracyMultiplier>
+constexpr RationalRegionAPairs RationalRegionADegrees() noexcept {
+    constexpr double kBudget = RegionABudget(BoysRole::kDoubleBatch);
+    RationalRegionAPairs pairs{};
+
+    for (int p = 0; p < static_cast<int>(std::size(kPieces)); ++p)
+    {
+        const std::size_t index = static_cast<std::size_t>(p);
+        const int numDeg = kRatANumDeg[index];
+        const int denDeg = kRatADenDeg[index];
+
+        RationalPairCut(kRatACoeffs,
+                        static_cast<std::size_t>(kRatAOffset[index]),
+                        kRatACoeffs,
+                        static_cast<std::size_t>(kRatAOffset[index] + numDeg + 1),
+                        numDeg,
+                        denDeg,
+                        kAccuracyMultiplier,
+                        1.0,
+                        kBudget,
+                        pairs.num[index],
+                        pairs.den[index]);
+    }
+
+    return pairs;
+}
+
+template <double kAccuracyMultiplier>
+constexpr RationalRegionBPairs RationalRegionBDegrees() noexcept {
+    constexpr double kBudget = RegionBBudget(BoysRole::kDoubleBatch);
+    RationalRegionBPairs pairs{};
+
+    // One seed for the region rather than one fit per order, so the cut is the
+    // same pair at every order: the table is the seed's pair repeated, and it is
+    // kept per order so a reader reads it the way the polynomial table reads.
+    // The seed's own cut is judged at order 0's amplification - A_B(0) = 1, the
+    // smallest the region pays - because the pair is one evaluation: every
+    // order's output carries the same cut, and the amplification is a property
+    // of the order it is read for, not of the seed.
+    int numDeg = 0;
+    int denDeg = 0;
+
+    RationalPairCut(kRatBnum,
+                    0,
+                    kRatBden,
+                    0,
+                    kRatBnumDeg,
+                    kRatBdenDeg,
+                    kAccuracyMultiplier,
+                    RegionBAmplification(0),
+                    kBudget,
+                    numDeg,
+                    denDeg);
+
+    for (int order = 0; order <= kMaxOrder; ++order)
+    {
+        pairs.num[static_cast<std::size_t>(order)] = numDeg;
+        pairs.den[static_cast<std::size_t>(order)] = denDeg;
+    }
+
+    return pairs;
 }
 #endif // !defined(__CUDACC__)
 

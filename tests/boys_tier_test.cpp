@@ -1854,4 +1854,278 @@ TEST(Route, EveryOrderIsWrittenWhateverNmaxAndRouteAreAsked) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// The rational route's relaxed rung
+// ---------------------------------------------------------------------------
+// The rung and the route are two selectors of two different things, and this
+// section is where their product is measured: the pair criterion's own bound
+// (which is the derivation, and is a claim about a bound rather than about any
+// value a table happens to hold), the run-time entry's mapping onto the
+// compile-time instantiation, the rung's declared bound on the reference grid,
+// and the route's carriage - that naming the pair is answered with the route's
+// fits rather than with the default entry's.
+//
+// What is NOT pinned here is which cut the criterion certifies. That is the
+// criterion's output and not its contract: a coefficient table that moved would
+// move it, and a test that pinned it would fail on a change that is correct.
+// ThePairCriterionBoundsEveryCutOfEveryRationalPiece is the contract - the
+// bound holds whatever the cut is - and it is measured on every cut of every
+// piece, with the cuts the criterion refuses counted beside the ones it admits.
+
+// The mapped argument's own grid for the piece-level bound sweep: dense enough
+// that a bound missed between points would have to be missed narrowly.
+constexpr int kPairSweep = 20001;
+
+// The rational route's rung compiled at a multiplier and a scheme: the path the
+// run-time entry has to reach, compiled here for the comparison.
+template <double M, boys::EvalScheme S>
+void RationalRungPath(int nmax, double x, double* out) noexcept {
+    BoysAllOrders<M, boys::EvalPolicy<boys::FitRoute::kRationalMinimax, S>>(nmax, x, out);
+}
+
+// Indexed by rung, in kRungs order (the reference rung first).
+constexpr std::array<PathFn, 7> kRationalSplitPaths{{
+    &RationalRungPath<boys::kBoysFullAccuracyMultiplier, boys::EvalScheme::kSplitClenshaw>,
+    &RationalRungPath<64.0, boys::EvalScheme::kSplitClenshaw>,
+    &RationalRungPath<256.0, boys::EvalScheme::kSplitClenshaw>,
+    &RationalRungPath<1024.0, boys::EvalScheme::kSplitClenshaw>,
+    &RationalRungPath<4096.0, boys::EvalScheme::kSplitClenshaw>,
+    &RationalRungPath<16384.0, boys::EvalScheme::kSplitClenshaw>,
+    &RationalRungPath<65536.0, boys::EvalScheme::kSplitClenshaw>,
+}};
+
+constexpr std::array<PathFn, 7> kRationalHornerPaths{{
+    &RationalRungPath<boys::kBoysFullAccuracyMultiplier, boys::EvalScheme::kHorner>,
+    &RationalRungPath<64.0, boys::EvalScheme::kHorner>,
+    &RationalRungPath<256.0, boys::EvalScheme::kHorner>,
+    &RationalRungPath<1024.0, boys::EvalScheme::kHorner>,
+    &RationalRungPath<4096.0, boys::EvalScheme::kHorner>,
+    &RationalRungPath<16384.0, boys::EvalScheme::kHorner>,
+    &RationalRungPath<65536.0, boys::EvalScheme::kHorner>,
+}};
+
+TEST(ThePairCriterion, BoundsEveryCutOfEveryRationalPiece) {
+    std::size_t cuts = 0;
+    std::size_t inadmissible = 0;
+    double tightest = 0.0;
+    int tightest_piece = -1;
+    int tightest_cut = -1;
+
+    for (std::size_t piece = 0; piece < boys::detail::kPieces.size(); ++piece) {
+        const std::size_t offset = static_cast<std::size_t>(boys::detail::kRatAOffset[piece]);
+        const int numDeg = boys::detail::kRatANumDeg[piece];
+        const int denDeg = boys::detail::kRatADenDeg[piece];
+        const int full = numDeg > denDeg ? numDeg : denDeg;
+
+        for (int cut = 0; cut <= full; ++cut) {
+            if (cut == 3 || (cut > 2 && cut % 2 != 0)) {
+                continue;
+            }
+
+            bool admissible = false;
+            const std::size_t denOffset =
+                offset + static_cast<std::size_t>(numDeg) + 1;
+            const double tail = boys::detail::RationalPairTail(boys::detail::kRatACoeffs,
+                                                               offset,
+                                                               boys::detail::kRatACoeffs,
+                                                               denOffset,
+                                                               numDeg,
+                                                               denDeg,
+                                                               cut,
+                                                               admissible);
+
+            if (!admissible) {
+                ++inadmissible;
+                continue;
+            }
+
+            double worst = 0.0;
+
+            for (int i = 0; i < kPairSweep; ++i) {
+                const double t = -1.0 + 2.0 * i / (kPairSweep - 1);
+                const double stored = boys::detail::RationalPieceAtCut(piece, numDeg, denDeg, t);
+                const double cutPair = boys::detail::RationalPieceAtCut(piece,
+                                                                       cut < numDeg ? cut : numDeg,
+                                                                       cut < denDeg ? cut : denDeg,
+                                                                       t);
+                worst = std::max(worst, std::fabs(stored - cutPair));
+            }
+
+            ++cuts;
+
+            // The bound is the criterion's whole claim: a cut it admits is a cut
+            // whose move the budget is asserted to carry.
+            EXPECT_LE(worst, tail)
+                << "piece " << piece << " (F" << piece / 2 << ") cut " << cut << ": measured "
+                << worst << " against the criterion's " << tail;
+
+            const double ratio = tail > 0.0 ? worst / tail : 0.0;
+
+            if (ratio > tightest) {
+                tightest = ratio;
+                tightest_piece = static_cast<int>(piece);
+                tightest_cut = cut;
+            }
+        }
+    }
+
+    // A criterion every one of whose cuts is inadmissible measures nothing: its
+    // fallback would be reached by every scan and the scan itself untested.
+    EXPECT_GT(cuts, 0u) << "no cut of any rational piece is admissible";
+    EXPECT_GT(inadmissible, 0u) << "no cut was refused, so the denominator's floor never bit";
+    EXPECT_LT(tightest, 1.0) << "the tightest cut is the bound itself, which would say the "
+                                "measure is not a bound at all";
+
+    std::printf("\nthe pair criterion: %zu admissible cut(s), %zu refused by the denominator's "
+                "floor; tightest measured/bound %.4g at piece %d, cut %d\n",
+                cuts,
+                inadmissible,
+                tightest,
+                tightest_piece,
+                tightest_cut);
+}
+
+TEST(Rung, TheRationalRungIsBitIdenticalToItsCompileTimeInstantiation) {
+    const std::array<AccuracyTier, 7> tiers{AccuracyTier::kReference,
+                                            AccuracyTier::kRelaxed64,
+                                            AccuracyTier::kRelaxed256,
+                                            AccuracyTier::kRelaxed1024,
+                                            AccuracyTier::kRelaxed4096,
+                                            AccuracyTier::kRelaxed16384,
+                                            AccuracyTier::kRelaxed65536};
+
+    const std::array<double, 12> xs{1e-12, 0.3,    1.0,  1.0855252345349333,
+                                    2.5,   6.0,    11.0, 11.899848152108484,
+                                    14.0,  20.0,   28.9, 40.0};
+
+    for (std::size_t r = 0; r < tiers.size(); ++r) {
+        for (const boys::EvalScheme scheme :
+             {boys::EvalScheme::kSplitClenshaw, boys::EvalScheme::kHorner}) {
+            const PathFn path = scheme == boys::EvalScheme::kHorner ? kRationalHornerPaths[r]
+                                                                    : kRationalSplitPaths[r];
+
+            for (const double x : xs) {
+                std::array<double, 33> routed{};
+                std::array<double, 33> direct{};
+
+                BoysAllOrdersAtTier(tiers[r], boys::FitRoute::kRationalMinimax, scheme, 32, x,
+                                    routed.data());
+                path(32, x, direct.data());
+
+                for (int n = 0; n <= 32; ++n) {
+                    EXPECT_EQ(std::bit_cast<std::uint64_t>(routed[static_cast<std::size_t>(n)]),
+                              std::bit_cast<std::uint64_t>(direct[static_cast<std::size_t>(n)]))
+                        << "rung " << r << ", scheme " << static_cast<int>(scheme)
+                        << ", x = " << x << ": out[" << n << "] is not the instantiation's value";
+                }
+            }
+        }
+    }
+}
+
+TEST(Rung, EveryRationalRungHoldsItsDeclaredBoundOnTheReferenceGrid) {
+    const Grid& grid = Reference();
+
+    if (grid.xs.empty()) {
+        GTEST_SKIP() << "no reference grid";
+    }
+
+    std::vector<double> out(static_cast<std::size_t>(boys::kMaxBoysOrder) + 1);
+
+    std::printf("\n%-14s %-16s %10s %10s %10s %14s\n",
+                "rung",
+                "scheme",
+                "cells",
+                "met",
+                "bound-cov",
+                "worst/bound");
+
+    for (int t = static_cast<int>(AccuracyTier::kReference);
+         t <= static_cast<int>(AccuracyTier::kRelaxed65536);
+         ++t) {
+        const AccuracyTier tier = static_cast<AccuracyTier>(t);
+        const double m = AccuracyMultiplier(tier);
+        const double bound = m * kDeclaredBatchBase;
+
+        for (const boys::EvalScheme scheme :
+             {boys::EvalScheme::kSplitClenshaw, boys::EvalScheme::kHorner}) {
+            Sweep sweep;
+
+            for (std::size_t i = 0; i < grid.xs.size(); ++i) {
+                BoysAllOrdersAtTier(tier, boys::FitRoute::kRationalMinimax, scheme,
+                                    boys::kMaxBoysOrder, grid.xs[i], out.data());
+
+                for (int n = 0; n <= boys::kMaxBoysOrder; ++n) {
+                    const double ref = grid.values[static_cast<std::size_t>(n)][i];
+
+                    if (std::isnan(ref)) {
+                        continue;
+                    }
+
+                    sweep.Note(std::fabs(out[static_cast<std::size_t>(n)] - ref),
+                               n,
+                               grid.xs[i],
+                               ref,
+                               bound);
+                }
+            }
+
+            std::printf("%-14g %-16s %10zu %10zu %10zu %14.3g (n=%d, x=%.6g)\n",
+                        m,
+                        boys::EvalSchemeName(scheme),
+                        sweep.cells,
+                        sweep.met,
+                        sweep.bound_covered,
+                        sweep.worst / bound,
+                        sweep.worst_n,
+                        sweep.worst_x);
+
+            ASSERT_GT(sweep.cells, 0u) << "the reference grid measured nothing at m = " << m;
+            EXPECT_EQ(sweep.met, sweep.cells)
+                << "m = " << m << " at " << boys::EvalSchemeName(scheme) << ": worst "
+                << sweep.worst << " against " << bound << " at n = " << sweep.worst_n
+                << ", x = " << sweep.worst_x;
+            EXPECT_LT(sweep.bound_covered, sweep.cells)
+                << "m = " << m << ": every cell is bound-covered, so returning zero would pass";
+        }
+    }
+}
+
+TEST(Rung, TheRationalRungIsTheRoutesOwnAnswerAndNotTheDefaultEntries) {
+    // Naming the route at a rung has to change the answer, or the route was not
+    // carried: the default entry's rung is the Chebyshev route's, and the two
+    // routes' fits are different numbers over the interval the rational row
+    // serves. Measured and counted rather than asserted, because a route that
+    // agreed everywhere would be a selection that does nothing.
+    std::size_t cells = 0;
+    std::size_t differ = 0;
+
+    for (int t = static_cast<int>(AccuracyTier::kRelaxed64);
+         t <= static_cast<int>(AccuracyTier::kRelaxed65536);
+         ++t) {
+        const AccuracyTier tier = static_cast<AccuracyTier>(t);
+
+        for (double x = 1.09; x < kX0; x += 0.05) {
+            std::array<double, 33> rational{};
+            std::array<double, 33> shipped{};
+
+            BoysAllOrdersAtTier(tier, boys::FitRoute::kRationalMinimax,
+                                boys::EvalScheme::kSplitClenshaw, 32, x, rational.data());
+            BoysAllOrdersAtTier(tier, 32, x, shipped.data());
+
+            for (int n = 0; n <= 32; ++n) {
+                ++cells;
+                differ += rational[static_cast<std::size_t>(n)] !=
+                          shipped[static_cast<std::size_t>(n)];
+            }
+        }
+    }
+
+    EXPECT_GT(differ, 0u) << "the rational rung answers the default route's values everywhere: "
+                             "the route is not carried";
+    std::printf("\nthe rational rung differs from the default entry's rung in %zu of %zu cell(s)\n",
+                differ,
+                cells);
+}
+
 } // namespace

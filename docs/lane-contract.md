@@ -38,7 +38,11 @@ x below about 1.0855. That last figure belongs to the single-argument entry; the
 most 5.5e-14 throughout, so a caller using the batch form should read 5.5e-14.
 
 A multiplier, set at compile time or per call, is any value at or above 1, with no upper end.
-Raising it loosens the bound and reduces the work.
+Raising it loosens the bound and reduces the work **on the default route**, which pays for the
+looser bound with fewer stored coefficients to sum. The rational route is not relaxed by the six
+multipliers this library names, and its rung section below states why and with what figure: a
+caller who needs the rational route's fits to cost less has to ask for a different pair, which is
+a fit this revision does not carry.
 
 **This is the most accurate double the library produces.** The stored coefficients are rounded to
 double precision and hold only the sixteen or so significant digits a double can hold, so nothing
@@ -101,6 +105,64 @@ bar, and the rational route reaches it with fewer coefficients because it is ask
 **A rational fit costs one division per order**, where the split-Clenshaw Chebyshev form is
 division-free. That is a real difference in the work, and which side of it a machine lands on is its
 divide-to-multiply throughput — so no speed is claimed for either route here.
+
+### The rung, per route
+
+The multiplier is a third selector, and it acts on the route the call names rather than on the
+library: a rung cuts the named route's own stored fit to the degrees a criterion certifies for that
+multiplier. `BoysAllOrdersAtTier(tier, route, scheme, ...)` is where a caller names all three at run
+time. The two routes' criteria read different tables, and the difference is not a detail of the
+implementation:
+
+- **The Chebyshev route's rung** cuts the stored coefficient series by one degree `d'`, and the
+  dropped tail is `Δ(d') = Σ_{k>d'} |c_k|`, which bounds the truncation because every basis function
+  is at most one in modulus on the mapped interval. The table is `RegionADegrees`/`RegionBDegrees` in
+  `boys_effective_degrees.hpp`, one per (multiplier, lane role, coefficient basis).
+- **The rational route's rung** cuts the stored numerator and denominator together, to
+  `[m', k'] = [min(d', m), min(d', k)]`. A quotient's perturbation is not a coefficient sum, so the
+  measure is the two terms it actually has. With `δP = P − P'` and `δQ = Q − Q'`,
+
+  ```
+  R − R' = P/Q − P'/Q' = δP/Q − R'·δQ/Q
+  ```
+
+  exactly, and with `ΔP(d') = Σ_{j>m'} |p_j|`, `ΔQ(d') = Σ_{j>k'} |q_j|`, `SP = Σ_j |p_j|` and `Qlo`
+  a lower bound on `|Q|` over the piece,
+
+  ```
+  Δ_pair(d') = ( ΔP(d') + (SP / (Qlo − ΔQ(d'))) · ΔQ(d') ) / Qlo   ≥   sup |R − R'|
+  ```
+
+  — the numerator's dropped tail against the denominator's floor, plus the denominator's dropped
+  tail carried by the pair's value scale. `Qlo` is taken from `Q`'s own values on a 64-interval grid
+  less what `Q` can move between grid points (`Σ_j j|q_j| · h/2`), because `Σ_j |q_j|` exceeds 1 on
+  these pieces and the triangle bound says nothing. A cut whose floor does not clear its own `ΔQ` is
+  refused rather than admitted: nothing bounds the pair's scale there. The table is
+  `RationalRegionADegrees`/`RationalRegionBDegrees`, beside the polynomial ones.
+
+Both scans share one criterion — `Δ · A ≤ (m − 1) · B_region`, the smallest admissible `d'` in the
+evaluator's domain `{0,1,2,4,6,…}` — and both fall back to the untruncated fit when nothing smaller
+is admissible. For the polynomial family the fallback is safe because `Δ(deg) = 0`. The rational
+family's equivalent is a pair cut to itself: `δP = δQ = 0`, so `R − R' = 0` exactly, and the rung
+returns the route's stored pair bit for bit. A rung that cannot reach its budget therefore costs
+nothing and claims nothing, and no rung is left without an admissible cut.
+
+**The rational rungs do not relax the rational route at this revision, and this is a measured
+result rather than a fallback.** The smallest pairwise tail any truncating cut of any of the 66
+region-A pieces reaches is **5.644946e-09** (F24's second piece, cut 6 of its stored `7/5`); the
+smallest for the region-B seed is **6.843273e-06** (one numerator order dropped). The criterion
+admits a cut when `Δ_pair · A ≤ (m − 1)·5.5e-14`, so the first multiplier that carries the cheapest
+region-A cut is `m ≈ 102636` and the first that carries the region-B one is `m ≈ 1.24e8`. The
+largest multiplier `AccuracyTier` names is 65536, whose budget is 3.604425e-09. Every one of the
+twelve (route, scheme, rung) combinations above m = 1 therefore evaluates the stored pair, and the
+gate measures it doing so: the delivered figures are the uncut route's own, and the bound published
+for each rung is `m · 5.5e-14`.
+
+The region-A amplification is 1 here rather than the batch role's `w(b)`. The route reads one piece
+per order — the pieces are fitted for the values alone and do not survive the batch downward
+recursion's gain — so a cut's error reaches the value it was read for with nothing in between.
+Region B reads its seed at order 0 and carries it up, so its cut pays the same `A_B(n)` the shipped
+seed's does.
 
 ## float
 

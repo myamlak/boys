@@ -578,6 +578,47 @@ void BoysAllOrdersAtTier(AccuracyTier tier, int nmax, double x, double* out) noe
 void BoysAllOrdersAtTier(
     AccuracyTier tier, EvalScheme scheme, int nmax, double x, double* out) noexcept;
 
+/// The same batch entry with the fit route named as well as the tier and the
+/// scheme: every axis of the compile-time selection, at run time.
+///
+/// The rung and the route are two selectors of two different things, and until
+/// this overload there was no way to name both: a rung truncates the route's
+/// own fits to the degrees its criterion certifies, and the criterion reads the
+/// table the route evaluates. So a caller that wants the rational route at a
+/// relaxed budget wants this entry, and a caller that names only a tier gets
+/// the default route's rung, which is what \c BoysAllOrdersAtTier has always
+/// answered.
+///
+/// The rung is a property of the route rather than of the multiplier: the
+/// Chebyshev family's rung is a cut of its stored coefficients, and the
+/// rational family's is a cut of its stored numerator and denominator pair. The
+/// two cuts are derived by the same criterion and neither is a value the other
+/// route's table can express, so the pair is a combination this library serves
+/// rather than one of its axes alone.
+///
+/// \param tier   the tier
+/// \param route  the fit route
+/// \param scheme the evaluation scheme
+/// \param nmax   highest order, 0..kMaxBoysOrder
+/// \param x      argument, >= 0
+/// \param out    receives nmax + 1 values, out[k] = F_k(x)
+///
+/// \ingroup boys
+void BoysAllOrdersAtTier(
+    AccuracyTier tier, FitRoute route, EvalScheme scheme, int nmax, double x, double* out) noexcept;
+
+/// The same entry with the reference scheme named for the route; see the
+/// scheme-carrying overload above.
+///
+/// \param tier  the tier
+/// \param route the fit route
+/// \param nmax  highest order, 0..kMaxBoysOrder
+/// \param x     argument, >= 0
+/// \param out   receives nmax + 1 values, out[k] = F_k(x)
+///
+/// \ingroup boys
+void BoysAllOrdersAtTier(
+    AccuracyTier tier, FitRoute route, int nmax, double x, double* out) noexcept;
 
 /// F_n(x) in double precision, |F̂ − F| ≤ m·B_region per region (contract
 /// table in the file preamble; m = kAccuracyMultiplier).
@@ -585,11 +626,16 @@ void BoysAllOrdersAtTier(
 /// \tparam kAccuracyMultiplier the accuracy multiplier m >= 1.0; 1.0 = full
 ///         static accuracy, bit-identical to the certified lane; relaxes the
 ///         per-region bound to m·B_region (compile-time degree truncation,
-///         monotone in m). A relaxed rung truncates the shipped fits to their
-///         certified effective degrees, each certified against the coefficient
-///         table the policy's scheme sums, so it is a rung of the Chebyshev
-///         route: a policy naming the rational one is rejected rather than
-///         answered
+///         monotone in m). The rung is a cut of the named route's own fits: the
+///         Chebyshev route's stored coefficients are cut to the degree table of
+///         boys_effective_degrees.hpp, certified against the table the policy's
+///         scheme sums, and the rational route's stored numerator and
+///         denominator pair is cut by the same criterion, which reads a pair's
+///         dropped orders as the two terms a quotient's perturbation has rather
+///         than as one coefficient sum. Both routes are carried, at either
+///         scheme; the entries that reach their values through the shipped
+///         fits' own path rather than through the policy are the ones that
+///         refuse the rational route, and they say so where the call is named
 /// \tparam Policy the evaluation policy (\c EvalPolicy): the fit route, the
 ///         scheme its coefficients are summed in, and a single-precision
 ///         engine's budget, selected together. The default is the Chebyshev

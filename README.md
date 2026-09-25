@@ -66,7 +66,13 @@ over part of the range than over the rest. Every figure below holds for **all** 
 
 "ULP" is the last representable digit of the result in the format concerned. On the C++ surface the
 multiplier is any value at or above 1, with no upper end, and raising it loosens the bound and
-reduces the work. The C surface takes a sampled set instead, listed in its own header.
+reduces the work on the default route, which pays for the looser bound with fewer coefficients to
+sum. The rational route's rung is derived by the same criterion over its own stored numerator and
+denominator pair, and at the six multipliers this library names it certifies the stored pair
+unchanged — so naming a rung there loosens the bound and changes nothing about the work. What the
+criterion certifies, and the figure that makes the outcome checkable, are in
+[docs/lane-contract.md](docs/lane-contract.md). The C surface takes a sampled set instead, listed in
+its own header.
 
 The fp16 and bf16 rows are fp16 *I/O* around the fp32 engine, so their error is the engine's.
 
@@ -179,6 +185,16 @@ A route whose own fit has one stored form — the rational minimax family — ev
 way under either scheme, so naming a scheme changes the values only where the shipped family answers.
 Calls that name no policy at all compile the default pair, which is the Chebyshev route by the split
 Clenshaw recurrence.
+
+**The multiplier is a third selector, and it acts on the named route.** A rung cuts the route's own
+stored fit to the degrees a criterion certifies for that multiplier, and the two routes' criteria
+read different tables: the Chebyshev family's is a cut of its stored coefficient series, and the
+rational family's a cut of its stored numerator and denominator pair. So the pair of selectors is a
+combination rather than a redundancy, and it is offered on the per-argument entries and named at run
+time by `BoysAllOrdersAtTier(tier, route, scheme, ...)`. Each rung of each route carries a measured
+bound on the committed reference: [docs/lane-contract.md](docs/lane-contract.md) states what the two
+criteria derive and publishes the figures the gate measures, including the one that says the
+rational route's own rungs do not truncate at these six multipliers.
 
 ### The packing axis
 

@@ -821,6 +821,87 @@ void CheckTiers(Report& report) {
                 "an out-of-range tier evaluates as the reference tier, bit for bit");
     }
     Covered("boys::BoysAllOrdersAtTier");
+
+    // Documented: the tier and the route are two selectors of two different
+    // things, so the entry that names both answers the rung of the route it was
+    // given rather than the default route's rung. Judged against the boundary
+    // the route's own row reports: over an interval the rational route serves,
+    // naming it has to change the values, and the scheme-carrying and
+    // reference-scheme overloads have to agree with each other and with a
+    // direct call at the rung's own multiplier.
+    {
+        const auto& rows = boys::BoysFitRoutes();
+        double rationalFrom = 0.0;
+        double rationalHi = 0.0;
+
+        for (const boys::FitRouteInfo& row : rows)
+        {
+            if (row.route == boys::FitRoute::kRationalMinimax &&
+                row.region == boys::AccuracyRegion::kA)
+            {
+                rationalFrom = row.servesFrom;
+                rationalHi = row.hi;
+            }
+        }
+
+        const double x = 0.5 * (rationalFrom + rationalHi);
+
+        boys::BoysAllOrdersAtTier(boys::AccuracyTier::kRelaxed64,
+                                  boys::FitRoute::kRationalMinimax,
+                                  boys::kMaxBoysOrder,
+                                  x,
+                                  relaxed);
+        boys::BoysAllOrdersAtTier(boys::AccuracyTier::kRelaxed64, boys::kMaxBoysOrder, x, out);
+
+        std::size_t differs = 0;
+
+        for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+        {
+            Require(report,
+                    relaxed[n] != kUnwritten,
+                    "the route-carrying tier entry writes every order");
+            differs += relaxed[n] != out[n];
+        }
+
+        Require(report,
+                differs > 0,
+                "the route-carrying tier entry answers the route it was given, not the default");
+
+        boys::BoysAllOrdersAtTier(boys::AccuracyTier::kRelaxed64,
+                                  boys::FitRoute::kRationalMinimax,
+                                  boys::EvalScheme::kSplitClenshaw,
+                                  boys::kMaxBoysOrder,
+                                  x,
+                                  out);
+
+        for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+        {
+            Require(report,
+                    relaxed[n] == out[n],
+                    "the two- and three-selector tier overloads agree, bit for bit");
+        }
+
+        // The reference rung of the route is the uncut route's own entry: the
+        // tier that names no rung and the entry that names no rung are the same
+        // call, and the route table's figure is that call's.
+        boys::BoysAllOrdersAtTier(boys::AccuracyTier::kReference,
+                                  boys::FitRoute::kRationalMinimax,
+                                  boys::kMaxBoysOrder,
+                                  x,
+                                  relaxed);
+        boys::BoysAllOrdersWithRoute(
+            boys::FitRoute::kRationalMinimax, boys::kMaxBoysOrder, x, out);
+
+        for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+        {
+            Require(report,
+                    relaxed[n] == out[n],
+                    "the reference rung of the rational route is the uncut route, bit for bit");
+        }
+    }
+
+    Covered("boys::BoysAllOrdersAtTier (tier, route, scheme)");
+    Covered("boys::BoysAllOrdersAtTier (tier, route)");
 }
 
 /// BoysSingle, BoysAllOrders and BoysFixedN over the whole grid, at the default
@@ -1745,7 +1826,9 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
         }
     }
 
-    Require(report, routeFound, "BoysBackends names the scalar-fp64 arithmetic the scheme bounds are in");
+    Require(report,
+            routeFound,
+            "BoysBackends names the scalar-fp64 arithmetic the scheme bounds are in");
 
     for (const boys::EvalSchemeInfo& info : schemes)
     {

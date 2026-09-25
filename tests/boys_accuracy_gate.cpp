@@ -6617,6 +6617,18 @@ int main(int argc, char** argv) {
                         "rational fits are a minimax pair per interval, and a rung of them is "
                         "another pair at the degree the rung needs",
                         true});
+#else
+    // The rung is derived and carried. The refusal above is the shape of the
+    // debt, printed only where the probe finds the call does not build; here the
+    // probe compiled it, and the twelve combinations it used to account for are
+    // measured in the block below at that rung. Neither direction is silent:
+    // the probe decides which of the two is printed, and the combination count
+    // is the second reading of the same fact.
+    std::printf("  CARRIED: the route-carrying rung entry compiles, so the rational route's "
+                "rung is\n  derived and every combination on the two axes is measured in the "
+                "block below. The\n  probe is the reading that says so; a revision that dropped "
+                "the rung would print the\n  refusal instead, with the twelve counted as "
+                "owed\n");
 #endif
 #ifdef BOYS_GATE_REFUSES_F32_PAIR
     refusals.push_back({"route and scheme on the single-precision engines",
@@ -6711,13 +6723,6 @@ int main(int argc, char** argv) {
                 "takes the route\n  needs rows of its own before the selection means "
                 "anything\n");
 #endif
-#ifndef BOYS_GATE_REFUSES_RATIONAL_RUNG
-    ++liftedRefusals;
-    std::printf("  LIFTED: the rational route runs at a relaxed rung, and the combination block "
-                "above\n  is where that is measured - read its OWED list and its count: if the "
-                "twelve are\n  still owed, the table landed without the rows that certify "
-                "it\n");
-#endif
 #ifndef BOYS_GATE_REFUSES_F32_PAIR
     ++liftedRefusals;
     std::printf("  LIFTED: the single-precision engines accept a route or a scheme other than "
@@ -6798,10 +6803,20 @@ int main(int argc, char** argv) {
     //                            for it, and it is listed and counted as a debt
     //                            with the plan on the row. It does not fail this
     //                            check - what fails it is an offered combination
-    //                            whose bound is unmet or unpublished.
+    //                            whose bound is unmet or unpublished. No row is
+    //                            in this category at this revision: the rung of
+    //                            the rational route is derived, and naming it is
+    //                            a call the library answers.
     //   not runnable on this host  the host does not provide what the
     //                            combination needs. A fact about the machine,
     //                            counted apart, and it does not fail.
+    //
+    // The rung and the route are two selectors of two different things, which is
+    // why this cross is not redundant: a rung cuts the named route's own fits -
+    // the Chebyshev family's stored coefficients by one degree table, the
+    // rational family's stored numerator and denominator pair by another - and
+    // the pair is answered by BoysAllOrdersAtTier's route-carrying overload,
+    // which is where a caller expresses it.
     //
     // The condition this block carries is the owner's: every *runnable*
     // combination has its bounds measured and published. It applies to the
@@ -6873,38 +6888,13 @@ int main(int argc, char** argv) {
                     c.axes = Fmt("%s, %s, m = %g", combRouteNames[ri], info.name, mult);
                     c.bound = mult * kBoundDoubleBatch;
 
-                    // Not offered: the library refuses this call at the call
-                    // site, so no consumer can make it and no bound is owed for
-                    // it. It is a capability the library does not have, listed
-                    // here as backlog and not counted as a defect.
-                    //
-                    // The plan on the row is marked a GUESS and not a
-                    // derivation, because a rational approximant has no
-                    // coefficient series to truncate: a lower-order [m/k] pair is
-                    // a different approximant rather than a dropped tail, so its
-                    // error has to be established the way the shipped rational
-                    // table's was - generate the fit and measure it against the
-                    // reference over the interval, or argue it by
-                    // equioscillation. Summing dropped coefficients is a
-                    // polynomial criterion transplanted to a form that has none,
-                    // and it is recorded as the guess it is so that nothing is
-                    // built on it unexamined.
-                    if (t != 0 && combRoutes[ri] != boys::FitRoute::kChebyshev)
-                    {
-                        c.state = "not yet implemented, and owed: the library refuses this "
-                                  "call at the call site because the rung table does not "
-                                  "exist. The refusal is ours and not a property of the "
-                                  "combination. The plan is a guess, not a derivation: a "
-                                  "lower-order [m/k] pair is a different approximant rather "
-                                  "than a truncated series, so its error must be established "
-                                  "as the shipped rational table's was - fit generated, "
-                                  "measured against the reference - or by equioscillation. A "
-                                  "coefficient tail is a polynomial criterion and does not "
-                                  "apply";
-                        combinations.push_back(std::move(c));
-                        continue;
-                    }
-
+                    // Every combination on the two axes is offered, so every one
+                    // of them is measured here: the rung is a property of the
+                    // route rather than of the multiplier (the Chebyshev family's
+                    // is a cut of its stored coefficients and the rational
+                    // family's a cut of its stored numerator and denominator
+                    // pair), and naming the two together is a call this library
+                    // answers.
                     for (std::size_t i = 0; i < count; ++i)
                     {
                         if (t == 0)
@@ -6914,7 +6904,7 @@ int main(int argc, char** argv) {
                         } else
                         {
                             boys::BoysAllOrdersAtTier(
-                                tier, info.scheme, nmax, ref.x[i], out.data());
+                                tier, combRoutes[ri], info.scheme, nmax, ref.x[i], out.data());
                         }
 
                         for (int n = 0; n <= nmax; ++n)
@@ -7020,11 +7010,12 @@ int main(int argc, char** argv) {
                 combCertified,
                 combinations.size() - combOwed - combHostLimited,
                 combOfferedBad);
-    std::printf("  NOT YET IMPLEMENTED and owed: %zu. The library refuses these at the call "
-                "site\n  because the rung table does not exist. The refusal is ours and not a "
-                "property of\n  the combinations, and each is owed to a consumer who asks for "
-                "it - so they are\n  listed and counted rather than dismissed. %zu "
-                "combination(s) are not runnable on\n  this host\n",
+    std::printf("  NOT YET IMPLEMENTED and owed: %zu. A combination lands here when the "
+                "library\n  refuses the call at the call site because the table it would need "
+                "does not exist.\n  The refusal is the library's own and not a property of the "
+                "combinations, and each\n  such combination is owed to a consumer who asks for "
+                "it - so they are listed and\n  counted rather than dismissed. %zu "
+                "combination(s) are not runnable on this host\n",
                 combOwed,
                 combHostLimited);
 

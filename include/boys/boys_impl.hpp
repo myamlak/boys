@@ -371,6 +371,98 @@ struct RationalFit {
     };
 };
 
+// One rational piece at a cut pair, in the mapped argument the shipped
+// evaluation reads it in. The cut keeps the low-order terms of both parts: the
+// numerator's p_0..p_{numDeg} and the denominator's q_1..q_{denDeg}. The
+// denominator's coefficients sit above the *stored* numerator, so the position
+// of q_j is the piece's full numerator degree's, not the cut's.
+inline double RationalPieceAtCut(std::size_t index, int numDeg, int denDeg, double t) noexcept {
+    const double* c = detail::kRatACoeffs.data() + detail::kRatAOffset[index];
+    const int storedNumDeg = detail::kRatANumDeg[index];
+    double num = c[numDeg];
+
+    for (int j = numDeg - 1; j >= 0; --j)
+    {
+        num = backend::ScalarFp64::MulAdd(num, t, c[j]);
+    }
+
+    if (denDeg == 0)
+    {
+        return num;
+    }
+
+    double den = c[storedNumDeg + denDeg];
+
+    for (int j = denDeg - 1; j >= 1; --j)
+    {
+        den = backend::ScalarFp64::MulAdd(den, t, c[storedNumDeg + j]);
+    }
+
+    return num / backend::ScalarFp64::MulAdd(den, t, 1.0);
+}
+
+// The region-B seed at a cut pair; same reading as RationalFit::RegionBSeed.
+inline double RationalSeedAtCut(int numDeg, int denDeg, double t) noexcept {
+    double num = detail::kRatBnum[numDeg];
+
+    for (int j = numDeg - 1; j >= 0; --j)
+    {
+        num = backend::ScalarFp64::MulAdd(num, t, detail::kRatBnum[j]);
+    }
+
+    if (denDeg == 0)
+    {
+        return num;
+    }
+
+    double den = detail::kRatBden[denDeg - 1];
+
+    for (int j = denDeg - 2; j >= 0; --j)
+    {
+        den = backend::ScalarFp64::MulAdd(den, t, detail::kRatBden[j]);
+    }
+
+    return num / backend::ScalarFp64::MulAdd(den, t, 1.0);
+}
+
+// The rational route at a relaxed rung: the same pieces, the same seed and the
+// same reading as RationalFit, at the pair each of them was certified for at
+// this multiplier. A rung of the rational route is a rung of its own pairs
+// rather than of the shipped fits, so it is carried by the route's own body:
+// the polynomial rung's shape - seed at the top order, then the batch downward
+// recursion - is the one this family cannot take, because its pieces are fitted
+// for the values alone.
+template <double kAccuracyMultiplier>
+struct RationalFitAtRung {
+    // The pair at each region-A piece and at the region-B seed, from the
+    // criterion in boys_effective_degrees.hpp.
+    static constexpr detail::RationalRegionAPairs kPairsA =
+        detail::RationalRegionADegrees<kAccuracyMultiplier>();
+    static constexpr detail::RationalRegionBPairs kPairsB =
+        detail::RationalRegionBDegrees<kAccuracyMultiplier>();
+
+    // The route hands each order over at its own region-A boundary, as the
+    // uncut rational family does: below it the shipped lane's value is the one
+    // that order is documented at.
+    static constexpr double kRegionAFitsFrom = detail::kRatARouteLo;
+
+    static double EvalPiece(std::size_t index, double t) noexcept {
+        return RationalPieceAtCut(index, kPairsA.num[index], kPairsA.den[index], t);
+    }
+
+    static double RegionBSeed(double x) noexcept {
+        const double t = 2.0 * (x - kX0) / (kX1 - kX0) - 1.0;
+        return RationalSeedAtCut(kPairsB.num[0], kPairsB.den[0], t);
+    }
+
+    // Each of the band's orders is its own fit, as it is on the uncut route.
+    struct BandSource {
+        explicit BandSource(double) noexcept {}
+
+        double Next(int l, double x) noexcept { return RegionAValue<RationalFitAtRung>(l, x); }
+    };
+};
+
 // Region-A seed F_order(x) of the Chebyshev route at a scheme, for the lanes
 // and the reports that read one fit rather than a whole route.
 template <EvalScheme kScheme = kDefaultEvalScheme>
@@ -489,9 +581,13 @@ inline float RegionBSeedF32WithDegrees(float x, int degree) noexcept {
 // recurrences without a parameter per axis: the family is Policy::Fit, the
 // scheme is Policy::kScheme, and the tail orders an order's own fit does not
 // answer are the shipped family's at that scheme.
-template <EvalPolicyLike Policy>
+// The fit is the policy's by default and is overridden only by the relaxed rung
+// of a route whose rung is a fit of its own rather than a cut of the shipped
+// one (see RationalFitAtRung); everything else about the body - the zero
+// argument, the region split, the per-order rule, the domains - is the same
+// under either, which is why the rung is a parameter here and not a second body.
+template <EvalPolicyLike Policy, typename Fit = typename Policy::Fit>
 void AllOrdersBody(int nmax, double x, double* out) noexcept {
-    using Fit = typename Policy::Fit;
     using Shipped = ChebyshevFit<Policy::kScheme>;
 
     static_assert(FitPolicy<Fit>,
@@ -592,10 +688,10 @@ void AllOrdersBody(int nmax, double x, double* out) noexcept {
     }
 }
 
-// One order at one argument, in the policy's family and scheme.
-template <EvalPolicyLike Policy>
+// One order at one argument, in the policy's family and scheme. The fit is
+// overridden by the relaxed rung as it is in AllOrdersBody, for the same reason.
+template <EvalPolicyLike Policy, typename Fit = typename Policy::Fit>
 double SingleOrder(int n, double x) noexcept {
-    using Fit = typename Policy::Fit;
     using Shipped = ChebyshevFit<Policy::kScheme>;
 
     static_assert(FitPolicy<Fit>,
@@ -656,27 +752,28 @@ double SingleOrder(int n, double x) noexcept {
 // family, the scheme and the single-precision budget arrive as the policy's
 // fields, so a further axis does not reopen these signatures.
 
-// The relaxation path's route, and the batch entries' route. A relaxed rung
-// truncates the shipped fits to their certified effective degrees and no other
-// family carries such a degree table, so every m > 1 branch asks for the
-// shipped route here: the combination is rejected where the rung is
-// instantiated, with the reason, rather than silently evaluating the shipped
-// fits for a caller who named another route.
+// The route the batch entries' region bodies carry, and the one the fixed-order
+// entry carries. Each is the shipped one at every rung: those bodies arrive at
+// their values by a path of their own - the batch's region A seeds its downward
+// recursion from the top order's stored fit and recurses, region B seeds its
+// upward recursion from the stored seed - and they read the shipped tables
+// through it. A policy naming the rational route is rejected where the call is
+// named, with the reason, rather than answered with the shipped fits under the
+// other route's name.
 //
-// The many-argument and fixed-order entries ask for it at every rung, and that
-// is their own scope rather than the rung's: their region bodies read the
-// shipped family's seed and per-order fits directly (BoysAllNBodyRegionB,
-// BoysFixedNImpl), so a policy naming the rational route would be answered with
-// the shipped fits while reporting the route it asked for. The per-argument
-// entries carry the route because their bodies take it from the policy's fit;
-// these do not, and a refusal is what says so.
+// The per-argument entries do not ask for it, because their bodies take the fit
+// from the policy: they carry either route at either rung, and the rational one
+// through RationalFitAtRung.
 template <EvalPolicyLike Policy>
 constexpr void RequireShippedRoute() noexcept
 {
     static_assert(Policy::kRoute == kDefaultFitRoute,
-                  "a relaxed rung truncates the shipped fits to their certified effective "
-                  "degrees, and the rational minimax fits carry no such degree table: the "
-                  "multiplier selects a rung of the shipped route only");
+                  "this body reaches its values through the shipped fits' own path - the "
+                  "downward recursion from a stored piece, or the upward recursion from a "
+                  "stored seed - and reads the shipped tables through it: the rational minimax "
+                  "route is carried on the per-argument entries, which take their fit from the "
+                  "policy, and a policy naming it here is rejected rather than answered with "
+                  "the shipped fits under the other route's name");
 }
 
 // The many-argument batch entries' route: the shipped one, at every rung.
@@ -720,6 +817,14 @@ double BoysSingleImpl(int n, double x) noexcept {
     if constexpr (kAccuracyMultiplier == 1.0)
     {
         return SingleOrder<Policy>(n, x);
+    } else if constexpr (Policy::kRoute == FitRoute::kRationalMinimax)
+    {
+        // A rung of the rational route: the route's own body at the pair the
+        // rung's criterion certifies. The body is the same one the uncut route
+        // runs, so the rung cannot reach a value the route does not serve, and
+        // the arguments the route's fits do not cover keep the shipped lane's
+        // answer exactly as they do at m = 1.
+        return SingleOrder<Policy, RationalFitAtRung<kAccuracyMultiplier>>(n, x);
     } else
     {
         RequireShippedRoute<Policy>();
@@ -795,12 +900,24 @@ void BoysAllOrdersImpl(int nmax, double x, double* out) noexcept {
         {
             AllOrdersBody<Policy>(nmax, x, out);
         }
+    } else if constexpr (Policy::kRoute == FitRoute::kRationalMinimax)
+    {
+        static_assert(Policy::kPack == PackAxis::kArguments,
+                      "the across-orders packed lane reads the shipped region-A piece table and "
+                      "nothing else, so it carries no rung of either route: a relaxed multiplier "
+                      "on the orders axis is not a combination this library serves");
+        // A rung of the rational route: the route's own body at the pair the
+        // rung's criterion certifies, exactly as the single-order entry runs it.
+        // The rung is not the polynomial rung's shape - seed at the top order
+        // and recurse down - because the cut pair is judged for the value it is
+        // read for, and the batch recursion's gain is what the route's pieces
+        // were never fitted through.
+        AllOrdersBody<Policy, RationalFitAtRung<kAccuracyMultiplier>>(nmax, x, out);
     } else
     {
         static_assert(Policy::kRoute == kDefaultFitRoute,
-                      "a relaxed rung truncates the shipped fits to their certified effective "
-                      "degrees, and the rational minimax fits carry no such degree table: the "
-                      "multiplier selects a rung of the shipped route only");
+                      "a policy naming a route outside the FitRoute enumeration is not one this "
+                      "library serves: name FitRoute::kChebyshev or FitRoute::kRationalMinimax");
         static_assert(Policy::kPack == PackAxis::kArguments,
                       "the across-orders packed lane evaluates every stored fit at its full "
                       "degree and reads no effective-degree table, so it carries no rung: a "

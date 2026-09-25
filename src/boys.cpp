@@ -151,6 +151,40 @@ void BoysAllOrdersAtTier(
     AllOrdersAtTier<EvalPolicy<>>(tier, nmax, x, out);
 }
 
+void BoysAllOrdersAtTier(
+    AccuracyTier tier, FitRoute route, int nmax, double x, double* out) noexcept {
+    BoysAllOrdersAtTier(tier, route, kDefaultEvalScheme, nmax, x, out);
+}
+
+void BoysAllOrdersAtTier(AccuracyTier tier,
+                         FitRoute route,
+                         EvalScheme scheme,
+                         int nmax,
+                         double x,
+                         double* out) noexcept {
+    // The same shape as BoysAllOrdersWithRoute, one axis wider: the route and
+    // the scheme are compile-time choices and the tier is a run-time one, so the
+    // pair is the template argument and the tier stays the switch inside. Both
+    // selectors are answered as named - the rung's own body for the rung, the
+    // named route's fits for the route - so a caller who names the pair is not
+    // handed one of them under the other's name.
+    if (route == FitRoute::kRationalMinimax)
+    {
+        if (scheme == EvalScheme::kHorner)
+        {
+            AllOrdersAtTier<EvalPolicy<FitRoute::kRationalMinimax, EvalScheme::kHorner>>(
+                tier, nmax, x, out);
+            return;
+        }
+
+        AllOrdersAtTier<EvalPolicy<FitRoute::kRationalMinimax, kDefaultEvalScheme>>(
+            tier, nmax, x, out);
+        return;
+    }
+
+    BoysAllOrdersAtTier(tier, scheme, nmax, x, out);
+}
+
 std::span<const FitRouteInfo> BoysFitRoutes() noexcept {
     // The rows are the generated header's own measured figures rather than
     // numbers repeated here, so a table and the fits it describes cannot drift
