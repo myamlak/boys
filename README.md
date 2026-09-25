@@ -78,7 +78,11 @@ denominator pair, and at the six multipliers this library names it certifies the
 unchanged — so naming a rung there loosens the bound and changes nothing about the work. What the
 criterion certifies, and the figure that makes the outcome checkable, are in
 [docs/lane-contract.md](docs/lane-contract.md). The C surface takes a sampled set instead, listed in
-its own header.
+its own header, and so do the CUDA lane's device-callable entries, because the rung a call names
+has to be the one `BoysCuda::DeviceTables` was instantiated with: the relaxed degree tables are
+resident for one rung at a time, and a call naming any other rung returns
+`BoysDeviceStatus::kMultiplierNotResident` and writes nothing. m = 1 needs no such table and is
+always served.
 
 The fp16 and bf16 rows are fp16 *I/O* around the fp32 engine, so their error is the engine's.
 

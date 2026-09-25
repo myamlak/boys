@@ -18,6 +18,7 @@
 extern "C" {
 int BoysCudaUploadTables();
 int BoysCudaDeviceTableAddresses(void** out);
+int BoysCudaEffTablesResident(double m);
 int BoysCudaUploadEffTables(double m, const int* degA, const int* degB);
 int BoysCudaLaunchSingleF32(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
@@ -121,10 +122,15 @@ namespace {
 constexpr int kEffLaneCount = 6;
 constexpr int kEffMaxOrder = detail::kMaxOrder;
 constexpr int kEffMaxPieces = 12;
+// The flat relaxed image's lane stride: the wider of the two piece tables,
+// which is the same count boys_cuda.cu cuts its own copy of it with.
+constexpr int kRelaxedStride = detail::kPieceStart[detail::kMaxOrder + 1] >
+                                       detail::f32::kPieceStart[detail::kMaxOrder + 1]
+                                   ? detail::kPieceStart[detail::kMaxOrder + 1]
+                                   : detail::f32::kPieceStart[detail::kMaxOrder + 1];
 
 std::array<int, kEffLaneCount*(kEffMaxOrder + 1) * kEffMaxPieces> gEffDegA{};
 std::array<int, kEffLaneCount*(kEffMaxOrder + 1)> gEffDegB{};
-double gEffCachedM = -1.0;
 
 template <double kAccuracyMultiplier, detail::BoysRole kRole, bool kDoublePieces>
 void FillEffLane(int lane) {
@@ -156,7 +162,10 @@ void FillEffLane(int lane) {
 // piece table even for the float/fp16 batch lanes (RoleUsesDoubleTables —
 // the downward recursion amplifies float seed errors beyond their budgets).
 template <double kAccuracyMultiplier> BoysStatus EnsureEffTables() {
-    if (gEffCachedM == kAccuracyMultiplier)
+    // Whether the tables are already resident is the .cu's answer and not a
+    // cache kept here: a cache keyed on m alone cannot see a device switch, and
+    // would then report one device's tables as another's.
+    if (BoysCudaEffTablesResident(kAccuracyMultiplier) == 1)
     {
         return BoysStatus::kSuccess;
     }
@@ -168,16 +177,8 @@ template <double kAccuracyMultiplier> BoysStatus EnsureEffTables() {
     FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Fp16Single, false>(4);
     FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Fp16Batch, true>(5);
 
-    const auto status = FromLaunchCode(
+    return FromLaunchCode(
         BoysCudaUploadEffTables(kAccuracyMultiplier, gEffDegA.data(), gEffDegB.data()));
-
-    if (status != BoysStatus::kSuccess)
-    {
-        return status;
-    }
-
-    gEffCachedM = kAccuracyMultiplier;
-    return BoysStatus::kSuccess;
 }
 
 } // namespace
@@ -186,6 +187,7 @@ BoysStatus BoysCuda::InitializeTables() {
     return FromLaunchCode(BoysCudaUploadTables());
 }
 
+template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::DeviceTables(BoysDeviceTables* out) {
     if (out == nullptr)
     {
@@ -194,14 +196,30 @@ BoysStatus BoysCuda::DeviceTables(BoysDeviceTables* out) {
 
     // The address order BoysCudaDeviceTableAddresses fills, one slot per
     // symbol: the double lane's pieceStart, offset, a, b, deg, coeffs and
-    // region-B seed, then the float lane's seven. Both sides state the order;
-    // the .cu cannot name this type and this file cannot name a symbol.
-    void* addresses[14] = {};
+    // region-B seed, then the float lane's seven, then the relaxed image's
+    // three — the resident rung's scalar, its region-A degrees and its
+    // region-B degrees. Both sides state the order; the .cu cannot name this
+    // type and this file cannot name a symbol.
+    void* addresses[17] = {};
     const BoysStatus status = FromLaunchCode(BoysCudaDeviceTableAddresses(addresses));
 
     if (status != BoysStatus::kSuccess)
     {
         return status;
+    }
+
+    // The rung is made resident before the handle that reads it is handed over,
+    // so a caller that got a handle has a rung and not only a promise of one.
+    // The full-accuracy tables are not in that image: a call at m = 1 has
+    // nothing to upload and leaves whatever relaxed rung is resident in place.
+    if constexpr (kAccuracyMultiplier != kBoysFullAccuracyMultiplier)
+    {
+        const BoysStatus rung = EnsureEffTables<kAccuracyMultiplier>();
+
+        if (rung != BoysStatus::kSuccess)
+        {
+            return rung;
+        }
     }
 
     BoysDeviceTables tables;
@@ -221,6 +239,18 @@ BoysStatus BoysCuda::DeviceTables(BoysDeviceTables* out) {
     tables.coeffs32 = static_cast<const float*>(addresses[12]);
     tables.bSeedCoeffs32 = static_cast<const float*>(addresses[13]);
     tables.bSeedDeg32 = detail::f32::kBDeg;
+    tables.relaxedRung = static_cast<const double*>(addresses[14]);
+    const int* const relaxedA = static_cast<const int*>(addresses[15]);
+    const int* const relaxedB = static_cast<const int*>(addresses[16]);
+
+    for (int lane = 0; lane < kEffLaneCount; ++lane)
+    {
+        // The flat image's lane stride is the wider of the two piece tables
+        // (boys_cuda.cu counts the same one from the same constants), so one
+        // axis serves both.
+        tables.relaxedDegA[lane] = relaxedA + lane * kRelaxedStride;
+        tables.relaxedDegB[lane] = relaxedB + lane * (kEffMaxOrder + 1);
+    }
 
     *out = tables;
     return BoysStatus::kSuccess;
@@ -588,5 +618,16 @@ template BoysStatus BoysCuda::SingleF16<1e8>(const int*, const F16*, F16*, std::
 template BoysStatus BoysCuda::AllOrdersF16<1e8>(const int*, const F16*, F16*, std::size_t, void*);
 template BoysStatus BoysCuda::AllNF16<1e8>(int, const F16*, F16*, std::size_t, void*);
 #endif
+
+// The handle for each rung the lane instantiates. m = 1 is the default
+// argument's own instantiation and is the one every existing caller reaches;
+// the rest are the rungs a device entry can be asked for, and each makes its
+// own rung resident.
+template BoysStatus BoysCuda::DeviceTables<kBoysFullAccuracyMultiplier>(BoysDeviceTables*);
+template BoysStatus BoysCuda::DeviceTables<2.0>(BoysDeviceTables*);
+template BoysStatus BoysCuda::DeviceTables<10.0>(BoysDeviceTables*);
+template BoysStatus BoysCuda::DeviceTables<100.0>(BoysDeviceTables*);
+template BoysStatus BoysCuda::DeviceTables<1e4>(BoysDeviceTables*);
+template BoysStatus BoysCuda::DeviceTables<1e8>(BoysDeviceTables*);
 
 } // namespace boys
