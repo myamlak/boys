@@ -849,8 +849,10 @@ int main(int argc, char** argv) {
     const int kOrders = AddClaim("double batch", "all-orders", kBoundDoubleBatch);
     const int kFixedN = AddClaim("double batch", "fixed-n", kBoundDoubleBatch);
     const int kAllN = AddClaim("double batch", "all-n", kBoundDoubleBatch);
+    const int kAllNAtOrders = AddClaim("double batch", "all-n at-orders", kBoundDoubleBatch);
     const int kFloatSingle = AddClaim("float single", "all", kBoundFloat);
     const int kFloatOrders = AddClaim("float batch", "all", kBoundFloat);
+    const int kFloatAllN = AddClaim("float batch", "all-n", kBoundFloat);
     const int kF16Single = AddClaim("fp16 store-half", "single", kBoundHalfBase);
     const int kF16Orders = AddClaim("fp16 store-half", "batch", kBoundHalfBase);
     const int kBf16Single = AddClaim("bf16 store-half", "single", kBoundHalfBase);
@@ -1179,6 +1181,62 @@ int main(int argc, char** argv) {
                 const std::size_t i = perm[j];
                 const double got = allOut[ref.Index(n, j)];
                 Measure(kAllN,
+                        n,
+                        ref.x[i],
+                        got,
+                        ref.v[ref.Index(n, i)],
+                        ref.decade[ref.Index(n, i)],
+                        kBoundDoubleBatch,
+                        Unrepresentable(got, -1022));
+            }
+        }
+    }
+
+    // ---- double batch: the per-element top order entry ---------------------
+    // Two patterns, because the entry's shape is what makes the first one
+    // interesting and not what makes it complete. The ragged pattern gives each
+    // argument a top order of its own, so the columns stop at different depths
+    // and the planes above a column are the ones the entry must leave alone; it
+    // is swept on its own cells. The uniform pattern gives every argument the
+    // grid's own nmax, which puts the entry on exactly the cells the all-n block
+    // above measures - so a bound the ragged pattern's tops happen not to reach
+    // is still measured, on the same arguments and the same reference.
+    {
+        std::vector<int> tops(count);
+        std::vector<double> out(count * static_cast<std::size_t>(nmax + 1));
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            tops[i] = nmax - static_cast<int>(i % static_cast<std::size_t>(nmax + 1));
+        }
+
+        boys::BoysAllNAtOrders(tops.data(), ref.x.data(), out.data(), count);
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            for (int n = 0; n <= tops[i]; ++n)
+            {
+                const double got = out[ref.Index(n, i)];
+                Measure(kAllNAtOrders,
+                        n,
+                        ref.x[i],
+                        got,
+                        ref.v[ref.Index(n, i)],
+                        ref.decade[ref.Index(n, i)],
+                        kBoundDoubleBatch,
+                        Unrepresentable(got, -1022));
+            }
+        }
+
+        std::fill(tops.begin(), tops.end(), nmax);
+        boys::BoysAllNAtOrders(tops.data(), ref.x.data(), out.data(), count);
+
+        for (int n = 0; n <= nmax; ++n)
+        {
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                const double got = out[ref.Index(n, i)];
+                Measure(kAllNAtOrders,
                         n,
                         ref.x[i],
                         got,
@@ -1773,6 +1831,35 @@ int main(int argc, char** argv) {
                         kBoundFloat,
                         out[static_cast<std::size_t>(n)] == 0.0f ||
                             std::fabs(asDouble) < std::numeric_limits<float>::min());
+            }
+        }
+
+        // The float lane's all-N batch: the same cells as the all-orders entry
+        // above, through the entry that carries the array shape on this lane.
+        std::vector<float> argsF(count);
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            argsF[i] = static_cast<float>(ref.xf[i]);
+        }
+
+        std::vector<float> allN(count * static_cast<std::size_t>(nmax + 1));
+        boys::BoysAllNF32(nmax, argsF.data(), allN.data(), count);
+
+        for (int n = 0; n <= nmax; ++n)
+        {
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                const std::size_t k = ref.Index(n, i);
+                const double asDouble = static_cast<double>(allN[k]);
+                Measure(kFloatAllN,
+                        n,
+                        ref.xf[i],
+                        asDouble,
+                        ref.vf[k],
+                        ref.decadeF[k],
+                        kBoundFloat,
+                        allN[k] == 0.0f || std::fabs(asDouble) < std::numeric_limits<float>::min());
             }
         }
     }
@@ -3123,12 +3210,13 @@ int main(int argc, char** argv) {
     // The call shape a row is one of. Each is a public entry, and each reads the
     // scheme its policy names somewhere between the call site and the fit.
     enum class SchemeEntryKind : std::uint8_t {
-        kSingle,     // BoysSingle: one order at one argument
-        kOrders,     // BoysAllOrders: every order at one argument
-        kFixedN,     // BoysFixedN: one order over the arguments of an array
-        kAllN,       // BoysAllN: every order over an array, the grouping done inside
-        kAllNSorted, // BoysAllN with the BoysSortedArgs overload
-        kTierEntry,  // BoysAllOrdersAtTier: the scheme named at run time
+        kSingle,       // BoysSingle: one order at one argument
+        kOrders,       // BoysAllOrders: every order at one argument
+        kFixedN,       // BoysFixedN: one order over the arguments of an array
+        kAllN,         // BoysAllN: every order over an array, the grouping done inside
+        kAllNSorted,   // BoysAllN with the BoysSortedArgs overload
+        kAllNAtOrders, // BoysAllNAtOrders: every order over an array, a top order per argument
+        kTierEntry,    // BoysAllOrdersAtTier: the scheme named at run time
     };
 
     struct SchemeEntry {
@@ -3159,6 +3247,7 @@ int main(int argc, char** argv) {
         {"fixed-n entry", "m = 1", SchemeEntryKind::kFixedN, 1.0},
         {"all-n entry", "m = 1", SchemeEntryKind::kAllN, 1.0},
         {"all-n sorted", "m = 1", SchemeEntryKind::kAllNSorted, 1.0},
+        {"all-n at-orders entry", "m = 1", SchemeEntryKind::kAllNAtOrders, 1.0},
         {"single entry", "m = 64", SchemeEntryKind::kSingle, 64.0},
         {"orders entry", "m = 64", SchemeEntryKind::kOrders, 64.0},
         {"fixed-n entry", "m = 64", SchemeEntryKind::kFixedN, 64.0},
@@ -3441,6 +3530,53 @@ int main(int argc, char** argv) {
                     if constexpr (kFirst)
                     {
                         note(a[p], b[p], ref.x[i]);
+                    }
+                }
+            }
+
+            break;
+        }
+
+        case SchemeEntryKind::kAllNAtOrders: {
+            // The entry's own shape: a top order per argument, so the planes a
+            // scheme reaches are read on the columns that run that deep. The
+            // two readings share the top array, which is what makes them a
+            // carriage comparison rather than two different calls.
+            std::vector<int> tops(count);
+
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                tops[i] = nmax - static_cast<int>(i % static_cast<std::size_t>(nmax + 1));
+            }
+
+            std::vector<double> a(count * static_cast<std::size_t>(nmax + 1));
+            std::vector<double> b(count * static_cast<std::size_t>(nmax + 1));
+            boys::BoysAllNAtOrders<kM, SchemePolicy<kScheme>>(
+                tops.data(), ref.x.data(), a.data(), count);
+
+            if constexpr (kFirst)
+            {
+                boys::BoysAllNAtOrders<kM, SchemePolicy<kOther>>(
+                    tops.data(), ref.x.data(), b.data(), count);
+            }
+
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                for (int n = 0; n <= tops[i]; ++n)
+                {
+                    const std::size_t k = ref.Index(n, i);
+                    MeasureAt(acc,
+                              n,
+                              ref.x[i],
+                              a[k],
+                              ref.v[k],
+                              ref.decade[k],
+                              e.multiplier * kBoundDoubleBatch,
+                              Unrepresentable(a[k], -1022));
+
+                    if constexpr (kFirst)
+                    {
+                        note(a[k], b[k], ref.x[i]);
                     }
                 }
             }
@@ -4012,14 +4148,14 @@ int main(int argc, char** argv) {
     add("README.double.batch",
         "double batch: 5.5e-14 in every region, all entries",
         "README accuracy contract (four-region table)",
-        verdictOf({kOrders, kFixedN, kAllN}),
-        worstOf({kOrders, kFixedN, kAllN}));
+        verdictOf({kOrders, kFixedN, kAllN, kAllNAtOrders}),
+        worstOf({kOrders, kFixedN, kAllN, kAllNAtOrders}));
 
     add("README.float",
         "float single and batch: 1.5e-7 absolute at m = 1, the same in every region",
         "README accuracy contract",
-        verdictOf({kFloatSingle, kFloatOrders}),
-        worstOf({kFloatSingle, kFloatOrders}));
+        verdictOf({kFloatSingle, kFloatOrders, kFloatAllN}),
+        worstOf({kFloatSingle, kFloatOrders, kFloatAllN}));
 
     add("README.half",
         "fp16 and bf16 store-half lanes: m*1e-7 + one half-ULP, single and batch",

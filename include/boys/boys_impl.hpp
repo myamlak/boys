@@ -1268,6 +1268,35 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
     }
 }
 
+// The float lane's all-N batch: the per-argument all-orders body at every
+// argument, the results scattered into the caller's planes. The AVX2 tier is
+// double and half only - there is no packed float region kernel - so this entry
+// has no homogeneous run to hand to a lane, no scratch to ask the caller for,
+// and no speed of its own to claim over the same loop written at the call site.
+// What it carries is the shape: the one BoysAllN has in the double lane and
+// BoysCuda::AllNF32 has on the device.
+template <double kAccuracyMultiplier, EvalPolicyLike Policy>
+void BoysAllNF32Impl(int nmax, const float* x, float* out, std::size_t count) noexcept {
+    static_assert(kAccuracyMultiplier >= 1.0,
+                  "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
+    assert(nmax >= 0 && nmax <= kMaxBoysOrder);
+    assert(count == 0 || x != nullptr);
+    assert(count == 0 || out != nullptr);
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        assert(x[i] >= 0.0f);
+
+        float row[kMaxBoysOrder + 1];
+        BoysAllOrdersF32Impl<kAccuracyMultiplier, Policy>(nmax, x[i], row);
+
+        for (int l = 0; l <= nmax; ++l)
+        {
+            out[static_cast<std::size_t>(l) * count + i] = row[static_cast<std::size_t>(l)];
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // The region kernels (internal: defined in boys_simd.cpp)
 // ---------------------------------------------------------------------------
@@ -1886,6 +1915,38 @@ void BoysAllNSortedImpl(int nmax,
     }
 }
 
+// The per-element-top-order batch: the per-argument all-orders body at each
+// argument's own top order, scattered into the caller's planes. The tops differ
+// per element, so a run has no common nmax to be grouped at and this entry has
+// nothing to group; its whole content is the layout, and the cells above each
+// column's own top order, which it leaves exactly as the caller left them.
+//
+// The body is the per-argument entry's, so this entry takes the policies that
+// entry takes - including a named fit route, which the plane entry (whose runs
+// carry the shipped fits as their own region bodies) does not.
+template <double kAccuracyMultiplier, EvalPolicyLike Policy>
+void BoysAllNAtOrdersImpl(const int* n, const double* x, double* out, std::size_t count) noexcept {
+    static_assert(kAccuracyMultiplier >= 1.0,
+                  "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
+    assert(count == 0 || n != nullptr);
+    assert(count == 0 || x != nullptr);
+    assert(count == 0 || out != nullptr);
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        assert(n[i] >= 0 && n[i] <= kMaxBoysOrder);
+        assert(x[i] >= 0.0);
+
+        double row[kMaxBoysOrder + 1];
+        BoysAllOrdersImpl<kAccuracyMultiplier, Policy>(n[i], x[i], row);
+
+        for (int l = 0; l <= n[i]; ++l)
+        {
+            out[static_cast<std::size_t>(l) * count + i] = row[static_cast<std::size_t>(l)];
+        }
+    }
+}
+
 } // namespace detail
 
 // ---------------------------------------------------------------------------
@@ -1923,6 +1984,11 @@ void BoysAllN(int nmax, const double* x, double* out, std::size_t count, BoysSor
 }
 
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
+void BoysAllNAtOrders(const int* n, const double* x, double* out, std::size_t count) noexcept {
+    detail::BoysAllNAtOrdersImpl<kAccuracyMultiplier, Policy>(n, x, out, count);
+}
+
+template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 float BoysSingleF32(int n, float x) noexcept {
     return detail::BoysSingleF32Impl<kAccuracyMultiplier, Policy>(n, x);
 }
@@ -1930,6 +1996,11 @@ float BoysSingleF32(int n, float x) noexcept {
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 void BoysAllOrdersF32(int nmax, float x, float* out) noexcept {
     detail::BoysAllOrdersF32Impl<kAccuracyMultiplier, Policy>(nmax, x, out);
+}
+
+template <double kAccuracyMultiplier, EvalPolicyLike Policy>
+void BoysAllNF32(int nmax, const float* x, float* out, std::size_t count) noexcept {
+    detail::BoysAllNF32Impl<kAccuracyMultiplier, Policy>(nmax, x, out, count);
 }
 
 #if BoysFp16

@@ -266,6 +266,8 @@ struct RouteFit {
     static_assert(kRoute == FitRoute::kChebyshev || kRoute == FitRoute::kRationalMinimax,
                   "a fit route outside the FitRoute enumeration is not a route the library "
                   "carries: name FitRoute::kChebyshev or FitRoute::kRationalMinimax");
+    /// Unreachable: the static assert above refuses a call site naming a route
+    /// outside the enumeration, so only the two specializations below are asked.
     using Type = ChebyshevFit<kScheme>;
 };
 
@@ -273,6 +275,7 @@ struct RouteFit {
 /// defined for it.
 template <EvalScheme kScheme>
 struct RouteFit<FitRoute::kChebyshev, kScheme> {
+    /// The Chebyshev coefficients at this scheme.
     using Type = ChebyshevFit<kScheme>;
 };
 
@@ -280,6 +283,7 @@ struct RouteFit<FitRoute::kChebyshev, kScheme> {
 /// are a monomial numerator and denominator with no Chebyshev form to sum.
 template <EvalScheme kScheme>
 struct RouteFit<FitRoute::kRationalMinimax, kScheme> {
+    /// The single rational fit, shared by both schemes.
     using Type = RationalFit;
 };
 

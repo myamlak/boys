@@ -15,8 +15,9 @@
 //  * every documented public choice is exercised: the seven accuracy tiers,
 //    both QueryTier overloads, the two fit routes of the double lane, the three
 //    product modes of the region-A transform over both bands, the
-//    sorted-argument and workspace forms of the many-argument entry, the
-//    fp16/bf16 I/O lanes, the native packed half lane, and the lane templates at
+//    sorted-argument and workspace forms of the many-argument entry, its
+//    per-element-order form in both precisions, the fp16/bf16 I/O lanes, the
+//    native packed half lane, and the lane templates at
 //    multipliers the library does not pre-instantiate - the case that is a link
 //    error when a definition lives in a .cpp file rather than in the header its
 //    declaration ships in;
@@ -457,6 +458,38 @@ void AllNSorted(double m, int nmax, const double* x, double* out, std::size_t co
     } else
     {
         boys::BoysAllN<100.0>(nmax, x, out, count, boys::BoysSortedArgs{});
+    }
+}
+
+void AllNAtOrders(double m, const int* n, const double* x, double* out, std::size_t count) {
+    if (m == 1.0)
+    {
+        boys::BoysAllNAtOrders<1.0>(n, x, out, count);
+    } else if (m == 3.0)
+    {
+        boys::BoysAllNAtOrders<3.0>(n, x, out, count);
+    } else if (m == 8.0)
+    {
+        boys::BoysAllNAtOrders<8.0>(n, x, out, count);
+    } else
+    {
+        boys::BoysAllNAtOrders<100.0>(n, x, out, count);
+    }
+}
+
+void AllNF32(double m, int nmax, const float* x, float* out, std::size_t count) {
+    if (m == 1.0)
+    {
+        boys::BoysAllNF32<1.0>(nmax, x, out, count);
+    } else if (m == 3.0)
+    {
+        boys::BoysAllNF32<3.0>(nmax, x, out, count);
+    } else if (m == 8.0)
+    {
+        boys::BoysAllNF32<8.0>(nmax, x, out, count);
+    } else
+    {
+        boys::BoysAllNF32<100.0>(nmax, x, out, count);
     }
 }
 
@@ -1224,6 +1257,163 @@ void CheckManyArgumentLanes(Report& report, const std::vector<Cell>& cells) {
     }
 }
 
+/// The lanes whose per-element order is not the batch's: the double order-array
+/// batch, where each argument carries its own top order, and the float all-N
+/// batch, whose shape is the double one in single precision.
+void CheckPerElementOrderLanes(Report& report, const std::vector<Cell>& cells) {
+    const std::vector<double> args = DistinctArgs(cells);
+    const std::size_t count = args.size();
+    const int nmax = boys::kMaxBoysOrder;
+    const std::size_t plane = static_cast<std::size_t>(nmax) + 1;
+    std::vector<int> raggeds(count);
+    std::vector<int> commons(count, nmax);
+    std::vector<double> planes(count * plane);
+    std::vector<double> row(plane);
+    std::vector<float> argsF(count);
+    std::vector<float> planesF(count * plane);
+    std::vector<float> rowF(plane);
+
+    // A ragged top order per argument, so the entry runs where the planes above
+    // an argument's own top order are the caller's to keep, and with arguments
+    // at the highest order as well, so a ragged batch still carries full columns.
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        raggeds[i] = static_cast<int>(i % plane);
+    }
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        argsF[i] = static_cast<float>(args[i]);
+    }
+
+    for (const double m : {1.0, 8.0})
+    {
+        Rule& ragged = NewRule(
+            RuleName("BoysAllNAtOrders<m = %> (ragged top order per argument)", MultiplierName(m)));
+        Rule& common = NewRule(
+            RuleName("BoysAllNAtOrders<m = %> (one top order for the batch)", MultiplierName(m)));
+
+        std::fill(planes.begin(), planes.end(), kUnwritten);
+        AllNAtOrders(m, raggeds.data(), args.data(), planes.data(), count);
+
+        std::size_t missing = 0;
+        std::size_t above = 0;
+        std::size_t kept = 0;
+        std::size_t differs = 0;
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            // Documented: the column stops at the argument's own top order and
+            // is, bit for bit, the per-argument all-orders entry's value at that
+            // argument and that top order.
+            AllOrders(m, raggeds[i], args[i], row.data());
+
+            for (int n = 0; n <= nmax; ++n)
+            {
+                const std::size_t index = static_cast<std::size_t>(n) * count + i;
+
+                if (n > raggeds[i])
+                {
+                    ++above;
+                    kept += planes[index] == kUnwritten ? 1 : 0;
+                    continue;
+                }
+
+                const Cell* cell = Find(cells, n, args[i]);
+
+                if (cell == nullptr)
+                {
+                    ++missing;
+                    continue;
+                }
+
+                Judge(ragged, planes[index], cell->value, BatchBound(m), n, args[i]);
+                differs += planes[index] == row[static_cast<std::size_t>(n)] ? 0 : 1;
+            }
+        }
+
+        Require(report, missing == 0, "the grid carries every cell this rule looks up");
+        Require(report,
+                above > 0 && kept == above,
+                "BoysAllNAtOrders leaves the cells above each argument's top order untouched");
+        Require(report,
+                differs == 0,
+                "BoysAllNAtOrders returns the per-argument entry's values bit for bit");
+
+        // One top order for the whole batch is the shape BoysAllN has, and the
+        // order-array entry answers it at the same documented bound.
+        std::fill(planes.begin(), planes.end(), kUnwritten);
+        AllNAtOrders(m, commons.data(), args.data(), planes.data(), count);
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            for (int n = 0; n <= nmax; ++n)
+            {
+                const Cell* cell = Find(cells, n, args[i]);
+
+                if (cell != nullptr)
+                {
+                    Judge(common,
+                          planes[static_cast<std::size_t>(n) * count + i],
+                          cell->value,
+                          BatchBound(m),
+                          n,
+                          args[i]);
+                }
+            }
+        }
+
+        // Documented: count may be 0, and then nothing is written.
+        double untouched[2] = {kUnwritten, kUnwritten};
+        AllNAtOrders(m, raggeds.data(), args.data(), untouched, 0);
+        Require(report,
+                untouched[0] == kUnwritten && untouched[1] == kUnwritten,
+                "BoysAllNAtOrders writes nothing for count = 0");
+
+        Covered("boys::BoysAllNAtOrders<m>");
+    }
+
+    for (const double m : {1.0, 8.0})
+    {
+        Rule& rule =
+            NewRule(RuleName("BoysAllNF32<m = %> (the float all-N batch)", MultiplierName(m)));
+        const double bound = m * 1.5e-7 + kOracleBound;
+
+        std::fill(planesF.begin(), planesF.end(), static_cast<float>(kUnwritten));
+        AllNF32(m, nmax, argsF.data(), planesF.data(), count);
+
+        std::size_t differs = 0;
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            // The float lane rounds its argument to float before evaluating, so
+            // the reference is the certified double entry at that rounded
+            // argument, in the same shape.
+            boys::BoysAllOrders<1.0>(nmax, static_cast<double>(argsF[i]), row.data());
+            AllOrdersF32(m, nmax, argsF[i], rowF.data());
+
+            for (int n = 0; n <= nmax; ++n)
+            {
+                const std::size_t index = static_cast<std::size_t>(n) * count + i;
+
+                Judge(rule, static_cast<double>(planesF[index]), row[n], bound, n, args[i]);
+                differs += planesF[index] == rowF[static_cast<std::size_t>(n)] ? 0 : 1;
+            }
+        }
+
+        Require(report, differs == 0, "BoysAllNF32 returns BoysAllOrdersF32's values bit for bit");
+
+        // Documented: count may be 0, and then nothing is written.
+        float untouched[2] = {-1.0f, -1.0f};
+        AllNF32(m, nmax, argsF.data(), untouched, 0);
+        Require(report,
+                untouched[0] == -1.0f && untouched[1] == -1.0f,
+                "BoysAllNF32 writes nothing for count = 0");
+
+        Covered("boys::BoysAllNF32<m>");
+    }
+}
+
 /// The run-time tier entry over the whole grid, at every tier.
 void CheckTierLane(const std::vector<Cell>& cells) {
     for (const TierSpec& spec : kTiers)
@@ -1902,6 +2092,7 @@ int main(int argc, char** argv) {
     CheckDoubleLanes(report, cells);
     CheckFitRoutes(report, cells);
     CheckManyArgumentLanes(report, cells);
+    CheckPerElementOrderLanes(report, cells);
     CheckTierLane(cells);
     CheckFloatLane(cells);
     CheckHalfIo(cells);

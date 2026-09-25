@@ -20,8 +20,8 @@ region C. See the accuracy contract below.
 | \ref boys::BoysSingle, \ref boys::BoysAllOrders | scalar fp64, single argument / order batch F_0..F_nmax |
 | \ref boys::BoysAllOrdersWithRoute, \ref boys::BoysFitRoutes | the double batch at a named fit route (\ref boys::FitRoute), and the report of which routes exist, what each promises and over what interval |
 | \ref boys::BoysFixedN | fp64, one order over an array of arguments, strided |
-| \ref boys::BoysAllN | fp64, all nmax + 1 orders over an array of arguments, order-major planes; classifies, groups and dispatches internally (\ref boys::BoysSortedArgs skips the sort for a non-decreasing array) |
-| \ref boys::BoysSingleF32, \ref boys::BoysAllOrdersF32 | scalar fp32 (the batch form seeds in double) |
+| \ref boys::BoysAllN, \ref boys::BoysAllNAtOrders | fp64, all orders over an array of arguments, order-major planes. `BoysAllN` takes one top order for the batch and classifies, groups and dispatches internally (\ref boys::BoysSortedArgs skips the sort for a non-decreasing array); `BoysAllNAtOrders` takes each argument's own top order, which is the shape a shell-quartet batch has — no padding of the arguments to a common order — and evaluates the per-argument body at each of them |
+| \ref boys::BoysSingleF32, \ref boys::BoysAllOrdersF32, \ref boys::BoysAllNF32 | scalar fp32 (the batch forms seed in double); `BoysAllNF32` is the float lane's \ref boys::BoysAllN, one top order for the batch and order-major planes |
 | \ref boys::BoysSingleF16, \ref boys::BoysAllOrdersF16, \ref boys::BoysSingleBf16, \ref boys::BoysAllOrdersBf16 | fp16/bf16 scalar I/O around the fp32 engine |
 | \ref boys::BoysAllOrdersHalf2, \ref boys::BoysAllNF16Native | native half: region C's ladder in packed binary16 (\ref boys::Half2), one correctly rounded half operation per step, two arguments to a register, results scaled by 2^15 (\ref boys::kHalfNativeScaleExponent) |
 | \ref boys::BoysCuda::InitializeTables, \ref boys::BoysCuda::SingleF32, \ref boys::BoysCuda::AllOrdersF32, \ref boys::BoysCuda::AllNF32, \ref boys::BoysCuda::SingleF64, \ref boys::BoysCuda::AllOrdersF64, \ref boys::BoysCuda::AllNF64, \ref boys::BoysCuda::SingleF16, \ref boys::BoysCuda::AllOrdersF16, \ref boys::BoysCuda::AllNF16 | CUDA lane (optional build); device arrays with an opaque stream handle; the tables upload on first use, and `InitializeTables` is an optional warm-up; `AllOrders*` is the all-orders batch at a per-element order, while `AllN*` is the device \ref boys::BoysAllN (one top order for the batch, order-major planes) and takes non-decreasing arguments, since it never sorts |
@@ -83,7 +83,7 @@ multiplier of the call. It defaults to 1 and runs to 65536. Every figure holds f
 | Lane | Error bound |
 |---|---|
 | double single | ≤ m·5.5e-14 everywhere; ≤ m·3e-14 below x = 11.899848152108484; ≤ m·1e-15 below about x = 1.0855 |
-| double batch | ≤ m·5.5e-14 |
+| double batch, whether the top order is the batch's or each argument's | ≤ m·5.5e-14 |
 | float single / batch | ≤ m·1.5e-7 |
 | fp16 / bf16 | ≤ m·1e-7 + ½ ULP |
 | native half, x ≥ 28.984375 | ≤ 8 ULP of the returned value |
