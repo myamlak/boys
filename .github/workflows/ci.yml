@@ -381,20 +381,23 @@ jobs:
       # the three - so an unknown base, a shallow clone or a failed fetch all
       # fall back to running the check rather than to skipping it.
       # The check asks whether the committed tables are consistent with the
-      # generator: the generated header records a digest of its own output and a
-      # digest of the generator that produced it, and this recomputes both. That
-      # needs no re-derivation, so it costs a hash rather than the hours a fresh
-      # generation and a byte-by-byte comparison cost - which is why there is no
-      # gating here. A gate shrinks how often the check runs; this removes the
-      # reason it was expensive.
+      # generator. It is this command either way; what the command has to DO to
+      # answer is the generator's business, and it currently re-derives the
+      # tables and compares them byte for byte.
       #
-      # Both halves matter and catch different drift: editing a coefficient by
-      # hand leaves the recorded output digest unmatched, and changing the
-      # generator without regenerating leaves the recorded generator digest
-      # unmatched. The accuracy gate is what holds the tables themselves to their
-      # measured bounds against the 45-digit reference, so provenance and
-      # correctness are separate claims rather than one check doing both.
-      - name: Generator consistency (the recorded digests, recomputed)
+      # The intended shape, which the generator does not carry yet, is that the
+      # generated header records a digest of its own output and a digest of the
+      # generator that produced it, so this step recomputes two hashes instead
+      # of spending hours. Both halves would then be caught and they are
+      # different halves: editing a coefficient by hand leaves the output digest
+      # unmatched, and changing the generator without regenerating leaves the
+      # generator digest unmatched.
+      #
+      # Either way the accuracy gate is what holds the tables themselves to their
+      # measured bounds against the 45-digit reference - a wrong table is caught
+      # on its merits, not by provenance - so this step is about consistency and
+      # nothing else.
+      - name: Generator consistency
         if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         env:
           CLANG_FORMAT: ${{ github.workspace }}/.venv/bin/clang-format
