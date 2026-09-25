@@ -739,13 +739,19 @@ void BoysAllOrders(int nmax, double x, double* out) noexcept;
 /// The fixed-n vector entry is the batch shape of integral-engine inner
 /// loops that group shell pairs by angular momentum: each element needs
 /// exactly one order, so no unused cross-order recursion is paid. Each
-/// output element is bit-identical to BoysSingle<kAccuracyMultiplier> at
-/// the same (n, x) - the m = 1 path runs the certified scalar single-lane
-/// region bodies verbatim (the bit-identity pin), the relaxed path the
-/// same bodies at the single-lane effective degrees. Arguments need no
-/// pre-partitioning: the region dispatch is per element, the portable
-/// shape. The vector tier is reached through the batch entries (BoysAllN),
-/// which group the arguments once for the whole call.
+/// output element returns BoysSingle<kAccuracyMultiplier>'s value at the
+/// same (n, x) and carries the single lane's per-region bound with it: the
+/// m = 1 path runs the certified scalar single-lane region bodies
+/// verbatim, the relaxed path the same bodies at the single-lane effective
+/// degrees. The two agree bit for bit on a build that does not contract a
+/// bare product-plus-add, which is what x86-64 without -mfma and MSVC
+/// everywhere deliver. A build that does contract one decides per call site
+/// whether to fuse that form, so an element can differ from the single
+/// entry's in the last place and still be inside the bound; what does not
+/// move is the bound. Arguments need no pre-partitioning: the region
+/// dispatch is per element, the portable shape. The vector tier is reached
+/// through the batch entries (BoysAllN), which group the arguments once for
+/// the whole call.
 ///
 /// Layout: out[i * stride] = F_n(x[i]), i = 0..count-1; stride is measured
 /// in doubles and defaults to 1 (contiguous). The output span must hold
@@ -757,11 +763,10 @@ void BoysAllOrders(int nmax, double x, double* out) noexcept;
 /// \tparam Policy see BoysSingle. The fixed-order entry carries the fit route:
 ///         a call naming a route other than the shipped one is answered by the
 ///         per-argument single entry, once per argument, which is the body this
-///         entry's own m = 1 path already mirrors region for region - so the
-///         bit-identity the documentation claims between this entry and
-///         BoysSingle is, on the route, exact by construction. The shaped path
-///         below stays the shipped route's, which is the one the bit-identity
-///         pin is about
+///         entry's own m = 1 path already mirrors region for region - so on that
+///         route the entry runs the single entry's own body rather than a second
+///         copy of it. The shaped path below stays the shipped route's, which is
+///         the path the entry's own paragraph above is about
 ///
 ///         The packing axis is not an axis of this shape, and that is the
 ///         entry's signature rather than a body nobody built. A packed lane

@@ -398,6 +398,84 @@ Separately, the report answers whether a bare product-plus-add contracts in a gi
 evaluating one — once per report, not per value. A caller who needs every call gone wants a target
 that has the instruction.
 
+### the same route, on a host that contracts
+
+The fused column above is one measurement of one arithmetic, and it is not the whole of the fused
+route. The bounds on this page are bounds on the arithmetic; the figure an arithmetic *delivers* is
+a second thing, and the two come apart here because not every multiply-add in these fits is written
+as a fused step. The recurrence bodies spell the step as a bare product-plus-add where that is what
+they mean, and a compiler holding the contraction licence is free to fuse that form into one
+rounding — which gcc and clang do by default wherever the target can form the instruction, and MSVC
+does not under its default `/fp:precise`. So a build that
+contracts evaluates **different arithmetic from one that does not**, on the same route, and a figure
+measured on one is not a figure for the other.
+
+**The architecture name does not decide this.** It is a property of the compiler and its flags, so it
+is asked rather than assumed: the configure step evaluates a bare product-plus-add in the build and
+compiles the claims against that answer, and `BoysBackends()` asks the same question again at run
+time so a caller can attribute a value to the arithmetic that produced it (the section below prints
+both lines). gcc and AppleClang contract one on arm64 and MSVC does not, on either architecture, so
+the MSVC arm64 build delivers the x86-64 figures. Only part of the contract moves, and this is the
+whole of it, at the default multiplier, against the same reference the table above uses:
+
+| lane | region | contracted | not contracted | bound |
+|---|---|---|---|---|
+| double, single | x < 1.0855252345349333 | 2.22e-16 | 2.22e-16 | 1e-15 |
+| double, single | 1.0855252345349333 ≤ x < 11.899848152108484 | 3.29e-15 | 3.22e-15 | 3e-14 |
+| double, single | 11.899848152108484 ≤ x < 28.98933773882074 | 9.94e-15 | 9.94e-15 | 3e-14 |
+| double, single | x ≥ 28.98933773882074 | 5e-14 | 5e-14 | 5.5e-14 |
+| float, single | all arguments | 1.29e-07 | 1.06e-07 | 1.5e-07 |
+| float, batch | all arguments | 1.29e-07 | 1.08e-07 | 1.5e-07 |
+
+The double lane's first, third and fourth rows do not move at all: the same worst cell, to the digit,
+on both arithmetics. What moves is its band between 1.0855 and 11.8998, whose worst cell is n = 16 at
+x = 4.89985 without contraction and n = 32 at x = 10.7836 with it, and both float lanes, whose worst
+cell is n = 0 at x = 0.072854 without contraction and n = 32 at x = 11.9447 with it. The
+not-contracted column was measured on four
+configurations — MSVC on arm64, MSVC on x86-64, clang on x86-64 and AppleClang on x86-64 — which
+agree to the digit, two architectures and three compilers reaching one figure. The contracted column
+was measured on AppleClang on arm64, and reproduced on x86-64 by building with `-mfma`: the same six
+figures to the digit, and the same worst cell down to its order and argument, from two compilers on
+two architectures. That is the pair worth reading together, because it is what the licence turns on —
+gcc and clang contract a bare product-plus-add when the target can form one, and only one of the two
+architectures can without being told to.
+
+The one configuration that contributes a measurement but no printed figures is gcc on arm64. It
+reports `contract.this-tu.fp64=1` — it runs the contracted arithmetic — and its consumer check parts
+company with the single lane over 10 of the same 9,240 comparisons, nine at the second element of a
+strided call and one at the first, which is one of the two ways a contracting build has been seen to
+take the licence. Its gate is green: `boys-accuracy-gate --strict` is a test in its ctest run and
+passes there. What is missing is the printed figure alone — ctest shows a passing test's output only
+under `-V`, and that leg does not carry the reading step the other five do — and the column it would
+fill is the contracted one, which the two measurements above already give.
+
+**Every bound on this page holds on both.** The contracted arithmetic's 3.29e-15 is 0.11 of its 3e-14
+and its 1.29e-07 is 0.859 of its 1.5e-07, and no cell of any lane exceeded its bound on any of the
+six configurations. Five of them print `39 of 39` documented claims met; on the sixth, gcc on arm64,
+the gate is the `boys-accuracy-gate --strict` test in its ctest run, and that test passes. Its
+consumer check prints 55 rule rows and every one reports zero cells above its bound. What a caller
+reads — the bound — is the same on either arithmetic, which is why a row is judged against the same
+figure either way and a caller who needs to know which arithmetic produced a value asks the report
+rather than the architecture.
+
+**The one claim that is not a bound moves with it.** `BoysFixedN` returns `BoysSingle`'s value at the
+same order and argument, and the two run the same recurrence from the same source. Where the build
+does not contract that source is one arithmetic and the two agree **bit for bit** — asserted, with no
+tolerance, over 9,240 comparisons of the committed grid. Contracting does not license the same
+arithmetic at two call sites, and a two-argument strided call is not the same generated code as a
+one-argument call, so it permits the two to part company in the last place — though it does not
+require it. On gcc, on arm64 and reproduced on x86-64 with `-mfma`, **10 of those 9,240 comparisons
+differ**: nine at the second element of a strided call and one at the first. On clang with `-mfma` on
+x86-64, and on AppleClang on arm64, which contract too, all 9,240 agree. The element-wise shape
+agrees at all 8,712 of its comparisons on every one of those builds.
+
+So the exactness is a property the arithmetic guarantees on one side of the licence and only permits
+on the other, and the bound is what the entry promises either way. That is why the bound is asserted
+on every build and the offsets are asserted where the arithmetic guarantees them, while the counts
+are printed on all of them: the consumer entry reports how many comparisons it made and how many
+agreed, so a host that takes the licence shows a figure rather than passing quietly, and no host is
+asserted against an arithmetic the licence let it avoid.
+
 ### what a build reports
 
 `BoysBackends()` prints the route beside the contraction measurement, so a caller can attribute a
