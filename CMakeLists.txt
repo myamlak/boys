@@ -104,6 +104,15 @@ if (BUILD_CUDA)
         set(CMAKE_CUDA_ARCHITECTURES 75 86 CACHE STRING
             "CUDA architectures for the Boys kernels" FORCE)
     endif()
+    # The toolkit and the target architectures, as text, for the device probe's
+    # report. A device figure whose toolkit and target architecture are unstated
+    # cannot be reproduced, and both are configure-time facts that the compiled
+    # binary cannot otherwise recover: nvcc's own version is not a runtime query,
+    # and the architectures are what this build was told to emit, not what the
+    # card happens to be. Spelled out as strings here so the probe's report and
+    # its text never have to guess.
+    string(REPLACE ";" "," BOYS_CUDA_ARCHITECTURES_TEXT
+        "${CMAKE_CUDA_ARCHITECTURES}")
 endif()
 
 # Vendored dependencies, committed in full — no FetchContent, no network
@@ -709,15 +718,30 @@ if (BUILD_CUDA)
     # is pinned at C++20 with a CUDA-safe include list (see the .cu preamble).
     # Entry points take raw device pointers + a stream and report through
     # boys::BoysStatus.
+    #
+    # The device option probe (boys_cuda_probe.cpp + boys_cuda_probe_kernels.cu)
+    # is in this target and not in a target of its own: it measures this lane's
+    # entries by calling this lane's launchers, so it has to be built against the
+    # same kernels the figures are about, and a consumer reaches it through
+    # include/boys/boys_cuda_probe.hpp either way.
     add_library(boys-cuda
         src/boys_cuda.cpp
-        src/boys_cuda.cu)
+        src/boys_cuda.cu
+        src/boys_cuda_probe.cpp
+        src/boys_cuda_probe_kernels.cu)
     target_include_directories(boys-cuda PUBLIC include PRIVATE src)
     target_compile_definitions(boys-cuda PUBLIC BoysFp16=1)
     # Stated because this target links nothing that carries a standard into it:
     # without it the host TU compiles at the compiler's default (C++14 on
     # MSVC) and the library's headers do not build.
     target_compile_features(boys-cuda PRIVATE cxx_std_20)
+    # The probe's report states the toolkit that compiled these kernels and the
+    # architectures they were compiled for. Both are configure-time facts, so
+    # they are passed as text: nothing at run time can recover what nvcc was
+    # told, and a figure that cannot be reproduced is not a measurement.
+    target_compile_definitions(boys-cuda PRIVATE
+        BOYS_CUDA_TOOLKIT_TEXT="${CMAKE_CUDA_COMPILER_VERSION}"
+        BOYS_CUDA_ARCHITECTURES_TEXT="${BOYS_CUDA_ARCHITECTURES_TEXT}")
     boys_strict_warnings(boys-cuda)
 
     if (BOYS_BUILD_TESTS)
@@ -727,6 +751,19 @@ if (BUILD_CUDA)
         target_include_directories(boys-cuda-tests PRIVATE src)
         boys_strict_warnings(boys-cuda-tests)
         add_test(NAME boys-cuda-tests COMMAND boys-cuda-tests)
+
+        # The DEVICE OPTION PROBE's own test. It asserts nothing about a cost -
+        # those are the card's - and asserts instead what a test can own about
+        # the surface: that an absent device is a status, that the card the
+        # figures are about is named in the returned data, and that a verdict
+        # names only an entry the run measured.
+        add_executable(boys-cuda-probe-tests tests/boys_cuda_probe_test.cpp)
+        target_link_libraries(boys-cuda-probe-tests PRIVATE boys-cuda boys
+            gtest gtest_main)
+        target_include_directories(boys-cuda-probe-tests PRIVATE src)
+        target_compile_features(boys-cuda-probe-tests PRIVATE cxx_std_20)
+        boys_strict_warnings(boys-cuda-probe-tests)
+        add_test(NAME boys-cuda-probe-tests COMMAND boys-cuda-probe-tests)
 
         # The DEVICE GATE (tests/boys_cuda_accuracy_gate.cpp) measures every
         # documented device bound against the CPU gate's own committed
@@ -836,6 +873,16 @@ if (BUILD_BENCHMARKS)
         target_link_libraries(boys-cuda-benchmark PRIVATE boys-cuda boys)
         target_compile_definitions(boys-cuda-benchmark PRIVATE BoysFp16=1)
         boys_strict_warnings(boys-cuda-benchmark)
+
+        # The device option probe's driver: argument parsing and printing only.
+        # The measurement is boys::RunDeviceOptionProbe in the library, which is
+        # the surface a consumer calls; this tool exists so a person can get the
+        # same report at a terminal without writing a program. Local-only by
+        # construction: it needs the device.
+        add_executable(boys-device-probe benchmarks/boys_device_probe.cpp)
+        target_link_libraries(boys-device-probe PRIVATE boys-cuda)
+        target_compile_features(boys-device-probe PRIVATE cxx_std_20)
+        boys_strict_warnings(boys-device-probe)
     endif()
 elseif (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/benchmark/CMakeLists.txt")
     message(WARNING "third_party/benchmark is missing; BUILD_BENCHMARKS is OFF, "
