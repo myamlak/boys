@@ -363,10 +363,19 @@ small to carry its own launch is a workload whose ranking is of the launcher. Ra
 `boys::DeviceProbeOptions::count` is what answers that.
 
 `boys::DeviceProbeStatus` is how a bad device is reported — an ordinal that does not exist is a
-status and not a crash, and the call does not throw for it. Measuring a device other than the one the
-rest of the lane is set up on is safe and leaves that device's state alone: the table upload is
-per-device and idempotent, so the tables for both devices stay resident and each keeps its own; the
-resident-rung state is process-wide and no entry reads it.
+status and not a crash, and the call does not throw for it.
+
+Measuring a device other than the one the caller has been using does not disturb the caller's. The
+probe sets its device before it allocates or uploads anything, and puts the calling thread's device
+back before it returns. Every table is uploaded to whichever device is current when it is uploaded
+and is guarded on that device, so a copy another device already holds is never written over and a
+device the caller had already set up is not re-uploaded: the two devices' tables stay resident side
+by side and each keeps its own. The one trace the probe leaves is the lane's record of which device
+the tables last went to, which now names the device it measured — and that record is read by the
+guard that compares it against the current device, so the caller's next call on their own device
+uploads the same tables once more. That is redundant work rather than changed state, and it is
+idempotent by construction: a record left naming another device makes an upload happen, never makes
+one be skipped.
 
 ## Supported platforms
 

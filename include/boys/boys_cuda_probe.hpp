@@ -640,12 +640,12 @@ struct DeviceProbeReport {
 /// does not throw for a bad device: that is a DeviceProbeStatus.
 ///
 /// The probe saves the calling thread's current device before it starts and
-/// restores it before it returns, so a caller's own device is where they left it
-/// and the tables this library uploaded for that device are untouched. The one
-/// piece of process-wide state it does move is the constant-table upload, which
-/// is per device and idempotent: measuring device 1 leaves device 0's tables
-/// resident and uploads device 1's. See the header preamble of boys_cuda.hpp for
-/// what the lane's tables are keyed on.
+/// restores it before it returns, so a caller's own device is where they left it.
+/// A table is uploaded to whichever device is current when it is uploaded, and
+/// the upload is guarded on the device it went to, so the copies a caller's
+/// device already holds are not written over: measuring device 1 leaves device
+/// 0's tables resident and uploads device 1's. See the header preamble of
+/// boys_cuda.hpp for what the lane's tables are keyed on.
 ///
 /// \param options the workload, the device ordinal and the pass protocol; the
 ///                defaults are the ones the preamble describes

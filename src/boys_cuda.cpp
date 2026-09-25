@@ -156,28 +156,24 @@ void FillEffLane(int lane) {
 // piece table even for the float/fp16 batch lanes (RoleUsesDoubleTables —
 // the downward recursion amplifies float seed errors beyond their budgets).
 template <double kAccuracyMultiplier> BoysStatus EnsureEffTables() {
-    if (gEffCachedM == kAccuracyMultiplier)
+    // The host-side degree tables depend on the multiplier alone, so they are
+    // computed once per multiplier. Whether the device already holds them is
+    // the upload's question, and its guard names the device as well as the
+    // multiplier: answering it here would skip the upload a second device
+    // still needs, and that device's kernels would read a zero table.
+    if (gEffCachedM != kAccuracyMultiplier)
     {
-        return BoysStatus::kSuccess;
+        FillEffLane<kAccuracyMultiplier, detail::BoysRole::kDoubleSingle, true>(0);
+        FillEffLane<kAccuracyMultiplier, detail::BoysRole::kDoubleBatch, true>(1);
+        FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Single, false>(2);
+        FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Batch, true>(3);
+        FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Fp16Single, false>(4);
+        FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Fp16Batch, true>(5);
+        gEffCachedM = kAccuracyMultiplier;
     }
 
-    FillEffLane<kAccuracyMultiplier, detail::BoysRole::kDoubleSingle, true>(0);
-    FillEffLane<kAccuracyMultiplier, detail::BoysRole::kDoubleBatch, true>(1);
-    FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Single, false>(2);
-    FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Batch, true>(3);
-    FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Fp16Single, false>(4);
-    FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Fp16Batch, true>(5);
-
-    const auto status = FromLaunchCode(
+    return FromLaunchCode(
         BoysCudaUploadEffTables(kAccuracyMultiplier, gEffDegA.data(), gEffDegB.data()));
-
-    if (status != BoysStatus::kSuccess)
-    {
-        return status;
-    }
-
-    gEffCachedM = kAccuracyMultiplier;
-    return BoysStatus::kSuccess;
 }
 
 } // namespace
