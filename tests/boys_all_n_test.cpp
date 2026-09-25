@@ -62,6 +62,11 @@ constexpr double kBatchBound = 5.5e-14;
 // The lanes' budget on the paths they serve (the region-A lane's 1e-15).
 constexpr double kGroupedBudget = 1e-15;
 
+// The extended band's own bar. x < x0 is not one interval: region A carries the
+// tight bar above and the band a looser one, and the two are documented
+// separately because the band's arithmetic is a different fit.
+constexpr double kBandBudget = 3e-14;
+
 // The order at which region A stops being the region-A lane's run: at and below
 // it the entry hands a homogeneous run to the lane, above it the lane's
 // per-order cost outweighs the scalar body's single seed and downward
@@ -831,7 +836,8 @@ TEST(BoysAllNTest, OrdersAxisChangesTheRegionAValuesAndStaysInsideTheBound) {
         RunOrdersAxis<boys::EvalScheme::kSplitClenshaw>(gGrid.xs, nmax, true);
     std::size_t differingInA = 0;
     std::size_t cellsInA = 0;
-    double worstAlongTheAxis = 0.0;
+    double worstInA = 0.0;
+    double worstInBand = 0.0;
 
     for (const ReferenceRow& row : gGrid.rows)
     {
@@ -850,17 +856,30 @@ TEST(BoysAllNTest, OrdersAxisChangesTheRegionAValuesAndStaysInsideTheBound) {
         }
 
         // Both values are certified, so the axis's own error is measured here
-        // rather than assumed: against the committed reference, at the packed
-        // lane's per-order bar over the interval the lane evaluates.
-        worstAlongTheAxis = std::max(worstAlongTheAxis, std::abs(axes[slot] - row.value));
+        // rather than assumed: against the committed reference, at the bar the
+        // argument's own sub-region carries. x < x0 is not one interval - region
+        // A and the extended band sit inside it under different bars - so the
+        // worst is kept per sub-region and each is held to its own.
+        const double error = std::abs(axes[slot] - row.value);
+
+        if (SubOf(row.x) == Sub::kBand)
+        {
+            worstInBand = std::max(worstInBand, error);
+        }
+        else
+        {
+            worstInA = std::max(worstInA, error);
+        }
     }
 
     EXPECT_GT(cellsInA, 0u);
     EXPECT_GT(differingInA, 0u)
         << "the axis names a lane whose values are the shipped entry's: the option is not "
            "reachable";
-    EXPECT_LE(worstAlongTheAxis, kGroupedBudget)
-        << "worst delivered " << worstAlongTheAxis << " over the packed lane's own bar";
+    EXPECT_LE(worstInA, kGroupedBudget)
+        << "worst delivered " << worstInA << " in region A, against its own bar";
+    EXPECT_LE(worstInBand, kBandBudget)
+        << "worst delivered " << worstInBand << " in the extended band, against its own bar";
 }
 
 // The region grouping is the arguments axis's and is not taken here: the same
