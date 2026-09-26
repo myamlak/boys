@@ -254,14 +254,31 @@ const char* GroupName(DeviceOptionGroup group) {
 /// The axis a row varies, with the member it is. A row with no axis states the
 /// one thing its entry is; a row with one states which member of it the row
 /// measured, because that is what its bound is the bound of.
+///
+/// The member is the one the row's own axis names: a row that varies the
+/// scheme carries a scheme and not a region-B exponential, so naming the
+/// exponential for it would state a choice the row does not offer.
 std::string AxisName(const DeviceOptionInfo& option) {
-    if (option.axis == DeviceOptionAxis::kNone)
+    switch (option.axis)
     {
-        return std::string("-");
+        case DeviceOptionAxis::kNone:
+            return std::string("-");
+        case DeviceOptionAxis::kRegionBExp:
+            return Text("region-B:%s",
+                        option.regionBExp == RegionBExp::kFast ? "fast" : "accurate");
+        case DeviceOptionAxis::kPartition:
+            return "partition:narrow";
+        case DeviceOptionAxis::kPacking:
+            return "packing:per-order";
+        case DeviceOptionAxis::kScheme:
+            return std::string("scheme:")
+                   + (option.scheme == EvalScheme::kHorner ? "horner" : "split-clenshaw");
+        default:
+            // An axis named by a newer header: the row is still printed, under
+            // the enumerator it was written with rather than under a member of
+            // some other axis.
+            return Text("axis:%d", static_cast<int>(option.axis));
     }
-
-    return Text("region-B:%s",
-                option.regionBExp == RegionBExp::kFast ? "fast" : "accurate");
 }
 
 /// The degree tables a row reads. The lane is what makes two rows of one

@@ -18,6 +18,13 @@
 ///   int          Deg(int order, int piece)         the piece's degree
 ///   T            BSeed(T x, int order)             region-B seed at an argument
 ///
+/// A lane that stores the monomial form of its fits carries a `kMonomial`
+/// member as well, and the piece summation reads it: the same pieces at the
+/// same degrees, summed by Horner in the monomial basis rather than by the
+/// split Clenshaw in the Chebyshev one. It is optional because a lane's stored
+/// form is a property of the tables it was handed and not of the body reading
+/// them, and a lane without the member reads the Chebyshev pool.
+///
 /// T is double for the double lane's seeds and float for the float lane's.
 /// BSeed is the whole of region B's seed, taken at the argument rather than as
 /// one polynomial over the region: the shipped partition's seed is one fit
@@ -40,6 +47,7 @@
 #include <cuda_runtime.h>
 
 #include <cstddef>
+#include <type_traits>
 
 namespace boys::detail {
 
@@ -152,6 +160,47 @@ __device__ __forceinline__ float DeviceClenshawSplit32(const float* c, int deg, 
     return __fmaf_rn(t, odd, even);
 }
 
+// The monomial scheme's summation: the same fit in the other basis, stored at
+// the same offsets and degrees as the Chebyshev one and summed by Horner in
+// ascending order. One multiply-add per coefficient, against the split
+// Clenshaw's two, so the scheme is a cost choice at equal degree — the two
+// tables carry the same fit and the delivered accuracy of each is its own
+// certified row.
+__device__ __forceinline__ double DeviceHornerMono(const double* c, int deg, double t) {
+    double acc = c[deg];
+
+    for (int j = deg - 1; j >= 0; --j)
+    {
+        acc = __fma_rn(acc, t, c[j]);
+    }
+
+    return acc;
+}
+
+// Which basis a lane's coefficients are stored in. A lane that reads the
+// monomial pool carries a kMonomial member and one that reads the Chebyshev
+// pool does not, so the scheme axis is this trait and the summation below it,
+// and every body above stays one body per (precision, shape).
+template <typename Lane, typename = void>
+struct LaneMonomial : std::false_type {};
+
+template <typename Lane>
+struct LaneMonomial<Lane, std::void_t<decltype(Lane::kMonomial)>> : std::true_type {};
+
+template <typename Lane>
+__device__ __forceinline__ double DevicePieceSum(const Lane& lane,
+                                                 const double* c,
+                                                 int deg,
+                                                 double t) {
+    if constexpr (LaneMonomial<Lane>::value)
+    {
+        return DeviceHornerMono(c, deg, t);
+    } else
+    {
+        return DeviceClenshawSplit(c, deg, t);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // seeds
 // ---------------------------------------------------------------------------
@@ -177,7 +226,7 @@ __device__ __forceinline__ double DeviceSeed(const Lane& lane, int order, double
 
     const double* c = lane.Coeffs(order, p);
     const double t = 2.0 * (x - lane.A(order, p)) / (lane.B(order, p) - lane.A(order, p)) - 1.0;
-    return DeviceClenshawSplit(c, lane.Deg(order, p), t);
+    return DevicePieceSum(lane, c, lane.Deg(order, p), t);
 }
 
 template <typename Lane>

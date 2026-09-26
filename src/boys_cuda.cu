@@ -159,6 +159,40 @@ __device__ int dNarrowDegEff[kNarrowPiecesTotal];
 __device__ int dNarrowBDegEff[detail::kNarrowBPieces * (detail::kMaxOrder + 1)];
 
 // ---------------------------------------------------------------------------
+// the monomial scheme's stored form, on this lane
+// ---------------------------------------------------------------------------
+// The same fits in the other basis: every piece table above is carried in both
+// forms (boys_coefficients.hpp), so this family stores no second fit and needs
+// no second partition — it is the pools and the summation, and the pieces,
+// edges, counts and stored degrees are the Chebyshev lanes' own.
+//
+// All of it is global rather than constant memory. The double lane's Chebyshev
+// pool and the float lane's tables already fill most of the 64 KB constant
+// bank, so a second double pool of the same size does not fit beside them; the
+// narrow pool is out of the bank for the same reason the Chebyshev narrow one
+// is. One fetch per piece per thread is the pattern the flat image above
+// serves that way.
+__device__ double dMonoCoeffs[kMaxCoeffs];
+__device__ double dMonoBcoeffs[24];
+__device__ double dNarrowAMonoCoeffs[kNarrowCoeffsTotal];
+__device__ double dNarrowBMonoCoeffs[detail::kNarrowBPieces * (detail::kNarrowBDeg + 1)];
+
+// The rung's cut, in the monomial basis: the same derivations as the Chebyshev
+// tables above at the other form of the same table (TailBasis::kMonomial), so
+// a rung's degrees are the ones that rung certifies for the pool and the
+// summation this family reads. Region A is order-major as cDegEff is, since the
+// cut is derived per order and piece; region B is one row per order, read at
+// the order-0 entry by the batch shape.
+//
+// The narrow partition's cut is one table each for the same reason its
+// Chebyshev counterpart is: the entries carrying the partition are the double
+// batch, so there is no lane axis to carry.
+__device__ int dMonoDegEff[detail::kMaxOrder + 1][kMaxPieces];
+__device__ int dMonoBDegEff[detail::kMaxOrder + 1];
+__device__ int dNarrowMonoDegEff[kNarrowPiecesTotal];
+__device__ int dNarrowMonoBDegEff[detail::kNarrowBPieces * (detail::kMaxOrder + 1)];
+
+// ---------------------------------------------------------------------------
 // the lanes: what the kernels below hand the shared arithmetic
 // ---------------------------------------------------------------------------
 // boys_cuda_arithmetic.hpp holds one body per (precision, shape), and it takes
@@ -394,6 +428,127 @@ template <bool kRelaxed> struct Lane64Narrow {
                                    kRelaxed ? dNarrowBDegEff[piece * (detail::kMaxOrder + 1)]
                                             : detail::kNarrowBDeg,
                                    t);
+    }
+};
+
+// The monomial scheme's lanes: the shipped lanes' pieces and degrees with the
+// coefficients read from the monomial pool and the piece summed by Horner. The
+// kMonomial member is the whole of the difference the shared bodies see — they
+// choose the summation with it (boys_cuda_arithmetic.hpp) and read the degrees
+// the lane hands them either way, so a rung of this family is a cut of this
+// family's table and not the Chebyshev one's.
+struct Lane64MonoFull {
+    static constexpr bool kMonomial = true;
+
+    __device__ __forceinline__ int Count(int order) const {
+        return cCount[order];
+    }
+
+    __device__ __forceinline__ double A(int order, int piece) const {
+        return cA[order][piece];
+    }
+
+    __device__ __forceinline__ double B(int order, int piece) const {
+        return cB[order][piece];
+    }
+
+    __device__ __forceinline__ const double* Coeffs(int order, int piece) const {
+        return dMonoCoeffs + cOffset[order][piece];
+    }
+
+    __device__ __forceinline__ int Deg(int order, int piece) const {
+        return cDeg[order][piece];
+    }
+
+    __device__ __forceinline__ double BSeed(double x, int) const {
+        const double t = 2.0 * (x - detail::kX0) / (detail::kX1 - detail::kX0) - 1.0;
+        return detail::DeviceHornerMono(dMonoBcoeffs, cBDeg, t);
+    }
+};
+
+// The rung's form: the cut's degrees in place of the stored ones, at the
+// order-0 region-B entry the batch shape reads.
+struct Lane64MonoEff {
+    static constexpr bool kMonomial = true;
+
+    __device__ __forceinline__ int Count(int order) const {
+        return cCount[order];
+    }
+
+    __device__ __forceinline__ double A(int order, int piece) const {
+        return cA[order][piece];
+    }
+
+    __device__ __forceinline__ double B(int order, int piece) const {
+        return cB[order][piece];
+    }
+
+    __device__ __forceinline__ const double* Coeffs(int order, int piece) const {
+        return dMonoCoeffs + cOffset[order][piece];
+    }
+
+    __device__ __forceinline__ int Deg(int order, int piece) const {
+        return dMonoDegEff[order][piece];
+    }
+
+    __device__ __forceinline__ double BSeed(double x, int) const {
+        const double t = 2.0 * (x - detail::kX0) / (detail::kX1 - detail::kX0) - 1.0;
+        return detail::DeviceHornerMono(dMonoBcoeffs, dMonoBDegEff[0], t);
+    }
+};
+
+// The narrow partition in the monomial basis, in the two forms a rung has, as
+// Lane64Narrow carries the Chebyshev one: kRelaxed false reads the degrees the
+// partition was stored at and true the rung's own cut of this basis. Region B
+// is piecewise here and read at order 0, for the reason Lane64Narrow gives.
+template <bool kRelaxed> struct Lane64NarrowMono {
+    static constexpr bool kMonomial = true;
+
+    __device__ __forceinline__ int Count(int order) const {
+        return dNarrowAPieceStart[order + 1] - dNarrowAPieceStart[order];
+    }
+
+    __device__ __forceinline__ double A(int order, int piece) const {
+        return dNarrowAA[dNarrowAPieceStart[order] + piece];
+    }
+
+    __device__ __forceinline__ double B(int order, int piece) const {
+        return dNarrowAB[dNarrowAPieceStart[order] + piece];
+    }
+
+    __device__ __forceinline__ const double* Coeffs(int order, int piece) const {
+        return dNarrowAMonoCoeffs + dNarrowAOffset[dNarrowAPieceStart[order] + piece];
+    }
+
+    __device__ __forceinline__ int Deg(int order, int piece) const {
+        const int flat = dNarrowAPieceStart[order] + piece;
+
+        if constexpr (kRelaxed)
+        {
+            return dNarrowMonoDegEff[flat];
+        } else
+        {
+            return dNarrowAStoredDeg[flat];
+        }
+    }
+
+    __device__ __forceinline__ double BSeed(double x, int) const {
+        int piece = 0;
+
+        while (piece + 1 < detail::kNarrowBPieces && x >= dNarrowBEdges[piece + 1])
+        {
+            ++piece;
+        }
+
+        const double a = dNarrowBEdges[piece];
+        const double b = dNarrowBEdges[piece + 1];
+        const double t = 2.0 * (x - a) / (b - a) - 1.0;
+
+        return detail::DeviceHornerMono(
+            dNarrowBMonoCoeffs + piece * (detail::kNarrowBDeg + 1),
+            kRelaxed ? dNarrowMonoBDegEff[piece * (detail::kMaxOrder + 1)]
+                     : detail::kNarrowBDeg,
+            t);
     }
 };
 
@@ -728,6 +883,138 @@ __global__ void BoysAllOrdersF64NarrowOrdersKernelEff(const int* n,
     DeviceOrdersBody(Lane64Narrow<true>{}, n[i], x[i], out, count, i);
 }
 
+// ---------------------------------------------------------------------------
+// the evaluation scheme: the same fits in the monomial basis
+// ---------------------------------------------------------------------------
+// The scheme axis is a lane choice and not a body choice — the pieces, the
+// edges, the region structure and the shape are the shipped ones, and what
+// changes is the pool a piece's coefficients come from and the summation they
+// are read by (boys_cuda_arithmetic.hpp) — so these are the same four shapes
+// with a monomial lane, each with the full-accuracy form and the rung's.
+//
+// The orders axis composes with it for the same reason it composes with the
+// partition: DeviceOrdersBody takes the lane, and the axis is a choice inside
+// region A whichever basis that lane sums.
+__global__ void BoysAllOrdersF64MonoKernel(const int* n,
+                                           const double* __restrict__ x,
+                                           double* __restrict__ out,
+                                           size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    detail::DeviceAllOrdersF64(Lane64MonoFull{}, n[i], x[i], [&](int l, double v) {
+        out[l * count + i] = v;
+    });
+}
+
+__global__ void BoysAllOrdersF64MonoKernelEff(const int* n,
+                                              const double* __restrict__ x,
+                                              double* __restrict__ out,
+                                              size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    detail::DeviceAllOrdersF64(Lane64MonoEff{}, n[i], x[i], [&](int l, double v) {
+        out[l * count + i] = v;
+    });
+}
+
+__global__ void BoysAllOrdersF64OrdersMonoKernel(const int* n,
+                                                 const double* __restrict__ x,
+                                                 double* __restrict__ out,
+                                                 size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DeviceOrdersBody(Lane64MonoFull{}, n[i], x[i], out, count, i);
+}
+
+__global__ void BoysAllOrdersF64OrdersMonoKernelEff(const int* n,
+                                                    const double* __restrict__ x,
+                                                    double* __restrict__ out,
+                                                    size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DeviceOrdersBody(Lane64MonoEff{}, n[i], x[i], out, count, i);
+}
+
+__global__ void BoysAllOrdersF64NarrowMonoKernel(const int* n,
+                                                 const double* __restrict__ x,
+                                                 double* __restrict__ out,
+                                                 size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    detail::DeviceAllOrdersF64(Lane64NarrowMono<false>{}, n[i], x[i], [&](int l, double v) {
+        out[l * count + i] = v;
+    });
+}
+
+__global__ void BoysAllOrdersF64NarrowMonoKernelEff(const int* n,
+                                                    const double* __restrict__ x,
+                                                    double* __restrict__ out,
+                                                    size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    detail::DeviceAllOrdersF64(Lane64NarrowMono<true>{}, n[i], x[i], [&](int l, double v) {
+        out[l * count + i] = v;
+    });
+}
+
+__global__ void BoysAllOrdersF64NarrowOrdersMonoKernel(const int* n,
+                                                       const double* __restrict__ x,
+                                                       double* __restrict__ out,
+                                                       size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DeviceOrdersBody(Lane64NarrowMono<false>{}, n[i], x[i], out, count, i);
+}
+
+__global__ void BoysAllOrdersF64NarrowOrdersMonoKernelEff(const int* n,
+                                                          const double* __restrict__ x,
+                                                          double* __restrict__ out,
+                                                          size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DeviceOrdersBody(Lane64NarrowMono<true>{}, n[i], x[i], out, count, i);
+}
+
 template <int kLane, bool kFastExp>
 __global__ void BoysSingleF32KernelEff(const int* n,
                                        const double* __restrict__ x,
@@ -860,6 +1147,9 @@ extern "C" int BoysCudaUploadTables() {
     // Double lane.
     {
         double coeffs[kMaxCoeffs] = {};
+        // The monomial scheme's pool, packed at the same offsets as the
+        // Chebyshev one — the two forms of one fit over the same pieces.
+        double monoCoeffs[kMaxCoeffs] = {};
         int offset[33][kMaxPieces] = {};
         double a[33][kMaxPieces] = {};
         double b[33][kMaxPieces] = {};
@@ -909,6 +1199,7 @@ extern "C" int BoysCudaUploadTables() {
                     }
 
                     coeffs[runningOffset + k] = detail::kCoeffs[piece.offset + k];
+                    monoCoeffs[runningOffset + k] = detail::kMonoCoeffs[piece.offset + k];
                 }
 
                 runningOffset += piece.deg + 1;
@@ -993,6 +1284,20 @@ extern "C" int BoysCudaUploadTables() {
 
         if (cudaMemcpyToSymbol(dBSeed, detail::kBcoeffs.data(), sizeof(detail::kBcoeffs)) !=
             cudaSuccess)
+        {
+            return 2;
+        }
+
+        // The monomial scheme's pools. Only the pool is copied: the pieces,
+        // their edges and their degrees are the ones above, which is what the
+        // two forms of a fit share.
+        if (cudaMemcpyToSymbol(dMonoCoeffs, monoCoeffs, sizeof(monoCoeffs)) != cudaSuccess)
+        {
+            return 2;
+        }
+
+        if (cudaMemcpyToSymbol(dMonoBcoeffs, detail::kMonoBcoeffs.data(),
+                               sizeof(detail::kMonoBcoeffs)) != cudaSuccess)
         {
             return 2;
         }
@@ -1160,8 +1465,13 @@ extern "C" int BoysCudaUploadTables() {
         double b[kNarrowPiecesTotal] = {};
         int stored[kNarrowPiecesTotal] = {};
         double coeffs[kNarrowCoeffsTotal] = {};
+        // The partition's own fits in the monomial basis, at the same offsets:
+        // the pieces, edges and stored degrees above are the two forms' shared
+        // ones.
+        double monoCoeffs[kNarrowCoeffsTotal] = {};
         double edges[detail::kNarrowBPieces + 1] = {};
         double bcoeffs[detail::kNarrowBPieces * (detail::kNarrowBDeg + 1)] = {};
+        double monoBcoeffs[detail::kNarrowBPieces * (detail::kNarrowBDeg + 1)] = {};
 
         for (int o = 0; o <= detail::kMaxOrder + 1; ++o)
         {
@@ -1186,6 +1496,8 @@ extern "C" int BoysCudaUploadTables() {
             {
                 coeffs[piece.offset + k] = detail::kNarrowACoeffs[static_cast<std::size_t>(
                     piece.offset + k)];
+                monoCoeffs[piece.offset + k] =
+                    detail::kNarrowAMonoCoeffs[static_cast<std::size_t>(piece.offset + k)];
             }
         }
 
@@ -1197,6 +1509,7 @@ extern "C" int BoysCudaUploadTables() {
         for (int k = 0; k < detail::kNarrowBPieces * (detail::kNarrowBDeg + 1); ++k)
         {
             bcoeffs[k] = detail::kNarrowBcoeffs[static_cast<std::size_t>(k)];
+            monoBcoeffs[k] = detail::kNarrowBMonoCoeffs[static_cast<std::size_t>(k)];
         }
 
         if (cudaMemcpyToSymbol(dNarrowAPieceStart, start, sizeof(start)) != cudaSuccess ||
@@ -1205,8 +1518,10 @@ extern "C" int BoysCudaUploadTables() {
             cudaMemcpyToSymbol(dNarrowAB, b, sizeof(b)) != cudaSuccess ||
             cudaMemcpyToSymbol(dNarrowAStoredDeg, stored, sizeof(stored)) != cudaSuccess ||
             cudaMemcpyToSymbol(dNarrowACoeffs, coeffs, sizeof(coeffs)) != cudaSuccess ||
+            cudaMemcpyToSymbol(dNarrowAMonoCoeffs, monoCoeffs, sizeof(monoCoeffs)) != cudaSuccess ||
             cudaMemcpyToSymbol(dNarrowBEdges, edges, sizeof(edges)) != cudaSuccess ||
-            cudaMemcpyToSymbol(dNarrowBCoeffs, bcoeffs, sizeof(bcoeffs)) != cudaSuccess)
+            cudaMemcpyToSymbol(dNarrowBCoeffs, bcoeffs, sizeof(bcoeffs)) != cudaSuccess ||
+            cudaMemcpyToSymbol(dNarrowBMonoCoeffs, monoBcoeffs, sizeof(monoBcoeffs)) != cudaSuccess)
         {
             return 2;
         }
@@ -1378,8 +1693,22 @@ extern "C" int BoysCudaEffTablesResident(double m) {
     return BoysCudaEffTablesResidentOn(device, m, gEffDevice, gEffM);
 }
 
-extern "C" int BoysCudaUploadEffTables(
-    double m, const int* degA, const int* degB, const int* narrowA, const int* narrowB) {
+// The monomial scheme's rungs travel with the Chebyshev ones and not in an
+// upload of their own: one rung is one cut of every table the lane holds, and a
+// caller that changed the multiplier must not be able to reach a device holding
+// the new shipped tables beside the old monomial ones. monoA layout:
+// [order][pieceInOrder] ((kMaxOrder + 1) x kMaxPieces); monoB layout: [order]
+// (kMaxOrder + 1); narrowMonoA: flat over the narrow partition's rows;
+// narrowMonoB: [piece][order], as the Chebyshev narrow region-B table is.
+extern "C" int BoysCudaUploadEffTables(double m,
+                                       const int* degA,
+                                       const int* degB,
+                                       const int* narrowA,
+                                       const int* narrowB,
+                                       const int* monoA,
+                                       const int* monoB,
+                                       const int* narrowMonoA,
+                                       const int* narrowMonoB) {
     int device = 0;
 
     if (cudaGetDevice(&device) != cudaSuccess)
@@ -1450,6 +1779,22 @@ extern "C" int BoysCudaUploadEffTables(
     if (cudaMemcpyToSymbol(dNarrowDegEff, narrowA, kNarrowPiecesTotal * sizeof(int)) != cudaSuccess ||
         cudaMemcpyToSymbol(dNarrowBDegEff,
                            narrowB,
+                           detail::kNarrowBPieces * (detail::kMaxOrder + 1) * sizeof(int)) !=
+            cudaSuccess)
+    {
+        return 2;
+    }
+
+    // The monomial scheme's cut of the same rung, in the same four shapes.
+    if (cudaMemcpyToSymbol(dMonoDegEff,
+                           monoA,
+                           (detail::kMaxOrder + 1) * kMaxPieces * sizeof(int)) != cudaSuccess ||
+        cudaMemcpyToSymbol(dMonoBDegEff, monoB, (detail::kMaxOrder + 1) * sizeof(int)) !=
+            cudaSuccess ||
+        cudaMemcpyToSymbol(dNarrowMonoDegEff, narrowMonoA, kNarrowPiecesTotal * sizeof(int)) !=
+            cudaSuccess ||
+        cudaMemcpyToSymbol(dNarrowMonoBDegEff,
+                           narrowMonoB,
                            detail::kNarrowBPieces * (detail::kMaxOrder + 1) * sizeof(int)) !=
             cudaSuccess)
     {
@@ -1545,6 +1890,63 @@ extern "C" int BoysCudaLaunchAllOrdersF64NarrowOrders(
 extern "C" int BoysCudaLaunchAllOrdersF64NarrowOrdersEff(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
     BoysAllOrdersF64NarrowOrdersKernelEff
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+// The monomial scheme's four shapes, each in the two forms a rung has.
+extern "C" int BoysCudaLaunchAllOrdersF64Mono(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    BoysAllOrdersF64MonoKernel
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF64MonoEff(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    BoysAllOrdersF64MonoKernelEff
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF64OrdersMono(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    BoysAllOrdersF64OrdersMonoKernel
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF64OrdersMonoEff(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    BoysAllOrdersF64OrdersMonoKernelEff
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF64NarrowMono(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    BoysAllOrdersF64NarrowMonoKernel
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF64NarrowMonoEff(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    BoysAllOrdersF64NarrowMonoKernelEff
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF64NarrowOrdersMono(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    BoysAllOrdersF64NarrowOrdersMonoKernel
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF64NarrowOrdersMonoEff(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    BoysAllOrdersF64NarrowOrdersMonoKernelEff
         <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
     return static_cast<int>(cudaGetLastError());
 }

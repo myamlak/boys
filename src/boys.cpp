@@ -812,17 +812,21 @@ Carriage CarriesSingle(FitRoute route,
 // Both of its packing axes are served too: one ladder per argument from the top
 // order's fit, and one fit per order inside region A
 // (BoysCuda::AllOrdersF64Orders, and the two together in
-// BoysCuda::AllOrdersF64NarrowOrders). What the lane does not take is a route
-// or a scheme of another family: its degree tables are certified for the
-// shipped fit, and the rational family's pairs and the monomial basis's
-// coefficients are the host lane's tables.
+// BoysCuda::AllOrdersF64NarrowOrders). Both of its schemes are served as well:
+// the double lane stores the Chebyshev fits in their monomial form too, one
+// coefficient per Chebyshev coefficient at the same pieces and degrees, and the
+// lane uploads both pools (BoysCuda::AllOrdersF64Mono and its three siblings),
+// so the scheme axis names which table the same body reads.
 Carriage CarriesDevice(FitRoute route, EvalScheme scheme) noexcept {
-    if (route != kDefaultFitRoute || scheme != kDefaultEvalScheme)
+    (void)scheme;
+
+    if (route != kDefaultFitRoute)
     {
         return {false,
-                "the device lane's entries evaluate the shipped fit: its degree tables are "
-                "certified for that family at each rung, and a route or a scheme of another "
-                "family has no table on this lane"};
+                "the device lane's entries evaluate the shipped fit, in either of the two bases "
+                "it is stored in, and the rational route's piece pairs and region-B seed are a "
+                "coefficient table this lane has not uploaded: the route's own entries are a "
+                "table to build rather than a shape the call cannot have"};
     }
 
     return {true, ""};

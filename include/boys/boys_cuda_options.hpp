@@ -14,6 +14,7 @@
 /// rows and an accuracy gate's claims be projections of one report instead of
 /// lists that drift from it.
 
+#include "boys/accuracy.hpp"
 #include "boys/boys_device_tables.hpp"
 
 #include <cstddef>
@@ -49,6 +50,10 @@ enum class DeviceEntry : int {
     kAllOrdersF64Narrow, ///< BoysCuda::AllOrdersF64Narrow, launched
     kAllOrdersF64Orders, ///< BoysCuda::AllOrdersF64Orders, launched
     kAllOrdersF64NarrowOrders, ///< BoysCuda::AllOrdersF64NarrowOrders, launched
+    kAllOrdersF64Mono, ///< BoysCuda::AllOrdersF64Mono, launched
+    kAllOrdersF64OrdersMono, ///< BoysCuda::AllOrdersF64OrdersMono, launched
+    kAllOrdersF64NarrowMono, ///< BoysCuda::AllOrdersF64NarrowMono, launched
+    kAllOrdersF64NarrowOrdersMono, ///< BoysCuda::AllOrdersF64NarrowOrdersMono, launched
 
     kAllNF64, ///< BoysCuda::AllNF64, launched
     kAllNF32, ///< BoysCuda::AllNF32, launched
@@ -134,6 +139,7 @@ enum class DeviceOptionAxis : int {
     kRegionBExp, ///< which region-B exponential the entry's recurrence seeds with
     kPartition, ///< which cut of the regions the entry reads its fits from
     kPacking, ///< how region A's fits are read: one ladder, or one fit per order
+    kScheme, ///< which basis the entry sums its stored fits in; its member is \c scheme
 };
 
 /// One row of the device option space: an option this surface offers, with
@@ -162,6 +168,18 @@ struct DeviceOptionInfo {
     const char* boundForm; ///< the documented form, as the multiplier m enters it
     bool built; ///< whether this build serves the option
     const char* refusedBecause; ///< why not, when \c built is false; nullptr otherwise
+
+    /// The evaluation scheme the option's stored basis is summed in, and the
+    /// route its pieces are cut from.
+    ///
+    /// Stated on every row rather than only on the rows that move them, because
+    /// the two are the family a row belongs to and a chooser placing two rows
+    /// side by side is asking whether they are the same family: the shipped
+    /// values are the defaults here, so a row that carries them says so by
+    /// carrying them. The member of a row whose \c axis is kScheme is \c scheme;
+    /// of one whose axis is kRoute, \c route.
+    EvalScheme scheme = kDefaultEvalScheme;
+    FitRoute route = kDefaultFitRoute;
 };
 
 /// The device option space this revision defines, one row per option, read from

@@ -473,6 +473,11 @@ int BoysCudaLaunchAllOrdersF64(const int*, const double*, double*, std::size_t, 
 int BoysCudaLaunchAllOrdersF64Narrow(const int*, const double*, double*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF64Orders(const int*, const double*, double*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF64NarrowOrders(const int*, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF64Mono(const int*, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF64OrdersMono(const int*, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF64NarrowMono(const int*, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF64NarrowOrdersMono(
+    const int*, const double*, double*, std::size_t, void*);
 int BoysCudaLaunchAllNF64(int, const double*, double*, std::size_t, void*);
 int BoysCudaLaunchSingleF16(const int*, const void*, void*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF16(const int*, const void*, void*, std::size_t, void*);
@@ -512,6 +517,19 @@ int LaunchLaunched(ProbeEntry entry,
             break;
         case ProbeEntry::kAllOrdersF64NarrowOrders:
             BoysCudaLaunchAllOrdersF64NarrowOrders(n, x, static_cast<double*>(out), count, stream);
+            break;
+        case ProbeEntry::kAllOrdersF64Mono:
+            BoysCudaLaunchAllOrdersF64Mono(n, x, static_cast<double*>(out), count, stream);
+            break;
+        case ProbeEntry::kAllOrdersF64OrdersMono:
+            BoysCudaLaunchAllOrdersF64OrdersMono(n, x, static_cast<double*>(out), count, stream);
+            break;
+        case ProbeEntry::kAllOrdersF64NarrowMono:
+            BoysCudaLaunchAllOrdersF64NarrowMono(n, x, static_cast<double*>(out), count, stream);
+            break;
+        case ProbeEntry::kAllOrdersF64NarrowOrdersMono:
+            BoysCudaLaunchAllOrdersF64NarrowOrdersMono(
+                n, x, static_cast<double*>(out), count, stream);
             break;
         case ProbeEntry::kAllOrdersF32:
             BoysCudaLaunchAllOrdersF32(n, x, static_cast<float*>(out), count, stream);
