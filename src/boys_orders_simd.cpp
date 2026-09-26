@@ -839,6 +839,9 @@ struct F32Group {
     const float* table;
     std::int32_t base[8];
     std::int32_t stored[8];
+    // A group is a stack local, so this array lands wherever the frame puts it
+    // and not necessarily on a 32-byte boundary: the load that reads it is the
+    // unaligned one, as the argument member's is.
     std::int32_t degree[8];
     float t[8];
     int degMax;
@@ -931,7 +934,7 @@ __m256 F32Coefficients(const F32Group& group, int k) noexcept {
                                         _mm256_load_si256(reinterpret_cast<const __m256i*>(index)),
                                         4);
     const __m256 deg = _mm256_cvtepi32_ps(
-        _mm256_load_si256(reinterpret_cast<const __m256i*>(group.degree)));
+        _mm256_loadu_si256(reinterpret_cast<const __m256i*>(group.degree)));
 
     return _mm256_andnot_ps(AboveDegreeF32(k, deg), c);
 }
