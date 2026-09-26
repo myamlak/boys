@@ -1459,7 +1459,11 @@ template <double kAccuracyMultiplier, FitRoute kRoute, EvalScheme kScheme, BoysR
 double FloatBatchRegionASeedAtRung(int order, double x) noexcept {
     if constexpr (kRoute == FitRoute::kRationalMinimax)
     {
-        if (x >= RationalFit32::kRegionAFitsFrom)
+        // The hand-over point is the route's own constant and the same one
+        // under either partition, and this rung body reads the shipped pieces
+        // (ShippedRegionAPartition, the double lane's pair table), so it is
+        // named at the shipped partition.
+        if (x >= RationalFit32<FitGranularity::kShipped>::kRegionAFitsFrom)
         {
             static constexpr detail::RationalRegionAPairs kPairsA =
                 detail::RationalRegionASeedDegrees<kAccuracyMultiplier, kRole>();
@@ -2214,7 +2218,13 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
     assert(x >= 0.0f);
     assert(out != nullptr);
 
-    if constexpr (Policy::kPack == PackAxis::kOrders)
+    // The packed lane below runs on the shipped partition, the only one whose
+    // pieces step order to order at a single stride. A policy naming the narrow
+    // partition takes the scalar per-order path instead: the same values this
+    // lane returns, exact to the bit, without the eight-wide lane - the cost of
+    // the option, not a value it changes.
+    if constexpr (Policy::kPack == PackAxis::kOrders &&
+                  Policy::kGranularity == kDefaultFitGranularity)
     {
         // The across-orders packed lane: eight orders of one argument in one
         // vector register, which is the shape BoysAllOrdersF32(nmax, x, out)
@@ -2237,16 +2247,6 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
                           "shipped route and scheme alone, and every route and scheme is served "
                           "at it");
         }
-
-        static_assert(Policy::kGranularity == kDefaultFitGranularity,
-                      "the across-orders packed lane of this engine steps one order's "
-                      "coefficients to the next at a fixed stride, which only the shipped table "
-                      "has: the narrow partition's pieces are cut per order, and this lane names "
-                      "no partition at all, so a policy naming the narrow one here would answer "
-                      "from the shipped table under the narrow partition's name. This assertion "
-                      "refuses it instead, and what it refuses is a kernel to write rather than "
-                      "a combination that cannot be formed: read the narrow partition on the "
-                      "arguments axis, or the shipped one on this axis");
 
         BoysAllOrdersF32Packed<Policy::kScheme,
                                kAccuracyMultiplier,
@@ -2389,23 +2389,17 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
 }
 
 // The float lane's all-N batch: the per-argument all-orders body at every
-// argument, the results scattered into the caller's planes. The AVX2 tier is
-// double and half only - there is no packed float region kernel - so this entry
-// has no homogeneous run to hand to a lane, no scratch to ask the caller for,
-// and no speed of its own to claim over the same loop written at the call site.
-// What it carries is the shape: the one BoysAllN has in the double lane and
-// BoysCuda::AllNF32 has on the device.
+// argument, the results scattered into the caller's planes. The packed float
+// lane this lane has packs the orders of one argument, and this entry's run is
+// one argument after another, so neither axis gets a homogeneous run out of it:
+// the run the axis would pack is the orders of a single argument, which the
+// all-orders body below already fills, one call per argument. What it carries
+// is the shape: the one BoysAllN has in the double lane and BoysCuda::AllNF32
+// has on the device.
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 void BoysAllNF32Impl(int nmax, const float* x, float* out, std::size_t count) noexcept {
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
-    static_assert(Policy::kPack == PackAxis::kArguments,
-                  "this entry answers each argument through the all-orders entry, so it has no "
-                  "run to hand to a packed lane of its own: the single-precision lane's one "
-                  "all-orders body is the scalar one (the AVX2 tier is double and half only), "
-                  "and that body refuses the orders axis for the reason its own assertion "
-                  "states. Naming the axis here would be read and ignored; read the orders axis "
-                  "on the double lane, or the shipped arguments axis here");
     assert(nmax >= 0 && nmax <= kMaxBoysOrder);
     assert(count == 0 || x != nullptr);
     assert(count == 0 || out != nullptr);

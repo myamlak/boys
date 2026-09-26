@@ -760,39 +760,44 @@ struct Carriage {
     const char* reason = "";
 };
 
-// The single-precision lanes' rule, which is one rule: one coefficient set per
-// region, no partition to name, and past the reference multiplier the shipped
-// route and scheme alone, because a relaxed rung cuts the lane's fits by a
-// table of effective degrees and a degree table is certified against one stored
-// table of one fit family.
+// The single-precision lanes' carriage, read off the entries those lanes build.
+// Both packing axes are served on the shipped partition: the arguments axis by
+// the per-order bodies, the orders axis by the packed lane that steps one
+// order's coefficients to the next order's. The narrow partition is stored for
+// this lane and is read at the reference multiplier on both axes; a rung of it
+// is not, because a rung reads the shipped pieces' stored coefficients and the
+// narrow pieces' own degree table is a derivation this lane has not done. The
+// packed lane's rung bodies are instantiated for the shipped route and scheme,
+// so another family's rung on that axis is a body to build.
 Carriage CarriesSingle(FitRoute route,
                        EvalScheme scheme,
                        PackAxis axis,
                        FitGranularity granularity,
                        AccuracyTier tier) noexcept {
+    const bool reference = tier == AccuracyTier::kReference;
+
     if (granularity != kDefaultFitGranularity)
     {
-        return {false,
-                "the single-precision lane's fits are its own, one partition of region A and one "
-                "region-B seed, with no narrow counterpart: a narrow table for this lane is a "
-                "table to generate, and the narrow partition is read on the double lane"};
+        if (!reference)
+        {
+            return {false,
+                    "a rung of this lane reads the shipped pieces' stored coefficients at the "
+                    "degrees the rung certifies, and the narrow pieces' own effective-degree "
+                    "table is a derivation this lane has not done: the narrow rungs are a table "
+                    "to derive rather than a shape the call cannot have"};
+        }
+
+        return {true, ""};
     }
 
-    if (axis != kDefaultPackAxis)
-    {
-        return {false,
-                "the packing axes are the double lane's: both members pack the double lane's "
-                "region-A fits, so this lane has no kernel for either of them"};
-    }
-
-    if (tier != AccuracyTier::kReference &&
+    if (axis != kDefaultPackAxis && !reference &&
         !(route == kDefaultFitRoute && scheme == kDefaultEvalScheme))
     {
         return {false,
-                "past the reference multiplier this lane serves the shipped route and scheme "
-                "alone: a relaxed rung cuts the lane's fits by a table of effective degrees, and a "
-                "degree table is certified against one stored table of one fit family, so the "
-                "degrees a rung needs of another family's fit are a derivation nobody has done"};
+                "the packed lane's rung bodies are instantiated for the shipped route and "
+                "scheme, and a rung of another family's fit on this axis is a body to build "
+                "rather than a shape the call cannot have: the scalar path carries that family's "
+                "rungs on the arguments axis"};
     }
 
     return {true, ""};
@@ -803,17 +808,27 @@ Carriage CarriesSingle(FitRoute route,
 // argument at the call site against a certified degree table the lane holds per
 // rung - so every rung is served where the host lane serves the shipped pair
 // alone. What the lane does not take is a partition, a packing axis or another
-// fit family, and each of those is refused for the reason the host lane's own
-// row states.
+// fit family, and each of the three is work on this lane rather than a shape it
+// cannot have: the narrow pieces' table, the packed orders kernel, and the
+// degree tables of another family are all the host lane's.
 Carriage CarriesDevice(FitRoute route,
                        EvalScheme scheme,
                        PackAxis axis,
                        FitGranularity granularity) noexcept {
-    Carriage c = CarriesSingle(route, scheme, axis, granularity, AccuracyTier::kReference);
-
-    if (!c.carried)
+    if (granularity != kDefaultFitGranularity)
     {
-        return c;
+        return {false,
+                "the device lane's entries read one coefficient set per region, and the narrow "
+                "pieces' table is the host lane's: a narrow policy on this lane is a table this "
+                "lane has not generated"};
+    }
+
+    if (axis != kDefaultPackAxis)
+    {
+        return {false,
+                "the device lane's kernels are one order per lane over an array of arguments, so "
+                "the orders axis on this lane is a kernel to write rather than a shape the call "
+                "cannot have"};
     }
 
     if (route != kDefaultFitRoute || scheme != kDefaultEvalScheme)
