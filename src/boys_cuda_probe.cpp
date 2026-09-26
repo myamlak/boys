@@ -1096,6 +1096,17 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
         return report;
     }
 
+    // Whether this build carries the fp16 rows, which is a fact about the
+    // build and not about the device: the handle above names the float lane's
+    // tables, and those are resident whatever the fp16 seam is set to, so a
+    // handle field cannot answer this. The entries are declared behind the
+    // seam, so the seam is what is read.
+#if BoysFp16
+    const bool fp16 = true;
+#else
+    const bool fp16 = false;
+#endif
+
     // --- The workload, and the buffers it lives in ---------------------------
     DeviceProbeOptions clamped = options;
     clamped.count = std::max<std::size_t>(options.count, 1u);

@@ -534,6 +534,13 @@ struct OptionProbeReport {
     /// this build's backend table does not carry the arithmetic they run in.
     std::vector<std::string> unoffered;
 
+    /// Options the library offers on other builds but not on this one, because
+    /// the build-time seam that declares them is closed in it. Kept apart from
+    /// the unoffered list above, which holds options this build has and cannot
+    /// run: the two are different facts about the build, and a caller choosing
+    /// an option is told which one it is looking at.
+    std::vector<std::string> notCarried;
+
     /// Names the caller asked for that are no option of this library at all.
     /// Kept apart from the unoffered list above, which holds options the library
     /// has and this build cannot serve: a name here is a misspelling, and

@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <numeric>
@@ -458,8 +459,12 @@ constexpr double kFloatLaneBound = 1.5e-7;
 /// 1e-7 plus the half-ULP representation term, taken at the top of the range
 /// the function returns in: |F_n(x)| <= 1, so 2^-11 is the largest half-ULP a
 /// binary16 return can carry there, and 2^-9 the largest a bfloat16 one can.
+/// Both belong to the entries the fp16 seam declares, so they are compiled with
+/// them and a build with the seam closed carries no bound for a lane it has.
+#if BoysFp16
 constexpr double kHalfIoLaneBound = 1e-7 + 0x1p-11;
 constexpr double kBf16IoLaneBound = 1e-7 + 0x1p-9;
+#endif // BoysFp16
 
 /// The largest error a tier can deliver in any region, read from the library.
 ///
@@ -710,6 +715,28 @@ std::vector<OptionProbeCell> EnumerateCells() {
                                 "the %s partition's tables carry the %s route, and the %s route "
                                 "is not one of them — a table to generate",
                                 partition.name, PartitionRouteNames(partition).c_str(), route.name);
+                        } else if (partition.granularity != kDefaultFitGranularity &&
+                                   route.route == FitRoute::kRationalMinimax &&
+                                   axis.axis == PackAxis::kOrders)
+                        {
+                            cell.served = false;
+                            cell.reason = Text(
+                                "the rational route's across-orders packed lane is instantiated "
+                                "over the shipped region-A pairs, whose coefficients it steps at a "
+                                "fixed stride: a packed kernel over the %s pieces' own pairs is a "
+                                "body to write",
+                                partition.name);
+                        } else if (partition.granularity != kDefaultFitGranularity &&
+                                   route.route == FitRoute::kRationalMinimax &&
+                                   tier != AccuracyTier::kReference)
+                        {
+                            cell.served = false;
+                            cell.reason = Text(
+                                "a relaxed rung of the rational route reads the shipped pairs' "
+                                "effective-degree table, and deriving it over the %s pieces' own "
+                                "pairs is a table to derive: the pair is carried at the reference "
+                                "multiplier",
+                                partition.name);
                         } else if (!FitGranularityHasAxis(partition, axis.axis))
                         {
                             cell.served = false;
@@ -758,11 +785,14 @@ std::vector<OptionProbeCell> EnumerateCells() {
 /// resolved against backend::BoysBackends(), so an option whose arithmetic the
 /// table lacks is reported as not offered rather than measured under a name that
 /// is not this build's. The half-precision lanes are behind the same BoysFp16
-/// seam that declares them.
+/// seam that declares them, so a build whose seam is closed carries no entry to
+/// name and says so through notCarried rather than by leaving the names
+/// unmentioned.
 std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table,
                                      std::span<const FitGranularityInfo> partitions,
                                      const std::vector<OptionProbeCell>& cells,
-                                     std::vector<std::string>& unoffered) {
+                                     std::vector<std::string>& unoffered,
+                                     std::vector<std::string>& notCarried) {
     std::vector<Option> options;
 
     const backend::BackendInfo* fp64 = ResolveArithmetic(table, true);
@@ -814,6 +844,18 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
     append("bf16-io", OptionKind::kBatchBf16, OptionPrecision::kBf16, kDefaultFitRoute,
            kDefaultEvalScheme, kDefaultFitGranularity, PackAxis::kArguments,
            AccuracyTier::kReference, fp32, kBf16IoLaneBound);
+
+    // A build that carries both lanes has nothing to report as not carried, and
+    // the register stays a parameter either way so its caller reads one list in
+    // both builds.
+    (void)notCarried;
+#else
+    // The seam is closed in this build, so the two lanes are not options it can
+    // serve. They are named as ones this build does not carry rather than
+    // dropped from both lists: a caller asking for one is told the build has no
+    // such lane, instead of being told the name is no option of this library.
+    notCarried.emplace_back("f16-io");
+    notCarried.emplace_back("bf16-io");
 #endif
 
     // Every served cell becomes an option, under the cell's own name, except the
@@ -1108,45 +1150,60 @@ void VisitValues(const Workload& work, Buffers& buffers, const Option& option, V
         break;
     }
 
-#if BoysFp16
     case OptionKind::kBatchF16:
-    {
-        F16 values[kMaxBoysOrder + 1];
-
-        for (std::size_t i = 0; i < work.x.size(); ++i)
-        {
-            const int n = work.order[i];
-            const F16 x = static_cast<F16>(static_cast<float>(work.x[i]));
-            BoysAllOrdersF16(n, x, values);
-
-            for (int k = 0; k <= n; ++k)
-            {
-                visit(static_cast<double>(x), k, static_cast<double>(values[k]));
-            }
-        }
-
-        break;
-    }
-
     case OptionKind::kBatchBf16:
     {
-        Bf16 values[kMaxBoysOrder + 1];
-
-        for (std::size_t i = 0; i < work.x.size(); ++i)
+        // Both kinds are declared in every build, so both are labelled in every
+        // build: a switch that left them out would be refused by -Werror=switch,
+        // and a label with nothing under it would answer in silence. The seam
+        // decides what stands under the label.
+#if BoysFp16
+        if (option.kind == OptionKind::kBatchF16)
         {
-            const int n = work.order[i];
-            const Bf16 x = static_cast<Bf16>(static_cast<float>(work.x[i]));
-            BoysAllOrdersBf16(n, x, values);
+            F16 values[kMaxBoysOrder + 1];
 
-            for (int k = 0; k <= n; ++k)
+            for (std::size_t i = 0; i < work.x.size(); ++i)
             {
-                visit(static_cast<double>(x), k, static_cast<double>(values[k]));
+                const int n = work.order[i];
+                const F16 x = static_cast<F16>(static_cast<float>(work.x[i]));
+                BoysAllOrdersF16(n, x, values);
+
+                for (int k = 0; k <= n; ++k)
+                {
+                    visit(static_cast<double>(x), k, static_cast<double>(values[k]));
+                }
+            }
+        } else
+        {
+            Bf16 values[kMaxBoysOrder + 1];
+
+            for (std::size_t i = 0; i < work.x.size(); ++i)
+            {
+                const int n = work.order[i];
+                const Bf16 x = static_cast<Bf16>(static_cast<float>(work.x[i]));
+                BoysAllOrdersBf16(n, x, values);
+
+                for (int k = 0; k <= n; ++k)
+                {
+                    visit(static_cast<double>(x), k, static_cast<double>(values[k]));
+                }
             }
         }
+#else
+        // A build whose seam is closed constructs no option of either kind - the
+        // enumeration below offers neither and registers them as not carried - so
+        // this arm is unreachable here. It stops rather than returning nothing,
+        // because a value visitor that answered no values would read as an option
+        // this build measured and found empty.
+        std::fprintf(stderr,
+                     "boys-probe: %s names a half-precision lane this build does not carry "
+                     "(BoysFp16 = 0)\n",
+                     option.name.c_str());
+        std::abort();
+#endif // BoysFp16
 
         break;
     }
-#endif // BoysFp16
 
     case OptionKind::kGroupedFp64:
     case OptionKind::kTaggedFp64:
@@ -1613,8 +1670,8 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
     // just as a full one does.
     const std::vector<OptionProbeCell> cells = EnumerateCells();
     report.cells = cells;
-    std::vector<Option> options_ =
-        EnumerateOptions(report.backends, report.granularities, cells, report.unoffered);
+    std::vector<Option> options_ = EnumerateOptions(report.backends, report.granularities,
+                                                    cells, report.unoffered, report.notCarried);
 
     // A caller who names a set is answered about that set, and every conclusion
     // below is drawn from what was measured, so the set is narrowed before
@@ -1639,7 +1696,9 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
                             options_.end(),
                             [&](const Option& tried) { return tried.name == name; }) ||
                 std::find(report.unoffered.begin(), report.unoffered.end(), name) !=
-                    report.unoffered.end();
+                    report.unoffered.end() ||
+                std::find(report.notCarried.begin(), report.notCarried.end(), name) !=
+                    report.notCarried.end();
 
             if (known)
             {
@@ -1668,6 +1727,11 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
                            report.unoffered.end(),
                            [&](const std::string& name) { return !asked(name); }),
             report.unoffered.end());
+        report.notCarried.erase(
+            std::remove_if(report.notCarried.begin(),
+                           report.notCarried.end(),
+                           [&](const std::string& name) { return !asked(name); }),
+            report.notCarried.end());
     }
 
     report.measurements.resize(options_.size());
@@ -2380,6 +2444,16 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
             }
         }
     }
+    if (!report.notCarried.empty())
+    {
+        text += "\noptions this build does not carry, because its fp16 seam is closed (BoysFp16 "
+                "= 0):\n";
+
+        for (const std::string& name : report.notCarried)
+        {
+            text += Text("  %s\n", name.c_str());
+        }
+    }
 
     // What this run could order, and which of the two measured terms set it, so
     // a reader can see the number was not chosen in advance.
@@ -2523,6 +2597,7 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
     std::size_t refusedRoute = 0;
     std::size_t refusedAxis = 0;
     std::size_t refusedRung = 0;
+    std::size_t refusedFiner = 0;
 
     for (const OptionProbeCell& cell : report.cells)
     {
@@ -2542,6 +2617,16 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
         } else if (partition->rungs == 1 && cell.tier != AccuracyTier::kReference)
         {
             ++refusedRung;
+        } else
+        {
+            // A limit finer than the partition row's own fields can state. The row
+            // says which routes and axes the partition carries and how many rungs it
+            // serves; it cannot say that one lane of a route it carries is
+            // instantiated over another partition's fits, or that a rung of that
+            // route is derived from them. Those cells carry the library's own
+            // reason in the coverage above, and this count keeps the summary's
+            // arithmetic equal to the refusals it describes.
+            ++refusedFiner;
         }
     }
 
@@ -2563,15 +2648,18 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
             "the true\n";
     text += "    function over the interval it is cut for — the library's accuracy gate measures "
             "that book;\n";
-    text += Text("  * the %zu cells of the option space this build refuses, of %zu: %zu on the "
-                 "rational route\n",
-                 refused, report.cells.size(), refusedRoute);
-    text += Text("    (a table to generate), %zu on the across-orders packing axis (a kernel to "
-                 "write) and %zu\n",
-                 refusedAxis, refusedRung);
-    text += "    at the relaxed rungs (a degree table to derive). Each is named with the library's "
-            "own reason\n";
-    text += "    in the coverage above: they are unbuilt work, counted rather than absent, and no "
+    text += Text("  * the %zu cells of the option space this build refuses, of %zu, counted by "
+                 "what the\n    partition rows state of themselves: %zu on the rational route (a "
+                 "table to generate),\n    %zu on the across-orders packing axis (a kernel to "
+                 "write), %zu at the relaxed rungs\n",
+                 refused, report.cells.size(), refusedRoute, refusedAxis, refusedRung);
+    text += Text("    (a degree table to derive) and %zu on a limit finer than those fields "
+                 "state — an\n    across-orders packed lane instantiated over the shipped fits "
+                 "rather than the\n    partition's own (a body to write), and a relaxed rung of "
+                 "the rational route derived\n    from those same fits (a table to derive). Each "
+                 "is named with the library's own reason in\n",
+                 refusedFiner);
+    text += "    coverage above: they are unbuilt work, counted rather than absent, and no "
             "cell of the\n";
     text += "    library's product is missing from this report;\n";
     text += "  * the call shapes other than this workload's all-orders-per-argument one, which the "

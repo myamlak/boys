@@ -586,10 +586,15 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
     // reads a cut of this partition's own pieces - a relaxed rung truncates the
     // partition's stored fits against a degree table derived over them, and the
     // across-orders lane gathers each of the orders it holds its own piece and
-    // coefficients - and the chebyshev route alone, because only that route was
-    // cut on this partition, so the rational route has no narrow table to
-    // evaluate. That one is unbuilt work rather than an unavailable option, and
-    // saying so here is what lets a caller count it without reading the kernels.
+    // coefficients - and both fit routes, because this partition was cut for the
+    // rational route as well: it stores one numerator/denominator pair over each
+    // of its pieces, region A's and region B's alike. The two facts those fields
+    // cannot state are stated where the call is refused: a relaxed rung of the
+    // rational route reads the shipped pairs' degree table, which is a derivation
+    // over these pairs this library has not done, and that route's across-orders
+    // packed lane is instantiated over the shipped pairs alone. Both are unbuilt
+    // work rather than unavailable options, and both are refused where they are
+    // named so that a caller can count them without reading the kernels.
     static const std::array<FitGranularityInfo, 2> rows = [] {
         static constexpr unsigned kBothAxes = (1u << static_cast<unsigned>(PackAxis::kArguments)) |
                                               (1u << static_cast<unsigned>(PackAxis::kOrders));
@@ -707,7 +712,7 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
 
         built[1].granularity = FitGranularity::kNarrow;
         built[1].name = GranularityName(FitGranularity::kNarrow);
-        built[1].routes = kChebBit;
+        built[1].routes = kChebBit | kRatBit;
         built[1].rungs = static_cast<int>(AccuracyTier::kRelaxed65536) + 1;
         built[1].axes = kBothAxes;
         built[1].regionAPieces = static_cast<int>(std::size(detail::kNarrowAPieces));
@@ -890,6 +895,8 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
         }
 
         const FitGranularityInfo& row = partitions[p];
+        const bool narrowRational =
+            granularity != kDefaultFitGranularity && route == FitRoute::kRationalMinimax;
 
         if (static_cast<int>(tier) >= row.rungs)
         {
@@ -903,6 +910,20 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
                 "the partition's tables do not hold this fit route: the rational minimax route "
                 "carries one numerator/denominator pair over the whole of region B, and a "
                 "partition cut per order has no table for it";
+        } else if (narrowRational && axis == PackAxis::kOrders)
+        {
+            c.reason =
+                "the rational route's across-orders packed lane is instantiated over the shipped "
+                "region-A pairs, whose coefficients it steps at a fixed stride: a packed kernel "
+                "over this partition's own pairs is a body to write rather than a shape the call "
+                "cannot have";
+        } else if (narrowRational && tier != AccuracyTier::kReference)
+        {
+            c.reason =
+                "a relaxed rung of the rational route reads the shipped pairs' effective-degree "
+                "table, and deriving that table over this partition's own pairs is work this "
+                "library has not done: the rung is a table to derive rather than a shape the call "
+                "cannot have, and the pair is carried at the reference multiplier";
         } else if (!FitGranularityHasAxis(row, axis))
         {
             c.reason =

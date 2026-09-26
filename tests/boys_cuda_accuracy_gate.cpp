@@ -104,6 +104,21 @@
 #define BoysGateRevision "unknown"
 #endif
 
+// The fp16 device entries and the host launchers that reach them are declared
+// under the BoysFp16 build-time seam (include/boys/boys_cuda.hpp), and CMake
+// pins that seam ON, so a consumer may build this tree with it closed. The
+// format types arrive from boys/f16.hpp either way; the entries do not exist in
+// a closed build, so calling one is a compile error rather than a wrong number.
+// The lane's cells are therefore measured only where this build carries it. The
+// rows are not dropped where it does not: their claim rows still exist, so the
+// claim count does not move with the seam, and the report names every row it
+// could not measure and why, and says so in its RESULT line - a table missing a
+// row reads as a row that was measured, and "every bound met" over cells that
+// were never compared is the other way of saying nothing.
+#if BoysFp16
+#define BOYS_CUDA_GATE_FP16 1
+#endif
+
 // The same reference reader and row shape the CPU gate reports in, so a lane
 // measured here is measured against one reference format and printed in one
 // vocabulary rather than one apiece.
@@ -240,6 +255,59 @@ struct ExpAudit {
 std::vector<ExpAudit>& ExpAudits() {
     static std::vector<ExpAudit> audits;
     return audits;
+}
+
+// The claim rows this build could not measure because the entries behind them
+// are behind a closed fp16 seam, named the way their own claim is registered.
+// Empty in a build that carries the lane, and every reader of it prints nothing
+// then, so the two builds differ only in what each one says it could not do.
+std::vector<std::string>& NotCarriedLanes() {
+    static std::vector<std::string> lanes;
+    return lanes;
+}
+
+// One unmeasured claim row, by its slot: the name comes from the claim itself,
+// so the report cannot drift from the table it is talking about. It exists only
+// in a build that has rows it cannot measure, which is the same build that
+// calls it.
+#ifndef BOYS_CUDA_GATE_FP16
+void NoteNotCarried(int slot) {
+    NotCarriedLanes().push_back(Claims()[static_cast<std::size_t>(slot)].lane);
+}
+#endif
+
+// That register as the report prints it: one line naming the seam and the
+// reason, then the rows, deduplicated because each rung registers the same
+// lanes again and a reader wants the lanes and not the repetition.
+void PrintNotCarried() {
+    if (NotCarriedLanes().empty())
+    {
+        return;
+    }
+
+    std::vector<std::string> printed;
+
+    for (const std::string& lane : NotCarriedLanes())
+    {
+        if (std::find(printed.begin(), printed.end(), lane) != printed.end())
+        {
+            continue;
+        }
+
+        printed.push_back(lane);
+    }
+
+    std::printf("\n  fp16 claim rows this build does not carry, so no bound of theirs is measured "
+                "here: their\n  entries are declared behind the BoysFp16 seam, which this build "
+                "has closed (BoysFp16 = 0),\n  and the %zu rows below name them. They are left in "
+                "the tables unmeasured rather than\n  removed, so the count of rows does not move "
+                "with the seam:\n",
+                printed.size());
+
+    for (const std::string& lane : printed)
+    {
+        std::printf("    %s\n", lane.c_str());
+    }
 }
 
 // The region a double-single argument is dispatched in, by README's interval
@@ -843,6 +911,7 @@ void SweepHalf(const Reference& ref,
                int slotSingle,
                int slotOrders,
                int slotAllN) {
+#ifdef BOYS_CUDA_GATE_FP16
     const std::size_t count = ref.count;
     const int nmax = boys::kMaxBoysOrder;
     const std::size_t cells = grid.cells;
@@ -961,6 +1030,17 @@ void SweepHalf(const Reference& ref,
             }
         }
     }
+#else
+    // No entry to call: this build's fp16 seam is closed, so the three rows
+    // this sweep fills are left unmeasured rather than measured against
+    // nothing, and the report names them by the claims they belong to.
+    (void)ref;
+    (void)grid;
+    (void)sorted;
+    NoteNotCarried(slotSingle);
+    NoteNotCarried(slotOrders);
+    NoteNotCarried(slotAllN);
+#endif // BOYS_CUDA_GATE_FP16
 }
 
 // One relaxed instantiation's rows. The device takes the multiplier as a
@@ -1914,8 +1994,12 @@ void SweepDevice(const Reference& ref,
     }
 
     // The fp16 shapes, at the half value of the argument the grid carries, with
-    // the bound the fp16 lane documents and the floor the format sets.
+    // the bound the fp16 lane documents and the floor the format sets. Closed
+    // seam: the entries these four rows are measured through are declared behind
+    // the seam, so there is nothing here to call and the rows stay unmeasured
+    // rather than measured against nothing. The report says which ones.
     {
+#ifdef BOYS_CUDA_GATE_FP16
         DevBuf<int> dN(cells);
         DevBuf<double> dRho(cells);
         DevBuf<double> dD2(cells);
@@ -2119,6 +2203,13 @@ void SweepDevice(const Reference& ref,
                            ladder,
                            ref,
                            nmax);
+#else
+        (void)rung;
+        NoteNotCarried(slots.single16);
+        NoteNotCarried(slots.orders16);
+        NoteNotCarried(slots.allN16);
+        NoteNotCarried(slots.each16);
+#endif // BOYS_CUDA_GATE_FP16
     }
 }
 
@@ -2892,19 +2983,21 @@ void RunProbe(const Reference& ref,
 
     std::vector<int> hostN(1, n);
     std::vector<double> hostX(1, x);
-    std::vector<boys::F16> hostH(1, boys::F16(static_cast<float>(x)));
 
     DevBuf<int> dN(1);
     DevBuf<double> dX(1);
-    DevBuf<boys::F16> dH(1);
     dN.Upload(hostN);
     dX.Upload(hostX);
-    dH.Upload(hostH);
 
     const std::size_t planes = static_cast<std::size_t>(nmax + 1);
     DevBuf<double> d64(planes);
     DevBuf<float> d32(planes);
+#if BoysFp16
+    std::vector<boys::F16> hostH(1, boys::F16(static_cast<float>(x)));
+    DevBuf<boys::F16> dH(1);
     DevBuf<boys::F16> d16(planes);
+    dH.Upload(hostH);
+#endif
 
     const auto row = [&](const char* lane, double got, double want, double bound, bool have) {
         if (!have)
@@ -2933,7 +3026,9 @@ void RunProbe(const Reference& ref,
 
     std::vector<double> out64(planes);
     std::vector<float> out32(planes);
+#if BoysFp16
     std::vector<boys::F16> out16(planes);
+#endif
     const double ref64 = have64 ? ref.v[atX] : 0.0;
     const double ref32 = have32 ? ref.vf[atF] : 0.0;
     const double ref16 = have16 ? ref.v16[atH] : 0.0;
@@ -2992,6 +3087,7 @@ void RunProbe(const Reference& ref,
         kBoundFloat,
         have32);
 
+#if BoysFp16
     CheckLaunch(boys::BoysCuda::SingleF16<1.0>(dN.get(), dH.get(), d16.get(), count, nullptr),
                 "SingleF16");
     d16.Download(out16);
@@ -3019,6 +3115,18 @@ void RunProbe(const Reference& ref,
         ref16,
         HalfBoundAt(static_cast<double>(out16[static_cast<std::size_t>(n)]), 1.0),
         have16);
+#else
+    // The three fp16 rows of this table. Their entries are declared behind the
+    // BoysFp16 seam, which this build has closed, so there is no entry here to
+    // call. They are named in the table rather than left out of it, with the
+    // build fact that leaves them unmeasured: a row missing from a table reads
+    // as a row that was measured.
+    (void)ref16;
+    const char* const seam = "not carried: this build's BoysFp16 seam is closed";
+    std::printf("  %-22s %s\n", "cuda single f16", seam);
+    std::printf("  %-22s %s\n", "cuda all-orders f16", seam);
+    std::printf("  %-22s %s\n", "cuda all-n f16", seam);
+#endif // BoysFp16
 
     // The device-callable entries at the same cell, through the same consumer
     // kernels the rows above are measured through. Each thread forms its own
@@ -3185,6 +3293,17 @@ void RunProbe(const Reference& ref,
             ref16,
             HalfBoundAt(static_cast<double>(out16[static_cast<std::size_t>(n)]), 1.0),
             have16);
+#else
+        // The four device-callable fp16 rows, on the same cell as the f32 rows
+        // above them. The demo entries that reach the fp16 arithmetic are
+        // declared behind the BoysFp16 seam, which this build has closed: the
+        // rows are named as rows this build does not serve, so the table says
+        // four entries are missing from it and why.
+        const char* const seamNote = "not carried: this build's BoysFp16 seam is closed";
+        std::printf("  %-22s %s\n", "device single f16", seamNote);
+        std::printf("  %-22s %s\n", "device all-orders f16", seamNote);
+        std::printf("  %-22s %s\n", "device each-order f16", seamNote);
+        std::printf("  %-22s %s\n", "device all-n f16", seamNote);
 #endif // BoysFp16
     }
 }
@@ -3690,9 +3809,25 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // A build that carries the lane prints nothing here, so the two builds differ
+    // only in what each one says it could not do.
+    PrintNotCarried();
+
+#ifdef BOYS_CUDA_GATE_FP16
     std::printf("\n  RESULT: every documented device bound met at this revision, %zu of %zu "
                 "comparison cells able to discriminate (exit status 0)\n",
                 cells - nonDiscriminating,
                 cells);
+#else
+    // Closed seam: the rows named above were never measured, so the statement
+    // below is scoped to the entries this build carries rather than left to read
+    // as one about the whole library.
+    std::printf("\n  RESULT: every documented device bound met at this revision for the entries "
+                "this build\n  carries, %zu of %zu comparison cells able to discriminate; the fp16 "
+                "rows named above are\n  not carried by this build (BoysFp16 = 0) and no bound of "
+                "theirs is stated here (exit\n  status 0)\n",
+                cells - nonDiscriminating,
+                cells);
+#endif // BOYS_CUDA_GATE_FP16
     return 0;
 }

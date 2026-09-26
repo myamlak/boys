@@ -57,8 +57,14 @@
 
 namespace {
 
+// The two half types are declared behind the BoysFp16 seam, and every name
+// below that spells one is compiled with the seam. The half section of main
+// states the lanes a build with the seam closed does not carry rather than
+// passing over them in silence.
+#if BoysFp16
 using boys::Bf16;
 using boys::F16;
+#endif // BoysFp16
 
 /// The four names, one line each. What each selects, and the bound it carries,
 /// are in docs/lane-contract.md.
@@ -128,6 +134,9 @@ struct Row {
     double worstX = 0.0;
 };
 
+// The half types' representation readers, which only the half rows below call
+// and so arrive and leave with the seam those rows are behind.
+#if BoysFp16
 std::uint16_t Bits(F16 v) noexcept {
     return std::bit_cast<std::uint16_t>(v);
 }
@@ -135,6 +144,7 @@ std::uint16_t Bits(F16 v) noexcept {
 std::uint16_t Bits(Bf16 v) noexcept {
     return std::bit_cast<std::uint16_t>(v);
 }
+#endif // BoysFp16
 
 std::uint32_t Bits(float v) noexcept {
     std::uint32_t bits = 0;
@@ -415,7 +425,10 @@ int main() {
     // --- half ---------------------------------------------------------------
     // The half lanes' entries take no policy: they run their own budget. What
     // is compared here is the entry against the call the name composes to, so
-    // that the name in the documentation is the arithmetic in the entry.
+    // that the name in the documentation is the arithmetic in the entry. The
+    // entries themselves are declared behind the BoysFp16 seam, so a build with
+    // the seam closed enters the branch below it and says so.
+#if BoysFp16
     {
         Row row = SingleOrderRow<F16>(
             xs,
@@ -526,6 +539,19 @@ int main() {
         row.name = "bf16 vs the float lane's default";
         Print(row);
     }
+
+#else // BoysFp16
+
+    // Stated, not dropped. With the seam closed this build declares no half
+    // entry, so there is no pair of spellings to compare and no cell to differ
+    // on. The four names themselves are still declared and asserted at the top
+    // of this file; what is absent here is the arithmetic they reach, and the
+    // identity rows counted below are the ones this build can run.
+    std::printf("  fp16/bf16 lanes NOT CARRIED by this build (BoysFp16 = 0): the four "
+                "half-precision entries are declared behind the seam, so the rows those "
+                "lanes own are absent here rather than compared\n");
+
+#endif // BoysFp16
 
     std::printf("  %zu of the %zu identity rows differ anywhere; "
                 "the shortcut and the entry are one call\n",

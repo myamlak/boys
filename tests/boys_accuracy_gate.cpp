@@ -62,14 +62,54 @@
 #include <boys/boys.hpp>
 #include <boys/f16.hpp>
 
+// The fp16/bf16 store-half lanes and the packed simd-half kernels behind them
+// are declared under the BoysFp16 build-time seam (include/boys/boys.hpp), which
+// a consumer may close: the format types arrive from boys/f16.hpp either way,
+// but the entries do not exist in a build whose seam is closed, so calling one
+// is a compile error rather than a wrong number. The same rule as the two lanes
+// below applies to them: the measurement is guarded here and the guard is stated
+// in the report, and the claim slots exist either way, so the count of claims
+// does not move with the seam - only their verdicts do.
+#if BoysFp16
+#define BOYS_GATE_FP16 1
+#endif
+
 // The native packed half lane is a lane of its own and arrives on its own
 // branch. A revision that does not carry it must report the lane's claims as
 // evidence absent rather than skip them, so its measurement is guarded here and
 // the guard is stated in the report; the claim slots exist either way, so the
 // count of claims does not move when the lane lands - only their verdicts do.
+//
+// The header arriving is not the lane arriving. boys/half2.hpp declares the
+// packed type and is unconditional, while the two entries that take and return
+// it - BoysAllOrdersHalf2 and BoysAllNF16Native - are declared behind the same
+// BoysFp16 seam as the store-half lanes above. A build of this revision whose
+// seam is closed therefore has the type and no entry to pass it to, which is a
+// different fact from a revision that has no packed type at all; the two are
+// told apart below rather than reported as one.
 #if __has_include("boys/half2.hpp")
 #include <boys/half2.hpp>
+#define BOYS_GATE_NATIVE_HALF_HEADER 1
+#endif
+
+#if defined(BOYS_GATE_NATIVE_HALF_HEADER) && BoysFp16
 #define BOYS_GATE_NATIVE_HALF 1
+#endif
+
+// Why the native packed half lane is not measured here; empty when it is. The
+// row prints this instead of a measurement, so a reader of either build is told
+// which of the two reasons applies rather than left to infer one.
+constexpr const char* kNativeHalfAbsent =
+#if !defined(BOYS_GATE_NATIVE_HALF_HEADER)
+    "the lane is not in this revision: no boys/half2.hpp, so neither the packed type nor the "
+    "entries that take it are here, and the lane's claims are neither confirmed nor refuted";
+#elif !defined(BOYS_GATE_NATIVE_HALF)
+    "the lane is not in this build: boys/half2.hpp is here and defines the packed type, but "
+    "BoysAllOrdersHalf2 and BoysAllNF16Native are declared behind the BoysFp16 seam, which this "
+    "build has closed, so there is no entry to call and the lane's claims are neither confirmed "
+    "nor refuted here";
+#else
+    "";
 #endif
 
 // The region-A transform lane is an entry of its own and carries its own
@@ -518,6 +558,18 @@ std::string Fmt(const char* format, ...)
     return std::string(buffer);
 }
 
+// One line for a lane this build does not carry. The lane is named with the
+// reason and not omitted: a list of lanes with one missing from it reads as a
+// lane that was measured, and a reader has no way to tell the two apart.
+// It is compiled with the rows that print it: a build whose seam is open carries
+// every fp16 lane, so it has no line of this kind to print.
+#ifndef BOYS_GATE_FP16
+void PrintNotCarried(const char* lane)
+{
+    std::printf("  %-28s %s\n", lane, "not carried: this build's BoysFp16 seam is closed");
+}
+#endif // BOYS_GATE_FP16
+
 // One argument, every lane: what each entry returns beside the reference, so a
 // reported failure can be reproduced and acted on rather than believed.
 void RunProbe(const Reference& ref, int n, double x)
@@ -530,8 +582,10 @@ void RunProbe(const Reference& ref, int n, double x)
 
     double refV = std::numeric_limits<double>::quiet_NaN();
     double refF = refV;
+#ifdef BOYS_GATE_FP16
     double ref16 = refV;
     double refB = refV;
+#endif
 
     for (std::size_t i = 0; i < ref.count; ++i)
     {
@@ -540,8 +594,10 @@ void RunProbe(const Reference& ref, int n, double x)
             const std::size_t k = ref.Index(n, i);
             refV = ref.v[k];
             refF = ref.vf[k];
+#ifdef BOYS_GATE_FP16
             ref16 = ref.v16[k];
             refB = ref.vb[k];
+#endif
             break;
         }
     }
@@ -576,6 +632,7 @@ void RunProbe(const Reference& ref, int n, double x)
         boys::BoysAllOrdersF32(n, xf, out.data());
         row("BoysAllOrdersF32[n]", static_cast<double>(out[static_cast<std::size_t>(n)]), refF);
 
+#ifdef BOYS_GATE_FP16
         const boys::F16 x16 = boys::F16(xf);
         const boys::Bf16 xb = boys::Bf16(xf);
         std::array<boys::F16, 33> out16{};
@@ -594,6 +651,12 @@ void RunProbe(const Reference& ref, int n, double x)
         row("BoysAllOrdersBf16[n]",
             static_cast<double>(static_cast<float>(outb[static_cast<std::size_t>(n)])),
             refB);
+#else
+        PrintNotCarried("BoysSingleF16");
+        PrintNotCarried("BoysAllOrdersF16[n]");
+        PrintNotCarried("BoysSingleBf16");
+        PrintNotCarried("BoysAllOrdersBf16[n]");
+#endif // BOYS_GATE_FP16
     }
 
     // The float lane's routes and schemes at a rung: the same argument and the
@@ -666,6 +729,7 @@ void RunProbe(const Reference& ref, int n, double x)
         }
     }
 
+#ifdef BOYS_GATE_FP16
     const float xf = static_cast<float>(x);
     const boys::F16 x16 = boys::F16(xf);
     const boys::Bf16 xb = boys::Bf16(xf);
@@ -724,6 +788,12 @@ void RunProbe(const Reference& ref, int n, double x)
     halfRow("RegionSimdF16[count=8]", false, 8);
     halfRow("RegionSimdBf16[count=1]", true, 1);
     halfRow("RegionSimdBf16[count=8]", true, 8);
+#else
+    PrintNotCarried("RegionSimdF16[count=1]");
+    PrintNotCarried("RegionSimdF16[count=8]");
+    PrintNotCarried("RegionSimdBf16[count=1]");
+    PrintNotCarried("RegionSimdBf16[count=8]");
+#endif // BOYS_GATE_FP16
 }
 
 // ---------------------------------------------------------------------------
@@ -3399,6 +3469,7 @@ int main(int argc, char** argv) {
     }
 
     // ---- fp16 and bf16, the store-half lane -------------------------------
+#ifdef BOYS_GATE_FP16
     {
         std::array<boys::F16, 33> out16{};
         std::array<boys::Bf16, 33> outb{};
@@ -3468,6 +3539,7 @@ int main(int argc, char** argv) {
             }
         }
     }
+#endif // BOYS_GATE_FP16
 
     // ---- the half kernels' path divergence and their claimed domain --------
     // The vector body against the certified scalar half entry, at the same
@@ -3477,6 +3549,7 @@ int main(int argc, char** argv) {
     // Counted separately from either path's own error, because the failure
     // this caught was one path returning zero where the other returned a
     // usable value.
+#ifdef BOYS_GATE_FP16
     double driftUlp = 0.0;
     int driftOrder = -1;
     double driftX = 0.0;
@@ -3490,6 +3563,7 @@ int main(int argc, char** argv) {
     int driftScalarZeroN = -1;
     std::size_t driftUnforgivenZero = 0; // a path returns zero above its bound
     double driftUnforgivenRef = 0.0;
+#endif // BOYS_GATE_FP16
 
     // ---- the 8-wide half-I/O region kernels --------------------------------
     // Two half values per register, computed in binary32 and rounded to the
@@ -3497,6 +3571,7 @@ int main(int argc, char** argv) {
     // half entries). No public entry reaches these: the suite calls them
     // directly, and so does this. Arguments are partitioned by the region
     // each kernel documents as its precondition.
+#ifdef BOYS_GATE_FP16
     if (boys::BoysAvx2Available())
     {
         const float fx0 = static_cast<float>(boys::detail::kX0);
@@ -3685,6 +3760,7 @@ int main(int argc, char** argv) {
             runPacked(idx, region, true);
         }
     }
+#endif // BOYS_GATE_FP16
 
     // ---- the run-time accuracy tier, if this revision carries it -----------
     // BoysAllOrdersAtTier / QueryTier / TierCoverage arrive on a branch of
@@ -4243,27 +4319,34 @@ int main(int argc, char** argv) {
     // The published statements that are not one lane x region cell.
     // ------------------------------------------------------------------
 
-    // The half lane's published cells: the 0.990-of-budget worst cell at
-    // (order 0, x = 721), the representation term's share of that budget, and
-    // the published range statement - from order 3 upward on region C the
-    // values leave the half type's normal range, subnormal first, then zero.
+    // The reference grid's own columns of that statement are read whatever the
+    // seam is: they are the table's, not a lane's. The lane's side of it - the
+    // published cell measured at x = 721 and the arguments the lane itself
+    // reached - needs an entry to call, so it is measured only where this build
+    // carries one.
+#ifdef BOYS_GATE_FP16
     double cellErr = 0.0;
     double cellValue = 0.0;
     double cellRef = 0.0;
     double cellBound = 0.0;
+#endif
     std::array<double, boys::kMaxBoysOrder + 1> refNormalX{};
     std::array<double, boys::kMaxBoysOrder + 1> refZeroX{};
     std::array<double, boys::kMaxBoysOrder + 1> refSpanNormalX{};
     std::array<double, boys::kMaxBoysOrder + 1> refSpanSubnormalX{};
+#ifdef BOYS_GATE_FP16
     std::array<double, boys::kMaxBoysOrder + 1> laneNormalX{};
     std::array<double, boys::kMaxBoysOrder + 1> laneNonzeroX{};
     std::array<double, boys::kMaxBoysOrder + 1> laneRefNormalX{};
+#endif
 
     for (int n = 0; n <= nmax; ++n)
     {
+#ifdef BOYS_GATE_FP16
         laneNormalX[static_cast<std::size_t>(n)] = -1.0;
         laneNonzeroX[static_cast<std::size_t>(n)] = -1.0;
         laneRefNormalX[static_cast<std::size_t>(n)] = -1.0;
+#endif
         refNormalX[static_cast<std::size_t>(n)] =
             LargestXAbove(ref, n, std::ldexp(1.0, kF16MinNormalExp));
         refZeroX[static_cast<std::size_t>(n)] = LargestXAbove(ref, n, std::ldexp(1.0, -25));
@@ -4271,6 +4354,7 @@ int main(int argc, char** argv) {
         refSpanSubnormalX[static_cast<std::size_t>(n)] = LargestXSparsable(ref, n, kF16Field);
     }
 
+#ifdef BOYS_GATE_FP16
     // The published cell itself, measured at the published argument: the grid
     // carries x = 721 exactly, so this is that cell and not its nearest node.
     {
@@ -4321,6 +4405,7 @@ int main(int argc, char** argv) {
             }
         }
     }
+#endif // BOYS_GATE_FP16
 
     // The asymptotic branch outside its own domain: the published row says the
     // error jumps five to eight orders below about x = 16, measured on the
@@ -4675,6 +4760,7 @@ int main(int argc, char** argv) {
                             M * kBoundFloat,
                             got == 0.0f);
 
+#ifdef BOYS_GATE_FP16
                     if (!std::isfinite(ref.x16[i]))
                     {
                         continue;
@@ -4692,6 +4778,12 @@ int main(int argc, char** argv) {
                             M * kBoundHalfBase +
                                 0.5 * UlpOf(asDouble, kF16MantissaBits, kF16MinNormalExp),
                             Unrepresentable(asDouble, kF16MinNormalExp));
+#else
+                    // A closed fp16 seam leaves the rung's half lane with no entry
+                    // to call, so the cell is not measured here; the slot it would
+                    // have counted into is reported as one this build does not carry.
+                    (void)claimHalf;
+#endif // BOYS_GATE_FP16
                 }
             }
         };
@@ -6468,6 +6560,7 @@ int main(int argc, char** argv) {
     // ---- the published cells and ranges, measured ---------------------------
     std::printf("\npublished cells and ranges, measured:\n");
 
+#ifdef BOYS_GATE_FP16
     const double cellRatio = cellBound > 0.0 ? cellErr / cellBound : -1.0;
     const double cellShare =
         cellBound > 0.0 ? (0.5 * UlpOf(cellValue, kF16MantissaBits, kF16MinNormalExp)) / cellBound
@@ -6523,6 +6616,37 @@ int main(int argc, char** argv) {
                 "     seed included, still fits what a per-order power-of-two scale can hold in\n"
                 "     binary16's normal range; the subnormal-field limit is, per order, %s)\n",
                 (refSpanSubnormalX[8] > 0.0 ? "printed for order 8 below" : "-"));
+#else
+    std::printf("  half worst cell (n=0, x=721): not carried by this build (BoysFp16 = 0)\n"
+                "  half lane, sweep worst      : not carried by this build (BoysFp16 = 0)\n"
+                "  half lane range, region C   : not measured here - the lane's columns below\n"
+                "    would be a lane's own returns, and this build has no half entry to call.\n"
+                "    The reference grid's columns of the same statement are:\n");
+    std::printf("    %5s %14s %14s %14s\n",
+                "order",
+                "ref normal to",
+                "ref zero to",
+                "scaled limit");
+
+    for (int n = 0; n <= nmax; ++n)
+    {
+        if (n > 8 && n != nmax)
+        {
+            continue;
+        }
+
+        std::printf("    %5d %14.6g %14.6g %14.6g\n",
+                    n,
+                    refNormalX[static_cast<std::size_t>(n)],
+                    refZeroX[static_cast<std::size_t>(n)],
+                    refSpanNormalX[static_cast<std::size_t>(n)]);
+    }
+
+    std::printf("    (scaled limit = the largest argument at which the order's whole ladder,\n"
+                "     seed included, still fits what a per-order power-of-two scale can hold in\n"
+                "     binary16's normal range; the subnormal-field limit is, per order, %s)\n",
+                (refSpanSubnormalX[8] > 0.0 ? "printed for order 8 below" : "-"));
+#endif // BOYS_GATE_FP16
 
     std::printf("  asymptotic branch across its stated domain edge (x = 16):\n"
                 "    worst err below 16 (n=%d, x=%.6g)  = %.6g\n"
@@ -6751,6 +6875,7 @@ int main(int argc, char** argv) {
     add("README.half",
         "fp16 and bf16 store-half lanes: m*1e-7 + one half-ULP, single and batch",
         "README accuracy contract and include/boys/boys.hpp",
+#ifdef BOYS_GATE_FP16
         verdictOf({kF16Single, kF16Orders, kBf16Single, kBf16Orders}) == Verdict::Verified
             ? Verdict::MetOverDomain
             : verdictOf({kF16Single, kF16Orders, kBf16Single, kBf16Orders}),
@@ -6760,6 +6885,15 @@ int main(int argc, char** argv) {
         "the row fails if the budget is read as claimed over the whole argument range: the "
         "counted-apart cells in LC.half.vacuous_floor are exactly the cells that reading would "
         "turn into failures");
+#else
+        Verdict::EvidenceAbsent,
+        "no lane was called and no cell was measured: the two lanes are declared behind the "
+        "BoysFp16 seam, which this build has closed, so the contract this row is about has no "
+        "subject here. The claim is not withdrawn - it is carried by the builds that close "
+        "nothing, and this one neither confirms nor denies it",
+        "the row's subject is the fp16 and bf16 lanes; a build that carries neither has no cell "
+        "of it to judge, which is reported rather than counted as a pass");
+#endif // BOYS_GATE_FP16
 
     {
         // The header's contract table as it stands: the double single lane's
@@ -7060,6 +7194,7 @@ int main(int argc, char** argv) {
     add("LC.half.budget",
         "the half lane stays inside its budget at every order tested",
         "docs/lane-contract.md, half",
+#ifdef BOYS_GATE_FP16
         verdictOf({kF16Single, kF16Orders, kBf16Single, kBf16Orders}) == Verdict::Verified
             ? Verdict::MetOverDomain
             : verdictOf({kF16Single, kF16Orders, kBf16Single, kBf16Orders}),
@@ -7069,7 +7204,15 @@ int main(int argc, char** argv) {
         "the row fails if a cell inside that domain delivers more than the bound, or if the "
         "domain's edge moves down to arguments where the return is the format's floor: the "
         "counts are in LC.half.vacuous_floor");
+#else
+        Verdict::EvidenceAbsent,
+        "not measured: the lane this row is about is declared behind the BoysFp16 seam, which "
+        "this build has closed, so there is no entry to call and no cell to judge",
+        "the row's subject is the fp16 and bf16 lanes; a build that carries neither reports the "
+        "claim as one it has no evidence for rather than passing it");
+#endif // BOYS_GATE_FP16
 
+#ifdef BOYS_GATE_FP16
     {
         const auto worstSlotOf = [&](std::initializer_list<int> slots) -> const Accum& {
             const Accum* best = &Claims()[static_cast<std::size_t>(*slots.begin())];
@@ -7130,17 +7273,43 @@ int main(int argc, char** argv) {
             "published cell stops reproducing - and it turns red the moment either format's "
             "worst ratio reaches 1.0, which is one half-quantum away");
     }
+#else
+    // The published cell, the sweep's worst cell and their margin are all readings
+    // of the half lane, so a build whose seam is closed has none of them. The row
+    // stays in the book with the reason stated: a reader of this build is told the
+    // claim is not carried here, and never that it was measured and held.
+    add("LC.half.worst_cell",
+        "[corrected this revision] the lane's worst cell is not 0.990 of budget at order 0, "
+        "x = 721 with a margin of 1%: that cell reproduces, but the sweep's own worst cell "
+        "is within a thousandth of the budget in both formats, so the margin is thousandths "
+        "of a per cent - a fragility, not a margin of 1%",
+        "docs/lane-contract.md, half (read before this revision: \"a worst cell of 0.990 of "
+        "budget at order 0, x = 721 - a margin of 1%\")",
+        Verdict::EvidenceAbsent,
+        "not measured: neither the published cell nor either format's sweep exists in this "
+        "build, because the half lane is declared behind the BoysFp16 seam it has closed. The "
+        "row's claim is about a lane, and this build carries no lane to measure it on",
+        "the row's subject is the fp16 and bf16 lanes; a build that carries neither reports the "
+        "claim as one it has no evidence for rather than passing it");
+#endif // BOYS_GATE_FP16
 
     add("LC.half.representation_share",
         "at that magnitude the half-ULP representation term is 99% of the budget",
         "docs/lane-contract.md, half",
+#ifdef BOYS_GATE_FP16
         std::abs(cellShare - 0.99) <= 0.02 ? Verdict::Verified : Verdict::Exceeded,
         Fmt("measured %.4f at (n=0, x=721)", cellShare));
+#else
+        Verdict::EvidenceAbsent,
+        "not measured: the share is the representation term of a value the half lane returned "
+        "at x = 721, and this build carries no half lane to return it");
+#endif // BOYS_GATE_FP16
 
     add("LC.half.vacuous_floor",
         "the half lanes' ceiling is a domain restriction: past it the return is the format's "
         "floor, no accuracy is claimed, and the points are counted rather than passed",
         "docs/lane-contract.md, half; include/boys/boys.hpp, the same paragraph",
+#ifdef BOYS_GATE_FP16
         Verdict::MetOverDomain,
         Fmt("the counted side, per lane and region cell. Where the bound exceeds the value: "
             "fp16 single %zu of %zu swept points, %zu of those returning no usable value "
@@ -7168,6 +7337,15 @@ int main(int argc, char** argv) {
         "claim over the whole argument range would make every point past the ceiling a "
         "failure, and the counters above are the number of them; it also fails if a point "
         "past the ceiling returns a usable value the count does not carry");
+#else
+        Verdict::EvidenceAbsent,
+        "not measured: the counted cells are returns of the fp16 and bf16 lanes, which this "
+        "build does not carry - its BoysFp16 seam is closed - so there is no return to count "
+        "on either side of the ceiling. The domain restriction the row states is a property of "
+        "those lanes and is neither confirmed nor denied here",
+        "the row's subject is the fp16 and bf16 lanes' returns past their ceiling; a build that "
+        "carries no such lane reports the claim as one it has no evidence for");
+#endif // BOYS_GATE_FP16
 
     // The half lane binds where |F_n(x)| exceeds its ceiling, and F_n falls
     // with x, so region C is entirely past the ceiling for an order exactly
@@ -7175,6 +7353,7 @@ int main(int argc, char** argv) {
     // claims, so the row measures the onset rather than a proxy for it. Every
     // return at that magnitude is subnormal, and a subnormal half has one
     // quantum, so each of those orders sits against the same ceiling.
+#ifdef BOYS_GATE_FP16
     const double subnormalCeiling =
         kBoundHalfBase + 0.5 * UlpOf(0.0, kF16MantissaBits, kF16MinNormalExp);
     std::size_t edgeIndex = count;
@@ -7260,6 +7439,25 @@ int main(int argc, char** argv) {
         "which is exactly what the whole-branch reading asserts - if an argument of the "
         "branch at order 3 or above returns a normal half that the sweep does not account "
         "for, or if the reference's own order-3 value becomes normal somewhere on the branch");
+#else
+    // The onset is read off the lane's own returns, so a build whose seam is
+    // closed has no onset to report. The reference side of the same statement is
+    // still readable - it is the grid's - and LC.half.no_scaling_past_38 below
+    // measures it, which is why that row stays unguarded.
+    add("LC.half.range_from_order3",
+        "from order 3 upward on region C every return is a subnormal half or zero, and from "
+        "order 6 upward every argument of the branch is past the ceiling, so no accuracy is "
+        "claimed there. Orders 3, 4 and 5 are inside the range the lane does claim over: "
+        "they still carry cells whose value exceeds the ceiling",
+        "docs/lane-contract.md, half",
+        Verdict::EvidenceAbsent,
+        "not measured: the onset order is the first order whose every region-C return is "
+        "subnormal or zero, and this build has no half lane to return one - its BoysFp16 seam "
+        "is closed. The reference side of the same statement is measured by "
+        "LC.half.no_scaling_past_38",
+        "the row's subject is the fp16 lane's own returns; a build that carries no such lane "
+        "reports the claim as one it has no evidence for");
+#endif // BOYS_GATE_FP16
 
     // Withdrawn: "a per-order power-of-two scale carries order 3 to x ~ 361,
     // order 4 to 129, order 8 to 30". The reaches themselves rest on the
@@ -7313,6 +7511,7 @@ int main(int argc, char** argv) {
         "the 8-wide half-I/O region kernels never drift from the certified scalar half lane "
         "by a value the bound cannot absorb, on the x86_64 targets that carry those kernels",
         "src/boys_simd.cpp comment on the shared half lanes",
+#ifdef BOYS_GATE_FP16
         driftCells != 0
             ? ((driftOneSideOut == 0 && driftUnforgivenZero == 0) ? Verdict::Verified
                                                                   : Verdict::Exceeded)
@@ -7343,13 +7542,28 @@ int main(int argc, char** argv) {
             driftSimdZeroN,
             driftScalarZeroX,
             driftScalarZeroN));
+#else
+        kSimdTierTarget ? Verdict::EvidenceAbsent : Verdict::MetOverDomain,
+        "this build's BoysFp16 seam is closed, so it carries neither the 8-wide half-I/O region "
+        "kernels nor the certified scalar half entry they are compared against: the claim has "
+        "no subject in this build, and no cell of it was measured. The reference grid's fp16 "
+        "and bf16 columns are read from the build but no lane is called to produce the values "
+        "they are compared against");
+#endif // BOYS_GATE_FP16
 
     add("code.half_simd_cells",
         "the 8-wide half-I/O region kernels hold the half lane's budget on the region each "
         "documents as its precondition",
         "src/boys_simd.cpp, region-partitioned kernels",
+#ifdef BOYS_GATE_FP16
         verdictOf({kF16PackedA, kF16PackedB, kF16PackedC, kBf16PackedA, kBf16PackedB, kBf16PackedC}),
         worstOf({kF16PackedA, kF16PackedB, kF16PackedC, kBf16PackedA, kBf16PackedB, kBf16PackedC}));
+#else
+        Verdict::EvidenceAbsent,
+        "not measured: the six cells are the 8-wide half-I/O kernels' own, and this build "
+        "carries no half entry and no half kernel - its BoysFp16 seam is closed. The claim has "
+        "no subject here rather than a cell that passed");
+#endif // BOYS_GATE_FP16
 
     {
         const Domain halfDomain = domainOf({kF16Single,
@@ -7373,6 +7587,7 @@ int main(int argc, char** argv) {
                 ? Verdict::EvidenceAbsent
                 : ((halfDomain.outside == 0 && halfDomain.zero == 0) ? Verdict::Verified
                                                                      : Verdict::Exceeded),
+#ifdef BOYS_GATE_FP16
             Fmt("the ten half lane x region cells over the whole sweep: %zu points in the "
                 "binding domain, %zu of them returned the format's zero (largest |F_n(x)| so "
                 "discarded %.4g) and %zu landed outside the bound; %zu returns inside the "
@@ -7384,6 +7599,13 @@ int main(int argc, char** argv) {
                 halfDomain.zeroRef,
                 halfDomain.outside,
                 halfDomain.subnormal));
+#else
+            std::string("not measured: the ten cells are cells of the fp16 and bf16 lanes, and "
+                        "this build carries neither - its BoysFp16 seam is closed - so the sweep "
+                        "produced no point on either side of the ceiling. The domain "
+                        "restriction the claim states is a property of those lanes and is "
+                        "neither confirmed nor denied here"));
+#endif // BOYS_GATE_FP16
     }
 
     // The run-time accuracy tier, in the two shapes its own documentation
@@ -7562,8 +7784,7 @@ int main(int argc, char** argv) {
                 : ((packedAcc.failures == 0 && batchAcc.failures == 0) ? Verdict::MetOverDomain
                                                                       : Verdict::Exceeded),
             packedAcc.points == 0
-                ? std::string("the lane is not in this revision: no boys/half2.hpp, so its "
-                              "bound is neither confirmed nor refuted here")
+                ? std::string(kNativeHalfAbsent)
                 : Fmt("worst %.4g ULP at (n=%d, x=%.6g), over %zu cells of the packed entry "
                       "and %zu of the count entry (the count entry's own worst is %.4g ULP); "
                       "the lane's published worst is 4.243 ULP, a swept maximum and not a "
@@ -7594,7 +7815,7 @@ int main(int argc, char** argv) {
                 ? Verdict::EvidenceAbsent
                 : (nativeExcusedFailures == 0 ? Verdict::MetOverDomain : Verdict::Exceeded),
             nativeCells == 0
-                ? std::string("the lane is not in this revision")
+                ? std::string(kNativeHalfAbsent)
                 : Fmt("the largest scaled value the sweep left unclaimed is %.6g (at n=%d, "
                       "x=%.6g) against the smallest normal half %.6g, so every unclaimed cell "
                       "is a cell where the scaling was meant to run out: %zu of %zu cells are "
@@ -7636,7 +7857,7 @@ int main(int argc, char** argv) {
                 : ((nativeBatchMismatch == 0 && nativePastOneUlp > 0) ? Verdict::MetOverDomain
                                                                      : Verdict::Exceeded),
             nativeCells == 0
-                ? std::string("the lane is not in this revision")
+                ? std::string(kNativeHalfAbsent)
                 : Fmt("verified against the oracle only in part, and said so: this gate's "
                       "reference can say what the value is, never how the arithmetic that "
                       "produced it was arranged, so the packing is separated from the bound "
@@ -7678,7 +7899,7 @@ int main(int argc, char** argv) {
                 ? Verdict::EvidenceAbsent
                 : (nativeWorstUlp > 0.5 ? Verdict::Verified : Verdict::Exceeded),
             nativeCells == 0
-                ? std::string("the lane is not in this revision")
+                ? std::string(kNativeHalfAbsent)
                 : Fmt("the native packed lane's worst cell is %.4g ULP of the returned value at "
                       "(n=%d, x=%.6g), which is %.4g times the 0.5 ULP the store-half budget "
                       "leaves for representing the result - the prototype's 'above its budget' "
@@ -9777,12 +9998,21 @@ int main(int argc, char** argv) {
                 "A revision\n  that reaches this line has changed what the entry is\n");
 #endif
 #ifndef BOYS_GATE_F32_REFUSES_ORDERS
-    ++liftedRefusals;
-    std::printf("  LIFTED: the single-precision engines accept an orders-axis policy, and the "
-                "packing\n  book above has no float row to measure what that policy answers "
-                "with: a call that\n  compiles is not an axis that is served, and a lane without "
-                "a packed body reads the\n  field and ignores it. A revision that reaches this "
-                "line has to carry the float\n  lane's packed cells in that book\n");
+    // The orders axis was a limit on the single-precision engines until this
+    // revision, and it is not one any more: the call compiles, runs, and the row
+    // that landing owes is measured rather than promised. The float book's "all,
+    // orders axis" claim above is that row - the same cells as the per-order row,
+    // the same reference grid and the same bound, through the entry with the axis
+    // named - and it is judged inside the README.float lane claim, so a revision
+    // that carried the call without the row would leave that lane row evidence
+    // absent and be red there. The line here names where the row is, the way the
+    // retired orders-axis limits above it do; the tripwire that stood here was
+    // for the revision that had no such row.
+    std::printf("  CARRIED: the single-precision engines accept an orders-axis policy, and the "
+                "float\n  book above carries the row it owes at the lane's own bar, measured "
+                "against the\n  committed reference grid beside the per-order entry's row over "
+                "the same cells. The\n  probe is the reading that says so; a revision that "
+                "dropped the axis would print the\n  refusal instead\n");
 #endif
     // The orders axis carried three limits until this revision, and all three
     // are gone: it answers a relaxed multiplier, it answers a route other than
@@ -10129,6 +10359,50 @@ int main(int argc, char** argv) {
         }(std::make_index_sequence<7>{});
     };
 
+    // The double lane at the reference rung alone, for the cells whose partition
+    // carries that one rung of the route: the rational route's narrow pieces are
+    // stored at their fitted degrees and have no relaxed-degree table over them,
+    // so the pair is measured at the multiplier whose fits exist and its rungs
+    // past it are the accessor's own refusal.
+    const auto combDoubleReference =
+        [&]<boys::FitRoute kRoute, boys::EvalScheme kScheme, boys::PackAxis kAxis,
+            boys::FitGranularity kGran>(int lane) {
+            using Policy =
+                boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFloat, kAxis, kGran>;
+            CombAccum a;
+            std::array<double, 33> out{};
+
+            a.bound = combLaneRows[static_cast<std::size_t>(lane)].bound +
+                      combLaneRows[static_cast<std::size_t>(lane)].additive;
+
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                boys::BoysAllOrders<1.0, Policy>(nmax, ref.x[i], out.data());
+
+                for (int n = 0; n <= nmax; ++n)
+                {
+                    a.add(n,
+                          ref.x[i],
+                          out[static_cast<std::size_t>(n)],
+                          ref.v[ref.Index(n, i)]);
+                }
+            }
+
+            combMeasured.push_back({lane,
+                                    0,
+                                    static_cast<int>(kRoute),
+                                    static_cast<int>(kScheme),
+                                    static_cast<int>(kGran),
+                                    static_cast<int>(kAxis),
+                                    a.cells,
+                                    a.below,
+                                    a.over,
+                                    a.worst,
+                                    a.bound,
+                                    a.worstN,
+                                    a.worstX});
+        };
+
     // The single and half lanes, the reference rung: the route and the scheme
     // are both free here.
     // The reference rung on one of the lane's shapes: every route and scheme on
@@ -10265,8 +10539,7 @@ int main(int argc, char** argv) {
     // The narrow partition of the Chebyshev route carries every rung and both
     // axes, so it is read off that row's own rungs rather than at the reference
     // multiplier alone: the partition's pieces are cut per order, and each rung
-    // reads the effective-degree table for it. The rational route's narrow row
-    // is the one still owed, and it is left to the accessor's own refusal below.
+    // reads the effective-degree table for it.
     combDoubleRungs.template operator()<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
                                         boys::PackAxis::kArguments,
                                         boys::FitGranularity::kNarrow>(kLaneDouble);
@@ -10279,6 +10552,19 @@ int main(int argc, char** argv) {
     combDoubleRungs.template operator()<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner,
                                         boys::PackAxis::kOrders,
                                         boys::FitGranularity::kNarrow>(kLaneDouble);
+    // The rational route's narrow pieces are stored at the reference rung, on
+    // the arguments axis, and both are read here so that the two cells that pair
+    // serves are measured rather than refused: its rungs past that multiplier and
+    // its orders axis are the accessor's own refusals, counted with the work they
+    // name.
+    combDoubleReference.template operator()<boys::FitRoute::kRationalMinimax,
+                                            boys::EvalScheme::kSplitClenshaw,
+                                            boys::PackAxis::kArguments,
+                                            boys::FitGranularity::kNarrow>(kLaneDouble);
+    combDoubleReference.template operator()<boys::FitRoute::kRationalMinimax,
+                                            boys::EvalScheme::kHorner,
+                                            boys::PackAxis::kArguments,
+                                            boys::FitGranularity::kNarrow>(kLaneDouble);
 
     // The single and half lanes: the reference rung carries every route and
     // scheme on the shipped partition at either axis, and the narrow partition

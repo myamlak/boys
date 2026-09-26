@@ -325,7 +325,9 @@ double BatchBound(double m) {
 
 /// The quantum (one ULP) of a binary16 or bfloat16 value of the given
 /// significand width: 2^(e - bits) for a normal value 1.f * 2^e, and zero at
-/// zero, where no quantum is defined.
+/// zero, where no quantum is defined. The half lanes' bounds below are its only
+/// callers, so it is declared with them and leaves the build with them.
+#if BoysFp16
 double QuantumOf(double v, int significandBits) {
     if (v == 0.0)
     {
@@ -336,7 +338,13 @@ double QuantumOf(double v, int significandBits) {
     (void)std::frexp(std::abs(v), &exponent);
     return std::ldexp(1.0, exponent - 1 - significandBits);
 }
+#endif // BoysFp16
 
+// The half lanes' ceilings, which belong to the lanes the BoysFp16 seam
+// declares and leave the build with them: the smallest positive normal
+// binary16 value, the floor of the native half lane's documented domain, and
+// the two I/O lanes' bounds. main states the lanes this build does not carry.
+#if BoysFp16
 /// The smallest positive normal binary16 value: the floor of the documented
 /// domain of the native half lane, whose claim holds where the returned value
 /// is a normal half.
@@ -353,6 +361,13 @@ double F16IoBound(double returned, double m) {
 double Bf16IoBound(double returned, double m) {
     return m * 1e-7 + 0.5 * QuantumOf(returned, 7);
 }
+
+/// One ULP of a normal half value: 2^(e - 10) for a value 1.f * 2^e. The
+/// native half lane's bound is stated in these, so it belongs to that lane.
+double HalfUlpOf(double v) {
+    return QuantumOf(v, 10);
+}
+#endif // BoysFp16
 
 /// The region-A product's bound per mode: the fit term at m, plus the two split
 /// modes' 32-bit accumulator floor, which no multiplier moves.
@@ -371,11 +386,6 @@ double ProductBound(Report& report, boys::ProductMode mode, double m) {
 
     Require(report, false, "every mode the sweep names has a BoysProductModes row");
     return 0.0;
-}
-
-/// One ULP of a normal half value: 2^(e - 10) for a value 1.f * 2^e.
-double HalfUlpOf(double v) {
-    return QuantumOf(v, 10);
 }
 
 /// The reference lane's own bound, carried by every composed comparison: the
@@ -563,6 +573,10 @@ void AllOrdersF32(double m, int nmax, float x, float* out) {
     }
 }
 
+// The fp16 and bf16 I/O lanes' call sites, at multipliers the library does not
+// pre-instantiate: they are the entries the BoysFp16 seam declares, so they are
+// compiled with the seam and the check that names them (CheckHalfIo) is too.
+#if BoysFp16
 boys::F16 SingleF16(double m, int n, boys::F16 x) {
     if (m == 1.0)
     {
@@ -632,6 +646,7 @@ void AllOrdersBf16(double m, int nmax, boys::Bf16 x, boys::Bf16* out) {
         boys::BoysAllOrdersBf16<100.0>(nmax, x, out);
     }
 }
+#endif // BoysFp16
 
 void RegionAProduct(boys::ProductMode mode,
                     double m,
@@ -695,9 +710,11 @@ void CheckConstants(Report& report) {
     Require(report,
             boys::kRegionAEnd == 11.899848152108484,
             "kRegionAEnd is the documented end of region A");
+#if BoysFp16
     Require(report,
             boys::kHalfNativeScaleExponent == 15,
             "kHalfNativeScaleExponent is the documented 2^15 scale");
+#endif
 
     // The version a caller reads is the version the build was configured at.
     // The build carries that value (BoysExpectedVersion, from the project()
@@ -744,8 +761,11 @@ void CheckConstants(Report& report) {
     Covered("boys::RegionABand");
     Covered("boys::kRegionA1Edge");
     Covered("boys::kRegionAEnd");
-    Covered("boys::kHalfNativeScaleExponent");
     Covered("boys::BoysAllNWorkspaceSize");
+
+#if BoysFp16
+    Covered("boys::kHalfNativeScaleExponent");
+#endif
 
     // The capability predicate is documented as a pure function of the
     // processor, and as reporting false on every non-x86_64 target.
@@ -1901,6 +1921,12 @@ void CheckFloatLane(const std::vector<Cell>& cells) {
     }
 }
 
+// The two half lanes below name entries the BoysFp16 seam declares - the
+// fp16/bf16 I/O lane and the native packed half lane - so both checks are
+// compiled with the entries they measure. A consumer that builds this tree
+// with the seam closed has no such entry to name, and main prints the lanes as
+// ones this build does not carry rather than dropping them in silence.
+#if BoysFp16
 /// The fp16 and bf16 I/O lanes. Both round their argument to the 16-bit format
 /// before evaluating, so the reference is the certified double lane at that
 /// rounded argument. The bound is the lane's own figure, claimed only where the
@@ -2085,6 +2111,7 @@ void CheckNativeHalf(Report& report, const std::vector<Cell>& cells) {
     Covered("boys::BoysAllNF16Native");
     Covered("boys::Half2");
 }
+#endif // BoysFp16
 
 /// The region-A transform, in all three of its arithmetic modes, over both
 /// bands, at a multiplier the library does not pre-instantiate. The entry is a
@@ -2253,6 +2280,11 @@ void CheckProductModes(Report& report, const std::vector<Cell>& cells) {
     }
 }
 
+// The packed half type's surface. This file includes only <boys/boys.hpp>, so
+// the type arrives with the seam: a closed-seam consumer has no boys::Half2,
+// boys::F16 or boys::Bf16 to name, and main prints the surface as one this
+// build does not carry rather than dropping it in silence.
+#if BoysFp16
 /// The packed half type's own surface: construction, the accessors, and the
 /// arithmetic, on values whose results are exactly representable in binary16 -
 /// so a correct operation is asserted exactly, not within a tolerance.
@@ -2323,6 +2355,7 @@ void CheckHalf2Surface(Report& report) {
     Covered("boys::Half2Sqrt");
     Covered("boys::NextUp");
 }
+#endif // BoysFp16
 
 /// The evaluation schemes a consumer can ask about and ask for. What a
 /// consumer reads here is the whole of the option: which arithmetic is in
@@ -2654,10 +2687,24 @@ int main(int argc, char** argv) {
     CheckPerElementOrderLanes(report, cells);
     CheckTierLane(cells);
     CheckFloatLane(cells);
+#if BoysFp16
     CheckHalfIo(cells);
     CheckNativeHalf(report, cells);
+#else
+    // Stated, not skipped: these are lanes this build does not carry, and a
+    // reader of this report is told so beside the lanes that were checked.
+    std::printf("  %-56s not carried by this build (BoysFp16 = 0)\n",
+                "fp16/bf16 I/O and native half lanes (not checked)");
+#endif
     CheckProductModes(report, cells);
+#if BoysFp16
     CheckHalf2Surface(report);
+#else
+    // Stated, not skipped: the packed half type comes to this file through the
+    // umbrella header, so a closed-seam build carries none of it.
+    std::printf("  %-56s not carried by this build (BoysFp16 = 0)\n",
+                "packed half type surface (not checked)");
+#endif
 
     std::printf("consumer check through <boys/boys.hpp>: %zu grid cells\n", cells.size());
     PrintRules();
