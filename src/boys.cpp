@@ -708,7 +708,7 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
         built[1].granularity = FitGranularity::kNarrow;
         built[1].name = GranularityName(FitGranularity::kNarrow);
         built[1].routes = kChebBit;
-        built[1].rungs = 1;
+        built[1].rungs = static_cast<int>(AccuracyTier::kRelaxed65536) + 1;
         built[1].axes = 1u << static_cast<unsigned>(PackAxis::kArguments);
         built[1].regionAPieces = static_cast<int>(std::size(detail::kNarrowAPieces));
         built[1].regionADeg = narrowADeg;

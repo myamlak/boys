@@ -953,24 +953,60 @@ void PackedOrdersCell(FitRoute route, EvalScheme scheme, AccuracyTier tier, int 
     }
 }
 
-/// The narrow partition, which only exists as a policy: the library reports the
-/// partition and refuses the combinations it has no tables for, and the probe
-/// reaches it the way a consumer does, by naming it in the policy's axes.
-void NarrowCell(EvalScheme scheme, int nmax, double x, double* out) noexcept {
+/// The narrow partition at one rung, which only exists as a policy: the library
+/// reports the partition, and the probe reaches it the way a consumer does, by
+/// naming it in the policy's axes. The partition's tables are cut at every rung
+/// the tier enumeration declares, so the rung is part of the instantiation.
+template <EvalScheme kScheme>
+void NarrowRung(AccuracyTier tier, int nmax, double x, double* out) noexcept {
     constexpr FitRoute kRoute = FitRoute::kChebyshev;
     constexpr PackAxis kPack = PackAxis::kArguments;
     constexpr BoysBudget kBudget = BoysBudget::kFloat;
 
+    switch (tier)
+    {
+    case AccuracyTier::kRelaxed64:
+        BoysAllOrders<64.0, EvalPolicy<kRoute, kScheme, kBudget, kPack,
+                                       FitGranularity::kNarrow>>(nmax, x, out);
+        return;
+    case AccuracyTier::kRelaxed256:
+        BoysAllOrders<256.0, EvalPolicy<kRoute, kScheme, kBudget, kPack,
+                                        FitGranularity::kNarrow>>(nmax, x, out);
+        return;
+    case AccuracyTier::kRelaxed1024:
+        BoysAllOrders<1024.0, EvalPolicy<kRoute, kScheme, kBudget, kPack,
+                                         FitGranularity::kNarrow>>(nmax, x, out);
+        return;
+    case AccuracyTier::kRelaxed4096:
+        BoysAllOrders<4096.0, EvalPolicy<kRoute, kScheme, kBudget, kPack,
+                                         FitGranularity::kNarrow>>(nmax, x, out);
+        return;
+    case AccuracyTier::kRelaxed16384:
+        BoysAllOrders<16384.0, EvalPolicy<kRoute, kScheme, kBudget, kPack,
+                                          FitGranularity::kNarrow>>(nmax, x, out);
+        return;
+    case AccuracyTier::kRelaxed65536:
+        BoysAllOrders<65536.0, EvalPolicy<kRoute, kScheme, kBudget, kPack,
+                                          FitGranularity::kNarrow>>(nmax, x, out);
+        return;
+
+    default:
+        BoysAllOrders<kBoysFullAccuracyMultiplier,
+                      EvalPolicy<kRoute, kScheme, kBudget, kPack,
+                                 FitGranularity::kNarrow>>(nmax, x, out);
+        return;
+    }
+}
+
+/// The narrow partition for either scheme at one rung.
+void NarrowCell(EvalScheme scheme, AccuracyTier tier, int nmax, double x,
+                double* out) noexcept {
     if (scheme == EvalScheme::kHorner)
     {
-        BoysAllOrders<kBoysFullAccuracyMultiplier,
-                      EvalPolicy<kRoute, EvalScheme::kHorner, kBudget, kPack,
-                                 FitGranularity::kNarrow>>(nmax, x, out);
+        NarrowRung<EvalScheme::kHorner>(tier, nmax, x, out);
     } else
     {
-        BoysAllOrders<kBoysFullAccuracyMultiplier,
-                      EvalPolicy<kRoute, EvalScheme::kSplitClenshaw, kBudget, kPack,
-                                 FitGranularity::kNarrow>>(nmax, x, out);
+        NarrowRung<EvalScheme::kSplitClenshaw>(tier, nmax, x, out);
     }
 }
 
@@ -984,7 +1020,7 @@ void NarrowCell(EvalScheme scheme, int nmax, double x, double* out) noexcept {
 void CellValues(const Option& option, int nmax, double x, double* out) noexcept {
     if (option.granularity == FitGranularity::kNarrow)
     {
-        NarrowCell(option.scheme, nmax, x, out);
+        NarrowCell(option.scheme, option.tier, nmax, x, out);
         return;
     }
 
