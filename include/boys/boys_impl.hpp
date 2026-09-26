@@ -2233,21 +2233,13 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
         // value, and the lane's own suite asserts it - so the axis changes
         // which lane runs and not which fit is read.
         //
-        // The rung restriction is the one every other float entry states: a
-        // degree table is certified against one stored table of one fit family
-        // and against one region budget, so past the reference multiplier this
-        // lane serves the shipped route and scheme at the budget it was given.
-        if constexpr (kAccuracyMultiplier != 1.0)
-        {
-            static_assert(Policy::kRoute == kDefaultFitRoute &&
-                              Policy::kScheme == kDefaultEvalScheme,
-                          "the relaxed rungs cut the float lane's fits by a table of effective "
-                          "degrees, and a degree table is certified against one stored table of "
-                          "one fit family: past the reference multiplier this engine serves the "
-                          "shipped route and scheme alone, and every route and scheme is served "
-                          "at it");
-        }
-
+        // A rung cuts the lane's fits by a table of effective degrees, and each
+        // family's table is derived from the coefficients that family stores
+        // and read in the basis the scheme sums - the shipped route's pieces
+        // for its own table, the rational route's pairs for theirs - so the
+        // route and the scheme are choices of table here as they are on the
+        // per-order bodies. The budget is the lane's own and picks which bar
+        // the table's role is certified against.
         BoysAllOrdersF32Packed<Policy::kScheme,
                                kAccuracyMultiplier,
                                Policy::kRoute,
@@ -2664,8 +2656,8 @@ extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
                                                                   double* out) noexcept;
 // The single-precision lane's shapes on the same axis: two schemes and two
 // computation budgets at the reference multiplier with either route, and the
-// six relaxed rungs of the shipped route and scheme alone. Declared here for
-// the reason above - so that a call site reaches the definition the library
+// six relaxed rungs of either route at either scheme. Declared here for the
+// reason above - so that a call site reaches the definition the library
 // already holds rather than instantiating a second copy of the body.
 #define BOYS_F32_ORDERS_PACKED_REFERENCE(kScheme, kBudget)                                         \
     extern template void BoysAllOrdersF32Packed<kScheme, 1.0, FitRoute::kChebyshev, kBudget>(      \
@@ -2674,25 +2666,36 @@ extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
     BoysAllOrdersF32Packed<kScheme, 1.0, FitRoute::kRationalMinimax, kBudget>(                     \
         int nmax, float x, float* out) noexcept;
 
+#define BOYS_F32_ORDERS_PACKED_RUNG(kScheme, kRoute, kMultiplier, kBudget)                         \
+    extern template void                                                                           \
+    BoysAllOrdersF32Packed<kScheme, kMultiplier, kRoute, kBudget>(int nmax, float x,               \
+                                                                  float* out) noexcept;
+
 #define BOYS_F32_ORDERS_PACKED_RUNGS(kBudget)                                                      \
-    extern template void                                                                            \
-    BoysAllOrdersF32Packed<kDefaultEvalScheme, 64.0, FitRoute::kChebyshev, kBudget>(               \
-        int nmax, float x, float* out) noexcept;                                                   \
-    extern template void                                                                            \
-    BoysAllOrdersF32Packed<kDefaultEvalScheme, 256.0, FitRoute::kChebyshev, kBudget>(              \
-        int nmax, float x, float* out) noexcept;                                                   \
-    extern template void                                                                            \
-    BoysAllOrdersF32Packed<kDefaultEvalScheme, 1024.0, FitRoute::kChebyshev, kBudget>(             \
-        int nmax, float x, float* out) noexcept;                                                   \
-    extern template void                                                                            \
-    BoysAllOrdersF32Packed<kDefaultEvalScheme, 4096.0, FitRoute::kChebyshev, kBudget>(             \
-        int nmax, float x, float* out) noexcept;                                                   \
-    extern template void                                                                            \
-    BoysAllOrdersF32Packed<kDefaultEvalScheme, 16384.0, FitRoute::kChebyshev, kBudget>(            \
-        int nmax, float x, float* out) noexcept;                                                   \
-    extern template void                                                                            \
-    BoysAllOrdersF32Packed<kDefaultEvalScheme, 65536.0, FitRoute::kChebyshev, kBudget>(            \
-        int nmax, float x, float* out) noexcept;
+    BOYS_F32_ORDERS_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kChebyshev, 64.0, kBudget)           \
+    BOYS_F32_ORDERS_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kChebyshev, 256.0, kBudget)          \
+    BOYS_F32_ORDERS_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kChebyshev, 1024.0, kBudget)         \
+    BOYS_F32_ORDERS_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kChebyshev, 4096.0, kBudget)         \
+    BOYS_F32_ORDERS_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kChebyshev, 16384.0, kBudget)        \
+    BOYS_F32_ORDERS_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kChebyshev, 65536.0, kBudget)        \
+    BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 64.0, kBudget)          \
+    BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 256.0, kBudget)         \
+    BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 1024.0, kBudget)        \
+    BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 4096.0, kBudget)        \
+    BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 16384.0, kBudget)       \
+    BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 65536.0, kBudget)       \
+    BOYS_F32_ORDERS_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kRationalMinimax, 64.0, kBudget)     \
+    BOYS_F32_ORDERS_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kRationalMinimax, 256.0, kBudget)    \
+    BOYS_F32_ORDERS_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kRationalMinimax, 1024.0, kBudget)   \
+    BOYS_F32_ORDERS_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kRationalMinimax, 4096.0, kBudget)   \
+    BOYS_F32_ORDERS_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kRationalMinimax, 16384.0, kBudget)  \
+    BOYS_F32_ORDERS_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kRationalMinimax, 65536.0, kBudget)  \
+    BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 64.0, kBudget)    \
+    BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 256.0, kBudget)   \
+    BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 1024.0, kBudget)  \
+    BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 4096.0, kBudget)  \
+    BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 16384.0, kBudget) \
+    BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 65536.0, kBudget)
 
 BOYS_F32_ORDERS_PACKED_REFERENCE(kDefaultEvalScheme, BoysBudget::kFloat)
 BOYS_F32_ORDERS_PACKED_REFERENCE(kDefaultEvalScheme, BoysBudget::kFp16)
@@ -2703,6 +2706,7 @@ BOYS_F32_ORDERS_PACKED_RUNGS(BoysBudget::kFp16)
 
 #undef BOYS_F32_ORDERS_PACKED_REFERENCE
 #undef BOYS_F32_ORDERS_PACKED_RUNGS
+#undef BOYS_F32_ORDERS_PACKED_RUNG
 
 // ---------------------------------------------------------------------------
 // The all-orders batch over an argument array (BoysAllN)

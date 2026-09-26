@@ -771,38 +771,15 @@ struct Carriage {
 // order's coefficients to the next order's. The narrow partition is stored for
 // this lane and is read at the reference multiplier on both axes; a rung of it
 // is not, because a rung reads the shipped pieces' stored coefficients and the
-// narrow pieces' own degree table is a derivation this lane has not done. The
-// packed lane's rung bodies are instantiated for the shipped route and scheme,
-// so another family's rung on that axis is a body to build.
-Carriage CarriesSingle(FitRoute route,
-                       EvalScheme scheme,
-                       PackAxis axis,
-                       FitGranularity granularity,
-                       AccuracyTier tier) noexcept {
-    const bool reference = tier == AccuracyTier::kReference;
-
-    if (granularity != kDefaultFitGranularity)
-    {
-        if (!reference)
-        {
-            return {false,
-                    "a rung of this lane reads the shipped pieces' stored coefficients at the "
-                    "degrees the rung certifies, and the narrow pieces' own effective-degree "
-                    "table is a derivation this lane has not done: the narrow rungs are a table "
-                    "to derive rather than a shape the call cannot have"};
-        }
-
-        return {true, ""};
-    }
-
-    if (axis != kDefaultPackAxis && !reference &&
-        !(route == kDefaultFitRoute && scheme == kDefaultEvalScheme))
+// narrow pieces' own degree table is a derivation this lane has not done.
+Carriage CarriesSingle(FitGranularity granularity, AccuracyTier tier) noexcept {
+    if (granularity != kDefaultFitGranularity && tier != AccuracyTier::kReference)
     {
         return {false,
-                "the packed lane's rung bodies are instantiated for the shipped route and "
-                "scheme, and a rung of another family's fit on this axis is a body to build "
-                "rather than a shape the call cannot have: the scalar path carries that family's "
-                "rungs on the arguments axis"};
+                "a rung of this lane reads the shipped pieces' stored coefficients at the "
+                "degrees the rung certifies, and the narrow pieces' own effective-degree "
+                "table is a derivation this lane has not done: the narrow rungs are a table "
+                "to derive rather than a shape the call cannot have"};
     }
 
     return {true, ""};
@@ -878,7 +855,7 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
             return CarriesDevice(route, scheme, axis, granularity);
         case Precision::kFp32:
         case Precision::kFp16:
-            return CarriesSingle(route, scheme, axis, granularity, tier);
+            return CarriesSingle(granularity, tier);
         case Precision::kFp64:
             break;
         }

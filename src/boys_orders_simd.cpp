@@ -1150,25 +1150,58 @@ void F32OrdersBody(int nmax, float x, float* out, Degrees degrees) noexcept {
 // One group of eight orders' rational geometry at one argument.
 struct F32RatGroup {
     std::int32_t base[8];
+    std::int32_t storednum[8];
     std::int32_t numdeg[8];
     std::int32_t dendeg[8];
     float t[8];
     int numMax;
     int denMax;
 };
-F32RatGroup BuildF32RatGroup(int l, float x) noexcept {
-    F32RatGroup group{{}, {}, {}, {}, 0, 0};
+
+// The pair a lane reads: the stored degrees, which is the reference rung's
+// reading - every stored fit read whole.
+struct F32StoredPairs {
+    static int Num(std::size_t, int stored) noexcept { return stored; }
+    static int Den(std::size_t, int stored) noexcept { return stored; }
+};
+
+// A rung's reading: the pair the pair criterion certifies for that piece at
+// the rung's multiplier, flat over the rational cover's piece table, which is
+// how the lookups above index it.
+template <typename Pairs>
+struct F32RungPairs {
+    const Pairs& pairs;
+
+    int Num(std::size_t flat, int /*stored*/) const noexcept { return pairs.num[flat]; }
+    int Den(std::size_t flat, int /*stored*/) const noexcept { return pairs.den[flat]; }
+};
+
+template <class CutPairs>
+F32RatGroup BuildF32RatGroup(int l, float x, CutPairs cuts) noexcept {
+    F32RatGroup group{{}, {}, {}, {}, {}, 0, 0};
 
     for (int j = 0; j < 8; ++j)
     {
         const f32::RatPiece& piece = FindRatPieceF32(l + j, x);
+        const std::size_t flat = static_cast<std::size_t>(&piece - f32::kRatAPieces.data());
 
         group.base[j] = piece.offset;
-        group.numdeg[j] = piece.numdeg;
-        group.dendeg[j] = piece.dendeg;
+        group.storednum[j] = piece.numdeg;
+
+        // The cut keeps the low-order terms of both parts. The numerator's
+        // array begins at zero, so a lane's top coefficient is its cut's own;
+        // the denominator's coefficients sit above the piece's FULL numerator,
+        // so a lane's denominator array begins at its stored numerator degree
+        // and its top coefficient is the smaller of the cut and the stored
+        // denominator degree, which is what `dendeg` holds here.
+        const int numDeg = cuts.Num(flat, piece.numdeg);
+        const int denDeg = cuts.Den(flat, piece.dendeg);
+
+        group.numdeg[j] = numDeg;
+        group.dendeg[j] = denDeg < piece.dendeg ? denDeg : piece.dendeg;
         group.t[j] = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
-        group.numMax = piece.numdeg > group.numMax ? piece.numdeg : group.numMax;
-        group.denMax = piece.dendeg > group.denMax ? piece.dendeg : group.denMax;
+        group.numMax = numDeg > group.numMax ? numDeg : group.numMax;
+        group.denMax = group.dendeg[j] > group.denMax ? group.dendeg[j] : group.denMax;
     }
 
     return group;
@@ -1224,7 +1257,7 @@ __m256 F32RationalGroup(const F32RatGroup& group) noexcept {
 
     for (int j = 0; j < 8; ++j)
     {
-        denShift[j] = group.numdeg[j] + 1;
+        denShift[j] = group.storednum[j] + 1;
         denStored[j] = group.dendeg[j] - 1;
     }
 
@@ -1241,37 +1274,28 @@ __m256 F32RationalGroup(const F32RatGroup& group) noexcept {
 }
 
 // The route's region-A body on this axis: eight orders to a vector and a
-// scalar tail, the tail again in the group's own arithmetic.
-void F32RationalBody(int nmax, float x, float* out) noexcept {
+// scalar tail, the tail again in the group's own arithmetic - the route's own
+// cut reading, whose recurrence and whose top coefficients are the group's, so
+// the tail's value is the vector's for the lane it stands for.
+template <class CutPairs>
+void F32RationalBody(int nmax, float x, float* out, CutPairs cuts) noexcept {
     int l = 0;
 
     for (; l + 8 <= nmax + 1; l += 8)
     {
-        _mm256_storeu_ps(out + l, F32RationalGroup(BuildF32RatGroup(l, x)));
+        _mm256_storeu_ps(out + l, F32RationalGroup(BuildF32RatGroup(l, x, cuts)));
     }
 
     for (; l <= nmax; ++l)
     {
         const f32::RatPiece& piece = FindRatPieceF32(l, x);
-        const float* const c = f32::kRatACoeffs.data() + piece.offset;
+        const std::size_t index = static_cast<std::size_t>(&piece - f32::kRatAPieces.data());
         const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
-        const BroadcastCoefficientsF32 numCoeff{c, 0};
-        const BroadcastCoefficientsF32 denCoeff{c, piece.numdeg + 1};
-        const __m256 tv = _mm256_set1_ps(t);
-        alignas(32) float lanes[8];
 
-        _mm256_store_ps(lanes, HornerGatheredF32(numCoeff, piece.numdeg, tv));
-        float num = lanes[0];
-
-        if (piece.dendeg == 0)
-        {
-            out[l] = num;
-            continue;
-        }
-
-        _mm256_store_ps(lanes, HornerGatheredF32(denCoeff, piece.dendeg - 1, tv));
-        out[l] = num / _mm256_cvtss_f32(
-                           _mm256_fmadd_ps(_mm256_set1_ps(lanes[0]), tv, _mm256_set1_ps(1.0f)));
+        out[l] = RationalPieceF32AtCut(index,
+                                       cuts.Num(index, piece.numdeg),
+                                       cuts.Den(index, piece.dendeg),
+                                       t);
     }
 }
 
@@ -1337,7 +1361,7 @@ template <bool kComposed>
 void F32OrdersByRoute(OrdersScheme scheme, FitRoute route, int nmax, float x, float* out) noexcept {
     if (route == FitRoute::kRationalMinimax)
     {
-        F32RationalBody(nmax, x, out);
+        F32RationalBody(nmax, x, out, F32StoredPairs{});
         return;
     }
 
@@ -1514,19 +1538,27 @@ void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
             return;
         }
 
-        // The degrees the shipped table's fits are read at. The lane evaluates
-        // each order independently, so the amplification it pays is the
-        // single-order one and the table is the single-order role's; the budget
-        // picks which bar that role is certified against.
+        // The degrees the fits are read at: each family's own table, cut from
+        // the coefficients that family stores and read in the basis the scheme
+        // sums, so the scheme is a choice of table here and not only of
+        // summation. The lane evaluates each order independently, so the
+        // amplification it pays is the single-order one and the table is the
+        // single-order role's; the budget picks which bar that role is
+        // certified against.
         constexpr BoysRole kRole = (kBudget == BoysBudget::kFloat) ? BoysRole::kF32Single
                                                                    : BoysRole::kF32Fp16Single;
-        static constexpr auto kDegreesA = RegionADegrees<kAccuracyMultiplier, kRole>();
 
         if constexpr (kRoute == FitRoute::kRationalMinimax)
         {
-            F32RationalBody(nmax, x, out);
+            static constexpr auto kPairsA =
+                RationalRegionAF32Degrees<kAccuracyMultiplier, kRole>();
+
+            F32RationalBody(nmax, x, out, F32RungPairs<decltype(kPairsA)>{kPairsA});
         } else
         {
+            static constexpr auto kDegreesA =
+                RegionADegrees<kAccuracyMultiplier, kRole, SchemeTailBasis<kScheme>()>();
+
             F32OrdersBody<OrdersSchemeOf(kScheme), kF32Composed>(
                 nmax, x, out, F32RungDegree<decltype(kDegreesA)>{kDegreesA});
         }
@@ -1535,35 +1567,50 @@ void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
 
 // The shapes a float policy can name on this axis: two schemes and two
 // computation budgets at the reference multiplier, with either route; and the
-// six relaxed rungs of the shipped route and scheme alone, which is the
-// combination the engine above admits at a rung. Each is instantiated here so
-// that the dispatch in boys_impl.hpp is a branch over code the library already
-// holds rather than a further instantiation per call site.
+// six relaxed rungs of either route at either scheme. Each is instantiated
+// here so that the dispatch in boys_impl.hpp is a branch over code the library
+// already holds rather than a further instantiation per call site.
+//
+// A rung is a table of effective degrees, and each family's table is cut from
+// the coefficients that family stores - the shipped route's pieces for the
+// polynomial table, the route's own pairs for the rational one - so a rung of
+// either route is a reading of the family the caller named, and the four
+// route-and-scheme pairs the axis offers are four tables rather than one.
 #define BOYS_ORDERS_F32_PACKED_REFERENCE(kScheme, kBudget)                                         \
     template void BoysAllOrdersF32Packed<kScheme, 1.0, FitRoute::kChebyshev, kBudget>(             \
         int, float, float*) noexcept;                                                              \
     template void BoysAllOrdersF32Packed<kScheme, 1.0, FitRoute::kRationalMinimax, kBudget>(       \
         int, float, float*) noexcept;
 
+#define BOYS_ORDERS_F32_PACKED_RUNG(kScheme, kRoute, kMultiplier, kBudget)                         \
+    template void                                                                                  \
+    BoysAllOrdersF32Packed<kScheme, kMultiplier, kRoute, kBudget>(int, float, float*) noexcept;
+
 #define BOYS_ORDERS_F32_PACKED_RUNGS(kBudget)                                                      \
-    template void                                                                                  \
-    BoysAllOrdersF32Packed<kDefaultEvalScheme, 64.0, FitRoute::kChebyshev, kBudget>(               \
-        int, float, float*) noexcept;                                                              \
-    template void                                                                                  \
-    BoysAllOrdersF32Packed<kDefaultEvalScheme, 256.0, FitRoute::kChebyshev, kBudget>(              \
-        int, float, float*) noexcept;                                                              \
-    template void                                                                                  \
-    BoysAllOrdersF32Packed<kDefaultEvalScheme, 1024.0, FitRoute::kChebyshev, kBudget>(             \
-        int, float, float*) noexcept;                                                              \
-    template void                                                                                  \
-    BoysAllOrdersF32Packed<kDefaultEvalScheme, 4096.0, FitRoute::kChebyshev, kBudget>(             \
-        int, float, float*) noexcept;                                                              \
-    template void                                                                                  \
-    BoysAllOrdersF32Packed<kDefaultEvalScheme, 16384.0, FitRoute::kChebyshev, kBudget>(            \
-        int, float, float*) noexcept;                                                              \
-    template void                                                                                  \
-    BoysAllOrdersF32Packed<kDefaultEvalScheme, 65536.0, FitRoute::kChebyshev, kBudget>(            \
-        int, float, float*) noexcept;
+    BOYS_ORDERS_F32_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kChebyshev, 64.0, kBudget)           \
+    BOYS_ORDERS_F32_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kChebyshev, 256.0, kBudget)          \
+    BOYS_ORDERS_F32_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kChebyshev, 1024.0, kBudget)         \
+    BOYS_ORDERS_F32_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kChebyshev, 4096.0, kBudget)         \
+    BOYS_ORDERS_F32_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kChebyshev, 16384.0, kBudget)        \
+    BOYS_ORDERS_F32_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kChebyshev, 65536.0, kBudget)        \
+    BOYS_ORDERS_F32_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 64.0, kBudget)          \
+    BOYS_ORDERS_F32_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 256.0, kBudget)         \
+    BOYS_ORDERS_F32_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 1024.0, kBudget)        \
+    BOYS_ORDERS_F32_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 4096.0, kBudget)        \
+    BOYS_ORDERS_F32_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 16384.0, kBudget)       \
+    BOYS_ORDERS_F32_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 65536.0, kBudget)       \
+    BOYS_ORDERS_F32_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kRationalMinimax, 64.0, kBudget)     \
+    BOYS_ORDERS_F32_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kRationalMinimax, 256.0, kBudget)    \
+    BOYS_ORDERS_F32_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kRationalMinimax, 1024.0, kBudget)   \
+    BOYS_ORDERS_F32_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kRationalMinimax, 4096.0, kBudget)   \
+    BOYS_ORDERS_F32_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kRationalMinimax, 16384.0, kBudget)  \
+    BOYS_ORDERS_F32_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kRationalMinimax, 65536.0, kBudget)  \
+    BOYS_ORDERS_F32_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 64.0, kBudget)    \
+    BOYS_ORDERS_F32_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 256.0, kBudget)   \
+    BOYS_ORDERS_F32_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 1024.0, kBudget)  \
+    BOYS_ORDERS_F32_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 4096.0, kBudget)  \
+    BOYS_ORDERS_F32_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 16384.0, kBudget) \
+    BOYS_ORDERS_F32_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 65536.0, kBudget)
 
 BOYS_ORDERS_F32_PACKED_REFERENCE(kDefaultEvalScheme, BoysBudget::kFloat)
 BOYS_ORDERS_F32_PACKED_REFERENCE(kDefaultEvalScheme, BoysBudget::kFp16)
@@ -1574,6 +1621,7 @@ BOYS_ORDERS_F32_PACKED_RUNGS(BoysBudget::kFp16)
 
 #undef BOYS_ORDERS_F32_PACKED_REFERENCE
 #undef BOYS_ORDERS_F32_PACKED_RUNGS
+#undef BOYS_ORDERS_F32_PACKED_RUNG
 
 // The entry the public surface's orders axis dispatches to (boys_impl.hpp).
 //
@@ -1832,18 +1880,24 @@ void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
         int, float, float*) noexcept;                                                              \
     template void BoysAllOrdersF32Packed<kScheme, 1.0, FitRoute::kRationalMinimax, kBudget>(       \
         int, float, float*) noexcept;                                                              \
-    template void BoysAllOrdersF32Packed<kScheme, 64.0, FitRoute::kChebyshev, kBudget>(            \
-        int, float, float*) noexcept;                                                              \
-    template void BoysAllOrdersF32Packed<kScheme, 256.0, FitRoute::kChebyshev, kBudget>(           \
-        int, float, float*) noexcept;                                                              \
-    template void BoysAllOrdersF32Packed<kScheme, 1024.0, FitRoute::kChebyshev, kBudget>(          \
-        int, float, float*) noexcept;                                                              \
-    template void BoysAllOrdersF32Packed<kScheme, 4096.0, FitRoute::kChebyshev, kBudget>(          \
-        int, float, float*) noexcept;                                                              \
-    template void BoysAllOrdersF32Packed<kScheme, 16384.0, FitRoute::kChebyshev, kBudget>(         \
-        int, float, float*) noexcept;                                                              \
-    template void BoysAllOrdersF32Packed<kScheme, 65536.0, FitRoute::kChebyshev, kBudget>(         \
-        int, float, float*) noexcept;
+    BOYS_ORDERS_F32_PACKED_RUNGS_ROUTE(kScheme, FitRoute::kChebyshev, kBudget)                     \
+    BOYS_ORDERS_F32_PACKED_RUNGS_ROUTE(kScheme, FitRoute::kRationalMinimax, kBudget)
+
+// The six relaxed rungs on a target without the vector tier, at either route:
+// the entry there is the certified scalar single lane at the policy the axis
+// names, so a rung is served by that lane's own rung body and the route is a
+// choice of table rather than of shape.
+#define BOYS_ORDERS_F32_PACKED_RUNGS_ROUTE(kScheme, kRoute, kBudget)                               \
+    BOYS_ORDERS_F32_PACKED_RUNG(kScheme, kRoute, 64.0, kBudget)                                    \
+    BOYS_ORDERS_F32_PACKED_RUNG(kScheme, kRoute, 256.0, kBudget)                                   \
+    BOYS_ORDERS_F32_PACKED_RUNG(kScheme, kRoute, 1024.0, kBudget)                                  \
+    BOYS_ORDERS_F32_PACKED_RUNG(kScheme, kRoute, 4096.0, kBudget)                                  \
+    BOYS_ORDERS_F32_PACKED_RUNG(kScheme, kRoute, 16384.0, kBudget)                                 \
+    BOYS_ORDERS_F32_PACKED_RUNG(kScheme, kRoute, 65536.0, kBudget)
+
+#define BOYS_ORDERS_F32_PACKED_RUNG(kScheme, kRoute, kMultiplier, kBudget)                         \
+    template void                                                                                  \
+    BoysAllOrdersF32Packed<kScheme, kMultiplier, kRoute, kBudget>(int, float, float*) noexcept;
 
 BOYS_ORDERS_F32_PACKED_INSTANTIATIONS(kDefaultEvalScheme, BoysBudget::kFloat)
 BOYS_ORDERS_F32_PACKED_INSTANTIATIONS(kDefaultEvalScheme, BoysBudget::kFp16)
@@ -1851,6 +1905,8 @@ BOYS_ORDERS_F32_PACKED_INSTANTIATIONS(EvalScheme::kHorner, BoysBudget::kFloat)
 BOYS_ORDERS_F32_PACKED_INSTANTIATIONS(EvalScheme::kHorner, BoysBudget::kFp16)
 
 #undef BOYS_ORDERS_F32_PACKED_INSTANTIATIONS
+#undef BOYS_ORDERS_F32_PACKED_RUNGS_ROUTE
+#undef BOYS_ORDERS_F32_PACKED_RUNG
 
 // The orders axis's entry on a target without the vector tier: the same
 // certified scalar single lane the packed bodies fall back to, at the policy
