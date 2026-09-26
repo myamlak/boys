@@ -5883,9 +5883,7 @@ int main(int argc, char** argv) {
                 boys::FitGranularity::kShipped>() {
             constexpr double kMultiplier =
                 boys::AccuracyMultiplier(static_cast<boys::AccuracyTier>(kRung));
-            constexpr std::size_t kSchemeIdx = static_cast<std::size_t>(kScheme);
             constexpr std::size_t kRouteIdx = static_cast<std::size_t>(kRoute);
-            constexpr std::size_t kPartIdx = static_cast<std::size_t>(kPart);
             using Policy = boys::EvalPolicy<kRoute,
                                             kScheme,
                                             boys::BoysBudget::kFloat,
@@ -5897,9 +5895,19 @@ int main(int argc, char** argv) {
             // reading order is what keeps a sweep and its row together: the
             // order the sweeps run in and the order the rows are published in
             // are two different orders, and only the table knows the second.
+            //
+            // The scheme and the partition are cast where the nested lambda uses
+            // them rather than named above it: a local read only from inside a
+            // lambda is not a use to MSVC's unused-local reading, which this
+            // file is built under at /W4 /WX, and naming it and capturing it to
+            // say so is what clang's unused-lambda-capture rejects.
             const auto claimSlot = [&](std::size_t entry, std::size_t region) {
-                const std::size_t at =
-                    openedSlot(kRung, kRouteIdx, kPartIdx, kSchemeIdx, entry, region);
+                const std::size_t at = openedSlot(kRung,
+                                                  kRouteIdx,
+                                                  static_cast<std::size_t>(kPart),
+                                                  static_cast<std::size_t>(kScheme),
+                                                  entry,
+                                                  region);
                 return static_cast<std::size_t>(openedSlots[at]);
             };
 
@@ -10420,7 +10428,9 @@ int main(int argc, char** argv) {
 
             for (std::size_t i = 0; i < count; ++i)
             {
-                boys::BoysAllOrdersF32<1.0, Policy>(nmax, ref.xf[i], out.data());
+                boys::BoysAllOrdersF32<1.0, Policy>(nmax,
+                                                    static_cast<float>(ref.xf[i]),
+                                                    out.data());
 
                 for (int n = 0; n <= nmax; ++n)
                 {
@@ -10472,7 +10482,9 @@ int main(int argc, char** argv) {
 
                     for (std::size_t i = 0; i < count; ++i)
                     {
-                        boys::BoysAllOrdersF32<kM, Policy>(nmax, ref.xf[i], out.data());
+                        boys::BoysAllOrdersF32<kM, Policy>(nmax,
+                                                          static_cast<float>(ref.xf[i]),
+                                                          out.data());
 
                         for (int n = 0; n <= nmax; ++n)
                         {
@@ -11062,6 +11074,10 @@ int main(int argc, char** argv) {
                 combPartitions,
                 combAxes,
                 combRungs);
+    std::printf("  the cross: %zu of %zu member(s) the accessor claims the library carries are "
+                "certified and\n                published by the rows above\n",
+                combClaimedCarried,
+                combTotal);
     std::printf("  the accessor: %zu row(s) refused without a figure, %zu answered for a lane "
                 "this host\n                cannot run, %zu whose guarantee differs from the "
                 "figure the row is judged by,\n                and %zu whose delivered figure "
@@ -11074,8 +11090,11 @@ int main(int argc, char** argv) {
                 "combination\n                names, and the call adds its recurrences over "
                 "them: on this grid it sits\n                strictly below the whole call's "
                 "measurement on %zu row(s), which is that relation\n                and not a "
-                "disagreement\n",
-                combAccessorDeliveredFloor);
+                "disagreement, and it has no delivered figure at all on %zu row(s) -\n"
+                "                the half lane's error is the format's, and a relaxed rung no "
+                "row measured\n",
+                combAccessorDeliveredFloor,
+                combAccessorDeliveredAbsent);
 
     if (combTotal != combClaimed || combTotal != combAccounted || combUncovered > 0 ||
         combOfferedBad > 0 || combAccessorDisagreeing > 0 || combAccessorDeliveredShort > 0)
