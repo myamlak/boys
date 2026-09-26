@@ -412,6 +412,7 @@ struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kShipped> {
 /// either scheme for the reason the shipped member is.
 template <EvalScheme kScheme>
 struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kNarrow> {
+    /// The single rational fit, one pair per narrow piece.
     using Type = RationalFitNarrow;
 };
 
