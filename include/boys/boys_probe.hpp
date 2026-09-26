@@ -633,7 +633,9 @@ struct OptionProbeReport {
     /// Passes whose canary wandered further than that. **Reported, and used
     /// anyway**: the flag says the machine's fixed work was not repeating, which
     /// a decaying clock produces by itself. Both of these add up to the passes
-    /// run, and every pass contributed to every figure above.
+    /// run, and every pass contributed to every figure above. Both are zero when
+    /// \c calibrated is false: nothing was read, so no pass is placed on either
+    /// side of an alarm that was never established.
     int passesAboveAlarm = 0;
 
     /// Paired rounds the figures rest on: the rounds of every pass, pooled. A

@@ -712,12 +712,30 @@ TEST(ProbeTest, AMeasuredButUnorderedRunLabelsItsFallbackToo) {
 // Whatever the machine did, the protocol's bookkeeping adds up: every pass was
 // either within the canary's alarm or above it and all of them were used, every
 // figure rests on every paired round, and a figure that exists is a positive
-// cost with a band around it.
+// cost with a band around it. A run whose load instrument never found a floor
+// took no canary and places no pass on either side of the alarm, and its
+// confidence line says so rather than naming a load of zero.
 TEST(ProbeTest, ThePassBookkeepingAddsUp) {
     const OptionProbeReport report = boys::RunOptionProbe(Timed());
 
-    EXPECT_EQ(report.passesWithinAlarm + report.passesAboveAlarm,
-              static_cast<int>(report.passes.size()));
+    if (report.calibrated) {
+        EXPECT_EQ(report.passesWithinAlarm + report.passesAboveAlarm,
+                  static_cast<int>(report.passes.size()));
+    } else {
+        EXPECT_EQ(report.passesWithinAlarm, 0);
+        EXPECT_EQ(report.passesAboveAlarm, 0);
+
+        // Where the fact is printed depends on the verdict, not on whether it
+        // happened: a refusal carries it in its reason, a recommendation in its
+        // confidence line. Either way a reader is told no canary ran.
+        EXPECT_NE((report.confidence + report.reason).find("never established a floor"),
+                  std::string::npos)
+            << report.confidence;
+        EXPECT_EQ(report.confidence.find("median load"), std::string::npos) << report.confidence;
+        EXPECT_EQ(report.confidence.find("canary's own runs wider"), std::string::npos)
+            << report.confidence;
+    }
+
     EXPECT_EQ(report.pairedRounds, report.options.passes * report.options.rounds);
 
     double widestCanary = 0.0;

@@ -1688,7 +1688,7 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
     const std::string loadNote =
         report.calibrated
             ? std::string()
-            : " The load instrument never established a floor on this machine, so the load columns "
+            : ". The load instrument never established a floor on this machine, so the load columns "
               "of this report have nothing to be relative to; no figure above is made of them.";
 
     // Every refusal leaves the caller a default: the static reading of the
@@ -2113,19 +2113,36 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
             overall->name.c_str(), overall->nsPerArgument);
     }
 
-    confidence += Text(". The passes ran at a median load of %.1f%% inside their timed rounds",
-                       report.loadMedian);
-
-    if (report.passesWithinAlarm < static_cast<int>(report.passes.size()))
+    if (report.calibrated)
     {
-        confidence += Text(
-            ", and %d of %d pass(es) ran with the canary's own runs wider than the %.1f%% alarm - "
-            "reported, used, and not what the ordering rests on",
-            report.passesAboveAlarm, static_cast<int>(report.passes.size()),
-            report.options.canarySpreadAlarm);
+        confidence += Text(". The passes ran at a median load of %.1f%% inside their timed rounds",
+                           report.loadMedian);
+
+        if (report.passesWithinAlarm < static_cast<int>(report.passes.size()))
+        {
+            confidence += Text(
+                ", and %d of %d pass(es) ran with the canary's own runs wider than the %.1f%% alarm - "
+                "reported, used, and not what the ordering rests on",
+                report.passesAboveAlarm, static_cast<int>(report.passes.size()),
+                report.options.canarySpreadAlarm);
+        }
+    } else
+    {
+        // No canary and no load figure were read - the instrument never found a
+        // floor to read them against - so the line says that instead of naming a
+        // load of zero or an alarm nothing came in under. What the verdict rests
+        // on is the paired rounds, which are taken whether the instrument
+        // calibrated or not.
+        confidence += Text(". The load instrument never established a floor on this machine, so no "
+                           "load reading and no canary run went beside these %d paired round(s), and "
+                           "nothing here is read from one",
+                           report.pairedRounds);
     }
 
-    report.confidence = confidence + loadNote;
+    // The load note goes on a reason that would otherwise carry the fact in no
+    // place at all: this line has just built its own statement of it for the
+    // run that never calibrated, and one sentence about it is enough.
+    report.confidence = confidence;
 }
 
 } // namespace
