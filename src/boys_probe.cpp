@@ -2037,7 +2037,8 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
     // put two different arithmetic routes - two vector register widths - against
     // each other, read from the run's own rows rather than assumed.
     const auto clock_clause = [&]() -> std::string {
-        if (doubles.members.size() < 2 || report.pairedRounds < kMinimumPairedRounds)
+        if (doubles.members.size() < 2 ||
+            report.pairedRounds < static_cast<int>(kMinimumPairedRounds))
         {
             return std::string();
         }
@@ -3174,19 +3175,9 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
         }
     }
 
-    // The certified rows of the double lane's precision, and the class's own
-    // entry so the resolution can be reported against the class it is measured
-    // in rather than against one row of it.
-    const OptionProbeMeasurement* leader = nullptr;
+    // The class's own entry, so the resolution can be reported against the class
+    // it is measured in rather than against one row of it.
     const OptionProbeClass* doublesClass = nullptr;
-
-    for (const OptionProbeMeasurement& measurement : report.measurements)
-    {
-        if (measurement.measured && measurement.name == report.fastestAtReferenceAccuracy)
-        {
-            leader = &measurement;
-        }
-    }
 
     for (const OptionProbeClass& entry : report.classes)
     {
