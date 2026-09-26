@@ -929,6 +929,137 @@ figure, so the two are not on one scale and this page offers no ratio between th
 says is that inside the sub-16 part of the branch the accuracy is nowhere near the accuracy of the
 fits. A caller evaluating there should expect that, and should not read the 5.5e-14 as covering it.
 
+## Every combination, and the bound each one carries
+
+The lanes above are one axis of six. A call is a lane, a fit route, an evaluation scheme, an
+interval partition, a packing axis and an accuracy multiplier, and the library offers the product of
+all six: **2 routes × 2 schemes × 2 partitions × 2 axes × 7 rungs, in 4 lanes — 448 combinations.**
+Each axis's own section above states what that axis changes. This one states what a combination is
+guaranteed, how a program asks the library for the figure, and which members of the space this
+revision does not carry.
+
+**The bound of a combination is its lane's figure at its rung, and no other axis moves it.** The
+other four axes change what a call *delivers* — which fits it reads, how many coefficients it sums,
+whether it packs arguments or orders — and the guarantee each of them publishes is the lane's own
+bound times the multiplier. The measured columns of the sections above are what those axes deliver;
+the bound is here.
+
+| Lane | One value carries at m = 1 | Beside that figure | Named |
+|---|---|---|---|
+| double | 5.5e-14 | — | `Precision::kFp64` |
+| float | 1.5e-7 | — | `Precision::kFp32` |
+| half, fp16 and bfloat16 | 1e-7 | plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum | `Precision::kFp16` |
+| float on a device | 1.5e-7 | plus 8e-8 under the fast region-B exponential | `Precision::kFp32Device` |
+
+A combination at multiplier `m` carries **`m · base + additive`** — the same arithmetic the README's
+contract table states lane by lane. `BoysLaneContracts()` returns those four rows, so a program
+reads the figures the tables are written from rather than transcribing them, and the accuracy gate
+reads the same rows to judge a combination against.
+
+**Two accessors, two questions, and their names say which is which.**
+`BoysAccuracyGuaranteed(precision, route, scheme, axis, granularity, tier)` answers *may I rely on
+this combination being at least this accurate*: its `value` is the bound above, at the rung named.
+`BoysAccuracyDelivered(...)` answers *which of these two combinations has been measured to do
+better*: its `value` is the worst of the rows the combination names, each of which publishes what it
+was measured to deliver. Both return an `AccuracyFigure` whose `reading` field says which of the
+two figures it is, so neither can be read as the other.
+
+**The delivered figure is a floor on a whole call's error and not the whole call's figure.** The
+rows it maximises over are the *fits'* own figures, and a call adds its recurrences over them, so
+the gate measures a whole call at or above it — strictly above it on 14 of the 78 carried rows of
+this grid. What a whole call delivers is the gate's measurement, and the gate's combination table is
+where that figure lives for every combination.
+
+**A combination this revision does not carry returns no number.** Both accessors return
+`available == false`, `value == 0.0` and a `reason` carrying the library's own sentence for the
+refusal — the same sentence the gate prints beside the row. A caller cannot mistake a refusal for an
+accuracy. The delivered accessor is absent as well for the half lane, whose error is dominated by
+the format's quantum at the returned value rather than by the call, and for every rung past the
+reference multiplier, because no row publishes a figure measured at one and a scaled guarantee is
+not a measurement.
+
+### What this revision carries, and what is owed
+
+The gate crosses the whole space, prints one line per combination — its measured delivered figure
+beside the bound its lane publishes — and ends the block with its own arithmetic. A row of that
+table reads `fp64, chebyshev, split-clenshaw, shipped, orders, m = 64 | 56694 cells | 0 outside |
+1.54485e-12 delivered | 3.52e-12 bound | certified and published`, and a refused one carries no
+cells, no figure and the reason. The block's own last lines, from the same run the top of this page
+names:
+
+    COMBINATIONS: 78 of 448 member(s) of the option space are certified and published
+                  363 refused with the library's own reason and owed
+                  7 not runnable on this host, counted apart and not against the library
+                  0 offered and covered by no cell of this block
+                  0 delivering outside the bound its lane publishes
+    the arithmetic: 78 + 363 + 7 + 0 + 0 = 448
+                   the space read off the tables a second way: 448 member(s) over 4 lane(s),
+                   a route axis of 2 2 2 2 route(s), 2 scheme(s), 2 partition(s),
+                   2 axis(es), 7 rung(s)
+
+Those are three states and there is no fourth: certified and published, refused with the library's
+own reason and owed, or not runnable on this host. **A combination added to the library and left
+uncovered lands in the fourth count and fails the run**, so a hole cannot go quiet; the run is at
+revision `623a8e2`. By lane:
+
+| Lane | Certified and published | Refused, reason owed | Not runnable on this host | Members |
+|---|---|---|---|---|
+| double | 58 | 54 | 0 | 112 |
+| float | 10 | 102 | 0 | 112 |
+| half | 10 | 102 | 0 | 112 |
+| float on a device | 0 | 105 | 7 | 112 |
+| the space | 78 | 363 | 7 | 448 |
+
+**The double lane carries 10 of its 16 members at the reference multiplier and 8 at each relaxed
+rung, and all 54 refusals are the narrow partition's.** Six of the 54 are at m = 1: the narrow
+partition holds no rational table, so its four rational rows are refused, and it has no kernel that
+packs a stride into the across-orders axis, which refuses the two chebyshev ones. The other 48 are
+narrow, eight at each of the six relaxed rungs, because a relaxed rung cuts a fit by a per-order
+effective degree and only the shipped row carries such a degree table.
+
+**The two single-precision lanes carry 10 members each.** At the reference multiplier they carry the
+shipped partition on the arguments axis, at both routes and both schemes — four — and past it the
+shipped route and scheme alone, which is six more, one at each relaxed rung. The 102 refusals fall
+in three parts: 56 are on the narrow partition, which for this lane is a table nobody has generated;
+28 are on the across-orders axis, which this lane has no kernel for because the packing axes are the
+double lane's; and 18 are a combination the reference rung carries and a relaxed rung does not,
+because a relaxed rung cuts a fit by a per-order effective degree and this lane's degree table is
+certified against one stored fit family.
+
+**The device lane carries one combination at seven rungs, and this host cannot run any of them.**
+Those seven are counted apart and not against the library: a machine with a CUDA device is the
+instrument for the lane, the CUDA accuracy gate is what runs there, and the figure this page
+publishes for the lane is its documented one rather than a measurement of it.
+
+A refusal is backed by a `static_assert` in the header, named, or by a configure probe that compiles
+the call and reports that it does not build — never by a build failure a reader has to guess at. The
+gate prints each refusal with the sentence and its backing, and the per-axis sections above give the
+same reasons axis by axis.
+
+### The accessor's figure beside the figure the row is judged by
+
+The gate reads both accessors for a combination in every lane, prints what they answer beside the
+bound the row is judged against and the figure the call was measured to deliver, and fails if the
+guarantee differs from the judged figure in any digit or if the delivered figure sits *above* the
+measurement. One combination per lane, from that run:
+
+| Combination | Accessor | Judged at | Measured | The source the accessor read |
+|---|---|---|---|---|
+| fp64, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 5.5e-14 | 5.5e-14 | 5e-14 | throughout, every region |
+| fp32, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 1.5e-07 | 1.5e-07 | 1.08354e-07 | throughout, every region |
+| fp16, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 1e-07 | 1e-07 | 1.08354e-07 | plus half of the last representable digit of the returned value |
+| fp32-device, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 2.3e-07 | 2.3e-07 | — | documented figure; this host cannot run the lane |
+| fp64, chebyshev, split-clenshaw, narrow, orders, m = 1 | no figure | not judged | not measured | refused, and the accessor returns no number |
+
+The first two columns are one number read two ways rather than two numbers that agree today. The
+accessor computes its figure inside the library from a `BoysLaneContracts()` row; the gate computes
+the figure it judges the row against from that same row by its own arithmetic, and fails the run
+when the two differ in any digit. They are two paths over one source, so a change to a lane's figure
+moves both or the run goes red. The fp16 row judged at 1e-07 and measured at 1.08354e-07 is the
+ceiling's half-ULP term at work: the base figure is what the accessor returns, and the term of the
+format is added by the row's own criterion — the gate counts the cells where the returned value
+falls at or below the floor rather than passing them as covered.
+
 ## What is not claimed
 
 **Speed.** No timing taken so far supports a speed claim for any lane. Every timing available was
