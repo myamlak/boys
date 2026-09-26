@@ -211,10 +211,22 @@ documents one — and `BoysAccuracyDelivered(...)` returns the figure it was mea
 which is the one to rank two combinations by. They are different questions, and the `reading` field
 of the returned `AccuracyFigure` says which answer a figure is. A combination this revision does not
 carry has no figure: both accessors say so and give the library's own reason rather than returning a
-number. **The bound is the lane's, and no other axis moves it** — what the other axes change is what
-a call delivers, and the gate prints every combination's measured figure beside its bound. The
-per-lane counts, the reasons and the figures are in
-[docs/lane-contract.md](docs/lane-contract.md#every-combination-and-the-bound-each-one-carries).
+number.
+
+**A caller that has a target rather than a comparison asks it directly.** `QueryCombination(...)`
+takes the same six axes and the absolute error the caller needs, and answers with a verdict beside
+the numbers it was made on: `kGuaranteedInside` where the bound is at or below the tolerance,
+`kDeliveredInside` where the bound is above it and the figure the combination's fits were measured
+to deliver is at or below it, `kOutside` where neither is, and `kNotCarried` where this revision does not have
+the combination — no verdict, no figure, and the library's own reason. The bound decides first, so
+`kGuaranteedInside` is the state a calculation's safety can rest on and `kDeliveredInside` is
+explicitly not that state. The request and both figures come back with the verdict, so an answer can
+be checked against what decided it.
+
+**The bound is the lane's, and no other axis moves it** — what the other axes change is what a call
+delivers, and the gate prints every combination's measured figure beside its bound. The per-lane
+counts, the reasons, the two figures side by side and the tolerance table are in
+[docs/lane-contract.md](docs/lane-contract.md#every-combination-its-bound-its-delivered-figure-and-its-tolerance).
 
 ### Check the figures yourself
 

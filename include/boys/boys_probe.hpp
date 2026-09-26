@@ -306,9 +306,9 @@ struct OptionProbeMeasurement {
     /// defaulted axis is still printed, so a row states the whole combination
     /// rather than the part that differs from a default.
     FitRoute route = kDefaultFitRoute;
-    EvalScheme scheme = kDefaultEvalScheme;
-    FitGranularity granularity = kDefaultFitGranularity;
-    PackAxis pack = PackAxis::kArguments;
+    EvalScheme scheme = kDefaultEvalScheme; ///< the scheme it sums them with
+    FitGranularity granularity = kDefaultFitGranularity; ///< the partition it reads
+    PackAxis pack = PackAxis::kArguments; ///< the packing axis its entry carries
 
     /// The arithmetic the option ran in, named by the library's own backend
     /// table (see backend::BoysBackends), so the number is attributable to the
@@ -371,8 +371,8 @@ struct OptionProbeMeasurement {
     /// interval that figure holds on. Zero, with the interval unread, for an
     /// option whose arithmetic is the shipped tables'.
     double ownBound = 0.0;
-    double ownLo = 0.0;
-    double ownHi = 0.0;
+    double ownLo = 0.0; ///< the left edge of the interval \c ownBound holds on
+    double ownHi = 0.0; ///< its right edge, exclusive
 
     /// Whether every value was bit-identical to the certified lane's, at the
     /// same order and the same argument.
@@ -444,11 +444,19 @@ struct OptionProbeCell {
     /// name it in ProbeOptions::only and be told what this build does with it.
     std::string name;
 
-    /// The axes this cell fixes.
+    /// The fit route this cell fixes.
     FitRoute route = kDefaultFitRoute;
+
+    /// The evaluation scheme this cell fixes.
     EvalScheme scheme = kDefaultEvalScheme;
+
+    /// The interval partition this cell fixes.
     FitGranularity granularity = kDefaultFitGranularity;
+
+    /// The packing axis this cell fixes.
     PackAxis pack = PackAxis::kArguments;
+
+    /// The accuracy rung this cell fixes.
     AccuracyTier tier = AccuracyTier::kReference;
 
     /// Whether this build serves the cell, so a served cell has an option row in

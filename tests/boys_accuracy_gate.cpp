@@ -10346,6 +10346,12 @@ int main(int argc, char** argv) {
         double accessorBound = 0.0;
         double accessorDelivered = 0.0;
         bool accessorDeliveredKnown = false;
+        boys::ToleranceVerdict atBound = boys::ToleranceVerdict::kNotCarried;
+        boys::ToleranceVerdict atHalf = boys::ToleranceVerdict::kNotCarried;
+        double toleranceBound = 0.0;
+        double toleranceDelivered = 0.0;
+        bool toleranceDeliveredKnown = false;
+        std::string toleranceReason;
         int worstN = -1;
         double worstX = 0.0;
     };
@@ -10894,6 +10900,39 @@ int main(int argc, char** argv) {
                             c.accessorDelivered = delivered.value;
                             c.accessorDeliveredKnown = delivered.available;
 
+                            // The tolerance query, asked twice on every row: at
+                            // the figure the row is judged by, which a bound at or
+                            // below itself must answer inside, and at half of it,
+                            // which nothing at that figure can answer inside. The
+                            // two together are what says the entry compares the
+                            // request with the figure it reports rather than
+                            // answering from somewhere else; a refused row is
+                            // asked the same two questions and must answer
+                            // neither, with no figures at all.
+                            const boys::CombinationCoverage askedAtBound =
+                                boys::QueryCombination(static_cast<boys::Precision>(lane),
+                                                       route,
+                                                       scheme,
+                                                       axisRow.axis,
+                                                       partition.granularity,
+                                                       tier,
+                                                       guaranteed.value);
+                            const boys::CombinationCoverage askedAtHalf =
+                                boys::QueryCombination(static_cast<boys::Precision>(lane),
+                                                       route,
+                                                       scheme,
+                                                       axisRow.axis,
+                                                       partition.granularity,
+                                                       tier,
+                                                       guaranteed.value * 0.5);
+
+                            c.atBound = askedAtBound.verdict;
+                            c.atHalf = askedAtHalf.verdict;
+                            c.toleranceBound = askedAtBound.bound;
+                            c.toleranceDelivered = askedAtBound.delivered;
+                            c.toleranceDeliveredKnown = askedAtBound.deliveredKnown;
+                            c.toleranceReason = askedAtBound.reason;
+
                             const CombCell* cell = nullptr;
 
                             for (const CombCell& m : combMeasured)
@@ -11034,20 +11073,110 @@ int main(int argc, char** argv) {
         }
     }
 
+    // ---- the tolerance query, judged against the same rows -------------------
+    //
+    // The query answers the question the two accessors above are the inputs to,
+    // so it is judged against them and not against a list of its own: the figure
+    // it reports at a tolerance the row itself supplies is the accessor's
+    // figure, its verdict is the comparison, and on a refused row it is a
+    // refusal with no figure at all. Every count below is zero and the run goes
+    // red on any that is not, so the one number a caller with a target reads is
+    // tied to the two numbers a reader can check it against.
+    std::size_t combToleranceCarried = 0;
+    std::size_t combToleranceHalfAsked = 0;
+    std::size_t combToleranceHalfUnasked = 0;
+    std::size_t combToleranceRefused = 0;
+    std::size_t combToleranceDisagreeing = 0;
+
+    for (const Combination& c : combinations)
+    {
+        if (c.state.rfind("refused", 0) == 0)
+        {
+            // A refused combination has no figure to compare with a request, so
+            // it has no verdict either, and the reason that comes back is the
+            // library's own sentence - the one the row is refused with - rather
+            // than a second sentence written for this entry.
+            ++combToleranceRefused;
+
+            if (c.atBound != boys::ToleranceVerdict::kNotCarried ||
+                c.atHalf != boys::ToleranceVerdict::kNotCarried || c.toleranceBound != 0.0 ||
+                c.toleranceDelivered != 0.0 || c.toleranceDeliveredKnown ||
+                c.toleranceReason.empty())
+            {
+                ++combToleranceDisagreeing;
+                std::printf("  %-58s the tolerance query answered a refused combination with a "
+                            "figure, a verdict or no reason\n",
+                            c.axes.c_str());
+            }
+
+            continue;
+        }
+
+        ++combToleranceCarried;
+
+        if (c.atBound != boys::ToleranceVerdict::kGuaranteedInside ||
+            c.toleranceBound != c.accessorBound ||
+            c.toleranceDeliveredKnown != c.accessorDeliveredKnown ||
+            c.toleranceDelivered != c.accessorDelivered)
+        {
+            ++combToleranceDisagreeing;
+            std::printf("  %-58s asked at %g the tolerance query answers %g/%g, not the "
+                        "accessor's %g/%g\n",
+                        c.axes.c_str(),
+                        c.accessorBound,
+                        c.toleranceBound,
+                        c.toleranceDelivered,
+                        c.accessorBound,
+                        c.accessorDelivered);
+        }
+
+        // Asked at half the figure the row is judged by, nothing that carries
+        // that figure is inside the request. The answer may be the measured
+        // figure or no - both are honest - and it may not be the guarantee.
+        if (c.accessorBound > 0.0)
+        {
+            ++combToleranceHalfAsked;
+
+            if (c.atHalf == boys::ToleranceVerdict::kGuaranteedInside)
+            {
+                ++combToleranceDisagreeing;
+                std::printf("  %-58s asked at half of %g the tolerance query answers inside on "
+                            "the guarantee\n",
+                            c.axes.c_str(),
+                            c.accessorBound);
+            }
+        } else
+        {
+            // A lane whose bound is zero would be asked nothing by the line
+            // above, and a row that is asked nothing is counted rather than
+            // passed quietly.
+            ++combToleranceHalfUnasked;
+        }
+    }
+
     // ---- the accessor beside the figure it is judged by ---------------------
     //
-    // One row per lane, printed so that a reader sees the number a consumer
-    // gets from the library and the number this gate judged the same
-    // combination by, side by side. They are one number and not two that agree:
-    // the check above compares them for exact equality on every row of the
-    // cross, and this prints what it compared.
+    // One row per lane, printed so that a reader sees the numbers a consumer
+    // gets from the library and the numbers this gate judged the same
+    // combination by, side by side. The four columns are two pairs and the
+    // headings say which is which: `bound` is the figure the lane documents for
+    // the combination, which is what a calculation's safety rests on, and
+    // `delivered` is the figure the combination's own rows were measured to
+    // deliver, which is what ranks two combinations; `row bound` and `call
+    // measured` are the same two questions asked of this row by this gate. The
+    // figures below are one number and not two that agree: the check above
+    // compares them for exact equality on every row of the cross, and this
+    // prints what it compared.
     std::printf("\n  the accessor beside the figure the row is judged by, one combination per "
-                "lane:\n");
-    std::printf("  %-58s %-14s %-14s %-14s %s\n",
+                "lane.\n  `bound` is what a caller may rely on, `delivered` is what the "
+                "combination's fits were\n  measured to deliver, and the last two are the same "
+                "two questions asked of the row by this\n  gate:\n");
+    std::printf("  %-58s %-14s %-14s %-14s %-14s %s\n",
                 "combination",
-                "accessor",
-                "judged at",
-                "measured",
+                "bound",
+                "delivered",
+                "row bound",
+                "call measured",
                 "state and the source the accessor read");
 
     for (int lane = 0; lane < combLaneCount; ++lane)
@@ -11080,28 +11209,42 @@ int main(int argc, char** argv) {
             continue;
         }
 
-        std::printf("  %-58s %-14.6g %-14.6g %-14.6g %s\n",
+        const std::string boundText = Fmt("%.6g", shown->accessorBound);
+        const std::string deliveredText = shown->accessorDeliveredKnown
+                                              ? Fmt("%.6g", shown->accessorDelivered)
+                                              : std::string("no figure");
+        const std::string rowBoundText =
+            shown->bound > 0.0 ? Fmt("%.6g", shown->bound) : std::string("not judged");
+        const std::string measuredText =
+            shown->cells > 0 ? Fmt("%.6g", shown->delivered) : std::string("not measured");
+
+        std::printf("  %-58s %-14s %-14s %-14s %-14s %s\n",
                     shown->axes.c_str(),
-                    shown->accessorBound,
-                    shown->bound,
-                    shown->delivered,
+                    boundText.c_str(),
+                    deliveredText.c_str(),
+                    rowBoundText.c_str(),
+                    measuredText.c_str(),
                     shown->state.rfind("certified", 0) == 0
                         ? combLaneRows[static_cast<std::size_t>(lane)].source
                         : "documented figure; this host cannot run the lane");
     }
 
-    // One combination the library refuses, so that what the accessor does
-    // instead of answering is on the record too.
+    // One combination the library refuses, so that what the accessors do
+    // instead of answering is on the record too - and what a caller with a
+    // target is told, which is the same nothing plus the reason.
     for (const Combination& c : combinations)
     {
         if (c.state.rfind("refused", 0) == 0)
         {
-            std::printf("  %-58s %-14s %-14s %-14s refused, and the accessor returns no number:\n"
-                        "  %s\n",
+            std::printf("  %-58s %-14s %-14s %-14s %-14s refused, and neither accessor returns a "
+                        "number\n"
+                        "  %-58s and the tolerance query returns no verdict: %s\n",
                         c.axes.c_str(),
+                        "no figure",
                         "no figure",
                         "not judged",
                         "not measured",
+                        "",
                         c.source.c_str());
 
             break;
@@ -11263,9 +11406,21 @@ int main(int argc, char** argv) {
                 "row measured\n",
                 combAccessorDeliveredFloor,
                 combAccessorDeliveredAbsent);
+    std::printf("  the tolerance query: %zu carried row(s) asked at the figure each row is "
+                "judged by and\n                answered inside it, %zu of them asked at half "
+                "of that figure and answered\n                outside it, %zu row(s) whose lane "
+                "publishes no figure to halve, and %zu\n                refused row(s) answered "
+                "with no verdict and no figure. %zu disagreement(s)\n                with the "
+                "figures the two accessors answer\n",
+                combToleranceCarried,
+                combToleranceHalfAsked,
+                combToleranceHalfUnasked,
+                combToleranceRefused,
+                combToleranceDisagreeing);
 
     if (combTotal != combClaimed || combTotal != combAccounted || combUncovered > 0 ||
-        combOfferedBad > 0 || combAccessorDisagreeing > 0 || combAccessorDeliveredShort > 0)
+        combOfferedBad > 0 || combAccessorDisagreeing > 0 || combAccessorDeliveredShort > 0 ||
+        combToleranceDisagreeing > 0)
     {
         std::printf("\n  COMBINATION COVERAGE FAIL: the option space this library offers is not "
                     "the option space\n  this block accounts for. Each count above is a member "

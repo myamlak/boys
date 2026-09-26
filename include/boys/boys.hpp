@@ -670,6 +670,108 @@ TierCoverage QueryTier(AccuracyTier tier, AccuracyRegion region, double toleranc
 /// \ingroup boys
 TierCoverage QueryTier(AccuracyTier tier, double x, double tolerance) noexcept;
 
+/// Which of a combination's two figures met a tolerance a caller named.
+///
+/// The two figures are different numbers and this says which one decided. A
+/// caller deciding whether a calculation is safe wants the state that the
+/// guarantee stands behind; a caller choosing between two combinations at a
+/// target wants the state that says whether the combination is at that target
+/// at all. \c kDeliveredInside is where those two questions part company, and
+/// it is a state of its own rather than a yes: the figure that decided it is a
+/// measurement of the fits the combination names, and a measurement is not a
+/// guarantee that a whole call stays inside it.
+///
+/// \ingroup boys
+enum class ToleranceVerdict : std::uint8_t {
+    kNotCarried = 0, ///< this revision does not carry the combination: no verdict and no figures
+    kGuaranteedInside, ///< the bound the combination carries is at or below the request
+    kDeliveredInside, ///< the bound is above the request and the measured figure is at or below it
+    kOutside, ///< no figure this library holds for the combination is at or below the request
+};
+
+/// What a combination answers when the caller names the error it needs, and the
+/// figures the answer was made on.
+///
+/// Both figures are stated beside the verdict so that the answer can be read
+/// rather than taken: \c bound is the figure the lane documents for the
+/// combination at its rung, which is the one a calculation's safety rests on,
+/// and \c delivered is the figure the combination's own rows were measured to
+/// deliver, which is the one that ranks two combinations against each other.
+/// The verdict says which of the two met \c requested. \c deliveredKnown is
+/// false where no measured figure is held for the combination - the half lanes
+/// and every rung past the reference multiplier - so a zero \c delivered is
+/// never taken for a measurement of nought.
+///
+/// A combination this revision does not carry returns no figure at all: \c
+/// verdict is \c kNotCarried, both figures are 0.0, \c deliveredKnown is false,
+/// and \c reason carries the library's own sentence for the refusal. That
+/// sentence is also where the two kinds of refusal stay apart, because it
+/// names the work rather than the outcome: a refusal names either a table,
+/// kernel or rung this library has not built, which is work owed, or a shape
+/// the call itself cannot have, which no revision lifts.
+///
+/// \ingroup boys
+struct CombinationCoverage {
+    ToleranceVerdict verdict = ToleranceVerdict::kNotCarried; ///< which figure met the request
+    double requested = 0.0; ///< the absolute error the caller asked for
+    double bound = 0.0; ///< the figure the lane documents for the combination, 0.0 where refused
+    double delivered = 0.0; ///< the figure the combination was measured to deliver, 0.0 where none
+    bool deliveredKnown = false; ///< whether a measured figure is held for the combination
+    const char* source = ""; ///< the table the figure that decided the verdict was read from
+    const char* reason = ""; ///< why there is no verdict, empty where there is one
+};
+
+/// Whether a combination provides the accuracy the caller needs, asked at the
+/// tolerance the caller names rather than answered as a figure to compare.
+///
+/// The two figures a combination has are answers to different questions, and
+/// this is the entry for a caller who has a target rather than a comparison:
+/// \c BoysAccuracyGuaranteed answers *may I rely on this combination being at
+/// least this accurate*, \c BoysAccuracyDelivered answers *which of these two
+/// has been measured to do better*, and a caller holding a number it needs to
+/// stay under would have to pick the right one of the two and compare it by
+/// hand - which is the mistake the verdict removes.
+///
+/// The verdict is decided by the bound first: a combination whose bound is at
+/// or below the request is \c kGuaranteedInside, which is the only state a
+/// calculation's safety can rest on. Where the bound is above it the
+/// measurement decides, and a combination measured at or below the request is
+/// \c kDeliveredInside - at the target in what it delivers, and not covered by
+/// its guarantee. Where neither is, the answer is \c kOutside. Both figures
+/// and the request are returned, so the answer can always be checked against
+/// the numbers it was made on, and \c source names the table the figure that
+/// decided it came from rather than always the bound's.
+///
+/// The figures are the same ones the two accessors answer with, read from the
+/// library's own tables: this entry computes nothing of its own and holds no
+/// second list of numbers.
+///
+/// \param precision   the lane
+/// \param route       the fit route
+/// \param scheme      the evaluation scheme
+/// \param axis        the packing axis
+/// \param granularity the interval partition
+/// \param tier        the accuracy rung
+/// \param tolerance   the absolute error the caller needs, > 0
+/// \returns           the verdict and the figures it was made on; \c
+///                    kNotCarried, no figures and a reason where this revision
+///                    does not carry the combination
+/// \pre               \p tolerance is positive and finite. A request that is
+///                    zero, negative or not a number is answered \c kOutside
+///                    where the combination is carried, as no figure is at or
+///                    below it, and \c kNotCarried where it is not; a request
+///                    of positive infinity is answered \c kGuaranteedInside,
+///                    as every figure this library holds is at or below it.
+///
+/// \ingroup boys
+CombinationCoverage QueryCombination(Precision precision,
+                                     FitRoute route,
+                                     EvalScheme scheme,
+                                     PackAxis axis,
+                                     FitGranularity granularity,
+                                     AccuracyTier tier,
+                                     double tolerance) noexcept;
+
 /// One certified fit route as a report states it.
 ///
 /// The figures are the route's own rather than a lane's: a route supplies the

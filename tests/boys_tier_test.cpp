@@ -1,7 +1,10 @@
 // The run-time accuracy tier's contract tests: AccuracyTier, QueryTier,
 // TierCoverage, AccuracyRegion, AccuracyComponent and BoysAllOrdersAtTier -
 // and, in section 5, the same surface's fit routes: FitRoute, FitRouteInfo,
-// BoysFitRoutes() and BoysAllOrdersWithRoute.
+// BoysFitRoutes() and BoysAllOrdersWithRoute - and, in section 6, the accuracy
+// accessors and the tolerance question asked of a whole combination:
+// BoysAccuracyGuaranteed, BoysAccuracyDelivered, QueryCombination,
+// CombinationCoverage and ToleranceVerdict.
 //
 // The tier is a selector: it names one of the multipliers this kernel already
 // instantiates and routes a call to that instantiation at run time. Four
@@ -2278,6 +2281,492 @@ TEST(Tier, TheSingleOrderEntryAgreesWithTheBatchEntryAtTheSameRung) {
 
     EXPECT_GT(cells, 0u);
     EXPECT_EQ(over, 0u) << "the two shapes have parted by more than the rung's own bound";
+}
+
+// ---------------------------------------------------------------------------
+// 6. The tolerance question: QueryCombination, CombinationCoverage and
+//    ToleranceVerdict
+// ---------------------------------------------------------------------------
+// The two accuracy accessors answer two different questions - what a
+// combination is guaranteed to stay inside, and what it was measured to
+// deliver - and a caller holding a target has a third: *is this at the error I
+// need*, which is a verdict rather than a figure to compare by hand. The
+// failure mode of such an entry is a second list of numbers: a copy of the
+// tables maintained beside them, which drifts from the figures the accessors
+// publish and goes on answering a question the library no longer holds that
+// answer to. So what is held here first is that the reply IS the two accessors'
+// reply, on every combination this build names.
+//
+// What is asserted:
+//  * over the whole cross of axes, the query's bound is the guaranteed
+//    accessor's figure and its measured figure is the delivered accessor's, bit
+//    for bit, and its verdict is the comparison of the request with the two;
+//  * the promise a caller relies on in each direction: a request at or above
+//    the bound is never answered below it, and a request below a figure the
+//    reply itself carries is never answered inside on that figure's account;
+//  * the bound decides first, and kDeliveredInside is a state a run reaches -
+//    that state being the whole point of the two figures being two;
+//  * a combination this build does not carry returns no figure and no verdict,
+//    with the accessor's own sentence; and the sentence a rung or a shape this
+//    library has not built produces is a different sentence from the one a
+//    precision no lane answers for produces, so the two kinds of refusal stay
+//    apart here as they do at the accessor;
+//  * a reply carries the request and the figures it was made on, so every
+//    answer can be checked against the numbers that decided it.
+
+namespace {
+
+using boys::AccuracyFigure;
+using boys::BoysAccuracyDelivered;
+using boys::BoysAccuracyGuaranteed;
+using boys::CombinationCoverage;
+using boys::QueryCombination;
+using boys::ToleranceVerdict;
+
+// One combination, as a caller names it.
+struct Option {
+    boys::Precision precision;
+    boys::FitRoute route;
+    boys::EvalScheme scheme;
+    boys::PackAxis axis;
+    boys::FitGranularity granularity;
+    boys::AccuracyTier tier;
+};
+
+/// Walk every combination the library's own axis reports name, in the order the
+/// reports enumerate them. The reports rather than a transcribed list, so a
+/// lane, route, scheme, partition or axis a revision adds is walked by these
+/// tests without an edit here, and one it stops carrying stops being walked.
+template <typename Fn> void ForEachOption(Fn&& fn) {
+    for (const boys::LaneContractInfo& lane : boys::BoysLaneContracts())
+    {
+        for (const boys::FitRouteInfo& route : boys::BoysFitRoutes())
+        {
+            for (const boys::EvalSchemeInfo& scheme : boys::BoysEvalSchemes())
+            {
+                for (const boys::FitGranularityInfo& partition : boys::BoysFitGranularities())
+                {
+                    for (const boys::PackAxisInfo& axis : boys::BoysPackAxes())
+                    {
+                        for (const Rung& rung : kRungs)
+                        {
+                            fn(Option{lane.precision,
+                                      route.route,
+                                      scheme.scheme,
+                                      axis.axis,
+                                      partition.granularity,
+                                      rung.tier});
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+AccuracyFigure Guaranteed(const Option& option) {
+    return BoysAccuracyGuaranteed(option.precision,
+                                  option.route,
+                                  option.scheme,
+                                  option.axis,
+                                  option.granularity,
+                                  option.tier);
+}
+
+AccuracyFigure Delivered(const Option& option) {
+    return BoysAccuracyDelivered(option.precision,
+                                 option.route,
+                                 option.scheme,
+                                 option.axis,
+                                 option.granularity,
+                                 option.tier);
+}
+
+CombinationCoverage Ask(const Option& option, double tolerance) {
+    return QueryCombination(option.precision,
+                            option.route,
+                            option.scheme,
+                            option.axis,
+                            option.granularity,
+                            option.tier,
+                            tolerance);
+}
+
+/// Whether two figures are the same number, bit for bit. One exact comparison
+/// and no tolerance: a re-derived figure that agreed to within a relative
+/// epsilon would be a second list of numbers that had not drifted yet.
+bool SameBits(double a, double b) {
+    return std::memcmp(&a, &b, sizeof(double)) == 0;
+}
+
+} // namespace
+
+TEST(Combination, TheReplyIsTheTwoAccessorsFiguresAndTheirComparison) {
+    std::size_t carried = 0;
+    std::size_t refused = 0;
+    std::size_t notTheAccessorsFigures = 0;
+    std::size_t notTheComparison = 0;
+
+    ForEachOption([&](const Option& option) {
+        const AccuracyFigure guaranteed = Guaranteed(option);
+        const AccuracyFigure delivered = Delivered(option);
+        const CombinationCoverage asked = Ask(option, guaranteed.value);
+
+        if (!guaranteed.available)
+        {
+            ++refused;
+
+            // A refusal carries no figure, and the reason is the accessor's own
+            // sentence rather than a second vocabulary for the same state.
+            if (asked.bound != 0.0 || asked.delivered != 0.0 || asked.deliveredKnown ||
+                asked.reason == nullptr || guaranteed.reason == nullptr ||
+                std::strcmp(asked.reason, guaranteed.reason) != 0)
+            {
+                ++notTheAccessorsFigures;
+            }
+
+            return;
+        }
+
+        ++carried;
+
+        // The request is echoed and the figures are the accessors' - the same
+        // numbers rather than the same claim re-derived.
+        if (!SameBits(asked.requested, guaranteed.value) ||
+            !SameBits(asked.bound, guaranteed.value) ||
+            asked.deliveredKnown != delivered.available ||
+            (delivered.available && !SameBits(asked.delivered, delivered.value)))
+        {
+            ++notTheAccessorsFigures;
+        }
+
+        // Asked at the figure the combination itself carries, the comparison of
+        // the request with those figures is necessarily "the bound is inside
+        // it": a verdict that said anything else here would be this entry
+        // answering a question other than the one it was asked.
+        if (asked.verdict != ToleranceVerdict::kGuaranteedInside)
+        {
+            ++notTheComparison;
+        }
+    });
+
+    EXPECT_GT(carried, 0u) << "no combination of this build is carried: nothing was compared";
+    EXPECT_GT(refused, 0u) << "no combination of this build is refused: the refusal path is not "
+                              "covered by this run";
+    EXPECT_EQ(notTheAccessorsFigures, 0u)
+        << "the tolerance query does not answer the two accessors' own figures";
+    EXPECT_EQ(notTheComparison, 0u)
+        << "the verdict is not the comparison of the request with the figures the reply carries";
+
+    std::printf("\nthe tolerance query over the cross: %zu combination(s) carried, %zu refused\n",
+                carried,
+                refused);
+}
+
+TEST(Combination, ARequestTheFiguresContradictIsNeverAnsweredInside) {
+    std::size_t carried = 0;
+    std::size_t overTheBound = 0;
+    std::size_t atTheBound = 0;
+    std::size_t atTheMeasurement = 0;
+    std::size_t insideWhereTheBoundIsAbove = 0;
+    std::size_t insideWhereTheMeasurementIsAbove = 0;
+    std::size_t insideWithNothingAtOrBelow = 0;
+    std::size_t withoutTheFigures = 0;
+
+    ForEachOption([&](const Option& option) {
+        const AccuracyFigure guaranteed = Guaranteed(option);
+        const AccuracyFigure delivered = Delivered(option);
+
+        if (!guaranteed.available)
+        {
+            return;
+        }
+
+        ++carried;
+
+        const double aboveTheBound = guaranteed.value * 2.0;
+        const double atTheBoundRequest = guaranteed.value;
+        const double belowTheBound = guaranteed.value * 0.5;
+        const double belowEveryFigure =
+            std::min(guaranteed.value,
+                     delivered.available ? delivered.value : guaranteed.value) *
+            0.5;
+        const double requests[] = {
+            aboveTheBound, atTheBoundRequest, belowTheBound, belowEveryFigure, 0.0};
+
+        for (const double request : requests)
+        {
+            const CombinationCoverage asked = Ask(option, request);
+
+            // Whatever the answer, it carries the numbers it was made on: an
+            // answer without them could not be checked against the request.
+            if (!SameBits(asked.requested, request) || !SameBits(asked.bound, guaranteed.value) ||
+                asked.deliveredKnown != delivered.available ||
+                (delivered.available && !SameBits(asked.delivered, delivered.value)))
+            {
+                ++withoutTheFigures;
+            }
+
+            // The safety direction: a request at or above the bound is inside,
+            // and it is the bound - not the measurement - that says so.
+            if (request >= guaranteed.value)
+            {
+                if (asked.verdict != ToleranceVerdict::kGuaranteedInside)
+                {
+                    ++insideWhereTheBoundIsAbove;
+                } else if (request > guaranteed.value)
+                {
+                    ++overTheBound;
+                } else
+                {
+                    ++atTheBound;
+                }
+            }
+
+            // The other direction, on each figure separately: a request below a
+            // figure the reply itself carries is never answered inside on that
+            // figure's account, and a request below both is inside on nothing.
+            if (request < guaranteed.value &&
+                asked.verdict == ToleranceVerdict::kGuaranteedInside)
+            {
+                ++insideWhereTheBoundIsAbove;
+            }
+
+            if (delivered.available && request < delivered.value &&
+                asked.verdict == ToleranceVerdict::kDeliveredInside)
+            {
+                ++insideWhereTheMeasurementIsAbove;
+            }
+
+            if (request < guaranteed.value && request < delivered.value &&
+                asked.verdict == ToleranceVerdict::kGuaranteedInside)
+            {
+                ++insideWithNothingAtOrBelow;
+            }
+
+            if (asked.verdict == ToleranceVerdict::kDeliveredInside)
+            {
+                ++atTheMeasurement;
+            }
+        }
+    });
+
+    EXPECT_GT(carried, 0u);
+    EXPECT_GT(overTheBound, 0u) << "no request above the bound was made: nothing was tested there";
+    EXPECT_GT(atTheBound, 0u);
+    EXPECT_GT(atTheMeasurement, 0u)
+        << "the measured figure never decided an answer on this cross, so the state that "
+           "distinguishes it from the guarantee is not covered by this run";
+    EXPECT_EQ(insideWhereTheBoundIsAbove, 0u)
+        << "an answer said the bound was inside a request it is above";
+    EXPECT_EQ(insideWhereTheMeasurementIsAbove, 0u)
+        << "an answer leaned on a measurement that is above the request";
+    EXPECT_EQ(insideWithNothingAtOrBelow, 0u)
+        << "an answer said something was inside a request no figure of the reply is at or below";
+    EXPECT_EQ(withoutTheFigures, 0u)
+        << "a reply did not carry the request and the figures it was made on";
+
+    std::printf("  the verdicts: %zu request(s) above the bound, %zu at it, %zu decided by the "
+                "measured figure\n",
+                overTheBound,
+                atTheBound,
+                atTheMeasurement);
+}
+
+TEST(Combination, ARefusalCarriesNoFigureAndTheAccessorsOwnSentence) {
+    std::vector<std::string> built;
+    std::size_t refused = 0;
+    std::size_t carryingAFigure = 0;
+    std::size_t carryingAVerdict = 0;
+    std::size_t withoutTheAccessorsSentence = 0;
+
+    ForEachOption([&](const Option& option) {
+        const AccuracyFigure guaranteed = Guaranteed(option);
+
+        if (guaranteed.available)
+        {
+            return;
+        }
+
+        const CombinationCoverage asked = Ask(option, 1e-12);
+        ++refused;
+
+        if (asked.bound != 0.0 || asked.delivered != 0.0 || asked.deliveredKnown)
+        {
+            ++carryingAFigure;
+        }
+
+        if (asked.verdict != ToleranceVerdict::kNotCarried)
+        {
+            ++carryingAVerdict;
+        }
+
+        if (asked.reason == nullptr || asked.reason[0] == '\0' || guaranteed.reason == nullptr ||
+            std::strcmp(asked.reason, guaranteed.reason) != 0)
+        {
+            ++withoutTheAccessorsSentence;
+        } else if (std::find(built.begin(), built.end(), std::string(asked.reason)) == built.end())
+        {
+            built.emplace_back(asked.reason);
+        }
+    });
+
+    EXPECT_GT(refused, 0u) << "no combination of this build is refused: nothing was tested here";
+    EXPECT_EQ(carryingAFigure, 0u) << "a refused combination answered with a figure";
+    EXPECT_EQ(carryingAVerdict, 0u) << "a refused combination answered with a verdict";
+    EXPECT_EQ(withoutTheAccessorsSentence, 0u)
+        << "a refusal did not repeat the accuracy accessor's own sentence";
+
+    // The other kind of refusal, and the reason the two have to stay apart: a
+    // precision no lane of this library answers for is not a combination whose
+    // table is owed, it is a combination this library's space does not contain.
+    // Both are kNotCarried at this entry - neither is a verdict about a figure -
+    // and the sentence is what tells a caller which of the two it is holding.
+    const Option noLane{static_cast<boys::Precision>(99),
+                        boys::FitRoute::kChebyshev,
+                        boys::EvalScheme::kSplitClenshaw,
+                        boys::PackAxis::kArguments,
+                        boys::FitGranularity::kShipped,
+                        AccuracyTier::kReference};
+    const AccuracyFigure noLaneFigure = Guaranteed(noLane);
+    const CombinationCoverage noLaneAsked = Ask(noLane, 1e-12);
+
+    EXPECT_FALSE(noLaneFigure.available);
+    ASSERT_NE(noLaneFigure.reason, nullptr);
+    EXPECT_FALSE(std::string(noLaneFigure.reason).empty());
+    EXPECT_EQ(noLaneAsked.verdict, ToleranceVerdict::kNotCarried);
+    EXPECT_EQ(noLaneAsked.bound, 0.0);
+    ASSERT_NE(noLaneAsked.reason, nullptr);
+    EXPECT_STREQ(noLaneAsked.reason, noLaneFigure.reason)
+        << "the query does not answer a combination outside its space with the accessor's sentence";
+
+    for (const std::string& sentence : built)
+    {
+        EXPECT_STRNE(sentence.c_str(), noLaneAsked.reason)
+            << "a sentence a combination this library has not built produces is also the sentence "
+               "for a precision no lane answers for: the two kinds of refusal have run together";
+    }
+
+    std::printf("  refusals: %zu combination(s), %zu distinct sentence(s) naming work this "
+                "library has not built,\n    and one sentence for a combination its space does "
+                "not contain: \"%s\"\n",
+                refused,
+                built.size(),
+                noLaneAsked.reason);
+}
+
+TEST(Combination, ARequestWithNoFigureAtOrBelowItIsAnsweredOutsideAndNotRefused) {
+    Option served{boys::Precision::kFp64,
+                  boys::FitRoute::kChebyshev,
+                  boys::EvalScheme::kSplitClenshaw,
+                  boys::PackAxis::kArguments,
+                  boys::FitGranularity::kShipped,
+                  AccuracyTier::kReference};
+
+    if (!Guaranteed(served).available)
+    {
+        // A revision that refuses the lane's default combination is answered
+        // from the cross rather than left untested.
+        bool found = false;
+
+        ForEachOption([&](const Option& option) {
+            if (!found && Guaranteed(option).available)
+            {
+                served = option;
+                found = true;
+            }
+        });
+
+        ASSERT_TRUE(found) << "no combination of this build is carried";
+    }
+
+    const AccuracyFigure guaranteed = Guaranteed(served);
+    const AccuracyFigure delivered = Delivered(served);
+
+    // The documented behaviour of a request the precondition excludes: the
+    // combination is carried, so there is a verdict rather than a refusal, and
+    // the verdict is that nothing is at or below the request. A verdict of
+    // "inside" here would be an entry answering about a figure the caller did
+    // not ask for.
+    const double outOfRange[] = {0.0,
+                                 -1.0,
+                                 -std::numeric_limits<double>::infinity(),
+                                 std::numeric_limits<double>::quiet_NaN()};
+
+    for (const double request : outOfRange)
+    {
+        const CombinationCoverage asked = Ask(served, request);
+
+        EXPECT_EQ(asked.verdict, ToleranceVerdict::kOutside)
+            << "a request of " << request << " was answered as if a figure were at or below it";
+        EXPECT_TRUE(SameBits(asked.requested, request))
+            << "the reply did not echo the request it was made on";
+        EXPECT_TRUE(SameBits(asked.bound, guaranteed.value))
+            << "such a request was answered without the figure it was measured against";
+        EXPECT_EQ(asked.deliveredKnown, delivered.available);
+    }
+
+    // The one unbounded request, which is the same rule read the other way:
+    // every finite figure this library holds is at or below it.
+    const CombinationCoverage everywhere = Ask(served, std::numeric_limits<double>::infinity());
+    EXPECT_EQ(everywhere.verdict, ToleranceVerdict::kGuaranteedInside)
+        << "a request of positive infinity was not answered as one every figure is inside";
+    EXPECT_TRUE(SameBits(everywhere.bound, guaranteed.value));
+    EXPECT_EQ(everywhere.deliveredKnown, delivered.available);
+
+    std::printf("  a request no figure is at or below: %zu request(s) answered outside and none "
+                "refused; positive infinity answered inside the bound\n",
+                std::size(outOfRange));
+}
+
+TEST(Combination, TheSourceNamesTheFigureThatDecidedTheVerdict) {
+    std::size_t decidedByTheMeasurement = 0;
+    std::size_t decidedByTheBound = 0;
+    std::size_t namedTheOtherTable = 0;
+
+    ForEachOption([&](const Option& option) {
+        const AccuracyFigure guaranteed = Guaranteed(option);
+        const AccuracyFigure delivered = Delivered(option);
+
+        if (!guaranteed.available)
+        {
+            return;
+        }
+
+        // A request the measurement meets and the bound does not is the case
+        // the two figures exist to tell apart.
+        if (delivered.available && delivered.value < guaranteed.value)
+        {
+            const CombinationCoverage asked = Ask(option, delivered.value);
+
+            if (asked.verdict == ToleranceVerdict::kDeliveredInside)
+            {
+                ++decidedByTheMeasurement;
+
+                if (asked.source == nullptr || delivered.source == nullptr ||
+                    std::strcmp(asked.source, delivered.source) != 0)
+                {
+                    ++namedTheOtherTable;
+                }
+            }
+        }
+
+        if (Ask(option, guaranteed.value).verdict == ToleranceVerdict::kGuaranteedInside)
+        {
+            ++decidedByTheBound;
+        }
+    });
+
+    EXPECT_GT(decidedByTheBound, 0u);
+    EXPECT_GT(decidedByTheMeasurement, 0u)
+        << "no request was decided by the measured figure on this cross: the source of an answer "
+           "was never exercised where the two figures come from different tables";
+    EXPECT_EQ(namedTheOtherTable, 0u)
+        << "an answer decided by the measured figure named the guarantee's table as its source";
+
+    std::printf("  sources: %zu answer(s) decided by the bound, %zu by the measured figure\n",
+                decidedByTheBound,
+                decidedByTheMeasurement);
 }
 
 } // namespace

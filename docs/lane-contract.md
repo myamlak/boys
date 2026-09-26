@@ -1243,14 +1243,14 @@ figure, so the two are not on one scale and this page offers no ratio between th
 says is that inside the sub-16 part of the branch the accuracy is nowhere near the accuracy of the
 fits. A caller evaluating there should expect that, and should not read the 5.5e-14 as covering it.
 
-## Every combination, and the bound each one carries
+## Every combination: its bound, its delivered figure, and its tolerance
 
 The lanes above are one axis of six. A call is a lane, a fit route, an evaluation scheme, an
 interval partition, a packing axis and an accuracy multiplier, and the library offers the product of
 all six: **2 routes × 2 schemes × 2 partitions × 2 axes × 7 rungs, in 4 lanes — 448 combinations.**
-Each axis's own section above states what that axis changes. This one states what a combination is
-guaranteed, how a program asks the library for the figure, and which members of the space this
-revision does not carry.
+Each axis's own section above states what that axis changes. This one states the two figures a
+combination has, how a program asks the library for each of them, how a program asks whether a
+combination meets the error it needs, and which members of the space this revision does not carry.
 
 **The bound of a combination is its lane's figure at its rung, and no other axis moves it.** The
 other four axes change what a call *delivers* — which fits it reads, how many coefficients it sums,
@@ -1258,7 +1258,7 @@ whether it packs arguments or orders — and the guarantee each of them publishe
 bound times the multiplier. The measured columns of the sections above are what those axes deliver;
 the bound is here.
 
-| Lane | One value carries at m = 1 | Beside that figure | Named |
+| Lane | The bound one value carries at m = 1 | The term that sits beside that bound | Named |
 |---|---|---|---|
 | double | 5.5e-14 | — | `Precision::kFp64` |
 | float | 1.5e-7 | — | `Precision::kFp32` |
@@ -1270,19 +1270,22 @@ contract table states lane by lane. `BoysLaneContracts()` returns those four row
 reads the figures the tables are written from rather than transcribing them, and the accuracy gate
 reads the same rows to judge a combination against.
 
-**Two accessors, two questions, and their names say which is which.**
+**Two figures, two questions, and their names say which is which.**
 `BoysAccuracyGuaranteed(precision, route, scheme, axis, granularity, tier)` answers *may I rely on
 this combination being at least this accurate*: its `value` is the bound above, at the rung named.
 `BoysAccuracyDelivered(...)` answers *which of these two combinations has been measured to do
 better*: its `value` is the worst of the rows the combination names, each of which publishes what it
 was measured to deliver. Both return an `AccuracyFigure` whose `reading` field says which of the
-two figures it is, so neither can be read as the other.
+two figures it is, so neither can be read as the other; the delivered figure is a **measurement of
+the fits the combination names** and is never a bound, and the guaranteed figure is a **bound** and
+is never a measurement.
 
 **The delivered figure is a floor on a whole call's error and not the whole call's figure.** The
 rows it maximises over are the *fits'* own figures, and a call adds its recurrences over them, so
-the gate measures a whole call at or above it — strictly above it on 14 of the 78 carried rows of
-this grid. What a whole call delivers is the gate's measurement, and the gate's combination table is
-where that figure lives for every combination.
+the gate measures a whole call at or above it — strictly above it on 16 rows of this grid's sweep,
+which the gate's accessor book prints beside the 12 rows where the delivered figure sits above the
+whole call's measurement. What a whole call delivers is the gate's measurement, and the gate's
+combination table is where that figure lives for every combination.
 
 **A combination this revision does not carry returns no number.** Both accessors return
 `available == false`, `value == 0.0` and a `reason` carrying the library's own sentence for the
@@ -1298,8 +1301,8 @@ The gate crosses the whole space, prints one line per combination — its measur
 beside the bound its lane publishes — and ends the block with its own arithmetic. A row of that
 table reads `fp64, chebyshev, split-clenshaw, shipped, orders, m = 64 | 56694 cells | 0 outside |
 1.54485e-12 delivered | 3.52e-12 bound | certified and published`, and a refused one carries no
-cells, no figure and the reason. The block's own last lines, from the same run the top of this page
-names:
+cells, no figure and the reason. The block's own last lines, from the run at revision `623a8e2`
+that their counts describe:
 
     COMBINATIONS: 174 of 448 member(s) of the option space are certified and published
                   263 refused with the library's own reason and owed
@@ -1372,29 +1375,106 @@ the call and reports that it does not build — never by a build failure a reade
 gate prints each refusal with the sentence and its backing, and the per-axis sections above give the
 same reasons axis by axis.
 
-### The accessor's figure beside the figure the row is judged by
+### The bound the accessor guarantees beside the figure it was measured to deliver
 
-The gate reads both accessors for a combination in every lane, prints what they answer beside the
-bound the row is judged against and the figure the call was measured to deliver, and fails if the
-guarantee differs from the judged figure in any digit or if the delivered figure sits *above* the
-measurement. One combination per lane, from that run:
+The gate reads both accessors for a combination in every lane and prints what each answers beside
+the figure the row itself is judged against and the figure the whole call was measured to deliver.
+The headings name the two numbers by what they are, because they are not interchangeable: **`bound`
+is what a caller may rely on, `delivered` is what the combination's fits were measured to deliver.**
+One combination per lane, from this run:
 
-| Combination | Accessor | Judged at | Measured | The source the accessor read |
-|---|---|---|---|---|
-| fp64, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 5.5e-14 | 5.5e-14 | 5e-14 | throughout, every region |
-| fp32, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 1.5e-07 | 1.5e-07 | 1.08354e-07 | throughout, every region |
-| fp16, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 1e-07 | 1e-07 | 1.08354e-07 | plus half of the last representable digit of the returned value |
-| fp32-device, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 2.3e-07 | 2.3e-07 | — | documented figure; this host cannot run the lane |
-| fp64, chebyshev, split-clenshaw, narrow, orders, m = 1 | no figure | not judged | not measured | refused, and the accessor returns no number |
+| Combination | `bound` — `BoysAccuracyGuaranteed` | `delivered` — `BoysAccuracyDelivered` | The row's own bound | What the whole call measured | Where each figure came from |
+|---|---|---|---|---|---|
+| fp64, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 5.5e-14 | 4.45751e-14 | 5.5e-14 | 5e-14 | bound: throughout, every region. delivered: `BoysFitRoutes()`, `BoysFitGranularities()` and `BoysEvalSchemes()` |
+| fp32, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 1.5e-07 | 1.23617e-07 | 1.5e-07 | 1.08354e-07 | bound: throughout, every region. delivered: `BoysFitRoutesF32()` |
+| fp16, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 1e-07 | no figure | 1e-07 | 1.08354e-07 | bound: plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum. delivered: no row of this library measured a half-typed return |
+| fp32-device, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 2.3e-07 | 1.42109e-14 | 2.3e-07 | not measured — this host cannot run the lane | bound: the lane's documented figure, plus 8e-8 under the fast region-B exponential. delivered: `BoysFitRoutes()` |
+| fp64, rational-minimax, split-clenshaw, narrow, arguments, m = 1 | no figure | no figure | not judged | not measured | refused, and neither accessor returns a number: *the partition's tables do not hold this fit route: the rational minimax route carries one numerator/denominator pair over the whole of region B, and a partition cut per order has no table for it* |
 
-The first two columns are one number read two ways rather than two numbers that agree today. The
-accessor computes its figure inside the library from a `BoysLaneContracts()` row; the gate computes
-the figure it judges the row against from that same row by its own arithmetic, and fails the run
-when the two differ in any digit. They are two paths over one source, so a change to a lane's figure
-moves both or the run goes red. The fp16 row judged at 1e-07 and measured at 1.08354e-07 is the
-ceiling's half-ULP term at work: the base figure is what the accessor returns, and the term of the
-format is added by the row's own criterion — the gate counts the cells where the returned value
-falls at or below the floor rather than passing them as covered.
+**The delivered figure is a measurement of the fits and never a bound, and the bound is never a
+measurement.** A reader ranking two combinations compares `delivered`; a reader deciding whether a
+calculation is safe reads `bound`. The fp64 row above is where the difference bites: the same
+combination is guaranteed 5.5e-14 and was measured at 4.45751e-14, so a caller needing 5e-14 is
+inside the measurement and outside the guarantee. The gate fails the run if `bound` differs from the
+figure the row is judged against in any digit, and if `delivered` sits above what the whole call
+measured.
+
+`bound` and the row's own bound are one number read two ways rather than two numbers that agree
+today. The accessor computes its figure inside the library from a `BoysLaneContracts()` row; the
+gate computes the figure it judges the row against from that same row by its own arithmetic, and
+fails the run when the two differ in any digit. They are two paths over one source, so a change to a
+lane's figure moves both or the run goes red. The fp16 row guaranteed 1e-07 and measured at
+1.08354e-07 is the ceiling's half-ULP term at work: the base figure is what the accessor returns,
+and the term of the format is added by the row's own criterion — the gate counts the cells where the
+returned value falls at or below the floor rather than passing them as covered.
+
+The device row's `delivered` figure comes from `BoysFitRoutes()` while its `bound` is the lane's own
+documented figure: the delivered accessor maximises over the fits the combination names, and the
+rows it read are the ones its own `source` string names. It is not a measurement of that lane on
+this host, which cannot run it — the figure for a device lane is a card's, and the CUDA gate is
+where it is taken.
+
+### Asking whether a combination meets a tolerance
+
+A caller that has a target rather than a comparison asks `QueryCombination(precision, route, scheme,
+axis, granularity, tier, tolerance)`, where `tolerance` is the absolute error it needs. The answer is
+a `CombinationCoverage`: a `verdict`, the request, both figures, and — where the verdict was decided
+by the measured figure rather than the bound — that figure's own `source`.
+
+| `ToleranceVerdict` | What it means |
+|---|---|
+| `kGuaranteedInside` | the bound this combination carries is at or below the request: safe to rely on |
+| `kDeliveredInside` | the bound is above the request and the figure the fits were measured to deliver is at or below it: at the target in what has been measured, and **not** covered by the guarantee |
+| `kOutside` | no figure this library holds for the combination is at or below the request |
+| `kNotCarried` | this revision does not carry the combination: no verdict, no figures, and the library's own reason |
+
+The verdict is decided by the bound first, so `kGuaranteedInside` is the only state a calculation's
+safety can rest on. Asked of **fp64, chebyshev, split-clenshaw, arguments, shipped, m = 1** — bound
+5.5e-14, measured at 4.45751e-14 — the four answers are:
+
+| The caller asks for | The bound | The measured figure | The answer |
+|---|---|---|---|
+| 1.1e-13 | 5.5e-14 | 4.45751e-14 | **yes** — the bound is at or below the request |
+| 5.5e-14 | 5.5e-14 | 4.45751e-14 | **yes** — at the bound itself |
+| 4.45751e-14 | 5.5e-14 | 4.45751e-14 | **at the target in what it delivers, not in its guarantee** — the bound is above the request and the measured figure is at it |
+| 2.22875e-14 | 5.5e-14 | 4.45751e-14 | **no** — neither figure is at or below the request |
+
+Each answer carries the request and both figures, so the reader can check it against the numbers
+that decided it rather than take it.
+
+A combination this revision does not carry is `kNotCarried` with no figure and no verdict, and the
+sentence is the accessor's own, so the two kinds of refusal stay apart here as they do at the
+accessor:
+
+| Asked of | The answer |
+|---|---|
+| fp64, rational-minimax, split-clenshaw, arguments, narrow, m = 1 — a table this lane has not generated | no verdict, no figure: *the partition's tables do not hold this fit route: the rational minimax route carries one numerator/denominator pair over the whole of region B, and a partition cut per order has no table for it* |
+| a precision no lane of this library has — a combination the space does not contain | no verdict, no figure: *no lane of this library has that precision* |
+
+The first names work this library has not done and says which table is missing; the second names a
+call the space itself does not have, and no revision of this library could answer it. Both are
+refusals and neither is a figure, which is what they have in common — the sentence is what tells a
+caller which of the two it is holding.
+
+Checked over the whole cross, the two accessors and this entry agree: **366 combinations of this
+build are carried, 530 are refused, and 0 of them disagreed** — every carried combination asked at
+the figure its lane publishes answers inside it, asked at half of that figure answers outside it
+except on the 10 rows where half of it is still at or above the figure those rows were measured to
+deliver, and every refused combination answers with no verdict, no figure and the accessor's own
+reason. Those counts are from `boys-consumer-umbrella`, whose accuracy section prints them and whose
+four requests above are its own; the gate's combination block prints the same comparison for the
+certified rows of each lane.
+
+Run at revision `94ee3ea`, the gate's own lines for the tolerance question are:
+
+    the tolerance query: 183 carried row(s) asked at the figure each row is judged by and
+                  answered inside it, 183 of them asked at half of that figure and answered
+                  outside it, 0 row(s) whose lane publishes no figure to halve, and 265
+                  refused row(s) answered with no verdict and no figure. 0 disagreement(s)
+                  with the figures the two accessors answer
+
+The 183 rows are the combinations that carry a figure at the rung they are judged at; the 265 are
+the refusals, each answered with the sentence its own lane's accessor gives.
 
 ## The default policy, per precision and per device
 
