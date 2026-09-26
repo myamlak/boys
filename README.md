@@ -408,10 +408,10 @@ size it is.
 reference over the interval its own pieces cover, `FitGranularity::kNarrow` delivers a worst absolute
 error of 2.22e-16 over region A at region A's published 1e-15 bar — the shipped table's own figure —
 and 7.21645e-16 over region B against the shipped seed's 9.9365e-15, a factor of 13.8. The gate's
-granularity block carries all 224 of its rows — one per partition, scheme, call shape and accuracy
+granularity block carries all 252 of its rows — one per partition, scheme, call shape and accuracy
 rung — each judged against the bar the published table holds for the cell it ran in times the rung's
-multiplier, with the worst cell named; and it reports the trade above and the 3243928 of 4052216 axis
-cells (80.1%) that can discriminate, the rest carrying a bound at least as large as the value itself.
+multiplier, with the worst cell named; and it reports the trade above and the 4079336 of 5639648 axis
+cells (72.3%) that can discriminate, the rest carrying a bound at least as large as the value itself.
 Those rows are counted apart from every other book the gate reports, so nothing the library already
 published moves.
 

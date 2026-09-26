@@ -5651,6 +5651,7 @@ int main(int argc, char** argv) {
         kOrdersB,     // BoysAllOrders over region B, where the seed is carried up
         kSingleA,     // BoysSingle, one order at one argument, over the table's region-A cell
         kSingleWhole, // BoysSingle over the whole grid, at the lane's per-region bars
+        kFixedN,      // BoysFixedN, one order over the arguments of the array
         kPlaneA,      // BoysAllN, every order over the array, over x < kX0
     };
 
@@ -5677,6 +5678,13 @@ int main(int argc, char** argv) {
         {"orders entry, region B", GranKind::kOrdersB, GranBar::kFixed, kBoundDoubleBatch},
         {"single entry, region A", GranKind::kSingleA, GranBar::kFixed, kBoundSingleA},
         {"single entry, A..C", GranKind::kSingleWhole, GranBar::kPerRegion, 0.0},
+        // The fixed-order entry is the shape a caller that needs one order over
+        // an array of arguments reaches for, and it has its own branch on the
+        // partition, so a row here is what says that branch reads the table its
+        // policy names. It is judged at the single-order lane's per-region
+        // figure, which is the bar the entry is published at: one order at one
+        // argument is that lane's shape, taken over an array.
+        {"fixed-order entry, A..C", GranKind::kFixedN, GranBar::kPerRegion, 0.0},
         {"plane entry, band and below", GranKind::kPlaneA, GranBar::kFixed, kBoundDoubleBatch},
     };
     constexpr std::size_t kGranRowCount = std::size(granRows);
@@ -5776,6 +5784,7 @@ int main(int argc, char** argv) {
     std::array<std::vector<double>, kGranMembers> ordersGrid;
     std::array<std::vector<double>, kGranMembers> planeGrid;
     std::array<std::vector<double>, kGranMembers> singleGrid;
+    std::array<std::vector<double>, kGranMembers> fixednGrid;
 
     // The stored fit one lane names at one partition, one rung and one scheme,
     // read directly. At the reference rung it is PartitionFitValue above, which
@@ -5831,6 +5840,7 @@ int main(int argc, char** argv) {
             ordersGrid[kMember].assign(grid, 0.0);
             planeGrid[kMember].assign(grid, 0.0);
             singleGrid[kMember].assign(grid, 0.0);
+            fixednGrid[kMember].assign(grid, 0.0);
 
             std::array<double, 33> orders{};
 
@@ -5855,6 +5865,19 @@ int main(int argc, char** argv) {
                     singleGrid[kMember][ref.Index(n, i)] =
                         boys::BoysSingle<kM, GranularityPolicy<kScheme, kGranularity>>(n,
                                                                                       ref.x[i]);
+                }
+            }
+
+            std::vector<double> column(count);
+
+            for (int n = 0; n <= nmax; ++n)
+            {
+                boys::BoysFixedN<kM, GranularityPolicy<kScheme, kGranularity>>(
+                    n, ref.x.data(), column.data(), count);
+
+                for (std::size_t i = 0; i < count; ++i)
+                {
+                    fixednGrid[kMember][ref.Index(n, i)] = column[i];
                 }
             }
         };
@@ -5987,6 +6010,13 @@ int main(int argc, char** argv) {
 
                             got = singleGrid[kMember][k];
                             other = singleGrid[1 - kMember][k];
+                            break;
+                        }
+
+                        case GranKind::kFixedN:
+                        {
+                            got = fixednGrid[kMember][k];
+                            other = fixednGrid[1 - kMember][k];
                             break;
                         }
                         }

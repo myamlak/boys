@@ -342,13 +342,14 @@ needs at a target near 1e-10, not at 1e-14, and the denominator here is 5.14888e
 **The option is exposed, certified at every rung, and refused where it has no tables.**
 `FitGranularity::kNarrow` is a field of `EvalPolicy` and a name the report can print. Its tables are
 the generated header's, reachable through the same entries as the shipped partition, and its
-certification is the accuracy gate's own block: 224 rows — one per partition, scheme, call shape and
+certification is the accuracy gate's own block: 252 rows — one per partition, scheme, call shape and
 accuracy rung — each judged against the bar the published table holds for the cell it ran in, times
 the rung's multiplier, with the worst cell named on the row. The call shapes are the stored fits read
 directly, the batch entry below the band (where the seeding fallback is taken), the batch and plane
 entries over the band and below, the batch entry over region B, the single-order entry at region A's
-cell, and the single-order and plane entries over the whole grid. Three rows move between the
-partitions, and every other row is the same figure under either name at the reference multiplier:
+cell, and the single-order, fixed-order and plane entries over the whole grid. Three rows move
+between the partitions, and every other row is the same figure under either name at the reference
+multiplier:
 
 | row, worst over both schemes | shipped | narrow | bar |
 | --- | --- | --- | --- |
@@ -357,7 +358,7 @@ partitions, and every other row is the same figure under either name at the refe
 | batch entry, region B | 9.9365e-15 | 7.51675e-16 (n=32, x=11.8998) | 5.5e-14 |
 | stored fits and single entry, region A | 2.22045e-16 | 2.22045e-16 | 1e-15 |
 | batch and plane entry, band and below | 3.21618e-15 (n=16, x=4.89985) | 3.21618e-15 | 5.5e-14 |
-| single and plane entry, whole grid | 5e-14 (n=32, x=28.9893) | 5e-14 | per region (m × B_region) |
+| single, fixed-order and plane entry, whole grid | 5e-14 (n=32, x=28.9893) | 5e-14 | per region (m × B_region) |
 
 **The rungs are served on both partitions, and the narrow rows are derived from the narrow table.**
 A relaxed rung is a cut of a fit's stored coefficients: the effective-degree criterion is
@@ -375,13 +376,13 @@ they promised, where the same row of the shipped partition at that rung delivers
 the same bar, and the degree one evaluation reads at that rung is 1 to 8 over the narrow pieces
 against 10 to 14 over the shipped ones, where at `m = 1` they are 10 and 18 to 20.
 
-**All 224 rows are met and the books around them do not move.** The block is counted apart from the
+**All 252 rows are met and the books around them do not move.** The block is counted apart from the
 lane book and from the scheme rows, and those read what they read before it existed: 39 of 39 claims,
 44 of 44 scheme rows, and the combinations book 28 of 28 with nothing owed. What does move is the
 option space, 28 members to 30 — the two new ones are the partitions themselves, each measured over
-2026108 cells at both schemes with 1146391 of them reading differently under the other partition and
-none over the bar its row is judged at. The block reports its own carrying fraction, 3243928 of
-4052216 cells (80.1%), as the cells able to discriminate; the other 808288 carry a bound at least as
+2819824 cells at both schemes with 1543959 of them reading differently under the other partition and
+none over the bar its row is judged at. The block reports its own carrying fraction, 4079336 of
+5639648 cells (72.3%), as the cells able to discriminate; the other 1560312 carry a bound at least as
 large as the value itself, so no error can exceed them, and they are not counted in the rows above.
 
 **What is refused is the combinations with no narrow table**, at compile time and where they are
