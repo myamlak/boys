@@ -46,6 +46,7 @@ enum class DeviceEntry : int {
     kAllOrdersF32, ///< BoysCuda::AllOrdersF32, launched
     kAllOrdersF16, ///< BoysCuda::AllOrdersF16, launched
 
+    kAllOrdersF64Narrow, ///< BoysCuda::AllOrdersF64Narrow, launched
     kAllNF64, ///< BoysCuda::AllNF64, launched
     kAllNF32, ///< BoysCuda::AllNF32, launched
     kAllNF16, ///< BoysCuda::AllNF16, launched
@@ -128,6 +129,7 @@ enum class DeviceOptionQuestion : int {
 enum class DeviceOptionAxis : int {
     kNone = 0, ///< the option is the entry, with no second choice in it
     kRegionBExp, ///< which region-B exponential the entry's recurrence seeds with
+    kPartition, ///< which cut of the regions the entry reads its fits from
 };
 
 /// One row of the device option space: an option this surface offers, with

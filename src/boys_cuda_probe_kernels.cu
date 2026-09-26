@@ -470,6 +470,7 @@ int BoysCudaLaunchAllOrdersF32(const int*, const double*, float*, std::size_t, v
 int BoysCudaLaunchAllNF32(int, const double*, float*, std::size_t, void*);
 int BoysCudaLaunchSingleF64(const int*, const double*, double*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF64(const int*, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF64Narrow(const int*, const double*, double*, std::size_t, void*);
 int BoysCudaLaunchAllNF64(int, const double*, double*, std::size_t, void*);
 int BoysCudaLaunchSingleF16(const int*, const void*, void*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF16(const int*, const void*, void*, std::size_t, void*);
@@ -500,6 +501,9 @@ int LaunchLaunched(ProbeEntry entry,
             break;
         case ProbeEntry::kAllOrdersF64:
             BoysCudaLaunchAllOrdersF64(n, x, static_cast<double*>(out), count, stream);
+            break;
+        case ProbeEntry::kAllOrdersF64Narrow:
+            BoysCudaLaunchAllOrdersF64Narrow(n, x, static_cast<double*>(out), count, stream);
             break;
         case ProbeEntry::kAllOrdersF32:
             BoysCudaLaunchAllOrdersF32(n, x, static_cast<float*>(out), count, stream);

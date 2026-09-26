@@ -16,15 +16,17 @@
 ///   T            B(int order, int piece)           piece upper edge
 ///   const T*     Coeffs(int order, int piece)      the piece's coefficients
 ///   int          Deg(int order, int piece)         the piece's degree
-///   const T*     BSeedCoeffs()                     region-B seed coefficients
-///   int          BSeedDeg(int order)               region-B seed degree
+///   T            BSeed(T x, int order)             region-B seed at an argument
 ///
 /// T is double for the double lane's seeds and float for the float lane's.
-/// BSeedDeg takes the order because the relaxed batches read their region-B
-/// degree from the order-0 entry — the F_0 seed's error reaches every output
-/// with gain at most 1 + 1.846e-17 — while the single lanes read it per order;
-/// a lane object is what decides which, and the arithmetic below is the same
-/// either way.
+/// BSeed is the whole of region B's seed, taken at the argument rather than as
+/// one polynomial over the region: the shipped partition's seed is one fit
+/// over [kX0, kX1] and a second partition's is a piecewise one, so a lane
+/// supplies the seed and not the coefficients of a fixed shape. It takes the
+/// order because the relaxed batches read their region-B degree from the
+/// order-0 entry — the F_0 seed's error reaches every output with gain at most
+/// 1 + 1.846e-17 — while the single lanes read it per order; a lane object is
+/// what decides which, and the arithmetic below is the same either way.
 ///
 /// The region structure is the library's: region A (x below kX0) is the
 /// piecewise Chebyshev fit of F_n itself, region B (up to kX1) is the upward
@@ -198,20 +200,6 @@ __device__ __forceinline__ float DeviceSeed32(const Lane& lane, int order, float
     return DeviceClenshawSplit32(c, lane.Deg(order, p), t);
 }
 
-// The region-B seed: one fit of F_0 over the whole of region B, with the
-// degree the caller's lane names for this order.
-template <typename Lane>
-__device__ __forceinline__ double DeviceSeedB(const Lane& lane, double x, int order) {
-    const double t = 2.0 * (x - kX0) / (kX1 - kX0) - 1.0;
-    return DeviceClenshawSplit(lane.BSeedCoeffs(), lane.BSeedDeg(order), t);
-}
-
-template <typename Lane>
-__device__ __forceinline__ float DeviceSeedB32(const Lane& lane, float x, int order) {
-    const float t = 2.0f * (x - static_cast<float>(kX0)) / static_cast<float>(kX1 - kX0) - 1.0f;
-    return DeviceClenshawSplit32(lane.BSeedCoeffs(), lane.BSeedDeg(order), t);
-}
-
 // ---------------------------------------------------------------------------
 // the region-B exponential of the float lane
 // ---------------------------------------------------------------------------
@@ -264,7 +252,7 @@ __device__ __forceinline__ double DeviceSingleF64(const Lane& lane, int order, d
         return DeviceSeed(lane, order, xx);
     }
 
-    double f = DeviceSeedB(lane, xx, order);
+    double f = lane.BSeed(xx, order);
 
     if (xx < kX1)
     {
@@ -300,7 +288,7 @@ __device__ __forceinline__ float DeviceSingleF32(const Lane& lane, int order, fl
 
     if (xx < static_cast<float>(kX1))
     {
-        float f = DeviceSeedB32(lane, xx, order);
+        float f = lane.BSeed(xx, order);
         const float expx = DeviceRegionBExp<kFastExp>(xx);
 
         for (int l = 0; l < order; ++l)
@@ -348,7 +336,7 @@ __device__ __forceinline__ void DeviceAllOrdersF64(
         return;
     }
 
-    double f = DeviceSeedB(lane, xx, order);
+    double f = lane.BSeed(xx, order);
     store(0, f);
 
     if (xx < kX1)
@@ -399,7 +387,7 @@ __device__ __forceinline__ void DeviceAllOrdersF32(
         return;
     }
 
-    float f = DeviceSeedB32(lane, xx, order);
+    float f = lane.BSeed(xx, order);
     store(0, f);
 
     if (xx < static_cast<float>(kX1))

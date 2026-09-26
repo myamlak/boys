@@ -20,7 +20,8 @@ extern "C" {
 int BoysCudaUploadTables();
 int BoysCudaDeviceTableAddresses(void** out);
 int BoysCudaEffTablesResident(double m);
-int BoysCudaUploadEffTables(double m, const int* degA, const int* degB);
+int BoysCudaUploadEffTables(
+    double m, const int* degA, const int* degB, const int* narrowA, const int* narrowB);
 int BoysCudaLaunchSingleF32(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchSingleF32Fast(
@@ -31,6 +32,10 @@ int BoysCudaLaunchAllNF32(int nmax, const double* x, float* out, std::size_t cou
 int BoysCudaLaunchSingleF64(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64(
+    const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64Narrow(
+    const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64NarrowEff(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllNF64(int nmax, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchSingleF32Eff(
@@ -133,6 +138,17 @@ constexpr int kRelaxedStride = detail::kPieceStart[detail::kMaxOrder + 1] >
 std::array<int, kEffLaneCount*(kEffMaxOrder + 1) * kEffMaxPieces> gEffDegA{};
 std::array<int, kEffLaneCount*(kEffMaxOrder + 1)> gEffDegB{};
 
+// The narrow partition's cut, flat over the partition's rows as the derivation
+// returns it and as the device lane indexes it. One table and not a lane axis:
+// the effective degrees of the narrow partition are derived for the roles that
+// evaluate those fits, and the entries carrying the partition are the double
+// batch, so this is that role's table.
+constexpr int kNarrowFlatPieces = detail::kNarrowAPieceStart[detail::kMaxOrder + 1];
+constexpr int kNarrowFlatB = detail::kNarrowBPieces * (kEffMaxOrder + 1);
+
+std::array<int, kNarrowFlatPieces> gNarrowDegA{};
+std::array<int, kNarrowFlatB> gNarrowDegB{};
+
 // Which multiplier the host-side tables above were last computed for. It is a
 // record of the HOST computation and not of what the device holds: residency on
 // a device is the upload's question, and its guard names the device as well as
@@ -166,6 +182,27 @@ void FillEffLane(int lane) {
     }
 }
 
+// The narrow partition's cut for one multiplier, for the role the entries that
+// carry it have. Region B is kept in the whole derived form — flat over (piece,
+// order) — rather than at the order-0 column the batch shape reads, so what the
+// device holds is the derivation and not a projection of it.
+template <double kAccuracyMultiplier> void FillNarrowLane() {
+    static constexpr auto kDegreesA =
+        detail::NarrowRegionADegrees<kAccuracyMultiplier, detail::BoysRole::kDoubleBatch>();
+    static constexpr auto kDegreesB =
+        detail::NarrowRegionBDegrees<kAccuracyMultiplier, detail::BoysRole::kDoubleBatch>();
+
+    for (int p = 0; p < kNarrowFlatPieces; ++p)
+    {
+        gNarrowDegA[static_cast<std::size_t>(p)] = kDegreesA[static_cast<std::size_t>(p)];
+    }
+
+    for (int k = 0; k < kNarrowFlatB; ++k)
+    {
+        gNarrowDegB[static_cast<std::size_t>(k)] = kDegreesB[static_cast<std::size_t>(k)];
+    }
+}
+
 // The six CUDA lanes' roles: the double batch seed evaluates the DOUBLE
 // piece table even for the float/fp16 batch lanes (RoleUsesDoubleTables —
 // the downward recursion amplifies float seed errors beyond their budgets).
@@ -192,11 +229,15 @@ template <double kAccuracyMultiplier> BoysStatus EnsureEffTables() {
         FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Batch, true>(3);
         FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Fp16Single, false>(4);
         FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Fp16Batch, true>(5);
+        FillNarrowLane<kAccuracyMultiplier>();
         gEffCachedM = kAccuracyMultiplier;
     }
 
-    return FromLaunchCode(
-        BoysCudaUploadEffTables(kAccuracyMultiplier, gEffDegA.data(), gEffDegB.data()));
+    return FromLaunchCode(BoysCudaUploadEffTables(kAccuracyMultiplier,
+                                                 gEffDegA.data(),
+                                                 gEffDegB.data(),
+                                                 gNarrowDegA.data(),
+                                                 gNarrowDegB.data()));
 }
 
 } // namespace
@@ -419,6 +460,33 @@ BoysStatus BoysCuda::AllOrdersF64(
 }
 
 template <double kAccuracyMultiplier>
+BoysStatus BoysCuda::AllOrdersF64Narrow(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    if constexpr (kAccuracyMultiplier == 1.0)
+    {
+        // The full-accuracy kernels read the degrees the partition was stored
+        // at, which BoysCudaUploadTables has already placed; nothing about the
+        // rung is uploaded here, so this path leaves a resident rung alone.
+        return RunLaunch(BoysCudaLaunchAllOrdersF64Narrow, n, x, out, count, stream);
+    } else
+    {
+        const auto status = EnsureEffTables<kAccuracyMultiplier>();
+
+        if (status != BoysStatus::kSuccess)
+        {
+            return status;
+        }
+
+        return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowEff, n, x, out, count, stream);
+    }
+}
+
+template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllNF64(
     int nmax, const double* x, double* out, std::size_t count, void* stream) {
     const auto valid = CheckOrder(nmax);
@@ -548,6 +616,8 @@ template BoysStatus BoysCuda::SingleF64<1.0>(
     const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF64<1.0>(
     const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Narrow<1.0>(
+    const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllNF64<1.0>(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
 template BoysStatus BoysCuda::SingleF16<1.0>(const int*, const F16*, F16*, std::size_t, void*);
@@ -563,6 +633,8 @@ template BoysStatus BoysCuda::AllNF32<2.0>(int, const double*, float*, std::size
 template BoysStatus BoysCuda::SingleF64<2.0>(
     const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF64<2.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Narrow<2.0>(
     const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllNF64<2.0>(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
@@ -581,6 +653,8 @@ template BoysStatus BoysCuda::SingleF64<10.0>(
     const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF64<10.0>(
     const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Narrow<10.0>(
+    const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllNF64<10.0>(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
 template BoysStatus BoysCuda::SingleF16<10.0>(const int*, const F16*, F16*, std::size_t, void*);
@@ -598,6 +672,8 @@ template BoysStatus BoysCuda::SingleF64<100.0>(
     const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF64<100.0>(
     const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Narrow<100.0>(
+    const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllNF64<100.0>(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
 template BoysStatus BoysCuda::SingleF16<100.0>(const int*, const F16*, F16*, std::size_t, void*);
@@ -614,6 +690,8 @@ template BoysStatus BoysCuda::SingleF64<1e4>(
     const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF64<1e4>(
     const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Narrow<1e4>(
+    const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllNF64<1e4>(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
 template BoysStatus BoysCuda::SingleF16<1e4>(const int*, const F16*, F16*, std::size_t, void*);
@@ -629,6 +707,8 @@ template BoysStatus BoysCuda::AllNF32<1e8>(int, const double*, float*, std::size
 template BoysStatus BoysCuda::SingleF64<1e8>(
     const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF64<1e8>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Narrow<1e8>(
     const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllNF64<1e8>(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
@@ -719,6 +799,10 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
      DeviceOptionAxis::kNone, RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16,
      kFormF16, kFp16Served, kFp16Refusal},
 
+    {DeviceEntry::kAllOrdersF64Narrow, "all-orders-fp64-narrow", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kPartition, RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64,
+     kFormF64, true, nullptr},
     {DeviceEntry::kAllNF64, "all-n-fp64", DeviceOptionGroup::kLaunched,
      DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllN, DeviceOptionQuestion::kAllN,
      DeviceOptionAxis::kNone, RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64,

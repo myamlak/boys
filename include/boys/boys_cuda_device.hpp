@@ -212,12 +212,9 @@ struct TableLane64 {
         return deg.regionA[tables->pieceStart[order] + piece];
     }
 
-    __device__ __forceinline__ const double* BSeedCoeffs() const {
-        return tables->bSeedCoeffs;
-    }
-
-    __device__ __forceinline__ int BSeedDeg(int order) const {
-        return deg.regionB[order * deg.stride];
+    __device__ __forceinline__ double BSeed(double x, int order) const {
+        const double t = 2.0 * (x - kX0) / (kX1 - kX0) - 1.0;
+        return DeviceClenshawSplit(tables->bSeedCoeffs, deg.regionB[order * deg.stride], t);
     }
 };
 
@@ -245,12 +242,9 @@ struct TableLane32 {
         return deg.regionA[tables->pieceStart32[order] + piece];
     }
 
-    __device__ __forceinline__ const float* BSeedCoeffs() const {
-        return tables->bSeedCoeffs32;
-    }
-
-    __device__ __forceinline__ int BSeedDeg(int order) const {
-        return deg.regionB[order * deg.stride];
+    __device__ __forceinline__ float BSeed(float x, int order) const {
+        const float t = 2.0f * (x - static_cast<float>(kX0)) / static_cast<float>(kX1 - kX0) - 1.0f;
+        return DeviceClenshawSplit32(tables->bSeedCoeffs32, deg.regionB[order * deg.stride], t);
     }
 };
 

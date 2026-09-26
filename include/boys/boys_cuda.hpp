@@ -309,6 +309,26 @@ public:
     static BoysStatus AllOrdersF64(
         const int* n, const double* x, double* out, std::size_t count, void* stream);
 
+    /// F_0(x[i])..F_n(x[i]) as AllOrdersF64, with the library's second
+    /// partition of the double lane's fits: region A's pieces are cut per
+    /// order instead of two to an order, and region B's seed is 5 pieces at
+    /// degree 10 instead of one polynomial over the interval. Shape, layout,
+    /// arguments and the multiplier are AllOrdersF64's.
+    ///
+    /// The narrow partition is the double lane's (its effective degrees are
+    /// derived for the roles that evaluate those fits, see
+    /// boys_effective_degrees.hpp), so this is a double entry and there is no
+    /// float or fp16 twin of it.
+    ///
+    /// A call at the full-accuracy multiplier reads the degrees the partition
+    /// was stored at and uploads nothing, so it does not disturb a relaxed rung
+    /// another call made resident.
+    ///
+    /// \returns kDeviceError when the launch fails.
+    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+    static BoysStatus AllOrdersF64Narrow(
+        const int* n, const double* x, double* out, std::size_t count, void* stream);
+
     /// F_0(x[i])..F_nmax(x[i]) at one common nmax, double precision — the
     /// uniform-order batch: many arguments, all nmax + 1 orders each, the
     /// layout AllNF32 documents and the bound the CPU lane's BoysAllN

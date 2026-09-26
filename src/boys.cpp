@@ -803,26 +803,18 @@ Carriage CarriesSingle(FitRoute route,
     return {true, ""};
 }
 
-// The device lane's rule. Its entries are the shipped single-precision fits,
-// one coefficient set per region, and its accuracy multiplier is a template
-// argument at the call site against a certified degree table the lane holds per
-// rung - so every rung is served where the host lane serves the shipped pair
-// alone. What the lane does not take is a partition, a packing axis or another
-// fit family, and each of the three is work on this lane rather than a shape it
-// cannot have: the narrow pieces' table, the packed orders kernel, and the
-// degree tables of another family are all the host lane's.
-Carriage CarriesDevice(FitRoute route,
-                       EvalScheme scheme,
-                       PackAxis axis,
-                       FitGranularity granularity) noexcept {
-    if (granularity != kDefaultFitGranularity)
-    {
-        return {false,
-                "the device lane's entries read one coefficient set per region, and the narrow "
-                "pieces' table is the host lane's: a narrow policy on this lane is a table this "
-                "lane has not generated"};
-    }
-
+// The device lane's rule. Its accuracy multiplier is a template argument at the
+// call site against a certified degree table the lane holds per rung, so every
+// rung is served, and both of the lane's partitions are served: the shipped cut
+// of the double lane's fits (BoysCuda::AllOrdersF64 and its siblings) and the
+// narrow one, whose pieces, piecewise region-B seed and per-rung effective
+// degrees the lane holds in its own tables (BoysCuda::AllOrdersF64Narrow). What
+// the lane does not yet have is the packing axis: its kernels are one order per
+// lane over an array of arguments, and the body that reads region A one fit per
+// order is a kernel this lane has not built. Nor a route or a scheme of another
+// family: its degree tables are certified for the shipped fit, and the rational
+// family's pairs and the monomial basis's coefficients are the host lane's.
+Carriage CarriesDevice(FitRoute route, EvalScheme scheme, PackAxis axis) noexcept {
     if (axis != kDefaultPackAxis)
     {
         return {false,
@@ -870,7 +862,7 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
         switch (precision)
         {
         case Precision::kFp32Device:
-            return CarriesDevice(route, scheme, axis, granularity);
+            return CarriesDevice(route, scheme, axis);
         case Precision::kFp32:
         case Precision::kFp16:
             return CarriesSingle(route, scheme, axis, granularity, tier);
