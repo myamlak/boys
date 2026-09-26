@@ -8600,6 +8600,17 @@ int main(int argc, char** argv) {
         bool backed = false;
     };
 
+    // The other direction, and the one this block must not be quiet about: a
+    // refusal whose probe COMPILED the call is a limit this revision does not
+    // have. That is not a defect in itself - a capability landing is the point
+    // - but a capability that lands while nothing measures it is a silent hole,
+    // and silence is the thing this block exists to prevent. So a lifted
+    // refusal fails here and names the book that has to carry the row before
+    // the gate can go green again. The count is declared before the refusals it
+    // is incremented beside, because each probe that lifts a refusal increments
+    // it where that refusal would have been pushed.
+    std::size_t liftedRefusals = 0;
+
     std::vector<Refusal> refusals;
 #ifdef BOYS_GATE_BATCH_REFUSES_ROUTE
     refusals.push_back({"rational route on BoysAllN / BoysAllN sorted / BoysFixedN",
@@ -8713,8 +8724,6 @@ int main(int argc, char** argv) {
     // and silence is the thing this block exists to prevent. So a lifted
     // refusal fails here and names the book that has to carry the row before
     // the gate can go green again.
-    std::size_t liftedRefusals = 0;
-
 #ifndef BOYS_GATE_BATCH_REFUSES_ROUTE
     // The refusal is gone: the entries compile the call and the route-carriage
     // rows below measure what they answer with it. Nothing is silent - the
@@ -8784,223 +8793,821 @@ int main(int argc, char** argv) {
         failed = true;
     }
 
-    // ---- the combinations --------------------------------------------------
-    // The members above are one axis each, and a member being bounded does not
-    // make every combination of the axes it belongs to bounded. So the same
-    // enumerations are crossed here: the rungs AccuracyTier declares (with each
-    // rung's multiplier taken from AccuracyMultiplier), the routes
-    // BoysFitRoutes() names, and the schemes BoysEvalSchemes() names. The count
-    // is the product of the enumerations' own sizes, so an axis member added to
-    // any of them moves it without this block being edited.
+    // ---- the combinations: the whole option space, crossed and counted ------
     //
-    // Every combination is exactly one of these, and this block fails on one of
-    // them only:
+    // A consumer chooses one combination out of this library's space and reads
+    // the bound that combination delivers. The space has six axes, and every
+    // member of every one of them is read off a table the library itself
+    // publishes rather than off a list written here:
     //
-    //   offered, certified and published  a consumer can express it, and this
-    //                            row measured it against the committed
-    //                            reference over the whole grid at the bound that
-    //                            rung documents. The delivered figure is printed
-    //                            with it, and the bound it is judged against is
-    //                            the one the public surface reports for that
-    //                            rung - so the figure a consumer reads is this
-    //                            figure. "Offered" is established by making the
-    //                            call this row makes, through the public entry,
-    //                            rather than by asserting it.
-    //   not yet implemented, and owed  the library refuses the call at the call
-    //                            site because the table it would need does not
-    //                            exist. The refusal is the library's own, and
-    //                            citing it as the reason a bound is not owed is
-    //                            circular: the combination is one the library
-    //                            should offer, it is owed to a consumer who asks
-    //                            for it, and it is listed and counted as a debt
-    //                            with the plan on the row. It does not fail this
-    //                            check - what fails it is an offered combination
-    //                            whose bound is unmet or unpublished. No row is
-    //                            in this category at this revision: the rung of
-    //                            the rational route is derived, and naming it is
-    //                            a call the library answers.
-    //   not runnable on this host  the host does not provide what the
-    //                            combination needs. A fact about the machine,
-    //                            counted apart, and it does not fail.
+    //   precision   the lanes BoysLaneContracts() reports - the double lane,
+    //               the single-precision lane, the half-precision lane and the
+    //               device lane - so a lane added to the library with a row of
+    //               its own is a member here without an edit
+    //   route       the distinct routes that lane's own report names,
+    //               BoysFitRoutes() for the double and device lanes and
+    //               BoysFitRoutesF32() for the single and half ones
+    //   scheme      BoysEvalSchemes()
+    //   partition   BoysFitGranularities()
+    //   axis        BoysPackAxes()
+    //   rung        the tiers AccuracyMultiplier answers for, from kReference to
+    //               the last member the enumeration declares
     //
-    // The rung and the route are two selectors of two different things, which is
-    // why this cross is not redundant: a rung cuts the named route's own fits -
-    // the Chebyshev family's stored coefficients by one degree table, the
-    // rational family's stored numerator and denominator pair by another - and
-    // the pair is answered by BoysAllOrdersAtTier's route-carrying overload,
-    // which is where a caller expresses it.
+    // Every combination is exactly one of three states, and there is no fourth:
+    //
+    //   certified and published    the library carries it, and this row measured
+    //                              it against the committed reference over the
+    //                              whole grid, at the figure the lane publishes
+    //                              for that shape. The delivered figure is
+    //                              printed beside the bound it is judged
+    //                              against, so the number a consumer reads is
+    //                              this number.
+    //   refused, and owed          the library does not carry the call, and this
+    //                              row prints the library's own reason. Citing
+    //                              that reason as the reason no bound is owed
+    //                              would be circular: none of these is an
+    //                              impossibility, each is a table or a body
+    //                              nobody has built, so each is counted as a
+    //                              debt with the work item on the row.
+    //   not runnable on this host  the library carries it and this host cannot
+    //                              run it - the device lane's entries need a
+    //                              CUDA device and a CUDA build, and this target
+    //                              is the host build. A fact about the machine,
+    //                              counted apart, and it does not fail.
+    //
+    // The arithmetic the block prints is the thing that makes a missing cell
+    // visible rather than a smaller number nobody notices:
+    //
+    //     total = measured + refused + not runnable on this host
+    //
+    // with `total` also computed a second way, as the product of the axis sizes
+    // read from those same tables. A cell dropped from either side breaks the
+    // equality and turns the gate red. The failure this exists to close is a
+    // combination the library offers and no measured row covers, and that
+    // failure is silent in every book that is smaller than the space.
     //
     // The condition this block carries is the owner's: every *runnable*
-    // combination has its bounds measured and published. It applies to the
-    // offered ones, so the only failure here is an offered combination whose
-    // bound is unmet or covered by no cell - a contract violation. Failing the
-    // gate on a combination the library does not offer would make a green pull
-    // request red for work that is not owed.
+    // combination has its bound measured and published. So the failure here is
+    // an offered, runnable combination whose bound is unmet or covered by no
+    // cell - a contract violation. Failing on a combination the library does
+    // not offer would make a green pull request red for work that is not owed.
     //
     // A loose true bound is honest and a tight false one is the defect, so a
     // runnable combination delivering worse than it promises is reported as a
-    // defect, not as a category of its own.
+    // defect with its worst cell, not as a category of its own.
     //
-    // The boundary of this enumeration, stated because a gap in one reads as
-    // coverage: the axes crossed are the rungs AccuracyTier declares, the routes
-    // BoysFitRoutes() names and the schemes BoysEvalSchemes() names, measured
-    // through the two entries that take a route or a rung at run time -
-    // BoysAllOrdersWithRoute and BoysAllOrdersAtTier. The *entries* are a fourth
-    // axis and are not crossed here: they are measured by the scheme book above
-    // (every entry at both schemes, at m = 1 and m = 64) and by the route book's
-    // carriage rows, and the rungs above m = 64 reach them only through the two
-    // run-time entries this block uses. That is a real boundary and not a claim
-    // of coverage.
+    // Each row is judged at the figure the lane publishes for that shape, read
+    // from BoysLaneContracts() - m x 5.5e-14 for the double lane, m x 1.5e-7 for
+    // the single-precision one, m x 1e-7 for the half-precision one - which is
+    // the same table the accessor below answers from and the same figures
+    // README.md publishes, so a figure a consumer reads off this table is the
+    // figure the library hands them.
+    //
+    // The half-precision lane's bound is a claim only where the value exceeds
+    // it: a return whose magnitude is at or below m x 1e-7 plus half a
+    // representable digit of that return is the format's floor and not the
+    // arithmetic's, and this block counts those cells rather than passing them.
+    // The count is printed on the row.
+    //
+    // The *entries* are a further axis and are not crossed here, which is a
+    // boundary and not a claim of coverage: they are measured by the scheme
+    // book above (every entry at both schemes), by the packing book (both
+    // entries the axis is carried on) and by the granularity book (each entry
+    // the partition is read through). The axes crossed here are reached through
+    // one entry per lane - BoysAllOrders for the double and device lanes,
+    // BoysAllOrdersF32 for the single and half ones - and a shape that entry
+    // does not have is not a member of this cross.
     struct Combination {
         std::string axes;
         std::string state;
+        std::string source;
         std::size_t cells = 0;
+        std::size_t below = 0;
         std::size_t over = 0;
         double delivered = 0.0;
         double bound = 0.0;
+        double accessorBound = 0.0;
+        double accessorDelivered = 0.0;
+        bool accessorDeliveredKnown = false;
         int worstN = -1;
         double worstX = 0.0;
     };
 
-    std::vector<Combination> combinations;
+    // The lanes, in the order BoysLaneContracts() reports them. The device lane
+    // is the one this target cannot run: its entries need a CUDA device.
+    const std::span<const boys::LaneContractInfo> combLaneRows = boys::BoysLaneContracts();
+    const int combLaneCount = static_cast<int>(combLaneRows.size());
+    const int combDeviceLane = static_cast<int>(boys::Precision::kFp32Device);
+    const int combHalfLane = static_cast<int>(boys::Precision::kFp16);
 
+    // Each lane's route axis: the distinct routes that lane's own report names,
+    // in the order the report first names them.
+    const auto combRoutesFor = [](int lane) {
+        return lane == static_cast<int>(boys::Precision::kFp64) ||
+                       lane == static_cast<int>(boys::Precision::kFp32Device)
+                   ? boys::BoysFitRoutes()
+                   : boys::BoysFitRoutesF32();
+    };
+
+    std::vector<std::vector<boys::FitRoute>> combRoutes(static_cast<std::size_t>(combLaneCount));
+
+    for (int lane = 0; lane < combLaneCount; ++lane)
     {
-        std::vector<boys::FitRoute> combRoutes;
-        std::vector<const char*> combRouteNames;
-
-        for (const boys::FitRouteInfo& row : boys::BoysFitRoutes())
+        for (const boys::FitRouteInfo& row : combRoutesFor(lane))
         {
             bool seen = false;
 
-            for (const boys::FitRoute r : combRoutes)
+            for (const boys::FitRoute carried : combRoutes[static_cast<std::size_t>(lane)])
             {
-                seen = seen || r == row.route;
+                seen = seen || carried == row.route;
             }
 
             if (!seen)
             {
-                combRoutes.push_back(row.route);
-                combRouteNames.push_back(row.name);
+                combRoutes[static_cast<std::size_t>(lane)].push_back(row.route);
             }
         }
+    }
 
-        const int lastTier = static_cast<int>(boys::AccuracyTier::kRelaxed65536);
-        std::array<double, 33> out{};
+    const std::size_t combSchemes = boys::BoysEvalSchemes().size();
+    const std::size_t combPartitions = boys::BoysFitGranularities().size();
+    const std::size_t combAxes = boys::BoysPackAxes().size();
 
-        for (int t = 0; t <= lastTier; ++t)
+    // The rungs, read off the multiplier the tier enumeration answers with.
+    std::vector<boys::AccuracyTier> combTiers;
+
+    for (int t = 0; t <= static_cast<int>(boys::AccuracyTier::kRelaxed65536); ++t)
+    {
+        combTiers.push_back(static_cast<boys::AccuracyTier>(t));
+    }
+
+    const std::size_t combRungs = combTiers.size();
+
+    // The product taken a second way, off the tables' own sizes. A member added
+    // to any axis moves this and the enumeration below together; a cell the
+    // enumeration drops moves only one of them, and the difference is what the
+    // reader sees.
+    std::size_t combClaimed = 0;
+
+    for (int lane = 0; lane < combLaneCount; ++lane)
+    {
+        combClaimed += combRoutes[static_cast<std::size_t>(lane)].size() * combSchemes *
+                       combPartitions * combAxes * combRungs;
+    }
+
+    // The measurement side. One row per cell this revision's library carries,
+    // measured over the whole committed grid through the entry that carries all
+    // of the cell's axes at once. It is a list of explicit instantiations rather
+    // than a loop because the refusals are compile-time ones - the entries
+    // instantiate per policy and a policy the library refuses does not build -
+    // and the claim side below is what catches a cell this list is missing.
+    struct CombCell {
+        int lane;
+        int rung;
+        int route;
+        int scheme;
+        int partition;
+        int axis;
+        std::size_t cells;
+        std::size_t below;
+        std::size_t over;
+        double delivered;
+        double bound;
+        int worstN;
+        double worstX;
+    };
+
+    std::vector<CombCell> combMeasured;
+
+    struct CombAccum {
+        std::size_t cells = 0;
+        std::size_t below = 0;
+        std::size_t over = 0;
+        double worst = 0.0;
+        double bound = 0.0;
+        double ceiling = 0.0; // above this magnitude the bound is claimed
+        int worstN = -1;
+        double worstX = 0.0;
+
+        void add(int n, double x, double got, double want, double ulp = 0.0) noexcept
         {
-            const boys::AccuracyTier tier = static_cast<boys::AccuracyTier>(t);
-            const double mult = boys::AccuracyMultiplier(tier);
+            const double err = std::abs(got - want);
+            const double magnitude = std::abs(want);
+            const double bar = bound + ulp;
+            ++cells;
 
-            for (std::size_t ri = 0; ri < combRoutes.size(); ++ri)
+            if (ceiling > 0.0 && magnitude <= bar)
             {
-                for (const boys::EvalSchemeInfo& info : boys::BoysEvalSchemes())
-                {
-                    Combination c;
-                    c.axes = Fmt("%s, %s, m = %g", combRouteNames[ri], info.name, mult);
-                    c.bound = mult * kBoundDoubleBatch;
+                // At or below the format's floor the lane claims nothing, and
+                // the cell is counted rather than judged.
+                ++below;
 
-                    // Every combination on the two axes is offered, so every one
-                    // of them is measured here: the rung is a property of the
-                    // route rather than of the multiplier (the Chebyshev family's
-                    // is a cut of its stored coefficients and the rational
-                    // family's a cut of its stored numerator and denominator
-                    // pair), and naming the two together is a call this library
-                    // answers.
+                return;
+            }
+
+            if (err > bar)
+            {
+                ++over;
+            }
+
+            if (err > worst)
+            {
+                worst = err;
+                worstN = n;
+                worstX = x;
+            }
+        }
+    };
+
+    // Half of the last representable digit of the returned value: the term the
+    // half-precision lane's own figure carries beside its base.
+    const auto halfUlp = [](double value) {
+        const int exponent = std::ilogb(value);
+
+        return exponent == FP_ILOGB0 || exponent == FP_ILOGBNAN || exponent < -1074
+                   ? 0.0
+                   : std::ldexp(1.0, exponent - 11);
+    };
+
+    // The double lane, every rung of one (route, scheme, axis, partition).
+    const auto combDoubleRungs = [&]<boys::FitRoute kRoute, boys::EvalScheme kScheme,
+                                     boys::PackAxis kAxis, boys::FitGranularity kGran>(int lane) {
+        using Policy =
+            boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFloat, kAxis, kGran>;
+        const double laneBound = combLaneRows[static_cast<std::size_t>(lane)].bound;
+        const double laneAdd = combLaneRows[static_cast<std::size_t>(lane)].additive;
+
+        [&]<std::size_t... kRung>(std::index_sequence<kRung...>) {
+            (void)std::initializer_list<int>{
+                ([&] {
+                    constexpr double kM =
+                        boys::AccuracyMultiplier(static_cast<boys::AccuracyTier>(kRung));
+                    CombAccum a;
+                    std::array<double, 33> out{};
+
+                    a.bound = kM * laneBound + laneAdd;
+
                     for (std::size_t i = 0; i < count; ++i)
                     {
-                        if (t == 0)
-                        {
-                            boys::BoysAllOrdersWithRoute(
-                                combRoutes[ri], info.scheme, nmax, ref.x[i], out.data());
-                        } else
-                        {
-                            boys::BoysAllOrdersAtTier(
-                                tier, combRoutes[ri], info.scheme, nmax, ref.x[i], out.data());
-                        }
+                        boys::BoysAllOrders<kM, Policy>(nmax, ref.x[i], out.data());
 
                         for (int n = 0; n <= nmax; ++n)
                         {
-                            const std::size_t k = ref.Index(n, i);
-                            const double got = out[static_cast<std::size_t>(n)];
-                            const double err = std::abs(got - ref.v[k]);
-                            ++c.cells;
-
-                            if (err > c.bound)
-                            {
-                                ++c.over;
-                            }
-
-                            if (err > c.delivered)
-                            {
-                                c.delivered = err;
-                                c.worstN = n;
-                                c.worstX = ref.x[i];
-                            }
+                            a.add(n,
+                                  ref.x[i],
+                                  out[static_cast<std::size_t>(n)],
+                                  ref.v[ref.Index(n, i)]);
                         }
                     }
 
-                    c.state = c.over == 0 ? "certified and published" : "DEFECT - runs and "
-                                                                        "delivers outside its "
-                                                                        "documented bound";
-                    combinations.push_back(std::move(c));
+                    combMeasured.push_back({lane,
+                                            static_cast<int>(kRung),
+                                            static_cast<int>(kRoute),
+                                            static_cast<int>(kScheme),
+                                            static_cast<int>(kGran),
+                                            static_cast<int>(kAxis),
+                                            a.cells,
+                                            a.below,
+                                            a.over,
+                                            a.worst,
+                                            a.bound,
+                                            a.worstN,
+                                            a.worstX});
+                }(),
+                0)...};
+        }(std::make_index_sequence<7>{});
+    };
+
+    // The reference rung alone, for the cells a relaxed rung does not carry.
+    const auto combDoubleReference =
+        [&]<boys::FitRoute kRoute, boys::EvalScheme kScheme, boys::PackAxis kAxis,
+           boys::FitGranularity kGran>(int lane) {
+            using Policy =
+                boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFloat, kAxis, kGran>;
+            CombAccum a;
+            std::array<double, 33> out{};
+
+            a.bound = combLaneRows[static_cast<std::size_t>(lane)].bound;
+
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                boys::BoysAllOrders<1.0, Policy>(nmax, ref.x[i], out.data());
+
+                for (int n = 0; n <= nmax; ++n)
+                {
+                    a.add(n, ref.x[i], out[static_cast<std::size_t>(n)], ref.v[ref.Index(n, i)]);
+                }
+            }
+
+            combMeasured.push_back({lane,
+                                    0,
+                                    static_cast<int>(kRoute),
+                                    static_cast<int>(kScheme),
+                                    static_cast<int>(kGran),
+                                    static_cast<int>(kAxis),
+                                    a.cells,
+                                    a.below,
+                                    a.over,
+                                    a.worst,
+                                    a.bound,
+                                    a.worstN,
+                                    a.worstX});
+        };
+
+    // The single and half lanes, the reference rung: the route and the scheme
+    // are both free here.
+    const auto combSingleReference =
+        [&]<boys::BoysBudget kBudget, boys::FitRoute kRoute, boys::EvalScheme kScheme>(int lane) {
+            using Policy = boys::EvalPolicy<kRoute, kScheme, kBudget, boys::PackAxis::kArguments,
+                                            boys::FitGranularity::kShipped>;
+            CombAccum a;
+            std::array<float, 33> out{};
+
+            a.bound = combLaneRows[static_cast<std::size_t>(lane)].bound;
+            a.ceiling = static_cast<double>(lane == combHalfLane) * a.bound;
+
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                boys::BoysAllOrdersF32<1.0, Policy>(nmax, ref.xf[i], out.data());
+
+                for (int n = 0; n <= nmax; ++n)
+                {
+                    const double got = static_cast<double>(out[static_cast<std::size_t>(n)]);
+                    const double ulp = a.ceiling > 0.0 ? halfUlp(got) : 0.0;
+
+                    a.add(n,
+                          static_cast<double>(ref.xf[i]),
+                          got,
+                          ref.vf[ref.Index(n, i)],
+                          ulp);
+                }
+            }
+
+            combMeasured.push_back({lane,
+                                    0,
+                                    static_cast<int>(kRoute),
+                                    static_cast<int>(kScheme),
+                                    static_cast<int>(boys::FitGranularity::kShipped),
+                                    static_cast<int>(boys::PackAxis::kArguments),
+                                    a.cells,
+                                    a.below,
+                                    a.over,
+                                    a.worst,
+                                    a.bound,
+                                    a.worstN,
+                                    a.worstX});
+        };
+
+    // The single and half lanes past the reference rung: the shipped route and
+    // scheme alone.
+    const auto combSingleRungs = [&]<boys::BoysBudget kBudget, boys::EvalScheme kScheme>(int lane) {
+        using Policy = boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, kBudget,
+                                        boys::PackAxis::kArguments,
+                                        boys::FitGranularity::kShipped>;
+        const double laneBound = combLaneRows[static_cast<std::size_t>(lane)].bound;
+
+        [&]<std::size_t... kStep>(std::index_sequence<kStep...>) {
+            (void)std::initializer_list<int>{
+                ([&] {
+                    constexpr int kRung = static_cast<int>(kStep) + 1;
+                    constexpr double kM =
+                        boys::AccuracyMultiplier(static_cast<boys::AccuracyTier>(kRung));
+                    CombAccum a;
+                    std::array<float, 33> out{};
+
+                    a.bound = kM * laneBound;
+                    a.ceiling = static_cast<double>(lane == combHalfLane) * a.bound;
+
+                    for (std::size_t i = 0; i < count; ++i)
+                    {
+                        boys::BoysAllOrdersF32<kM, Policy>(nmax, ref.xf[i], out.data());
+
+                        for (int n = 0; n <= nmax; ++n)
+                        {
+                            const double got =
+                                static_cast<double>(out[static_cast<std::size_t>(n)]);
+                            const double ulp = a.ceiling > 0.0 ? halfUlp(got) : 0.0;
+
+                            a.add(n,
+                                  static_cast<double>(ref.xf[i]),
+                                  got,
+                                  ref.vf[ref.Index(n, i)],
+                                  ulp);
+                        }
+                    }
+
+                    combMeasured.push_back({lane,
+                                            kRung,
+                                            static_cast<int>(boys::FitRoute::kChebyshev),
+                                            static_cast<int>(kScheme),
+                                            static_cast<int>(boys::FitGranularity::kShipped),
+                                            static_cast<int>(boys::PackAxis::kArguments),
+                                            a.cells,
+                                            a.below,
+                                            a.over,
+                                            a.worst,
+                                            a.bound,
+                                            a.worstN,
+                                            a.worstX});
+                }(),
+                0)...};
+        }(std::make_index_sequence<6>{});
+    };
+
+    const int kLaneDouble = static_cast<int>(boys::Precision::kFp64);
+    const int kLaneSingle = static_cast<int>(boys::Precision::kFp32);
+
+    // The double lane: both routes, both schemes, both axes and both partitions,
+    // each at the rungs its partition's row certifies.
+    combDoubleRungs.template operator()<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
+                                        boys::PackAxis::kArguments,
+                                        boys::FitGranularity::kShipped>(kLaneDouble);
+    combDoubleRungs.template operator()<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner,
+                                        boys::PackAxis::kArguments,
+                                        boys::FitGranularity::kShipped>(kLaneDouble);
+    combDoubleRungs.template operator()<boys::FitRoute::kRationalMinimax,
+                                        boys::EvalScheme::kSplitClenshaw,
+                                        boys::PackAxis::kArguments,
+                                        boys::FitGranularity::kShipped>(kLaneDouble);
+    combDoubleRungs.template operator()<boys::FitRoute::kRationalMinimax,
+                                        boys::EvalScheme::kHorner, boys::PackAxis::kArguments,
+                                        boys::FitGranularity::kShipped>(kLaneDouble);
+    combDoubleRungs.template operator()<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
+                                        boys::PackAxis::kOrders,
+                                        boys::FitGranularity::kShipped>(kLaneDouble);
+    combDoubleRungs.template operator()<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner,
+                                        boys::PackAxis::kOrders,
+                                        boys::FitGranularity::kShipped>(kLaneDouble);
+    combDoubleRungs.template operator()<boys::FitRoute::kRationalMinimax,
+                                        boys::EvalScheme::kSplitClenshaw, boys::PackAxis::kOrders,
+                                        boys::FitGranularity::kShipped>(kLaneDouble);
+    combDoubleRungs.template operator()<boys::FitRoute::kRationalMinimax,
+                                        boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
+                                        boys::FitGranularity::kShipped>(kLaneDouble);
+    combDoubleReference.template operator()<boys::FitRoute::kChebyshev,
+                                            boys::EvalScheme::kSplitClenshaw,
+                                            boys::PackAxis::kArguments,
+                                            boys::FitGranularity::kNarrow>(kLaneDouble);
+    combDoubleReference.template operator()<boys::FitRoute::kChebyshev,
+                                            boys::EvalScheme::kHorner, boys::PackAxis::kArguments,
+                                            boys::FitGranularity::kNarrow>(kLaneDouble);
+
+    // The single and half lanes: the reference rung carries every route and
+    // scheme, and past it the shipped pair alone, on both engine budgets.
+    combSingleReference.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kChebyshev,
+                                            boys::EvalScheme::kSplitClenshaw>(kLaneSingle);
+    combSingleReference.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kChebyshev,
+                                            boys::EvalScheme::kHorner>(kLaneSingle);
+    combSingleReference.template operator()<boys::BoysBudget::kFloat,
+                                            boys::FitRoute::kRationalMinimax,
+                                            boys::EvalScheme::kSplitClenshaw>(kLaneSingle);
+    combSingleReference.template operator()<boys::BoysBudget::kFloat,
+                                            boys::FitRoute::kRationalMinimax,
+                                            boys::EvalScheme::kHorner>(kLaneSingle);
+    combSingleRungs.template operator()<boys::BoysBudget::kFloat,
+                                        boys::EvalScheme::kSplitClenshaw>(kLaneSingle);
+    combSingleReference.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kChebyshev,
+                                            boys::EvalScheme::kSplitClenshaw>(combHalfLane);
+    combSingleReference.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kChebyshev,
+                                            boys::EvalScheme::kHorner>(combHalfLane);
+    combSingleReference.template operator()<boys::BoysBudget::kFp16,
+                                            boys::FitRoute::kRationalMinimax,
+                                            boys::EvalScheme::kSplitClenshaw>(combHalfLane);
+    combSingleReference.template operator()<boys::BoysBudget::kFp16,
+                                            boys::FitRoute::kRationalMinimax,
+                                            boys::EvalScheme::kHorner>(combHalfLane);
+    combSingleRungs.template operator()<boys::BoysBudget::kFp16,
+                                        boys::EvalScheme::kSplitClenshaw>(combHalfLane);
+
+    // ---- the cross, judged against what the accessor answers ----------------
+    std::vector<Combination> combinations;
+    std::size_t combClaimedCarried = 0;
+
+    for (int lane = 0; lane < combLaneCount; ++lane)
+    {
+        const std::span<const boys::FitRouteInfo> laneRoutes = combRoutesFor(lane);
+
+        for (int t = 0; t < static_cast<int>(combRungs); ++t)
+        {
+            const boys::AccuracyTier tier = combTiers[static_cast<std::size_t>(t)];
+
+            for (int ri = 0; ri < static_cast<int>(combRoutes[static_cast<std::size_t>(lane)].size());
+                 ++ri)
+            {
+                const boys::FitRoute route = combRoutes[static_cast<std::size_t>(lane)]
+                    [static_cast<std::size_t>(ri)];
+                const char* routeName = "";
+
+                for (const boys::FitRouteInfo& row : laneRoutes)
+                {
+                    if (row.route == route && routeName[0] == '\0')
+                    {
+                        routeName = row.name;
+                    }
+                }
+
+                for (int si = 0; si < static_cast<int>(combSchemes); ++si)
+                {
+                    const boys::EvalScheme scheme = boys::BoysEvalSchemes()
+                        [static_cast<std::size_t>(si)].scheme;
+
+                    for (int gi = 0; gi < static_cast<int>(combPartitions); ++gi)
+                    {
+                        const boys::FitGranularityInfo& partition =
+                            boys::BoysFitGranularities()[static_cast<std::size_t>(gi)];
+
+                        for (int ai = 0; ai < static_cast<int>(combAxes); ++ai)
+                        {
+                            const boys::PackAxisInfo& axisRow =
+                                boys::BoysPackAxes()[static_cast<std::size_t>(ai)];
+                            const boys::AccuracyFigure guaranteed = boys::BoysAccuracyGuaranteed(
+                                static_cast<boys::Precision>(lane),
+                                route,
+                                scheme,
+                                axisRow.axis,
+                                partition.granularity,
+                                tier);
+                            const boys::AccuracyFigure delivered = boys::BoysAccuracyDelivered(
+                                static_cast<boys::Precision>(lane),
+                                route,
+                                scheme,
+                                axisRow.axis,
+                                partition.granularity,
+                                tier);
+
+                            Combination c;
+                            c.axes = Fmt("%s, %s, %s, %s, %s, m = %g",
+                                         combLaneRows[static_cast<std::size_t>(lane)].name,
+                                         routeName,
+                                         boys::EvalSchemeName(scheme),
+                                         partition.name,
+                                         axisRow.name,
+                                         boys::AccuracyMultiplier(tier));
+                            c.accessorBound = guaranteed.value;
+                            c.accessorDelivered = delivered.value;
+                            c.accessorDeliveredKnown = delivered.available;
+
+                            const CombCell* cell = nullptr;
+
+                            for (const CombCell& m : combMeasured)
+                            {
+                                if (m.lane == lane && m.rung == t &&
+                                    m.route == static_cast<int>(route) &&
+                                    m.scheme == static_cast<int>(scheme) &&
+                                    m.partition == static_cast<int>(partition.granularity) &&
+                                    m.axis == static_cast<int>(axisRow.axis))
+                                {
+                                    cell = &m;
+
+                                    break;
+                                }
+                            }
+
+                            if (cell != nullptr)
+                            {
+                                c.cells = cell->cells;
+                                c.below = cell->below;
+                                c.over = cell->over;
+                                c.delivered = cell->delivered;
+                                c.bound = cell->bound;
+                                c.worstN = cell->worstN;
+                                c.worstX = cell->worstX;
+                                c.state = c.over == 0
+                                              ? "certified and published"
+                                              : "DEFECT: delivers outside its documented bound";
+                                c.source = "measured here over the whole committed grid";
+                            } else if (!guaranteed.available)
+                            {
+                                c.state = "refused - owed";
+                                c.source = guaranteed.reason;
+                            } else if (lane == combDeviceLane)
+                            {
+                                c.state = "not runnable on this host";
+                                c.source =
+                                    "the device lane's entries need a CUDA device and a CUDA "
+                                    "build; this target is the host build";
+                                c.bound = guaranteed.value;
+                            } else
+                            {
+                                // The accessor says the library carries this cell
+                                // and no measurement on the list covers it. That
+                                // is the hole this block exists to find.
+                                c.state = "OFFERED AND COVERED BY NO CELL";
+                                c.source = Fmt("BoysAccuracyGuaranteed answers %g from %s and no "
+                                               "cell of this block measured it",
+                                               guaranteed.value,
+                                               guaranteed.source);
+                            }
+
+                            if (c.state == "certified and published")
+                            {
+                                ++combClaimedCarried;
+                            }
+
+                            combinations.push_back(std::move(c));
+                        }
+                    }
                 }
             }
         }
     }
 
+    // ---- the accessor, read against the row and against the measurement ------
+    //
+    // The accessor is the consumer's way to this table without running a gate.
+    // It answers from BoysLaneContracts() and from the route, partition and
+    // scheme rows, which are the tables these rows are judged by, so the check
+    // below is not that two numbers agree today but that they are one number:
+    // the guarantee is compared for exact equality, and the delivered figure is
+    // compared against what the whole call measured.
+    std::size_t combAccessorDisagreeing = 0;
+    std::size_t combAccessorRefused = 0;
+    std::size_t combAccessorHostOnly = 0;
+    std::size_t combAccessorDeliveredShort = 0;
+    std::size_t combAccessorDeliveredFloor = 0;
+    std::size_t combAccessorDeliveredAbsent = 0;
+
+    for (const Combination& c : combinations)
+    {
+        if (c.state.rfind("refused", 0) == 0 || c.state.rfind("OFFERED", 0) == 0)
+        {
+            ++combAccessorRefused;
+
+            if (c.accessorBound != 0.0)
+            {
+                ++combAccessorDisagreeing;
+            }
+
+            continue;
+        }
+
+        if (c.state.rfind("not runnable", 0) == 0)
+        {
+            ++combAccessorHostOnly;
+
+            if (c.accessorBound != c.bound)
+            {
+                ++combAccessorDisagreeing;
+            }
+
+            continue;
+        }
+
+        if (c.accessorBound != c.bound)
+        {
+            ++combAccessorDisagreeing;
+        }
+
+        if (c.accessorDeliveredKnown)
+        {
+            // The accessor's figure is the worst over the fits the combination
+            // names, so it is a floor on what the whole call delivers and must
+            // not sit above it. A figure above the measurement would be the
+            // accessor claiming less accuracy than the call achieves, which is
+            // the harmless direction, or more than it achieves, which is not;
+            // the one that fails is the second, and the first is counted.
+            if (c.accessorDelivered > c.delivered)
+            {
+                ++combAccessorDeliveredShort;
+                std::printf("  %-58s the accessor answers %g, above the %g the whole call "
+                            "measured\n",
+                            c.axes.c_str(),
+                            c.accessorDelivered,
+                            c.delivered);
+            } else if (c.accessorDelivered < c.delivered)
+            {
+                ++combAccessorDeliveredFloor;
+            }
+        } else if (c.below < c.cells)
+        {
+            // A delivered figure is absent for the half lane, whose error is the
+            // format's, and for every relaxed rung, which no row measured. Both
+            // are stated, and neither is a silent zero.
+            ++combAccessorDeliveredAbsent;
+        }
+    }
+
+    // ---- the accessor beside the figure it is judged by ---------------------
+    //
+    // One row per lane, printed so that a reader sees the number a consumer
+    // gets from the library and the number this gate judged the same
+    // combination by, side by side. They are one number and not two that agree:
+    // the check above compares them for exact equality on every row of the
+    // cross, and this prints what it compared.
+    std::printf("\n  the accessor beside the figure the row is judged by, one combination per "
+                "lane:\n");
+    std::printf("  %-58s %-14s %-14s %-14s %s\n",
+                "combination",
+                "accessor",
+                "judged at",
+                "measured",
+                "state and the source the accessor read");
+
+    for (int lane = 0; lane < combLaneCount; ++lane)
+    {
+        const Combination* shown = nullptr;
+
+        for (const Combination& c : combinations)
+        {
+            if (c.axes.rfind(combLaneRows[static_cast<std::size_t>(lane)].name, 0) != 0)
+            {
+                continue;
+            }
+
+            if (shown == nullptr ||
+                (c.state.rfind("not runnable", 0) == 0 &&
+                 shown->state.rfind("not runnable", 0) != 0) ||
+                c.state.rfind("certified", 0) == 0)
+            {
+                shown = &c;
+            }
+
+            if (c.state.rfind("certified", 0) == 0)
+            {
+                break;
+            }
+        }
+
+        if (shown == nullptr)
+        {
+            continue;
+        }
+
+        std::printf("  %-58s %-14.6g %-14.6g %-14.6g %s\n",
+                    shown->axes.c_str(),
+                    shown->accessorBound,
+                    shown->bound,
+                    shown->delivered,
+                    shown->state.rfind("certified", 0) == 0
+                        ? combLaneRows[static_cast<std::size_t>(lane)].source
+                        : "documented figure; this host cannot run the lane");
+    }
+
+    // One combination the library refuses, so that what the accessor does
+    // instead of answering is on the record too.
+    for (const Combination& c : combinations)
+    {
+        if (c.state.rfind("refused", 0) == 0)
+        {
+            std::printf("  %-58s %-14s %-14s %-14s refused, and the accessor returns no number:\n"
+                        "  %s\n",
+                        c.axes.c_str(),
+                        "no figure",
+                        "not judged",
+                        "not measured",
+                        c.source.c_str());
+
+            break;
+        }
+    }
+
+    // ---- what the cross found ----------------------------------------------
     std::size_t combCertified = 0;
     std::size_t combOfferedBad = 0;
     std::size_t combOwed = 0;
     std::size_t combHostLimited = 0;
+    std::size_t combUncovered = 0;
 
     for (const Combination& c : combinations)
     {
-        if (c.cells == 0 && c.over == 0 && c.state.rfind("not yet implemented", 0) == 0)
-        {
-            ++combOwed;
-        } else if (c.cells == 0 && c.over == 0 && c.state.rfind("not runnable", 0) == 0)
-        {
-            ++combHostLimited;
-        } else if (c.over == 0 && c.cells > 0)
+        if (c.state.rfind("certified", 0) == 0)
         {
             ++combCertified;
+        } else if (c.state.rfind("DEFECT", 0) == 0)
+        {
+            ++combOfferedBad;
+        } else if (c.state.rfind("OFFERED", 0) == 0)
+        {
+            ++combUncovered;
+        } else if (c.state.rfind("not runnable", 0) == 0)
+        {
+            ++combHostLimited;
         } else
         {
-            // Offered, and either over its bound or covered by no cell at all:
-            // the contract violation this block exists to catch.
-            ++combOfferedBad;
+            ++combOwed;
         }
     }
 
-    std::printf("\n  the combinations: every rung AccuracyTier declares, crossed with every "
-                "route\n  BoysFitRoutes() names and every scheme BoysEvalSchemes() names. Each "
-                "one is\n  certified and published, not runnable on this host, or outstanding - "
-                "expressible\n  and simply not built yet, with the derivation it needs named on "
-                "the row. A\n  combination that runs and delivers outside its documented bound "
-                "is a defect, and it\n  fails below rather than being a category\n");
-    std::printf("  %-40s %9s %9s %-22s %-16s %s\n",
+    const std::size_t combTotal = combinations.size();
+    const std::size_t combAccounted = combCertified + combOfferedBad + combUncovered + combOwed +
+                                      combHostLimited;
+
+    std::printf("\n  the combinations: every combination this library's own tables offer, each "
+                "one either\n  measured against the committed reference at the figure its lane "
+                "publishes, or refused\n  with the library's own reason, or counted as not "
+                "runnable on this host. Nothing is\n  absent and nothing is uncounted\n");
+    std::printf("  %-58s %9s %9s %-13s %-13s %s\n",
                 "combination",
                 "cells",
-                "over",
-                "worst delivered",
+                "outside",
+                "delivered",
                 "bound",
                 "state");
     std::printf("  %s\n", std::string(150, '-').c_str());
 
     for (const Combination& c : combinations)
     {
-        char where[64];
-
-        if (c.cells > 0)
-        {
-            std::snprintf(where, sizeof(where), "n=%d, x=%.6g", c.worstN, c.worstX);
-        } else
-        {
-            std::snprintf(where, sizeof(where), "-");
-        }
-
-        std::printf("  %-40s %9zu %9zu %-22.6g %-16.6g %s\n",
+        std::printf("  %-58s %9zu %9zu %-13.6g %-13.6g %s\n",
                     c.axes.c_str(),
                     c.cells,
                     c.over,
@@ -9010,61 +9617,104 @@ int main(int argc, char** argv) {
     }
 
     std::printf("  %s\n", std::string(150, '-').c_str());
-    std::printf("  the host provides AVX2 %s. The combinations above are the scalar surface and "
-                "none of\n  them needs a host feature, so 'not runnable on this host' is 0 here. "
-                "A member the\n  host does not provide is counted in the member table above and "
-                "not against the\n  library - the packed lanes are the ones gated on that "
-                "question, and the member\n  count moves with them because it is read off "
-                "BoysBackends()\n",
-                boys::BoysAvx2Available() ? "present" : "absent");
 
-    std::printf("  COMBINATIONS: %zu of %zu offered, certified and published - %zu defect(s)\n",
-                combCertified,
-                combinations.size() - combOwed - combHostLimited,
-                combOfferedBad);
-    std::printf("  NOT YET IMPLEMENTED and owed: %zu. A combination lands here when the "
-                "library\n  refuses the call at the call site because the table it would need "
-                "does not exist.\n  The refusal is the library's own and not a property of the "
-                "combinations, and each\n  such combination is owed to a consumer who asks for "
-                "it - so they are listed and\n  counted rather than dismissed. %zu "
-                "combination(s) are not runnable on this host\n",
-                combOwed,
-                combHostLimited);
-
-    if (combOwed > 0)
+    for (const Combination& c : combinations)
     {
-        std::printf("  OWED, listed and counted so the debt can be read. None of them is an\n"
-                    "  impossibility and none of them fails this check; what fails it is an "
-                    "offered\n  combination whose bound is unmet or unpublished:\n");
-
-        for (const Combination& c : combinations)
+        if (c.state.rfind("certified", 0) != 0 && c.state.rfind("not runnable", 0) != 0)
         {
-            if (c.cells == 0 && c.over == 0 && c.state.rfind("not yet implemented", 0) == 0)
-            {
-                std::printf("    - %s [%s]\n", c.axes.c_str(), c.state.c_str());
-            }
+            std::printf("  %-58s %s\n", c.axes.c_str(), c.source.c_str());
         }
     }
 
-    if (combOfferedBad > 0)
+    for (const Combination& c : combinations)
     {
-        std::printf("  NOT DELIVERED at this revision:");
-
-        for (const Combination& c : combinations)
+        if (c.over > 0)
         {
-            if (c.state.rfind("not yet implemented", 0) != 0 &&
-                c.state.rfind("not runnable", 0) != 0 &&
-                (c.over > 0 || c.cells == 0))
-            {
-                std::printf(" [%s: %s]", c.axes.c_str(),
-                            c.cells == 0 ? "offered and covered by no cell"
-                                         : "delivers outside its documented bound");
-            }
+            std::printf("  %-58s %zu cell(s) outside %.6g; the worst is n=%d at x=%.6g, "
+                        "delivering %.6g\n",
+                        c.axes.c_str(),
+                        c.over,
+                        c.bound,
+                        c.worstN,
+                        c.worstX,
+                        c.delivered);
         }
+    }
 
-        std::printf("\n  FAIL (an offered combination whose bound is unmet or not published: "
-                    "that is the\n  condition, and it is the only thing in this block that "
-                    "turns the gate red)\n");
+    for (const Combination& c : combinations)
+    {
+        if (c.below > 0)
+        {
+            std::printf("  %-58s %zu of %zu cell(s) sit at or below the figure the lane claims "
+                        "over,\n  %-58s where the return is the format's floor rather than the "
+                        "arithmetic's, and they\n  %-58s are counted here rather than passed\n",
+                        c.axes.c_str(),
+                        c.below,
+                        c.cells,
+                        "",
+                        "");
+        }
+    }
+
+    std::printf("  %s\n", std::string(150, '-').c_str());
+    std::printf("  COMBINATIONS: %zu of %zu member(s) of the option space are certified and "
+                "published\n",
+                combCertified,
+                combTotal);
+    std::printf("                %zu refused with the library's own reason and owed\n", combOwed);
+    std::printf("                %zu not runnable on this host, counted apart and not against the "
+                "library\n",
+                combHostLimited);
+    std::printf("                %zu offered and covered by no cell of this block\n",
+                combUncovered);
+    std::printf("                %zu delivering outside the bound its lane publishes\n",
+                combOfferedBad);
+    std::printf("  the arithmetic: %zu + %zu + %zu + %zu + %zu = %zu\n",
+                combCertified,
+                combOwed,
+                combHostLimited,
+                combUncovered,
+                combOfferedBad,
+                combAccounted);
+    std::printf("                 the space read off the tables a second way: %zu member(s) over "
+                "%d lane(s),\n                 a route axis of",
+                combClaimed,
+                combLaneCount);
+
+    for (int lane = 0; lane < combLaneCount; ++lane)
+    {
+        std::printf(" %zu", combRoutes[static_cast<std::size_t>(lane)].size());
+    }
+
+    std::printf(" route(s), %zu scheme(s), %zu partition(s),\n                 %zu axis(es), %zu "
+                "rung(s)\n",
+                combSchemes,
+                combPartitions,
+                combAxes,
+                combRungs);
+    std::printf("  the accessor: %zu row(s) refused without a figure, %zu answered for a lane "
+                "this host\n                cannot run, %zu whose guarantee differs from the "
+                "figure the row is judged by,\n                and %zu whose delivered figure "
+                "sits above what the whole call measured\n",
+                combAccessorRefused,
+                combAccessorHostOnly,
+                combAccessorDisagreeing,
+                combAccessorDeliveredShort);
+    std::printf("                the accessor's delivered figure is the worst over the fits the "
+                "combination\n                names, and the call adds its recurrences over "
+                "them: on this grid it sits\n                strictly below the whole call's "
+                "measurement on %zu row(s), which is that relation\n                and not a "
+                "disagreement\n",
+                combAccessorDeliveredFloor);
+
+    if (combTotal != combClaimed || combTotal != combAccounted || combUncovered > 0 ||
+        combOfferedBad > 0 || combAccessorDisagreeing > 0 || combAccessorDeliveredShort > 0)
+    {
+        std::printf("\n  COMBINATION COVERAGE FAIL: the option space this library offers is not "
+                    "the option space\n  this block accounts for. Each count above is a member "
+                    "of the space that has no\n  measured row of its own, and every one of them "
+                    "is work - a table, a body or a probe -\n  rather than a combination that "
+                    "cannot exist\n");
         failed = true;
     }
 
