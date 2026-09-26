@@ -765,10 +765,13 @@ struct Carriage {
 // the per-order bodies, the orders axis by the packed lane that steps one
 // order's coefficients to the next order's. The narrow partition is stored for
 // this lane and is read at the reference multiplier on both axes; a rung of it
-// is not, because a rung reads the shipped pieces' stored coefficients and the
-// narrow pieces' own degree table is a derivation this lane has not done. The
-// packed lane's rung bodies are instantiated for the shipped route and scheme,
-// so another family's rung on that axis is a body to build.
+// is a cut of the narrow pieces' own degree table, which this lane derives,
+// and the bodies below read it - so a narrow rung is served on both axes and
+// on every route and scheme, because the packed lane the orders axis names is
+// the shipped partition's and a narrow policy takes the scalar path instead.
+// The packed lane's rung bodies are instantiated for the shipped route and
+// scheme, so another family's rung on the SHIPPED partition's orders axis is a
+// body to build.
 Carriage CarriesSingle(FitRoute route,
                        EvalScheme scheme,
                        PackAxis axis,
@@ -778,15 +781,6 @@ Carriage CarriesSingle(FitRoute route,
 
     if (granularity != kDefaultFitGranularity)
     {
-        if (!reference)
-        {
-            return {false,
-                    "a rung of this lane reads the shipped pieces' stored coefficients at the "
-                    "degrees the rung certifies, and the narrow pieces' own effective-degree "
-                    "table is a derivation this lane has not done: the narrow rungs are a table "
-                    "to derive rather than a shape the call cannot have"};
-        }
-
         return {true, ""};
     }
 
