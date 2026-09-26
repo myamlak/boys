@@ -545,16 +545,18 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderF64(const BoysDeviceTables& table
 /// entry is the same arithmetic at m = 1, and it takes the lane's own choice of
 /// region-B exponential.
 ///
-/// \tparam kExp  the region-B exponential to evaluate. RegionBExp::kAccurate is
-///         the default and the tighter bound of the two; a caller that selects
-///         RegionBExp::kFast takes that option's bound, which is the lane's
-///         plus the corrected seed's own contribution. The choice is a template
-///         argument and not a run-time one because it selects an arithmetic
-///         inside the caller's own kernel rather than branching within one: the
-///         exponential is evaluated once per call, outside the order loop, so
-///         the option not selected is absent from the caller's kernel instead
-///         of merely untaken. Both options of a given template argument are one
-///         binary; a caller that needs both instantiates both.
+/// \tparam kExp  the region-B exponential to evaluate; the default is
+///         \c kDefaultRegionBExp, the lane's documented default
+///         (\c RegionBExp::kAccurate), which is the tighter bound of the two and
+///         the name the batch entry of the same precision defaults to. A caller
+///         that selects RegionBExp::kFast takes that option's bound, which is
+///         the lane's plus the corrected seed's own contribution. The choice is a
+///         template argument and not a run-time one because it selects an
+///         arithmetic inside the caller's own kernel rather than branching within
+///         one: the exponential is evaluated once per call, outside the order
+///         loop, so the option not selected is absent from the caller's kernel
+///         instead of merely untaken. Both options of a given template argument
+///         are one binary; a caller that needs both instantiates both.
 /// \param tables     the handle BoysCuda::DeviceTables filled
 /// \param order      the order n, 0..kMaxBoysOrder
 /// \param x          the argument, >= 0, formed by the calling thread
@@ -566,7 +568,7 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderF64(const BoysDeviceTables& table
 ///
 /// \returns kSuccess after writing F_n(x); kTablesNotReady, kOrderOutOfRange or
 /// kMultiplierNotResident otherwise, without writing.
-template <RegionBExp kExp = RegionBExp::kAccurate>
+template <RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceSingleF32(const BoysDeviceTables& tables,
                                                 int order,
                                                 float x,

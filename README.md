@@ -108,6 +108,13 @@ resident for one rung at a time, and a call naming any other rung returns
 `BoysDeviceStatus::kMultiplierNotResident` and writes nothing. m = 1 needs no such table and is
 always served.
 
+**Choosing nothing.** A caller that has picked a precision and no axis writes one name: each precision
+has a named default, and so does the device lane. [docs/lane-contract.md](docs/lane-contract.md#the-default-policy-per-precision-and-per-device)
+states what each selects, the bound it carries, and the command that prints the name and the in-force
+default as numbers. They are the shipped settings and not a measurement: the option space is still
+being completed, and the per-precision defaults will be set from the runs that follow it, which have
+not been taken.
+
 The rows above are bounds, and a bound is not the figure a lane delivers. Two lanes are delivered at
 a different figure depending on one property of the build — whether the compiler fuses a bare
 product-plus-add into a single rounding. **The architecture does not decide it**: of the six
@@ -168,7 +175,8 @@ at all.
 
 The **CUDA fp32 lane's single entries** — the batch one and the device-callable one — take a
 certified choice of region-B exponential (`boys::RegionBExp`), and each choice carries its own
-bound. `RegionBExp::kAccurate` is the default and the arithmetic the batch entries already run.
+bound. `RegionBExp::kAccurate`, named `boys::kDefaultRegionBExp` because it is the lane's default,
+is the default and the arithmetic the batch entries already run.
 `RegionBExp::kFast` is the hardware approximation with its argument-scaling residual removed.
 
 The correction is what the recurrence asks for, and the recurrence is what makes the choice

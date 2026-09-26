@@ -23,6 +23,10 @@ and a non-zero status. `--per-order` extends it to every order and `--probe n x`
 `ctest` runs the same binary as one of its tests, but a passing `ctest` prints only how long the test
 took.
 
+A caller that has chosen a precision and does not want to choose an axis wants one name, and the
+section *The default policy, per precision and per device* states, for each precision and for the
+device lane, what its default selects and the bound it carries — and where those settings come from.
+
 ## How the argument affects the bound
 
 The library evaluates the function differently at different argument sizes, and the error bound
@@ -1357,6 +1361,101 @@ moves both or the run goes red. The fp16 row judged at 1e-07 and measured at 1.0
 ceiling's half-ULP term at work: the base figure is what the accessor returns, and the term of the
 format is added by the row's own criterion — the gate counts the cells where the returned value
 falls at or below the floor rather than passing them as covered.
+
+## The default policy, per precision and per device
+
+A caller that has chosen a precision and nothing else writes one name. Every precision the library
+offers has one, each entry of that precision runs it when the call site names no policy — for the half
+lanes as a fixed policy, since those entries take no policy argument at all — and this section states
+what each name selects and the bound it carries.
+
+**These are the shipped settings, and not a measurement.** No default on this page was chosen against
+a timing: the option space is still being completed, and the runs that would set a default per
+precision have not been taken. When they are, each name is set from them, and that is one line per
+name — the aliases in `backend.hpp`, and the device lane's two in `accuracy.hpp` and
+`boys_device_tables.hpp`. Until
+then nothing here is a claim about which setting is fastest. *What is not claimed*, at the end of this
+page, is the same statement for every lane.
+
+| Precision | Name | Fit route | Scheme | Granularity | Packing axis | Engine budget |
+|---|---|---|---|---|---|---|
+| double | `boys::DefaultPolicyFp64` | chebyshev | split Clenshaw | shipped | arguments | none — the double lanes read no budget |
+| float | `boys::DefaultPolicyFp32` | chebyshev | split Clenshaw | shipped | arguments | `BoysBudget::kFloat` |
+| fp16 | `boys::DefaultPolicyFp16` | chebyshev | split Clenshaw | shipped | arguments | `BoysBudget::kFp16` |
+| bf16 | `boys::DefaultPolicyBf16` | chebyshev | split Clenshaw | shipped | arguments | `BoysBudget::kFp16` |
+
+The route column is the lane's shipped Chebyshev table; the scheme reads it by the split Clenshaw
+recurrence, which is the lane's certified form; the granularity is the shipped partition, region A's
+two equal-width bands per order and region B's one seed; and the packing axis is the arguments axis,
+the one a call has whether or not anybody names it. What the other member of each axis costs and buys
+is in *The two fit routes*, *Interval granularity*, *The evaluation scheme* and *The packing axis*
+above.
+
+**The bound each name carries is the lane's own**, stated above and not restated here: the double
+single entry at most 1e-15 below x = 1.0855, 3e-14 below x = 11.899848152108484 and 5.5e-14
+everywhere, the double batch entries 5.5e-14 throughout, the float lane 1.5e-7 absolute and
+everywhere, the half lanes `m·1e-7` plus half of the last representable digit of the result. The
+multiplier is the entry's own default, `boys::kBoysFullAccuracyMultiplier`, which is the rung every
+figure on this page is stated at. A call that names an axis is judged against that axis's section
+rather than against this table.
+
+**Why four names and not one.** The fp16 and bf16 lanes are the float engine under the fp16 budget,
+and the budget is the axis that differs: their region-A and region-B degrees are cut for a 1e-7
+budget where the float lane's are cut for 1.5e-7, so past the reference multiplier the two budgets
+select different rungs and different arithmetic. One default for every precision would be the float
+lane's budget imposed on the half lanes. `DefaultPolicyFp16` and `DefaultPolicyBf16` are one policy
+type — one lane at one budget — named twice so that a document can cite the format its reader uses.
+
+**The half lanes' entries take no policy argument.** `BoysSingleF16`, `BoysAllOrdersF16`,
+`BoysSingleBf16` and `BoysAllOrdersBf16` take the multiplier and nothing else: the budget is the whole
+of what their default adds to the float lane's, so they run `DefaultPolicyFp16` and
+`DefaultPolicyBf16` as a policy they carry rather than one a call site passes. The name is what a
+document cites and what the check below holds them to.
+
+**The device lane's default is two names**: `boys::kBoysFullAccuracyMultiplier`, the multiplier the
+CPU entries default to, and `boys::kDefaultRegionBExp`, which is `RegionBExp::kAccurate` — the library
+exponential, and the arithmetic the f32 batch bodies have always run. `BoysCuda::SingleF32` and the
+device-callable `BoysDeviceSingleF32` are the two entries of the lane that take the second; every
+other entry of the lane takes the first alone. The lane takes no fit route, no scheme, no budget, no
+packing axis and no partition, so a caller that has chosen a device precision and named neither of
+these two has chosen everything the lane has to choose.
+
+The device lane's bounds are the CPU lane's, precision by precision: CUDA fp64 the double lane's
+figures, CUDA fp32 at `RegionBExp::kAccurate` the float lane's 1.5e-7 in every region, and CUDA fp32
+at `RegionBExp::kFast` that bound plus the corrected seed's own contribution — the region-B
+exponential section above states it, and the device gate measures it.
+
+**The run that prints these figures.** The first command prints the identity of each name and the
+in-force default as numbers rather than as a checkmark:
+
+    cmake --build <build> --target boys-consumer-defaults
+    <build>/Release/boys-consumer-defaults      # the config directory is your generator's
+
+It prints one line per entry: the cells compared between the name and the same entry with no policy,
+how many of them differ, and the worst difference between the two — zero on every identity row,
+because the name and the in-force default are one call and not two spellings of one arithmetic. Its
+last two rows compare a half lane against the float lane's default at m = 2, where the budget decides
+the rung, and print the number of cells the two part on; that is the figure behind the four names.
+The device lane's two defaults are printed the same way by a check of its own, which a CUDA build
+compiles into two translation units because the lane's headers split that way — the batch entry's
+header is a host header, and the device header is what a `.cu` may include:
+
+    cmake --build <build> --target boys-consumer-cuda-defaults   # needs -DBUILD_CUDA=ON
+    <build>/Release/boys-consumer-cuda-defaults
+
+It holds each default to its name at compile time, where two spellings of one entry compare equal as
+function addresses exactly when they are one instantiation, and runs the batch entry and the
+device-callable entry on the card in both spellings, each of them beside `RegionBExp::kFast` as well,
+so a printed row shows which arithmetic the default selected.
+
+The second command prints the bound each name carries:
+
+    cmake --build <build> --target boys-accuracy-gate
+    <build>/Release/boys-accuracy-gate --strict
+
+which sweeps the documented entries and prints, lane by lane and region by region, the worst error
+delivered beside the bound claimed. The device lane's figures come from `boys-cuda-accuracy-gate`,
+which a CUDA build runs on the card it was compiled for.
 
 ## What is not claimed
 

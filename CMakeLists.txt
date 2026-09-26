@@ -673,6 +673,14 @@ int main() {
     #     Its meaning is the empty link line, so the target's link libraries
     #     are asserted empty below rather than trusted.
     #
+    #   boys-consumer-defaults  is the shortcut's own check: the per-precision
+    #     default each entry takes when the call site names no policy, written
+    #     as a name from <boys/boys.hpp> alone and compared against the same
+    #     entry with no argument, value by value over every order and a sweep
+    #     of arguments, with the half lanes held against the policy their
+    #     entries run. It prints the cells compared and the worst difference
+    #     for each row.
+    #
     # Neither target adds src/ to its include path (the library publishes
     # include/ as PUBLIC and src/ as PRIVATE), and both say so: they carry an
     # __has_include probe that fails the compile if the internal directory ever
@@ -705,10 +713,15 @@ int main() {
     boys_strict_warnings(boys-consumer-header-only)
     boys_assert_no_linked_library(boys-consumer-header-only)
 
+    add_executable(boys-consumer-defaults tests/consumer_defaults.cpp)
+    target_link_libraries(boys-consumer-defaults PRIVATE boys)
+    boys_strict_warnings(boys-consumer-defaults)
+
     add_test(NAME boys-tests COMMAND boys-tests)
     add_test(NAME boys-boundary-standalone COMMAND boys-boundary-standalone)
     add_test(NAME boys-consumer-umbrella COMMAND boys-consumer-umbrella)
     add_test(NAME boys-consumer-header-only COMMAND boys-consumer-header-only)
+    add_test(NAME boys-consumer-defaults COMMAND boys-consumer-defaults)
     # --strict: the gate fails on a claim whose evidence is not in the tree as
     # well as on one it measures exceeded, so a green ctest never means "every
     # documented claim is met at this revision" while a claim rest on a
@@ -831,7 +844,17 @@ if (BUILD_CUDA)
         src/boys_cuda.cu
         src/boys_cuda_probe.cpp
         src/boys_cuda_probe_kernels.cu)
-    target_include_directories(boys-cuda PUBLIC include PRIVATE src)
+    # The CUDA driver targets below compile C++ translation units that include
+    # CUDA headers (tests/boys_cuda_test.cpp, tests/boys_cuda_accuracy_gate.cpp
+    # and the default check's host half). nvcc finds its own headers wherever the
+    # toolkit lives; the host compiler does not, and a toolkit installed by
+    # NVIDIA's own installer under /usr/local/cuda is not on its default search
+    # path, so the toolkit's include directories - which CMake reports once the
+    # CUDA language above is enabled - are named here, PUBLIC, because what links
+    # this library is what reads them.
+    target_include_directories(boys-cuda
+        PUBLIC include ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
+        PRIVATE src)
     target_compile_definitions(boys-cuda PUBLIC BoysFp16=1)
     # Stated because this target links nothing that carries a standard into it:
     # without it the host TU compiles at the compiler's default (C++14 on
@@ -892,6 +915,24 @@ if (BUILD_CUDA)
             BoysGateRevision="${BOYS_GATE_REVISION}")
         boys_strict_warnings(boys-cuda-accuracy-gate)
         add_test(NAME boys-cuda-accuracy-gate COMMAND boys-cuda-accuracy-gate)
+
+        # The CUDA consumer's own check of the lane's default, in two
+        # translation units because the lane's headers split that way: the host
+        # half includes <boys/boys_cuda.hpp> - the batch entry's home - and the
+        # kernel half includes <boys/boys_cuda_device.hpp>, which is what a .cu
+        # may include. Each half holds its entry's default to the name it is
+        # documented under at compile time and runs both spellings of that entry
+        # on the card, printing the cells compared and the worst difference
+        # between them. It is a consumer rather than a test for the same reason
+        # tests/boys_cuda_device_demo.cu is: only a caller of the public headers
+        # can show what a caller gets.
+        add_executable(boys-consumer-cuda-defaults
+            tests/consumer_cuda_defaults_host.cpp
+            tests/consumer_cuda_defaults.cu)
+        target_link_libraries(boys-consumer-cuda-defaults PRIVATE boys-cuda boys)
+        target_compile_features(boys-consumer-cuda-defaults PRIVATE cxx_std_20)
+        boys_strict_warnings(boys-consumer-cuda-defaults)
+        add_test(NAME boys-consumer-cuda-defaults COMMAND boys-consumer-cuda-defaults)
     endif()
 endif()
 

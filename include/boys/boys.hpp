@@ -966,7 +966,7 @@ double BoysSingleAtTier(AccuracyTier tier, int n, double x) noexcept;
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = EvalPolicy<>>
+          EvalPolicyLike Policy = DefaultPolicyFp64>
 double BoysSingle(int n, double x) noexcept;
 
 /// F_0(x)..F_nmax(x) in double precision, |F̂ − F| ≤ m·B_region per value.
@@ -983,7 +983,7 @@ double BoysSingle(int n, double x) noexcept;
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = EvalPolicy<>>
+          EvalPolicyLike Policy = DefaultPolicyFp64>
 void BoysAllOrders(int nmax, double x, double* out) noexcept;
 
 /// F_n(x_i) for an array of arguments at one fixed order n, double
@@ -1038,7 +1038,7 @@ void BoysAllOrders(int nmax, double x, double* out) noexcept;
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = EvalPolicy<>>
+          EvalPolicyLike Policy = DefaultPolicyFp64>
 void BoysFixedN(
     int n, const double* x, double* out, std::size_t count, std::size_t stride = 1) noexcept;
 
@@ -1145,7 +1145,7 @@ constexpr std::size_t BoysAllNWorkspaceSize(std::size_t count) noexcept
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = EvalPolicy<>>
+          EvalPolicyLike Policy = DefaultPolicyFp64>
 void BoysAllN(int nmax,
               const double* x,
               double* out,
@@ -1191,7 +1191,7 @@ void BoysAllN(int nmax,
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = EvalPolicy<>>
+          EvalPolicyLike Policy = DefaultPolicyFp64>
 void BoysAllN(
     int nmax, const double* x, double* out, std::size_t count, BoysSortedArgs) noexcept;
 
@@ -1249,7 +1249,7 @@ void BoysAllN(
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = EvalPolicy<>>
+          EvalPolicyLike Policy = DefaultPolicyFp64>
 void BoysAllNAtOrders(const int* n, const double* x, double* out, std::size_t count) noexcept;
 
 /// Whether the packed region-A lane serves a call whose policy names this
@@ -1309,7 +1309,7 @@ constexpr bool BoysPackedLaneServes(EvalScheme scheme) noexcept
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = EvalPolicy<>>
+          EvalPolicyLike Policy = DefaultPolicyFp32>
 float BoysSingleF32(int n, float x) noexcept;
 
 /// F_0(x)..F_nmax(x) in single precision, |F̂ − F| ≤ m·1.5e-7 per value.
@@ -1333,7 +1333,7 @@ float BoysSingleF32(int n, float x) noexcept;
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = EvalPolicy<>>
+          EvalPolicyLike Policy = DefaultPolicyFp32>
 void BoysAllOrdersF32(int nmax, float x, float* out) noexcept;
 
 /// F_0(x_i)..F_nmax(x_i) for an array of arguments, single precision — the
@@ -1381,7 +1381,7 @@ void BoysAllOrdersF32(int nmax, float x, float* out) noexcept;
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = EvalPolicy<>>
+          EvalPolicyLike Policy = DefaultPolicyFp32>
 void BoysAllNF32(int nmax, const float* x, float* out, std::size_t count) noexcept;
 
 /// F_n(x) in single precision at a run-time-selected fit route — the
@@ -1468,6 +1468,12 @@ bool BoysAvx2Available() noexcept;
 /// ceiling: in f16 the return there is a subnormal number, then exactly zero,
 /// with the bound met by the format's floor rather than by the lane — see the
 /// contract table in the file preamble.
+///
+/// The lane runs \c DefaultPolicyFp16 — the shipped route and scheme at the
+/// fp16 engine budget — and its entries take no policy argument, because the
+/// budget is the whole of what this lane's default adds to the float lane's:
+/// the policy is named so that a document can cite what the call runs and a
+/// test can hold it to the name, not so that a call site selects it.
 ///
 /// \tparam kAccuracyMultiplier see BoysSingle (forwards to the F32 engine)
 /// \param n     order, 0..kMaxBoysOrder

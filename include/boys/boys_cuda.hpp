@@ -178,9 +178,9 @@ public:
     /// the condition number of that region's recurrence and confirmed by the
     /// device gate's sweep:
     ///
-    ///  - \c RegionBExp::kAccurate, the default: |F̂ − F| ≤ m * 1.5e-7, the f32
-    ///    lane's documented bound, in every region. Measured at m = 1: 1.29e-7
-    ///    at its worst, 0.86 of the bound.
+    ///  - \c RegionBExp::kAccurate, \c kDefaultRegionBExp and the default:
+    ///    |F̂ − F| ≤ m * 1.5e-7, the f32 lane's documented bound, in every
+    ///    region. Measured at m = 1: 1.29e-7 at its worst, 0.86 of the bound.
     ///  - \c RegionBExp::kFast: |F̂ − F| ≤ m * 1.5e-7 + 8e-8 — the lane's bound
     ///    plus the corrected seed's own contribution, which the recurrence's
     ///    amplification caps at 8e-8. Measured at m = 1: 1.44e-7 at its worst,
@@ -191,9 +191,11 @@ public:
     ///   bit-identical full-accuracy path; m > 1 relaxes the asserted bound
     ///   to m * 1.5e-7 via compile-time Chebyshev degree truncation. Monotone
     ///   in m.
-    /// \tparam kExp which region-B exponential the call runs. Both are
-    ///   certified at every multiplier this lane instantiates, each against its
-    ///   own bound above; nothing here substitutes one for the other.
+    /// \tparam kExp which region-B exponential the call runs; the default is
+    ///   \c kDefaultRegionBExp, the lane's documented default
+    ///   (\c RegionBExp::kAccurate). Both are certified at every multiplier
+    ///   this lane instantiates, each against its own bound above; nothing here
+    ///   substitutes one for the other.
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
     /// \param out    device array receiving F_n(x[i])
@@ -202,7 +204,7 @@ public:
     ///
     /// \returns kDeviceError when the launch fails.
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-              RegionBExp kExp = RegionBExp::kAccurate>
+              RegionBExp kExp = kDefaultRegionBExp>
     static BoysStatus SingleF32(
         const int* n, const double* x, float* out, std::size_t count, void* stream);
 
