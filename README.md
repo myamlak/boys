@@ -510,9 +510,9 @@ ratio is 32, and a card whose compute capability predates the bf16 tensor instru
 path at all. So the CUDA lane ships the same kind of measurement. `boys::RunDeviceOptionProbe` takes
 a device ordinal, establishes that device's context before it allocates anything, and returns a
 `boys::DeviceProbeReport` — the card's name and compute capability in the returned data, one figure
-per entry with the spread it was taken under, one conclusion per question class with the resolution
-that class was ordered at, and the entries it could not separate. `boys-device-probe` is a thin
-driver over it for the terminal:
+per entry with the spread it was taken under, one class per precision holding one ranking per question
+shape with the resolution that ranking was ordered at, and the entries it could not separate.
+`boys-device-probe` is a thin driver over it for the terminal:
 
     cmake -S . -B build-cuda -DBUILD_CUDA=ON
     cmake --build build-cuda --target boys-device-probe
