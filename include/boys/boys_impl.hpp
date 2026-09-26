@@ -716,15 +716,6 @@ double ChebyshevValueWithDegrees(int order, double x, const DegreesArray& degree
                                                 t);
 }
 
-template <typename DegreesArray>
-float ChebyshevValueF32WithDegrees(int order, float x, const DegreesArray& degrees) noexcept {
-    const detail::f32::OrderPiece& piece = FindPieceF32(order, x);
-    const std::ptrdiff_t index = &piece - detail::f32::kPieces.data();
-    const float* c = detail::f32::kCoeffs.data() + piece.offset;
-    const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
-    return ClenshawSplit<backend::ScalarFp32>(c, degrees[static_cast<std::size_t>(index)], t);
-}
-
 template <EvalScheme kScheme = kDefaultEvalScheme>
 inline double RegionBSeedWithDegrees(double x, int degree) noexcept {
     const double t = 2.0 * (x - kX0) / (kX1 - kX0) - 1.0;
@@ -732,9 +723,55 @@ inline double RegionBSeedWithDegrees(double x, int degree) noexcept {
         detail::kBcoeffs.data(), detail::kMonoBcoeffs.data(), degree, t);
 }
 
+template <EvalScheme kScheme = kDefaultEvalScheme, typename DegreesArray>
+float ChebyshevValueF32WithDegrees(int order, float x, const DegreesArray& degrees) noexcept {
+    const detail::f32::OrderPiece& piece = FindPieceF32(order, x);
+    const std::ptrdiff_t index = &piece - detail::f32::kPieces.data();
+    const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
+    return FitSum<kScheme, backend::ScalarFp32>(detail::f32::kCoeffs.data() + piece.offset,
+                                                detail::f32::kMonoCoeffs.data() + piece.offset,
+                                                degrees[static_cast<std::size_t>(index)],
+                                                t);
+}
+
+template <EvalScheme kScheme = kDefaultEvalScheme>
 inline float RegionBSeedF32WithDegrees(float x, int degree) noexcept {
     const float t = 2.0f * (x - static_cast<float>(kX0)) / static_cast<float>(kX1 - kX0) - 1.0f;
-    return ClenshawSplit<backend::ScalarFp32>(detail::f32::kBcoeffs.data(), degree, t);
+    return FitSum<kScheme, backend::ScalarFp32>(detail::f32::kBcoeffs.data(),
+                                                detail::f32::kMonoBcoeffs.data(),
+                                                degree,
+                                                t);
+}
+
+// The narrow partition's counterparts of the two above: the same mapped
+// argument and the same summation, over the pieces that partition holds and at
+// the degree its own table certifies for them. A degree table is indexed the
+// way the partition it cuts is read - one entry per narrow region-A piece, one
+// per order for the narrow region-B seed - so the pair of tables and the pair
+// of helpers move together and neither is usable with the other partition's.
+template <EvalScheme kScheme = kDefaultEvalScheme, typename DegreesArray>
+double NarrowRegionAValueWithDegrees(int order, double x, const DegreesArray& degrees) noexcept {
+    const detail::OrderPiece& piece = FindNarrowAPiece(order, x);
+    const std::ptrdiff_t index = &piece - detail::kNarrowAPieces.data();
+    const int deg = degrees[static_cast<std::size_t>(index)];
+    const double t = 2.0 * (x - piece.a) / (piece.b - piece.a) - 1.0;
+    return FitSum<kScheme, backend::ScalarFp64>(detail::kNarrowACoeffs.data() + piece.offset,
+                                                detail::kNarrowAMonoCoeffs.data() + piece.offset,
+                                                deg,
+                                                t);
+}
+
+template <EvalScheme kScheme = kDefaultEvalScheme>
+inline double NarrowRegionBSeedWithDegrees(double x, int degree) noexcept {
+    const std::size_t index = static_cast<std::size_t>(NarrowBPieceOf(x));
+    const double a = detail::kNarrowBEdges[index];
+    const double b = detail::kNarrowBEdges[index + 1];
+    const double t = 2.0 * (x - a) / (b - a) - 1.0;
+    const std::size_t offset = index * (static_cast<std::size_t>(detail::kNarrowBDeg) + 1);
+    return FitSum<kScheme, backend::ScalarFp64>(detail::kNarrowBcoeffs.data() + offset,
+                                                detail::kNarrowBMonoCoeffs.data() + offset,
+                                                degree,
+                                                t);
 }
 
 // ---------------------------------------------------------------------------
@@ -1120,20 +1157,19 @@ constexpr void RequireShippedRoute() noexcept
 }
 
 // A relaxed rung truncates a stored row to a per-order effective degree, and
-// only the shipped row carries that degree table: the narrow partition's pieces
-// are one fit at one degree each, so a truncation of a piece is a different fit
-// from the shipped row truncated. Every m > 1 branch asks for the shipped
-// partition here, for the same reason RequireShippedRoute gives: rejected where
-// the rung is instantiated rather than answered at a degree the table does not
-// certify.
-template <EvalPolicyLike Policy>
-constexpr void RequireShippedPartition() noexcept
-{
-    static_assert(Policy::kGranularity == kDefaultFitGranularity,
-                  "a relaxed rung reads a stored row at a per-order effective degree, and only "
-                  "the shipped row carries such a degree table: the multiplier selects a rung "
-                  "of the shipped partition only");
-}
+// each partition carries its own such table: the shipped row's degrees are cut
+// from the shipped pieces' coefficients and the narrow row's from the narrow
+// pieces', so a rung of the narrow partition is a rung of the narrow fit and not
+// the shipped row's degrees applied to narrower intervals. The two tables are
+// derived by one criterion over the two tables of coefficients (see
+// boys_effective_degrees.hpp) and every m > 1 body below picks the pair that
+// matches the partition its policy names, so the granularity and the rung are
+// one choice rather than a crossing.
+//
+// What the choice costs is stated where the partitions are: a rung of the narrow
+// partition reads fewer coefficients than a rung of the shipped one at the same
+// budget - the narrow pieces are lower-degree to begin with - and pays the
+// longer piece scan its table needs.
 
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 double BoysSingleImpl(int n, double x) noexcept {
@@ -1164,13 +1200,6 @@ double BoysSingleImpl(int n, double x) noexcept {
     } else
     {
         RequireShippedRoute<Policy>();
-        RequireShippedPartition<Policy>();
-        static constexpr auto kDegreesA = RegionADegrees<kAccuracyMultiplier,
-                                                         BoysRole::kDoubleSingle,
-                                                         SchemeTailBasis<Policy::kScheme>()>();
-        static constexpr auto kDegreesB = RegionBDegrees<kAccuracyMultiplier,
-                                                         BoysRole::kDoubleSingle,
-                                                         SchemeTailBasis<Policy::kScheme>()>();
 
         if (x == 0.0)
         {
@@ -1179,11 +1208,39 @@ double BoysSingleImpl(int n, double x) noexcept {
 
         if (x < kX0)
         {
-            return ChebyshevValueWithDegrees<Policy::kScheme>(n, x, kDegreesA);
+            if constexpr (Policy::kGranularity == kDefaultFitGranularity)
+            {
+                static constexpr auto kDegreesA = RegionADegrees<kAccuracyMultiplier,
+                                                                 BoysRole::kDoubleSingle,
+                                                                 SchemeTailBasis<Policy::kScheme>()>();
+                return ChebyshevValueWithDegrees<Policy::kScheme>(n, x, kDegreesA);
+            } else
+            {
+                static constexpr auto kDegreesA =
+                    NarrowRegionADegrees<kAccuracyMultiplier,
+                                         BoysRole::kDoubleSingle,
+                                         SchemeTailBasis<Policy::kScheme>()>();
+                return NarrowRegionAValueWithDegrees<Policy::kScheme>(n, x, kDegreesA);
+            }
         }
 
-        double f =
-            RegionBSeedWithDegrees<Policy::kScheme>(x, kDegreesB[static_cast<std::size_t>(n)]);
+        double f = 0.0;
+
+        if constexpr (Policy::kGranularity == kDefaultFitGranularity)
+        {
+            static constexpr auto kDegreesB = RegionBDegrees<kAccuracyMultiplier,
+                                                             BoysRole::kDoubleSingle,
+                                                             SchemeTailBasis<Policy::kScheme>()>();
+            f = RegionBSeedWithDegrees<Policy::kScheme>(x, kDegreesB[static_cast<std::size_t>(n)]);
+        } else
+        {
+            static constexpr auto kDegreesB =
+                NarrowRegionBDegrees<kAccuracyMultiplier,
+                                     BoysRole::kDoubleSingle,
+                                     SchemeTailBasis<Policy::kScheme>()>();
+            f = NarrowRegionBSeedWithDegrees<Policy::kScheme>(
+                x, kDegreesB[static_cast<std::size_t>(n)]);
+        }
 
         if (x < kX1)
         {
@@ -1260,12 +1317,6 @@ void BoysAllOrdersImpl(int nmax, double x, double* out) noexcept {
         static_assert(Policy::kRoute == kDefaultFitRoute,
                       "a policy naming a route outside the FitRoute enumeration is not one this "
                       "library serves: name FitRoute::kChebyshev or FitRoute::kRationalMinimax");
-        static constexpr auto kDegreesA = RegionADegrees<kAccuracyMultiplier,
-                                                         BoysRole::kDoubleBatch,
-                                                         SchemeTailBasis<Policy::kScheme>()>();
-        static constexpr auto kDegreesB = RegionBDegrees<kAccuracyMultiplier,
-                                                         BoysRole::kDoubleBatch,
-                                                         SchemeTailBasis<Policy::kScheme>()>();
 
         if (x == 0.0)
         {
@@ -1279,7 +1330,23 @@ void BoysAllOrdersImpl(int nmax, double x, double* out) noexcept {
 
         if (x < kX0)
         {
-            double f = ChebyshevValueWithDegrees<Policy::kScheme>(nmax, x, kDegreesA);
+            double f = 0.0;
+
+            if constexpr (Policy::kGranularity == kDefaultFitGranularity)
+            {
+                static constexpr auto kDegreesA = RegionADegrees<kAccuracyMultiplier,
+                                                                 BoysRole::kDoubleBatch,
+                                                                 SchemeTailBasis<Policy::kScheme>()>();
+                f = ChebyshevValueWithDegrees<Policy::kScheme>(nmax, x, kDegreesA);
+            } else
+            {
+                static constexpr auto kDegreesA =
+                    NarrowRegionADegrees<kAccuracyMultiplier,
+                                         BoysRole::kDoubleBatch,
+                                         SchemeTailBasis<Policy::kScheme>()>();
+                f = NarrowRegionAValueWithDegrees<Policy::kScheme>(nmax, x, kDegreesA);
+            }
+
             out[nmax] = f;
             const double expx = 0.5 * std::exp(-x);
 
@@ -1309,7 +1376,23 @@ void BoysAllOrdersImpl(int nmax, double x, double* out) noexcept {
             // the order-n single-style path; seeding with kDegreesB[nmax]
             // leaves F0's error at Delta(d'(nmax)) — up to
             // (m-1)*B/A_B(nmax) — unbounded.
-            double f = RegionBSeedWithDegrees<Policy::kScheme>(x, kDegreesB[0]);
+            double f = 0.0;
+
+            if constexpr (Policy::kGranularity == kDefaultFitGranularity)
+            {
+                static constexpr auto kDegreesB = RegionBDegrees<kAccuracyMultiplier,
+                                                                 BoysRole::kDoubleBatch,
+                                                                 SchemeTailBasis<Policy::kScheme>()>();
+                f = RegionBSeedWithDegrees<Policy::kScheme>(x, kDegreesB[0]);
+            } else
+            {
+                static constexpr auto kDegreesB =
+                    NarrowRegionBDegrees<kAccuracyMultiplier,
+                                         BoysRole::kDoubleBatch,
+                                         SchemeTailBasis<Policy::kScheme>()>();
+                f = NarrowRegionBSeedWithDegrees<Policy::kScheme>(x, kDegreesB[0]);
+            }
+
             out[0] = f;
             const double expx = 0.5 * std::exp(-x);
 
@@ -1539,15 +1622,19 @@ float BoysSingleF32Impl(int n, float x) noexcept {
         return SingleOrderF32Body<FloatRouteFit<Policy::kRoute, Policy::kScheme>>(n, x);
     } else
     {
-        static_assert(Policy::kRoute == kDefaultFitRoute && Policy::kScheme == kDefaultEvalScheme,
-                      "the relaxed rungs cut the float lane's fits by a table of effective "
-                      "degrees, and a degree table is certified against one stored table of one "
-                      "fit family: past the reference multiplier this engine serves the shipped "
-                      "route and scheme alone, and every route and scheme is served at it");
+        static_assert(Policy::kRoute == kDefaultFitRoute,
+                      "the relaxed rungs cut a fit by a table of effective degrees read off that "
+                      "fit's own stored coefficients, and the rational route's fits are a "
+                      "numerator/denominator pair whose acceptance criterion is not a dropped "
+                      "coefficient tail: a rung of that route on this lane awaits a table derived "
+                      "for it, as the Chebyshev fits' was. Every scheme is served here, because "
+                      "both of the Chebyshev family's stored tables are read");
         constexpr BoysRole kRole =
             (Policy::kBudget == BoysBudget::kFloat) ? BoysRole::kF32Single : BoysRole::kF32Fp16Single;
-        static constexpr auto kDegreesA = RegionADegrees<kAccuracyMultiplier, kRole>();
-        static constexpr auto kDegreesB = RegionBDegrees<kAccuracyMultiplier, kRole>();
+        static constexpr auto kDegreesA =
+            RegionADegrees<kAccuracyMultiplier, kRole, SchemeTailBasis<Policy::kScheme>()>();
+        static constexpr auto kDegreesB =
+            RegionBDegrees<kAccuracyMultiplier, kRole, SchemeTailBasis<Policy::kScheme>()>();
 
         if (x == 0.0f)
         {
@@ -1559,10 +1646,11 @@ float BoysSingleF32Impl(int n, float x) noexcept {
 
         if (x < x0)
         {
-            return ChebyshevValueF32WithDegrees(n, x, kDegreesA);
+            return ChebyshevValueF32WithDegrees<Policy::kScheme>(n, x, kDegreesA);
         }
 
-        float f = RegionBSeedF32WithDegrees(x, kDegreesB[static_cast<std::size_t>(n)]);
+        float f =
+            RegionBSeedF32WithDegrees<Policy::kScheme>(x, kDegreesB[static_cast<std::size_t>(n)]);
 
         if (x < x1)
         {
@@ -1665,15 +1753,19 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
         }
     } else
     {
-        static_assert(Policy::kRoute == kDefaultFitRoute && Policy::kScheme == kDefaultEvalScheme,
-                      "the relaxed rungs cut the float lane's fits by a table of effective "
-                      "degrees, and a degree table is certified against one stored table of one "
-                      "fit family: past the reference multiplier this engine serves the shipped "
-                      "route and scheme alone, and every route and scheme is served at it");
+        static_assert(Policy::kRoute == kDefaultFitRoute,
+                      "the relaxed rungs cut a fit by a table of effective degrees read off that "
+                      "fit's own stored coefficients, and the rational route's fits are a "
+                      "numerator/denominator pair whose acceptance criterion is not a dropped "
+                      "coefficient tail: a rung of that route on this lane awaits a table derived "
+                      "for it, as the Chebyshev fits' was. Every scheme is served here, because "
+                      "both of the Chebyshev family's stored tables are read");
         constexpr BoysRole kRole =
             (Policy::kBudget == BoysBudget::kFloat) ? BoysRole::kF32Batch : BoysRole::kF32Fp16Batch;
-        static constexpr auto kDegreesA = RegionADegrees<kAccuracyMultiplier, kRole>();
-        static constexpr auto kDegreesB = RegionBDegrees<kAccuracyMultiplier, kRole>();
+        static constexpr auto kDegreesA =
+            RegionADegrees<kAccuracyMultiplier, kRole, SchemeTailBasis<Policy::kScheme>()>();
+        static constexpr auto kDegreesB =
+            RegionBDegrees<kAccuracyMultiplier, kRole, SchemeTailBasis<Policy::kScheme>()>();
 
         if (x == 0.0f)
         {
@@ -1692,7 +1784,8 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
         {
             // The seed must be double precision (see the m = 1 branch); the
             // recursion itself stays in float.
-            const double seed = ChebyshevValueWithDegrees(nmax, static_cast<double>(x), kDegreesA);
+            const double seed =
+                ChebyshevValueWithDegrees<Policy::kScheme>(nmax, static_cast<double>(x), kDegreesA);
             out[nmax] = static_cast<float>(seed);
             float f = out[nmax];
             const float expx = 0.5f * std::exp(-x);
@@ -2064,11 +2157,23 @@ inline void BoysAllNBodyRegionADown(int nmax, double x, std::size_t count, doubl
     } else
     {
         RequireShippedRoute<Policy>();
-        RequireShippedPartition<Policy>();
-        static constexpr auto kDegreesA = RegionADegrees<kAccuracyMultiplier,
-                                                         BoysRole::kDoubleBatch,
-                                                         SchemeTailBasis<Policy::kScheme>()>();
-        double f = ChebyshevValueWithDegrees<Policy::kScheme>(nmax, x, kDegreesA);
+        double f = 0.0;
+
+        if constexpr (Policy::kGranularity == kDefaultFitGranularity)
+        {
+            static constexpr auto kDegreesA = RegionADegrees<kAccuracyMultiplier,
+                                                             BoysRole::kDoubleBatch,
+                                                             SchemeTailBasis<Policy::kScheme>()>();
+            f = ChebyshevValueWithDegrees<Policy::kScheme>(nmax, x, kDegreesA);
+        } else
+        {
+            static constexpr auto kDegreesA =
+                NarrowRegionADegrees<kAccuracyMultiplier,
+                                     BoysRole::kDoubleBatch,
+                                     SchemeTailBasis<Policy::kScheme>()>();
+            f = NarrowRegionAValueWithDegrees<Policy::kScheme>(nmax, x, kDegreesA);
+        }
+
         plane[static_cast<std::size_t>(nmax) * count] = f;
         const double expx = 0.5 * std::exp(-x);
 
@@ -2135,11 +2240,23 @@ inline void BoysAllNBodyRegionB(int nmax, double x, std::size_t count, double* p
         // error reaches every output order with amplification A_B(l), at most
         // 1 + 1.846e-17 over the supported orders (its maximum at l = 32).
         RequireShippedRoute<Policy>();
-        RequireShippedPartition<Policy>();
-        static constexpr auto kDegreesB = RegionBDegrees<kAccuracyMultiplier,
-                                                         BoysRole::kDoubleBatch,
-                                                         SchemeTailBasis<Policy::kScheme>()>();
-        double f = RegionBSeedWithDegrees<Policy::kScheme>(x, kDegreesB[0]);
+        double f = 0.0;
+
+        if constexpr (Policy::kGranularity == kDefaultFitGranularity)
+        {
+            static constexpr auto kDegreesB = RegionBDegrees<kAccuracyMultiplier,
+                                                             BoysRole::kDoubleBatch,
+                                                             SchemeTailBasis<Policy::kScheme>()>();
+            f = RegionBSeedWithDegrees<Policy::kScheme>(x, kDegreesB[0]);
+        } else
+        {
+            static constexpr auto kDegreesB =
+                NarrowRegionBDegrees<kAccuracyMultiplier,
+                                     BoysRole::kDoubleBatch,
+                                     SchemeTailBasis<Policy::kScheme>()>();
+            f = NarrowRegionBSeedWithDegrees<Policy::kScheme>(x, kDegreesB[0]);
+        }
+
         plane[0] = f;
         const double expx = 0.5 * std::exp(-x);
 

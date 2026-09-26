@@ -525,7 +525,8 @@ int main() {
     # cannot - and each verdict is printed after the probe that produced it,
     # because a statement placed above its probe reads a variable not yet set.
     unset(BOYS_GATE_RATIONAL_RUNG_ACCEPTED CACHE)
-    unset(BOYS_GATE_F32_PAIR_AT_RUNG_ACCEPTED CACHE)
+    unset(BOYS_GATE_F32_ROUTE_AT_RUNG_ACCEPTED CACHE)
+    unset(BOYS_GATE_F32_SCHEME_AT_RUNG_ACCEPTED CACHE)
     set(_boys_probe_target_type "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
     set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
     set(CMAKE_REQUIRED_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -542,17 +543,30 @@ int main() {
     return 0;
 }
 " BOYS_GATE_RATIONAL_RUNG_ACCEPTED)
+    # The single-precision lane's two axes at a rung are probed apart, because
+    # they are two different facts: the route a rung of the lane's fits would
+    # have to be derived for, and the scheme it already stores a table for.
     check_cxx_source_compiles("
 #include <boys/boys.hpp>
 int main() {
     float out[33] = {};
     boys::BoysAllOrdersF32<8.0, boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(1, 1.0f, out);
+    return 0;
+}
+" BOYS_GATE_F32_ROUTE_AT_RUNG_ACCEPTED)
+    check_cxx_source_compiles("
+#include <boys/boys.hpp>
+int main() {
+    float out[33] = {};
+    boys::BoysAllOrdersF32<8.0,
+                           boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                            boys::EvalScheme::kHorner>>(1, 1.0f, out);
     boys::BoysSingleF32<8.0,
                         boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>>(
         1, 1.0f);
     return 0;
 }
-" BOYS_GATE_F32_PAIR_AT_RUNG_ACCEPTED)
+" BOYS_GATE_F32_SCHEME_AT_RUNG_ACCEPTED)
     set(CMAKE_TRY_COMPILE_TARGET_TYPE "${_boys_probe_target_type}")
     unset(_boys_probe_target_type)
     unset(CMAKE_REQUIRED_FLAGS)
@@ -570,14 +584,24 @@ int main() {
             "compiling the call")
     endif()
 
-    if (NOT BOYS_GATE_F32_PAIR_AT_RUNG_ACCEPTED)
+    if (NOT BOYS_GATE_F32_ROUTE_AT_RUNG_ACCEPTED)
         target_compile_definitions(boys-accuracy-gate PRIVATE
-            BOYS_GATE_REFUSES_F32_PAIR_AT_RUNG=1)
-        message(STATUS "boys: a route or a scheme other than the shipped pair at a relaxed rung "
-            "on the single-precision engines is REFUSED, measured by compiling the call")
+            BOYS_GATE_REFUSES_F32_ROUTE_AT_RUNG=1)
+        message(STATUS "boys: the rational route at a relaxed rung on the single-precision "
+            "engines is REFUSED, measured by compiling the call")
     else()
-        message(STATUS "boys: the single-precision engines ACCEPT another route or scheme at a "
+        message(STATUS "boys: the single-precision engines ACCEPT the rational route at a "
             "relaxed rung")
+    endif()
+
+    if (NOT BOYS_GATE_F32_SCHEME_AT_RUNG_ACCEPTED)
+        target_compile_definitions(boys-accuracy-gate PRIVATE
+            BOYS_GATE_REFUSES_F32_SCHEME_AT_RUNG=1)
+        message(STATUS "boys: a scheme other than the shipped one at a relaxed rung on the "
+            "single-precision engines is REFUSED, measured by compiling the call")
+    else()
+        message(STATUS "boys: the single-precision engines ACCEPT a second scheme at a relaxed "
+            "rung")
     endif()
 
     if (BOYS_GATE_HAS_TIER)

@@ -404,20 +404,28 @@ the high orders' right ends rather than as accuracy. The extended band is the sa
 granularity, because the upward recursion it feeds runs the other way and an error in it stays the
 size it is.
 
-**The member is certified.** Measured against the committed high-precision reference over the
-interval its own pieces cover, `FitGranularity::kNarrow` delivers a worst absolute error of 2.22e-16
-over region A at region A's published 1e-15 bar — the shipped table's own figure — and 7.21645e-16
-over region B against the shipped seed's 9.9365e-15, a factor of 13.8. The gate's granularity block
-carries all 32 of its rows, one per partition, scheme and call shape, each judged against the bar the
-published table holds for the cell it ran in, with the worst cell named; and it reports the trade
-above and the 481700 of 578888 axis cells (83.2%) that can discriminate, the rest carrying a bound at
-least as large as the value itself. Those rows are counted apart from every other book the gate
-reports, so nothing the library already published moves.
+**The member is certified, and at every rung.** Measured against the committed high-precision
+reference over the interval its own pieces cover, `FitGranularity::kNarrow` delivers a worst absolute
+error of 2.22e-16 over region A at region A's published 1e-15 bar — the shipped table's own figure —
+and 7.21645e-16 over region B against the shipped seed's 9.9365e-15, a factor of 13.8. The gate's
+granularity block carries all 224 of its rows — one per partition, scheme, call shape and accuracy
+rung — each judged against the bar the published table holds for the cell it ran in times the rung's
+multiplier, with the worst cell named; and it reports the trade above and the 3243928 of 4052216 axis
+cells (80.1%) that can discriminate, the rest carrying a bound at least as large as the value itself.
+Those rows are counted apart from every other book the gate reports, so nothing the library already
+published moves.
+
+**A relaxed rung on this partition is the same cut the shipped one gets, made on its own table.** The
+effective-degree criterion is a compile-time derivation over the coefficients the generated header
+already stores, so naming `kNarrow` with a multiplier reads the narrow pieces' own degrees and reads
+nothing from the shipped table; no coefficient had to be generated for it. The gate measures the
+result at every rung: the worst any row comes in at is 0.909 of the bar it promised at `m = 1`, 0.997
+at `m = 256` and 0.991 at `m = 65536`, with every rung inside its budget on every row.
 
 **Where a combination has no narrow table it is refused where it is named**, with the reason, rather
 than answered from the shipped table: the rational minimax route (one numerator/denominator pair over
-the whole interval), the relaxed rungs `m > 1` (which truncate the shipped fits to certified
-effective degrees), and the single-precision lanes (which hold one coefficient set). The two
+the whole interval) and the single-precision lanes (which hold one coefficient set). Each names the
+table it would need and each is therefore unbuilt work rather than an impossible combination. The two
 partitions are different fits of the same function over the same interval, so a substitution would
 return the shipped values under the narrow partition's name.
 
