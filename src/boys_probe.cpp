@@ -14,15 +14,19 @@
 
 // The option probe. Three things live here and nowhere else in the library:
 //
-//   1. A load instrument that needs no platform API. The options are ranked by
-//      a wall-clock minimum, and a wall clock is only worth reading on a
-//      machine nobody else is using, so every pass carries a reading of how
-//      much of a core this process actually got. The instrument is a fixed-work
-//      integer spin: the fastest time that same work has ever taken here is the
-//      machine's quiet floor, and a reading is the percentage by which a run of
-//      it exceeded that floor. An integer chain is used deliberately - it holds
-//      no floating-point state, so the arithmetic question the probe is about
-//      cannot change the cost of the instrument itself.
+//   1. A load instrument that needs no platform API, and a comparison that does
+//      not depend on it. Every pass carries a reading of how much of a core this
+//      process actually got: a fixed-work integer spin, whose fastest time here
+//      is the machine's quiet floor and whose reading is the percentage by which
+//      a run of it exceeded that floor. An integer chain is used deliberately -
+//      it holds no floating-point state, so the arithmetic question the probe is
+//      about cannot change the cost of the instrument itself. That reading is
+//      reported and never gates: a fixed work read by wall clock measures the
+//      clock as much as the load, so a machine whose boost decays widens the
+//      spin's own spread while doing nothing else. The options are compared
+//      inside a round instead - both were timed under the same clock, and a
+//      drift common to the round cancels in their ratio - and the run is ordered
+//      from those paired ratios.
 //
 //   2. The workload: the library's real call shape, per-argument orders over a
 //      log-uniform argument range, built once and shared by every option so no
@@ -162,6 +166,31 @@ double MedianMilliseconds(std::vector<double> milliseconds) {
     return milliseconds[milliseconds.size() / 2];
 }
 
+/// The quantile \p p of a set of readings, by copy and sort, interpolating
+/// between the two order statistics it falls between.
+///
+/// This is the statistic the reported cost is: a lower quartile rather than a
+/// minimum, because the minimum of a run under a decaying clock is the earliest
+/// and fastest observation rather than what a caller with a long workload meets,
+/// and a quartile rather than a mean, because one disturbed round must not move
+/// it. Its complement, the upper quartile, is what the spread beside it is made
+/// of, so the two ends come from the same distribution.
+double QuantileOf(std::vector<double> values, double p) {
+    if (values.empty())
+    {
+        return 0.0;
+    }
+
+    std::sort(values.begin(), values.end());
+
+    const double position = p * static_cast<double>(values.size() - 1);
+    const std::size_t lower = static_cast<std::size_t>(position);
+    const std::size_t upper = std::min(lower + 1, values.size() - 1);
+    const double weight = position - static_cast<double>(lower);
+
+    return values[lower] * (1.0 - weight) + values[upper] * weight;
+}
+
 /// The load the machine put on a single-threaded, CPU-bound workload, as a
 /// percentage above the fastest run of the canary this machine has shown, with
 /// the canary's own run-to-run agreement as the thing that decides whether a
@@ -289,15 +318,32 @@ private:
 /// Percentage above the minimum within which the calibration window's median
 /// must sit for its floor to mean anything at all.
 ///
-/// Loose on purpose, and not the admission rule. The floor is the denominator of
-/// the load readings, which are context, so a busy calibration window costs a
-/// little accuracy in those numbers and nothing else. What admits a pass is the
-/// canary's spread *inside* that pass, so a machine that is busy throughout still
-/// gets measured and told what its own wandering allows it to order. This bar is
-/// here only to catch a window that never settled into a floor at all: at 100 the
-/// median run may take twice the fastest, and beyond that the fastest run is a
-/// glitch rather than a floor.
+/// Loose on purpose, and not an admission rule — there is none. The floor is the
+/// denominator of the load readings, which are context, so a busy calibration
+/// window costs a little accuracy in those numbers and nothing else. A machine
+/// that is busy throughout still gets measured and told what its own wandering
+/// allows it to order, because what decides that is the spread of the paired
+/// within-round ratios and not the canary. This bar is here only to catch a
+/// window that never settled into a floor at all: at 100 the median run may take
+/// twice the fastest, and beyond that the fastest run is a glitch rather than a
+/// floor.
 constexpr double kCalibrationTolerancePercent = 100.0;
+
+/// The quantile the reported cost and its ratio to the reference are read at.
+///
+/// A lower quartile, and not the minimum the probe used to report. Under a
+/// decaying clock the minimum of a run is its earliest observation, taken at the
+/// highest clock the machine will reach that day, and a caller whose workload
+/// runs for hours does not meet that state; a quartile is what the bulk of a
+/// long workload meets, and it still discards the round a background process
+/// stole. It is a quartile and not a mean for the same reason: one disturbed
+/// round out of many must not move a figure a consumer will build on.
+constexpr double kStatisticQuantile = 0.25;
+
+/// The number of rounds a quartile band needs before it can exist: two ends of a
+/// band are two order statistics, and below four observations they are the same
+/// observation twice.
+constexpr std::size_t kMinimumPairedRounds = 4;
 
 // --- the workload -----------------------------------------------------------
 
@@ -449,6 +495,89 @@ struct Option {
 /// scalar names are not written here: they are the types' own kName.
 constexpr const char* kPackedFp64Name = "avx2-fp64";
 constexpr const char* kPackedFp32Name = "avx2-fp32";
+
+/// The entry every ratio is formed against: the library's default
+/// double-precision all-orders call, which is what a caller who chooses no
+/// policy already runs. Naming it here is what makes the anchor a documented
+/// choice rather than the winner of the comparison it anchors.
+constexpr const char* kReferenceOptionName = "batch-fp64";
+
+/// The option every ratio is formed against, resolved from the option book: the
+/// entry named above when this run measured it, else the first option of the
+/// default precision, else the first option measured.
+///
+/// Resolved before any round is timed, so the anchor cannot be chosen to suit
+/// the answer. It is the library's own default lane, so every ratio reads as
+/// "this option against what a caller would have got anyway".
+std::size_t ReferenceIndex(const std::vector<Option>& options) {
+    for (std::size_t index = 0; index < options.size(); ++index)
+    {
+        if (options[index].name == kReferenceOptionName)
+        {
+            return index;
+        }
+    }
+
+    for (std::size_t index = 0; index < options.size(); ++index)
+    {
+        if (options[index].precision == OptionPrecision::kFp64)
+        {
+            return index;
+        }
+    }
+
+    return 0;
+}
+
+/// The widest relative width of a within-round ratio band a set of rounds
+/// showed, in percent: for each option, the upper quartile of its ratio to the
+/// reference over the lower quartile of the same ratio, less one, taken at its
+/// widest.
+///
+/// The reference's own column is skipped, and only it: its ratio is one in every
+/// round by construction, so it would contribute a band of zero. A set too short
+/// for a band reports zero rather than a width it did not measure.
+double PassPairedSpread(const std::vector<std::vector<double>>& rounds, std::size_t reference) {
+    double widest = 0.0;
+
+    if (rounds.empty() || reference >= rounds.front().size())
+    {
+        return 0.0;
+    }
+
+    for (const std::vector<double>& row : rounds)
+    {
+        if (row[reference] <= 0.0)
+        {
+            return 0.0;
+        }
+    }
+
+    for (std::size_t index = 0; index < rounds.front().size(); ++index)
+    {
+        if (index == reference)
+        {
+            continue;
+        }
+
+        std::vector<double> ratios;
+
+        for (const std::vector<double>& row : rounds)
+        {
+            ratios.push_back(row[index] / row[reference]);
+        }
+
+        const double low = QuantileOf(ratios, kStatisticQuantile);
+        const double high = QuantileOf(ratios, 1.0 - kStatisticQuantile);
+
+        if (low > 0.0)
+        {
+            widest = std::max(widest, 100.0 * (high / low - 1.0));
+        }
+    }
+
+    return widest;
+}
 
 /// The published bounds of the narrower lanes at the reference multiplier. The
 /// fp64 options do not appear here: their bound is read from the library
@@ -1268,52 +1397,327 @@ private:
 
 // --- the conclusion ---------------------------------------------------------
 
+/// One rival measured against its class's leader, inside the rounds.
+///
+/// Every quantity here is a ratio formed inside a single round: both options
+/// were timed under whatever clock that round ran at, so a drift common to the
+/// round is in both terms of the ratio and cancels. This is the comparison the
+/// probe is ordered by.
+struct PairedOutcome {
+    /// Lower and upper quartile of the within-round ratio, rival over leader:
+    /// the band the middle half of the run put the pair in.
+    double lo = 1.0;
+    double hi = 1.0;
+
+    /// Rounds in which the rival was the slower of the two, of the rounds that
+    /// could be formed.
+    int slowerRounds = 0;
+    int rounds = 0;
+
+    /// How far the pair's ratio moved between the run's first and second half of
+    /// rounds: the second half's median ratio over the first half's, less one. A
+    /// pair whose ratio is a property of the two options holds still as the clock
+    /// moves; one that drifts is a pair the two do not carry the clock alike,
+    /// which is the one way a paired comparison can still be misled by a machine
+    /// whose boost decays.
+    double drift = 0.0;
+
+    /// Whether the band clears one: the middle half of the run put the rival
+    /// behind the leader, and the probe orders only what it saw in that half.
+    bool ordered = false;
+};
+
+/// Measures one rival against one leader over the run's rounds.
+///
+/// The ratio is formed inside a round and never across rounds, so the pair is
+/// compared under one clock. The band is the lower and upper quartile of those
+/// per-round ratios, and the ordering is that lower quartile clearing one: the
+/// middle half of the run has to put the rival behind, not merely the run's
+/// average.
+///
+/// \param rounds the round table: one row per round, one column per option, in
+///               cost per argument
+/// \param leader column of the option the rival is measured against
+/// \param rival  column of the option being placed
+///
+/// \returns the pair's own band, its slower-round count and its drift
+PairedOutcome CompareToLeader(const std::vector<std::vector<double>>& rounds, std::size_t leader,
+                              std::size_t rival) {
+    PairedOutcome outcome;
+    std::vector<double> ratios;
+    std::vector<double> early;
+    std::vector<double> late;
+
+    for (std::size_t round = 0; round < rounds.size(); ++round)
+    {
+        if (leader >= rounds[round].size() || rival >= rounds[round].size())
+        {
+            continue;
+        }
+
+        const double lead = rounds[round][leader];
+
+        if (lead <= 0.0)
+        {
+            continue;
+        }
+
+        const double ratio = rounds[round][rival] / lead;
+        ratios.push_back(ratio);
+
+        if (ratio > 1.0)
+        {
+            ++outcome.slowerRounds;
+        }
+
+        if (round * 2 < rounds.size())
+        {
+            early.push_back(ratio);
+        } else
+        {
+            late.push_back(ratio);
+        }
+    }
+
+    outcome.rounds = static_cast<int>(ratios.size());
+    outcome.lo = QuantileOf(ratios, kStatisticQuantile);
+    outcome.hi = QuantileOf(ratios, 1.0 - kStatisticQuantile);
+    outcome.ordered = outcome.lo > 1.0;
+
+    const double firstHalf = MedianMilliseconds(early);
+    const double secondHalf = MedianMilliseconds(late);
+
+    if (firstHalf > 0.0)
+    {
+        outcome.drift = secondHalf / firstHalf - 1.0;
+    }
+
+    return outcome;
+}
+
+/// The option to name when the measurement could not order the field, and the
+/// static reading of the library's tables it was chosen from.
+struct StaticFallback {
+    /// The option's name, empty when the run's set holds nothing the rule can
+    /// rank.
+    std::string name;
+
+    /// Why that option, in the library's own numbers, and what the rule does not
+    /// compare.
+    std::string basis;
+};
+
+/// Chooses the fallback by counting what the library's tables say, never by
+/// timing anything.
+///
+/// **This is a heuristic and it is reported as one.** The rule, whole: over the
+/// options this run carries at the certified bound, restricted to the certified
+/// fit route and evaluation scheme - the family the certified lane itself is
+/// defined in, because a count of multiply-adds does not rank a Chebyshev
+/// polynomial against a rational one, whose evaluation is a numerator and a
+/// denominator and a division - the option whose partition evaluates the fewer
+/// operations is named: the degree a region-A piece is evaluated at plus the
+/// degree region B's seed is, both read from the partition's own row in the
+/// library's table. A tie is broken by the coefficients the partition stores,
+/// which is the table it brings into cache, and then by the library's own
+/// default axis values, so a tie-break is a documented choice rather than an
+/// accident of enumeration order. The set is narrowed to the certified double
+/// lane's own precision where that set holds something rankable.
+///
+/// What it cannot do is as much a part of the rule as what it does: it does not
+/// compare the routes or the schemes it excluded, it says nothing about any
+/// machine's arithmetic, and a partition's own fits cover the interval its row
+/// states and not the whole argument range.
+///
+/// \param report a report whose measurements and partition rows are filled in
+///
+/// \returns the fallback, empty when the run's option set holds nothing to rank
+StaticFallback StaticFallbackFor(const OptionProbeReport& report) {
+    StaticFallback fallback;
+
+    const auto partition_of = [&report](FitGranularity granularity) -> const FitGranularityInfo* {
+        for (const FitGranularityInfo& partition : report.granularities)
+        {
+            if (partition.granularity == granularity)
+            {
+                return &partition;
+            }
+        }
+
+        return nullptr;
+    };
+
+    const auto rankable = [&report](const OptionProbeMeasurement& measurement,
+                                    bool doublesOnly) {
+        if (measurement.bound > report.referenceBound ||
+            measurement.route != kDefaultFitRoute || measurement.scheme != kDefaultEvalScheme)
+        {
+            return false;
+        }
+
+        return !doublesOnly || measurement.precision == OptionPrecision::kFp64;
+    };
+
+    const OptionProbeMeasurement* best = nullptr;
+    const OptionProbeMeasurement* second = nullptr;
+    const FitGranularityInfo* bestPartition = nullptr;
+    bool doublesOnly = true;
+
+    // The certified lane's own precision first; a run narrowed to another
+    // precision still gets a fallback, and the basis says which set was ranked.
+    for (const bool narrowed : {true, false})
+    {
+        for (const OptionProbeMeasurement& measurement : report.measurements)
+        {
+            if (!rankable(measurement, narrowed))
+            {
+                continue;
+            }
+
+            const FitGranularityInfo* partition = partition_of(measurement.granularity);
+
+            if (partition == nullptr)
+            {
+                continue;
+            }
+
+            const int degree = partition->regionADeg + partition->regionBDeg;
+            const int stored = partition->regionAStored + partition->regionBStored;
+            const int axes = (measurement.granularity == kDefaultFitGranularity ? 0 : 1) +
+                             (measurement.pack == PackAxis::kArguments ? 0 : 1);
+
+            if (best == nullptr)
+            {
+                best = &measurement;
+                bestPartition = partition;
+                doublesOnly = narrowed;
+                continue;
+            }
+
+            const int bestDegree = bestPartition->regionADeg + bestPartition->regionBDeg;
+            const int bestStored = bestPartition->regionAStored + bestPartition->regionBStored;
+            const int bestAxes = (best->granularity == kDefaultFitGranularity ? 0 : 1) +
+                                 (best->pack == PackAxis::kArguments ? 0 : 1);
+
+            const bool better = degree < bestDegree ||
+                                (degree == bestDegree && stored < bestStored) ||
+                                (degree == bestDegree && stored == bestStored && axes < bestAxes);
+
+            if (better)
+            {
+                second = best;
+                best = &measurement;
+                bestPartition = partition;
+            } else if (second == nullptr)
+            {
+                second = &measurement;
+            }
+        }
+
+        if (best != nullptr)
+        {
+            break;
+        }
+    }
+
+    if (best == nullptr || bestPartition == nullptr)
+    {
+        return fallback;
+    }
+
+    const std::string runnerUp =
+        second != nullptr && partition_of(second->granularity) != nullptr
+            ? Text(", the next being '%s', whose partition evaluates %d dependent multiply-adds",
+                   second->name.c_str(), partition_of(second->granularity)->regionADeg +
+                                              partition_of(second->granularity)->regionBDeg)
+            : std::string();
+
+    fallback.name = best->name;
+    fallback.basis = Text(
+        "counted, not timed: '%s' reads a partition whose region-A piece is evaluated at degree %d "
+        "and whose region-B seed is at degree %d, %d dependent multiply-adds, storing %d "
+        "coefficients%s. The rule takes the lowest degree first, the fewest stored coefficients "
+        "second and the library's own default axes last, over this build's options at the "
+        "certified bound on the certified fit route and evaluation scheme%s. It does not compare "
+        "the routes or the schemes it excluded, it says nothing about this machine's arithmetic, "
+        "and a partition's own fits cover the interval its row states and not the whole range.",
+        best->name.c_str(), bestPartition->regionADeg, bestPartition->regionBDeg,
+        bestPartition->regionADeg + bestPartition->regionBDeg,
+        bestPartition->regionAStored + bestPartition->regionBStored, runnerUp.c_str(),
+        doublesOnly ? ""
+                    : " (no option of the certified double lane's precision was rankable, so this "
+                      "is the widest precision set the run carried)");
+
+    return fallback;
+}
+
 /// Fills in the recommendation, or the refusal, from the figures already in the
 /// report.
 ///
-/// The rule, in one place: the recommendation is the fastest option documented
-/// at the certified lane's own accuracy, and it is only made when every rival in
-/// that accuracy class is further behind it than this run's resolution. The
-/// resolution is measured, not chosen: it is the larger of the widest spread the
-/// canary showed inside an admitted pass and the leader's own spread across its
-/// clean passes, so a machine whose speed wanders orders only large differences
-/// and a steady one orders small ones. Everything else - a rival inside the
-/// resolution, no clean pass, no option in the accuracy class, an instrument
-/// that never found a floor - ends in the refusal, because ordering noise is the
-/// one outcome this tool exists to avoid.
-void Conclude(OptionProbeReport& report) {
+/// The rule, in one place. Inside one precision class the run's own statistic -
+/// the lower quartile of each option's ratio to the reference lane over the
+/// paired rounds - names a leader, and the leader stands only when every other
+/// member of its class was behind it in the middle half of those rounds: the
+/// comparison is the pair's own within-round ratio and the pair's lower quartile
+/// has to clear one. A rival whose band straddles one cannot be placed, and a
+/// rival whose band lies below one was ahead of the leader in that half, which
+/// means the statistic and the paired rounds disagree about the pair; both end
+/// in the refusal, with the band and the round counts printed beside each. The
+/// same happens when the run is too short for a quartile band to exist and when
+/// nothing of the class was measured.
+///
+/// What the rule is not is a threshold on absolute time. A ratio inside one
+/// round cancels a clock drift common to the round, so a machine whose speed
+/// wanders - which every machine that boosts opportunistically does - still
+/// orders options through it. The canary beside each pass is reported and gates
+/// nothing, and the load a pass ran under is context rather than a bar.
+///
+/// \param report the report to conclude on, whose measurements carry the figures
+/// \param rounds the round table the measurements were aggregated from, one row
+///               per round and one column per option in the measurements' own
+///               order, so a pair can be compared inside a round
+void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>& rounds) {
     report.verdict = OptionProbeVerdict::kCannotDetermine;
+    report.heuristicOption.clear();
+    report.heuristicBasis.clear();
+    report.hasDefault = false;
 
-    if (!report.calibrated)
-    {
-        if (report.canaryCalibrationRuns == 0)
-        {
-            report.reason =
-                "the load instrument could not be calibrated: its calibration window was empty, "
-                "so the fixed-work canary never ran and no pass has anything to be judged "
-                "against; no pass was run";
-        } else
-        {
-            const double medianAboveFloor =
-                report.canaryFloorMs > 0.0
-                    ? 100.0 * (report.canaryCalibrationMedianMs / report.canaryFloorMs - 1.0)
-                    : 0.0;
+    // The comparison is not made in the load readings, and a run whose
+    // calibration window never settled still measures; the load columns then have
+    // nothing to be relative to, which is what this says.
+    const std::string loadNote =
+        report.calibrated
+            ? std::string()
+            : " The load instrument never established a floor on this machine, so the load columns "
+              "of this report have nothing to be relative to; no figure above is made of them.";
 
-            report.reason = Text(
-                "the load instrument could not be calibrated: %d runs of the fixed-work canary "
-                "over %.3f s spread %.1f%% and their median sat %.1f%% above the fastest of them, "
-                "so this machine never repeated fixed work closely enough for a pass to be judged; "
-                "no pass was run",
-                report.canaryCalibrationRuns, report.options.calibrationSeconds,
-                report.canaryCalibrationSpread, medianAboveFloor);
+    // Every refusal leaves the caller a default: the static reading of the
+    // library's own tables. It is filled in one place, so no refusal path can
+    // return without it and none of them prints it beside a measured winner.
+    const auto refuse = [&report, &loadNote](const std::string& reason,
+                                             const std::string& confidence) {
+        report.reason = reason + loadNote;
+        report.confidence = confidence;
+
+        const StaticFallback fallback = StaticFallbackFor(report);
+
+        if (!fallback.name.empty())
+        {
+            report.heuristicOption = fallback.name;
+            report.heuristicBasis = fallback.basis;
+            report.hasDefault = true;
         }
+    };
 
-        report.confidence = "CANNOT DETERMINE: nothing was measured";
-        return;
-    }
+    // The column an option's calls were timed in, which is its index in the
+    // measurements: the round table and the measurement rows are built from the
+    // same option book, in the same order.
+    const auto column_of = [&report](const OptionProbeMeasurement* measurement) {
+        return static_cast<std::size_t>(measurement - report.measurements.data());
+    };
 
-    const auto faster = [](const OptionProbeMeasurement& a, const OptionProbeMeasurement& b) {
-        return a.nsPerArgument < b.nsPerArgument;
+    const auto cheaper = [](const OptionProbeMeasurement* a, const OptionProbeMeasurement* b) {
+        return a->nsPerArgument < b->nsPerArgument;
     };
 
     std::vector<const OptionProbeMeasurement*> live;
@@ -1328,56 +1732,28 @@ void Conclude(OptionProbeReport& report) {
 
     if (live.empty())
     {
-        report.reason = report.cleanPasses == 0
-                            ? "every pass was discarded: the canary's own runs disagreed by more "
-                              "than the bar inside each of them, so this probe has no figure it "
-                              "is willing to report. The canary column beside each pass says how "
-                              "much that pass wandered; a quieter machine is what would let this "
-                              "run order anything"
-                            : "no option produced a figure on a pass the canary vouched for";
-        report.confidence = "CANNOT DETERMINE";
+        refuse(Text("no option produced a figure: the run took %d paired round(s), and a cost per "
+                    "argument needs one reading of each option from the same round, so nothing "
+                    "here is a measurement. Raise ProbeOptions::passes or ProbeOptions::rounds and "
+                    "run again",
+                    report.pairedRounds),
+               "CANNOT DETERMINE: nothing was measured");
         return;
     }
 
-    // The fastest of a set, by the cost the report orders on.
-    const auto cheapest = [&faster](const OptionProbeMeasurement* a,
-                                    const OptionProbeMeasurement* b) { return faster(*a, *b); };
-
-    const OptionProbeMeasurement* overall = *std::min_element(live.begin(), live.end(), cheapest);
+    const OptionProbeMeasurement* overall = *std::min_element(live.begin(), live.end(), cheaper);
     report.fastestOverall = overall->name;
 
-    // The classes: one per precision, each ranked inside itself. This is the
-    // only partition the probe orders across, because it is the only one whose
-    // members answer the same question — a lane that computes in single
-    // precision is not a faster answer to the double lane's question, it is an
-    // answer to a different one. Nothing below ever compares a row of one class
-    // against a row of another.
-    const auto members_of = [&live, &cheapest](OptionPrecision precision) {
-        std::vector<const OptionProbeMeasurement*> members;
-
-        for (const OptionProbeMeasurement* measurement : live)
-        {
-            if (measurement->precision == precision)
-            {
-                members.push_back(measurement);
-            }
-        }
-
-        std::sort(members.begin(), members.end(), cheapest);
-        return members;
-    };
-
-    // The double lane's own certified reading: the options whose bound is the
-    // certified lane's or tighter. It is a reading of the fp64 class rather than
-    // a class of its own — a relaxed rung and the narrow partition still stand
-    // in that class beside the certified rows, showing their own bounds.
+    // The fastest option of the double lane's precision whose own bound is the
+    // certified lane's or tighter: the fastest row a caller at the certified
+    // accuracy can take, which is a narrower reading than the class's leader.
     const OptionProbeMeasurement* certified = nullptr;
 
     for (const OptionProbeMeasurement* measurement : live)
     {
         if (measurement->precision == OptionPrecision::kFp64 &&
             measurement->bound <= report.referenceBound &&
-            (certified == nullptr || faster(*measurement, *certified)))
+            (certified == nullptr || cheaper(measurement, certified)))
         {
             certified = measurement;
         }
@@ -1388,175 +1764,331 @@ void Conclude(OptionProbeReport& report) {
         report.fastestAtReferenceAccuracy = certified->name;
     }
 
-    // The verdict is made in the double lane's precision: it is the library's
-    // default lane, the one the certified reference is in, and the lane whose
-    // class a caller who names no precision is asking about.
-    const std::vector<const OptionProbeMeasurement*> doubles = members_of(OptionPrecision::kFp64);
+    // What one precision class's own rounds said. The members are ranked by the
+    // run's statistic; every other member is then measured against the leader
+    // pair by pair, and each pair is placed by its own band rather than by any
+    // threshold on time.
+    struct ClassOutcome {
+        std::vector<const OptionProbeMeasurement*> members;
+        std::vector<std::string> behind;
+        std::vector<std::string> within;
+        std::vector<std::string> ahead;
+        const OptionProbeMeasurement* nearest = nullptr;
+        PairedOutcome nearestPair;
+        double widestBand = 0.0;
+        double widestDrift = 0.0;
+        std::string driftPair;
+    };
 
-    if (doubles.empty())
-    {
-        report.reason = Text(
-            "no option of the certified double lane's precision was measured cleanly; the fastest "
-            "measured option overall is '%s' at %.2f ns/argument, which is another precision's "
-            "answer and is not ordered against the double lane's",
-            overall->name.c_str(), overall->nsPerArgument);
-        report.confidence = "CANNOT DETERMINE";
-        return;
-    }
+    const auto outcome_of = [&rounds, &column_of, &cheaper, &live](OptionPrecision precision) {
+        ClassOutcome outcome;
 
-    const OptionProbeMeasurement* leader = doubles.front();
+        for (const OptionProbeMeasurement* measurement : live)
+        {
+            if (measurement->precision == precision)
+            {
+                outcome.members.push_back(measurement);
+            }
+        }
 
-    // An ordering rests on how the admitted passes disagreed with each other. A
-    // single admitted pass has nothing to disagree with - its spread is 1 by
-    // construction - so a resolution built on it would report a precision the run
-    // never measured, which is the one thing this entry must not do.
-    if (report.cleanPasses < 2)
-    {
-        report.reason = Text(
-            "'%s' is the fastest option of the certified double lane's precision (%.2f "
-            "ns/argument), but only %d of %d passes was admitted, and how far two options can be "
-            "ordered apart rests on how the admitted passes disagreed; a second pass the canary "
-            "vouches for is what this needs",
-            leader->name.c_str(), leader->nsPerArgument, report.cleanPasses,
-            static_cast<int>(report.passes.size()));
-        report.confidence =
-            Text("CANNOT DETERMINE: %d of %d passes admitted, and the resolution needs two",
-                 report.cleanPasses, static_cast<int>(report.passes.size()));
-        return;
-    }
+        std::sort(outcome.members.begin(), outcome.members.end(),
+                  [&cheaper](const OptionProbeMeasurement* a, const OptionProbeMeasurement* b) {
+                      return cheaper(a, b);
+                  });
 
-    // What this run can order. Both terms are measured here: the instrument's
-    // own disagreement with itself, and how far the leader's clean passes
-    // disagreed with each other. A machine that is steadily busy does not inflate
-    // either - it slows every option by the same factor, and a ratio is what is
-    // compared - so a loaded but steady run still orders small differences, and
-    // an unsteady one stops at large ones.
-    report.resolution = std::max(report.canarySpread / 100.0, leader->spread - 1.0);
+        if (outcome.members.empty())
+        {
+            return outcome;
+        }
 
-    // Every class's own ranking, at the resolution this run measured. A class
-    // whose leader is clear of its own field is ordered; one whose field is
-    // inside the resolution is not, and says so, rather than being folded into
-    // another class's answer.
+        const OptionProbeMeasurement* leader = outcome.members.front();
+        const std::size_t leaderColumn = column_of(leader);
+
+        // The leader's own band is part of what the class's measurement showed,
+        // so a class of one option still reports the width it was measured to.
+        outcome.widestBand = std::max(0.0, leader->spread - 1.0);
+
+        for (std::size_t index = 1; index < outcome.members.size(); ++index)
+        {
+            const OptionProbeMeasurement* rival = outcome.members[index];
+            const PairedOutcome pair = CompareToLeader(rounds, leaderColumn, column_of(rival));
+            const double width = pair.lo > 0.0 ? pair.hi / pair.lo - 1.0 : 0.0;
+
+            outcome.widestBand = std::max(outcome.widestBand, width);
+            outcome.widestBand = std::max(outcome.widestBand, rival->spread - 1.0);
+
+            if (index == 1)
+            {
+                outcome.nearest = rival;
+                outcome.nearestPair = pair;
+            }
+
+            if (std::abs(pair.drift) > std::abs(outcome.widestDrift))
+            {
+                outcome.widestDrift = pair.drift;
+                outcome.driftPair =
+                    Text("'%s' against '%s'", rival->name.c_str(), leader->name.c_str());
+            }
+
+            const std::string line = Text(
+                "'%s' at %.2f ns/argument, %.1f%% of the leader's: its within-round ratio to the "
+                "leader over the %d paired rounds fell in %.3f..%.3f, and it was the slower of the "
+                "two in %d of them (its own rounds spread %.2fx)",
+                rival->name.c_str(), rival->nsPerArgument,
+                100.0 * (rival->nsPerArgument / leader->nsPerArgument), pair.rounds, pair.lo,
+                pair.hi, pair.slowerRounds, rival->spread);
+
+            if (pair.ordered)
+            {
+                outcome.behind.push_back(line);
+            } else if (pair.hi < 1.0)
+            {
+                outcome.ahead.push_back(line);
+            } else
+            {
+                outcome.within.push_back(line);
+            }
+        }
+
+        return outcome;
+    };
+
+    // The classes: one per precision, each ordered inside itself. This is the
+    // only partition the probe orders across, because it is the only one whose
+    // members answer the same question - a lane that computes in single precision
+    // is not a faster answer to the double lane's question, it is an answer to a
+    // different one. Nothing below ever compares a row of one class with a row of
+    // another.
+    ClassOutcome doubles;
+    const bool tooFewRounds = report.pairedRounds < static_cast<int>(kMinimumPairedRounds);
+
     for (const OptionPrecision precision :
          {OptionPrecision::kFp64, OptionPrecision::kFp32, OptionPrecision::kFp16,
           OptionPrecision::kBf16})
     {
+        const ClassOutcome outcome = outcome_of(precision);
+
         OptionProbeClass entry;
         entry.precision = precision;
         entry.name = PrecisionName(precision);
 
-        const std::vector<const OptionProbeMeasurement*> members = members_of(precision);
-
-        if (members.empty())
+        if (outcome.members.empty())
         {
             entry.note = "no option of this precision produced a figure on this run";
             report.classes.push_back(entry);
             continue;
         }
 
-        entry.leader = members.front()->name;
-        entry.leaderNsPerArgument = members.front()->nsPerArgument;
+        entry.leader = outcome.members.front()->name;
+        entry.leaderNsPerArgument = outcome.members.front()->nsPerArgument;
 
-        double lowest = members.front()->bound;
-        double highest = members.front()->bound;
+        double lowest = outcome.members.front()->bound;
+        double highest = outcome.members.front()->bound;
 
-        for (const OptionProbeMeasurement* member : members)
+        for (const OptionProbeMeasurement* member : outcome.members)
         {
             entry.ranked.push_back(member->name);
             lowest = std::min(lowest, member->bound);
             highest = std::max(highest, member->bound);
         }
 
-        std::vector<std::string> within;
+        entry.ordered = tooFewRounds ? false
+                                     : outcome.within.empty() && outcome.ahead.empty();
 
-        for (std::size_t i = 1; i < members.size(); ++i)
+        if (tooFewRounds)
         {
-            if (members[i]->nsPerArgument <=
-                members.front()->nsPerArgument * (1.0 + report.resolution))
-            {
-                within.push_back(Text(
-                    "%s %.2f ns/argument (%.2f%% behind the leader, inside the %.2f%% this run "
-                    "can order)",
-                    members[i]->name.c_str(), members[i]->nsPerArgument,
-                    100.0 * (members[i]->nsPerArgument / members.front()->nsPerArgument - 1.0),
-                    100.0 * report.resolution));
-            }
-        }
-
-        entry.ordered = within.empty();
-        entry.note =
-            within.empty()
-                ? Text("ordered: this class is one precision, %zu option(s) of it were measured "
-                       "cleanly, and the nearest of them is beyond the %.2f%% this run can order. "
-                       "The bounds inside the class differ by row (%.3g to %.3g here), so the "
-                       "leader is the fastest option at some accuracy in this precision and not "
-                       "the fastest at yours: read the bound column.",
-                       members.size(), 100.0 * report.resolution, lowest, highest)
-                : Text("not ordered: %s, and this run can only order %.2f%%",
-                       within.front().c_str(), 100.0 * report.resolution);
-
-        if (precision == OptionPrecision::kFp64)
+            entry.note = Text("not ordered: the run took %d paired round(s), and a band over the "
+                              "lower and upper quartiles of the within-round ratios needs %zu, so "
+                              "nothing in this class was placed",
+                              report.pairedRounds, kMinimumPairedRounds);
+        } else if (!entry.ordered)
         {
-            report.inseparable = within;
+            entry.note = Text("not ordered: %s",
+                              !outcome.within.empty() ? outcome.within.front().c_str()
+                                                      : outcome.ahead.front().c_str());
+        } else if (outcome.members.size() == 1)
+        {
+            entry.note = Text("ordered: this class is one precision and one option of it was "
+                              "measured, so it has no rival in its class to be ordered against. Its "
+                              "own rounds spread %.2f, and %.3g is the bound it is documented at: a "
+                              "bound is a column of this table and not the class's key",
+                              outcome.members.front()->spread, lowest);
+        } else
+        {
+            entry.note = Text(
+                "ordered: this class is one precision, and each of the %zu option(s) behind '%s' "
+                "was the slower of the two in the middle half of the %d paired rounds (the widest "
+                "band in the class was %.2f%%). The bounds inside the class differ by row (%.3g to "
+                "%.3g here), so the leader is the fastest option at some accuracy in this "
+                "precision and not the fastest at yours: read the bound column.",
+                outcome.members.size() - 1, entry.leader.c_str(), report.pairedRounds,
+                100.0 * outcome.widestBand, lowest, highest);
         }
 
         report.classes.push_back(entry);
+
+        if (precision == OptionPrecision::kFp64)
+        {
+            doubles = outcome;
+        }
     }
 
-    if (!report.inseparable.empty())
+    // A quartile band needs four rounds. With fewer, the lower and upper
+    // quartiles are two- and three-point order statistics, and a probe that
+    // ordered on them would be reporting a resolution it never measured.
+    if (tooFewRounds)
     {
-        report.reason = Text(
-            "'%s' is the fastest option of the certified double lane's precision (%.2f "
-            "ns/argument), but '%s' (%.2f ns/argument) is %.2f%% behind it, inside the %.2f%% "
-            "this run can order; the probe does not order noise",
-            leader->name.c_str(), leader->nsPerArgument, doubles[1]->name.c_str(),
-            doubles[1]->nsPerArgument,
-            100.0 * (doubles[1]->nsPerArgument / leader->nsPerArgument - 1.0),
-            100.0 * report.resolution);
-        report.confidence = Text("CANNOT DETERMINE: %zu of %zu options in the certified double "
-                                 "lane's precision are inside the %.2f%% this run can order, which "
-                                 "is what the canary and the leader's own passes measured",
-                                 report.inseparable.size(), doubles.size(),
-                                 100.0 * report.resolution);
+        refuse(Text("the run took %d paired round(s), and the lower and upper quartiles of a "
+                    "within-round ratio need %zu of them: with fewer, the band is the ratio of two "
+                    "or three rounds rather than a quartile of many, and this probe will not order "
+                    "options on it. Raise ProbeOptions::passes or ProbeOptions::rounds and run "
+                    "again",
+                    report.pairedRounds, kMinimumPairedRounds),
+               Text("CANNOT DETERMINE: %d paired rounds, and the comparison needs %zu",
+                    report.pairedRounds, kMinimumPairedRounds));
+        return;
+    }
+
+    if (doubles.members.empty())
+    {
+        refuse(Text("no option of the certified double lane's precision was measured cleanly, and "
+                    "that is the class this verdict is made in; the fastest measured option "
+                    "overall is '%s' at %.2f ns/argument, which is another precision's answer and "
+                    "is not ordered against the double lane's",
+                    overall->name.c_str(), overall->nsPerArgument),
+               "CANNOT DETERMINE: the class the verdict is made in is empty");
+        return;
+    }
+
+    const OptionProbeMeasurement* leader = doubles.members.front();
+
+    // What this run can order, as the widest relative width of a within-round
+    // band the class's own measurement showed - an option's own band or a
+    // rival's band against the leader. It is reported beside the figures; the
+    // ordering itself is made pair by pair from each pair's own band, so this
+    // number bars nothing.
+    report.resolution = doubles.widestBand;
+
+    if (!doubles.within.empty() || !doubles.ahead.empty())
+    {
+        std::vector<std::string> unplaced = doubles.within;
+        unplaced.insert(unplaced.end(), doubles.ahead.begin(), doubles.ahead.end());
+        report.inseparable = unplaced;
+
+        refuse(
+            Text("'%s' is the fastest option of the certified double lane's precision by this "
+                 "run's own statistic - %.2f ns/argument at the lower quartile of the %d paired "
+                 "rounds, %.2f at the upper - but %zu of the %zu option(s) in that precision "
+                 "could not be placed behind it: %s. The band and the round count of every one of "
+                 "them are listed below. Ordering a pair whose band straddles one would be "
+                 "ordering noise, and ordering one whose band lies below one would contradict this "
+                 "run's own statistic, so the probe does neither; the static fallback below is what "
+                 "a caller who needs a default takes instead",
+                 leader->name.c_str(), leader->nsPerArgument, report.pairedRounds,
+                 leader->nsPerArgumentMax, unplaced.size(), doubles.members.size(),
+                 !doubles.within.empty() ? doubles.within.front().c_str()
+                                         : doubles.ahead.front().c_str()),
+            Text("CANNOT DETERMINE: %zu of %zu option(s) in the certified double lane's precision "
+                 "could not be ordered against '%s' over the %d paired rounds; the widest band the "
+                 "class showed was %.2f%%",
+                 unplaced.size(), doubles.members.size(), leader->name.c_str(),
+                 report.pairedRounds, 100.0 * report.resolution));
         return;
     }
 
     report.verdict = OptionProbeVerdict::kRecommend;
     report.recommended = leader->name;
+    report.hasDefault = true;
 
-    const OptionProbeMeasurement* nearest = doubles.size() > 1 ? doubles[1] : nullptr;
+    const std::string shape =
+        doubles.members.size() == 1
+            ? "It is the only option of that precision this run measured, so it has no rival in "
+              "its class to be ordered against."
+            : Text("Each of the other %zu option(s) of the same precision was the slower of the two "
+                   "in the middle half of the same rounds.",
+                   doubles.members.size() - 1);
 
     report.reason = Text(
-        "'%s' is the fastest option of the certified double lane's precision, documented at %.3g "
-        "and measured cleanly: %.2f ns/argument over %d admitted of %d passes, spread %.2fx, "
-        "taken at a load of %.1f%% inside the pass",
-        leader->name.c_str(), leader->bound, leader->nsPerArgument, leader->cleanPasses,
-        leader->cleanPasses + leader->disturbedPasses, leader->spread, leader->loadAtMinimum);
+        "'%s' is the fastest option of the certified double lane's precision: %.2f ns/argument at "
+        "the lower quartile of the %d paired rounds, %.2f at the upper (spread %.2fx), documented "
+        "at %.3g and measured at %.3g over this workload. ",
+        leader->name.c_str(), leader->nsPerArgument, report.pairedRounds,
+        leader->nsPerArgumentMax, leader->spread, leader->bound, leader->maxError) +
+                    shape;
 
-    report.confidence = Text("HIGH: the nearest option of this precision is at least %.2f%% "
-                             "behind, beyond the %.2f%% this run can order (canary spread %.2f%%, "
-                             "leader's own passes spread %.2f%%)",
-                             nearest != nullptr
-                                 ? 100.0 * (nearest->nsPerArgument / leader->nsPerArgument - 1.0)
-                                 : 0.0,
-                             100.0 * report.resolution, report.canarySpread,
-                             100.0 * (leader->spread - 1.0));
+    std::string confidence;
+
+    if (doubles.nearest != nullptr)
+    {
+        confidence = Text(
+            "HIGH: the nearest option of this precision, '%s', took %.1f%% of the leader's cost "
+            "and was the slower of the two in %d of the %d paired rounds, its within-round band "
+            "%.3f..%.3f clearing one",
+            doubles.nearest->name.c_str(),
+            100.0 * (doubles.nearest->nsPerArgument / leader->nsPerArgument),
+            doubles.nearestPair.slowerRounds, doubles.nearestPair.rounds, doubles.nearestPair.lo,
+            doubles.nearestPair.hi);
+    } else
+    {
+        confidence = "HIGH: it is the only option this run measured in the certified double lane's "
+                     "precision, so there is no rival of it to fall inside a resolution";
+    }
+
+    // The clock check, done rather than assumed. A pair whose ratio moves between
+    // the run's halves is a pair that does not carry a decaying clock alike, and
+    // the two options of such a pair differ in how exposed they are to the
+    // clock; the report says so instead of implying the ordering holds at any
+    // clock. A pair whose ratio held still within the run's own resolution puts
+    // no such caveat on the ordering.
+    if (doubles.nearest == nullptr)
+    {
+        // Nothing to say: no rival was measured, so no pair was followed.
+    } else if (std::abs(doubles.widestDrift) > report.resolution)
+    {
+        confidence += Text(
+            ". WARNING: the pair %s moved %.1f%% between the run's first and second half of "
+            "rounds, beyond the %.2f%% this run can order, so those two options are not equally "
+            "exposed to this machine's clock and the ordering above is a property of this run's "
+            "clock as well as of the options",
+            doubles.driftPair.c_str(), 100.0 * doubles.widestDrift, 100.0 * report.resolution);
+    } else
+    {
+        confidence += Text(
+            ". No pair's ratio moved between the run's halves by more than the %.2f%% this run can "
+            "order (the widest was %s at %.1f%%), so no measured pair was more exposed to the "
+            "clock's drift than the ordering's own precision",
+            100.0 * report.resolution, doubles.driftPair.c_str(), 100.0 * doubles.widestDrift);
+    }
 
     if (leader->bound > report.referenceBound)
     {
-        report.confidence += Text(". This leader's own bound is %.3g, looser than the certified "
-                                  "lane's %.3g: it is the fastest option in this precision, at some "
-                                  "accuracy in it",
-                                  leader->bound, report.referenceBound);
+        confidence += Text(
+            ". This leader's own bound is %.3g, looser than the certified lane's %.3g: it is the "
+            "fastest option in this precision, at some accuracy in it",
+            leader->bound, report.referenceBound);
     }
 
     if (overall != leader)
     {
-        report.confidence += Text(". The fastest option measured overall is '%s' at %.2f "
-                                  "ns/argument, a different precision's answer: faster, not faster "
-                                  "at this precision",
-                                  overall->name.c_str(), overall->nsPerArgument);
+        confidence += Text(
+            ". The fastest option measured overall is '%s' at %.2f ns/argument, a different "
+            "precision's answer: faster, not faster at this precision",
+            overall->name.c_str(), overall->nsPerArgument);
     }
+
+    confidence += Text(". The passes ran at a median load of %.1f%% inside their timed rounds",
+                       report.loadMedian);
+
+    if (report.passesWithinAlarm < static_cast<int>(report.passes.size()))
+    {
+        confidence += Text(
+            ", and %d of %d pass(es) ran with the canary's own runs wider than the %.1f%% alarm - "
+            "reported, used, and not what the ordering rests on",
+            report.passesAboveAlarm, static_cast<int>(report.passes.size()),
+            report.options.canarySpreadAlarm);
+    }
+
+    report.confidence = confidence + loadNote;
 }
 
 } // namespace
@@ -1671,12 +2203,6 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
     }
 
     report.measurements.resize(options_.size());
-    std::vector<std::vector<double>> passCost(options.passes);
-
-    for (std::vector<double>& column : passCost)
-    {
-        column.assign(options_.size(), std::numeric_limits<double>::infinity());
-    }
 
     // Warm-up: every option once, so the tables, the stack pages and the
     // workspace are resident before the first timed round, and the load
@@ -1695,6 +2221,20 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
     report.canaryCalibrationMedianMs = meter.MedianMs();
     report.canaryCalibrationSpread = meter.CalibrationSpreadPercent();
 
+    // The round table: one row per timed round in the order the rounds ran, one
+    // column per option, each cell the cost per argument of that option's call
+    // in that round. Every figure below is an aggregate of ratios taken inside a
+    // row of this table, which is what makes it a paired comparison: two cells
+    // of one row were timed under one clock.
+    std::vector<std::vector<double>> roundCost;
+
+    // The option every ratio is formed against, fixed here from the option book
+    // rather than chosen from the figures afterwards, so the anchor is a
+    // documented choice and not the winner of the comparison it anchors.
+    const std::size_t reference = ReferenceIndex(options_);
+    std::vector<double> referenceCost;
+    std::vector<double> passLoads;
+
     // The canary's runs inside a pass: one before the first round and one after
     // every round, so the set brackets the timed work and spans it. Each is
     // taken between rounds, never inside a timed region, so the instrument can
@@ -1702,37 +2242,68 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
     // can disagree with itself.
     const int canarySamples = std::max(3, options.rounds + 1);
 
-    if (report.calibrated)
-    {
-        for (int pass = 0; pass < options.passes; ++pass)
-        {
-            OptionProbePass record;
-            std::vector<double> canaryMs;
+    // The visit order is shuffled once per round from the workload's own seed.
+    // A fixed order would put the same option first in every round, and whatever
+    // a position in the round is worth - the first call touching a table the
+    // others then find warm - would be worth the same to that option every time
+    // and would enter its ratio as though it were the option's own cost.
+    // Shuffling makes a position average out instead of accumulating, and the
+    // seed keeps a run reproducible.
+    std::mt19937_64 shuffle(options.seed);
+    std::vector<std::size_t> visit(options_.size());
 
+    for (std::size_t slot = 0; slot < visit.size(); ++slot)
+    {
+        visit[slot] = slot;
+    }
+
+    // Every pass is run and every pass is used. The canary beside it is read and
+    // reported; it decides nothing, because a fixed work read by wall clock
+    // measures the clock as much as the load, and a machine whose boost decays
+    // widens the spin's own spread while doing nothing else. Discarding on that
+    // would discard the measurement rather than the machine.
+    for (int pass = 0; pass < options.passes; ++pass)
+    {
+        OptionProbePass record;
+        std::vector<double> canaryMs;
+        std::vector<std::vector<double>> passRounds;
+
+        if (report.calibrated)
+        {
             record.backgroundLoad = meter.Average(options.backgroundWindowSeconds);
             canaryMs.push_back(meter.SampleMs());
             record.beforeLoad = meter.Percent(canaryMs.back());
+        }
 
-            for (int round = 0; round < options.rounds; ++round)
+        for (int round = 0; round < options.rounds; ++round)
+        {
+            std::shuffle(visit.begin(), visit.end(), shuffle);
+
+            std::vector<double> row(options_.size(), 0.0);
+
+            for (const std::size_t index : visit)
             {
-                for (std::size_t index = 0; index < options_.size(); ++index)
-                {
-                    const Clock::time_point t0 = Clock::now();
-                    const double sum = Checksum(work, buffers, options_[index]);
-                    const Clock::time_point t1 = Clock::now();
+                const Clock::time_point t0 = Clock::now();
+                const double sum = Checksum(work, buffers, options_[index]);
+                const Clock::time_point t1 = Clock::now();
 
-                    const double milliseconds = MillisecondsBetween(t0, t1);
-                    const double perArgument =
-                        milliseconds * 1e6 / static_cast<double>(options.count);
-                    passCost[static_cast<std::size_t>(pass)][index] =
-                        std::min(passCost[static_cast<std::size_t>(pass)][index], perArgument);
-                    record.seconds += SecondsBetween(t0, t1);
-                    report.measurements[index].checkedSum = sum;
-                }
-
-                canaryMs.push_back(meter.SampleMs());
+                const double milliseconds = MillisecondsBetween(t0, t1);
+                row[index] = milliseconds * 1e6 / static_cast<double>(options.count);
+                record.seconds += SecondsBetween(t0, t1);
+                report.measurements[index].checkedSum = sum;
             }
 
+            passRounds.push_back(row);
+            roundCost.push_back(std::move(row));
+
+            if (report.calibrated)
+            {
+                canaryMs.push_back(meter.SampleMs());
+            }
+        }
+
+        if (report.calibrated)
+        {
             while (static_cast<int>(canaryMs.size()) < canarySamples)
             {
                 canaryMs.push_back(meter.SampleMs());
@@ -1741,24 +2312,34 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
             record.afterLoad = meter.Percent(canaryMs.back());
             record.inPassLoad = meter.Percent(MedianMilliseconds(canaryMs));
             record.canarySpread = SpreadPercent(canaryMs);
-            record.disturbed = record.canarySpread > options.canarySpreadThreshold;
+            record.canaryWide = record.canarySpread > options.canarySpreadAlarm;
 
-            if (record.disturbed)
+            if (record.canaryWide)
             {
-                ++report.disturbedPasses;
+                ++report.passesAboveAlarm;
             } else
             {
-                ++report.cleanPasses;
-                report.canarySpread = std::max(report.canarySpread, record.canarySpread);
+                ++report.passesWithinAlarm;
             }
 
-            report.passes.push_back(record);
+            report.canarySpread = std::max(report.canarySpread, record.canarySpread);
+            passLoads.push_back(record.inPassLoad);
         }
+
+        // The pass's own paired spread: the within-round ratios of this pass,
+        // which is the spread the ordering is made in. Reported beside the
+        // canary's, and it gates nothing either - the resolution below is what
+        // says whether a pair could be separated.
+        record.pairedSpread = PassPairedSpread(passRounds, reference);
+        report.passes.push_back(record);
     }
 
+    report.loadMedian = MedianMilliseconds(passLoads);
+    report.pairedRounds = static_cast<int>(roundCost.size());
+
     // The accuracy column, measured once per option outside the clock. It does
-    // not depend on a clean pass: the values a lane returns for an argument are
-    // a property of the build, not of the machine's load.
+    // not depend on a pass: the values a lane returns for an argument are a
+    // property of the build, not of the machine's load.
     for (std::size_t index = 0; index < options_.size(); ++index)
     {
         AccuracyWalker walker;
@@ -1793,55 +2374,91 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
             !measurement.meetsBound && measurement.maxError <= report.referenceBound;
     }
 
-    // The figures: the minimum of the clean passes, with the ratio of the
-    // slowest clean pass to it as the spread. A disturbed pass is not averaged
-    // in and does not take part in either end.
-    for (std::size_t pass = 0; pass < report.passes.size(); ++pass)
+    // The paired figures. Each option's ratios to the reference are formed
+    // inside the round its two calls were timed in, so a drift common to the
+    // round - a clock that decayed between this round and the last, a background
+    // process that stole time from both - is in both terms of the ratio and
+    // cancels. The statistic is a lower quartile: the minimum of these rounds
+    // would be the earliest, highest-clock observation, which is not what a
+    // caller with a long workload meets, and a mean would let one disturbed
+    // round move the figure.
+    if (!roundCost.empty() && reference < options_.size())
     {
-        if (report.passes[pass].disturbed)
+        report.referenceOption = options_[reference].name;
+
+        for (const std::vector<double>& row : roundCost)
         {
-            continue;
+            referenceCost.push_back(row[reference]);
         }
+
+        report.referenceNsPerArgument = QuantileOf(referenceCost, kStatisticQuantile);
+
+        const std::size_t half = roundCost.size() / 2;
 
         for (std::size_t index = 0; index < options_.size(); ++index)
         {
             OptionProbeMeasurement& measurement = report.measurements[index];
-            const double cost = passCost[pass][index];
+            std::vector<double> ratios;
+            std::vector<double> early;
+            std::vector<double> late;
+            double peak = std::numeric_limits<double>::infinity();
 
-            if (!measurement.measured || cost < measurement.nsPerArgument)
+            for (std::size_t round = 0; round < roundCost.size(); ++round)
             {
-                measurement.nsPerArgument = cost;
-                measurement.loadAtMinimum = report.passes[pass].inPassLoad;
+                const double anchor = roundCost[round][reference];
+
+                if (anchor <= 0.0)
+                {
+                    continue;
+                }
+
+                const double cost = roundCost[round][index];
+                ratios.push_back(cost / anchor);
+                peak = std::min(peak, cost);
+
+                if (round < half)
+                {
+                    early.push_back(cost / anchor);
+                } else
+                {
+                    late.push_back(cost / anchor);
+                }
+            }
+
+            if (ratios.size() < 2 || report.referenceNsPerArgument <= 0.0)
+            {
+                continue;
             }
 
             measurement.measured = true;
-            measurement.nsPerArgumentMax = std::max(measurement.nsPerArgumentMax, cost);
-            ++measurement.cleanPasses;
+            measurement.rounds = static_cast<int>(roundCost.size());
+            measurement.ratioToReference = QuantileOf(ratios, kStatisticQuantile);
+            measurement.ratioLo = measurement.ratioToReference;
+            measurement.ratioHi = QuantileOf(ratios, 1.0 - kStatisticQuantile);
+            measurement.nsPerArgument = report.referenceNsPerArgument * measurement.ratioToReference;
+            measurement.nsPerArgumentMax = report.referenceNsPerArgument * measurement.ratioHi;
+            measurement.nsPerArgumentPeak = peak;
+            measurement.spread = measurement.ratioLo > 0.0
+                                     ? measurement.ratioHi / measurement.ratioLo
+                                     : 1.0;
+
+            // How far the option's ratio to the lane moved between the run's
+            // halves. Zero means the option and the lane kept pace as the clock
+            // moved, which is what a ratio that is genuinely the option's own
+            // cost looks like; a value away from zero is a warning that the two
+            // do not carry the clock alike, and the report says so where it
+            // prints this option.
+            const double firstHalf = MedianMilliseconds(early);
+            const double secondHalf = MedianMilliseconds(late);
+
+            if (firstHalf > 0.0)
+            {
+                measurement.ratioDrift = secondHalf / firstHalf - 1.0;
+            }
         }
     }
 
-    for (std::size_t pass = 0; pass < report.passes.size(); ++pass)
-    {
-        if (!report.passes[pass].disturbed)
-        {
-            continue;
-        }
-
-        for (OptionProbeMeasurement& measurement : report.measurements)
-        {
-            ++measurement.disturbedPasses;
-        }
-    }
-
-    for (OptionProbeMeasurement& measurement : report.measurements)
-    {
-        if (measurement.measured && measurement.nsPerArgument > 0.0)
-        {
-            measurement.spread = measurement.nsPerArgumentMax / measurement.nsPerArgument;
-        }
-    }
-
-    Conclude(report);
+    Conclude(report, roundCost);
 
     return report;
 }
@@ -1986,11 +2603,17 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
                  "%.3f s |\n",
                  report.options.passes, report.options.rounds,
                  report.options.backgroundWindowSeconds);
-    text += Text("            calibration %.3f s | a pass is admitted while the canary's own "
-                 "runs across it\n",
-                 report.options.calibrationSeconds);
-    text += Text("            stay within %.1f%% of each other\n",
-                 report.options.canarySpreadThreshold);
+    text += Text("            calibration %.3f s | canary alarm %.1f%% (a flag, not a gate)\n",
+                 report.options.calibrationSeconds, report.options.canarySpreadAlarm);
+    text += "  comparison: paired. Every option is called once in every round, and the comparison\n";
+    text += "            between two options is the ratio of their times inside the round both "
+            "were called\n";
+    text += "            in, never a ratio of figures from different rounds, so a clock drift "
+            "common to\n";
+    text += "            the round cancels in it. The visit order is shuffled per round from the\n";
+    text += Text("            workload's seed %llu, so a position in a round is not a systematic "
+                 "advantage.\n",
+                 static_cast<unsigned long long>(report.options.seed));
 
     if (!report.options.only.empty())
     {
@@ -2011,24 +2634,19 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
     text += Text("            %.3f ms. Those runs spread %.1f%% and their median sat %.1f%% above "
                  "the floor.\n",
                  report.canaryFloorMs, report.canaryCalibrationSpread, medianAboveFloor);
-    text += "            A pass is admitted on the canary's own spread, not on how busy the "
-            "machine\n";
-    text += "            looked: a steady load slows every option by the same factor and leaves\n";
-    text += "            their order alone, because a ratio is what is compared, while a load "
-            "that\n";
-    text += "            wanders is what corrupts a comparison, and the spread between the\n";
-    text += "            canary's own runs is that wandering, measured directly.\n";
-    text += "  load readings: context, printed beside each pass and not the gate. A reading is "
-            "the\n";
-    text += "            percentage by which the canary took longer than its floor, so it says "
-            "how\n";
-    text += "            busy the machine looked, not how well it could be measured. It is not "
-            "the\n";
-    text += "            machine's total utilization: no standard-library call can read another\n";
-    text += "            process's processor time. A pass the canary cannot vouch for is "
-            "reported\n";
-    text += "            as disturbed and excluded from every figure rather than averaged "
-            "in.\n";
+    text += "            It is a diagnostic and it gates nothing. A fixed work read by wall clock\n";
+    text += "            measures the clock as much as the load, so a machine whose boost decays\n";
+    text += "            widens the spin's own spread while doing nothing else; a rule that\n";
+    text += "            discarded a pass on that would discard the measurement rather than the\n";
+    text += "            machine. The paired% column below is the spread of the quantity the\n";
+    text += "            comparison is actually made in, and it is what the ordering uses.\n";
+    text += "  load readings: context, and not a bar. A reading is the percentage by which the\n";
+    text += "            canary took longer than its floor, so it says how busy the machine "
+            "looked,\n";
+    text += "            not how well it could be measured. It is not the machine's total\n";
+    text += "            utilization: no standard-library call can read another process's "
+            "processor\n";
+    text += "            time.\n";
     text += Text("  reference: the certified per-order fp64 lane, BoysSingle, documented at "
                  "%.3g,\n",
                  report.referenceBound);
@@ -2037,20 +2655,51 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
     text += "            certified lane by this comparison; the committed reference grid in the\n";
     text += "            test suite is what proves the bound itself.\n";
 
-    text += "\npass  wall_s  background%  before%  after%  in-pass%  canary%  verdict\n";
+    text += "\npass  wall_s  background%  before%  after%  in-pass%  canary%  paired%  note\n";
 
     for (std::size_t i = 0; i < report.passes.size(); ++i)
     {
         const OptionProbePass& pass = report.passes[i];
-        text += Text("%4zu  %6.3f  %11.1f  %7.1f  %6.1f  %8.1f  %7.2f  %s\n", i + 1, pass.seconds,
-                     pass.backgroundLoad, pass.beforeLoad, pass.afterLoad, pass.inPassLoad,
-                     pass.canarySpread, pass.disturbed ? "DISTURBED (excluded)" : "admitted");
+
+        if (report.calibrated)
+        {
+            text += Text("%4zu  %6.3f  %11.1f  %7.1f  %6.1f  %8.1f  %7.2f  %7.2f  %s\n", i + 1,
+                         pass.seconds, pass.backgroundLoad, pass.beforeLoad, pass.afterLoad,
+                         pass.inPassLoad, pass.canarySpread, pass.pairedSpread,
+                         pass.canaryWide ? "canary wide — reported, used"
+                                         : "canary within alarm");
+        } else
+        {
+            text += Text("%4zu  %6.3f  %11s  %7s  %6s  %8s  %7s  %7.2f  %s\n", i + 1, pass.seconds,
+                         "-", "-", "-", "-", "-", pass.pairedSpread,
+                         "load instrument never ran");
+        }
     }
 
     if (report.passes.empty())
     {
-        text += "     (no pass was run: the canary never settled, so no pass could be judged — "
-                "see the reason below)\n";
+        text += "     (no pass was run)\n";
+    }
+
+    if (report.calibrated)
+    {
+        text += Text("  %d of %d pass(es) ran with the canary's own runs wider than the %.1f%% "
+                     "alarm, and every\n",
+                     report.passesAboveAlarm, static_cast<int>(report.passes.size()),
+                     report.options.canarySpreadAlarm);
+        text += Text("  one of them was used. The figures below pool all %d paired rounds, and the "
+                     "paired%%\n",
+                     report.pairedRounds);
+        text += "  column is the widest within-round band that pass's own rounds showed: the "
+                "spread the\n";
+        text += "  ordering is made in, in the units the comparison is made in.\n";
+    } else
+    {
+        text += "  The load instrument never established a floor on this machine, so the load and\n";
+        text += "  canary columns have nothing to be relative to and the spin was not run. The\n";
+        text += Text("  comparison does not use them: the %d paired round(s) below are timed "
+                     "rounds.\n",
+                     report.pairedRounds);
     }
 
     text += Text("\noptions — every option evaluates F_0..F_n for one argument, with n that "
@@ -2066,16 +2715,16 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
         nameWidth = std::max(nameWidth, measurement.name.size());
     }
 
-    text += Text("  %-*s %-6s %-13s %-9s %12s  %7s  %5s  %6s  %11s  %10s  %s\n",
-                 static_cast<int>(nameWidth), "option", "prec", "arithmetic", "contracts", "ns/arg",
-                 "spread", "clean", "load%", "max error", "bound", "verdict");
+    text += Text("  %-*s %-6s %-13s %9s %9s %7s %15s %7s %9s  %11s  %10s  %s\n",
+                 static_cast<int>(nameWidth), "option", "prec", "arithmetic", "ns/arg", "hi",
+                 "spread", "vs ref band", "drift%", "peak ns", "max error", "bound", "verdict");
 
     for (const OptionProbeMeasurement& measurement : report.measurements)
     {
         // The verdict is the accuracy one and it does not depend on a single
         // pass being admitted: the values a lane returns for an argument are a
-        // property of the build, and a busy machine that discards every pass
-        // must not be able to blank the accuracy column with it.
+        // property of the build, and a busy machine that widened every canary
+        // reading must not be able to blank the accuracy column with it.
         std::string verdict = measurement.meetsBound ? "within bound"
                               : measurement.withinReferenceFloor
                                   ? "within the floor"
@@ -2102,27 +2751,21 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
 
         if (measurement.measured)
         {
-            text += Text("  %-*s %-6s %-13s %-9s %12.2f  %6.2fx  %2d/%d  %6.1f  %11.3e  %10.3g  %s\n",
+            text += Text("  %-*s %-6s %-13s %9.2f %9.2f %6.2fx %6.3f..%-6.3f %6.1f%% %9.2f  "
+                         "%11.3e  %10.3g  %s\n",
                          static_cast<int>(nameWidth), measurement.name.c_str(),
                          PrecisionName(measurement.precision), measurement.arithmetic.c_str(),
-                         measurement.contracts ? "yes" : "no",
-                         measurement.nsPerArgument,
-                         measurement.spread,
-                         measurement.cleanPasses,
-                         measurement.cleanPasses + measurement.disturbedPasses,
-                         measurement.loadAtMinimum,
-                         measurement.maxError,
-                         measurement.bound,
-                         verdict.c_str());
+                         measurement.nsPerArgument, measurement.nsPerArgumentMax,
+                         measurement.spread, measurement.ratioLo, measurement.ratioHi,
+                         100.0 * measurement.ratioDrift, measurement.nsPerArgumentPeak,
+                         measurement.maxError, measurement.bound, verdict.c_str());
         } else
         {
-            text += Text("  %-*s %-6s %-13s %-9s %12s  %7s  %2d/%d  %6s  %11.3e  %10.3g  %s\n",
+            text += Text("  %-*s %-6s %-13s %9s %9s %7s %15s %7s %9s  %11.3e  %10.3g  %s\n",
                          static_cast<int>(nameWidth), measurement.name.c_str(),
                          PrecisionName(measurement.precision), measurement.arithmetic.c_str(),
-                         measurement.contracts ? "yes" : "no", "not measured", "-",
-                         measurement.cleanPasses,
-                         measurement.cleanPasses + measurement.disturbedPasses, "-",
-                         measurement.maxError, measurement.bound, verdict.c_str());
+                         "not measured", "-", "-", "-", "-", "-", measurement.maxError,
+                         measurement.bound, verdict.c_str());
         }
     }
 
@@ -2132,17 +2775,33 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
             "the\n";
     text += "   double lane's question, it is an answer to a different one, so no column here is "
             "read\n";
-    text += "   across precisions. load% is the canary's reading inside the pass each figure was "
-            "taken in —\n";
-    text += "   the load that number was taken under. The verdict column is the accuracy one, "
-            "against the\n";
-    text += "   bound in the row's own bound column: 'within bound' met it, 'within the floor' is "
-            "above its\n";
-    text += Text("   own bound but at or below the certified lane's %.3g, which this comparison "
-                 "cannot\n",
+    text += "   across precisions. ns/arg is the lower quartile of the option's per-round costs and "
+            "hi the\n";
+    text += "   upper, both from within-round ratios to the reference lane, so neither carries a "
+            "drift\n";
+    text += "   common to a round; spread is hi over ns/arg. 'vs ref band' is the range the "
+            "option's ratio\n";
+    text += "   to the reference lane fell in over the run's rounds, at its lower and upper "
+            "quartiles, and\n";
+    text += "   drift% is how far that ratio moved between the run's first and second half — a "
+            "pair whose\n";
+    text += "   ratio drifts does not carry a decaying clock alike, and the confidence line below "
+            "says\n";
+    text += "   whether any pair drifted further than this run can order. 'peak ns' is the single "
+            "fastest\n";
+    text += "   round the option was seen in; it bounds what the option can do at a peak clock and "
+            "is\n";
+    text += "   never the option's cost, because under a decaying clock the fastest round is the\n";
+    text += "   earliest one, which a caller with a long workload does not meet. The verdict column "
+            "is the\n";
+    text += "   accuracy one, against the bound in the row's own bound column: 'within bound' met "
+            "it,\n";
+    text += Text("   'within the floor' is above its own bound but at or below the certified lane's "
+                 "%.3g,\n",
                  report.referenceBound);
-    text += "   separate, and 'ABOVE BOUND' means the option did not deliver what its own lane "
-            "documents.\n";
+    text += "   which this comparison cannot separate, and 'ABOVE BOUND' means the option did not "
+            "deliver\n";
+    text += "   what its own lane documents.\n";
     text += "   Every bound in the column is read from the library, and every one of them applies "
             "over\n";
     text += "   every argument the row was measured on: the certified lane's own figure for the "
@@ -2170,11 +2829,9 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
     text += "   one range is not comparable with one from another, while the verdict is, because "
             "the figure\n";
     text += "   it is judged against does not move. The verdict does not wait on a pass:\n";
-    text += "   the values a lane returns are a property of the build, so a run whose passes were "
-            "all\n";
-    text += "   discarded by the load instrument still reports which rows delivered what they "
-            "document,\n";
-    text += "   and its cost columns read 'not measured' where no figure could be stood behind.)\n";
+    text += "   the values a lane returns are a property of the build, so a run on a machine whose\n";
+    text += "   clock wandered still reports which rows delivered what they document, and its cost\n";
+    text += "   columns read 'not measured' only where no figure could be formed at all.)\n";
 
     if (!report.refused.empty())
     {
@@ -2240,8 +2897,8 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
             }
         }
 
-        text += Text("  %-6s %zu option(s) measured cleanly | leader %s at %.2f ns/argument, "
-                     "documented at %.3g | %s\n",
+        text += Text("  %-6s %zu option(s) measured | leader %s at %.2f ns/argument, documented at "
+                     "%.3g | %s\n",
                      entry.name.c_str(), entry.ranked.size(), entry.leader.c_str(),
                      entry.leaderNsPerArgument,
                      leaderRow != nullptr ? leaderRow->bound : 0.0,
@@ -2275,6 +2932,14 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
 
         text += WrappedList(rankedLines, "         ");
         text += Text("         %s\n", entry.note.c_str());
+
+        if (entry.precision == OptionPrecision::kFp64)
+        {
+            text += "         (this is the class the verdict below is made in: the library's own "
+                    "default\n";
+            text += "         precision, and the one a caller who names no precision is asking "
+                    "about)\n";
+        }
     }
 
     // The coverage: the library's own option space, every cell of it, so a
@@ -2381,15 +3046,25 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
         }
     }
 
-    // What this run could order, and which of the two measured terms set it, so
-    // a reader can see the number was not chosen in advance.
+    // The certified rows of the double lane's precision, and the class's own
+    // entry so the resolution can be reported against the class it is measured
+    // in rather than against one row of it.
     const OptionProbeMeasurement* leader = nullptr;
+    const OptionProbeClass* doublesClass = nullptr;
 
     for (const OptionProbeMeasurement& measurement : report.measurements)
     {
         if (measurement.measured && measurement.name == report.fastestAtReferenceAccuracy)
         {
             leader = &measurement;
+        }
+    }
+
+    for (const OptionProbeClass& entry : report.classes)
+    {
+        if (entry.precision == OptionPrecision::kFp64)
+        {
+            doublesClass = &entry;
         }
     }
 
@@ -2412,9 +3087,11 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
 
         if (measurement.measured)
         {
-            text += Text("    %-*s %8.2f ns/argument  spread %.2fx  %d clean pass(es)\n",
+            text += Text("    %-*s %8.2f ns/argument  band %.3f..%.3f  spread %.2fx  %d paired "
+                         "round(s)  peak %.2f\n",
                          static_cast<int>(nameWidth), measurement.name.c_str(),
-                         measurement.nsPerArgument, measurement.spread, measurement.cleanPasses);
+                         measurement.nsPerArgument, measurement.ratioLo, measurement.ratioHi,
+                         measurement.spread, measurement.rounds, measurement.nsPerArgumentPeak);
         } else
         {
             text += Text("    %-*s cost not measured on this run; delivered %.3g against %.3g\n",
@@ -2440,33 +3117,38 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
         }
     }
 
-    if (leader == nullptr)
+    if (doublesClass == nullptr || doublesClass->leader.empty() ||
+        !doublesClass->leaderNsPerArgument)
     {
-        text += "\n  resolution: not measurable on this run — the accuracy class produced no "
-                "figure, so\n";
-        text += "              there was nothing to order\n";
-    } else if (report.cleanPasses < 2)
+        text += "\n  resolution: not measurable on this run — the certified double lane's "
+                "precision produced\n";
+        text += "              no measured option, so there was nothing to order\n";
+    } else if (report.pairedRounds < static_cast<int>(kMinimumPairedRounds))
     {
-        text += Text("\n  resolution: not measurable on this run — an ordering rests on how the "
-                     "admitted\n");
-        text += Text("              passes disagreed with each other, and %d of %d was admitted\n",
-                     report.cleanPasses, static_cast<int>(report.passes.size()));
+        text += Text("\n  resolution: not measurable on this run — %d paired round(s) is fewer than "
+                     "the %zu a\n",
+                     report.pairedRounds, kMinimumPairedRounds);
+        text += "              quartile band needs, so no band was formed and nothing was "
+                "ordered\n";
     } else
     {
-        text += Text("\n  resolution: options closer than %.2f%% cannot be ordered on this run. "
-                     "The number is\n",
-                     100.0 * report.resolution);
-        text += "              measured, not assumed: it is the wider of the canary's own spread "
-                "inside\n";
-        text += Text("              an admitted pass (%.2f%%) and the leading option's own "
-                     "admitted\n",
+        text += "\n  resolution: the widest within-round band anything in the certified double "
+                "lane's\n";
+        text += Text("              precision showed over the %d paired rounds was %.2f%%. It is "
+                     "measured in the\n",
+                     report.pairedRounds, 100.0 * report.resolution);
+        text += "              paired ratios, which is the quantity the ordering is made of, and "
+                "not in\n";
+        text += "              absolute times: every pair's band is formed inside a round and the\n";
+        text += "              ordering is made pair by pair from that pair's own band, so this "
+                "number states\n";
+        text += "              how coarse the class's own measurement got and bars nothing. The\n";
+        text += Text("              canary's widest pass spread beside it was %.2f%% — context, and "
+                     "not the\n",
                      report.canarySpread);
-        text += Text("              passes (%.2f%%), whichever was wider. A steady load widens "
-                     "neither — it\n",
-                     100.0 * (leader->spread - 1.0));
-        text += "              slows every option alike — so this number moves with how steady "
-                "the machine\n";
-        text += "              was, not with how busy it was.\n";
+        text += "              bar: a clock that decays widens a fixed work read by wall clock and\n";
+        text += "              cancels in a ratio, which is why the two columns differ and why the\n";
+        text += "              second is the one the ordering uses.\n";
     }
 
     text += Text("  verdict: %s\n", report.verdict == OptionProbeVerdict::kRecommend
@@ -2483,9 +3165,14 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
         text += Text("  reason: %s\n", report.reason.c_str());
     }
 
-    for (const std::string& entry : report.inseparable)
+    if (!report.inseparable.empty())
     {
-        text += Text("  not separable: %s\n", entry.c_str());
+        text += "\n  not placed behind the leader by the paired rounds:\n";
+
+        for (const std::string& entry : report.inseparable)
+        {
+            text += Text("    * %s\n", entry.c_str());
+        }
     }
 
     if (!report.confidence.empty())
@@ -2493,16 +3180,50 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
         text += Text("  confidence: %s\n", report.confidence.c_str());
     }
 
+    // The fallback, in its own section and labelled where a consumer reads it.
+    // It is a different kind of answer from everything above, and printing it in
+    // the same list as a measured cost is the one thing this must not do.
+    if (!report.heuristicOption.empty())
+    {
+        text += "\nstatic fallback — a heuristic, not a measurement\n";
+        text += "  The measurement above did not order this field, so the default below is chosen "
+                "by counting\n";
+        text += "  the library's own tables and never by timing anything:\n";
+        text += Text("    option: %s\n", report.heuristicOption.c_str());
+        text += Text("    basis:  %s\n", report.heuristicBasis.c_str());
+        text += "  It is a property of the tables this build ships and not of this machine, so it "
+                "holds\n";
+        text += "  anywhere this build runs — and it is not evidence that the option is fast here. "
+                "No figure\n";
+        text += "  above this line is derived from it.\n";
+    } else if (report.verdict == OptionProbeVerdict::kCannotDetermine)
+    {
+        text += "\nstatic fallback: none. The measurement did not order the field and this run's "
+                "option set\n";
+        text += "  holds nothing the static rule can rank against the certified bound, so neither "
+                "answered.\n";
+    } else
+    {
+        text += "\nstatic fallback: none needed. The verdict above is a measurement, and no "
+                "heuristic is\n";
+        text += "  printed beside it.\n";
+    }
+
     text += "\n  this ranking is this machine's: a different host, a different compiler or a "
             "different set of\n";
     text += "  build flags can rank these options differently, which is why the probe is run where "
             "the numbers\n";
-    text += "  are used rather than read from documentation. A figure above is a minimum of "
-            "admitted\n";
-    text += "  passes, not a mean, and its spread is what the passes it rests on disagreed by. "
-            "The\n";
-    text += "  resolution above is this run's: a steadier or busier machine would give a "
-            "different one.\n";
+    text += "  are used rather than read from documentation. A figure above is the lower quartile "
+            "of its\n";
+    text += "  paired rounds — not the minimum, which is the earliest and highest-clock "
+            "observation, and\n";
+    text += "  not the mean, which one disturbed round moves — and its spread is printed beside "
+            "it so the\n";
+    text += "  reader can see what the figure rests on. The peak column bounds what each option can "
+            "do at a\n";
+    text += "  peak clock and is never the option's cost. The resolution above is this run's: a "
+            "steadier\n";
+    text += "  machine would order pairs this one could not.\n";
 
     // The refusals, grouped by the axis that refuses them, counted from the
     // coverage book rather than written here: the three ways a cell of the
