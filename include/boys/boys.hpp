@@ -390,7 +390,19 @@ std::span<const PackAxisInfo> BoysPackAxes() noexcept;
 /// the shipped partition the bar its fits are cut at, for the narrow one the
 /// per-piece round-up its certification publishes. The two are stated apart for
 /// the same reason the contract table's measured column and published column
-/// are: a figure a sweep found is not the figure a caller may rely on.
+/// are: a figure a sweep found is not the figure a caller may rely on. Both are
+/// figures for the stored fits, measured where a fit is read directly.
+///
+/// \c lo and \c hi are the interval those fits cover, read off the pieces above:
+/// \c bound holds on \c [lo, hi) and says nothing about any argument outside it.
+/// Naming a partition replaces the fitted tables of that interval and leaves the
+/// rest of the domain to what the entry does without them, so this is not the
+/// figure for an entry's error: the entry that reads a partition carries its own
+/// documented accuracy, and where the values of two partitions are compared the
+/// difference is bounded by the two fits' figures together, one of them the
+/// other partition's. Above \c hi the same asymptotic arithmetic runs under
+/// either partition, so a figure covering the whole line is the entry's and
+/// never this one.
 ///
 /// \ingroup boys
 struct FitGranularityInfo {
@@ -407,6 +419,8 @@ struct FitGranularityInfo {
     int regionBStored = 0; ///< coefficients region B's tables store
     double delivered = 0.0; ///< worst error the partition's fits were measured to deliver
     double bound = 0.0; ///< the figure the partition's tables are certified against
+    double lo = 0.0; ///< lowest argument the partition's own tables serve
+    double hi = 0.0; ///< one past the highest argument the partition's own tables serve
 };
 
 /// Whether the named partition carries the named fit route's tables.

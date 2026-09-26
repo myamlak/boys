@@ -412,7 +412,11 @@ carries all 32 of its rows, one per partition, scheme and call shape, each judge
 published table holds for the cell it ran in, with the worst cell named; and it reports the trade
 above and the 481700 of 578888 axis cells (83.2%) that can discriminate, the rest carrying a bound at
 least as large as the value itself. Those rows are counted apart from every other book the gate
-reports, so nothing the library already published moves.
+reports, so nothing the library already published moves. `BoysFitGranularities()` states the interval
+each partition's figures hold on, read off its own pieces and the fitted routes' domains: above that
+interval the entry runs region C's asymptotic form, which no partition replaces, so a caller reading
+one of these figures against a wider range would be matching the fitted tables' promise to an error
+that is not theirs.
 
 **Where a combination has no narrow table it is refused where it is named**, with the reason, rather
 than answered from the shipped table: the rational minimax route (one numerator/denominator pair over

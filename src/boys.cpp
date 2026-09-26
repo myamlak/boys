@@ -657,6 +657,33 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
             narrowAStored += piece.deg + 1;
         }
 
+        // The interval a partition's own tables serve, read from the fitted
+        // routes' own domains: region A's per-order tables from zero to kX0 and
+        // region B's seed from kX0 to kX1, under either partition, so the two
+        // edges are the lowest left edge and the highest right edge the fitted
+        // rows state. It is the domain the partition's figure holds on and no
+        // wider one: above the top edge the entry runs region C's asymptotic
+        // form, which no partition replaces and whose figure is the certified
+        // lane's, so a caller reading the figure against a wider range would be
+        // matching a promise about the fitted tables to an error that is not
+        // theirs.
+        double fittedLo = std::numeric_limits<double>::infinity();
+        double fittedHi = 0.0;
+
+        for (const FitRouteInfo& row : BoysFitRoutes())
+        {
+            fittedLo = std::min(fittedLo, row.lo);
+            fittedHi = std::max(fittedHi, row.hi);
+        }
+
+        // No fitted row at all leaves no interval to report, and one made up here
+        // would be a claim about tables that are not there.
+        if (!(fittedLo <= fittedHi))
+        {
+            fittedLo = 0.0;
+            fittedHi = 0.0;
+        }
+
         std::array<FitGranularityInfo, 2> built{};
 
         built[0].granularity = FitGranularity::kShipped;
@@ -675,6 +702,8 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
         built[0].delivered =
             routeWorst([](const FitRouteInfo& row) { return row.delivered; });
         built[0].bound = routeWorst([](const FitRouteInfo& row) { return row.bound; });
+        built[0].lo = fittedLo;
+        built[0].hi = fittedHi;
 
         built[1].granularity = FitGranularity::kNarrow;
         built[1].name = GranularityName(FitGranularity::kNarrow);
@@ -693,6 +722,8 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
         // only the one that measured it.
         built[1].delivered = std::max(detail::kNarrowRows[0].fused, detail::kNarrowRows[0].separate);
         built[1].bound = built[1].delivered;
+        built[1].lo = fittedLo;
+        built[1].hi = fittedHi;
 
         return built;
     }();
