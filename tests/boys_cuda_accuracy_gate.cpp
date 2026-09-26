@@ -3456,7 +3456,7 @@ int main(int argc, char** argv) {
         {
             char contribution[32];
             char wrong[24];
-            char relative[64];
+            char relative[96];
             std::snprintf(contribution,
                           sizeof(contribution),
                           "%.3g (n=%d, x=%.6g)",
