@@ -191,7 +191,13 @@ struct Dev32 {
     }
 };
 
+#if BoysFp16
 /// The fp16 lane, which rounds at the boundary and runs the fp32 engine between.
+///
+/// It is behind the seam that declares the entries it calls, like everything
+/// else that names them: a build without them has no fp16 rows to measure, and
+/// the host side says so in the report rather than reaching this file for a
+/// shape that does not exist here.
 struct Dev16 {
     using Value = __half;
 
@@ -228,6 +234,7 @@ struct Dev16 {
         return __float2half(__half2float(x) * static_cast<float>(l + 1));
     }
 };
+#endif // BoysFp16
 
 /// The four shapes, as a template parameter. Every shape writes its whole
 /// output: the single order one value, a ladder the values of the ladder. The
@@ -357,17 +364,11 @@ int LaunchInKernel(ProbeEntry entry,
             case ProbeEntry::kDeviceSingleF32:
                 BOYS_PROBE_LAUNCH(Dev32, float, kSingle, xf);
                 break;
-            case ProbeEntry::kDeviceSingleF16:
-                BOYS_PROBE_LAUNCH(Dev16, __half, kSingle, xh);
-                break;
             case ProbeEntry::kDeviceAllOrdersF64:
                 BOYS_PROBE_LAUNCH(Dev64, double, kAllOrders, xd);
                 break;
             case ProbeEntry::kDeviceAllOrdersF32:
                 BOYS_PROBE_LAUNCH(Dev32, float, kAllOrders, xf);
-                break;
-            case ProbeEntry::kDeviceAllOrdersF16:
-                BOYS_PROBE_LAUNCH(Dev16, __half, kAllOrders, xh);
                 break;
             case ProbeEntry::kDeviceAllNF64:
                 BOYS_PROBE_LAUNCH(Dev64, double, kAllN, xd);
@@ -375,18 +376,34 @@ int LaunchInKernel(ProbeEntry entry,
             case ProbeEntry::kDeviceAllNF32:
                 BOYS_PROBE_LAUNCH(Dev32, float, kAllN, xf);
                 break;
-            case ProbeEntry::kDeviceAllNF16:
-                BOYS_PROBE_LAUNCH(Dev16, __half, kAllN, xh);
-                break;
             case ProbeEntry::kDeviceEachOrderF64:
                 BOYS_PROBE_LAUNCH(Dev64, double, kEachOrder, xd);
                 break;
             case ProbeEntry::kDeviceEachOrderF32:
                 BOYS_PROBE_LAUNCH(Dev32, float, kEachOrder, xf);
                 break;
+#if BoysFp16
+            // The fp16 lane's own arms, with the lane: the entries they name
+            // are behind the same seam, and a build without them has no such
+            // enumerator to be asked for — the host does not offer the rows.
+            case ProbeEntry::kDeviceSingleF16:
+                BOYS_PROBE_LAUNCH(Dev16, __half, kSingle, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16:
+                BOYS_PROBE_LAUNCH(Dev16, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllNF16:
+                BOYS_PROBE_LAUNCH(Dev16, __half, kAllN, xh);
+                break;
             case ProbeEntry::kDeviceEachOrderF16:
                 BOYS_PROBE_LAUNCH(Dev16, __half, kEachOrder, xh);
                 break;
+#else
+            // A build with the seam closed has no fp16 enumerator to be asked
+            // for and no half array to read, so this is the only arm that would
+            // have touched the parameter.
+            (void)xh;
+#endif // BoysFp16
             default:
                 return 1;
         }
@@ -400,17 +417,11 @@ int LaunchInKernel(ProbeEntry entry,
             case ProbeEntry::kDeviceSingleF32:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev32, float, kSingle, xf);
                 break;
-            case ProbeEntry::kDeviceSingleF16:
-                BOYS_PROBE_LAUNCH_PLAIN(Dev16, __half, kSingle, xh);
-                break;
             case ProbeEntry::kDeviceAllOrdersF64:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev64, double, kAllOrders, xd);
                 break;
             case ProbeEntry::kDeviceAllOrdersF32:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev32, float, kAllOrders, xf);
-                break;
-            case ProbeEntry::kDeviceAllOrdersF16:
-                BOYS_PROBE_LAUNCH_PLAIN(Dev16, __half, kAllOrders, xh);
                 break;
             case ProbeEntry::kDeviceAllNF64:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev64, double, kAllN, xd);
@@ -418,18 +429,27 @@ int LaunchInKernel(ProbeEntry entry,
             case ProbeEntry::kDeviceAllNF32:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev32, float, kAllN, xf);
                 break;
-            case ProbeEntry::kDeviceAllNF16:
-                BOYS_PROBE_LAUNCH_PLAIN(Dev16, __half, kAllN, xh);
-                break;
             case ProbeEntry::kDeviceEachOrderF64:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev64, double, kEachOrder, xd);
                 break;
             case ProbeEntry::kDeviceEachOrderF32:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev32, float, kEachOrder, xf);
                 break;
+#if BoysFp16
+            // The removed-call half of the same four arms; see above.
+            case ProbeEntry::kDeviceSingleF16:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16, __half, kSingle, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllNF16:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16, __half, kAllN, xh);
+                break;
             case ProbeEntry::kDeviceEachOrderF16:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16, __half, kEachOrder, xh);
                 break;
+#endif // BoysFp16
             default:
                 return 1;
         }
@@ -453,9 +473,11 @@ int BoysCudaLaunchAllNF32(int, const double*, float*, std::size_t, void*);
 int BoysCudaLaunchSingleF64(const int*, const double*, double*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF64(const int*, const double*, double*, std::size_t, void*);
 int BoysCudaLaunchAllNF64(int, const double*, double*, std::size_t, void*);
+#if BoysFp16
 int BoysCudaLaunchSingleF16(const int*, const void*, void*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF16(const int*, const void*, void*, std::size_t, void*);
 int BoysCudaLaunchAllNF16(int, const void*, void*, std::size_t, void*);
+#endif // BoysFp16
 }
 
 int LaunchLaunched(ProbeEntry entry,
@@ -477,17 +499,11 @@ int LaunchLaunched(ProbeEntry entry,
         case ProbeEntry::kSingleF32Fast:
             BoysCudaLaunchSingleF32Fast(n, x, static_cast<float*>(out), count, stream);
             break;
-        case ProbeEntry::kSingleF16:
-            BoysCudaLaunchSingleF16(n, xh, out, count, stream);
-            break;
         case ProbeEntry::kAllOrdersF64:
             BoysCudaLaunchAllOrdersF64(n, x, static_cast<double*>(out), count, stream);
             break;
         case ProbeEntry::kAllOrdersF32:
             BoysCudaLaunchAllOrdersF32(n, x, static_cast<float*>(out), count, stream);
-            break;
-        case ProbeEntry::kAllOrdersF16:
-            BoysCudaLaunchAllOrdersF16(n, xh, out, count, stream);
             break;
         case ProbeEntry::kAllNF64:
             BoysCudaLaunchAllNF64(nmax, x, static_cast<double*>(out), count, stream);
@@ -495,9 +511,23 @@ int LaunchLaunched(ProbeEntry entry,
         case ProbeEntry::kAllNF32:
             BoysCudaLaunchAllNF32(nmax, x, static_cast<float*>(out), count, stream);
             break;
+#if BoysFp16
+        // The fp16 lane's launched entries, behind the seam that declares both
+        // the launchers above and the batch entries that reach them.
+        case ProbeEntry::kSingleF16:
+            BoysCudaLaunchSingleF16(n, xh, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersF16:
+            BoysCudaLaunchAllOrdersF16(n, xh, out, count, stream);
+            break;
         case ProbeEntry::kAllNF16:
             BoysCudaLaunchAllNF16(nmax, xh, out, count, stream);
             break;
+#else
+        // As in LaunchInKernel: with the seam closed the fp16 arms are the only
+        // ones that would have read a half array.
+        (void)xh;
+#endif // BoysFp16
         default:
             return 1;
     }

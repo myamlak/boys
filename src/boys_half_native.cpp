@@ -43,6 +43,14 @@
 // so this lane has a precondition (x >= kX1) rather than a fallback, and no
 // accuracy multiplier (region C carries no truncatable resource).
 
+// The lane is behind the BoysFp16 seam like the entries that declare it: both
+// of them, the packed type they take and return, and the scale constant they
+// document leave the public surface together when the seam is closed, so this
+// file's body is compiled with them. A build with the seam closed has no
+// BoysAllOrdersHalf2 and no BoysAllNF16Native to define, and this file
+// contributes nothing to it rather than failing it.
+#if BoysFp16
+
 namespace boys {
 namespace detail {
 
@@ -122,3 +130,5 @@ void BoysAllNF16Native(int nmax, const F16* x, F16* out, std::size_t count) noex
 }
 
 } // namespace boys
+
+#endif // BoysFp16

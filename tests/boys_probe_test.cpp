@@ -73,6 +73,17 @@ bool Unoffered(const OptionProbeReport& report, const std::string& name) {
     return false;
 }
 
+// Whether a name was reported as one this build does not carry, rather than
+// measured: the seam that declares the entry is closed in this build.
+bool NotCarried(const OptionProbeReport& report, const std::string& name) {
+    for (const std::string& entry : report.notCarried) {
+        if (entry == name) {
+            return true;
+        }
+    }
+    return false;
+}
+
 TEST(ProbeTest, EveryReportedOptionRunsInArithmeticThisBuildCarries) {
     const OptionProbeReport report = boys::RunOptionProbe(Untimed());
 
@@ -151,6 +162,17 @@ TEST(ProbeTest, NothingTheLibraryOffersGoesUnreported) {
 #if BoysFp16
     EXPECT_TRUE(Find(report, "f16-io") != nullptr || Unoffered(report, "f16-io"));
     EXPECT_TRUE(Find(report, "bf16-io") != nullptr || Unoffered(report, "bf16-io"));
+    // This build carries them, so neither is named as one it does not carry.
+    EXPECT_FALSE(NotCarried(report, "f16-io"));
+    EXPECT_FALSE(NotCarried(report, "bf16-io"));
+#else
+    // A closed seam must not read as a build that never had the lanes: the two
+    // are reported as entries this build does not carry, which is a fact a
+    // caller can act on, where their absence would be a fact about nothing.
+    EXPECT_TRUE(NotCarried(report, "f16-io"));
+    EXPECT_TRUE(NotCarried(report, "bf16-io"));
+    EXPECT_TRUE(Find(report, "f16-io") == nullptr);
+    EXPECT_TRUE(Find(report, "bf16-io") == nullptr);
 #endif
 }
 

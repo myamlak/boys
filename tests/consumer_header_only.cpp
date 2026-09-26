@@ -248,6 +248,10 @@ double QuantumOf(double v, int significandBits) {
     return std::ldexp(1.0, exponent - 1 - significandBits);
 }
 
+// The fp16/bf16 I/O lane's own ceilings: m * 1e-7 of the certified float engine
+// plus one half-ULP of the representation. They belong to the lane, so they
+// arrive and leave with it (see CheckHalfIo below).
+#if BoysFp16
 double F16IoBound(double returned, double m) {
     return m * 1e-7 + 0.5 * QuantumOf(returned, 10);
 }
@@ -255,6 +259,7 @@ double F16IoBound(double returned, double m) {
 double Bf16IoBound(double returned, double m) {
     return m * 1e-7 + 0.5 * QuantumOf(returned, 7);
 }
+#endif // BoysFp16
 
 double ProductBound(boys::ProductMode mode, double m) {
     return mode == boys::ProductMode::kFp64 ? m * 1e-15 : m * 1e-15 + 2.5e-7;
@@ -444,6 +449,11 @@ void CheckFloatLane(const std::vector<Cell>& cells) {
     Covered("boys::BoysAllOrdersF32<m>");
 }
 
+// The fp16 and bf16 I/O lanes, which the BoysFp16 seam declares. A consumer
+// that builds this tree with the seam closed has no such entry to name, so the
+// check is compiled with the entries it measures and main prints the lane as
+// one this build does not carry rather than dropping it in silence.
+#if BoysFp16
 void CheckHalfIo(const std::vector<Cell>& cells) {
     Rule& f16Single = NewRule("BoysSingleF16<m = 3> (cells above its bound, no library)");
     Rule& bf16Single = NewRule("BoysSingleBf16<m = 3> (cells above its bound, no library)");
@@ -526,6 +536,7 @@ void CheckHalfIo(const std::vector<Cell>& cells) {
     Covered("boys::BoysSingleBf16<m>");
     Covered("boys::BoysAllOrdersBf16<m>");
 }
+#endif // BoysFp16
 
 /// The region-A transform: its definition has to be in the header for any
 /// multiplier outside the sampled set, in all three modes.
@@ -647,7 +658,14 @@ int main(int argc, char** argv) {
     CheckDoubleLanes(report, cells);
     CheckManyArgumentLanes(report, cells);
     CheckFloatLane(cells);
+#if BoysFp16
     CheckHalfIo(cells);
+#else
+    // Stated, not skipped: the lane is one this build does not carry, and a
+    // reader of this report is told so beside the lanes that were checked.
+    std::printf("  %-56s not carried by this build (BoysFp16 = 0)\n",
+                "fp16/bf16 lanes (not checked)");
+#endif
     CheckProductModes(report, cells);
 
     std::printf("consumer check through <boys/boys.hpp> alone: %zu grid cells\n", cells.size());

@@ -418,8 +418,12 @@ constexpr double kFloatLaneBound = 1.5e-7;
 /// 1e-7 plus the half-ULP representation term, taken at the top of the range
 /// the function returns in: |F_n(x)| <= 1, so 2^-11 is the largest half-ULP a
 /// binary16 return can carry there, and 2^-9 the largest a bfloat16 one can.
+/// Both belong to the entries the fp16 seam declares, so they are compiled with
+/// them and a build with the seam closed carries no bound for a lane it has.
+#if BoysFp16
 constexpr double kHalfIoLaneBound = 1e-7 + 0x1p-11;
 constexpr double kBf16IoLaneBound = 1e-7 + 0x1p-9;
+#endif // BoysFp16
 
 /// The largest error a tier can deliver in any region, read from the library.
 ///
@@ -481,9 +485,11 @@ const backend::BackendInfo* ResolveArithmetic(std::span<const backend::BackendIn
 /// build's; and the relaxed tiers are found by asking the library what each
 /// tier it can name delivers, so a build serving fewer rungs offers fewer
 /// options. The half-precision lanes are behind the same BoysFp16 seam that
-/// declares them.
+/// declares them, so a build whose seam is closed carries no entry to name and
+/// says so through notCarried rather than by leaving the names unmentioned.
 std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table,
-                                     std::vector<std::string>& unoffered) {
+                                     std::vector<std::string>& unoffered,
+                                     std::vector<std::string>& notCarried) {
     std::vector<Option> options;
 
     const backend::BackendInfo* fp64 = ResolveArithmetic(table, true);
@@ -520,6 +526,18 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
     // The half lanes run the fp32 engine, so their arithmetic is the fp32 one.
     append("f16-io", OptionKind::kBatchF16, AccuracyTier::kReference, fp32, kHalfIoLaneBound);
     append("bf16-io", OptionKind::kBatchBf16, AccuracyTier::kReference, fp32, kBf16IoLaneBound);
+
+    // A build that carries both lanes has nothing to report as not carried, and
+    // the register stays a parameter either way so its caller reads one list in
+    // both builds.
+    (void)notCarried;
+#else
+    // The seam is closed in this build, so the two lanes are not options it can
+    // serve. They are named as ones this build does not carry rather than
+    // dropped from both lists: a caller asking for one is told the build has no
+    // such lane, instead of being told the name is no option of this library.
+    notCarried.emplace_back("f16-io");
+    notCarried.emplace_back("bf16-io");
 #endif
 
     // The relaxed rungs, walked over the enum's integer range rather than over
@@ -1028,7 +1046,8 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
     Buffers buffers = MakeBuffers(work);
     report.orderRuns = work.runOrder.size();
     report.largestRun = work.largestRun;
-    std::vector<Option> options_ = EnumerateOptions(report.backends, report.unoffered);
+    std::vector<Option> options_ =
+        EnumerateOptions(report.backends, report.unoffered, report.notCarried);
 
     // A caller who names a set is answered about that set, and every conclusion
     // below is drawn from what was measured, so the set is narrowed before
@@ -1049,7 +1068,9 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
                             options_.end(),
                             [&](const Option& tried) { return tried.name == name; }) ||
                 std::find(report.unoffered.begin(), report.unoffered.end(), name) !=
-                    report.unoffered.end();
+                    report.unoffered.end() ||
+                std::find(report.notCarried.begin(), report.notCarried.end(), name) !=
+                    report.notCarried.end();
 
             if (!known)
             {
@@ -1066,6 +1087,11 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
                            report.unoffered.end(),
                            [&](const std::string& name) { return !asked(name); }),
             report.unoffered.end());
+        report.notCarried.erase(
+            std::remove_if(report.notCarried.begin(),
+                           report.notCarried.end(),
+                           [&](const std::string& name) { return !asked(name); }),
+            report.notCarried.end());
     }
 
     report.measurements.resize(options_.size());
@@ -1390,6 +1416,17 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
                 "arithmetic to run them in:\n";
 
         for (const std::string& name : report.unoffered)
+        {
+            text += Text("  %s\n", name.c_str());
+        }
+    }
+
+    if (!report.notCarried.empty())
+    {
+        text += "\noptions this build does not carry, because its fp16 seam is closed (BoysFp16 "
+                "= 0):\n";
+
+        for (const std::string& name : report.notCarried)
         {
             text += Text("  %s\n", name.c_str());
         }

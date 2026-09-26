@@ -180,8 +180,20 @@ Timing TimeLane(const char* name,
                 double* dX,
                 double* dOutF64,
                 float* dOutF32,
+#if BoysFp16
                 boys::F16* dF16In,
-                boys::F16* dF16Out) {
+                boys::F16* dF16Out
+#else
+                // The fp16 lane is declared behind the BoysFp16 seam, so a build
+                // with it closed has no fp16 buffer to pass and no fp16 type to
+                // pass it as. The two parameters stay, as the raw device pointers
+                // the buffers would have been, so every call below reads the same
+                // in both builds; the fp16-single branch is their only reader and
+                // it says there that this build does not carry the lane.
+                void* dF16In,
+                void* dF16Out
+#endif
+                ) {
     cudaEvent_t t0;
     cudaEvent_t t1;
     cudaEventCreate(&t0);
@@ -222,6 +234,14 @@ Timing TimeLane(const char* name,
             {
                 std::exit(2);
             }
+#else
+            // No fp16 lane in this build: no entry to time and no buffer to
+            // pass. A run that asks for the lane by name is told so rather than
+            // handed a time for work that never ran.
+            (void)dF16In;
+            (void)dF16Out;
+            std::fprintf(
+                stderr, "fp16-single: not carried: this build's BoysFp16 seam is closed\n");
 #endif
         }
     };
@@ -267,9 +287,18 @@ int SelfCheck(const std::vector<Item>& items,
               double* dX,
               double* dOutF64,
               float* dOutF32,
+#if BoysFp16
               const std::vector<boys::F16>& f16In,
               boys::F16* dF16In,
               boys::F16* dF16Out,
+#else
+              // As in TimeLane: a closed seam leaves no fp16 host values and no
+              // fp16 device buffers, so the host vector is not a parameter here
+              // and the device pointers stay as the raw addresses they would
+              // have been.
+              void* dF16In,
+              void* dF16Out,
+#endif
               int blocks) {
     int failed = 0;
 
@@ -463,6 +492,14 @@ int SelfCheck(const std::vector<Item>& items,
                     pass ? "PASS" : "FAIL");
         failed += !pass;
     }
+#else
+    // The row above is not measured here and not reported as a pass: a closed
+    // seam means there is no fp16 entry on either side to compare. It is named
+    // so a reader of this output sees a row this build does not carry rather
+    // than an output with a row missing from it.
+    (void)dF16In;
+    (void)dF16Out;
+    std::printf("self-check: fp16-single | not carried: this build's BoysFp16 seam is closed\n");
 #endif
 
     return failed == 0 ? 0 : 1;
@@ -527,8 +564,16 @@ int main(int argc, char** argv) {
     double* dX = nullptr;
     double* dOutF64 = nullptr;
     float* dOutF32 = nullptr;
+#if BoysFp16
     boys::F16* dF16In = nullptr;
     boys::F16* dF16Out = nullptr;
+#else
+    // A closed seam carries no fp16 lane to feed, so there is no fp16 buffer to
+    // allocate. The names stay, as the raw device pointers the buffers would
+    // have been, so the calls below read the same in both builds.
+    void* dF16In = nullptr;
+    void* dF16Out = nullptr;
+#endif
     cudaError_t e = cudaMalloc(&dN, kInputCount * sizeof(int));
 
     if (e == cudaSuccess)
@@ -546,6 +591,7 @@ int main(int argc, char** argv) {
         e = cudaMalloc(&dOutF32, kInputCount * sizeof(float));
     }
 
+#if BoysFp16
     if (e == cudaSuccess)
     {
         e = cudaMalloc(&dF16In, kInputCount * sizeof(boys::F16));
@@ -555,6 +601,7 @@ int main(int argc, char** argv) {
     {
         e = cudaMalloc(&dF16Out, kInputCount * sizeof(boys::F16));
     }
+#endif
 
     if (e != cudaSuccess)
     {
@@ -564,14 +611,18 @@ int main(int argc, char** argv) {
 
     std::vector<int> nHost(kInputCount);
     std::vector<double> xHost(kInputCount);
+#if BoysFp16
     std::vector<boys::F16> f16In(kInputCount);
     std::vector<boys::F16> f16Out(kInputCount);
+#endif
 
     for (std::size_t i = 0; i < kInputCount; ++i)
     {
         nHost[i] = items[i].n;
         xHost[i] = items[i].x;
+#if BoysFp16
         f16In[i] = boys::F16(static_cast<float>(items[i].x));
+#endif
     }
 
     e = cudaMemcpy(dN, nHost.data(), kInputCount * sizeof(int), cudaMemcpyHostToDevice);
@@ -581,11 +632,13 @@ int main(int argc, char** argv) {
         e = cudaMemcpy(dX, xHost.data(), kInputCount * sizeof(double), cudaMemcpyHostToDevice);
     }
 
+#if BoysFp16
     if (e == cudaSuccess)
     {
         e = cudaMemcpy(
             dF16In, f16In.data(), kInputCount * sizeof(boys::F16), cudaMemcpyHostToDevice);
     }
+#endif
 
     if (e != cudaSuccess)
     {
@@ -597,7 +650,11 @@ int main(int argc, char** argv) {
 
     if (selfCheck)
     {
+#if BoysFp16
         return SelfCheck(items, dN, dX, dOutF64, dOutF32, f16In, dF16In, dF16Out, blocks);
+#else
+        return SelfCheck(items, dN, dX, dOutF64, dOutF32, dF16In, dF16Out, blocks);
+#endif
     }
 
     TimeLane("cheb-f64", blocks, dN, dX, dOutF64, dOutF32, dF16In, dF16Out);
