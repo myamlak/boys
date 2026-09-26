@@ -400,6 +400,11 @@ struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kNarrow> {
                   "whole of region B and no narrow partition of it: name "
                   "FitGranularity::kShipped for this route, or FitRoute::kChebyshev for the "
                   "narrow partition");
+
+    /// The fit a caller would have reached had the combination been served. The
+    /// assertion above holds at every scheme this specialisation can be
+    /// instantiated at, so no call reaches this alias; it is here because a
+    /// specialisation that names a route has to name its fit.
     using Type = RationalFit;
 };
 
