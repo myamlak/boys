@@ -371,6 +371,103 @@ struct PackAxisInfo {
 /// \ingroup boys
 std::span<const PackAxisInfo> BoysPackAxes() noexcept;
 
+/// One partition of the fitted regions, and what this build promises about it.
+///
+/// The partition is how narrowly the fitted domain is cut into pieces, and it is
+/// a property of the stored tables rather than of a call shape: a row states
+/// what the partition's tables hold — pieces, degree and coefficients per fitted
+/// region — and which rungs and packing axes the partition has kernels for. A
+/// combination the row does not cover is refused where it is named rather than
+/// answered from another partition's tables, and the row is where those refusals
+/// can be counted from instead of being discovered one compile at a time.
+///
+/// Both rows are the double lane's tables. The single-precision lanes hold one
+/// coefficient set each, so they take no partition and naming one is refused
+/// where it is named.
+///
+/// \c delivered is the worst figure the partition's certification measured over
+/// its pieces, and \c bound is the figure its tables are certified against — for
+/// the shipped partition the bar its fits are cut at, for the narrow one the
+/// per-piece round-up its certification publishes. The two are stated apart for
+/// the same reason the contract table's measured column and published column
+/// are: a figure a sweep found is not the figure a caller may rely on. Both are
+/// figures for the stored fits, measured where a fit is read directly.
+///
+/// \c lo and \c hi are the interval those fits cover, read off the pieces above:
+/// \c bound holds on \c [lo, hi) and says nothing about any argument outside it.
+/// Naming a partition replaces the fitted tables of that interval and leaves the
+/// rest of the domain to what the entry does without them, so this is not the
+/// figure for an entry's error: the entry that reads a partition carries its own
+/// documented accuracy, and where the values of two partitions are compared the
+/// difference is bounded by the two fits' figures together, one of them the
+/// other partition's. Above \c hi the same asymptotic arithmetic runs under
+/// either partition, so a figure covering the whole line is the entry's and
+/// never this one.
+///
+/// \ingroup boys
+struct FitGranularityInfo {
+    FitGranularity granularity = FitGranularity::kShipped; ///< the selector value this row describes
+    const char* name = ""; ///< the name a report prints it under
+    unsigned routes = 0; ///< bit (1u << route) set per fit route the partition's tables hold
+    int rungs = 0; ///< accuracy rungs the partition's tables are certified at, reference included
+    unsigned axes = 0; ///< bit (1u << axis) set per packing axis the partition has a kernel for
+    int regionAPieces = 0; ///< pieces region A's per-order tables are cut into
+    int regionADeg = 0; ///< highest degree an evaluation of a region-A piece reads
+    int regionAStored = 0; ///< coefficients region A's tables store
+    int regionBPieces = 0; ///< pieces region B's seed is cut into
+    int regionBDeg = 0; ///< highest degree an evaluation of a region-B piece reads
+    int regionBStored = 0; ///< coefficients region B's tables store
+    double delivered = 0.0; ///< worst error the partition's fits were measured to deliver
+    double bound = 0.0; ///< the figure the partition's tables are certified against
+    double lo = 0.0; ///< lowest argument the partition's own tables serve
+    double hi = 0.0; ///< one past the highest argument the partition's own tables serve
+};
+
+/// Whether the named partition carries the named fit route's tables.
+///
+/// A partition and a route are separate choices: a partition's tables are cut
+/// for whichever routes it holds, and a route with no table in it is a
+/// combination a build either carries or refuses. This answers the row's own
+/// coverage without a caller reading a kernel.
+///
+/// \param partition a row of BoysFitGranularities
+/// \param route     the fit route
+/// \returns         true when the partition's tables carry that route
+///
+/// \ingroup boys
+constexpr bool FitGranularityHasRoute(const FitGranularityInfo& partition,
+                                      FitRoute route) noexcept {
+    return (partition.routes & (1u << static_cast<unsigned>(route))) != 0u;
+}
+
+/// Whether the named partition has a kernel for the named packing axis.
+///
+/// The axis is a property of a call shape and the partition of the tables, so
+/// the pair is a combination a build either carries or refuses. This answers the
+/// row's own coverage without a caller reading a kernel.
+///
+/// \param partition a row of BoysFitGranularities
+/// \param axis      the packing axis
+/// \returns         true when the partition has a kernel for that axis
+///
+/// \ingroup boys
+constexpr bool FitGranularityHasAxis(const FitGranularityInfo& partition, PackAxis axis) noexcept {
+    return (partition.axes & (1u << static_cast<unsigned>(axis))) != 0u;
+}
+
+/// The partitions of the fitted regions this build ships, as a report prints
+/// them.
+///
+/// Which partition an entry accepts is the entries' own business and is refused
+/// where it is named; this answers what exists, what each partition's tables
+/// hold, and which of the other axes - the packing axes and the fit routes - it
+/// is offered on.
+///
+/// \returns one row per partition, in enumerator order
+///
+/// \ingroup boys
+std::span<const FitGranularityInfo> BoysFitGranularities() noexcept;
+
 /// What a tier delivers in one region, and what limits it when a tighter
 /// error than that is asked for.
 ///

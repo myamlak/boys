@@ -74,19 +74,37 @@
 /// exist — and when nothing was measured at all. A wrong ranking is worse than
 /// none, so the refusal path is the one this entry is most careful about.
 ///
-/// **Entries are ordered only against entries asked the same question.** An
-/// entry that returns F_n alone and one that returns the whole ladder for the
-/// same arguments have not done the same work, and a table that put them in one
-/// column would rank the amount of output instead of the cost of the
-/// arithmetic. The report therefore carries one ranking per question class —
-/// the single order, the ladder to each argument's own order, and the ladder to
-/// one common top order — and never a winner across them.
+/// **Entries are ordered only within one precision and one question shape.** A
+/// class is one precision — \c fp64, \c fp32 or \c fp16 — because precision is
+/// the choice the caller has already made from the accuracy their calculation
+/// needs, and an option is not available to be traded for speed: the report
+/// never places an fp32 entry against an fp64 one. Inside a class the entries
+/// are grouped into one ranking per question shape, because an entry that
+/// returns F_n alone and one that returns the whole ladder for the same
+/// arguments have not done the same work, and the figure the report states is
+/// per argument rather than per value, so a ranking across the two would rank
+/// the amount of output against the arithmetic. The report therefore carries
+/// one class per precision, one ranking per question shape inside it — the
+/// single order, the ladder to each argument's own order, and the ladder to one
+/// common top order — and never a winner across precisions or across shapes.
 ///
-/// **The accuracy column is the documented bound, not a measurement.** A faster
-/// precision is not a faster option unless it is fast at an accuracy the caller
-/// can use, so each row carries the bound its lane documents at full accuracy.
-/// It is read from the documentation and stated as such; what an entry actually
-/// delivers on this card is the accuracy gate's business, and that gate exists.
+/// **The bound is a column of a row, not the thing a class is keyed on.** Two
+/// rows of one precision need not document the same bound: the fp32 lane's
+/// single entries are the case in this library, where one of them evaluates the
+/// fast region-B exponential and documents the looser bound that buys. That row
+/// stays in its precision's class and carries its own bound in its own row, so a
+/// class holds rows whose documented bounds differ and its winner is the fastest
+/// entry of one shape in one precision at the bound its own row states — which
+/// is what the accuracy column is for, and it makes the winner the fastest at
+/// an accuracy and not the fastest at one accuracy. A row that trades accuracy
+/// for speed inside the precision the caller chose is still that precision.
+///
+/// **The accuracy column is the documented bound, not a measurement.** A row
+/// that is fast at a looser bound is not a faster option for a caller who needs
+/// the tighter one, so each row carries the bound its lane documents at full
+/// accuracy. It is read from the documentation and stated as such; what an entry
+/// actually delivers on this card is the accuracy gate's business, and that gate
+/// exists.
 ///
 /// **What this probe does not measure**, and why. The relaxed accuracy
 /// multipliers are left out: the device lane fixes the multiplier at the call
@@ -97,7 +115,9 @@
 /// not sort them, so an unsorted batch costs what the classification costs and
 /// is not a figure for the sorted shape the entry is for. The fp16 and fp32
 /// single entries' region-B option is measured in both of its forms, because
-/// both are reachable from a consumer and neither substitutes for the other.
+/// both are reachable from a consumer and neither substitutes for the other;
+/// both rows stand in their precision's single ranking and each carries the
+/// bound its own form documents.
 ///
 /// **This result is about the card it was measured on.** The report says so in
 /// its own output, not only here, and it states the card's documented ratio of
@@ -132,16 +152,16 @@ enum class DeviceProbeStatus : int {
     kInvalidArgument,  ///< the request named no entry this library has; see the report
 };
 
-/// What the probe concluded for one question class, and the two ways it can end.
+/// What the probe concluded for one question shape, and the two ways it can end.
 ///
 /// \ingroup boys
 enum class DeviceProbeVerdict : int {
-    /// One entry leads and every other entry in its class is further behind it
-    /// than the resolution this run measured.
+    /// One entry leads and every other entry of that shape in that precision is
+    /// further behind it than the resolution this run measured.
     kRecommend = 0,
     /// The probe declined: no clean pass, fewer than two, nothing measured in
-    /// the class, or a rival inside the resolution, so the two cannot be ordered
-    /// against each other. See the class's reason.
+    /// the shape, one entry alone in it, or a rival inside the resolution, so
+    /// the two cannot be ordered against each other. See the ranking's reason.
     kCannotDetermine,
 };
 
@@ -174,7 +194,7 @@ struct DeviceProbeOptions {
     std::size_t count = 1u << 18;
 
     /// Highest order any argument carries, 1..kMaxBoysOrder. It is also the
-    /// common top order the all-n class is asked for.
+    /// common top order the all-n shape is asked for.
     int nmax = kMaxBoysOrder;
 
     /// Lower end of the log-uniform argument range.
@@ -332,8 +352,9 @@ struct DeviceProbeMeasurement {
     /// the call.
     std::string shape;
 
-    /// The question class the entry belongs to, which is the set it may be
-    /// ordered against and no other.
+    /// The question shape of the call. With the entry's precision it names the
+    /// one set the entry may be ordered in and no other: the report ranks one
+    /// shape inside one precision, so this is the ranking the row stands in.
     std::string question;
 
     /// How the figure was obtained: \c "launched" for a kernel of this library
@@ -396,7 +417,7 @@ struct DeviceProbeMeasurement {
 
     /// Whether the repetition control was run on this row. Every row a ranking
     /// could recommend carries it: the two rows the report's controls describe,
-    /// and every row that led a question class once the rows set aside below were
+    /// and every row that led a question shape once the rows set aside below were
     /// taken out of the running.
     bool repetitionChecked = false;
 
@@ -417,18 +438,26 @@ struct DeviceProbeMeasurement {
     std::string repetitionNote;
 };
 
-/// One question class: what its entries were asked to produce, and what the run
-/// could conclude about ordering them.
+/// One question shape inside a class: the entries of one precision that were
+/// asked the same question, and what the run could conclude about ordering them
+/// against each other.
+///
+/// A ranking is per shape because the cost the report states is per argument and
+/// the shapes return different amounts of output for one argument — the ladder's
+/// cost carries order + 1 values where the single order's carries one — so only
+/// the entries of one shape, in one precision, have done the same work.
 ///
 /// \ingroup boys
-struct DeviceProbeClass {
-    /// The class's name, as the report prints it.
+struct DeviceProbeRanking {
+    /// The shape's name, as the report prints it: \c "single",
+    /// \c "all-orders" or \c "all-n". The entries it holds are those of its
+    /// class's precision whose own \c question is this name.
     std::string question;
 
-    /// One sentence saying what every entry in this class produced.
+    /// One sentence saying what every entry in this shape produced.
     std::string asked;
 
-    /// What this run can order in this class, as a fraction of a cost: two rows
+    /// What this run can order in this shape, as a fraction of a cost: two rows
     /// closer together than this are inside the noise and the probe declines to
     /// order them. It is the larger of the canary's widest admitted spread and
     /// the leader's own spread across its clean passes, both measured here, so it
@@ -441,21 +470,21 @@ struct DeviceProbeClass {
     /// strings in \c inseparable carry the threshold each was judged against.
     double resolution = 0.0;
 
-    /// Whether the probe named a winner in this class.
+    /// Whether the probe named a winner in this shape.
     DeviceProbeVerdict verdict = DeviceProbeVerdict::kCannotDetermine;
 
-    /// The entry the probe recommends in this class, empty when it declined.
+    /// The entry the probe recommends in this shape, empty when it declined.
     std::string recommended;
 
-    /// The fastest entry measured in this class, empty when no entry was.
+    /// The fastest entry measured in this shape, empty when no entry was.
     std::string fastestOverall;
 
-    /// The entries this class will not order against the recommendation, with
+    /// The entries this shape will not order against the recommendation, with
     /// their figures and how far behind the leader they are. Empty when the
     /// recommendation is clear of the field.
     std::vector<std::string> inseparable;
 
-    /// The rows this class set aside rather than rank, each with the reason it
+    /// The rows this shape set aside rather than rank, each with the reason it
     /// was set aside. Two reasons arise, and each names itself: an in-kernel row
     /// whose subtraction resolved nothing above the caller kernel's own baseline
     /// — its arithmetic sat inside the traffic and the clock's resolution at this
@@ -471,6 +500,34 @@ struct DeviceProbeClass {
     /// One line naming how far the recommendation can be trusted, built from
     /// the same numbers the verdict is.
     std::string confidence = "not measured";
+};
+
+/// One class: a precision, and the rankings of its question shapes.
+///
+/// The class is keyed on precision and not on the accuracy a row achieves.
+/// Precision is the choice the caller has already made, from the accuracy their
+/// calculation needs, so it is not available to be traded for speed and no entry
+/// of one class is ordered against an entry of another. The bound a row
+/// documents is a column of that row instead, and the rows of one class do not
+/// all carry the same one: a row that buys speed with accuracy stays in its
+/// precision and shows the bound it bought it with. See the header preamble.
+///
+/// \ingroup boys
+struct DeviceProbeClass {
+    /// \c "fp64", \c "fp32" or \c "fp16": the arithmetic every entry of this
+    /// class runs, and the class key. How far the fp64 class sits behind the
+    /// fp32 one is the card's own ratio of single- to double-precision
+    /// throughput, which is a property of the card and not of the library.
+    std::string precision;
+
+    /// One paragraph saying what this class is: the precision its rows share,
+    /// and the fact that the bounds they document are their own and need not
+    /// agree, so that its rankings are by cost within one precision.
+    std::string note;
+
+    /// One ranking per question shape, in the report's own order. The first
+    /// shape is the one whose entries appear first in the report's option table.
+    std::vector<DeviceProbeRanking> rankings;
 };
 
 /// The repetition-count control: one entry timed at two very different counts of
@@ -582,8 +639,15 @@ struct DeviceProbeReport {
     /// Nothing was measured for them.
     std::vector<std::string> notAnEntry;
 
-    /// Entries this build does not carry, because the fp16 seam is closed in it.
+    /// Options of the library's device space that this build does not serve,
+    /// as the library reports them, with the reason beside each in
+    /// \c refusedBecause. Read from BoysDeviceOptions(), so a row the library
+    /// adds to the space and this build cannot serve reaches a report without
+    /// an edit here.
     std::vector<std::string> unoffered;
+
+    /// The library's reason for each name in \c unoffered, in the same order.
+    std::vector<std::string> refusedBecause;
 
     /// Arguments in the workload, and the highest order any of them carries.
     std::size_t workloadCount = 0;
@@ -605,7 +669,8 @@ struct DeviceProbeReport {
     /// floor the canary's own spread is measured against.
     double canaryFloorMs = 0.0;
 
-    /// One conclusion per question class, in the report's own order.
+    /// One class per precision this run's option table carries, in the report's
+    /// own order, each holding one ranking per question shape.
     std::vector<DeviceProbeClass> classes;
 
     /// The control on the launched route: the fastest launched row timed at two
@@ -630,8 +695,9 @@ struct DeviceProbeReport {
 /// whose canary runs disagree by more than
 /// DeviceProbeOptions::canarySpreadThreshold is discarded. The report carries,
 /// per entry, the minimum of the passes that were admitted with their spread
-/// beside it, one ranking per question class with the resolution those passes
-/// support, and the repetition-count controls described on
+/// beside it, one class per precision holding one ranking per question shape,
+/// each with the resolution those passes support, and the repetition-count
+/// controls described on
 /// DeviceProbeRepetitionControl — one per route, since the two routes are two
 /// methods and a check of one says nothing about the other.
 ///
@@ -658,7 +724,7 @@ struct DeviceProbeReport {
 ///
 /// \returns the report, whose status is \c kDeviceNotFound or \c kNoDevice when
 ///          the caller named a device this machine does not have, and whose
-///          per-class verdict is \c kCannotDetermine whenever the measurement
+///          per-shape verdict is \c kCannotDetermine whenever the measurement
 ///          did not support naming an entry
 ///
 /// \ingroup boys

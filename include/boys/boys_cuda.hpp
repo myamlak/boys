@@ -1,6 +1,7 @@
 #pragma once
 
 #include "boys/boys.hpp"
+#include "boys/boys_cuda_options.hpp"
 #include "boys/boys_device_tables.hpp"
 
 #include <cstddef>
@@ -32,6 +33,20 @@ enum class BoysStatus {
     kInvalidArgument, ///< a parameter was invalid (see the entry's contract)
     kDeviceError, ///< a CUDA operation failed
 };
+
+// ---------------------------------------------------------------------------
+// The device option space.
+//
+// One row per option of the surface below, with what a chooser needs to place
+// it, in boys_cuda_options.hpp. The rows are declared there and not here
+// because they are one table with two readers: this header's entries are one,
+// and the device translation units that implement the entries of
+// boys_cuda_device.hpp are the other — those are compiled by nvcc, which cannot
+// take this header (it pulls in the whole library through boys.hpp). The
+// enumerators, the row struct and BoysDeviceOptions() are therefore in the
+// small header, and it is included here so that a caller who reads this surface
+// has the space in the same include.
+// ---------------------------------------------------------------------------
 
 /// Device-side Boys evaluation over arrays of (n, x) inputs.
 ///

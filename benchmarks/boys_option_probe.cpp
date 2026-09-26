@@ -8,9 +8,12 @@
 // so a script that wants the verdict reads it from the text.
 //
 // The knobs move the workload to the caller's own shape (--count, --nmax,
-// --xrange) and the protocol to the machine's own patience (--passes, --rounds,
-// --bg, --cal, --canary-spread). Every value that was in force is printed in the
-// report, so a figure is never read without the protocol that produced it.
+// --xrange), the protocol to the machine's own patience (--passes, --rounds,
+// --bg, --cal, --canary-spread), and the measured set to the caller's own
+// shortlist (--only, repeatable). Every value that was in force is printed in
+// the report, so a figure is never read without the protocol that produced it,
+// and a name that is no option of this library is printed as such rather than
+// silently measuring nothing.
 #include "boys/boys_probe.hpp"
 
 #include <array>
@@ -19,6 +22,7 @@
 #include <cstring>
 #include <ctime>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -37,6 +41,30 @@ std::string Timestamp() {
     return std::string(buffer.data());
 }
 
+// A comma-separated list of option names, appended to the set the caller is
+// narrowing the measurement to.
+void AppendNames(const char* list, std::vector<std::string>& names) {
+    const std::string text(list);
+
+    for (std::size_t start = 0; start <= text.size();)
+    {
+        const std::size_t comma = text.find(',', start);
+        const std::size_t end = comma == std::string::npos ? text.size() : comma;
+
+        if (end > start)
+        {
+            names.push_back(text.substr(start, end - start));
+        }
+
+        if (comma == std::string::npos)
+        {
+            break;
+        }
+
+        start = comma + 1;
+    }
+}
+
 void Usage() {
     std::fputs("boys option probe — measures this build's evaluation options on this machine\n"
                "\n"
@@ -53,6 +81,11 @@ void Usage() {
                "  --canary-spread=P  spread percentage of the canary's own runs\n"
                "                     across a pass above which the pass is\n"
                "                     discarded (default 5.0)\n"
+               "  --only=A,B         measure only these options, by name, repeatable\n"
+               "                     and comma-separated (default: every option this\n"
+               "                     build offers). A name that is no option of this\n"
+               "                     library, a cell the library refuses, and an option\n"
+               "                     this build does not carry are answered apart.\n"
                "  --help             this text\n"
                "\n"
                "The result is about this machine, this build and this process. It is\n"
@@ -97,6 +130,9 @@ int main(int argc, char** argv) {
         } else if (arg.rfind("--canary-spread=", 0) == 0)
         {
             options.canarySpreadThreshold = std::strtod(arg.c_str() + 16, nullptr);
+        } else if (arg.rfind("--only=", 0) == 0)
+        {
+            AppendNames(arg.c_str() + 7, options.only);
         } else if (arg.rfind("--xrange=", 0) == 0)
         {
             options.xLo = std::strtod(arg.c_str() + 9, nullptr);

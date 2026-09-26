@@ -26,6 +26,7 @@ namespace {
 using boys::DeviceProbeClass;
 using boys::DeviceProbeMeasurement;
 using boys::DeviceProbeOptions;
+using boys::DeviceProbeRanking;
 using boys::DeviceProbeReport;
 using boys::DeviceProbeStatus;
 using boys::DeviceProbeVerdict;
@@ -56,9 +57,12 @@ TEST(DeviceProbe, ADisturbedRunRefusesWithAReason) {
     {
         for (const DeviceProbeClass& clause : report.classes)
         {
-            EXPECT_EQ(clause.verdict, DeviceProbeVerdict::kCannotDetermine);
-            EXPECT_TRUE(clause.recommended.empty());
-            EXPECT_FALSE(clause.reason.empty());
+            for (const DeviceProbeRanking& ranking : clause.rankings)
+            {
+                EXPECT_EQ(ranking.verdict, DeviceProbeVerdict::kCannotDetermine);
+                EXPECT_TRUE(ranking.recommended.empty());
+                EXPECT_FALSE(ranking.reason.empty());
+            }
         }
     }
 }
@@ -103,6 +107,83 @@ TEST(DeviceProbe, TheReportCarriesTheProtocolItWasTakenUnder) {
     }
 }
 
+/// A class is one precision and a ranking inside it is one question shape: no
+/// entry is ever placed against an entry of another precision or of another
+/// shape. That is the rule the ranking is read under, so it is the rule checked
+/// here, row by row rather than by the names the report happens to print.
+TEST(DeviceProbe, AClassIsOnePrecisionAndARankingIsOneShape) {
+    DeviceProbeOptions options = Small();
+    options.passes = 1;
+    options.canarySpreadThreshold = 1.0e9;
+
+    const DeviceProbeReport report = boys::RunDeviceOptionProbe(options);
+
+    ASSERT_EQ(report.status, DeviceProbeStatus::kSuccess);
+    ASSERT_FALSE(report.classes.empty());
+
+    for (std::size_t c = 0; c < report.classes.size(); ++c)
+    {
+        const DeviceProbeClass& clause = report.classes[c];
+
+        EXPECT_FALSE(clause.precision.empty());
+        EXPECT_FALSE(clause.note.empty());
+        EXPECT_FALSE(clause.rankings.empty());
+
+        // One class per precision, so no two classes are the same precision.
+        for (std::size_t other = c + 1; other < report.classes.size(); ++other)
+        {
+            EXPECT_NE(report.classes[other].precision, clause.precision);
+        }
+
+        for (std::size_t r = 0; r < clause.rankings.size(); ++r)
+        {
+            const DeviceProbeRanking& ranking = clause.rankings[r];
+
+            EXPECT_FALSE(ranking.question.empty());
+            EXPECT_FALSE(ranking.asked.empty());
+
+            // One ranking per shape, so no two rankings of one class ask the
+            // same question.
+            for (std::size_t other = r + 1; other < clause.rankings.size(); ++other)
+            {
+                EXPECT_NE(clause.rankings[other].question, ranking.question);
+            }
+
+            // Every row the report places in this ranking — the recommended one
+            // included — is of this class's precision and this ranking's
+            // question, and there is at least one such row in the table.
+            std::size_t rows = 0;
+
+            for (const DeviceProbeMeasurement& measurement : report.measurements)
+            {
+                if (measurement.precision != clause.precision ||
+                    measurement.question != ranking.question)
+                {
+                    continue;
+                }
+
+                ++rows;
+            }
+
+            EXPECT_GT(rows, 0u);
+
+            if (!ranking.recommended.empty())
+            {
+                const auto named =
+                    std::find_if(report.measurements.begin(),
+                                 report.measurements.end(),
+                                 [&ranking](const DeviceProbeMeasurement& measurement) {
+                                     return measurement.name == ranking.recommended;
+                                 });
+
+                ASSERT_NE(named, report.measurements.end());
+                EXPECT_EQ(named->precision, clause.precision);
+                EXPECT_EQ(named->question, ranking.question);
+            }
+        }
+    }
+}
+
 /// A class that names a winner names one it measured, and it says how far the
 /// nearest rival was. A class that does not names what it could not separate.
 TEST(DeviceProbe, AVerdictNamesOnlyEntriesItMeasured) {
@@ -116,27 +197,84 @@ TEST(DeviceProbe, AVerdictNamesOnlyEntriesItMeasured) {
 
     for (const DeviceProbeClass& clause : report.classes)
     {
-        EXPECT_FALSE(clause.asked.empty());
-
-        if (clause.verdict != DeviceProbeVerdict::kRecommend)
+        for (const DeviceProbeRanking& ranking : clause.rankings)
         {
-            continue;
+            EXPECT_FALSE(ranking.asked.empty());
+
+            if (ranking.verdict != DeviceProbeVerdict::kRecommend)
+            {
+                EXPECT_TRUE(ranking.recommended.empty());
+                continue;
+            }
+
+            EXPECT_FALSE(ranking.recommended.empty());
+            EXPECT_FALSE(ranking.reason.empty());
+            EXPECT_GT(ranking.resolution, 0.0);
+            EXPECT_FALSE(ranking.confidence.empty());
+
+            const auto named =
+                std::find_if(report.measurements.begin(),
+                             report.measurements.end(),
+                             [&ranking](const DeviceProbeMeasurement& measurement) {
+                                 return measurement.name == ranking.recommended;
+                             });
+
+            ASSERT_NE(named, report.measurements.end());
+            EXPECT_TRUE(named->measured);
+            EXPECT_EQ(named->question, ranking.question);
+            EXPECT_EQ(named->precision, clause.precision);
         }
-
-        EXPECT_FALSE(clause.recommended.empty());
-
-        const auto named = std::find_if(report.measurements.begin(),
-                                        report.measurements.end(),
-                                        [&clause](const DeviceProbeMeasurement& measurement) {
-                                            return measurement.name == clause.recommended;
-                                        });
-
-        ASSERT_NE(named, report.measurements.end());
-        EXPECT_TRUE(named->measured);
-        EXPECT_EQ(named->question, clause.question);
-        EXPECT_GT(clause.resolution, 0.0);
-        EXPECT_FALSE(clause.confidence.empty());
     }
+}
+
+/// A ranking is a comparison, so it needs two entries to be one. A shape whose
+/// table holds one entry has nothing to order that entry against, and the report
+/// declines rather than naming it: what such an entry is, is the fastest of the
+/// one entry of its shape, and what it is not, is a result against a field.
+///
+/// The check is on the shape's own rows rather than on a figure, because whether
+/// an entry measures at this workload is the card's business and this run is not
+/// asserting a cost.
+TEST(DeviceProbe, AShapeOfOneNamesNoWinner) {
+    DeviceProbeOptions options = Small();
+    options.canarySpreadThreshold = 1.0e9;
+    options.only = {"all-n-fp64"};
+
+    const DeviceProbeReport report = boys::RunDeviceOptionProbe(options);
+
+    ASSERT_EQ(report.status, DeviceProbeStatus::kSuccess);
+
+    bool sawAShapeOfOne = false;
+
+    for (const DeviceProbeClass& clause : report.classes)
+    {
+        for (const DeviceProbeRanking& ranking : clause.rankings)
+        {
+            std::size_t rows = 0;
+
+            for (const DeviceProbeMeasurement& measurement : report.measurements)
+            {
+                if (measurement.precision == clause.precision &&
+                    measurement.question == ranking.question)
+                {
+                    ++rows;
+                }
+            }
+
+            if (rows >= 2)
+            {
+                continue;
+            }
+
+            sawAShapeOfOne = true;
+            EXPECT_NE(ranking.verdict, DeviceProbeVerdict::kRecommend);
+            EXPECT_TRUE(ranking.recommended.empty());
+            EXPECT_FALSE(ranking.reason.empty());
+            EXPECT_FALSE(ranking.confidence.empty());
+        }
+    }
+
+    EXPECT_TRUE(sawAShapeOfOne);
 }
 
 /// A control that agrees has two figures to compare. A count at which the

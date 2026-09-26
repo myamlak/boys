@@ -417,7 +417,11 @@ carries all 32 of its rows, one per partition, scheme and call shape, each judge
 published table holds for the cell it ran in, with the worst cell named; and it reports the trade
 above and the 481700 of 578888 axis cells (83.2%) that can discriminate, the rest carrying a bound at
 least as large as the value itself. Those rows are counted apart from every other book the gate
-reports, so nothing the library already published moves.
+reports, so nothing the library already published moves. `BoysFitGranularities()` states the interval
+each partition's figures hold on, read off its own pieces and the fitted routes' domains: above that
+interval the entry runs region C's asymptotic form, which no partition replaces, so a caller reading
+one of these figures against a wider range would be matching the fitted tables' promise to an error
+that is not theirs.
 
 **Where a combination has no narrow table it is refused where it is named**, with the reason, rather
 than answered from the shipped table: the rational minimax route (one numerator/denominator pair over
@@ -515,13 +519,23 @@ ratio is 32, and a card whose compute capability predates the bf16 tensor instru
 path at all. So the CUDA lane ships the same kind of measurement. `boys::RunDeviceOptionProbe` takes
 a device ordinal, establishes that device's context before it allocates anything, and returns a
 `boys::DeviceProbeReport` — the card's name and compute capability in the returned data, one figure
-per entry with the spread it was taken under, one conclusion per question class with the resolution
-that class was ordered at, and the entries it could not separate. `boys-device-probe` is a thin
-driver over it for the terminal:
+per entry with the spread it was taken under, one class per precision holding one ranking per question
+shape with the resolution that ranking was ordered at, and the entries it could not separate.
+`boys-device-probe` is a thin driver over it for the terminal:
 
     cmake -S . -B build-cuda -DBUILD_CUDA=ON
     cmake --build build-cuda --target boys-device-probe
     ./build-cuda/Release/boys-device-probe     # the config directory is your generator's
+
+The option space the probe ranks is the library's own, reported by `boys::BoysDeviceOptions()` in
+`boys_cuda_options.hpp` beside the entries it describes. A row carries what a chooser needs to place
+an option: the entry, the precision it computes in, the question shape it answers, the axis it varies
+where it has one — the single fp32 entry's region-B exponential, whose two members carry different
+bounds — the degree tables it reads, and the bound its own documentation states. The probe's rows are
+a projection of that report, so a precision, a shape or an axis member added to the surface appears in
+both without an edit to the probe, and an option this build does not serve is carried with the reason
+rather than left out. The device accuracy gate reads the same report for the same bounds, so what a
+chooser is told and what the gate certifies cannot come apart.
 
 The figures are device time only. The arguments and the output are uploaded and allocated once,
 before the first clock, and every figure is a CUDA event pair around many back-to-back launches into

@@ -112,23 +112,60 @@ using namespace boys_gate;
 namespace {
 
 // ---------------------------------------------------------------------------
-// The documented device bounds, transcribed from README.md and
-// include/boys/boys_cuda.hpp.
+// The documented device bounds, and the option rows they are the bounds of.
+//
+// The fp32 and fp16 figures, and the rows the device cells below are claimed
+// for, are read from boys::BoysDeviceOptions() — the library's own report of its
+// device option space, the table the header's entries are documented in and the
+// one a chooser reads. A gate that transcribed them would be a second source of
+// truth for the same numbers, and the two could disagree: a row added to the
+// surface would be certified by nothing, and a bound could say one thing to a
+// chooser and another to the certifier. The fp64 single lane's per-region cells
+// are the exception and are transcribed below, because the report states one
+// figure per option and that lane's contract is four cells of one option.
 // ---------------------------------------------------------------------------
+
+/// The report's row for an option, by entry and axis member.
+///
+/// A row this gate asks for and the library does not report is the drift this
+/// reads the report to prevent, so it stops the gate rather than substituting a
+/// figure: a gate that can invent a bound is not a certifier.
+const boys::DeviceOptionInfo& DeviceRow(boys::DeviceEntry entry,
+                                        boys::RegionBExp exp = boys::RegionBExp::kAccurate) {
+    for (const boys::DeviceOptionInfo& option : boys::BoysDeviceOptions())
+    {
+        if (option.entry == entry && option.regionBExp == exp)
+        {
+            return option;
+        }
+    }
+
+    std::fprintf(stderr,
+                 "gate: the library reports no device option at entry %d, region-B exponential %d\n",
+                 static_cast<int>(entry),
+                 static_cast<int>(exp));
+    std::abort();
+}
 
 // README's accuracy contract: "CUDA fp64 | same m*budgets as the CPU double
 // lanes". The CPU double single lane is the one with per-region cells
 // (1e-15 below the region-A edge, 3e-14 through the extended band and region
 // B, 5.5e-14 in region C); the CPU double batch lane publishes one, 5.5e-14.
+//
+// Three of those cells are transcribed below, because the report states one
+// figure per option and this lane's contract is four cells of one option. The
+// region-C cell and the batch bound are read from the report, as every fp32 and
+// fp16 figure below is.
 constexpr double kBoundSingleA = 1e-15;
 constexpr double kBoundSingleBand = 3e-14;
 constexpr double kBoundSingleB = 3e-14;
-constexpr double kBoundSingleC = 5.5e-14;
-constexpr double kBoundDoubleBatch = 5.5e-14;
+const double kBoundSingleC = DeviceRow(boys::DeviceEntry::kSingleF64).bound;
+const double kBoundDoubleBatch = DeviceRow(boys::DeviceEntry::kAllOrdersF64).bound;
 // README: "CUDA fp32, RegionBExp::kAccurate (the default) | same m*budgets as
 // the CPU float lanes" - 1.5e-7, the bound of the single entry's accurate
-// region-B exponential, of the batch entries and of the all-n entry.
-constexpr double kBoundFloat = 1.5e-7;
+// region-B exponential, of the batch entries and of the all-n entry. Read from
+// the report, which is the header's own figure for that option.
+const double kBoundFloat = DeviceRow(boys::DeviceEntry::kDeviceSingleF32).bound;
 // The single entry's fast region-B exponential carries its own bound: the
 // lane's m * 1.5e-7 plus the corrected seed's own contribution, which the
 // recurrence's amplification caps at this figure. The cap is derived, not
@@ -140,9 +177,20 @@ constexpr double kBoundFloat = 1.5e-7;
 // most G_n (1/2) e^{-x} rho: 6.1e-8 at rho = 4 ulp, 8e-8 here. The sweep below
 // reports the contribution it actually measured, and the audit reports the
 // wrong-sign cells (zero at m = 1 for the corrected form).
-constexpr double kFastExpContribution = 8e-8;
+//
+// It is read as the difference between the two options' documented bounds - the
+// fast option's figure is the lane's plus this contribution, and both figures are
+// the report's. A contribution derived here from two reported numbers cannot
+// disagree with either of them.
+const double kFastExpContribution =
+    DeviceRow(boys::DeviceEntry::kDeviceSingleF32Fast, boys::RegionBExp::kFast).bound -
+                                    DeviceRow(boys::DeviceEntry::kDeviceSingleF32).bound;
 // The fp16 entries' bound is the header's: m * 1e-7 + 1/2 ULP of the returned
-// value, which is what HalfBound computes at m = 1.
+// value, which is what HalfBound computes at m = 1. Its constant part is read
+// from the report's fp16 row, and the coverage check at the end of this file
+// compares it against kBoundHalfBase, the figure the shared reference book
+// states: two books, one number, and a disagreement stops the gate.
+const double kBoundHalfRow = DeviceRow(boys::DeviceEntry::kDeviceSingleF16).bound;
 
 // The rungs the lane instantiates, in the order the rows print: the multiplier
 // and the name a row's label carries for it. m = 1 is the unlabelled row, which
@@ -485,7 +533,7 @@ DigitGrid LoadDigitGrid(const std::string& path) {
 // The fp16 bound at a multiplier: the header's m * 1e-7 + 1/2 ULP, in ULP of
 // the value the entry returned rather than of the value it should have.
 double HalfBoundAt(double got, double multiplier) {
-    return multiplier * kBoundHalfBase + 0.5 * UlpOf(got, kF16MantissaBits, kF16MinNormalExp);
+    return multiplier * kBoundHalfRow + 0.5 * UlpOf(got, kF16MantissaBits, kF16MinNormalExp);
 }
 
 // A float lane's return, widened for the comparison against a double reference,
@@ -924,16 +972,16 @@ void SweepRelaxed(const Reference& ref,
                   const Grid& grid,
                   const SortedArgs& sorted,
                   const char* rung) {
-    const std::string doubleSingle = Label("cuda single f64", rung);
-    const std::string doubleOrders = Label("cuda all-orders f64", rung);
-    const std::string doubleAllN = Label("cuda all-n f64", rung);
-    const std::string floatSingle = Label("cuda single f32", rung);
-    const std::string floatSingleFast = Label("cuda single f32 (fast exp)", rung);
-    const std::string floatOrders = Label("cuda all-orders f32", rung);
-    const std::string floatAllN = Label("cuda all-n f32", rung);
-    const std::string halfSingle = Label("cuda single f16", rung);
-    const std::string halfOrders = Label("cuda all-orders f16", rung);
-    const std::string halfAllN = Label("cuda all-n f16", rung);
+    const std::string doubleSingle = Label(DeviceRow(boys::DeviceEntry::kSingleF64).name, rung);
+    const std::string doubleOrders = Label(DeviceRow(boys::DeviceEntry::kAllOrdersF64).name, rung);
+    const std::string doubleAllN = Label(DeviceRow(boys::DeviceEntry::kAllNF64).name, rung);
+    const std::string floatSingle = Label(DeviceRow(boys::DeviceEntry::kSingleF32).name, rung);
+    const std::string floatSingleFast = Label(DeviceRow(boys::DeviceEntry::kSingleF32Fast, boys::RegionBExp::kFast).name, rung);
+    const std::string floatOrders = Label(DeviceRow(boys::DeviceEntry::kAllOrdersF32).name, rung);
+    const std::string floatAllN = Label(DeviceRow(boys::DeviceEntry::kAllNF32).name, rung);
+    const std::string halfSingle = Label(DeviceRow(boys::DeviceEntry::kSingleF16).name, rung);
+    const std::string halfOrders = Label(DeviceRow(boys::DeviceEntry::kAllOrdersF16).name, rung);
+    const std::string halfAllN = Label(DeviceRow(boys::DeviceEntry::kAllNF16).name, rung);
 
     const int doubleSingleA = AddClaim(doubleSingle.c_str(), "A", kMultiplier * kBoundSingleA);
     const int doubleSingleBand =
@@ -951,9 +999,9 @@ void SweepRelaxed(const Reference& ref,
         AddClaim(floatSingleFast.c_str(), "A..C", kMultiplier * kBoundFloat + kFastExpContribution);
     const int floatOrderSlot = AddClaim(floatOrders.c_str(), "A..C", kMultiplier * kBoundFloat);
     const int floatAllNSlot = AddClaim(floatAllN.c_str(), "A..C", kMultiplier * kBoundFloat);
-    const int halfSingleSlot = AddClaim(halfSingle.c_str(), "A..C", kMultiplier * kBoundHalfBase);
-    const int halfOrderSlot = AddClaim(halfOrders.c_str(), "A..C", kMultiplier * kBoundHalfBase);
-    const int halfAllNSlot = AddClaim(halfAllN.c_str(), "A..C", kMultiplier * kBoundHalfBase);
+    const int halfSingleSlot = AddClaim(halfSingle.c_str(), "A..C", kMultiplier * kBoundHalfRow);
+    const int halfOrderSlot = AddClaim(halfOrders.c_str(), "A..C", kMultiplier * kBoundHalfRow);
+    const int halfAllNSlot = AddClaim(halfAllN.c_str(), "A..C", kMultiplier * kBoundHalfRow);
 
     SweepDouble<kMultiplier>(ref,
                              grid,
@@ -1169,19 +1217,19 @@ struct DeviceSlots {
 // that held the m = 1 bound would be asserting what it was relaxed out of.
 DeviceSlots DeviceClaimSet(const char* rung, double multiplier) {
     DeviceSlots slots;
-    const std::string single = Label("device single f64", rung);
-    const std::string orders64 = Label("device all-orders f64", rung);
-    const std::string allN64 = Label("device all-n f64", rung);
-    const std::string each64 = Label("device each-order f64", rung);
-    const std::string single32 = Label("device single f32", rung);
-    const std::string single32Fast = Label("device single f32 (fast exp)", rung);
-    const std::string orders32 = Label("device all-orders f32", rung);
-    const std::string allN32 = Label("device all-n f32", rung);
-    const std::string each32 = Label("device each-order f32", rung);
-    const std::string single16 = Label("device single f16", rung);
-    const std::string orders16 = Label("device all-orders f16", rung);
-    const std::string allN16 = Label("device all-n f16", rung);
-    const std::string each16 = Label("device each-order f16", rung);
+    const std::string single = Label(DeviceRow(boys::DeviceEntry::kDeviceSingleF64).name, rung);
+    const std::string orders64 = Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64).name, rung);
+    const std::string allN64 = Label(DeviceRow(boys::DeviceEntry::kDeviceAllNF64).name, rung);
+    const std::string each64 = Label(DeviceRow(boys::DeviceEntry::kDeviceEachOrderF64).name, rung);
+    const std::string single32 = Label(DeviceRow(boys::DeviceEntry::kDeviceSingleF32).name, rung);
+    const std::string single32Fast = Label(DeviceRow(boys::DeviceEntry::kDeviceSingleF32Fast, boys::RegionBExp::kFast).name, rung);
+    const std::string orders32 = Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32).name, rung);
+    const std::string allN32 = Label(DeviceRow(boys::DeviceEntry::kDeviceAllNF32).name, rung);
+    const std::string each32 = Label(DeviceRow(boys::DeviceEntry::kDeviceEachOrderF32).name, rung);
+    const std::string single16 = Label(DeviceRow(boys::DeviceEntry::kDeviceSingleF16).name, rung);
+    const std::string orders16 = Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF16).name, rung);
+    const std::string allN16 = Label(DeviceRow(boys::DeviceEntry::kDeviceAllNF16).name, rung);
+    const std::string each16 = Label(DeviceRow(boys::DeviceEntry::kDeviceEachOrderF16).name, rung);
 
     slots.singleA = AddClaim(single.c_str(), "A", multiplier * kBoundSingleA);
     slots.singleBand = AddClaim(single.c_str(), "band", multiplier * kBoundSingleBand);
@@ -1198,10 +1246,10 @@ DeviceSlots DeviceClaimSet(const char* rung, double multiplier) {
     slots.orders32 = AddClaim(orders32.c_str(), "A..C", multiplier * kBoundFloat);
     slots.allN32 = AddClaim(allN32.c_str(), "A..C", multiplier * kBoundFloat);
     slots.each32 = AddClaim(each32.c_str(), "A..C", multiplier * kBoundFloat);
-    slots.single16 = AddClaim(single16.c_str(), "A..C", multiplier * kBoundHalfBase);
-    slots.orders16 = AddClaim(orders16.c_str(), "A..C", multiplier * kBoundHalfBase);
-    slots.allN16 = AddClaim(allN16.c_str(), "A..C", multiplier * kBoundHalfBase);
-    slots.each16 = AddClaim(each16.c_str(), "A..C", multiplier * kBoundHalfBase);
+    slots.single16 = AddClaim(single16.c_str(), "A..C", multiplier * kBoundHalfRow);
+    slots.orders16 = AddClaim(orders16.c_str(), "A..C", multiplier * kBoundHalfRow);
+    slots.allN16 = AddClaim(allN16.c_str(), "A..C", multiplier * kBoundHalfRow);
+    slots.each16 = AddClaim(each16.c_str(), "A..C", multiplier * kBoundHalfRow);
     return slots;
 }
 
@@ -1705,7 +1753,7 @@ void SweepDevice(const Reference& ref,
         // go into their own row under the bound its own option carries, and the
         // difference between the two returns is the audit's contribution term.
         ExpAudit audit;
-        audit.lane = ShapeLabel("device single f32 (fast exp)", rung);
+        audit.lane = ShapeLabel(DeviceRow(boys::DeviceEntry::kDeviceSingleF32Fast, boys::RegionBExp::kFast).name, rung);
 
         for (int n = 0; n <= nmax; ++n)
         {
@@ -3141,6 +3189,114 @@ void RunProbe(const Reference& ref,
     }
 }
 
+// ---------------------------------------------------------------------------
+// The coverage, and the two books' one number.
+//
+// The claims above are made for rows named by the library's report, so the
+// gate's row list and the chooser's are one list. This says so out loud,
+// because the failure it guards against is silent: an option added to the
+// surface and certified by nothing, or a claim left behind for a row the
+// library no longer reports.
+//
+// It also checks the one figure the report and the shared reference book both
+// state, so the fp16 cells' bound cannot come out of one book in the claims and
+// the other in the comparisons.
+//
+// \returns the number of options the library reports that this build serves and
+//          the gate has no claim for, plus the claims naming no reported option.
+std::size_t ReportDeviceOptionCoverage() {
+    char fp16Report[32];
+    char fp16Book[32];
+    std::snprintf(fp16Report, sizeof(fp16Report), "%.17g", kBoundHalfRow);
+    std::snprintf(fp16Book, sizeof(fp16Book), "%.17g", kBoundHalfBase);
+
+    std::printf("\n  device option coverage, from BoysDeviceOptions():\n");
+
+    if (std::abs(kBoundHalfRow - kBoundHalfBase) > 0.0)
+    {
+        std::printf("    the report states the fp16 bound as %s and the reference book as %s, "
+                    "which are not\n    the same number.\n",
+                    fp16Report,
+                    fp16Book);
+    }
+
+    std::size_t served = 0;
+    std::size_t uncovered = 0;
+    std::vector<std::string> missing;
+
+    for (const boys::DeviceOptionInfo& option : boys::BoysDeviceOptions())
+    {
+        if (!option.built)
+        {
+            continue;
+        }
+
+        ++served;
+
+        bool claimed = false;
+
+        for (const Accum& a : Claims())
+        {
+            const std::string name = option.name;
+            claimed = claimed || a.lane == name || a.lane.rfind(name + " m=", 0) == 0;
+        }
+
+        if (!claimed)
+        {
+            ++uncovered;
+            missing.push_back(option.name);
+        }
+    }
+
+    // The other direction: a claim whose name is no reported option. Names the
+    // m = 1 book and the rung books share are counted once.
+    std::vector<std::string> orphans;
+
+    for (const Accum& a : Claims())
+    {
+        bool known = false;
+
+        for (const boys::DeviceOptionInfo& option : boys::BoysDeviceOptions())
+        {
+            if (!option.built)
+            {
+                continue;
+            }
+
+            const std::string name = option.name;
+            known = known || a.lane == name || a.lane.rfind(name + " m=", 0) == 0;
+        }
+
+        if (!known && std::find(orphans.begin(), orphans.end(), a.lane) == orphans.end())
+        {
+            orphans.push_back(a.lane);
+        }
+    }
+
+    std::printf("    %zu of %zu served option(s) claimed", served - uncovered, served);
+
+    if (!missing.empty())
+    {
+        std::printf(", with no claim for:");
+
+        for (const std::string& name : missing)
+        {
+            std::printf(" %s", name.c_str());
+        }
+    }
+
+    std::printf("; %zu claim name(s) that are no reported option", orphans.size());
+
+    for (const std::string& name : orphans)
+    {
+        std::printf(" %s", name.c_str());
+    }
+
+    std::printf("\n");
+
+    return uncovered + orphans.size() + (std::abs(kBoundHalfRow - kBoundHalfBase) > 0.0 ? 1u : 0u);
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -3207,22 +3363,24 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    const int slotSingleA = AddClaim("cuda single f64", "A", kBoundSingleA);
-    const int slotSingleBand = AddClaim("cuda single f64", "band", kBoundSingleBand);
-    const int slotSingleB = AddClaim("cuda single f64", "B", kBoundSingleB);
-    const int slotSingleC = AddClaim("cuda single f64", "C", kBoundSingleC);
-    const int slotDoubleOrders = AddClaim("cuda all-orders f64", "A..C", kBoundDoubleBatch);
-    const int slotDoubleAllN = AddClaim("cuda all-n f64", "A..C", kBoundDoubleBatch);
-    const int slotFloatSingle = AddClaim("cuda single f32", "A..C", kBoundFloat);
+    const int slotSingleA = AddClaim(DeviceRow(boys::DeviceEntry::kSingleF64).name, "A", kBoundSingleA);
+    const int slotSingleBand = AddClaim(DeviceRow(boys::DeviceEntry::kSingleF64).name, "band", kBoundSingleBand);
+    const int slotSingleB = AddClaim(DeviceRow(boys::DeviceEntry::kSingleF64).name, "B", kBoundSingleB);
+    const int slotSingleC = AddClaim(DeviceRow(boys::DeviceEntry::kSingleF64).name, "C", kBoundSingleC);
+    const int slotDoubleOrders = AddClaim(DeviceRow(boys::DeviceEntry::kAllOrdersF64).name, "A..C", kBoundDoubleBatch);
+    const int slotDoubleAllN = AddClaim(DeviceRow(boys::DeviceEntry::kAllNF64).name, "A..C", kBoundDoubleBatch);
+    const int slotFloatSingle = AddClaim(DeviceRow(boys::DeviceEntry::kSingleF32).name, "A..C", kBoundFloat);
     // The single entry's fast region-B exponential: a second certified option
     // with a bound of its own, not a relaxed rung of the lane's.
     const int slotFloatSingleFast =
-        AddClaim("cuda single f32 (fast exp)", "A..C", kBoundFloat + kFastExpContribution);
-    const int slotFloatOrders = AddClaim("cuda all-orders f32", "A..C", kBoundFloat);
-    const int slotFloatAllN = AddClaim("cuda all-n f32", "A..C", kBoundFloat);
-    const int slotHalfSingle = AddClaim("cuda single f16", "A..C", kBoundHalfBase);
-    const int slotHalfOrders = AddClaim("cuda all-orders f16", "A..C", kBoundHalfBase);
-    const int slotHalfAllN = AddClaim("cuda all-n f16", "A..C", kBoundHalfBase);
+        AddClaim(DeviceRow(boys::DeviceEntry::kSingleF32Fast, boys::RegionBExp::kFast).name,
+                     "A..C",
+                     kBoundFloat + kFastExpContribution);
+    const int slotFloatOrders = AddClaim(DeviceRow(boys::DeviceEntry::kAllOrdersF32).name, "A..C", kBoundFloat);
+    const int slotFloatAllN = AddClaim(DeviceRow(boys::DeviceEntry::kAllNF32).name, "A..C", kBoundFloat);
+    const int slotHalfSingle = AddClaim(DeviceRow(boys::DeviceEntry::kSingleF16).name, "A..C", kBoundHalfRow);
+    const int slotHalfOrders = AddClaim(DeviceRow(boys::DeviceEntry::kAllOrdersF16).name, "A..C", kBoundHalfRow);
+    const int slotHalfAllN = AddClaim(DeviceRow(boys::DeviceEntry::kAllNF16).name, "A..C", kBoundHalfRow);
 
     SweepDouble<1.0>(ref,
                      grid,
@@ -3240,7 +3398,7 @@ int main(int argc, char** argv) {
                     slotFloatSingleFast,
                     slotFloatOrders,
                     slotFloatAllN,
-                    "cuda single f32 (fast exp)");
+                    DeviceRow(boys::DeviceEntry::kSingleF32Fast, boys::RegionBExp::kFast).name);
     SweepHalf<1.0>(ref, grid, sorted, slotHalfSingle, slotHalfOrders, slotHalfAllN);
 
     SweepRelaxed<2.0>(ref, grid, sorted, kRungs[1].name);
@@ -3512,11 +3670,23 @@ int main(int argc, char** argv) {
                     live);
     }
 
+    const std::size_t uncovered = ReportDeviceOptionCoverage();
+
     if (exceeded > 0)
     {
         std::printf("\n  RESULT: FAIL - %zu cells over their documented bound on this device "
                     "(exit status 1)\n",
                     exceeded);
+        return 1;
+    }
+
+    if (uncovered > 0)
+    {
+        std::printf("\n  RESULT: FAIL - %zu device option(s) of the library's report that this "
+                    "gate does not account for (exit status 1): an option added to the surface "
+                    "is certified by nothing until a claim names it, and a claim whose row the "
+                    "library no longer reports is a row this gate is still judging.\n",
+                    uncovered);
         return 1;
     }
 
