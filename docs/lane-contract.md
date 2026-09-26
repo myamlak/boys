@@ -963,7 +963,8 @@ each with their own intervals, so no such stride exists. A stride is one way to 
 requirement of the axis: the lane fills it the other way, by fetching each of the four orders it holds
 its own piece's start and its own coefficients — one gather per stored coefficient rather than one
 stride per group — and summing the four as one vector. The value the row promises is unchanged, and so
-is the figure: **|F̂ − F| ≤ 1e-15 over `0 <= x < kX0`** at m = 1, the per-order region-A bar.
+is the figure: at m = 1 the per-order bar is **|F̂ − F| ≤ 1e-15** on the per-order fits and **3e-14**
+on the extended band that closes region A, the two cells the header's table keeps apart.
 
 **Two lanes, two mappings, and the reference as the third party.** The narrow partition cannot carry
 the bit-for-bit row above, and it is worth saying why rather than letting a reader find the gap. That
@@ -990,7 +991,8 @@ x = 4.8998472055064735, has the axis **5.82e-17** from the reference and the per
 other region-A row at.
 
 **The domain is region A, and its bounds are the fits' own.** The orders lane covers `0 <= x < kX0`
-and is certified against the per-order region-A bar, **|F̂ − F| ≤ m·1e-15**. At the certified split
+and is certified against the per-order region-A bar by cell, **|F̂ − F| ≤ m·1e-15** on the per-order
+fits and **m·3e-14** on the extended band. At the certified split
 Clenshaw scheme its values are the across-arguments lane's values **bit for bit** — one exact
 comparison over 3,009 arguments and every order, 99,297 of 99,297 values, with no tolerance, because
 a reordered step or a coefficient read one index out would still return a plausible number. That row
