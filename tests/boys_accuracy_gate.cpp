@@ -236,6 +236,26 @@ int AddPackClaim(const char* lane, const char* region, double bound) {
     return static_cast<int>(PackClaims().size()) - 1;
 }
 
+// The granularity axis's own accumulation, held apart from the three books
+// above for the reason each of them gives: the axis is a choice a caller makes
+// about how narrowly the fitted domain is cut, and the cells that measure it are
+// not the lane cells the claim book's count is quoted against. Its block is
+// printed after the scheme book's and after the packing axis's, so a row added
+// for it moves neither of those.
+std::vector<Accum>& GranularityClaims() {
+    static std::vector<Accum> claims;
+    return claims;
+}
+
+int AddGranularityClaim(const char* lane, const char* region, double bound) {
+    Accum a;
+    a.lane = lane;
+    a.region = region;
+    a.baseBound = bound;
+    GranularityClaims().push_back(a);
+    return static_cast<int>(GranularityClaims().size()) - 1;
+}
+
 // The fit routes' own accumulation, kept apart from the lanes' so the two
 // tables report separately: a route is a choice a caller makes, not a lane the
 // library always serves, and folding its cells into the lane sweep would move
@@ -348,6 +368,40 @@ const char* RegionName(boys::AccuracyRegion region) {
 // reports, and the pair a call site reaches by naming one EvalPolicy.
 template <boys::EvalScheme kScheme>
 using SchemePolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme>;
+
+// The policy the granularity book's rows are measured under: the shipped route
+// at the scheme the row names, at one of the two partitions. The partition is
+// the only difference from SchemePolicy, and naming it is the whole of the
+// axis: a call site reaches the narrow member by putting it in the policy it
+// already writes.
+template <boys::EvalScheme kScheme, boys::FitGranularity kGranularity>
+using GranularityPolicy =
+    boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                     kScheme,
+                     boys::BoysBudget::kFloat,
+                     boys::PackAxis::kArguments,
+                     kGranularity>;
+
+// The stored fit one lane names at one partition, summed by one scheme. It is
+// FitValue with the partition named rather than assumed, and the shipped member
+// reads what FitValue reads: the same pieces, the same coefficients, the same
+// recurrence.
+template <boys::EvalScheme kScheme, boys::FitGranularity kGranularity>
+double PartitionFitValue(boys::EvalLane lane, int n, double x) {
+    using Fit = boys::detail::ChebyshevFit<kScheme, kGranularity>;
+
+    switch (lane)
+    {
+    case boys::EvalLane::kRegionA:
+        return boys::detail::RegionAValue<Fit>(n, x);
+    case boys::EvalLane::kRegionB:
+        return Fit::RegionBSeed(x);
+    case boys::EvalLane::kExtendedBand:
+        return boys::detail::RegionBExtendedSeed<kScheme>(x);
+    }
+
+    return 0.0;
+}
 
 // The policy the packing book's rows are measured under: the shipped route and
 // the scheme the row names, at the orders axis. The axis is the only difference
@@ -4190,6 +4244,358 @@ int main(int argc, char** argv) {
     sweepPlanePackAxis.template operator()<boys::EvalScheme::kSplitClenshaw>();
     sweepPlanePackAxis.template operator()<boys::EvalScheme::kHorner>();
 
+    // ---- the granularity axis ----------------------------------------------
+    // Two partitions of the fitted domain, and the axis is which one a call
+    // reads. The rows ask the questions the two books above ask - the stored
+    // fits read directly, and the entries read end to end - and they are judged
+    // at the bars the lanes already document, so the axis stands on the footing
+    // the shipped partition stands on rather than on one of its own.
+    //
+    // Every entry row is cast over region A or narrower, and that is the
+    // difference from the two books above rather than a convenience. An entry
+    // row over the whole grid is won by region C at the top order, where no
+    // partition of the fitted domain is read at all: measured here, those rows
+    // report 5e-14 at n=32, x=kX1 for both partitions, so they are a row about
+    // the asymptotic path and about nothing the axis decides. The region-A rows
+    // are the ones that can see the axis, and one whole-grid row is kept beside
+    // them so the axis is tied to the single-order lane's published
+    // whole-domain claim as well.
+    //
+    // Each row's domain is the cell the published table itself uses, not the
+    // whole of region A: that table's 1e-15 cell is x below the band's left
+    // edge, and the band from there to x0 is its own 3e-14 cell. Judging the
+    // single-order entry over x < x0 at 1e-15 would re-make the over-claim this
+    // gate has already found and withdrawn - the withdrawn claim's record row
+    // is in the book above, and its worst cells are the band's, at 1.8e-15 -
+    // so the single-order row takes the table's own cell, and the batch rows,
+    // whose lane documents one bar over the whole line, also take the
+    // fallback's domain below that edge.
+    //
+    // Two of the region-A readings are worth saying out loud, because the rows
+    // are where they are measured. A piece of region A is read twice: once as
+    // the single-order lane's own value, under the 1e-15 bar region A
+    // documents, and once as the seed the batch entry's downward recursion
+    // starts from, where the recursion multiplies the piece's error by
+    // seed_weight(n, b) on the way down to F_0. That gain's envelope over the
+    // region reaches 1.04e5, at order 12 and the region's right edge, but the
+    // seeding fallback is taken only below the band's left edge, where the gain
+    // is the calling order's own and so is at most 2.18. The narrow pieces are
+    // cut under the tighter of those two readings, so the orders-entry rows are
+    // the ones that can see the second: the below-the-band row reads the
+    // amplified value end to end over exactly the arguments that seeding
+    // fallback is taken at, while the single-entry rows and the region-A fit row
+    // read each piece at its own size.
+    //
+    // The carriage count is the axis's reachability, taken the way the schemes'
+    // and the packing axis's are: every row is read at both members in the same
+    // pass and the cells whose two readings differ are counted. A member whose
+    // readings agree everywhere is a member no entry reaches, whatever its
+    // accuracy says.
+    enum class GranKind : std::uint8_t {
+        kFitsA,       // region A's stored fits, read directly, over x < kX0
+        kSeedB,       // region B's stored seed, read directly
+        kOrdersBelow, // BoysAllOrders below the band, where the seeding fallback is taken
+        kOrdersA,     // BoysAllOrders, the call shape with one argument, over x < kX0
+        kOrdersB,     // BoysAllOrders over region B, where the seed is carried up
+        kSingleA,     // BoysSingle, one order at one argument, over the table's region-A cell
+        kSingleWhole, // BoysSingle over the whole grid, at the lane's per-region bars
+        kPlaneA,      // BoysAllN, every order over the array, over x < kX0
+    };
+
+    // The bar a row's cells are judged at: one published number, or the
+    // single-order lane's own bar for the region an argument falls in, which is
+    // what that lane's documented rows are judged at.
+    enum class GranBar : std::uint8_t { kFixed, kPerRegion };
+
+    struct GranRow {
+        const char* row;
+        GranKind kind;
+        GranBar bar;
+        double bound; // the bar, where bar is kFixed
+    };
+
+    constexpr GranRow granRows[] = {
+        {"stored fits, region A", GranKind::kFitsA, GranBar::kFixed, kBoundSingleA},
+        {"stored seed, region B", GranKind::kSeedB, GranBar::kFixed, kBoundSingleB},
+        {"orders entry, below band",
+         GranKind::kOrdersBelow,
+         GranBar::kFixed,
+         kBoundDoubleBatch},
+        {"orders entry, band and below", GranKind::kOrdersA, GranBar::kFixed, kBoundDoubleBatch},
+        {"orders entry, region B", GranKind::kOrdersB, GranBar::kFixed, kBoundDoubleBatch},
+        {"single entry, region A", GranKind::kSingleA, GranBar::kFixed, kBoundSingleA},
+        {"single entry, A..C", GranKind::kSingleWhole, GranBar::kPerRegion, 0.0},
+        {"plane entry, band and below", GranKind::kPlaneA, GranBar::kFixed, kBoundDoubleBatch},
+    };
+    constexpr std::size_t kGranRowCount = std::size(granRows);
+    constexpr std::size_t kGranMembers = 2;
+    constexpr std::size_t kGranSchemeCount = 2;
+
+    static_assert(static_cast<std::size_t>(boys::FitGranularity::kShipped) == 0
+                      && static_cast<std::size_t>(boys::FitGranularity::kNarrow) == 1,
+                  "the tables below are indexed by the enumerator, so the enumerators are the "
+                  "order they are read in");
+
+    // The schemes, in the order the report walks them, read from the library's
+    // own report so a scheme added there is measured here at both partitions.
+    std::array<boys::EvalScheme, kGranSchemeCount> granSchemes{};
+    std::size_t granSchemeCount = 0;
+
+    for (const boys::EvalSchemeInfo& info : boys::BoysEvalSchemes())
+    {
+        if (granSchemeCount < kGranSchemeCount)
+        {
+            granSchemes[granSchemeCount++] = info.scheme;
+        }
+    }
+
+    // Slot [member][scheme][row], filled in row-major order below so a row
+    // added to the list is one row in every member's and scheme's table and the
+    // block reads them all out of the same list.
+    std::array<std::array<std::array<int, kGranRowCount>, kGranSchemeCount>, kGranMembers>
+        granSlots{};
+
+    for (std::size_t g = 0; g < kGranMembers; ++g)
+    {
+        const char* member = boys::GranularityName(static_cast<boys::FitGranularity>(g));
+
+        for (std::size_t s = 0; s < granSchemeCount; ++s)
+        {
+            for (std::size_t r = 0; r < kGranRowCount; ++r)
+            {
+                granSlots[g][s][r] =
+                    AddGranularityClaim(member, granRows[r].row, granRows[r].bound);
+            }
+        }
+    }
+
+    // The cells each row was read at, and the cells where the two members'
+    // readings differed, one row per (granularity, scheme, row).
+    std::array<std::size_t, kGranMembers * kGranSchemeCount * kGranRowCount> granCells{};
+    std::array<std::size_t, kGranMembers * kGranSchemeCount * kGranRowCount> granDiffer{};
+
+    // The flat index of one cell of those tables.
+    const auto granIndex = [](std::size_t member, std::size_t scheme, std::size_t row) {
+        return (member * kGranSchemeCount + scheme) * kGranRowCount + row;
+    };
+
+    // Both members' readings of the whole grid, held between the members'
+    // passes so that the second member's reading of a cell is an array read
+    // and not a second call: the carriage count below asks every row at both
+    // members, and a call taken inside that loop would be taken per row.
+    //
+    // One array per member per call shape. The entries' readings are the same
+    // numbers their own books read, taken once here and measured twice.
+    std::array<std::vector<double>, kGranMembers> ordersGrid;
+    std::array<std::vector<double>, kGranMembers> planeGrid;
+    std::array<std::vector<double>, kGranMembers> singleGrid;
+
+    const auto sweepGranularity = [&]<std::size_t kSchemeIndex, boys::EvalScheme kScheme>() {
+        // The whole grid at one member, one entry at a time. The two passes
+        // over the members are what makes the tables above the entry's own
+        // numbers at both partitions; a member read alone would leave the
+        // carriage count with nothing to compare against.
+        const auto fill = [&]<boys::FitGranularity kGranularity>() {
+            constexpr std::size_t kMember =
+                kGranularity == boys::FitGranularity::kShipped ? 0 : 1;
+            const std::size_t grid = count * (static_cast<std::size_t>(nmax) + 1);
+
+            ordersGrid[kMember].assign(grid, 0.0);
+            planeGrid[kMember].assign(grid, 0.0);
+            singleGrid[kMember].assign(grid, 0.0);
+
+            std::array<double, 33> orders{};
+
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                boys::BoysAllOrders<1.0, GranularityPolicy<kScheme, kGranularity>>(
+                    nmax, ref.x[i], orders.data());
+
+                for (int n = 0; n <= nmax; ++n)
+                {
+                    ordersGrid[kMember][ref.Index(n, i)] = orders[static_cast<std::size_t>(n)];
+                }
+            }
+
+            boys::BoysAllN<1.0, GranularityPolicy<kScheme, kGranularity>>(
+                nmax, ref.x.data(), planeGrid[kMember].data(), count);
+
+            for (int n = 0; n <= nmax; ++n)
+            {
+                for (std::size_t i = 0; i < count; ++i)
+                {
+                    singleGrid[kMember][ref.Index(n, i)] =
+                        boys::BoysSingle<1.0, GranularityPolicy<kScheme, kGranularity>>(n,
+                                                                                       ref.x[i]);
+                }
+            }
+        };
+
+        fill.template operator()<boys::FitGranularity::kShipped>();
+        fill.template operator()<boys::FitGranularity::kNarrow>();
+
+        const auto measure = [&]<boys::FitGranularity kGranularity>() {
+            constexpr std::size_t kMember =
+                kGranularity == boys::FitGranularity::kShipped ? 0 : 1;
+
+            // The other member, for the carriage count. The relation is
+            // symmetric, so the count is taken once, in the shipped member's
+            // pass, and written to both members' rows.
+            constexpr bool kFirst = kMember == 0;
+            constexpr boys::FitGranularity kOther =
+                kGranularity == boys::FitGranularity::kShipped ? boys::FitGranularity::kNarrow
+                                                               : boys::FitGranularity::kShipped;
+
+            for (std::size_t r = 0; r < kGranRowCount; ++r)
+            {
+                Accum& acc =
+                    GranularityClaims()[static_cast<std::size_t>(granSlots[kMember][kSchemeIndex]
+                                                                           [r])];
+                const std::size_t index = granIndex(kMember, kSchemeIndex, r);
+
+                for (int n = 0; n <= nmax; ++n)
+                {
+                    // The seed row is one value per argument - order 0, the
+                    // value the piece is the seed for - so it is read once
+                    // rather than once per order.
+                    if (granRows[r].kind == GranKind::kSeedB && n != 0)
+                    {
+                        continue;
+                    }
+
+                    for (std::size_t i = 0; i < count; ++i)
+                    {
+                        const double x = ref.x[i];
+                        const std::size_t k = ref.Index(n, i);
+                        double got = 0.0;
+                        double other = 0.0;
+
+                        switch (granRows[r].kind)
+                        {
+                        case GranKind::kFitsA:
+                        {
+                            if (x >= boys::detail::kX0)
+                            {
+                                continue;
+                            }
+
+                            got = PartitionFitValue<kScheme, kGranularity>(
+                                boys::EvalLane::kRegionA, n, x);
+                            other = PartitionFitValue<kScheme, kOther>(boys::EvalLane::kRegionA,
+                                                                      n, x);
+                            break;
+                        }
+
+                        case GranKind::kSeedB:
+                        {
+                            if (x < boys::detail::kX0 || x >= boys::detail::kX1)
+                            {
+                                continue;
+                            }
+
+                            got = PartitionFitValue<kScheme, kGranularity>(
+                                boys::EvalLane::kRegionB, 0, x);
+                            other = PartitionFitValue<kScheme, kOther>(boys::EvalLane::kRegionB,
+                                                                      0, x);
+                            break;
+                        }
+
+                        case GranKind::kOrdersBelow:
+                        {
+                            if (x >= boys::detail::kExtendedBX0)
+                            {
+                                continue;
+                            }
+
+                            got = ordersGrid[kMember][k];
+                            other = ordersGrid[1 - kMember][k];
+                            break;
+                        }
+
+                        case GranKind::kOrdersA:
+                        case GranKind::kPlaneA:
+                        {
+                            if (x >= boys::detail::kX0)
+                            {
+                                continue;
+                            }
+
+                            const bool orders = granRows[r].kind == GranKind::kOrdersA;
+                            got = orders ? ordersGrid[kMember][k] : planeGrid[kMember][k];
+                            other = orders ? ordersGrid[1 - kMember][k] : planeGrid[1 - kMember][k];
+                            break;
+                        }
+
+                        case GranKind::kOrdersB:
+                        {
+                            // Region B's row: the batch entry seeds its upward
+                            // recursion from the order-0 seed and carries it to
+                            // the top order, so the seed's own partition is
+                            // amplified here by A_B(n), which the seed-sizing
+                            // argument bounds by one.
+                            if (x < boys::detail::kX0 || x >= boys::detail::kX1)
+                            {
+                                continue;
+                            }
+
+                            got = ordersGrid[kMember][k];
+                            other = ordersGrid[1 - kMember][k];
+                            break;
+                        }
+
+                        case GranKind::kSingleA:
+                        case GranKind::kSingleWhole:
+                        {
+                            // The published table changes cell at the band's
+                            // left edge: below it a piece is documented at the
+                            // lane's own 1e-15, above it the band's 3e-14 holds.
+                            // So this row is the piece read at its own size
+                            // under its own bar, which is not the same row as
+                            // the fits read directly above.
+                            if (granRows[r].kind == GranKind::kSingleA &&
+                                x >= boys::detail::kExtendedBX0)
+                            {
+                                continue;
+                            }
+
+                            got = singleGrid[kMember][k];
+                            other = singleGrid[1 - kMember][k];
+                            break;
+                        }
+                        }
+
+                        ++granCells[index];
+
+                        if (std::memcmp(&got, &other, sizeof(double)) != 0)
+                        {
+                            if constexpr (kFirst)
+                            {
+                                ++granDiffer[index];
+                                ++granDiffer[granIndex(1 - kMember, kSchemeIndex, r)];
+                            }
+                        }
+
+                        MeasureAt(acc,
+                                  n,
+                                  x,
+                                  got,
+                                  ref.v[k],
+                                  ref.decade[k],
+                                  granRows[r].bar == GranBar::kFixed ? granRows[r].bound
+                                                                     : SingleBound(x),
+                                  Unrepresentable(got, -1022));
+                    }
+                }
+            }
+        };
+
+        measure.template operator()<boys::FitGranularity::kShipped>();
+        measure.template operator()<boys::FitGranularity::kNarrow>();
+    };
+
+    sweepGranularity.template operator()<0, boys::EvalScheme::kSplitClenshaw>();
+    sweepGranularity.template operator()<1, boys::EvalScheme::kHorner>();
+
     std::printf("\naccuracy gate, revision %s\n", BoysGateRevision);
     std::printf("  reference: %s (%zu arguments per order, %zu orders, %s)\n",
                 reference.c_str(),
@@ -7037,6 +7443,49 @@ int main(int argc, char** argv) {
         }
     }
 
+    // The granularity axis, walked from its enumerator the way the rungs are
+    // walked from theirs: the library reports no table of this axis, so its
+    // members are the enumerator's own, and one added to it is counted here
+    // without this block being edited. The cells are the granularity book's,
+    // read from its own accumulators and not from the lane books', and the
+    // reachability figure is that book's carriage count - the cells where
+    // naming this member changes a value over naming the other. That is the
+    // question the axis is a choice about: a member no cell can tell apart from
+    // the other is a member no entry reaches, whatever its accuracy says.
+    for (int g = 0; g <= static_cast<int>(boys::FitGranularity::kNarrow); ++g)
+    {
+        const boys::FitGranularity gran = static_cast<boys::FitGranularity>(g);
+        OptionMember o;
+        o.kind = "granularity";
+        o.member = boys::GranularityName(gran);
+        std::size_t cells = 0;
+        std::size_t failures = 0;
+        std::size_t differ = 0;
+
+        for (std::size_t s = 0; s < granSchemeCount; ++s)
+        {
+            for (std::size_t r = 0; r < kGranRowCount; ++r)
+            {
+                const std::size_t index = granIndex(static_cast<std::size_t>(g), s, r);
+                cells += granCells[index];
+                differ += granDiffer[index];
+                failures += GranularityClaims()[static_cast<std::size_t>(
+                    granSlots[static_cast<std::size_t>(g)][s][r])]
+                                .failures;
+            }
+        }
+
+        o.supported = cells > 0;
+        o.bounded = o.supported && failures == 0;
+        o.reachable = differ > 0;
+        o.note = Fmt("%zu cell(s) at both schemes, %zu of them differing from the other "
+                     "partition's reading, %zu over the bar its row is judged at",
+                     cells,
+                     differ,
+                     failures);
+        optionSpace.push_back(std::move(o));
+    }
+
     // The refusal record: the combinations this build refuses, and what backs
     // each. A refusal is admissible in place of the three only where the
     // library refuses the call at compile time - the combination cannot be
@@ -7667,6 +8116,176 @@ int main(int argc, char** argv) {
 
         std::printf("\n  FAIL (exit status 1; the packing-axis rows are judged with the books "
                     "above)\n");
+        return 1;
+    }
+
+    // ---- the granularity-axis rows, counted apart ---------------------------
+    // Their own block, their own cell count and their own RESULT line, for the
+    // reason the packing axis's block gives: the books above are the numbers a
+    // reader has seen before and a new axis must not move them. Two rows are
+    // read at both members' stored fits directly - region A's pieces and region
+    // B's seed, each under the bar its own lane documents - and six are the
+    // entries read end to end over the region the axis is cut in, so that a
+    // member whose fits are fine but whose evaluation is not is a row rather
+    // than an assumption. The row list and why the entry rows are cast there
+    // rather than over the whole grid is stated where the list is defined.
+    //
+    // The trade is printed with the rows and not in place of them, because the
+    // axis is not a saving: one evaluation reads fewer coefficients, and the
+    // table that makes that possible stores more of them and holds more rows to
+    // find the piece in. Every figure in that line is read from the generated
+    // tables at compile time rather than written here.
+    std::size_t granCellCount = 0;
+    std::size_t granNonDiscriminating = 0;
+
+    for (const Accum& a : GranularityClaims())
+    {
+        granCellCount += a.points;
+        granNonDiscriminating += a.vacuous;
+    }
+
+    std::printf("\nthe granularity-axis rows: which partition of the fitted domain a call "
+                "reads, measured at both members against the committed reference\n");
+    std::printf("  %-10s %-16s %-28s %9s %-22s %-22s %7s  %-22s %s\n",
+                "partition",
+                "scheme",
+                "row",
+                "cells",
+                "bound it promises",
+                "worst delivered",
+                "ratio",
+                "worst cell",
+                "verdict");
+    std::printf("  %s\n", std::string(168, '-').c_str());
+
+    int granMet = 0;
+    std::size_t granRowsRun = 0;
+    std::vector<std::string> granNotMet;
+
+    const auto granRow =
+        [&](const char* member, const char* scheme, const char* row, const char* bound,
+            const Accum& a) {
+            ++granRowsRun;
+            const Verdict v = FromAccum(a);
+
+            if (IsMet(v))
+            {
+                ++granMet;
+            } else
+            {
+                granNotMet.push_back(std::string(member) + " / " + scheme + " / " + row);
+            }
+
+            char where[64];
+            std::snprintf(where, sizeof(where), "n=%d, x=%.6g", a.worstN, a.worstX);
+            std::printf("  %-10s %-16s %-28s %9zu %-22s %-22.6g %7.3g  %-22s %s\n",
+                        member,
+                        scheme,
+                        row,
+                        a.points,
+                        bound,
+                        a.worstErr,
+                        a.worstRatio,
+                        where,
+                        VerdictName(v));
+        };
+
+    for (std::size_t g = 0; g < kGranMembers; ++g)
+    {
+        const char* member = boys::GranularityName(static_cast<boys::FitGranularity>(g));
+
+        for (std::size_t s = 0; s < granSchemeCount; ++s)
+        {
+            const char* scheme = boys::EvalSchemeName(granSchemes[s]);
+
+            for (std::size_t r = 0; r < kGranRowCount; ++r)
+            {
+                // The bar a row is judged at, printed as the row was judged:
+                // one published number, or the per-region formula the
+                // single-order lane's whole-domain rows are judged with.
+                char bar[32];
+
+                if (granRows[r].bar == GranBar::kFixed)
+                {
+                    std::snprintf(bar, sizeof(bar), "%.6g", granRows[r].bound);
+                } else
+                {
+                    std::snprintf(bar, sizeof(bar), "per region (m x B_region)");
+                }
+
+                granRow(member,
+                        scheme,
+                        granRows[r].row,
+                        bar,
+                        GranularityClaims()[static_cast<std::size_t>(granSlots[g][s][r])]);
+            }
+        }
+    }
+
+    std::printf("  %s\n", std::string(168, '-').c_str());
+    std::printf("  GRANULARITY RESULT: %d of %zu granularity-axis rows met at this revision\n",
+                granMet,
+                granRowsRun);
+
+    // The partition's own size, read off the tables the two members are built
+    // from: rows to look the piece up in, coefficients stored, and the span of
+    // coefficients one evaluation reads.
+    {
+        int shippedLow = 0;
+        int shippedHigh = 0;
+
+        for (const boys::detail::OrderPiece& piece : boys::detail::kPieces)
+        {
+            shippedLow = shippedLow == 0 || piece.deg < shippedLow ? piece.deg : shippedLow;
+            shippedHigh = piece.deg > shippedHigh ? piece.deg : shippedHigh;
+        }
+
+        const std::size_t shippedRows = std::size(boys::detail::kPieces);
+        const std::size_t shippedStored = std::size(boys::detail::kCoeffs)
+                                          + std::size(boys::detail::kBcoeffs);
+        const std::size_t narrowRows = std::size(boys::detail::kNarrowAPieces)
+                                       + static_cast<std::size_t>(boys::detail::kNarrowBPieces);
+        const std::size_t narrowStored = std::size(boys::detail::kNarrowACoeffs)
+                                         + std::size(boys::detail::kNarrowBcoeffs);
+
+        std::printf("  the trade the axis names: the shipped partition stores %zu coefficient(s) "
+                    "in %zu row(s) over both fitted regions and one evaluation reads %d to %d "
+                    "of them;\n"
+                    "                            the narrow partition stores %zu in %zu rows and "
+                    "one evaluation reads %d. Naming it buys the smaller read at the larger "
+                    "table and the piece lookup, and is not a saving\n",
+                    shippedStored,
+                    shippedRows + 1,
+                    shippedLow + 1,
+                    shippedHigh + 1,
+                    narrowStored,
+                    narrowRows,
+                    boys::detail::kNarrowADeg + 1);
+    }
+
+    if (granCellCount > 0)
+    {
+        std::printf("                carried by the %zu of %zu axis cells (%.1f%%) that can "
+                    "discriminate: the other %zu carry a bound at least as large as the value "
+                    "itself. These cells are not in the counts above and do not move them\n",
+                    granCellCount - granNonDiscriminating,
+                    granCellCount,
+                    100.0 * static_cast<double>(granCellCount - granNonDiscriminating)
+                        / static_cast<double>(granCellCount),
+                    granNonDiscriminating);
+    }
+
+    if (!granNotMet.empty())
+    {
+        std::printf("  NOT MET at this revision:");
+
+        for (const std::string& id : granNotMet)
+        {
+            std::printf(" %s", id.c_str());
+        }
+
+        std::printf("\n  FAIL (exit status 1; the granularity-axis rows are judged with the "
+                    "books above)\n");
         return 1;
     }
 

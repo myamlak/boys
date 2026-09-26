@@ -212,11 +212,22 @@ const char* PackAxisName(PackAxis axis) noexcept;
 /// nothing and pays the lookup. It is offered for a consumer to choose between
 /// and not as a winner.
 ///
-/// **The axis is a selection over region B.** Region A's pieces seed the batch
-/// entry's downward recursion under a gain of up to 1.04e5, a criterion the
-/// truncation bound the partition is derived from does not carry, so region A
-/// and the extended band are the same fits at either granularity. The member
-/// documents that scope rather than implying a partition of the whole domain.
+/// **The axis cuts both fitted regions, and region A pays a second criterion.**
+/// Region B's seed is read for itself, so a narrow piece there is held to the
+/// same bound as any other fit of that interval. Region A's pieces are read two
+/// ways: a single-order call reads one for its own value, and the batch entry's
+/// relaxed path reads one as the seed of a downward recursion that carries its
+/// error down to F_0 with a gain of `max(1, b^n / prod(j + 1/2))` at the piece's
+/// right end `b`. That gain's envelope over region A reaches 1.04e5, at order 12
+/// and the region's right edge, while the seeding fallback is taken only below
+/// the band's left edge, where the gain a call reaches is the calling order's
+/// own - 2.18 at order 1, 1.58 at order 2 and 1 at every order from 3 up - and
+/// the walk holds the envelope rather than that, so that no piece's reading
+/// depends on which order an entry seeds from. A narrow piece is therefore held
+/// to whichever of the two readings is tighter at its own right end, so the gain
+/// binds only where it exceeds the ratio of the two bars, and a piece far enough
+/// left is cut to the single-order bar alone. Both readings are parts of one
+/// criterion rather than a choice.
 ///
 /// A member the build cannot serve is refused where it is named, with the
 /// reason, rather than answered from the shipped tables: the two partitions'
@@ -224,8 +235,12 @@ const char* PackAxisName(PackAxis axis) noexcept;
 /// interval, so a silent substitution would return the shipped partition's
 /// values under the other's name. The refusals are the route that carries no
 /// narrow table, the relaxed rungs that truncate the shipped fits to certified
-/// effective degrees, and the single-precision lanes, which hold one
-/// coefficient set.
+/// effective degrees, the single-precision lanes, which hold one coefficient
+/// set, and the across-orders packing axis, whose kernel reads one order's
+/// coefficients at a fixed stride and so needs the pieces to share their shape
+/// from order to order, which a per-order cut does not. Each is unbuilt work
+/// rather than an impossible combination, and each is named where it is refused
+/// so that it can be counted.
 ///
 /// \ingroup boys
 enum class FitGranularity : std::uint8_t {
@@ -235,9 +250,10 @@ enum class FitGranularity : std::uint8_t {
     /// by.
     kShipped = 0,
 
-    /// A deliberately narrower partition of region B, at the degrees the proved
-    /// truncation bound gives a piece of that width at the quantum-chemistry
-    /// target. Fewer coefficients per evaluation, more pieces in the table.
+    /// A deliberately narrower partition of both fitted regions, at the degrees
+    /// the proved truncation bound gives a piece of that width at the bar the
+    /// piece is read under. Fewer coefficients per evaluation, more pieces in
+    /// the table.
     kNarrow = 1,
 };
 
@@ -270,6 +286,22 @@ enum class BoysBudget : std::uint8_t {
     kFp16 = 1,
 };
 
+/// The region-A partition a fit reads: which piece of the region an argument
+/// falls in and what that piece is.
+///
+/// A fit names its partition rather than carrying a lookup of its own, because
+/// the lookup is the same on every partition - scan the order's pieces for the
+/// first whose right edge is past the argument - and only the table differs.
+/// The two members are that lookup and that table, so a fit over a second
+/// partition of the same region is the same evaluation over other rows.
+///
+/// \ingroup boys
+template <typename P>
+concept RegionAPartition = requires(std::size_t index, int order, double x) {
+    { P::PieceIndex(order, x) } -> std::convertible_to<std::size_t>;
+    { P::PieceAt(index) };
+};
+
 /// The fit one region-A route evaluates: its coefficient set and the scheme
 /// the coefficients are read in, named as a type so the evaluation body around
 /// it is written once and instantiated per route. The body is in
@@ -279,12 +311,14 @@ enum class BoysBudget : std::uint8_t {
 /// The body owns everything that is not the fit - the zero argument's closed
 /// form, the region split, the piece lookup, the mapped argument, the
 /// recurrences, the per-order rule and the domains - so a route cannot drift
-/// from the lane around it, and asks a policy for three things:
+/// from the lane around it, and asks a policy for four things:
 ///
+///  - `Partition` is the region-A partition the fit's pieces are stored in, as
+///    a model of RegionAPartition. The pieces, their intervals and the mapping
+///    are that table's, so two fits over one region differ in the scheme or in
+///    the partition rather than in how either is read.
 ///  - `EvalPiece(index, t)` is one region-A piece's value at its own mapped
-///    argument `t`, named by the piece's index in the shared piece table. The
-///    pieces, their intervals and the mapping are that table's, so two routes
-///    over one region differ in the scheme rather than in the partition.
+///    argument `t`, named by the piece's index in that partition.
 ///  - `RegionBSeed(x)` is region B's seed F_0(x).
 ///  - `BandSource` reads the orders the band's regime covers. A source is
 ///    constructed at an argument and stepped order by order, so a batch pays
@@ -301,7 +335,7 @@ concept FitPolicy = requires(std::size_t index, double t, double x, int l) {
     { F::EvalPiece(index, t) } -> std::same_as<double>;
     { F::RegionBSeed(x) } -> std::same_as<double>;
     { typename F::BandSource(x).Next(l, x) } -> std::same_as<double>;
-};
+} && RegionAPartition<typename F::Partition>;
 
 /// The fit one (route, scheme) pair evaluates. The families themselves are in
 /// boys_impl.hpp beside the coefficient tables they read, and this is the join
@@ -402,10 +436,12 @@ struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kNarrow> {
 /// The one error the axes carry beyond a route outside the enumeration is a
 /// combination the build cannot serve - a partition for a route that has none,
 /// a partition on a rung that truncates the shipped fits, a partition on a lane
-/// that holds one coefficient set - and each is refused where it is named
-/// rather than at a kernel, because the partitions are different fits of the
-/// same function over the same interval and a fallback would return the shipped
-/// values under the other partition's name.
+/// that holds one coefficient set, a partition on the packing axis whose kernel
+/// reads the shipped pieces' shape from order to order - and each is refused
+/// where it is named rather than at a kernel, because the partitions are
+/// different fits of the same function over the same interval and a fallback
+/// would return the shipped values under the other partition's name. Each is
+/// unbuilt work and is refused with the work it names, so a gap is countable.
 ///
 /// \tparam kFitRoute      the fit route; \c FitRoute::kChebyshev by default
 /// \tparam kEvalScheme    the scheme the fit's coefficients are summed in;

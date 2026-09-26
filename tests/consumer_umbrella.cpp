@@ -2159,19 +2159,23 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
 // The interval-granularity axis, reached the way a consumer reaches it: by
 // naming the partition on the policy and calling the entries.
 //
-// The member is a second partition of region B, so the three things a consumer
-// has to be able to read from it are that naming it changes the values over
-// region B - a partition and not the shipped seed under another name - that it
-// changes nothing outside it, the axis being a selection over the interval the
-// partition's bound was derived on, and that every value it returns is inside
-// the lane's published bound, so the member does not widen the contract a
-// caller already relies on.
+// The member is a second partition of the fitted domain - region A's pieces and
+// region B's seed - so the things a consumer has to be able to read from it are
+// that naming it changes the values over the fitted domain at both of the
+// regions the two tables are cut in, so that the member is a partition and not
+// the shipped tables under another name; that it changes nothing at or above the
+// fitted domain's end, the axis being a selection between two stored tables and
+// not a second arithmetic path; that naming the shipped member is the default
+// call bit for bit, so the default is a member of the axis rather than a third
+// reading beside it; and that every value it returns is inside the lane's
+// published bound, so the member does not widen the contract a caller already
+// relies on.
 //
 // The counts the partition costs - the coefficients one evaluation reads and
 // the coefficients the table stores - are the generated header's own
 // static_assert and the gate's narrow rows; what is asserted here is that the
-// policy carries the partition it was named with, so a call site that names
-// one is not silently handed the other.
+// policy carries the partition it was named with, so a call site that names one
+// is not silently handed the other.
 void CheckGranularityLane(Report& report, const std::vector<Cell>& cells) {
     using NarrowPolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
                                           boys::EvalScheme::kSplitClenshaw,
@@ -2198,56 +2202,93 @@ void CheckGranularityLane(Report& report, const std::vector<Cell>& cells) {
 
     Rule& rule = NewRule("granularity: the narrow partition through the entries");
 
-    // The split is at the published region-A end, which is the argument the
-    // region-B seed takes over at. The gate carries the exact interval - it
-    // reads the region constants from the kernel - and what this rule reads is
-    // what the public surface publishes: below the edge nothing may move, at
-    // and above it something must.
-    std::size_t atOrAboveTheEdge = 0;
-    std::size_t changedAtOrAbove = 0;
-    std::size_t changedBelow = 0;
+    // x1, where the fitted domain ends and the asymptotic path takes over, as
+    // the umbrella header publishes it - region B runs x0 <= x < x1 and region C
+    // is x >= x1. The public surface names no constant for it, so it is
+    // transcribed the way the lane bounds at the head of this file are.
+    constexpr double kFittedDomainEnd = 28.98933773882074;
+
+    std::size_t inA = 0;
+    std::size_t changedInA = 0;
+    std::size_t inB = 0;
+    std::size_t changedInB = 0;
+    std::size_t aboveDomain = 0;
+    std::size_t changedAboveDomain = 0;
+    std::size_t shippedDiffering = 0;
 
     for (const Cell& cell : cells)
     {
         const double byDefault = boys::BoysSingle<boys::kBoysFullAccuracyMultiplier>(cell.n, cell.x);
         const double narrow =
             boys::BoysSingle<boys::kBoysFullAccuracyMultiplier, NarrowPolicy>(cell.n, cell.x);
-        const bool served = cell.x >= boys::kRegionAEnd;
+        const double named =
+            boys::BoysSingle<boys::kBoysFullAccuracyMultiplier, ShippedPolicy>(cell.n, cell.x);
 
-        if (served)
+        if (cell.x < boys::kRegionAEnd)
         {
-            ++atOrAboveTheEdge;
+            ++inA;
 
             if (narrow != byDefault)
             {
-                ++changedAtOrAbove;
+                ++changedInA;
             }
-        } else if (narrow != byDefault)
+        } else if (cell.x < kFittedDomainEnd)
         {
-            ++changedBelow;
+            ++inB;
+
+            if (narrow != byDefault)
+            {
+                ++changedInB;
+            }
+        } else
+        {
+            ++aboveDomain;
+
+            if (narrow != byDefault)
+            {
+                ++changedAboveDomain;
+            }
+        }
+
+        if (named != byDefault)
+        {
+            ++shippedDiffering;
         }
 
         Judge(rule, narrow, cell.value, SingleBound(cell.x, 1.0), cell.n, cell.x);
     }
 
-    // A grid with no argument at or above the edge would leave the reading
-    // below vacuous, so the rule says which grid it measured rather than
-    // passing on an empty sweep.
-    Require(report, atOrAboveTheEdge > 0, "the grid carries arguments the region-B seed serves");
+    // Each rule says which cells it measured rather than passing on an empty
+    // sweep: a grid that carries no argument of a region would otherwise leave
+    // the reading vacuous.
     Require(report,
-            changedAtOrAbove > 0,
-            "naming the narrow partition changes the values at and above the region edge: the "
-            "member is a partition and not the shipped seed under another name");
+            inA > 0 && changedInA > 0,
+            "naming the narrow partition changes region A's values: the member cuts region A's "
+            "pieces as well as region B's seed, and the change is visible through the entry");
     Require(report,
-            changedBelow == 0,
-            "naming the narrow partition leaves every argument below the edge bit-identical");
+            inB > 0 && changedInB > 0,
+            "naming the narrow partition changes region B's values: the member is a partition "
+            "and not the shipped seed under another name");
+    Require(report,
+            aboveDomain > 0 && changedAboveDomain == 0,
+            "naming the narrow partition changes nothing at or above the fitted domain's end: "
+            "above it the entry reads the asymptotic path, which no partition of the stored "
+            "fits is part of");
+    Require(report,
+            shippedDiffering == 0,
+            "naming the shipped partition is the default call bit for bit, so the default is "
+            "that member and not a third reading beside the two");
 
-    std::printf("  %-56s %7zu cells  %zu of %zu at or above the edge changed, %zu below\n",
+    std::printf("  %-56s %7zu cells  %zu of %zu in region A changed, %zu of %zu in region B, "
+                "%zu of %zu above the fitted domain\n",
                 rule.name.c_str(),
                 rule.cells,
-                changedAtOrAbove,
-                atOrAboveTheEdge,
-                changedBelow);
+                changedInA,
+                inA,
+                changedInB,
+                inB,
+                changedAboveDomain,
+                aboveDomain);
 
     Covered("boys::FitGranularity");
     Covered("boys::kDefaultFitGranularity");
