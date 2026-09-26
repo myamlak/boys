@@ -10282,10 +10282,12 @@ int main(int argc, char** argv) {
 
     // The single and half lanes: the reference rung carries every route and
     // scheme on the shipped partition at either axis, and the narrow partition
-    // too. Past it the shipped partition carries every family on the arguments
-    // axis (the per-order bodies, each at the degrees its own family's rung
-    // derives) and the shipped pair alone on the orders axis, whose rung bodies
-    // are the packed lane's and are instantiated for that pair.
+    // too. Past it the shipped partition carries every family on both axes -
+    // the per-order bodies at the degrees their own family's rung derives, and
+    // the packed lane's rung bodies, whose family's table is read on this axis
+    // as it is on the other. The narrow partition's own rungs are the table one
+    // lane derives and this one does not yet, so they are left to the accessor's
+    // own refusal rather than measured here.
 #define BOYS_COMB_SINGLE_LANE(kBudget, kLane)                                                      \
     combSingleReference.template operator()<kBudget, boys::FitRoute::kChebyshev,                    \
                                             boys::EvalScheme::kSplitClenshaw,                       \
@@ -10353,7 +10355,14 @@ int main(int argc, char** argv) {
         kLane);                                                                                     \
     combSingleRungs.template operator()<kBudget, boys::FitRoute::kChebyshev,                        \
                                         boys::EvalScheme::kSplitClenshaw, boys::PackAxis::kOrders>( \
-        kLane)
+        kLane);                                                                                     \
+    combSingleRungs.template operator()<kBudget, boys::FitRoute::kChebyshev,                        \
+                                        boys::EvalScheme::kHorner, boys::PackAxis::kOrders>(kLane); \
+    combSingleRungs.template operator()<kBudget, boys::FitRoute::kRationalMinimax,                  \
+                                        boys::EvalScheme::kSplitClenshaw, boys::PackAxis::kOrders>( \
+        kLane);                                                                                     \
+    combSingleRungs.template operator()<kBudget, boys::FitRoute::kRationalMinimax,                  \
+                                        boys::EvalScheme::kHorner, boys::PackAxis::kOrders>(kLane)
 
     BOYS_COMB_SINGLE_LANE(boys::BoysBudget::kFloat, kLaneSingle);
     BOYS_COMB_SINGLE_LANE(boys::BoysBudget::kFp16, combHalfLane);
