@@ -252,6 +252,107 @@ constexpr int EffectiveDegree(const CoeffArray& coeffs,
     return deg;
 }
 
+// Which of a piece table's two stored forms the scan reads: the Chebyshev
+// table or the monomial one. Every table this library stores a rung's degrees
+// for is carried in both, so the choice is the basis and nothing else, and a
+// table that carried one form would be a table to store the other for. It
+// stands above the derivations rather than beside them because each of them
+// names it with explicit template arguments over a dependent array, and a
+// compiler that looks the name up where the derivation is written would not
+// find it below.
+template <TailBasis kBasis, typename Table>
+constexpr const auto& TailTable(const Table& chebyshev, const Table& monomial) noexcept {
+    return (kBasis == TailBasis::kChebyshev) ? chebyshev : monomial;
+}
+
+// The narrow partition's own effective-degree tables. The narrow pieces carry
+// their own coefficients, so the criterion above applies to them unchanged: the
+// tail a rung drops from *this* piece's stored coefficients, times the path's
+// amplification, against the rung's budget. Nothing about the derivation is the
+// shipped partition's - a narrow piece is a different fit over a different
+// interval, so the tail it drops at a degree and the gain it is read under are
+// its own numbers.
+//
+// The narrow partition is the double lane's: the single-precision lanes hold
+// one coefficient set each and no second partition, which is why these take no
+// basis table from f32 and stand beside a refusal there rather than beside
+// RegionADegrees' second branch.
+template <double kAccuracyMultiplier, BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
+constexpr auto NarrowRegionADegrees() noexcept {
+    static_assert(RoleUsesDoubleTables(kRole),
+                  "the narrow partition is the double lane's, so this derivation reads the "
+                  "double lane's narrow table and no single-precision role has one to cut");
+
+    constexpr const auto& coeffs = TailTable<kBasis>(kNarrowACoeffs, kNarrowAMonoCoeffs);
+    std::array<int, std::size(kNarrowAPieces)> degrees{};
+
+    for (int order = 0; order <= kMaxOrder; ++order)
+    {
+        for (int p = kNarrowAPieceStart[order]; p < kNarrowAPieceStart[order + 1]; ++p)
+        {
+            const OrderPiece& piece = kNarrowAPieces[static_cast<std::size_t>(p)];
+            const double amplification =
+                RoleUsesBatchAmplification(kRole) ? RegionAAmplification(order, piece.b) : 1.0;
+            degrees[static_cast<std::size_t>(p)] =
+                EffectiveDegree(coeffs,
+                                static_cast<std::size_t>(piece.offset),
+                                piece.deg,
+                                kAccuracyMultiplier,
+                                amplification,
+                                RegionABudget(kRole));
+        }
+    }
+
+    return degrees;
+}
+
+// Region B's narrow seed at a rung. The seed is a second partition of the same
+// interval - kNarrowBPieces fits, every one at kNarrowBDeg, and the evaluation
+// reads the piece the argument falls in - so the rung needs one degree per
+// order that is admissible for *every* piece, not one per piece: the table the
+// body reads is indexed by order alone.
+//
+// The largest of the pieces' effective degrees is that degree, and it is
+// admissible for each piece because the tail is non-increasing in the cut - a
+// piece admissible at d'_p is admissible at any larger degree, since the sum
+// the tail adds is over non-negative magnitudes. The criterion is therefore
+// applied to every piece and the rung pays the widest cut any of them needs;
+// taking the smallest instead would relax the pieces the argument reaches
+// beyond what their own coefficients carry.
+template <double kAccuracyMultiplier, BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
+constexpr auto NarrowRegionBDegrees() noexcept {
+    static_assert(RoleUsesDoubleTables(kRole),
+                  "the narrow partition is the double lane's, so this derivation reads the "
+                  "double lane's narrow table and no single-precision role has one to cut");
+
+    constexpr const auto& coeffs = TailTable<kBasis>(kNarrowBcoeffs, kNarrowBMonoCoeffs);
+    std::array<int, kMaxOrder + 1> degrees{};
+
+    for (int order = 0; order <= kMaxOrder; ++order)
+    {
+        const double amplification = RegionBAmplification(order);
+        int widest = 0;
+
+        for (int q = 0; q < kNarrowBPieces; ++q)
+        {
+            const int pieceDegree =
+                EffectiveDegree(coeffs,
+                                static_cast<std::size_t>(q) *
+                                    (static_cast<std::size_t>(kNarrowBDeg) + 1),
+                                kNarrowBDeg,
+                                kAccuracyMultiplier,
+                                amplification,
+                                RegionBBudget(kRole));
+
+            widest = pieceDegree > widest ? pieceDegree : widest;
+        }
+
+        degrees[static_cast<std::size_t>(order)] = widest;
+    }
+
+    return degrees;
+}
+
 // ---------------------------------------------------------------------------
 // The rational pair's own truncation
 // ---------------------------------------------------------------------------
@@ -502,18 +603,12 @@ constexpr void RationalPairCut(const NumArray& num,
 // region B; the flat form keeps the tables constexpr on MSVC). The NTTP
 // forms are instantiation-local constants — zero mutable state on the CPU
 // path.
+
 template <double kAccuracyMultiplier, BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
 constexpr auto RegionADegrees() noexcept {
-    static_assert(kBasis == TailBasis::kChebyshev || RoleUsesDoubleTables(kRole),
-                  "a monomial tail's effective degrees are derived from the table its own fits "
-                  "are cut from, and this derivation reads the double lane's tables for the "
-                  "roles that take them and the float lane's Chebyshev table for the rest, so a "
-                  "monomial tail on a single-precision single role has no degrees derived for "
-                  "it here");
-
     if constexpr (RoleUsesDoubleTables(kRole))
     {
-        constexpr const auto& coeffs = (kBasis == TailBasis::kChebyshev) ? kCoeffs : kMonoCoeffs;
+        constexpr const auto& coeffs = TailTable<kBasis>(kCoeffs, kMonoCoeffs);
         std::array<int, std::size(kPieces)> degrees{};
 
         for (int order = 0; order <= kMaxOrder; ++order)
@@ -536,6 +631,11 @@ constexpr auto RegionADegrees() noexcept {
         return degrees;
     } else
     {
+        // The single-precision roles' own table, in whichever of its two
+        // stored forms the rung's scheme sums: the lane holds a Chebyshev
+        // table and a monomial one over the same pieces, so a Horner rung on
+        // it is cut from the monomial table exactly as the double lane's is.
+        constexpr const auto& coeffs = TailTable<kBasis>(f32::kCoeffs, f32::kMonoCoeffs);
         std::array<int, std::size(f32::kPieces)> degrees{};
 
         for (int order = 0; order <= kMaxOrder; ++order)
@@ -546,7 +646,7 @@ constexpr auto RegionADegrees() noexcept {
                 const double amplification =
                     RoleUsesBatchAmplification(kRole) ? RegionAAmplification(order, piece.b) : 1.0;
                 degrees[static_cast<std::size_t>(p)] =
-                    EffectiveDegree(f32::kCoeffs,
+                    EffectiveDegree(coeffs,
                                     static_cast<std::size_t>(piece.offset),
                                     piece.deg,
                                     kAccuracyMultiplier,
@@ -561,16 +661,9 @@ constexpr auto RegionADegrees() noexcept {
 
 template <double kAccuracyMultiplier, BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
 constexpr auto RegionBDegrees() noexcept {
-    static_assert(kBasis == TailBasis::kChebyshev || kRole == BoysRole::kDoubleSingle ||
-                      kRole == BoysRole::kDoubleBatch,
-                  "a monomial tail's effective degrees are derived from the table its own fits "
-                  "are cut from, and this derivation reads the double lane's region-B seed "
-                  "tables, so a monomial tail on a single-precision role has no degrees derived "
-                  "for it here");
-
     if constexpr (kRole == BoysRole::kDoubleSingle || kRole == BoysRole::kDoubleBatch)
     {
-        constexpr const auto& coeffs = (kBasis == TailBasis::kChebyshev) ? kBcoeffs : kMonoBcoeffs;
+        constexpr const auto& coeffs = TailTable<kBasis>(kBcoeffs, kMonoBcoeffs);
         std::array<int, kMaxOrder + 1> degrees{};
 
         for (int order = 0; order <= kMaxOrder; ++order)
@@ -586,11 +679,14 @@ constexpr auto RegionBDegrees() noexcept {
         return degrees;
     } else
     {
+        // The single-precision lane's own seed, in the form its scheme sums;
+        // one row, as the double lane's is, so the scan is the same one.
+        constexpr const auto& coeffs = TailTable<kBasis>(f32::kBcoeffs, f32::kMonoBcoeffs);
         std::array<int, kMaxOrder + 1> degrees{};
 
         for (int order = 0; order <= kMaxOrder; ++order)
         {
-            degrees[static_cast<std::size_t>(order)] = EffectiveDegree(f32::kBcoeffs,
+            degrees[static_cast<std::size_t>(order)] = EffectiveDegree(coeffs,
                                                                        0,
                                                                        f32::kBDeg,
                                                                        kAccuracyMultiplier,
