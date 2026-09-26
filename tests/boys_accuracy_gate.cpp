@@ -5791,9 +5791,7 @@ int main(int argc, char** argv) {
                 boys::FitGranularity::kShipped>() {
             constexpr double kMultiplier =
                 boys::AccuracyMultiplier(static_cast<boys::AccuracyTier>(kRung));
-            constexpr std::size_t kSchemeIdx = static_cast<std::size_t>(kScheme);
             constexpr std::size_t kRouteIdx = static_cast<std::size_t>(kRoute);
-            constexpr std::size_t kPartIdx = static_cast<std::size_t>(kPart);
             using Policy = boys::EvalPolicy<kRoute,
                                             kScheme,
                                             boys::BoysBudget::kFloat,
@@ -5806,6 +5804,8 @@ int main(int argc, char** argv) {
             // order the sweeps run in and the order the rows are published in
             // are two different orders, and only the table knows the second.
             const auto claimSlot = [&](std::size_t entry, std::size_t region) {
+                constexpr std::size_t kSchemeIdx = static_cast<std::size_t>(kScheme);
+                constexpr std::size_t kPartIdx = static_cast<std::size_t>(kPart);
                 const std::size_t at =
                     openedSlot(kRung, kRouteIdx, kPartIdx, kSchemeIdx, entry, region);
                 return static_cast<std::size_t>(openedSlots[at]);
@@ -10146,7 +10146,8 @@ int main(int argc, char** argv) {
 
             for (std::size_t i = 0; i < count; ++i)
             {
-                boys::BoysAllOrdersF32<1.0, Policy>(nmax, ref.xf[i], out.data());
+                boys::BoysAllOrdersF32<1.0, Policy>(nmax, static_cast<float>(ref.xf[i]),
+                                                    out.data());
 
                 for (int n = 0; n <= nmax; ++n)
                 {
@@ -10198,7 +10199,8 @@ int main(int argc, char** argv) {
 
                     for (std::size_t i = 0; i < count; ++i)
                     {
-                        boys::BoysAllOrdersF32<kM, Policy>(nmax, ref.xf[i], out.data());
+                        boys::BoysAllOrdersF32<kM, Policy>(nmax, static_cast<float>(ref.xf[i]),
+                                                           out.data());
 
                         for (int n = 0; n <= nmax; ++n)
                         {
