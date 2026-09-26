@@ -1321,12 +1321,19 @@ float BoysSingleF32(int n, float x) noexcept;
 ///         the route's tables each of those reads - and the budget selects the
 ///         region budget the degree cut targets. Region A's seed is the double
 ///         lane's fit at the policy's pair, so its degrees are that lane's rung
-///         table; region B's is this lane's own. The packing axis is refused
-///         where it is named, and this is the one shape in the float lane where
-///         the axis is not empty: nmax + 1 orders of one argument is exactly what
-///         a packed lane would hold, and the axis is refused here because this
-///         lane has no packed body to answer it with rather than because the call
-///         has nothing to pack
+///         table; region B's is this lane's own. The packing axis is carried
+///         here too, and the orders axis is the shape this entry already has:
+///         the body it calls under that axis fills one vector register with
+///         eight orders of the single argument, and it reads the tables the
+///         policy names, so a policy naming the narrow partition reads each
+///         order's own piece of it. Past the reference multiplier that body
+///         serves the shipped route and scheme, a rung's degree table being
+///         certified against one stored table of one fit family; at the
+///         reference multiplier every route and scheme is served. Naming the
+///         arguments axis names no lane this shape has to fill: one argument is
+///         what the entry takes, so the values are the per-argument body's
+///         either way, and the batch entry is where an array of arguments is
+///         answered, one argument at a time
 /// \param nmax  highest order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0
 /// \param out   receives nmax + 1 values, out[k] = F_k(x)
