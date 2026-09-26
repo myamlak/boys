@@ -98,8 +98,17 @@ static_assert(Fp16Default::kGranularity == boys::kDefaultFitGranularity);
 // the assertions that each entry's *own* default is the name — not that the
 // name is a type the entry could be called with. They are what a revision that
 // changed an entry's template default without changing the alias would fail,
-// which is the defect the shortcut exists to make visible. The last two are
-// negative controls: a comparison that can only say yes proves nothing.
+// which is the defect the shortcut exists to make visible.
+//
+// Only the yes direction is a constant expression. A comparison between two
+// distinct function addresses is not one under the sanitizer configuration this
+// file is also built in: g++ 15 with -fsanitize=address,undefined refuses it
+// with "'(f == g)' is not a constant expression", and a function address
+// against a null pointer with "'(f == 0)'", while two spellings of one function
+// fold. A variable template's initializer is a constant-expression context even
+// where the value is only read at run time, so this comparison cannot be
+// written as one at all; the two controls that show the relation can say no
+// compare their pairs in main() instead, as ordinary pointer comparisons.
 template <auto Left, auto Right> constexpr bool SameCall = (Left == Right);
 
 static_assert(SameCall<&boys::BoysSingle<kFull>, &boys::BoysSingle<kFull, Fp64Default>>);
@@ -111,9 +120,6 @@ static_assert(SameCall<&boys::BoysSingleF32<kFull>, &boys::BoysSingleF32<kFull, 
 static_assert(
     SameCall<&boys::BoysAllOrdersF32<kFull>, &boys::BoysAllOrdersF32<kFull, Fp32Default>>);
 static_assert(SameCall<&boys::BoysAllNF32<kFull>, &boys::BoysAllNF32<kFull, Fp32Default>>);
-
-static_assert(!SameCall<&boys::BoysSingle<kFull>, &boys::BoysSingle<kFull, Fp16Default>>);
-static_assert(!SameCall<&boys::BoysSingleF32<kFull>, &boys::BoysSingleF32<kFull, Fp16Default>>);
 
 // --- the comparison ---------------------------------------------------------
 
@@ -310,6 +316,8 @@ int main() {
     const std::vector<double> xs = Arguments();
     std::size_t rows = 0;
     std::size_t failed = 0;
+    std::size_t controls = 0;
+    constexpr std::size_t kControls = 2;
 
     std::printf("consumer check of the named defaults through <boys/boys.hpp>: "
                 "%zu arguments, orders 0..%d\n",
@@ -527,10 +535,36 @@ int main() {
         Print(row);
     }
 
+    // --- the negative controls ------------------------------------------------
+    // The same comparison the identity assertions above make, on the pair they
+    // cannot make it on: everything above folds only when two names are one
+    // instantiation, so a comparison that could only ever say yes would leave
+    // that block proving nothing, and the half default and the float lane's are
+    // two names. The comparison is made here rather than in a static assertion
+    // because the sanitizer configuration does not accept it in any
+    // constant-expression context (see the note above SameCall); a revision that
+    // made either of them one call fails this the way it would fail an assertion.
+    {
+        const bool singleIsHalf = &boys::BoysSingle<kFull> == &boys::BoysSingle<kFull, Fp16Default>;
+        const bool singleF32IsHalf =
+            &boys::BoysSingleF32<kFull> == &boys::BoysSingleF32<kFull, Fp16Default>;
+
+        std::printf("  negative control: the fp16 default and the float default are %s on "
+                    "BoysSingle, %s on BoysSingleF32\n",
+                    singleIsHalf ? "one call" : "two calls",
+                    singleF32IsHalf ? "one call" : "two calls");
+        controls += singleIsHalf ? 1u : 0u;
+        controls += singleF32IsHalf ? 1u : 0u;
+    }
+
     std::printf("  %zu of the %zu identity rows differ anywhere; "
                 "the shortcut and the entry are one call\n",
                 failed,
                 rows);
+    std::printf("  %zu of the %zu negative controls report one call, which is the answer "
+                "the identity assertions above need them not to give\n",
+                controls,
+                kControls);
 
-    return failed == 0 ? 0 : 1;
+    return failed == 0 && controls == 0 ? 0 : 1;
 }
