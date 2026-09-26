@@ -2688,17 +2688,15 @@ template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 void BoysAllNF32Impl(int nmax, const float* x, float* out, std::size_t count) noexcept {
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
-    static_assert(Policy::kPack == PackAxis::kArguments,
-                  "this entry answers each argument through the all-orders entry, so it has no "
-                  "run to hand to a packed lane of its own: the single-precision lane's one "
-                  "all-orders body is the scalar one (the AVX2 tier is double and half only), "
-                  "and that body refuses the orders axis for the reason its own assertion "
-                  "states. Naming the axis here would be read and ignored; read the orders axis "
-                  "on the double lane, or the shipped arguments axis here");
     assert(nmax >= 0 && nmax <= kMaxBoysOrder);
     assert(count == 0 || x != nullptr);
     assert(count == 0 || out != nullptr);
 
+    // Both axes are served, and the axis is read: the per-argument body this
+    // loop calls is the all-orders entry, which packs eight orders of one
+    // argument when the policy names the orders axis and fits one argument's
+    // region otherwise. The arguments axis's region partitioning stays at the
+    // caller's loop, as the doc comment above says.
     for (std::size_t i = 0; i < count; ++i)
     {
         assert(x[i] >= 0.0f);

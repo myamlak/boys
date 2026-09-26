@@ -1368,9 +1368,10 @@ void BoysAllOrdersF32(int nmax, float x, float* out) noexcept;
 ///         every multiplier - the route for this lane's own region-B seed, the
 ///         scheme for which of the route's tables it is read from - and the
 ///         budget selects the region budget the degree cut targets. The packing
-///         axis is refused where it is named: this entry answers each argument
-///         through the all-orders entry, whose own paragraph says why the float
-///         lane cannot serve the orders axis
+///         axis is read at every argument: the all-orders body this entry calls
+///         packs eight orders of one argument when the policy names the orders
+///         axis. What stays at the caller's loop is the region partitioning of
+///         the arguments axis, for the reason the paragraph above gives
 /// \param nmax  highest order, 0..kMaxBoysOrder
 /// \param x     array of count arguments, each >= 0
 /// \param out   receives count * (nmax + 1) floats, out[k * count + i] = F_k(x[i])

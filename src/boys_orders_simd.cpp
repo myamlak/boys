@@ -606,19 +606,19 @@ int LaneMax(const int* lanes) noexcept {
 // degrees so that a masked-off lane cannot read outside the coefficient table;
 // the clamp is invisible to a live lane, whose cut never exceeds its piece's
 // stored degree.
+//
+// The four lanes' geometry is handed in, because the two partitions reach it
+// differently: the shipped cover steps one flat index per lane at a stride the
+// table has, and the narrow cover looks each lane's own piece up, so one
+// recurrence serves both bodies over two different covers.
 template <class Pairs>
-__m256d RationalGroup(const double* coeffs,
-                      std::size_t firstFlat,
-                      int pieceStride,
-                      int l,
-                      const Pairs& pairs,
-                      __m256d tv) noexcept {
-    const __m128i flat = _mm_add_epi32(
-        _mm_set1_epi32(static_cast<int>(firstFlat) + l * pieceStride),
-        _mm_mullo_epi32(_mm_set_epi32(3, 2, 1, 0), _mm_set1_epi32(pieceStride)));
-    const __m128i offset = _mm_i32gather_epi32(kRatAOffset.data(), flat, 4);
-    const __m128i storedNum = _mm_i32gather_epi32(kRatANumDeg.data(), flat, 4);
-    const __m128i storedDen = _mm_i32gather_epi32(kRatADenDeg.data(), flat, 4);
+__m256d RationalGroupAt(const double* coeffs,
+                        __m128i flat,
+                        __m128i offset,
+                        __m128i storedNum,
+                        __m128i storedDen,
+                        const Pairs& pairs,
+                        __m256d tv) noexcept {
     const __m128i numCut = _mm_i32gather_epi32(pairs.num.data(), flat, 4);
     const __m128i denCut = _mm_i32gather_epi32(pairs.den.data(), flat, 4);
     const __m256d numCutD = _mm256_cvtepi32_pd(numCut);
@@ -654,6 +654,29 @@ __m256d RationalGroup(const double* coeffs,
 
     den = _mm256_fmadd_pd(den, tv, _mm256_set1_pd(1.0));
     return _mm256_div_pd(num, den);
+}
+
+// One shipped-cover group: the four lanes' flat indices are derived from the
+// group's first flat index and the table's stride, and the piece tables the
+// recurrence reads are the shipped cover's own.
+template <class Pairs>
+__m256d RationalGroup(const double* coeffs,
+                      std::size_t firstFlat,
+                      int pieceStride,
+                      int l,
+                      const Pairs& pairs,
+                      __m256d tv) noexcept {
+    const __m128i flat = _mm_add_epi32(
+        _mm_set1_epi32(static_cast<int>(firstFlat) + l * pieceStride),
+        _mm_mullo_epi32(_mm_set_epi32(3, 2, 1, 0), _mm_set1_epi32(pieceStride)));
+
+    return RationalGroupAt(coeffs,
+                           flat,
+                           _mm_i32gather_epi32(kRatAOffset.data(), flat, 4),
+                           _mm_i32gather_epi32(kRatANumDeg.data(), flat, 4),
+                           _mm_i32gather_epi32(kRatADenDeg.data(), flat, 4),
+                           pairs,
+                           tv);
 }
 
 // The rational route's region-A body: the shipped geometry, the per-order rule
@@ -754,6 +777,120 @@ void RationalOrdersBody(int nmax,
     {
         out[static_cast<std::size_t>(l) * stride] =
             (l < served) ? routeOrder(l) : shippedOrder(l);
+    }
+}
+
+// The same body over the narrow partition's own cover. The partition is the
+// whole of the difference: a lane's piece, its interval, its coefficient offset
+// and its stored pair are its own piece's in the narrow cover rather than a
+// stride away from the group's first, so the four lanes' geometry is looked up
+// lane by lane and handed to the same recurrence.
+//
+// The per-order rule is the body above's, unchanged - the route answers an
+// order from that order's own end of region A, and below it the partition's
+// own region-A fit answers at this rung's degree - so what a call on this axis
+// returns is the per-order narrow rational lane's value for the same order, read
+// four at a time.
+template <EvalScheme kScheme, class Pairs, class Degrees>
+void NarrowRationalOrdersBody(int nmax,
+                              double x,
+                              double* out,
+                              std::size_t stride,
+                              const Pairs& pairs,
+                              Degrees degrees) noexcept {
+    constexpr OrdersScheme kOrdersScheme = OrdersSchemeOf(kScheme);
+
+    const double* const table =
+        (kScheme == EvalScheme::kHorner) ? kNarrowAMonoCoeffs.data() : kNarrowACoeffs.data();
+    const double* const ratCoeffs = kNarrowRatACoeffs.data();
+
+    int served = 0;
+
+    while (served <= nmax && x >= kTierThresholds[static_cast<std::size_t>(served)])
+    {
+        ++served;
+    }
+
+    const auto narrowPiece = [&](int l) -> const OrderPiece& { return FindNarrowAPiece(l, x); };
+
+    const auto routeOrder = [&](int l) {
+        const OrderPiece& piece = narrowPiece(l);
+        const std::size_t flat = static_cast<std::size_t>(&piece - kNarrowAPieces.data());
+        const double t = std::fma(x - piece.a, 2.0 / (piece.b - piece.a), -1.0);
+        return RationalPieceNarrowAtCut(flat, pairs.num[flat], pairs.den[flat], t);
+    };
+
+    const auto partitionOrder = [&](int l) {
+        const OrderPiece& piece = narrowPiece(l);
+        const std::size_t flat = static_cast<std::size_t>(&piece - kNarrowAPieces.data());
+        const double t = std::fma(x - piece.a, 2.0 / (piece.b - piece.a), -1.0);
+        return ScalarFit<kOrdersScheme>(table + piece.offset, degrees.At(flat, piece.deg), t);
+    };
+
+    int l = 0;
+
+    if (nmax >= 3)
+    {
+        for (; l + 3 <= nmax; l += 4)
+        {
+            if (l >= served)
+            {
+                // None of the four takes the route's pair: the whole group is
+                // the narrow partition's own fit at this rung's degrees.
+                int deg = 0;
+                __m128i offsets{};
+                __m256d tv{};
+                NarrowGeometry(l, x, degrees, offsets, deg, tv);
+                StoreGroup(out, l, stride, NarrowGroup<kOrdersScheme>(table, offsets, deg, tv));
+            } else if (l + 4 <= served)
+            {
+                alignas(32) int flatIdx[4];
+                alignas(32) int off[4];
+                alignas(32) int storedN[4];
+                alignas(32) int storedD[4];
+                alignas(32) double mapped[4];
+
+                for (int j = 0; j < 4; ++j)
+                {
+                    const OrderPiece& piece = narrowPiece(l + j);
+                    const std::size_t flat =
+                        static_cast<std::size_t>(&piece - kNarrowAPieces.data());
+
+                    flatIdx[j] = static_cast<int>(flat);
+                    off[j] = kNarrowRatAOffset[flat];
+                    storedN[j] = kNarrowRatANumDeg[flat];
+                    storedD[j] = kNarrowRatADenDeg[flat];
+                    mapped[j] = std::fma(x - piece.a, 2.0 / (piece.b - piece.a), -1.0);
+                }
+
+                StoreGroup(out,
+                           l,
+                           stride,
+                           RationalGroupAt(
+                               ratCoeffs,
+                               _mm_loadu_si128(reinterpret_cast<const __m128i*>(flatIdx)),
+                               _mm_loadu_si128(reinterpret_cast<const __m128i*>(off)),
+                               _mm_loadu_si128(reinterpret_cast<const __m128i*>(storedN)),
+                               _mm_loadu_si128(reinterpret_cast<const __m128i*>(storedD)),
+                               pairs,
+                               _mm256_load_pd(mapped)));
+            } else
+            {
+                // The handover falls inside this group: one order at a time, in
+                // the same two readings the whole-group rules above use.
+                for (int j = 0; j < 4; ++j)
+                {
+                    out[static_cast<std::size_t>(l + j) * stride] =
+                        (l + j < served) ? routeOrder(l + j) : partitionOrder(l + j);
+                }
+            }
+        }
+    }
+
+    for (; l <= nmax; ++l)
+    {
+        out[static_cast<std::size_t>(l) * stride] =
+            (l < served) ? routeOrder(l) : partitionOrder(l);
     }
 }
 
@@ -1887,21 +2024,24 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
         if constexpr (kGranularity != kDefaultFitGranularity)
         {
             // The narrow partition is a partition of the shipped route's own
-            // region-A fits, and this lane's narrow body is that partition's: it
-            // reads each of the four orders it holds its own piece and
-            // coefficients, because a per-order cut gives the four lanes no
-            // stride to share. The rational route's narrow fit is a pair per
-            // piece with no such four-order lane built over it, so a policy
-            // naming the route and the partition together is refused here.
-            static_assert(kRoute == FitRoute::kChebyshev,
-                          "this lane's narrow body reads each of the four orders it holds its own "
-                          "piece and coefficients, and the rational route's narrow fit is a pair "
-                          "per piece with no four-order lane built over it: naming the route and "
-                          "the partition together on this axis is a kernel to write rather than "
-                          "a combination that cannot be formed - read the narrow partition on "
-                          "the route's own entries, or the shipped partition on this axis");
-            NarrowOrdersBody<OrdersSchemeOf(kScheme)>(
-                nmax, x, out, 1, RungDegree<decltype(kDegrees)>{kDegrees});
+            // region-A fits, and this lane reads it with the per-order rule the
+            // route's per-argument body applies: below an order's own end of
+            // region A the partition's fit answers at this rung's degree, and at
+            // and above it the route's pair answers at this rung's cut. The two
+            // readings are one body each, so which of them a lane takes is the
+            // only thing the route changes here.
+            if constexpr (kRoute == FitRoute::kRationalMinimax)
+            {
+                static constexpr auto kPairs = RationalRegionANarrowDegrees<kAccuracyMultiplier>();
+
+                NarrowRationalOrdersBody<kScheme>(
+                    nmax, x, out, 1, kPairs, RungDegree<decltype(kDegrees)>{kDegrees});
+            }
+            else
+            {
+                NarrowOrdersBody<OrdersSchemeOf(kScheme)>(
+                    nmax, x, out, 1, RungDegree<decltype(kDegrees)>{kDegrees});
+            }
         } else if constexpr (kRoute == FitRoute::kRationalMinimax)
         {
             static constexpr auto kPairs = RationalRegionADegrees<kAccuracyMultiplier>();
@@ -1972,13 +2112,37 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
     template void BoysAllOrdersPacked<kScheme, 65536.0, FitRoute::kChebyshev,                      \
                                       FitGranularity::kNarrow>(int, double, double*) noexcept;
 
+// The same partition on the other route. It is the same lane reading the other
+// route's pairs over the narrow cover, and the two routes' regions do not
+// coincide - the route answers an order from that order's own end of region A -
+// so a rung of the pair is a combination the lane carries rather than a
+// reading of the shipped bodies.
+#define BOYS_ORDERS_NARROW_RATIONAL_INSTANTIATIONS(kScheme)                                        \
+    template void BoysAllOrdersPacked<kScheme, 1.0, FitRoute::kRationalMinimax,                    \
+                                      FitGranularity::kNarrow>(int, double, double*) noexcept;     \
+    template void BoysAllOrdersPacked<kScheme, 64.0, FitRoute::kRationalMinimax,                   \
+                                      FitGranularity::kNarrow>(int, double, double*) noexcept;     \
+    template void BoysAllOrdersPacked<kScheme, 256.0, FitRoute::kRationalMinimax,                  \
+                                      FitGranularity::kNarrow>(int, double, double*) noexcept;     \
+    template void BoysAllOrdersPacked<kScheme, 1024.0, FitRoute::kRationalMinimax,                 \
+                                      FitGranularity::kNarrow>(int, double, double*) noexcept;     \
+    template void BoysAllOrdersPacked<kScheme, 4096.0, FitRoute::kRationalMinimax,                 \
+                                      FitGranularity::kNarrow>(int, double, double*) noexcept;     \
+    template void BoysAllOrdersPacked<kScheme, 16384.0, FitRoute::kRationalMinimax,                \
+                                      FitGranularity::kNarrow>(int, double, double*) noexcept;     \
+    template void BoysAllOrdersPacked<kScheme, 65536.0, FitRoute::kRationalMinimax,                \
+                                      FitGranularity::kNarrow>(int, double, double*) noexcept;
+
 BOYS_ORDERS_PACKED_INSTANTIATIONS(kDefaultEvalScheme)
 BOYS_ORDERS_PACKED_INSTANTIATIONS(EvalScheme::kHorner)
 BOYS_ORDERS_NARROW_INSTANTIATIONS(kDefaultEvalScheme)
 BOYS_ORDERS_NARROW_INSTANTIATIONS(EvalScheme::kHorner)
+BOYS_ORDERS_NARROW_RATIONAL_INSTANTIATIONS(kDefaultEvalScheme)
+BOYS_ORDERS_NARROW_RATIONAL_INSTANTIATIONS(EvalScheme::kHorner)
 
 #undef BOYS_ORDERS_PACKED_INSTANTIATIONS
 #undef BOYS_ORDERS_NARROW_INSTANTIATIONS
+#undef BOYS_ORDERS_NARROW_RATIONAL_INSTANTIATIONS
 
 } // namespace boys::detail
 
@@ -2142,13 +2306,35 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
     template void BoysAllOrdersPacked<kScheme, 65536.0, FitRoute::kChebyshev,                      \
                                       FitGranularity::kNarrow>(int, double, double*) noexcept;
 
+// The same partition on the other route, for the reason the vector tier
+// instantiates it: this tier's body is the policy's own scalar lane, and the
+// shapes a policy can name are held here rather than instantiated per call site.
+#define BOYS_ORDERS_NARROW_RATIONAL_INSTANTIATIONS(kScheme)                                        \
+    template void BoysAllOrdersPacked<kScheme, 1.0, FitRoute::kRationalMinimax,                    \
+                                      FitGranularity::kNarrow>(int, double, double*) noexcept;     \
+    template void BoysAllOrdersPacked<kScheme, 64.0, FitRoute::kRationalMinimax,                   \
+                                      FitGranularity::kNarrow>(int, double, double*) noexcept;     \
+    template void BoysAllOrdersPacked<kScheme, 256.0, FitRoute::kRationalMinimax,                  \
+                                      FitGranularity::kNarrow>(int, double, double*) noexcept;     \
+    template void BoysAllOrdersPacked<kScheme, 1024.0, FitRoute::kRationalMinimax,                 \
+                                      FitGranularity::kNarrow>(int, double, double*) noexcept;     \
+    template void BoysAllOrdersPacked<kScheme, 4096.0, FitRoute::kRationalMinimax,                 \
+                                      FitGranularity::kNarrow>(int, double, double*) noexcept;     \
+    template void BoysAllOrdersPacked<kScheme, 16384.0, FitRoute::kRationalMinimax,                \
+                                      FitGranularity::kNarrow>(int, double, double*) noexcept;     \
+    template void BoysAllOrdersPacked<kScheme, 65536.0, FitRoute::kRationalMinimax,                \
+                                      FitGranularity::kNarrow>(int, double, double*) noexcept;
+
 BOYS_ORDERS_PACKED_INSTANTIATIONS(kDefaultEvalScheme)
 BOYS_ORDERS_PACKED_INSTANTIATIONS(EvalScheme::kHorner)
 BOYS_ORDERS_NARROW_INSTANTIATIONS(kDefaultEvalScheme)
 BOYS_ORDERS_NARROW_INSTANTIATIONS(EvalScheme::kHorner)
+BOYS_ORDERS_NARROW_RATIONAL_INSTANTIATIONS(kDefaultEvalScheme)
+BOYS_ORDERS_NARROW_RATIONAL_INSTANTIATIONS(EvalScheme::kHorner)
 
 #undef BOYS_ORDERS_PACKED_INSTANTIATIONS
 #undef BOYS_ORDERS_NARROW_INSTANTIATIONS
+#undef BOYS_ORDERS_NARROW_RATIONAL_INSTANTIATIONS
 
 } // namespace boys::detail
 

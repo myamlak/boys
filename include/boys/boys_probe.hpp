@@ -122,16 +122,13 @@
 /// out: they are a separate optional build that needs a device, and the options
 /// this probe ranks are the CPU ones the caller's own build carries.
 ///
-/// What the option space itself refuses is not left out but named: the cells
-/// the library cannot serve are listed with their reasons in the report's
-/// coverage section, counted rather than omitted. They are the narrow partition
-/// crossed with the rational route (which carries no narrow table), with the
-/// across-orders packing axis (whose kernel needs the shipped partition's shared
-/// piece shape), and with a relaxed accuracy rung (the narrow degrees are the
-/// shipped rung's); and the partition axis on the single-precision lanes, which
-/// hold one coefficient set each. Each is unbuilt work — a table to generate or
-/// a kernel to write — and a later change that builds one moves the cell out of
-/// the refused list and into the measured table.
+/// What the option space itself refuses is not left out but named: a cell this
+/// build cannot serve is listed with the library's reason in the report's
+/// coverage section, counted rather than omitted, and a change that builds one
+/// moves that cell out of the refused list and into the measured table. The list
+/// is read from the library's own tables rather than kept here, so it shrinks by
+/// itself as cells are built; where those tables serve every cell of the space,
+/// the list is empty and the coverage section says so in those words.
 ///
 /// **This result is about the machine it was measured on.** The report says so
 /// in its own output, not only here, because a table of costs pasted into a
