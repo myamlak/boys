@@ -539,11 +539,22 @@ TEST(ProbeTest, TheClockCheckIsReadFromTheRunsOwnRows) {
         return;
     }
 
-    const bool travelled = report.confidence.find("No pair's ratio moved") != std::string::npos;
+    const bool heldStill = report.confidence.find("No pair's ratio moved") != std::string::npos;
     const bool warned = report.confidence.find("WARNING: the pair") != std::string::npos;
 
-    EXPECT_NE(travelled, warned) << report.confidence;
-    EXPECT_NE(report.confidence.find("widest was"), std::string::npos) << report.confidence;
+    // Exactly one of the two, and both name the pair and the resolution the
+    // figure was read against: a pair that came in under it, or one that went
+    // past it with the ordering's own exposure named.
+    EXPECT_NE(heldStill, warned) << report.confidence;
+    EXPECT_NE(report.confidence.find("this run can order"), std::string::npos)
+        << report.confidence;
+
+    if (heldStill) {
+        EXPECT_NE(report.confidence.find("widest was"), std::string::npos) << report.confidence;
+    } else {
+        EXPECT_NE(report.confidence.find("are not equally exposed"), std::string::npos)
+            << report.confidence;
+    }
 
     const std::string expected =
         oneRoute ? "runs the same arithmetic" : "does not run one arithmetic";
