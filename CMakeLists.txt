@@ -658,7 +658,11 @@ int main() {
     # --strict: the gate fails on a claim whose evidence is not in the tree as
     # well as on one it measures exceeded, so a green ctest never means "every
     # documented claim is met at this revision" while a claim rest on a
-    # measurement this revision cannot re-run.
+    # measurement this revision cannot re-run. What it scopes over is the
+    # claims the build carries: a build that closes the fp16 seam has rows
+    # whose subject its sources do not declare at all, and those are reported
+    # and named with their reason rather than counted as evidence this revision
+    # failed to produce.
     add_test(NAME boys-accuracy-gate COMMAND boys-accuracy-gate --strict)
     set_tests_properties(boys-boundary-standalone PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
