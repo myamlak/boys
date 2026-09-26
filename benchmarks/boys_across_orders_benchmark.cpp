@@ -33,6 +33,14 @@
 // Reproducing an instruction count, one variant per run:
 //   perf stat -e instructions:u,uops_retired.retire_slots:u
 //     boys-across-orders-benchmark --variant=orders-across-direct --reps=20000
+//
+// The single-precision lane's figures are read the same way, over the workload
+// they are quoted with, one variant per run:
+//   perf stat -e instructions:u,uops_retired.retire_slots:u
+//     boys-across-orders-benchmark --variant=orders-f32-orders-axis --reps=2000
+//   (and the same line with --variant=orders-f32-shipped,
+//    --variant=orders-f32-scalar-fits, --variant=orders-f32-across-clenshaw,
+//    --variant=orders-f32-across-composed)
 
 #include "boys/boys.hpp"
 #include "boys/boys_coefficients.hpp"
@@ -125,6 +133,28 @@ constexpr Variant kVariants[] = {
     {"balln-across-direct-composed",
      "BoysAllN(nmax, x[], count)",
      "the across-orders lane per argument, direct sum, coefficients composed"},
+
+    // The single-precision lane, where a register holds eight orders rather
+    // than four. The baseline is the per-order fit loop the float lane's own
+    // tables are read by one order at a time - the same baseline the double
+    // lane is measured against above, so the two widths are read off the same
+    // comparison.
+    {"orders-f32-shipped",
+     "BoysAllOrdersF32(nmax, x)",
+     "the shipped float entry: one seed fit and a recursion across the orders"},
+    {"orders-f32-scalar-fits",
+     "BoysAllOrdersF32(nmax, x)",
+     "the certified scalar float region-A fit per order, no recursion"},
+    {"orders-f32-across-clenshaw",
+     "BoysAllOrdersF32(nmax, x)",
+     "the float across-orders lane, eight orders to a register, split Clenshaw"},
+    {"orders-f32-across-composed",
+     "BoysAllOrdersF32(nmax, x)",
+     "the float across-orders lane, eight orders to a register, bases composed not gathered"},
+    {"orders-f32-orders-axis",
+     "BoysAllOrdersF32(nmax, x)",
+     "the shipped entry of the orders axis on the float lane: the policy the public call "
+     "names, which is the fetch the entry itself selects"},
 };
 
 const Variant* FindVariant(const std::string& name) {
@@ -320,6 +350,60 @@ double Run(const Config& config) {
 
             return x.size() * orders;
         });
+    } else if (name.rfind("orders-f32-", 0) == 0)
+    {
+        // The float lane's variants. The buffer is the caller's and is
+        // constructed once, outside the rep loop, so the allocator's
+        // instructions are not counted beside the kernel's.
+        std::vector<float> fout(orders, 0.0f);
+
+        values = Drive(config, [&](const std::vector<double>& x, std::vector<double>& out) {
+            (void)out;
+
+            for (double xi : x)
+            {
+                const float x32 = static_cast<float>(xi);
+
+                if (name == "orders-f32-shipped")
+                {
+                    boys::BoysAllOrdersF32(nmax, x32, fout.data());
+                } else if (name == "orders-f32-scalar-fits")
+                {
+                    for (int l = 0; l <= nmax; ++l)
+                    {
+                        fout[static_cast<std::size_t>(l)] =
+                            boys::detail::ChebyshevValueF32<boys::EvalScheme::kSplitClenshaw>(l,
+                                                                                             x32);
+                    }
+                } else if (name == "orders-f32-across-composed")
+                {
+                    boys::detail::BoysAllOrdersF32SimdComposed(
+                        boys::detail::OrdersScheme::kSplitClenshaw,
+                        boys::FitRoute::kChebyshev,
+                        nmax,
+                        x32,
+                        fout.data());
+                } else if (name == "orders-f32-orders-axis")
+                {
+                    using OrdersAxis =
+                        boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                          boys::EvalScheme::kSplitClenshaw,
+                                          boys::BoysBudget::kFloat,
+                                          boys::PackAxis::kOrders>;
+
+                    boys::BoysAllOrdersF32<1.0, OrdersAxis>(nmax, x32, fout.data());
+                } else
+                {
+                    boys::detail::BoysAllOrdersF32Simd(boys::detail::OrdersScheme::kSplitClenshaw,
+                                                       boys::FitRoute::kChebyshev,
+                                                       nmax,
+                                                       x32,
+                                                       fout.data());
+                }
+            }
+
+            return x.size() * orders;
+        });
     } else
     {
         std::fprintf(stderr, "unknown variant: %s\n", name.c_str());
@@ -426,6 +510,64 @@ int main(int argc, char** argv) {
                     sample.size(),
                     deviation.absolute,
                     deviation.relative);
+    }
+
+    // The same guard on the float lane, at the bound that lane documents: the
+    // packed lane rides fused arithmetic by construction, so on a build whose
+    // scalar arithmetic is the two-rounding route the guard reading is the
+    // float budget and not a bit comparison.
+    if (!config.variant.empty() &&
+        (config.variant.rfind("orders-f32-across", 0) == 0 ||
+         config.variant == "orders-f32-orders-axis"))
+    {
+        const std::vector<double> sample = MakeArguments(std::min<std::size_t>(config.count, 64));
+        std::vector<float> mine(static_cast<std::size_t>(config.nmax) + 1, 0.0f);
+        std::vector<float> shipped(static_cast<std::size_t>(config.nmax) + 1, 0.0f);
+        float worst = 0.0f;
+
+        for (double xi : sample)
+        {
+            const float x32 = static_cast<float>(xi);
+
+            if (config.variant == "orders-f32-across-composed")
+            {
+                boys::detail::BoysAllOrdersF32SimdComposed(boys::detail::OrdersScheme::kSplitClenshaw,
+                                                           boys::FitRoute::kChebyshev,
+                                                           config.nmax,
+                                                           x32,
+                                                           mine.data());
+            } else if (config.variant == "orders-f32-orders-axis")
+            {
+                using OrdersAxis =
+                    boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::BoysBudget::kFloat,
+                                      boys::PackAxis::kOrders>;
+
+                boys::BoysAllOrdersF32<1.0, OrdersAxis>(config.nmax, x32, mine.data());
+            } else
+            {
+                boys::detail::BoysAllOrdersF32Simd(boys::detail::OrdersScheme::kSplitClenshaw,
+                                                   boys::FitRoute::kChebyshev,
+                                                   config.nmax,
+                                                   x32,
+                                                   mine.data());
+            }
+
+            boys::BoysAllOrdersF32(config.nmax, x32, shipped.data());
+
+            for (int l = 0; l <= config.nmax; ++l)
+            {
+                worst = std::max(worst,
+                                 std::abs(mine[static_cast<std::size_t>(l)] -
+                                          shipped[static_cast<std::size_t>(l)]));
+            }
+        }
+
+        std::printf("against the shipped entry, over %zu arguments: worst absolute %.6e "
+                    "(the float lane documents 1.5e-7)\n",
+                    sample.size(),
+                    static_cast<double>(worst));
     }
 
     Run(config);

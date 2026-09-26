@@ -325,6 +325,7 @@ if (BOYS_BUILD_TESTS)
         tests/boys_fixed_n_test.cpp
         tests/boys_all_n_test.cpp
         tests/boys_across_orders_test.cpp
+        tests/boys_orders_f32_test.cpp
         tests/boys_c_test.cpp
         tests/f16_test.cpp
         tests/boys_half_native_test.cpp
@@ -526,6 +527,7 @@ int main() {
     # because a statement placed above its probe reads a variable not yet set.
     unset(BOYS_GATE_RATIONAL_RUNG_ACCEPTED CACHE)
     unset(BOYS_GATE_F32_PAIR_AT_RUNG_ACCEPTED CACHE)
+    unset(BOYS_GATE_F32_ACCEPTS_ORDERS CACHE)
     set(_boys_probe_target_type "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
     set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
     set(CMAKE_REQUIRED_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -553,6 +555,22 @@ int main() {
     return 0;
 }
 " BOYS_GATE_F32_PAIR_AT_RUNG_ACCEPTED)
+    # The orders axis on the single-precision engines: the reference rung with
+    # the shipped route and scheme, and a relaxed rung of the same pair. The
+    # second call is the one that names the rung, so a probe that compiled only
+    # the first would not be measuring the axis at the multiplier the engine
+    # answers it at.
+    check_cxx_source_compiles("
+#include <boys/boys.hpp>
+int main() {
+    float out[33] = {};
+    using OrdersAxis = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
+                                        boys::BoysBudget::kFloat, boys::PackAxis::kOrders>;
+    boys::BoysAllOrdersF32<1.0, OrdersAxis>(32, 1.0f, out);
+    boys::BoysAllOrdersF32<64.0, OrdersAxis>(32, 1.0f, out);
+    return 0;
+}
+" BOYS_GATE_F32_ACCEPTS_ORDERS)
     set(CMAKE_TRY_COMPILE_TARGET_TYPE "${_boys_probe_target_type}")
     unset(_boys_probe_target_type)
     unset(CMAKE_REQUIRED_FLAGS)
@@ -578,6 +596,15 @@ int main() {
     else()
         message(STATUS "boys: the single-precision engines ACCEPT another route or scheme at a "
             "relaxed rung")
+    endif()
+
+    if (BOYS_GATE_F32_ACCEPTS_ORDERS)
+        message(STATUS "boys: the orders packing axis on the single-precision engines is ACCEPTED, "
+            "measured by compiling the call")
+    else()
+        target_compile_definitions(boys-accuracy-gate PRIVATE BOYS_GATE_F32_REFUSES_ORDERS=1)
+        message(STATUS "boys: the orders packing axis on the single-precision engines is REFUSED, "
+            "measured by compiling the call")
     endif()
 
     if (BOYS_GATE_HAS_TIER)

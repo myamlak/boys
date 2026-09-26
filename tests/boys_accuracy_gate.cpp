@@ -967,6 +967,7 @@ int main(int argc, char** argv) {
     const int kAllNAtOrders = AddClaim("double batch", "all-n at-orders", kBoundDoubleBatch);
     const int kFloatSingle = AddClaim("float single", "all", kBoundFloat);
     const int kFloatOrders = AddClaim("float batch", "all", kBoundFloat);
+    const int kFloatOrdersPacked = AddClaim("float batch", "all, orders axis", kBoundFloat);
     const int kFloatAllN = AddClaim("float batch", "all-n", kBoundFloat);
     const int kF16Single = AddClaim("fp16 store-half", "single", kBoundHalfBase);
     const int kF16Orders = AddClaim("fp16 store-half", "batch", kBoundHalfBase);
@@ -2113,6 +2114,41 @@ int main(int argc, char** argv) {
                         kBoundFloat,
                         out[static_cast<std::size_t>(n)] == 0.0f ||
                             std::fabs(asDouble) < std::numeric_limits<float>::min());
+            }
+        }
+
+        // The same cells again, through the entry with the orders packing axis
+        // named: the entry the caller reaches by asking for that axis, so the
+        // claim the row above makes is measured on the axis as well as off it.
+        // The bound is the same one and the reference is the same grid, because
+        // a packing axis chooses which lane evaluates and not which fit.
+        {
+            using OrdersAxis =
+                boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                 boys::EvalScheme::kSplitClenshaw,
+                                 boys::BoysBudget::kFloat,
+                                 boys::PackAxis::kOrders>;
+
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                boys::BoysAllOrdersF32<1.0, OrdersAxis>(nmax,
+                                                        static_cast<float>(ref.x[i]),
+                                                        out.data());
+
+                for (int n = 0; n <= nmax; ++n)
+                {
+                    const std::size_t k = ref.Index(n, i);
+                    const double asDouble = static_cast<double>(out[static_cast<std::size_t>(n)]);
+                    Measure(kFloatOrdersPacked,
+                            n,
+                            ref.xf[i],
+                            asDouble,
+                            ref.vf[k],
+                            ref.decadeF[k],
+                            kBoundFloat,
+                            out[static_cast<std::size_t>(n)] == 0.0f ||
+                                std::fabs(asDouble) < std::numeric_limits<float>::min());
+                }
             }
         }
 
@@ -5880,8 +5916,8 @@ int main(int argc, char** argv) {
     add("README.float",
         "float single and batch: 1.5e-7 absolute at m = 1, the same in every region",
         "README accuracy contract",
-        verdictOf({kFloatSingle, kFloatOrders, kFloatAllN}),
-        worstOf({kFloatSingle, kFloatOrders, kFloatAllN}));
+        verdictOf({kFloatSingle, kFloatOrders, kFloatOrdersPacked, kFloatAllN}),
+        worstOf({kFloatSingle, kFloatOrders, kFloatOrdersPacked, kFloatAllN}));
 
     add("README.half",
         "fp16 and bf16 store-half lanes: m*1e-7 + one half-ULP, single and batch",
@@ -8659,6 +8695,30 @@ int main(int argc, char** argv) {
                         "the call and not a table nobody built: no revision of this entry "
                         "produces four orders for the axis to pack",
                         true});
+#endif
+#ifdef BOYS_GATE_F32_REFUSES_ORDERS
+    refusals.push_back({"orders axis on the single-precision engines",
+                        "a packed lane reads one coefficient stride and the float table gives "
+                        "each order its own cover, so a fixed argument selects a different piece "
+                        "in each lane and the eight bases are not a stride apart; the probe "
+                        "compiles the call and it does not build. This is a lane nobody had "
+                        "written, not a combination that cannot exist: the eight lanes share the "
+                        "degree the group is summed at, and a lane whose own fit is cut shorter "
+                        "reads zeros above its own cut, which is that lane's own polynomial read "
+                        "in that lane's own arithmetic",
+                        true});
+#else
+    // The axis is implemented and measured. The refusal above is printed only
+    // where the probe finds the call does not build; here the probe compiled
+    // it, and the row it owes is carried by the float book under "all, orders
+    // axis", measured against the committed reference grid at the lane's own
+    // bar. Neither direction is silent: the probe decides which of the two
+    // lines prints.
+    std::printf("  CARRIED: the single-precision engines compile a policy naming the orders "
+                "packing axis,\n  and the float book above carries the row it owes at the lane's "
+                "own bar, measured\n  against the committed reference grid beside the per-order "
+                "entry's row over the same\n  cells. The probe is the reading that says so; a "
+                "revision that dropped the axis would\n  print the refusal instead\n");
 #endif
 
     // ---- what the check found ----------------------------------------------

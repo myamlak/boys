@@ -21,6 +21,8 @@
 // it by recursion, which is one fit for all of them; the fits are the cost
 // this lane exists to spread over a vector.
 
+#include "boys/backend.hpp"
+
 #include <cstddef>
 
 namespace boys::detail {
@@ -80,8 +82,74 @@ void BoysAllOrdersSimd(
 void BoysAllOrdersSimdComposed(
     OrdersScheme scheme, int nmax, double x, double* out, std::size_t stride) noexcept;
 
-// The entry the public orders axis dispatches to, BoysAllOrdersPacked, is
-// declared in boys/boys_impl.hpp with the other internal entries and defined in
-// this translation unit: one declaration, where the entries that call it are.
+// --- The single-precision lane -------------------------------------------------
+//
+// The same axis where a register holds eight floats rather than four doubles,
+// and one premise weaker. The double lane rests on every order's region-A fit
+// being cut at the same boundaries to the same degree, which makes a fixed x
+// select one piece index, one mapped argument and one stride for the whole
+// vector. The float lane's table gives each order its own cover - order 0 is cut
+// into two pieces where order 14 is cut into three, and a break is not shared
+// between orders - so a fixed x selects a different piece in each lane and the
+// offset from one lane's coefficients to the next is not a stride at all. The
+// vector therefore carries the per-lane geometry: one mapped argument and one
+// coefficient base per lane, fetched per lane rather than stepped.
+//
+// What the eight lanes do share is the DEGREE the group is summed at, because
+// the split Clenshaw's even/odd structure belongs to the degree rather than to a
+// coefficient. The group runs at its lanes' largest degree and a lane whose own
+// cut is below it reads zeros above that cut. Reading zeros above a cut is the
+// lane's own polynomial, and down the recurrence it is the lane's own
+// arithmetic: the extra top step has an exact zero for both terms. That is what
+// keeps the packed value the per-order value bit for bit rather than near it.
+//
+// Each entry below is one group width and one fetch, and the fetch is a
+// template argument rather than a decision taken here because it is a property
+// of the machine and not of the algorithm - see the double lane's pair above.
+
+/// Fills out[l] with F_l(x) for l = 0..nmax in single precision, eight orders to
+/// a vector, with the eight coefficient bases gathered one instruction per step.
+///
+/// The packed lane's own entry, at the scheme and the route the policy named and
+/// at the degree the multiplier's effective-degree table cuts each fit to. It is
+/// this lane's region-A body, and it covers region A alone: past kX0 the
+/// engine's own entry runs the certified scalar single lane one order at a time,
+/// exactly as the double lane's does past its own interval.
+///
+/// \param scheme    which summation of the stored fits to use
+/// \param route     which family's region-A fits the lane reads
+/// \param nmax      highest order, 0..kMaxBoysOrder
+/// \param x         argument; the fits cover 0 <= x < kX0
+/// \param out       nmax + 1 values, contiguous
+/// \pre out holds nmax + 1 floats, and x >= 0
+void BoysAllOrdersF32Simd(
+    OrdersScheme scheme, FitRoute route, int nmax, float x, float* out) noexcept;
+
+/// The same entry with the other fetch: the eight bases composed into the
+/// register from eight loads rather than gathered with one instruction.
+///
+/// Same lane, same tables, same arithmetic, same values; the two differ in the
+/// instruction the fetch costs and in nothing else, which the lane's own test
+/// asserts. Which is cheaper is a property of the machine, so both are here,
+/// the benchmark measures them, and the engine's own entry takes the one this
+/// lane's counters prefer rather than the double lane's answer.
+///
+/// \param scheme see BoysAllOrdersF32Simd
+/// \param route  see BoysAllOrdersF32Simd
+/// \param nmax   see BoysAllOrdersF32Simd
+/// \param x      see BoysAllOrdersF32Simd
+/// \param out    see BoysAllOrdersF32Simd
+void BoysAllOrdersF32SimdComposed(
+    OrdersScheme scheme, FitRoute route, int nmax, float x, float* out) noexcept;
+
+// The two entries above are the reference rung's reading, where every fit is
+// read whole. A relaxed rung is the same lane reading the same fits at the
+// degrees a truncation criterion certifies, which is a table rather than a
+// body, so the rung reaches the lane through BoysAllOrdersF32Packed<...> below.
+
+/// The entry the public orders axis dispatches to on the single-precision
+/// engines, BoysAllOrdersF32Packed, is declared in boys/boys_impl.hpp with the
+/// double lane's sibling and defined here: one declaration, where the entries
+/// that call it are.
 
 } // namespace boys::detail

@@ -635,6 +635,564 @@ void ScalarOrders(int nmax, double x, double* out, std::size_t stride) noexcept 
     }
 }
 
+// --- The single-precision lane ----------------------------------------------
+//
+// Eight orders to a register, and a premise the double lane above does not
+// need. Every order's float region-A cover is its own: order 0 is cut into two
+// pieces where order 14 is cut into three, and a break one order carries is not
+// a break the next one carries at the same argument. A fixed x therefore
+// selects a different piece in every lane, and the offset from one lane's
+// coefficients to the next is not a stride. So the group carries the geometry:
+// one coefficient base, one mapped argument and one degree per lane, fetched
+// per lane rather than stepped.
+//
+// What the eight lanes share is the degree the group is summed AT, because the
+// split Clenshaw's even/odd structure belongs to the degree and not to a
+// coefficient. The group runs at its lanes' largest degree and a lane whose own
+// cut is below it reads zeros above that cut. Reading zeros above a cut is that
+// lane's own polynomial and, down the recurrence, its own arithmetic: the extra
+// top step has an exact zero for both of its terms, so it hands the lane
+// exactly the state its own-degree summation would have started from. That is
+// what keeps a lane's packed value the per-order value bit for bit rather than
+// near it, and the lane's own test holds it to that.
+
+// The steps a lane does not take: all-ones where k is above the lane's own
+// degree. The degrees are small integers, so the comparison is exact in float
+// lanes and the mask is a lane-sized one rather than a packed integer that
+// would have to be widened first.
+__m256 AboveDegreeF32(int k, __m256 deg) noexcept {
+    return _mm256_cmp_ps(_mm256_set1_ps(static_cast<float>(k)), deg, _CMP_GT_OQ);
+}
+
+// One group of eight orders' geometry at one argument: where each lane's
+// coefficients begin, what degree each lane is read at, and what argument each
+// lane's fit is summed at.
+//
+// A lane's base and its stored degree are what bound the fetch's index; its
+// degree at this reading is what the mask is taken against. When every lane is
+// read at the group's own degree - which is every lane at the reference rung,
+// where each fit is read whole - there is no cut to mask and the fetch is one
+// index per lane.
+struct F32Group {
+    const float* table;
+    std::int32_t base[8];
+    std::int32_t stored[8];
+    std::int32_t degree[8];
+    float t[8];
+    int degMax;
+    bool uniform;
+};
+
+// The coefficient bases and mapped arguments a group of eight orders is read
+// at. Eight scalar piece lookups per group is this lane's own price: the double
+// lane's shared cover makes its index a stride it can step, and the float
+// lane's per-order cover does not.
+template <class Degrees>
+F32Group BuildF32Group(const float* table, int l, float x, Degrees degrees) noexcept {
+    F32Group group{table, {}, {}, {}, {}, 0, true};
+
+    for (int j = 0; j < 8; ++j)
+    {
+        const f32::OrderPiece& piece = FindPieceF32(l + j, x);
+        const auto flat = static_cast<std::size_t>(&piece - f32::kPieces.data());
+
+        group.base[j] = piece.offset;
+        group.stored[j] = piece.deg;
+        group.degree[j] = degrees.At(flat, piece.deg);
+        group.t[j] = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
+        group.degMax = group.degree[j] > group.degMax ? group.degree[j] : group.degMax;
+    }
+
+    for (int j = 0; j < 8; ++j)
+    {
+        group.uniform = group.uniform && group.degree[j] == group.degMax;
+    }
+
+    return group;
+}
+
+// The eight orders' k-th coefficients, each lane read at the lower of k and its
+// own stored degree - so a lane already cut off cannot read past its piece -
+// and zeroed wherever k is above the degree it is being read at.
+//
+// Two ways to fetch them, as on the double lane: the gather is one instruction
+// and, on the machines measured here, a microcode assist; the composed form is
+// eight loads and the shuffles that join them, more instructions and no assist.
+// Which costs less is a property of the machine, so both are here.
+template <bool kComposed>
+__m256 F32Coefficients(const F32Group& group, int k) noexcept {
+    if (group.uniform)
+    {
+        if constexpr (kComposed)
+        {
+            return _mm256_set_ps(group.table[group.base[7] + k],
+                                 group.table[group.base[6] + k],
+                                 group.table[group.base[5] + k],
+                                 group.table[group.base[4] + k],
+                                 group.table[group.base[3] + k],
+                                 group.table[group.base[2] + k],
+                                 group.table[group.base[1] + k],
+                                 group.table[group.base[0] + k]);
+        } else
+        {
+            return _mm256_i32gather_ps(
+                group.table,
+                _mm256_set_epi32(group.base[7] + k,
+                                 group.base[6] + k,
+                                 group.base[5] + k,
+                                 group.base[4] + k,
+                                 group.base[3] + k,
+                                 group.base[2] + k,
+                                 group.base[1] + k,
+                                 group.base[0] + k),
+                4);
+        }
+    }
+
+    alignas(32) std::int32_t index[8];
+
+    for (int j = 0; j < 8; ++j)
+    {
+        index[j] = group.base[j] + (k < group.stored[j] ? k : group.stored[j]);
+    }
+
+    const __m256 c =
+        kComposed ? _mm256_set_ps(group.table[index[7]],
+                                  group.table[index[6]],
+                                  group.table[index[5]],
+                                  group.table[index[4]],
+                                  group.table[index[3]],
+                                  group.table[index[2]],
+                                  group.table[index[1]],
+                                  group.table[index[0]])
+                  : _mm256_i32gather_ps(group.table,
+                                        _mm256_load_si256(reinterpret_cast<const __m256i*>(index)),
+                                        4);
+    const __m256 deg = _mm256_cvtepi32_ps(
+        _mm256_load_si256(reinterpret_cast<const __m256i*>(group.degree)));
+
+    return _mm256_andnot_ps(AboveDegreeF32(k, deg), c);
+}
+
+// The same fetch for the scalar tail, where the eight lanes are one order: the
+// tail runs the vector body rather than the library's scalar one so that its
+// values are this lane's values, at whatever degree it was handed.
+struct BroadcastCoefficientsF32 {
+    const float* table;
+    int base;
+
+    __m256 operator()(int k) const noexcept { return _mm256_set1_ps(table[base + k]); }
+};
+
+// Split Clenshaw, transcribed from boys_impl.hpp's ClenshawSplit onto per-lane
+// coefficients: same steps, same order, same fused operations, so a lane's
+// value is that order's single-precision value at the same degree, bit for bit.
+template <class C> __m256 ClenshawSplitF32(C coeff, int deg, __m256 t) noexcept {
+    if (deg == 0)
+    {
+        return coeff(0);
+    }
+
+    if (deg == 1)
+    {
+        return _mm256_fmadd_ps(t, coeff(1), coeff(0));
+    }
+
+    const __m256 v =
+        _mm256_fmadd_ps(_mm256_set1_ps(2.0f), _mm256_mul_ps(t, t), _mm256_set1_ps(-1.0f));
+    const __m256 twoV = _mm256_add_ps(v, v);
+
+    if (deg == 2)
+    {
+        return _mm256_fmadd_ps(t, coeff(1), _mm256_fmadd_ps(v, coeff(2), coeff(0)));
+    }
+
+    assert(deg >= 4 && deg % 2 == 0);
+
+    const int m = deg / 2;
+    __m256 b1 = coeff(2 * m);
+    __m256 b2 = _mm256_setzero_ps();
+
+    for (int k = m - 1; k >= 1; --k)
+    {
+        const __m256 b0 = _mm256_fmadd_ps(twoV, b1, _mm256_sub_ps(coeff(2 * k), b2));
+        b2 = b1;
+        b1 = b0;
+    }
+
+    const __m256 even = _mm256_fmadd_ps(v, b1, _mm256_sub_ps(coeff(0), b2));
+
+    __m256 o1 = coeff(2 * m - 1);
+    __m256 o2 = _mm256_setzero_ps();
+
+    for (int k = m - 2; k >= 1; --k)
+    {
+        const __m256 o0 = _mm256_fmadd_ps(twoV, o1, _mm256_sub_ps(coeff(2 * k + 1), o2));
+        o2 = o1;
+        o1 = o0;
+    }
+
+    const __m256 odd = _mm256_fmadd_ps(
+        _mm256_sub_ps(twoV, _mm256_set1_ps(1.0f)), o1, _mm256_sub_ps(coeff(1), o2));
+    return _mm256_fmadd_ps(t, odd, even);
+}
+
+// The direct sum: the Chebyshev series term by term, T_k by the forward
+// recurrence. Two multiply-adds per coefficient against the split Clenshaw's
+// one, and no dependence between the terms.
+template <class C> __m256 ChebyshevDirectSumF32(C coeff, int deg, __m256 t) noexcept {
+    if (deg == 0)
+    {
+        return coeff(0);
+    }
+
+    __m256 sum = _mm256_fmadd_ps(t, coeff(1), coeff(0));
+
+    if (deg == 1)
+    {
+        return sum;
+    }
+
+    const __m256 twoT = _mm256_add_ps(t, t);
+    __m256 prev = _mm256_set1_ps(1.0f); // T_0
+    __m256 cur = t; // T_1
+
+    for (int k = 2; k <= deg; ++k)
+    {
+        const __m256 next = _mm256_fmsub_ps(twoT, cur, prev);
+        sum = _mm256_fmadd_ps(coeff(k), next, sum);
+        prev = cur;
+        cur = next;
+    }
+
+    return sum;
+}
+
+// Horner over the monomial form of the fit, transcribed from HornerMono onto
+// per-lane coefficients.
+template <class C> __m256 HornerGatheredF32(C coeff, int deg, __m256 t) noexcept {
+    __m256 acc = coeff(deg);
+
+    for (int k = deg - 1; k >= 0; --k)
+    {
+        acc = _mm256_fmadd_ps(acc, t, coeff(k));
+    }
+
+    return acc;
+}
+
+// One order's fit at one argument, in the group's own arithmetic: the body the
+// scalar tail runs so that its values are the vector's.
+template <OrdersScheme kScheme>
+float F32ScalarFit(const float* table, int base, int deg, float t) noexcept {
+    const BroadcastCoefficientsF32 coeff{table, base};
+    const __m256 tv = _mm256_set1_ps(t);
+    alignas(32) float lanes[8];
+
+    if constexpr (kScheme == OrdersScheme::kHorner)
+    {
+        _mm256_store_ps(lanes, HornerGatheredF32(coeff, deg, tv));
+    } else if constexpr (kScheme == OrdersScheme::kDirectSum)
+    {
+        _mm256_store_ps(lanes, ChebyshevDirectSumF32(coeff, deg, tv));
+    } else
+    {
+        _mm256_store_ps(lanes, ClenshawSplitF32(coeff, deg, tv));
+    }
+
+    return lanes[0];
+}
+
+// One vector of eight orders' values from a polynomial table, at the group's
+// largest degree, every lane masked to its own.
+template <OrdersScheme kScheme, bool kComposed>
+__m256 F32ShippedGroup(const F32Group& group) noexcept {
+    const auto coeff = [&](int k) { return F32Coefficients<kComposed>(group, k); };
+    const __m256 tv = _mm256_loadu_ps(group.t);
+
+    if constexpr (kScheme == OrdersScheme::kHorner)
+    {
+        return HornerGatheredF32(coeff, group.degMax, tv);
+    } else if constexpr (kScheme == OrdersScheme::kDirectSum)
+    {
+        return ChebyshevDirectSumF32(coeff, group.degMax, tv);
+    } else
+    {
+        return ClenshawSplitF32(coeff, group.degMax, tv);
+    }
+}
+
+// The reference reading: every stored fit at its own stored degree.
+struct F32StoredDegree {
+    static int At(std::size_t, int stored) noexcept { return stored; }
+};
+
+// A rung's reading: every stored fit at the degree the truncation criterion
+// certifies for that fit's piece at the rung's multiplier. The table is flat
+// over the float lane's piece table, one degree per piece, which is how the
+// lookups above index it.
+template <typename Table>
+struct F32RungDegree {
+    const Table& table;
+
+    int At(std::size_t flat, int stored) const noexcept {
+        static_cast<void>(stored);
+        return table[flat];
+    }
+};
+
+// The region-A body: vector groups of eight orders, eight coefficient bases to
+// a group, and a scalar tail for the remainder.
+template <OrdersScheme kScheme, bool kComposed, class Degrees>
+void F32OrdersBody(int nmax, float x, float* out, Degrees degrees) noexcept {
+    const float* const table =
+        (kScheme == OrdersScheme::kHorner) ? f32::kMonoCoeffs.data() : f32::kCoeffs.data();
+
+    int l = 0;
+
+    for (; l + 8 <= nmax + 1; l += 8)
+    {
+        _mm256_storeu_ps(out + l, F32ShippedGroup<kScheme, kComposed>(BuildF32Group(table, l, x, degrees)));
+    }
+
+    for (; l <= nmax; ++l)
+    {
+        const f32::OrderPiece& piece = FindPieceF32(l, x);
+        const auto flat = static_cast<std::size_t>(&piece - f32::kPieces.data());
+
+        out[l] = F32ScalarFit<kScheme>(table,
+                                       piece.offset,
+                                       degrees.At(flat, piece.deg),
+                                       2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f);
+    }
+}
+
+// --- The rational route on the float orders axis ----------------------------
+//
+// The other family's region-A fits are a numerator and a denominator over the
+// route's own pieces, read by Horner in the same mapped argument. The float
+// route needs no per-order handover: every order over the whole of the route's
+// region A is the route's own value, where the double route hands an order back
+// to the shipped family below its own end of the interval. So the axis carries
+// the route's pairs alone, each lane at its own stored numerator and
+// denominator degrees.
+//
+// The group runs from its lanes' longest numerator and longest denominator
+// down, with every lane masked to its own stored degree - and the denominator's
+// coefficients sit above the piece's FULL numerator, so a lane's index is its
+// own numerator degree plus j whatever the group's is.
+
+// One group of eight orders' rational geometry at one argument.
+struct F32RatGroup {
+    std::int32_t base[8];
+    std::int32_t numdeg[8];
+    std::int32_t dendeg[8];
+    float t[8];
+    int numMax;
+    int denMax;
+};
+F32RatGroup BuildF32RatGroup(int l, float x) noexcept {
+    F32RatGroup group{{}, {}, {}, {}, 0, 0};
+
+    for (int j = 0; j < 8; ++j)
+    {
+        const f32::RatPiece& piece = FindRatPieceF32(l + j, x);
+
+        group.base[j] = piece.offset;
+        group.numdeg[j] = piece.numdeg;
+        group.dendeg[j] = piece.dendeg;
+        group.t[j] = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
+        group.numMax = piece.numdeg > group.numMax ? piece.numdeg : group.numMax;
+        group.denMax = piece.dendeg > group.denMax ? piece.dendeg : group.denMax;
+    }
+
+    return group;
+}
+
+// The eight orders' k-th coefficient of one part of the pair, read as a Horner
+// array that begins at each lane's own `shift` into its piece: the index is
+// clamped to the lane's own stored degree so a masked lane stays inside its
+// piece, and the value is zeroed above the degree the lane is read at.
+__m256 F32RatCoefficients(const float* coeffs,
+                          const std::int32_t* base,
+                          const std::int32_t* shift,
+                          const std::int32_t* stored,
+                          int k) noexcept {
+    alignas(32) float c[8];
+
+    for (int j = 0; j < 8; ++j)
+    {
+        const int m = k < stored[j] ? k : stored[j];
+        c[j] = (k > stored[j]) ? 0.0f : coeffs[base[j] + shift[j] + m];
+    }
+
+    return _mm256_load_ps(c);
+}
+
+// Eight orders' values from the stored pairs, each lane at its own degrees.
+//
+// The mask is what makes one recurrence serve eight different pairs: a lane's
+// coefficients are live down to its own degree and zero above it, and a lane
+// whose every step so far has been masked off still holds exactly zero, so its
+// sequence is the route's own scalar reading - same first coefficient, same
+// order, same fused operations. A lane with no denominator at all keeps the
+// zero accumulator and the closing multiply-add turns it into exactly one,
+// which is the route's own early return.
+__m256 F32RationalGroup(const F32RatGroup& group) noexcept {
+    const float* const coeffs = f32::kRatACoeffs.data();
+    const __m256 tv = _mm256_loadu_ps(group.t);
+    const std::int32_t kNumShift[8] = {};
+
+    __m256 num = _mm256_setzero_ps();
+
+    for (int k = group.numMax; k >= 0; --k)
+    {
+        num = _mm256_fmadd_ps(
+            num, tv, F32RatCoefficients(coeffs, group.base, kNumShift, group.numdeg, k));
+    }
+
+    // The denominator is stored above the piece's full numerator, so its
+    // Horner array begins at the lane's own numerator degree plus one and runs
+    // to its own denominator degree less one.
+    alignas(32) std::int32_t denShift[8];
+    alignas(32) std::int32_t denStored[8];
+
+    for (int j = 0; j < 8; ++j)
+    {
+        denShift[j] = group.numdeg[j] + 1;
+        denStored[j] = group.dendeg[j] - 1;
+    }
+
+    __m256 den = _mm256_setzero_ps();
+
+    for (int k = group.denMax - 1; k >= 0; --k)
+    {
+        den = _mm256_fmadd_ps(
+            den, tv, F32RatCoefficients(coeffs, group.base, denShift, denStored, k));
+    }
+
+    den = _mm256_fmadd_ps(den, tv, _mm256_set1_ps(1.0f));
+    return _mm256_div_ps(num, den);
+}
+
+// The route's region-A body on this axis: eight orders to a vector and a
+// scalar tail, the tail again in the group's own arithmetic.
+void F32RationalBody(int nmax, float x, float* out) noexcept {
+    int l = 0;
+
+    for (; l + 8 <= nmax + 1; l += 8)
+    {
+        _mm256_storeu_ps(out + l, F32RationalGroup(BuildF32RatGroup(l, x)));
+    }
+
+    for (; l <= nmax; ++l)
+    {
+        const f32::RatPiece& piece = FindRatPieceF32(l, x);
+        const float* const c = f32::kRatACoeffs.data() + piece.offset;
+        const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
+        const BroadcastCoefficientsF32 numCoeff{c, 0};
+        const BroadcastCoefficientsF32 denCoeff{c, piece.numdeg + 1};
+        const __m256 tv = _mm256_set1_ps(t);
+        alignas(32) float lanes[8];
+
+        _mm256_store_ps(lanes, HornerGatheredF32(numCoeff, piece.numdeg, tv));
+        float num = lanes[0];
+
+        if (piece.dendeg == 0)
+        {
+            out[l] = num;
+            continue;
+        }
+
+        _mm256_store_ps(lanes, HornerGatheredF32(denCoeff, piece.dendeg - 1, tv));
+        out[l] = num / _mm256_cvtss_f32(
+                           _mm256_fmadd_ps(_mm256_set1_ps(lanes[0]), tv, _mm256_set1_ps(1.0f)));
+    }
+}
+
+// Whether the lane applies at this argument: inside the stored fits' interval
+// and on a machine whose vector tier is present. The double lane's third
+// condition - a table whose pieces share their shape - is the premise this lane
+// was built not to need.
+bool F32OrdersLaneApplies(float x) noexcept {
+    return !(x >= static_cast<float>(kX0)) && BoysAvx2Available();
+}
+
+// The certified scalar single lane at the reference multiplier and the default
+// policy: what the measurement entries answer outside the packed interval and
+// on a host without the vector tier, exactly as the double lane's measurement
+// entries fall back to theirs.
+void F32ScalarOrdersDefault(int nmax, float x, float* out) noexcept {
+    for (int l = 0; l <= nmax; ++l)
+    {
+        out[l] = BoysSingleF32<kBoysFullAccuracyMultiplier>(l, x);
+    }
+}
+
+// The certified scalar single lane at the policy the axis names, one order at a
+// time: what the public entry answers outside its own interval and on a host
+// without the vector tier.
+template <EvalScheme kScheme, double kAccuracyMultiplier, FitRoute kRoute, BoysBudget kBudget>
+void F32ScalarOrders(int nmax, float x, float* out) noexcept {
+    using Policy = EvalPolicy<kRoute, kScheme, kBudget, PackAxis::kArguments>;
+
+    for (int l = 0; l <= nmax; ++l)
+    {
+        out[l] = BoysSingleF32<kAccuracyMultiplier, Policy>(l, x);
+    }
+}
+
+// The zero the library states in closed form, and the fallback outside the
+// lane's domain, for the measurement entries: both are shared by the two fetch
+// entries above.
+bool F32OrdersShortcut(int nmax, float x, float* out) noexcept {
+    assert(nmax >= 0 && nmax <= kMaxBoysOrder);
+    assert(x >= 0.0f);
+
+    if (x == 0.0f)
+    {
+        for (int l = 0; l <= nmax; ++l)
+        {
+            out[l] = 1.0f / (2.0f * static_cast<float>(l) + 1.0f);
+        }
+
+        return true;
+    }
+
+    if (!F32OrdersLaneApplies(x))
+    {
+        F32ScalarOrdersDefault(nmax, x, out);
+        return true;
+    }
+
+    return false;
+}
+
+template <bool kComposed>
+void F32OrdersByRoute(OrdersScheme scheme, FitRoute route, int nmax, float x, float* out) noexcept {
+    if (route == FitRoute::kRationalMinimax)
+    {
+        F32RationalBody(nmax, x, out);
+        return;
+    }
+
+    switch (scheme)
+    {
+    case OrdersScheme::kDirectSum:
+        F32OrdersBody<OrdersScheme::kDirectSum, kComposed>(nmax, x, out, F32StoredDegree{});
+        break;
+
+    case OrdersScheme::kHorner:
+        F32OrdersBody<OrdersScheme::kHorner, kComposed>(nmax, x, out, F32StoredDegree{});
+        break;
+
+    case OrdersScheme::kSplitClenshaw:
+    default:
+        F32OrdersBody<OrdersScheme::kSplitClenshaw, kComposed>(nmax, x, out, F32StoredDegree{});
+        break;
+    }
+}
+
 } // namespace
 
 // The zero the library states in closed form, and the fallback outside the
@@ -689,6 +1247,167 @@ void BoysAllOrdersSimdComposed(
         OrdersByScheme<true>(scheme, nmax, x, out, stride);
     }
 }
+
+void BoysAllOrdersF32Simd(
+    OrdersScheme scheme, FitRoute route, int nmax, float x, float* out) noexcept {
+    assert(nmax >= 0 && nmax <= kMaxBoysOrder);
+    assert(x >= 0.0f);
+    assert(out != nullptr);
+
+    if (!F32OrdersShortcut(nmax, x, out))
+    {
+        F32OrdersByRoute<false>(scheme, route, nmax, x, out);
+    }
+}
+
+void BoysAllOrdersF32SimdComposed(
+    OrdersScheme scheme, FitRoute route, int nmax, float x, float* out) noexcept {
+    assert(nmax >= 0 && nmax <= kMaxBoysOrder);
+    assert(x >= 0.0f);
+    assert(out != nullptr);
+
+    if (!F32OrdersShortcut(nmax, x, out))
+    {
+        F32OrdersByRoute<true>(scheme, route, nmax, x, out);
+    }
+}
+
+// The float engines' entry on the orders axis (boys_impl.hpp).
+//
+// Four choices reach this one entry and each is a template argument: the
+// scheme, the route, the accuracy multiplier and the computation budget. The
+// last two are what a rung costs here that it does not cost the double lane:
+// the degree table a rung reads is certified against one stored table of one
+// fit family on the one hand, and against a region budget on the other, so a
+// relaxed rung reaches the float lane through the shipped route and scheme at
+// the budget the policy named.
+//
+// The stored fit is summed gathered rather than composed. The two fetches are
+// the same lane value for value - the lane's own test asserts the pair is
+// bit-identical over every scheme and the whole region-A sweep - so this is a
+// choice of instruction and nothing else, and the counter decides it. On this
+// lane the gather is the cheaper of the two on both retired counters, which is
+// not the double lane's result: eight floats fill one gather where four doubles
+// filled a microcoded one. The composed entry stays beside it so the pair
+// remains measurable.
+constexpr bool kF32Composed = false;
+
+template <EvalScheme kScheme, double kAccuracyMultiplier, FitRoute kRoute, BoysBudget kBudget>
+void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
+    static_assert(kAccuracyMultiplier >= 1.0,
+                  "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
+    static_assert(kRoute == FitRoute::kChebyshev || kRoute == FitRoute::kRationalMinimax,
+                  "a policy naming a route outside the FitRoute enumeration is not one this "
+                  "library serves: name FitRoute::kChebyshev or FitRoute::kRationalMinimax");
+    assert(nmax >= 0 && nmax <= kMaxBoysOrder);
+    assert(x >= 0.0f);
+    assert(out != nullptr);
+
+    if constexpr (kRoute == kDefaultFitRoute && kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
+    {
+        // The reference rung of the shipped route is the lane exactly as it
+        // stands: the same body the measurement entries above run, so the same
+        // tables and the same values. The budget is inert here - at the
+        // reference multiplier the region-A seed is the double lane's, which
+        // takes no budget - so one entry serves both.
+        if (x == 0.0f)
+        {
+            for (int l = 0; l <= nmax; ++l)
+            {
+                out[l] = 1.0f / (2.0f * static_cast<float>(l) + 1.0f);
+            }
+
+            return;
+        }
+
+        // Past the interval, and on a host without the vector tier, the entry
+        // is the certified scalar single lane at the scheme, the route and the
+        // budget the caller named, one order at a time.
+        if (!F32OrdersLaneApplies(x))
+        {
+            F32ScalarOrders<kScheme, kAccuracyMultiplier, kRoute, kBudget>(nmax, x, out);
+            return;
+        }
+
+        F32OrdersBody<OrdersSchemeOf(kScheme), kF32Composed>(nmax, x, out, F32StoredDegree{});
+    } else
+    {
+        if (x == 0.0f)
+        {
+            for (int l = 0; l <= nmax; ++l)
+            {
+                out[l] = 1.0f / (2.0f * static_cast<float>(l) + 1.0f);
+            }
+
+            return;
+        }
+
+        if (!F32OrdersLaneApplies(x))
+        {
+            F32ScalarOrders<kScheme, kAccuracyMultiplier, kRoute, kBudget>(nmax, x, out);
+            return;
+        }
+
+        // The degrees the shipped table's fits are read at. The lane evaluates
+        // each order independently, so the amplification it pays is the
+        // single-order one and the table is the single-order role's; the budget
+        // picks which bar that role is certified against.
+        constexpr BoysRole kRole = (kBudget == BoysBudget::kFloat) ? BoysRole::kF32Single
+                                                                   : BoysRole::kF32Fp16Single;
+        static constexpr auto kDegreesA = RegionADegrees<kAccuracyMultiplier, kRole>();
+
+        if constexpr (kRoute == FitRoute::kRationalMinimax)
+        {
+            F32RationalBody(nmax, x, out);
+        } else
+        {
+            F32OrdersBody<OrdersSchemeOf(kScheme), kF32Composed>(
+                nmax, x, out, F32RungDegree<decltype(kDegreesA)>{kDegreesA});
+        }
+    }
+}
+
+// The shapes a float policy can name on this axis: two schemes and two
+// computation budgets at the reference multiplier, with either route; and the
+// six relaxed rungs of the shipped route and scheme alone, which is the
+// combination the engine above admits at a rung. Each is instantiated here so
+// that the dispatch in boys_impl.hpp is a branch over code the library already
+// holds rather than a further instantiation per call site.
+#define BOYS_ORDERS_F32_PACKED_REFERENCE(kScheme, kBudget)                                         \
+    template void BoysAllOrdersF32Packed<kScheme, 1.0, FitRoute::kChebyshev, kBudget>(             \
+        int, float, float*) noexcept;                                                              \
+    template void BoysAllOrdersF32Packed<kScheme, 1.0, FitRoute::kRationalMinimax, kBudget>(       \
+        int, float, float*) noexcept;
+
+#define BOYS_ORDERS_F32_PACKED_RUNGS(kBudget)                                                      \
+    template void                                                                                  \
+    BoysAllOrdersF32Packed<kDefaultEvalScheme, 64.0, FitRoute::kChebyshev, kBudget>(               \
+        int, float, float*) noexcept;                                                              \
+    template void                                                                                  \
+    BoysAllOrdersF32Packed<kDefaultEvalScheme, 256.0, FitRoute::kChebyshev, kBudget>(              \
+        int, float, float*) noexcept;                                                              \
+    template void                                                                                  \
+    BoysAllOrdersF32Packed<kDefaultEvalScheme, 1024.0, FitRoute::kChebyshev, kBudget>(             \
+        int, float, float*) noexcept;                                                              \
+    template void                                                                                  \
+    BoysAllOrdersF32Packed<kDefaultEvalScheme, 4096.0, FitRoute::kChebyshev, kBudget>(             \
+        int, float, float*) noexcept;                                                              \
+    template void                                                                                  \
+    BoysAllOrdersF32Packed<kDefaultEvalScheme, 16384.0, FitRoute::kChebyshev, kBudget>(            \
+        int, float, float*) noexcept;                                                              \
+    template void                                                                                  \
+    BoysAllOrdersF32Packed<kDefaultEvalScheme, 65536.0, FitRoute::kChebyshev, kBudget>(            \
+        int, float, float*) noexcept;
+
+BOYS_ORDERS_F32_PACKED_REFERENCE(kDefaultEvalScheme, BoysBudget::kFloat)
+BOYS_ORDERS_F32_PACKED_REFERENCE(kDefaultEvalScheme, BoysBudget::kFp16)
+BOYS_ORDERS_F32_PACKED_REFERENCE(EvalScheme::kHorner, BoysBudget::kFloat)
+BOYS_ORDERS_F32_PACKED_REFERENCE(EvalScheme::kHorner, BoysBudget::kFp16)
+BOYS_ORDERS_F32_PACKED_RUNGS(BoysBudget::kFloat)
+BOYS_ORDERS_F32_PACKED_RUNGS(BoysBudget::kFp16)
+
+#undef BOYS_ORDERS_F32_PACKED_REFERENCE
+#undef BOYS_ORDERS_F32_PACKED_RUNGS
 
 // The entry the public surface's orders axis dispatches to (boys_impl.hpp).
 //
@@ -839,6 +1558,68 @@ void BoysAllOrdersSimdComposed(
     OrdersScheme scheme, int nmax, double x, double* out, std::size_t stride) noexcept {
     BoysAllOrdersSimd(scheme, nmax, x, out, stride);
 }
+
+// The float lane's measurement entries exist here for the reason the double
+// lane's do: the vector tier is absent, so the lane is the fits it would have
+// vectorised, one order at a time.
+void BoysAllOrdersF32Simd(
+    OrdersScheme scheme, FitRoute route, int nmax, float x, float* out) noexcept {
+    assert(nmax >= 0 && nmax <= kMaxBoysOrder);
+    assert(x >= 0.0f);
+    assert(out != nullptr);
+
+    static_cast<void>(scheme);
+    static_cast<void>(route);
+
+    for (int l = 0; l <= nmax; ++l)
+    {
+        out[l] = BoysSingleF32<kBoysFullAccuracyMultiplier>(l, x);
+    }
+}
+
+void BoysAllOrdersF32SimdComposed(
+    OrdersScheme scheme, FitRoute route, int nmax, float x, float* out) noexcept {
+    BoysAllOrdersF32Simd(scheme, route, nmax, x, out);
+}
+
+// The orders axis's float entry on a target without the vector tier: the same
+// certified scalar single lane the packed bodies fall back to, at the policy
+// the axis names, so the option exists, is defined and is the policy's own
+// answer everywhere the library is.
+template <EvalScheme kScheme, double kAccuracyMultiplier, FitRoute kRoute, BoysBudget kBudget>
+void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
+    using Policy = EvalPolicy<kRoute, kScheme, kBudget, PackAxis::kArguments>;
+
+    for (int l = 0; l <= nmax; ++l)
+    {
+        out[l] = BoysSingleF32<kAccuracyMultiplier, Policy>(l, x);
+    }
+}
+
+#define BOYS_ORDERS_F32_PACKED_INSTANTIATIONS(kScheme, kBudget)                                    \
+    template void BoysAllOrdersF32Packed<kScheme, 1.0, FitRoute::kChebyshev, kBudget>(             \
+        int, float, float*) noexcept;                                                              \
+    template void BoysAllOrdersF32Packed<kScheme, 1.0, FitRoute::kRationalMinimax, kBudget>(       \
+        int, float, float*) noexcept;                                                              \
+    template void BoysAllOrdersF32Packed<kScheme, 64.0, FitRoute::kChebyshev, kBudget>(            \
+        int, float, float*) noexcept;                                                              \
+    template void BoysAllOrdersF32Packed<kScheme, 256.0, FitRoute::kChebyshev, kBudget>(           \
+        int, float, float*) noexcept;                                                              \
+    template void BoysAllOrdersF32Packed<kScheme, 1024.0, FitRoute::kChebyshev, kBudget>(          \
+        int, float, float*) noexcept;                                                              \
+    template void BoysAllOrdersF32Packed<kScheme, 4096.0, FitRoute::kChebyshev, kBudget>(          \
+        int, float, float*) noexcept;                                                              \
+    template void BoysAllOrdersF32Packed<kScheme, 16384.0, FitRoute::kChebyshev, kBudget>(         \
+        int, float, float*) noexcept;                                                              \
+    template void BoysAllOrdersF32Packed<kScheme, 65536.0, FitRoute::kChebyshev, kBudget>(         \
+        int, float, float*) noexcept;
+
+BOYS_ORDERS_F32_PACKED_INSTANTIATIONS(kDefaultEvalScheme, BoysBudget::kFloat)
+BOYS_ORDERS_F32_PACKED_INSTANTIATIONS(kDefaultEvalScheme, BoysBudget::kFp16)
+BOYS_ORDERS_F32_PACKED_INSTANTIATIONS(EvalScheme::kHorner, BoysBudget::kFloat)
+BOYS_ORDERS_F32_PACKED_INSTANTIATIONS(EvalScheme::kHorner, BoysBudget::kFp16)
+
+#undef BOYS_ORDERS_F32_PACKED_INSTANTIATIONS
 
 // The orders axis's entry on a target without the vector tier: the same
 // certified scalar single lane the packed bodies fall back to, at the policy
