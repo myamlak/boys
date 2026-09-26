@@ -1,5 +1,5 @@
 // The option probe's host side: the workload, the protocol, the folding of the
-// passes into figures, the refusal to order noise, and the text a consumer
+// rounds into figures, the refusal to order noise, and the text a consumer
 // reads.
 //
 // The clock is not here. Every timed region is a CUDA event pair this file
@@ -8,19 +8,31 @@
 // that keeps it out. What this file decides is what to time, how many times, and
 // what the results are allowed to say.
 //
-// The shape is the CPU option probe's (src/boys_probe.cpp in this library): one
-// fixed question per class, an instrument that judges the run rather than the
-// library, a pass the instrument cannot vouch for is discarded and never
-// averaged in, an entry's figure is the minimum of its clean passes, the
-// resolution is what the run measured rather than a bar chosen in advance, and a
-// rival inside that resolution is named as unseparable instead of being ordered.
-// The differences are all forced by the device: the instrument is a kernel and
-// not a host spin, the card is named instead of the host, and the entries that
-// exist to run inside the caller's kernel are measured by subtraction rather
-// than launched.
+// The shape is the CPU option probe's (src/boys_probe.cpp in this library): every
+// entry is timed once in every round, a comparison between two entries is the
+// ratio of their per-round figures inside one round, the figure reported for an
+// entry is a lower quartile of that entry's ratios to a reference entry scaled by
+// the reference's own lower-quartile cost, the canary beside each pass is a
+// diagnostic that gates nothing, the resolution is what the run measured rather
+// than a bar chosen in advance, a rival whose band does not clear one is named as
+// unplaced instead of being ordered, and a refusal is accompanied by a static
+// fallback labelled as the heuristic it is. The differences are all forced by the
+// device: the instrument is a kernel and not a host spin, the card is named
+// instead of the host, and the entries that exist to run inside the caller's
+// kernel are measured by subtraction rather than launched.
+//
+// One difference is worth naming here, because it is the one that survives the
+// change rather than being forced by it: the two halves of an in-kernel row's
+// subtraction are timed adjacent inside the *same round*, with their order
+// alternating by round, so the difference that row's figure is made of is a
+// within-round pair exactly like a ratio between two entries is, and a clock that
+// drifts over the run moves both halves together and cancels in it. That is why
+// the subtraction route did not need to be re-founded when the ordering moved to
+// paired ratios; it was already paired.
 
 #include "boys/boys_cuda_probe.hpp"
 
+#include "boys/boys_coefficients.hpp"
 #include "boys/boys_cuda.hpp"
 #include "boys/boys_device_tables.hpp"
 #include "boys/f16.hpp"
@@ -35,6 +47,7 @@
 #include <cstdio>
 #include <cstring>
 #include <limits>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -128,6 +141,204 @@ double MedianOf(std::vector<double> samples) {
     return samples[samples.size() / 2];
 }
 
+/// The quantile \p p of a set of readings, by copy and sort, interpolating
+/// between the two order statistics it falls between.
+///
+/// This is the statistic the reported cost is: a lower quartile rather than a
+/// minimum, because the minimum of a run under a decaying clock is the earliest
+/// and fastest observation rather than what a caller with a long workload meets,
+/// and a quartile rather than a mean, because one disturbed round must not move
+/// it. Its complement, the upper quartile, is what the spread beside it is made
+/// of, so the two ends come from the same distribution.
+double QuantileOf(std::vector<double> values, double p) {
+    if (values.empty())
+    {
+        return 0.0;
+    }
+
+    std::sort(values.begin(), values.end());
+
+    const double position = p * static_cast<double>(values.size() - 1);
+    const std::size_t lower = static_cast<std::size_t>(position);
+    const std::size_t upper = std::min(lower + 1, values.size() - 1);
+    const double weight = position - static_cast<double>(lower);
+
+    return values[lower] * (1.0 - weight) + values[upper] * weight;
+}
+
+/// The quantile the reported cost and its ratio to the reference are read at.
+///
+/// A lower quartile, and not the minimum this probe used to report. On a card
+/// whose clock decays under a sustained load - which is every card that boosts
+/// opportunistically, and this is a load - the minimum of a run is its earliest
+/// and best-clocked round, and a caller whose kernel runs for hours does not meet
+/// that state. A quartile is what the bulk of such a run meets, and it still
+/// discards the round a background process or a clock step spoiled. It is a
+/// quartile and not a mean for the same reason: one disturbed round out of many
+/// must not move a figure a consumer will build a default on.
+constexpr double kStatisticQuantile = 0.25;
+
+/// The number of paired rounds a quartile band needs before it can exist: the two
+/// ends of a band are two order statistics, and below four observations they are
+/// the same observation twice.
+constexpr std::size_t kMinimumPairedRounds = 4;
+
+/// The widest relative width of a within-round ratio band a set of rounds showed,
+/// in percent: for each entry, the upper quartile of its ratio to \p reference
+/// over the lower quartile of the same ratio, taken at its widest.
+///
+/// The reference's own column is skipped, and only it: its ratio is one in every
+/// round by construction, so it would contribute a band of zero. A set too short
+/// for a band, or one whose reference column holds a non-positive reading, reports
+/// zero rather than a width it did not measure.
+double PassPairedSpread(const std::vector<std::vector<double>>& rounds, std::size_t reference) {
+    double widest = 0.0;
+
+    if (rounds.empty() || reference >= rounds.front().size())
+    {
+        return 0.0;
+    }
+
+    // A round in which either the reference or the row could not be timed holds no
+    // ratio, and is left out of every column rather than contributing an infinity:
+    // a failed launch is not a slow one.
+    for (const std::vector<double>& row : rounds)
+    {
+        if (!std::isfinite(row[reference]) || row[reference] <= 0.0)
+        {
+            return 0.0;
+        }
+    }
+
+    for (std::size_t index = 0; index < rounds.front().size(); ++index)
+    {
+        if (index == reference)
+        {
+            continue;
+        }
+
+        std::vector<double> ratios;
+
+        for (const std::vector<double>& row : rounds)
+        {
+            if (!std::isfinite(row[index]))
+            {
+                continue;
+            }
+
+            ratios.push_back(row[index] / row[reference]);
+        }
+
+        const double low = QuantileOf(ratios, kStatisticQuantile);
+        const double high = QuantileOf(ratios, 1.0 - kStatisticQuantile);
+
+        if (low > 0.0)
+        {
+            widest = std::max(widest, 100.0 * (high / low - 1.0));
+        }
+    }
+
+    return widest;
+}
+
+/// One rival measured against one leader, inside the rounds.
+///
+/// Every quantity here is a ratio formed inside a single round: both entries were
+/// timed under whatever clock that round ran at, so a drift common to the round
+/// is in both terms of the ratio and cancels. This is the comparison the probe is
+/// ordered by.
+struct PairedOutcome {
+    /// Lower and upper quartile of the within-round ratio, rival over leader: the
+    /// band the middle half of the run put the pair in.
+    double lo = 1.0;
+    double hi = 1.0;
+
+    /// Rounds in which the rival was the slower of the two, of the rounds that
+    /// could be formed.
+    int slowerRounds = 0;
+    int rounds = 0;
+
+    /// How far the pair's ratio moved between the run's first and second half of
+    /// rounds: the second half's median ratio over the first half's, less one. A
+    /// pair whose ratio is a property of the two entries holds still as the card's
+    /// clock moves; one that drifts is a pair whose two entries do not carry the
+    /// clock alike, which is the one way a paired comparison can still be misled
+    /// by a card whose boost decays.
+    double drift = 0.0;
+
+    /// Whether the band clears one: the middle half of the run put the rival
+    /// behind the leader, and the probe orders only what it saw in that half.
+    bool ordered = false;
+};
+
+/// Measures one rival against one leader over the run's rounds.
+///
+/// The ratio is formed inside a round and never across rounds, so the pair is
+/// compared under one clock. The band is the lower and upper quartile of those
+/// per-round ratios, and the ordering is that lower quartile clearing one: the
+/// middle half of the run has to put the rival behind, not merely the run's
+/// average.
+///
+/// \param rounds the round table: one row per round, one column per entry, in
+///               cost per argument
+/// \param leader column of the entry the rival is measured against
+/// \param rival  column of the entry being placed
+///
+/// \returns the pair's own band, its slower-round count and its drift
+PairedOutcome CompareToLeader(const std::vector<std::vector<double>>& rounds, std::size_t leader,
+                              std::size_t rival) {
+    PairedOutcome outcome;
+    std::vector<double> ratios;
+    std::vector<double> early;
+    std::vector<double> late;
+
+    for (std::size_t round = 0; round < rounds.size(); ++round)
+    {
+        if (leader >= rounds[round].size() || rival >= rounds[round].size())
+        {
+            continue;
+        }
+
+        const double lead = rounds[round][leader];
+
+        if (!std::isfinite(lead) || lead <= 0.0 || !std::isfinite(rounds[round][rival]))
+        {
+            continue;
+        }
+
+        const double ratio = rounds[round][rival] / lead;
+        ratios.push_back(ratio);
+
+        if (ratio > 1.0)
+        {
+            ++outcome.slowerRounds;
+        }
+
+        if (round * 2 < rounds.size())
+        {
+            early.push_back(ratio);
+        } else
+        {
+            late.push_back(ratio);
+        }
+    }
+
+    outcome.rounds = static_cast<int>(ratios.size());
+    outcome.lo = QuantileOf(ratios, kStatisticQuantile);
+    outcome.hi = QuantileOf(ratios, 1.0 - kStatisticQuantile);
+    outcome.ordered = outcome.lo > 1.0;
+
+    const double firstHalf = MedianOf(early);
+    const double secondHalf = MedianOf(late);
+
+    if (firstHalf > 0.0)
+    {
+        outcome.drift = secondHalf / firstHalf - 1.0;
+    }
+
+    return outcome;
+}
+
 /// A CUDA version as the runtime packs it, written the way a consumer reads it.
 std::string FormatCudaVersion(int packed) {
     if (packed <= 0)
@@ -175,6 +386,14 @@ struct EntryInfo {
     ProbeQuestion question;
     bool inKernel;
     double bound;
+    /// The degree tables the row's lane reads, and whose seed it amplifies, as
+    /// the library's own option book states it. It is carried so that the static
+    /// fallback can count a row's arithmetic from the same tables the row runs
+    /// on, rather than from a second mapping written here.
+    BoysDeviceLane lane;
+    /// Which region-B exponential the row evaluates, as the option book states
+    /// it, so the fallback can prefer the library's own documented default.
+    RegionBExp regionBExp;
 };
 
 const char* QuestionName(ProbeQuestion question) {
@@ -345,7 +564,9 @@ std::vector<EntryInfo> EnumerateEntries(std::vector<std::string>& unoffered,
                                     ShapeName(option.shape),
                                     option.question,
                                     option.group == DeviceOptionGroup::kDeviceCallable,
-                                    option.bound});
+                                    option.bound,
+                                    option.lane,
+                                    option.regionBExp});
     }
 
     return entries;
@@ -523,20 +744,24 @@ struct TimedEntry {
 
 /// One entry's timed figure for one round, in milliseconds of device time.
 ///
-/// A launched entry is one region. A device-callable entry is two, taken
-/// adjacent in the same round: two adjacent regions and not two passes, so a
-/// drift in the card's clocks moves both halves together and cancels in the
-/// difference.
+/// A launched entry is one region. A device-callable entry is two, taken adjacent
+/// in the same round: two adjacent regions inside one round and not two regions
+/// in different rounds, so a drift in the card's clocks moves both halves together
+/// and cancels in the difference. That is what makes an in-kernel row's figure a
+/// within-round pair of the same kind a ratio between two entries is, and it is
+/// why the subtraction route did not need re-founding when the ordering moved to
+/// paired ratios.
 ///
-/// Which half goes first alternates by round, and each half's figure is its best
-/// round. A region carries a small fixed cost of its own — the event pair, the
-/// first launch's cold start, the host's submission of the launch — which is
-/// divided by the repetition count rather than by the call, and whichever half
-/// pays it lands in the difference as a term that shrinks as the repetition count
-/// rises. That is a bias, not noise: it does not average away, and it moves the
-/// figure between two repetition counts, which is what the subtraction control
-/// found. Alternating the order puts each half in the favoured position on half
-/// the rounds, so each half's best round is a round it went first in.
+/// Which half goes first alternates by round, and both halves of every round are
+/// kept, so a per-round difference can be formed from them and each half is timed
+/// going first in half the rounds. A region carries a small fixed cost of its own
+/// — the event pair, the first launch's cold start, the host's submission of the
+/// launch — which is divided by the repetition count rather than by the call, and
+/// whichever half pays it lands in the difference as a term that shrinks as the
+/// repetition count rises. That is a bias, not noise: it does not average away,
+/// and it moves the figure between two repetition counts, which is what the
+/// subtraction control found. Alternating the order spreads it over both halves
+/// rather than leaving it on one.
 TimedEntry TimeEntry(const EntryInfo& info,
                      const ProbeTimeRequest& base,
                      int reps,
@@ -588,11 +813,15 @@ TimedEntry TimeEntry(const EntryInfo& info,
 /// a reader can see the difference was not two unstable readings cancelling.
 /// Returns false when either count could not be timed.
 ///
-/// Each count is read over several rounds with the order of the two halves
-/// alternating, and each half's figure there is its best round, because that is
-/// the estimator the reported figures use: checking a minimum over rounds against
-/// a single reading would report the difference between the two estimators rather
-/// than the difference between the two counts.
+/// Each count is read over \c kMinimumPairedRounds rounds with the order of the
+/// two halves alternating, and each count's figure is the lower quartile of its
+/// own rounds' per-argument readings, with an in-kernel round's difference formed
+/// inside the round. That is the statistic the reported figures are, so the two
+/// counts are compared as figures of one kind rather than as a quartile against a
+/// minimum. **The check itself is not softened by it**: a count that resolved no
+/// difference leaves no second figure to compare, and a run that cannot resolve
+/// the row cannot vouch for its repetition counts either, so both of those fail
+/// the control rather than passing it.
 bool RunRepetitionControl(const EntryInfo& info,
                           const DeviceProbeMeasurement& row,
                           const ProbeTimeRequest& base,
@@ -605,13 +834,12 @@ bool RunRepetitionControl(const EntryInfo& info,
     out.repetitionsHigh = clamped.controlRepetitionsHigh;
     out.judgedAgainst = judgedAgainst;
 
-    constexpr int kRounds = 3;
-    const double infinite = std::numeric_limits<double>::infinity();
+    const int kRounds = static_cast<int>(kMinimumPairedRounds);
 
-    double withLow = infinite;
-    double withoutLow = infinite;
-    double withHigh = infinite;
-    double withoutHigh = infinite;
+    std::vector<double> lowRounds;
+    std::vector<double> highRounds;
+    std::vector<double> baselineLow;
+    std::vector<double> baselineHigh;
     bool subtracted = false;
     bool ok = true;
 
@@ -632,13 +860,23 @@ bool RunRepetitionControl(const EntryInfo& info,
             break;
         }
 
-        withLow = std::min(withLow, low.withMs);
-        withHigh = std::min(withHigh, high.withMs);
+        // The same shape the figures are, formed inside the round: a launched row
+        // is its region, an in-kernel row the difference between the region that
+        // held the call and the one that did not, both timed together here.
+        const auto Figure = [&](double withMs, double withoutMs, int reps) {
+            const double ms = subtracted ? std::max(0.0, withMs - withoutMs) : withMs;
+            return PerArgument(ms, reps, clamped.count);
+        };
+
+        lowRounds.push_back(Figure(low.withMs, low.withoutMs, clamped.controlRepetitionsLow));
+        highRounds.push_back(Figure(high.withMs, high.withoutMs, clamped.controlRepetitionsHigh));
 
         if (subtracted)
         {
-            withoutLow = std::min(withoutLow, low.withoutMs);
-            withoutHigh = std::min(withoutHigh, high.withoutMs);
+            baselineLow.push_back(
+                PerArgument(low.withoutMs, clamped.controlRepetitionsLow, clamped.count));
+            baselineHigh.push_back(
+                PerArgument(high.withoutMs, clamped.controlRepetitionsHigh, clamped.count));
         }
     }
 
@@ -654,23 +892,13 @@ bool RunRepetitionControl(const EntryInfo& info,
         return false;
     }
 
-    // The same shape the figures are: a launched row is its region, an in-kernel
-    // row the difference between the region that held the call and the one that
-    // did not.
-    const auto Figure = [&](double withMs, double withoutMs, int reps) {
-        const double ms = subtracted ? std::max(0.0, withMs - withoutMs) : withMs;
-        return PerArgument(ms, reps, clamped.count);
-    };
-
-    out.nsPerArgumentLow = Figure(withLow, withoutLow, clamped.controlRepetitionsLow);
-    out.nsPerArgumentHigh = Figure(withHigh, withoutHigh, clamped.controlRepetitionsHigh);
+    out.nsPerArgumentLow = QuantileOf(lowRounds, kStatisticQuantile);
+    out.nsPerArgumentHigh = QuantileOf(highRounds, kStatisticQuantile);
 
     if (subtracted)
     {
-        out.nsPerArgumentBaselineLow =
-            PerArgument(withoutLow, clamped.controlRepetitionsLow, clamped.count);
-        out.nsPerArgumentBaselineHigh =
-            PerArgument(withoutHigh, clamped.controlRepetitionsHigh, clamped.count);
+        out.nsPerArgumentBaselineLow = QuantileOf(baselineLow, kStatisticQuantile);
+        out.nsPerArgumentBaselineHigh = QuantileOf(baselineHigh, kStatisticQuantile);
     }
 
     const double smaller = std::min(out.nsPerArgumentLow, out.nsPerArgumentHigh);
@@ -684,18 +912,19 @@ bool RunRepetitionControl(const EntryInfo& info,
     out.difference = resolved
                          ? std::fabs(out.nsPerArgumentHigh - out.nsPerArgumentLow) / smaller
                          : std::numeric_limits<double>::infinity();
-    // The resolution this run measured for that row is what the two counts are
-    // judged against: a run that could not place that row has no yardstick for
-    // its repetition counts either, and the control says so rather than inventing
-    // a bar here.
+    // The widest within-round band this row's own shape showed on this run is
+    // what the two counts are judged against - the same number that shape's
+    // refusal prints - and not a bar invented here. A run that could not resolve
+    // the row has no yardstick for its repetition counts either, and the control
+    // says so rather than passing.
     out.agrees = judgedAgainst > 0.0 && out.difference <= judgedAgainst;
 
     const std::string comparison =
         resolved
-            ? Text("a disagreement of %.2f%%, %s the %.2f%% this row can be placed at (the "
-                   "canary's widest admitted spread and this row's own passes together), which is "
-                   "the check that a cost repeating with the launch rather than with the call did "
-                   "not survive into the figures at the repetition count they were taken at",
+            ? Text("a disagreement of %.2f%%, %s the %.2f%% this shape could order at (the widest "
+                   "within-round ratio band its own rows showed over this run), which is the check "
+                   "that a cost repeating with the launch rather than with the call did not survive "
+                   "into the figures at the repetition count they were taken at",
                    100.0 * out.difference,
                    out.agrees ? "inside" : "OUTSIDE",
                    100.0 * judgedAgainst)
@@ -739,30 +968,84 @@ bool RunRepetitionControl(const EntryInfo& info,
 // ---------------------------------------------------------------------------
 
 /// Folds one shape's live measurements into a verdict, on the CPU probe's rule:
-/// the resolution is what the run measured - the larger of the instrument's
-/// widest admitted spread and the leader's own spread across its clean passes -
-/// and a rival inside it is named rather than ordered.
+/// the shape's leader is the entry with the lowest ratio to the reference at the
+/// lower quartile of the paired rounds, and it stands only when every rival's own
+/// within-round band against it has a lower quartile above one. A rival whose band
+/// straddles one cannot be placed, and a rival whose band lies wholly below one was
+/// ahead in that half, which means the statistic and the rounds disagree about the
+/// pair; both end in a refusal that names each unplaced rival with its band and its
+/// slower-round count and prints the run's own resolution. The ordering is never
+/// weakened into a ranking: no winner is named while any rival is unplaced.
 ///
 /// Every row handed in is already of one precision and one question shape, which
 /// is what makes them comparable at all. The bounds those rows document are
 /// columns of their own rows and are not what this orders on: two rows at
 /// different bounds are still two ways to compute the precision the caller
 /// chose, which is why the class holds them together.
+///
+/// \param clause the ranking to fill in
+/// \param live   the shape's measured rows, in the report's own order
+/// \param columns each live row's own column in \p rounds, in the same order as
+///               \p live
+/// \param rounds the round table the report's figures were aggregated from: one
+///               row per pooled round, one column per entry in the measurements'
+///               own order, in cost per argument, so a pair can be compared
+///               inside a round
+/// \param pairedRounds rounds the run pooled, which is what a quartile band needs
+///               four of
+/// The clock check, stated: whether any pair of the shape moved between the run's
+/// first and second half of rounds by more than the run can order.
+///
+/// It is appended to a ranking's confidence line on every path that followed a
+/// pair, a refusal included, because a reader of a refusal is asking exactly this:
+/// whether the shape could not be ordered because its entries are close or because
+/// the clock moved under the run. It carries its own leading punctuation because it
+/// is always a sentence added to one already written.
+std::string DriftClause(const std::string& driftPair, double widestDrift, double resolution) {
+    if (std::abs(widestDrift) > resolution) {
+        return Text(". WARNING: the pair %s moved %.1f%% between the run's first and second half of "
+                    "rounds, beyond the %.2f%% this run can order, so those two entries are not "
+                    "equally exposed to this card's clock and the conclusion above is a property "
+                    "of this run's clock as well as of the entries.",
+                    driftPair.c_str(),
+                    100.0 * widestDrift,
+                    100.0 * resolution);
+    }
+
+    return Text(". No pair's ratio moved between the run's halves by more than the %.2f%% this run "
+                "can order (the widest was %s at %.1f%%), so no measured pair was more exposed to "
+                "the clock's drift than the run's own resolution is wide.",
+                100.0 * resolution,
+                driftPair.empty() ? "none" : driftPair.c_str(),
+                100.0 * widestDrift);
+}
+
 void Conclude(DeviceProbeRanking& clause,
               const std::vector<DeviceProbeMeasurement*>& live,
-              double canarySpreadPercent,
-              int cleanPasses,
-              int totalPasses) {
+              const std::vector<std::size_t>& columns,
+              const std::vector<std::vector<double>>& rounds,
+              int pairedRounds) {
     clause.verdict = DeviceProbeVerdict::kCannotDetermine;
+    clause.rounds = pairedRounds;
+
+    /// A row of this shape with the column its rounds were timed in, which is what
+    /// a pair against another of them is formed from.
+    struct Candidate {
+        DeviceProbeMeasurement* row = nullptr;
+        std::size_t column = 0;
+    };
 
     // Two kinds of row may not be ranked: an in-kernel row whose subtraction did
     // not resolve, and a row whose repetition control disagreed. Neither may be
     // silently dropped either, because a reader who expected it in the table
     // would take its absence for a build fact.
-    std::vector<DeviceProbeMeasurement*> ordered;
+    std::vector<Candidate> ordered;
 
-    for (DeviceProbeMeasurement* measurement : live)
+    for (std::size_t index = 0; index < live.size(); ++index)
     {
+        DeviceProbeMeasurement* measurement = live[index];
+        const std::size_t column = index < columns.size() ? columns[index] : 0u;
+
         if (!measurement->subtractionResolved)
         {
             clause.notOrdered.push_back(
@@ -777,7 +1060,7 @@ void Conclude(DeviceProbeRanking& clause,
                 Text("%s: %s", measurement->name.c_str(), measurement->repetitionNote.c_str()));
         } else
         {
-            ordered.push_back(measurement);
+            ordered.push_back({measurement, column});
         }
     }
 
@@ -796,33 +1079,77 @@ void Conclude(DeviceProbeRanking& clause,
         return;
     }
 
-    const auto cheaper = [](const DeviceProbeMeasurement* a, const DeviceProbeMeasurement* b) {
-        return a->nsPerArgument < b->nsPerArgument;
+    const auto cheaper = [](const Candidate& a, const Candidate& b) {
+        return a.row->nsPerArgument < b.row->nsPerArgument;
     };
 
-    const DeviceProbeMeasurement* leader =
-        *std::min_element(ordered.begin(), ordered.end(), cheaper);
+    const Candidate leader = *std::min_element(ordered.begin(), ordered.end(), cheaper);
 
-    clause.fastestOverall = leader->name;
+    clause.fastestOverall = leader.row->name;
 
-    if (cleanPasses < 2)
+    // Every pair of this shape, measured inside the rounds. Done once and kept,
+    // because the resolution, the refusal and the confidence line are all made of
+    // it and a second computation could disagree with the first.
+    struct Rival {
+        Candidate candidate;
+        PairedOutcome pair;
+    };
+
+    std::vector<Rival> rivals;
+    double widestBand = std::max(0.0, leader.row->spread - 1.0);
+    double widestDrift = 0.0;
+    std::string driftPair;
+
+    for (const Candidate& candidate : ordered)
     {
-        clause.reason = Text("'%s' is the fastest entry of this shape (%.3f ns/argument), but "
-                             "only %d of %d passes was admitted, and how far two entries can be "
-                             "ordered apart rests on how the admitted passes disagreed; a second "
-                             "pass the canary vouches for is what this needs",
-                             leader->name.c_str(),
-                             leader->nsPerArgument,
-                             cleanPasses,
-                             totalPasses);
-        clause.confidence = Text("CANNOT DETERMINE: %d of %d passes admitted, and the resolution "
-                                 "needs two",
-                                 cleanPasses,
-                                 totalPasses);
+        if (candidate.row == leader.row)
+        {
+            continue;
+        }
+
+        const PairedOutcome pair = CompareToLeader(rounds, leader.column, candidate.column);
+        rivals.push_back({candidate, pair});
+
+        if (pair.lo > 0.0)
+        {
+            widestBand = std::max(widestBand, pair.hi / pair.lo - 1.0);
+        }
+
+        widestBand = std::max(widestBand, candidate.row->spread - 1.0);
+
+        if (std::abs(pair.drift) > std::abs(widestDrift))
+        {
+            widestDrift = pair.drift;
+            driftPair = Text("'%s' against '%s'", candidate.row->name.c_str(), leader.row->name.c_str());
+        }
+    }
+
+    clause.resolution = widestBand;
+
+    // A quartile band needs four rounds. With fewer, the lower and upper quartiles
+    // are two- and three-point order statistics, and a probe that ordered on them
+    // would be reporting a resolution it never measured.
+    if (pairedRounds < static_cast<int>(kMinimumPairedRounds))
+    {
+        clause.reason = Text("'%s' is the fastest entry of this shape by the run's own statistic "
+                             "(%.3f ns/argument at the lower quartile of its rounds), but the run "
+                             "took %d paired round(s), and the lower and upper quartiles of a "
+                             "within-round ratio need %zu of them: with fewer, the band is the "
+                             "ratio of two or three rounds rather than a quartile of many, and "
+                             "this probe will not order entries on it. Raising "
+                             "DeviceProbeOptions::passes or DeviceProbeOptions::rounds is what "
+                             "this needs",
+                             leader.row->name.c_str(),
+                             leader.row->nsPerArgument,
+                             pairedRounds,
+                             kMinimumPairedRounds);
+        clause.confidence = Text("CANNOT DETERMINE: %d paired round(s), and the comparison needs %zu",
+                                 pairedRounds,
+                                 kMinimumPairedRounds);
         return;
     }
 
-    if (!(leader->nsPerArgument > 0.0))
+    if (!(leader.row->nsPerArgument > 0.0))
     {
         // A per-argument figure of zero is not a fast entry: it is a timed region
         // whose device time rounded away, which happens when the workload is too
@@ -837,125 +1164,482 @@ void Conclude(DeviceProbeRanking& clause,
         return;
     }
 
-    clause.resolution = std::max(canarySpreadPercent / 100.0, leader->spread - 1.0);
-
     if (ordered.size() < 2)
     {
         // One entry is not a ranking. What the one figure says is that the entry
         // is the fastest of the one entry this run measured of its shape; what it
         // does not say is that the entry beats anything, and shipping it as a
         // recommendation would be shipping a field of one as a result.
-        clause.reason = Text("'%s' is the fastest entry of this shape (%.3f ns/argument), but it "
-                             "is the only entry of it this run could order, so there is nothing to "
-                             "order it against: a ranking needs a second entry of the same shape "
-                             "and precision, and this run has one",
-                             leader->name.c_str(),
-                             leader->nsPerArgument);
+        clause.reason = Text("'%s' is the fastest entry of this shape (%.3f ns/argument at the "
+                             "lower quartile of the %d paired rounds), but it is the only entry of "
+                             "it this run could order, so there is nothing to order it against: a "
+                             "ranking needs a second entry of the same shape and precision, and "
+                             "this run has one",
+                             leader.row->name.c_str(),
+                             leader.row->nsPerArgument,
+                             pairedRounds);
         clause.confidence = Text("CANNOT DETERMINE: one entry of this shape in this class could be "
                                  "ordered, and one entry is not a ranking");
         return;
     }
 
-    // Each rival is judged against its own spread as well as the leader's: a row
-    // whose passes wandered 40% is not placed by a run that can order 2%, however
-    // steady the row it is compared against was, and using the leader's figure
-    // alone would either order that row or fail a class the run can place.
-    struct InseparableRow {
-        const DeviceProbeMeasurement* rival;
-        double threshold;
-    };
+    // The rivals, each placed by its own band against the leader and by nothing
+    // else. A band whose lower quartile does not clear one is a pair this run did
+    // not put in order, in either direction, and the probe will not name a winner
+    // while one of those stands.
+    std::vector<std::string> within;
+    std::vector<std::string> ahead;
+    const DeviceProbeMeasurement* nearest = nullptr;
+    PairedOutcome nearestPair;
 
-    std::vector<InseparableRow> inseparable;
-
-    for (const DeviceProbeMeasurement* rival : ordered)
+    for (const Rival& rival : rivals)
     {
-        if (rival == leader)
+        const DeviceProbeMeasurement* row = rival.candidate.row;
+
+        const std::string line = Text(
+            "'%s' at %.3f ns/argument, %.1f%% of the leader's: its within-round ratio to '%s' over "
+            "the %d paired rounds fell in %.3f..%.3f, and it was the slower of the two in %d of "
+            "them (its own rounds spread %.2fx)",
+            row->name.c_str(),
+            row->nsPerArgument,
+            100.0 * (row->nsPerArgument / leader.row->nsPerArgument),
+            leader.row->name.c_str(),
+            rival.pair.rounds,
+            rival.pair.lo,
+            rival.pair.hi,
+            rival.pair.slowerRounds,
+            row->spread);
+
+        if (nearest == nullptr || row->nsPerArgument < nearest->nsPerArgument)
+        {
+            nearest = row;
+            nearestPair = rival.pair;
+        }
+
+        if (rival.pair.ordered)
         {
             continue;
         }
 
-        const double threshold =
-            std::max({canarySpreadPercent / 100.0, leader->spread - 1.0, rival->spread - 1.0});
-
-        if (rival->nsPerArgument <= leader->nsPerArgument * (1.0 + threshold))
+        if (rival.pair.hi < 1.0)
         {
-            inseparable.push_back({rival, threshold});
+            ahead.push_back(line);
+        } else
+        {
+            within.push_back(line);
         }
     }
 
-    if (!inseparable.empty())
+    if (!within.empty() || !ahead.empty())
     {
-        const InseparableRow& nearest = inseparable.front();
+        std::vector<std::string> unplaced = within;
+        unplaced.insert(unplaced.end(), ahead.begin(), ahead.end());
+        clause.inseparable = unplaced;
 
-        clause.reason = Text("'%s' is the fastest entry of this shape (%.3f ns/argument), but "
-                             "'%s' (%.3f ns/argument) is %.2f%% behind it, inside the %.2f%% "
-                             "this run can order; the probe does not order noise",
-                             leader->name.c_str(),
-                             leader->nsPerArgument,
-                             nearest.rival->name.c_str(),
-                             nearest.rival->nsPerArgument,
-                             100.0 * (nearest.rival->nsPerArgument / leader->nsPerArgument - 1.0),
-                             100.0 * nearest.threshold);
-        clause.confidence = Text("CANNOT DETERMINE: %zu of %zu entries of this shape are inside "
-                                 "the %.2f%% this run can order, which is what the canary and the "
-                                 "spread of the two rows measured",
-                                 inseparable.size(),
+        clause.reason = Text(
+            "'%s' is the fastest entry of this shape by the run's own statistic - %.3f "
+            "ns/argument at the lower quartile of the %d paired rounds, %.3f at the upper - but "
+            "%zu of the %zu entry(s) of this shape could not be placed behind it: %s. The band and "
+            "the slower-round count of every one of them are listed below. Ordering a pair whose "
+            "band straddles one would be ordering noise, and ordering one whose band lies below "
+            "one would contradict the run's own statistic, so the probe does neither: it reports "
+            "what it could not separate, and the static fallback below stands in for the default",
+            leader.row->name.c_str(),
+            leader.row->nsPerArgument,
+            pairedRounds,
+            leader.row->nsPerArgumentMax,
+            unplaced.size(),
+            ordered.size(),
+            !within.empty() ? within.front().c_str() : ahead.front().c_str());
+        clause.confidence = Text("CANNOT DETERMINE: %zu of %zu entry(s) of this shape could not be "
+                                 "ordered against '%s' over the %d paired rounds; the widest band "
+                                 "this shape showed was %.2f%%",
+                                 unplaced.size(),
                                  ordered.size(),
-                                 100.0 * nearest.threshold);
+                                 leader.row->name.c_str(),
+                                 pairedRounds,
+                                 100.0 * clause.resolution);
 
-        for (const InseparableRow& row : inseparable)
-        {
-            clause.inseparable.push_back(
-                Text("%s %.3f ns/argument (%.2f%% behind the leader, inside the %.2f%% this run "
-                     "can order: the canary's spread and the two rows' own spreads together)",
-                     row.rival->name.c_str(),
-                     row.rival->nsPerArgument,
-                     100.0 * (row.rival->nsPerArgument / leader->nsPerArgument - 1.0),
-                     100.0 * row.threshold));
-        }
-
+        // The clock check belongs here as much as on a recommendation: a refusal
+        // is where a reader wants to know whether the entries were too close to
+        // separate or whether the machine moved under the run. Guarded by the same
+        // rule as above — this branch is only reached with a quartile band's worth
+        // of rounds, and every path short of that has already returned.
+        clause.confidence += DriftClause(driftPair, widestDrift, clause.resolution);
         return;
     }
 
-    const DeviceProbeMeasurement* nearest = nullptr;
-    double nearestThreshold = clause.resolution;
+    clause.verdict = DeviceProbeVerdict::kRecommend;
+    clause.recommended = leader.row->name;
 
-    for (const DeviceProbeMeasurement* rival : ordered)
+    clause.reason = Text("'%s' is the fastest entry of this shape: %.3f ns/argument at the lower "
+                         "quartile of the %d paired rounds, %.3f at the upper (spread %.2fx), "
+                         "%.3f ns/argument at its peak. Every other entry of the shape was the "
+                         "slower of the two in the middle half of the same rounds.",
+                         leader.row->name.c_str(),
+                         leader.row->nsPerArgument,
+                         pairedRounds,
+                         leader.row->nsPerArgumentMax,
+                         leader.row->spread,
+                         leader.row->nsPerArgumentPeak);
+
+    // The clock check, done rather than assumed. A pair whose ratio moves between
+    // the run's halves is a pair whose two entries do not carry a decaying clock
+    // alike, and the report says so instead of implying the ordering holds at any
+    // clock. A pair whose ratio held still within the run's own resolution puts no
+    // such caveat on the ordering.
+    clause.confidence =
+        nearest != nullptr
+            ? Text("HIGH: the nearest entry of this shape, '%s', took %.1f%% of the leader's cost "
+                   "and was the slower of the two in %d of the %d paired rounds, its within-round "
+                   "band %.3f..%.3f clearing one",
+                   nearest->name.c_str(),
+                   100.0 * (nearest->nsPerArgument / leader.row->nsPerArgument),
+                   nearestPair.slowerRounds,
+                   nearestPair.rounds,
+                   nearestPair.lo,
+                   nearestPair.hi)
+            : std::string("HIGH: it is the only entry this run measured in this shape, so there is "
+                          "no rival of it to fall inside a resolution");
+
+    if (nearest == nullptr)
     {
-        if (rival == leader)
+        // Nothing to say: no rival was measured, so no pair was followed.
+    } else
+    {
+        // The clock check, done rather than assumed. A pair whose ratio moves
+        // between the run's halves is a pair whose two entries do not carry a
+        // decaying clock alike, and the report says so instead of implying the
+        // ordering holds at any clock. A pair whose ratio held still within the
+        // run's own resolution puts no such caveat on the ordering.
+        clause.confidence += DriftClause(driftPair, widestDrift, clause.resolution);
+    }
+}
+
+/// The widest within-round ratio band one shape showed on this run, as a fraction.
+///
+/// It is the number the shape's refusal prints and the number the repetition
+/// control's two counts are judged against, computed once from the pairs rather
+/// than twice from two thresholds: an entry's own band to the reference, every
+/// rival's band against the shape's fastest entry, and the fastest entry's own
+/// band, taken at their widest.
+///
+/// A shape with fewer than two rows that could be ordered has no pair to form, and
+/// reports the fastest row's own band, which is what one row's rounds can say
+/// about themselves.
+double ShapeResolution(const std::vector<DeviceProbeMeasurement>& measurements,
+                       const std::vector<std::vector<double>>& rounds,
+                       const std::string& precision,
+                       const std::string& question) {
+    std::vector<std::size_t> columns;
+
+    for (std::size_t index = 0; index < measurements.size(); ++index)
+    {
+        if (measurements[index].measured && measurements[index].subtractionResolved &&
+            measurements[index].precision == precision &&
+            measurements[index].question == question)
+        {
+            columns.push_back(index);
+        }
+    }
+
+    if (columns.empty())
+    {
+        return 0.0;
+    }
+
+    std::size_t leader = columns.front();
+
+    for (const std::size_t column : columns)
+    {
+        if (measurements[column].nsPerArgument < measurements[leader].nsPerArgument)
+        {
+            leader = column;
+        }
+    }
+
+    double widest = std::max(0.0, measurements[leader].spread - 1.0);
+
+    for (const std::size_t column : columns)
+    {
+        if (column == leader)
         {
             continue;
         }
 
-        if (nearest == nullptr || rival->nsPerArgument < nearest->nsPerArgument)
+        const PairedOutcome pair = CompareToLeader(rounds, leader, column);
+
+        if (pair.lo > 0.0)
         {
-            nearest = rival;
-            nearestThreshold =
-                std::max({canarySpreadPercent / 100.0, leader->spread - 1.0, rival->spread - 1.0});
+            widest = std::max(widest, pair.hi / pair.lo - 1.0);
+        }
+
+        widest = std::max(widest, measurements[column].spread - 1.0);
+    }
+
+    return widest;
+}
+
+/// The entry to name when the measurement could not order a shape, and the static
+/// reading of the library's device entry book it was chosen from.
+struct StaticFallback {
+    /// The entry's name, empty when the shape's rows hold nothing the rule can
+    /// rank.
+    std::string name;
+
+    /// Why that entry, in the library's own numbers, and what the rule does not
+    /// compare.
+    std::string basis;
+};
+
+/// The degrees a row's lane is cut to, read from the library's own degree tables.
+///
+/// Which table region A is cut from is a property of the lane and is stated by the
+/// tables themselves: the double piece table serves kF64Single, kF64Batch,
+/// kF32Batch and kF16Batch — a float entry's region-A seed is computed in double
+/// whatever precision it returns — and the float piece table serves kF32Single and
+/// kF16Single. Region B is the lane's own seed degree, read by the single lanes per
+/// order and by the batch lanes at the order-0 entry.
+///
+/// Read from the host-side tables the device image is built out of
+/// (boys_coefficients.hpp), and not from the handle the device entries read:
+/// that handle holds addresses in the device's own memory, which a host reader
+/// of this report must not follow. The values are the ones the upload copies
+/// into those addresses, so the count here and the degree there are one fact.
+struct LaneDegrees {
+    /// Dependent multiply-adds region A's piece evaluation is cut to at the top
+    /// order the shape reaches: the stored degrees of that order's pieces, summed,
+    /// which is what the table states for it and no choice of piece.
+    int regionA = 0;
+
+    /// The region-B seed's degree.
+    int regionB = 0;
+
+    /// Stored coefficients the two together read, at that order.
+    int stored = 0;
+
+    /// Whether these came from the double lane's tables, so the basis says which.
+    bool doubles = true;
+};
+
+LaneDegrees LaneDegreesOf(BoysDeviceLane lane, int topOrder) {
+    LaneDegrees degrees;
+
+    const bool floatTable =
+        lane == BoysDeviceLane::kF32Single || lane == BoysDeviceLane::kF16Single;
+    const bool floatSeed = lane == BoysDeviceLane::kF32Batch || lane == BoysDeviceLane::kF16Batch ||
+                           floatTable;
+
+    degrees.doubles = !floatTable;
+
+    if (topOrder < 0 || topOrder > detail::kMaxOrder)
+    {
+        return degrees;
+    }
+
+    if (floatTable)
+    {
+        const auto& pieces = detail::f32::kPieces;
+        const auto& pieceStart = detail::f32::kPieceStart;
+
+        for (int piece = pieceStart[topOrder]; piece < pieceStart[topOrder + 1]; ++piece)
+        {
+            degrees.regionA += pieces[static_cast<std::size_t>(piece)].deg;
+            degrees.stored += pieces[static_cast<std::size_t>(piece)].deg;
+        }
+
+        degrees.regionB = detail::f32::kBDeg;
+        degrees.stored += detail::f32::kBDeg;
+        return degrees;
+    }
+
+    const auto& pieces = detail::kPieces;
+    const auto& pieceStart = detail::kPieceStart;
+
+    for (int piece = pieceStart[topOrder]; piece < pieceStart[topOrder + 1]; ++piece)
+    {
+        degrees.regionA += pieces[static_cast<std::size_t>(piece)].deg;
+        degrees.stored += pieces[static_cast<std::size_t>(piece)].deg;
+    }
+
+    degrees.regionB = floatSeed ? detail::f32::kBDeg : detail::kBDeg;
+    degrees.stored += degrees.regionB;
+    return degrees;
+}
+
+/// Chooses a shape's fallback by counting what the library's entry book and its
+/// degree tables say, never by timing anything.
+///
+/// **This is a heuristic and it is reported as one.** The rule, whole: over the
+/// rows this run carries in one shape — one precision and one question, so the
+/// candidates answered the same question and produced the same amount of output
+/// for the same arguments — the row whose route evaluates the fewer dependent
+/// multiply-adds for one argument is named, counted as the region-A piece degrees
+/// of the shape's top order summed plus the lane's region-B seed degree, both read
+/// from the degree tables the library itself publishes. A tie is broken by the
+/// stored coefficients those two read, then by the number of times the entry is
+/// invoked per argument — the library's own shape says once for \c single,
+/// \c all-orders and \c all-n, and once per order for \c each-order — then by the
+/// launches of this library's own kernel the route needs, which is one for a
+/// launched row and none for a device-callable one, then by the library's own
+/// default region-B exponential, and last by the library's own enumeration order,
+/// so a tie-break is a documented choice rather than an accident of enumeration.
+///
+/// What it cannot do is as much a part of the rule as what it does: it does not
+/// compare the two routes' arithmetic, so it cannot say whether the calling kernel
+/// can keep the ladder in registers, which is the whole question between a
+/// launched row and a device-callable one; it says nothing about any card's
+/// arithmetic; and it reads the whole-argument-range bound each row documents
+/// rather than measuring what the row delivers.
+///
+/// \param entries  the rows this run carries, as the library reports them
+/// \param device   the card the run measured, named in the basis
+/// \param topOrder the shape's top order, which is the run's own highest
+/// \param precision one class's precision
+/// \param question  one shape's question
+///
+/// \returns the fallback, empty when the shape holds nothing to rank
+StaticFallback StaticFallbackFor(const std::vector<EntryInfo>& entries,
+                                 const std::string& device,
+                                 int topOrder,
+                                 const std::string& precision,
+                                 ProbeQuestion question) {
+    StaticFallback fallback;
+
+    /// What the rule counts about one candidate, in the order the rule compares
+    /// them: the arithmetic, the table it brings into cache, the invocations, the
+    /// launches, the library's own default axis and, last, the library's own order.
+    struct Counted {
+        const EntryInfo* info = nullptr;
+        LaneDegrees degrees;
+        int calls = 0;
+        int launches = 0;
+        int axes = 0;
+    };
+
+    const auto counted = [topOrder](const EntryInfo& info) {
+        Counted out;
+        out.info = &info;
+        out.degrees = LaneDegreesOf(info.lane, topOrder);
+        // The library's own shape says how many times an entry is invoked for one
+        // argument: once for single, all-orders and all-n, once per order for
+        // each-order. And its own group says whether this library launches its
+        // kernel at all.
+        out.calls = info.shape == std::string("each-order") ? 2 : 1;
+        out.launches = info.inKernel ? 0 : 1;
+        // The library's own default region-B exponential, which is the member its
+        // default names; the other member of that axis is the exception.
+        out.axes = info.regionBExp == kDefaultRegionBExp ? 0 : 1;
+        return out;
+    };
+
+    const auto lower = [](const Counted& candidate, const Counted& best) {
+        const int candidateArithmetic = candidate.degrees.regionA + candidate.degrees.regionB;
+        const int bestArithmetic = best.degrees.regionA + best.degrees.regionB;
+
+        if (candidateArithmetic != bestArithmetic)
+        {
+            return candidateArithmetic < bestArithmetic;
+        }
+
+        if (candidate.degrees.stored != best.degrees.stored)
+        {
+            return candidate.degrees.stored < best.degrees.stored;
+        }
+
+        if (candidate.calls != best.calls)
+        {
+            return candidate.calls < best.calls;
+        }
+
+        if (candidate.launches != best.launches)
+        {
+            return candidate.launches < best.launches;
+        }
+
+        if (candidate.axes != best.axes)
+        {
+            return candidate.axes < best.axes;
+        }
+
+        // The library's own enumeration order last, so the tie-break is the book's
+        // order rather than this loop's.
+        return static_cast<int>(candidate.info->entry) < static_cast<int>(best.info->entry);
+    };
+
+    Counted best;
+    const EntryInfo* second = nullptr;
+
+    for (const EntryInfo& info : entries)
+    {
+        if (info.precision != precision || info.question != question)
+        {
+            continue;
+        }
+
+        const Counted candidate = counted(info);
+
+        if (best.info == nullptr)
+        {
+            best = candidate;
+            continue;
+        }
+
+        if (lower(candidate, best))
+        {
+            second = best.info;
+            best = candidate;
+        } else if (second == nullptr)
+        {
+            second = &info;
         }
     }
 
-    // A ranking needs two entries, and the one-entry case returned above, so a
-    // rival exists here: this is the nearest of them.
-    clause.verdict = DeviceProbeVerdict::kRecommend;
-    clause.recommended = leader->name;
+    if (best.info == nullptr)
+    {
+        return fallback;
+    }
 
-    clause.reason = Text("'%s' is the fastest entry of this shape: %.3f ns/argument over %d "
-                         "admitted of %d passes, spread %.2fx",
-                         leader->name.c_str(),
-                         leader->nsPerArgument,
-                         leader->cleanPasses,
-                         totalPasses,
-                         leader->spread);
-    clause.confidence =
-        Text("HIGH: the nearest rival in this shape is at least %.2f%% behind, beyond the %.2f%% "
-             "this pair can be ordered at (canary spread %.2f%%, leader's own passes "
-             "spread %.2f%%, the rival's %.2f%%)",
-             100.0 * (nearest->nsPerArgument / leader->nsPerArgument - 1.0),
-             100.0 * nearestThreshold,
-             canarySpreadPercent,
-             100.0 * (leader->spread - 1.0),
-             100.0 * (nearest->spread - 1.0));
+    const std::string runnerUp =
+        second != nullptr ? Text(", the next being '%s', whose route is counted at %d dependent "
+                                 "multiply-adds for one argument",
+                                 second->name,
+                                 LaneDegreesOf(second->lane, topOrder).regionA +
+                                     LaneDegreesOf(second->lane, topOrder).regionB)
+                          : std::string();
+
+    fallback.name = best.info->name;
+    fallback.basis = Text(
+        "counted, not timed: '%s' reads the %s lane's piece table, whose pieces at order %d are cut "
+        "to %d dependent multiply-adds with a region-B seed at degree %d — %d together — storing %d "
+        "coefficients%s. The route reaches it as a %s row, invoking the entry %s per argument and "
+        "launching %s of this library's own kernel%s. The rule takes the fewest counted "
+        "multiply-adds first, the fewest stored coefficients second, the fewest invocations per "
+        "argument third, the fewest launches fourth, the library's own default region-B "
+        "exponential fifth and the library's own enumeration order last, over this run's own rows "
+        "of one precision and one question. It does not compare what the two routes' arithmetic "
+        "does once it is running — whether a caller's kernel keeps the ladder in registers is the "
+        "whole question between a launched row and a device-callable one and is not counted here — "
+        "it says nothing about what any card does with these tables, and the %.4g beside this row "
+        "is the bound its documentation states over the whole argument range rather than anything "
+        "measured. A name below this line is a property of the tables and of the device %s answered "
+        "on, and is not evidence that the entry is fast on it.",
+        best.info->name,
+        best.degrees.doubles ? "double" : "float",
+        topOrder,
+        best.degrees.regionA,
+        best.degrees.regionB,
+        best.degrees.regionA + best.degrees.regionB,
+        best.degrees.stored,
+        runnerUp.c_str(),
+        best.info->inKernel ? "device-callable" : "launched",
+        best.calls == 1 ? "once" : "once per order",
+        best.launches == 1 ? "one" : "none",
+        best.launches == 1 ? "" : ", so the calling kernel is the whole of its cost",
+        best.info->bound,
+        device.c_str());
+
+    return fallback;
 }
 
 /// The card-specific caveat, built from what the runtime reports about the card
@@ -1243,15 +1927,47 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
         measurement.documentedBound = info.bound;
     }
 
-    const std::size_t passCount = static_cast<std::size_t>(clamped.passes);
-    std::vector<std::vector<double>> passCost(
-        entries.size(),
-        std::vector<double>(passCount, std::numeric_limits<double>::infinity()));
-    std::vector<std::vector<double>> passBaseline(passCost);
+    /// The entry every cost column of this run is anchored to: the library's own
+    /// first fp64 row, which is the single-order double entry in the book's own
+    /// order. It is resolved in this run's own entry list, because a run narrowed
+    /// to a set that does not carry it still needs an anchor, and it falls back to
+    /// the first fp64 row the run carries and then to its first row.
+    ///
+    /// The anchor is what makes the costs comparable: every entry's figure is this
+    /// entry's own lower-quartile cost scaled by that entry's lower-quartile ratio
+    /// to it, so the column is one measurement and a set of ratios taken inside the
+    /// rounds rather than a set of independent times taken in whatever clock each
+    /// happened to run under.
+    const auto ReferenceIndex = [&entries]() {
+        for (std::size_t index = 0; index < entries.size(); ++index)
+        {
+            if (entries[index].name == std::string("single-fp64"))
+            {
+                return index;
+            }
+        }
 
-    // --- Warm-up. The first launch of a kernel pays one-time costs that are
-    // the card's and the context's rather than the entry's, so nothing here is
-    // timed.
+        for (std::size_t index = 0; index < entries.size(); ++index)
+        {
+            if (entries[index].precision == std::string("fp64"))
+            {
+                return index;
+            }
+        }
+
+        return std::size_t{0};
+    };
+
+    const std::size_t reference = ReferenceIndex();
+
+    // The pooled round table: one row per round, one column per entry, in cost per
+    // argument, plus the same shape for the in-kernel rows' baselines. Every round
+    // of every pass is in here; no round is dropped and no pass is excluded.
+    std::vector<std::vector<double>> roundCost;
+    std::vector<std::vector<double>> roundBaseline;
+
+    // --- Warm-up. The first launch of a kernel pays one-time costs that are the
+    // card's and the context's rather than the entry's, so nothing here is timed.
     bool warm = true;
 
     for (const EntryInfo& info : entries)
@@ -1286,22 +2002,34 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
     }
 
     // --- Passes --------------------------------------------------------------
+    //
+    // Every pass is run and every pass is used. What the canary said beside a pass
+    // is reported with it and decides nothing: a fixed work read by a device clock
+    // measures the clock as much as the load, and a card whose boost decays widens
+    // the spin's own spread while doing nothing else, so discarding on it would
+    // discard the measurement rather than the machine.
+    //
+    // The visit order is shuffled once per round from the run's own seed. A fixed
+    // order would put the same entry first in every round, and whatever a position
+    // in the round is worth — the first launch touching a table the others then
+    // find warm — would be worth the same to that entry every time and would enter
+    // its ratio as though it were the entry's own cost. The seed keeps a run
+    // reproducible.
+    std::mt19937_64 shuffle(clamped.seed);
+    std::vector<std::size_t> visit(entries.size());
+
+    for (std::size_t slot = 0; slot < visit.size(); ++slot)
+    {
+        visit[slot] = slot;
+    }
+
     const int canarySamples = std::max(3, clamped.rounds + 1);
 
     for (int pass = 0; pass < clamped.passes; ++pass)
     {
         DeviceProbePass record;
         std::vector<double> canaryMs;
-        // The two halves of a subtraction are minimised separately and over the
-        // same rounds, not subtracted round by round. Each region in a round
-        // opens its own stream and its own events, so whichever of the two is
-        // timed first pays a ramp the other does not; taking each half's own best
-        // round leaves that where it belongs, in the ramp, and not in the
-        // difference.
-        std::vector<double> withThisPass(entries.size(),
-                                         std::numeric_limits<double>::infinity());
-        std::vector<double> withoutThisPass(entries.size(),
-                                            std::numeric_limits<double>::infinity());
+        std::vector<std::vector<double>> passRounds;
 
         const auto takeCanary = [&]() {
             double ms = 0.0;
@@ -1321,23 +2049,60 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
 
         for (int round = 0; round < clamped.rounds; ++round)
         {
-            for (std::size_t e = 0; e < entries.size(); ++e)
+            std::shuffle(visit.begin(), visit.end(), shuffle);
+
+            // One row of this pass's own round table: one cell per entry, in cost
+            // per argument, timed in this round and in no other. A cell left
+            // infinite is a round in which the entry could not be timed, and it is
+            // left out of the ratios below rather than counted as a fast one.
+            std::vector<double> row(entries.size(),
+                                    std::numeric_limits<double>::infinity());
+            std::vector<double> baseline(row);
+
+            // Which half of an in-kernel pair goes first alternates by round, so
+            // the fixed cost of a timed region — the event pair, the first launch's
+            // cold start, the host's submission — lands on each half in half the
+            // rounds instead of always on one.
+            const bool baselineFirst = (round % 2) == 1;
+
+            for (const std::size_t index : visit)
             {
                 const TimedEntry timed =
-                    TimeEntry(entries[e], base, clamped.repetitions, (round % 2) == 1);
+                    TimeEntry(entries[index], base, clamped.repetitions, baselineFirst);
 
                 if (!timed.ok)
                 {
                     continue;
                 }
 
-                withThisPass[e] = std::min(withThisPass[e], timed.withMs);
+                const double with =
+                    PerArgument(timed.withMs, clamped.repetitions, clamped.count);
 
-                if (timed.subtracted)
+                row[index] = with;
+
+                if (!timed.subtracted)
                 {
-                    withoutThisPass[e] = std::min(withoutThisPass[e], timed.withoutMs);
+                    continue;
                 }
+
+                // Both halves were timed in this round and the difference is
+                // formed here, inside the round the two were timed in: whatever the
+                // card's clock did between rounds is in both halves of this pair
+                // and cancels, and this cell is not a cost taken under a clock of
+                // its own. A subtraction that comes out at or below zero is the
+                // entry's arithmetic inside the noise of its own baseline: the row
+                // is a cost and cannot be below zero, and the report says separately
+                // that the subtraction did not resolve.
+                const double without =
+                    PerArgument(timed.withoutMs, clamped.repetitions, clamped.count);
+
+                baseline[index] = without;
+                row[index] = entries[index].inKernel ? std::max(0.0, with - without) : with;
             }
+
+            passRounds.push_back(row);
+            roundCost.push_back(std::move(row));
+            roundBaseline.push_back(std::move(baseline));
 
             takeCanary();
         }
@@ -1350,86 +2115,149 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
             takeCanary();
         }
 
-        record.canaryMedianMs = MedianOf(canaryMs);
-        record.canarySpread = SpreadPercent(canaryMs);
-        record.disturbed = record.canarySpread > clamped.canarySpreadThreshold;
+        // The canary is read here and nowhere else decides anything on it. A pass
+        // in which no read succeeded took no reading at all, and that is recorded
+        // as such: its figures are zero because nothing was read, and a zero
+        // spread would otherwise be a machine reported as still by a reading that
+        // was never taken.
+        record.canaryMeasured = !canaryMs.empty();
 
-        if (record.disturbed)
+        if (record.canaryMeasured)
         {
-            ++report.disturbedPasses;
+            record.canaryMedianMs = MedianOf(canaryMs);
+            record.canarySpread = SpreadPercent(canaryMs);
+            record.canaryWide = record.canarySpread > clamped.canarySpreadAlarm;
+
+            if (record.canaryWide)
+            {
+                ++report.passesAboveAlarm;
+            } else
+            {
+                ++report.passesWithinAlarm;
+            }
+
+            report.canarySpread = std::max(report.canarySpread, record.canarySpread);
         } else
         {
-            ++report.cleanPasses;
-            report.canarySpread = std::max(report.canarySpread, record.canarySpread);
-
-            for (std::size_t e = 0; e < entries.size(); ++e)
-            {
-                const double with =
-                    PerArgument(withThisPass[e], clamped.repetitions, clamped.count);
-                // A subtraction that comes out at or below zero is the entry's
-                // arithmetic inside the noise of its own baseline: the row is a
-                // cost and cannot be below zero, and the report says separately
-                // that the subtraction did not resolve.
-                const double without = std::isfinite(withoutThisPass[e])
-                                           ? PerArgument(withoutThisPass[e],
-                                                         clamped.repetitions,
-                                                         clamped.count)
-                                           : 0.0;
-
-                passBaseline[e][static_cast<std::size_t>(pass)] = without;
-                passCost[e][static_cast<std::size_t>(pass)] =
-                    entries[e].inKernel ? std::max(0.0, with - without) : with;
-            }
+            ++report.passesWithoutCanary;
         }
 
+        // The pass's own paired spread: the within-round ratios of this pass, which
+        // is the spread the ordering is made in. Reported beside the canary's, and
+        // it gates nothing either.
+        record.pairedSpread = PassPairedSpread(passRounds, reference);
         report.passes.push_back(record);
     }
 
-    // --- Fold the passes into figures ---------------------------------------
-    for (std::size_t e = 0; e < entries.size(); ++e)
+    report.pairedRounds = static_cast<int>(roundCost.size());
+
+    // --- Fold the rounds into figures ---------------------------------------
+    //
+    // Every figure below is an aggregate of ratios taken inside a round of the
+    // table above, which is what makes it a paired comparison: two cells of one
+    // round were timed under one clock. The statistic is a lower quartile —
+    // see QuantileOf and kStatisticQuantile for why not the minimum, and why not a
+    // mean — and the cost is the reference entry's own lower-quartile figure scaled
+    // by this entry's lower-quartile ratio to it, so every cost column of the
+    // report is anchored to one entry's own measurement.
+    if (!roundCost.empty() && reference < entries.size())
     {
-        DeviceProbeMeasurement& measurement = report.measurements[e];
-        double fastest = std::numeric_limits<double>::infinity();
-        double slowest = 0.0;
-        double baseline = 0.0;
-        int clean = 0;
+        report.referenceEntry = entries[reference].name;
 
-        for (int pass = 0; pass < clamped.passes; ++pass)
+        std::vector<double> referenceCost;
+
+        for (const std::vector<double>& row : roundCost)
         {
-            const double cost = passCost[e][static_cast<std::size_t>(pass)];
+            referenceCost.push_back(row[reference]);
+        }
 
-            if (!std::isfinite(cost))
+        report.referenceNsPerArgument = QuantileOf(referenceCost, kStatisticQuantile);
+
+        const std::size_t half = roundCost.size() / 2;
+
+        for (std::size_t e = 0; e < entries.size(); ++e)
+        {
+            DeviceProbeMeasurement& measurement = report.measurements[e];
+            std::vector<double> ratios;
+            std::vector<double> early;
+            std::vector<double> late;
+            std::vector<double> baselines;
+            double peak = std::numeric_limits<double>::infinity();
+
+            for (std::size_t round = 0; round < roundCost.size(); ++round)
+            {
+                const double anchor = roundCost[round][reference];
+                const double cost = roundCost[round][e];
+
+                if (!std::isfinite(anchor) || anchor <= 0.0 || !std::isfinite(cost))
+                {
+                    continue;
+                }
+
+                ratios.push_back(cost / anchor);
+                // The peak column is the entry's own fastest single round, and a
+                // round whose cell is zero has no cost in it: for a subtracted row
+                // that cell is the floor a difference which did not clear its own
+                // baseline was held at, so taking it as the peak would print the
+                // instrument's floor as the entry's best round. The peak is the
+                // fastest round that produced a figure, which for a launched row is
+                // every round of the run. Left infinite when no round did, and the
+                // table prints a dash for that.
+                if (cost > 0.0)
+                {
+                    peak = std::min(peak, cost);
+                }
+                if (round < half)
+                {
+                    early.push_back(cost / anchor);
+                } else
+                {
+                    late.push_back(cost / anchor);
+                }
+
+                if (std::isfinite(roundBaseline[round][e]))
+                {
+                    baselines.push_back(roundBaseline[round][e]);
+                }
+            }
+
+            if (ratios.size() < 2 || report.referenceNsPerArgument <= 0.0)
             {
                 continue;
             }
 
-            if (cost < fastest)
+            measurement.measured = true;
+            measurement.rounds = static_cast<int>(roundCost.size());
+            measurement.ratioToReference = QuantileOf(ratios, kStatisticQuantile);
+            measurement.ratioLo = measurement.ratioToReference;
+            measurement.ratioHi = QuantileOf(ratios, 1.0 - kStatisticQuantile);
+            measurement.nsPerArgument =
+                report.referenceNsPerArgument * measurement.ratioToReference;
+            measurement.nsPerArgumentMax = report.referenceNsPerArgument * measurement.ratioHi;
+            measurement.nsPerArgumentPeak = std::isfinite(peak) ? peak : 0.0;
+            measurement.nsPerArgumentBaseline = QuantileOf(baselines, kStatisticQuantile);
+            measurement.spread =
+                measurement.ratioLo > 0.0 ? measurement.ratioHi / measurement.ratioLo : 1.0;
+            // A launched row is not a subtraction and always carries its figure. An
+            // in-kernel row carries one only when the difference it was reduced to
+            // stands above its own baseline in the middle half of the run; a row
+            // whose figure is the zero the max() above floors it at is the row's
+            // arithmetic sitting inside its kernel's traffic at this workload.
+            measurement.subtractionResolved =
+                !entries[e].inKernel || measurement.nsPerArgument > 0.0;
+
+            // How far the entry's ratio to the reference moved between the run's
+            // halves. Zero means the entry and the reference kept pace as the clock
+            // moved, which is what a ratio that is genuinely the entry's own cost
+            // looks like; a value away from zero says the two do not carry the clock
+            // alike, and the report says so where it prints this entry.
+            const double firstHalf = MedianOf(early);
+            const double secondHalf = MedianOf(late);
+
+            if (firstHalf > 0.0)
             {
-                // The baseline is the one the fastest pass was taken with, so a
-                // reader subtracting the two gets the subtraction this figure
-                // came from and not two passes' worth.
-                fastest = cost;
-                baseline = passBaseline[e][static_cast<std::size_t>(pass)];
+                measurement.ratioDrift = secondHalf / firstHalf - 1.0;
             }
-
-            slowest = std::max(slowest, cost);
-            ++clean;
-        }
-
-        measurement.cleanPasses = clean;
-        measurement.disturbedPasses = report.disturbedPasses;
-        measurement.measured = clean > 0;
-        // A launched row is not a subtraction and always carries its figure. An
-        // in-kernel row carries one only when its own best pass put the entry's
-        // half above the half it was measured against.
-        measurement.subtractionResolved = !entries[e].inKernel || fastest > 0.0;
-
-        if (clean > 0)
-        {
-            measurement.nsPerArgument = fastest;
-            measurement.nsPerArgumentMax = slowest;
-            measurement.nsPerArgumentBaseline = baseline;
-            measurement.spread = fastest > 0.0 ? slowest / fastest : 1.0;
         }
     }
 
@@ -1576,17 +2404,43 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
             ranking.asked = QuestionAsked(info.question);
 
             std::vector<DeviceProbeMeasurement*> live;
+            std::vector<std::size_t> columns;
 
-            for (DeviceProbeMeasurement& measurement : report.measurements)
+            for (std::size_t index = 0; index < report.measurements.size(); ++index)
             {
+                DeviceProbeMeasurement& measurement = report.measurements[index];
+
                 if (measurement.measured && measurement.precision == info.precision &&
                     measurement.question == question)
                 {
                     live.push_back(&measurement);
+                    columns.push_back(index);
                 }
             }
 
-            Conclude(ranking, live, report.canarySpread, report.cleanPasses, clamped.passes);
+            Conclude(ranking, live, columns, roundCost, report.pairedRounds);
+
+            // A refusal is still a report a consumer can act on, so it carries a
+            // default read out of the library's own entry book for this shape and
+            // precision. It is derived from the tables — which regions a route
+            // runs, whether the entry is launched or called inside the caller's
+            // kernel, the repetition counts, the degrees the tables state — and
+            // from no timing at all, so it is labelled as a heuristic wherever it
+            // is printed and it never appears beside a measured figure. A shape
+            // the run did order carries none: it has a measurement instead.
+            if (ranking.verdict == DeviceProbeVerdict::kCannotDetermine)
+            {
+                const StaticFallback fallback = StaticFallbackFor(entries,
+                                                                  report.device.name,
+                                                                  clamped.nmax,
+                                                                  info.precision,
+                                                                  info.question);
+
+                ranking.heuristicEntry = fallback.name;
+                ranking.heuristicBasis = fallback.basis;
+                report.hasDefault = report.hasDefault || !fallback.name.empty();
+            }
+
             report.classes[classAt].rankings.push_back(ranking);
         }
     };
@@ -1595,7 +2449,7 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
     // passes measured, never against the widest threshold some other class
     // needed: a class whose rival wandered is a fact about that rival.
     const auto RowResolution = [&](const DeviceProbeMeasurement* row) {
-        return std::max(report.canarySpread / 100.0, row->spread - 1.0);
+        return ShapeResolution(report.measurements, roundCost, row->precision, row->question);
     };
 
     const auto FindEntry = [&](const std::string& name) -> const EntryInfo* {
@@ -2012,27 +2866,75 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
     text += Text("    %d passes, %d rounds per pass, %d launches per timed region. Every entry "
                  "is timed by\n    a CUDA event pair around those launches, into buffers "
                  "uploaded once before the first\n    clock; the per-argument figure is the "
-                 "device time divided by the launches and the\n    arguments. A pass whose "
-                 "canary runs disagree by more than %.1f%% is discarded.\n",
+                 "device time divided by the launches and the\n    arguments.\n",
                  report.options.passes,
                  report.options.rounds,
-                 report.options.repetitions,
-                 report.options.canarySpreadThreshold);
+                 report.options.repetitions);
+    text += Text("    every entry is timed once per round and the visit order is shuffled per "
+                 "round, so the\n    %d rounds of the run are pooled into one table of %d rows and "
+                 "%zu columns, one row\n    per round and one column per entry: a comparison between "
+                 "two entries is the ratio\n    of their cells in one row — both were timed under "
+                 "whatever clock that round ran at,\n    and a drift common to the round cancels in "
+                 "the ratio.\n",
+                 report.pairedRounds,
+                 report.pairedRounds,
+                 report.measurements.size());
+    text += "    no round and no pass is dropped. A reported figure is the lower quartile of those "
+            "ratios\n    and never the minimum of the run: on a card whose clock decays the "
+            "minimum is the\n    earliest and best-clocked round, which is not what a caller's "
+            "long workload meets, and\n    the upper quartile is printed beside it so both ends "
+            "come from one distribution. The\n    peak column is the entry's own fastest single "
+            "round, a raw figure under no anchor and\n    not a bound on the columns beside it.\n";
+    text += Text("    the canary beside a pass is a diagnostic and gates nothing: a fixed work read "
+                 "by a\n    device clock measures the clock as much as the load, so a pass is "
+                 "flagged when the\n    canary's own runs disagreed by more than %.1f%% and is "
+                 "used either way.\n",
+                 report.options.canarySpreadAlarm);
     text += Text("    in-kernel rows are a subtraction: the caller's kernel with the entry in it, "
                  "less the\n    same kernel with the call removed and the traffic kept, the two "
-                 "timed adjacent in\n    the same round.\n");
+                 "timed adjacent in\n    the same round, so the difference is formed inside that "
+                 "round and survives a drift.\n");
 
     text += "\n  canary:\n";
     text += Text("    a fixed-work integer kernel, launched between the rounds, holding no "
                  "floating-point\n    state, so the arithmetic this probe ranks cannot change "
                  "the instrument's own cost.\n");
-    text += Text("    its fastest run seen here is %.4f ms; the widest spread across an admitted "
-                 "pass is\n    %.2f%%, which is this run's reading of the card's own timing "
-                 "noise.\n",
-                 report.canaryFloorMs,
-                 report.canarySpread);
 
-    text += "\npass  wall_s  canary_ms  canary%  verdict\n";
+    double widestPaired = 0.0;
+    bool anyCanaryMeasured = false;
+
+    for (const DeviceProbePass& pass : report.passes)
+    {
+        widestPaired = std::max(widestPaired, pass.pairedSpread);
+        anyCanaryMeasured = anyCanaryMeasured || pass.canaryMeasured;
+    }
+
+    // A canary that did not run is said in words where a spread would be read. A
+    // zero spread and an absent reading are different facts about a machine, and
+    // printing the second as the first is the report claiming to have looked.
+    if (!anyCanaryMeasured)
+    {
+        text += Text("    no pass %s a canary reading between its rounds, so no spread of the "
+                     "instrument's\n    own is reported here: a canary that did not run is not a "
+                     "canary that stayed quiet,\n    and the space where its spread would go holds "
+                     "those words instead of a zero. The\n    widest within-round paired spread "
+                     "across the passes, which is where the ordering\n    below is made, is "
+                     "%.2f%%.\n",
+                     report.passes.empty() ? "was run to take" : "took",
+                     widestPaired);
+    } else
+    {
+        text += Text("    its fastest run seen here is %.4f ms; the widest spread across the passes "
+                     "is %.2f%%,\n    beside the widest within-round paired spread of %.2f%%. Both "
+                     "are context: the\n    ordering below is made in the paired column, and the "
+                     "canary is the same fixed work\n    read by the same clock the entries "
+                     "were.\n",
+                     report.canaryFloorMs,
+                     report.canarySpread,
+                     widestPaired);
+    }
+
+    text += "\npass  wall_s  canary_ms  canary%  paired%  verdict\n";
 
     if (report.passes.empty())
     {
@@ -2042,23 +2944,73 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
     for (std::size_t i = 0; i < report.passes.size(); ++i)
     {
         const DeviceProbePass& pass = report.passes[i];
-        text += Text("%4zu  %6.3f  %9.4f  %7.2f  %s\n",
+
+        // A pass whose canary was not timed prints no canary figure at all: a dash
+        // in both columns and the reason in the verdict column, so the table
+        // cannot be read as a reading that was never taken.
+        const std::string canaryMs =
+            pass.canaryMeasured ? Text("%.4f", pass.canaryMedianMs) : std::string("-");
+        const std::string canarySpread =
+            pass.canaryMeasured ? Text("%.2f", pass.canarySpread) : std::string("-");
+        const char* wideText = pass.canaryMeasured
+                                   ? (pass.canaryWide ? "canary wide - reported, used"
+                                                      : "canary within alarm")
+                                   : "canary not timed - no reading, not a quiet one";
+
+        text += Text("%4zu  %6.3f  %9s  %7s  %7.2f  %s\n",
                      i + 1,
                      pass.seconds,
-                     pass.canaryMedianMs,
-                     pass.canarySpread,
-                     pass.disturbed ? "DISTURBED (excluded)" : "admitted");
+                     canaryMs.c_str(),
+                     canarySpread.c_str(),
+                     pass.pairedSpread,
+                     wideText);
     }
 
-    text += Text("\n  %d of %d passes admitted, %d discarded for the canary's own disagreement.\n",
-                 report.cleanPasses,
+    text += Text("\n  %d of %d pass(es) ran with the canary's own runs wider than the %.1f%% "
+                 "alarm, and every\n  one of them was used: the canary is fixed work read by the "
+                 "same clock the entries were,\n  so it cannot separate the two, and discarding "
+                 "on it would discard the measurement\n  rather than the machine. What separates "
+                 "the entries is the paired column and the\n  refusal below, not this one.\n",
+                 report.passesAboveAlarm,
                  report.options.passes,
-                 report.disturbedPasses);
+                 report.options.canarySpreadAlarm);
+
+    if (report.passesWithoutCanary > 0)
+    {
+        text += Text("  %d of the %d pass(es) took no canary reading at all and are counted in "
+                     "neither the\n  within nor the above: a pass the canary did not run in is a "
+                     "pass with no reading, and\n  no zero is reported for it.",
+                     report.passesWithoutCanary,
+                     report.options.passes);
+        text += "\n";
+    }
+
+    {
+        // What the column's own ceiling is, said where a reader meets it: at two
+        // rounds per pass the widest a two-reading quartile band can be is three
+        // times, so a pass that reads 200.00% is at that ceiling and is not a cap.
+        const std::string ceiling =
+            report.options.rounds == 2
+                ? std::string("A pass holds two rounds and the two ends of a quartile band over "
+                              "two\n  readings are three times apart at the extreme, so 200.00% is "
+                              "that column's\n  own ceiling: a pass reading it had one entry whose "
+                              "two rounds were as far\n  apart as two readings can be.")
+                : Text("A pass holds %d rounds, so this column and the run's resolution below\n  are "
+                       "the same kind of number taken over different round counts.",
+                       report.options.rounds);
+
+        text += Text("\n  The paired column is the widest within-round band any entry of that pass "
+                     "showed, so\n  it is the resolution that pass alone can order at.\n  %s\n  The "
+                     "run's resolution, below, is the same measurement over all %d pooled "
+                     "rounds.\n",
+                     ceiling.c_str(),
+                     report.pairedRounds);
+    }
 
     text += "\nentries - ns/argument is device time per argument, transfer and host submission "
             "excluded\n";
-    text += "  entry                     precision  shape        route      ns/arg     minus    "
-            "spread  clean  bound      method\n";
+    text += "  entry                     precision  shape        route      ns/arg      hi      "
+            "minus   spread   vs ref band  drift%    peak ns  rounds  bound      method\n";
 
     for (const DeviceProbeMeasurement& measurement : report.measurements)
     {
@@ -2066,10 +3018,20 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
             measurement.nsPerArgumentBaseline > 0.0
                 ? Text("%.3f", measurement.nsPerArgumentBaseline)
                 : std::string("-");
+        const std::string band = measurement.measured
+                                     ? Text("%.3f..%.3f", measurement.ratioLo, measurement.ratioHi)
+                                     : std::string("-");
+        const std::string rounds =
+            Text("%2d/%d", measurement.rounds, report.pairedRounds);
+        const std::string peak =
+            measurement.nsPerArgumentPeak > 0.0
+                ? Text("%.3f", measurement.nsPerArgumentPeak)
+                : std::string("-");
 
         if (!measurement.measured)
         {
-            text += Text("  %-24s %-10s %-11s %-10s %10s  %-7s  %6s  %2d/%d  %8.2g  %s\n",
+            text += Text("  %-24s %-10s %-11s %-10s %10s  %-7s  %-7s  %-7s  %-12s  %-7s  %8s  "
+                         "%-6s  %8.2g  %s\n",
                          measurement.name.c_str(),
                          measurement.precision.c_str(),
                          measurement.shape.c_str(),
@@ -2077,8 +3039,11 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
                          "-",
                          "-",
                          "-",
-                         measurement.cleanPasses,
-                         report.options.passes,
+                         "-",
+                         "-",
+                         "-",
+                         "-",
+                         rounds.c_str(),
                          measurement.documentedBound,
                          measurement.launchedByLibrary ? "library kernel launched"
                                                        : "caller kernel, subtracted");
@@ -2090,42 +3055,69 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
         // the class this row belongs to sets it aside, so the table says the same.
         if (!measurement.subtractionResolved)
         {
-            text += Text("  %-24s %-10s %-11s %-10s %10s  %-7s  %6.2fx  %2d/%d  %8.2g  %s\n",
+            text += Text("  %-24s %-10s %-11s %-10s %10s  %-7s  %-7s  %6.2fx  %-12s  %+6.2f%%  "
+                         "%8s  %-6s  %8.2g  %s\n",
                          measurement.name.c_str(),
                          measurement.precision.c_str(),
                          measurement.shape.c_str(),
                          measurement.route.c_str(),
                          "unresolved",
+                         "-",
                          baseline.c_str(),
                          measurement.spread,
-                         measurement.cleanPasses,
-                         report.options.passes,
+                         band.c_str(),
+                         100.0 * measurement.ratioDrift,
+                         "-",
+                         rounds.c_str(),
                          measurement.documentedBound,
                          "caller kernel, subtracted");
             continue;
         }
 
-        text += Text("  %-24s %-10s %-11s %-10s %10.3f  %-7s  %6.2fx  %2d/%d  %8.2g  %s\n",
+        text += Text("  %-24s %-10s %-11s %-10s %10.3f  %8.3f  %-7s  %6.2fx  %-12s  %+6.2f%%  "
+                     "%8s  %-6s  %8.2g  %s\n",
                      measurement.name.c_str(),
                      measurement.precision.c_str(),
                      measurement.shape.c_str(),
                      measurement.route.c_str(),
                      measurement.nsPerArgument,
+                     measurement.nsPerArgumentMax,
                      baseline.c_str(),
                      measurement.spread,
-                     measurement.cleanPasses,
-                     report.options.passes,
+                     band.c_str(),
+                     100.0 * measurement.ratioDrift,
+                     peak.c_str(),
+                     rounds.c_str(),
                      measurement.documentedBound,
                      measurement.launchedByLibrary ? "library kernel launched"
                                                    : "caller kernel, subtracted");
     }
 
+    text += Text("\n  the ns/arg column is the lower quartile of this entry's %d paired rounds, as "
+                 "the\n  reference entry's own lower-quartile figure scaled by this entry's "
+                 "lower-quartile ratio\n  to it ('%s', whose own ratio is exactly 1.000 and whose "
+                 "drift is exactly 0.00%%); 'hi' is\n  the same at the upper quartile of the same "
+                 "rounds and 'spread' is hi over lo, so the two\n  ends of a row come from one "
+                 "distribution. The vs-ref band is that ratio over the middle\n  half of the "
+                 "rounds, and drift is how far it moved between the run's first and second\n  "
+                 "half — a row whose drift is larger than the resolution below is a row whose two\n"
+                 "  entries do not carry this card's clock alike. 'peak ns' is the fastest single "
+                 "round the\n  entry was ever seen in: a raw figure under no anchor, the entry's own "
+                 "floor and not\n  a bound on the columns beside it, which are anchored to the "
+                 "reference entry — and a\n  round whose cell was zero is left out of it, because "
+                 "such a cell is the floor a\n  subtracted difference was held at rather than a "
+                 "cost. 'rounds' is how many of the\n  run's pooled rounds the row rests on, and "
+                 "every measured row rests on every one of\n  them — no round and no pass is "
+                 "dropped for it.\n",
+                 report.pairedRounds,
+                 report.referenceEntry.empty() ? "the reference entry" : report.referenceEntry.c_str());
     text += "\n  the minus column is the second half of a subtraction: the same caller-shaped "
-            "kernel with\n  the call removed and the traffic kept, in the round the figure came "
-            "from. A launched row\n  has no minus column because nothing was subtracted from it. "
-            "The ns/arg column is the\n  difference between the region that held the call and "
-            "that figure, and it reads\n  unresolved for an in-kernel row whose difference did "
-            "not clear its own baseline.\n";
+            "kernel with\n  the call removed and the traffic kept, timed in the same round as the "
+            "half it is\n  subtracted from, so the difference is formed inside that round and a "
+            "drift common to\n  the round cancels in it. Both columns are then aggregated over "
+            "the same rounds. A\n  launched row has no minus column because nothing was "
+            "subtracted from it. The ns/arg\n  column reads unresolved for an in-kernel row whose "
+            "difference did not clear its own\n  baseline.\n";
 
     if (!report.unoffered.empty())
     {
@@ -2273,6 +3265,38 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
         return rows;
     };
 
+    /// The static fallback's own section, which is what a consumer is left with
+    /// when the run refused to order a shape.
+    ///
+    /// It is printed on a refusal and on nothing else, under a heading that says
+    /// what it is, and its basis line begins with the words that say where the
+    /// name came from: the library's own tables, counted. A shape the run did order
+    /// has a measurement instead and gets a line saying no fallback is needed,
+    /// which keeps the two kinds of answer from ever being read as one.
+    const auto AppendFallback = [&text](const DeviceProbeRanking& ranking) {
+        if (ranking.verdict == DeviceProbeVerdict::kRecommend)
+        {
+            text += "\n  static fallback: none needed, this shape was ordered by measurement\n";
+            return;
+        }
+
+        text += "\n  static fallback — a heuristic, not a measurement\n";
+
+        if (ranking.heuristicEntry.empty())
+        {
+            text += "    this shape's rows carry nothing the library's own tables can count, so no "
+                    "default\n    is named for it\n";
+            return;
+        }
+
+        text += Text("    default: %s\n", ranking.heuristicEntry.c_str());
+        text += Text("    basis: %s\n", ranking.heuristicBasis.c_str());
+        text += "    this name is a property of the library's own entry book and degree tables for "
+                "this\n    device, this build and this shape. It is not a measurement of "
+                "anything, it took no\n    part in the run above, and it is not to be read beside "
+                "a measured figure.\n";
+    };
+
     for (const DeviceProbeClass& clause : report.classes)
     {
         text += Text("\nclass %s\n", clause.precision.c_str());
@@ -2344,19 +3368,53 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
                     text += Text("    set aside: %s\n", entry.c_str());
                 }
 
+                text += Text("    verdict: %s\n",
+                             ranking.verdict != DeviceProbeVerdict::kRecommend ? "CANNOT DETERMINE"
+                                                                               : "RECOMMEND");
                 text += Text("    confidence: %s\n", ranking.confidence.c_str());
+                AppendFallback(ranking);
                 continue;
             }
 
             text += Text("    fastest measured: %s\n", ranking.fastestOverall.c_str());
 
-            if (ranking.resolution > 0.0)
+            // A resolution is a distance between two order statistics of the run's
+            // ratios, and a run with fewer paired rounds than a quartile band needs
+            // has none: the widest band it showed is a band of two or three
+            // readings, printed beside a refusal for being too short, and a reader
+            // would take it for what this run can order. The field is not printed
+            // there, and the line says which count is missing instead.
+            if (ranking.resolution > 0.0 &&
+                ranking.rounds >= static_cast<int>(kMinimumPairedRounds))
             {
-                text += Text("    resolution: entries closer than %.2f%% cannot be ordered on this "
-                             "run. The\n                number is measured, not assumed: it is the "
-                             "larger of the canary's\n                widest admitted spread and "
-                             "the leader's own spread across its clean\n                passes.\n",
-                             100.0 * ranking.resolution);
+                // The canary is named beside the resolution only where it was read.
+                // A run whose canary never ran has no spread to put there, and a
+                // zero printed in this line would read as a still machine.
+                const std::string canaryContext =
+                    anyCanaryMeasured
+                        ? Text("The run's canary spread, %.2f%%,\n                is context beside "
+                               "it and is not what sets it.\n",
+                               report.canarySpread)
+                        : std::string("No pass took a canary reading on this run,\n                "
+                                      "so there is no canary spread beside it.\n");
+
+                text += Text("    resolution: entries whose within-round ratio band is narrower "
+                             "than %.2f%%\n                cannot be ordered on this run. The "
+                             "number is measured, not assumed: it\n                is the widest "
+                             "ratio band this shape showed, taken over the leader\n"
+                             "                against each rival and over each entry against the "
+                             "reference, all of\n                them ratios formed inside a "
+                             "round. %s",
+                             100.0 * ranking.resolution,
+                             canaryContext.c_str());
+            } else if (ranking.rounds < static_cast<int>(kMinimumPairedRounds))
+            {
+                text += Text("    resolution: not measurable on this run: it took %d paired round(s) "
+                             "and a lower\n                and an upper quartile need %zu of them, "
+                             "so the widest band it showed is not\n                a resolution and "
+                             "is not printed as one.\n",
+                             ranking.rounds,
+                             kMinimumPairedRounds);
             } else
             {
                 text += "    resolution: not measurable on this run, so this shape is not ordered\n";
@@ -2462,6 +3520,7 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
             }
 
             text += Text("    confidence: %s\n", ranking.confidence.c_str());
+            AppendFallback(ranking);
         }
     }
 

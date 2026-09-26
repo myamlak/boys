@@ -21,30 +21,59 @@
 
 namespace {
 
-void Usage() {
-    std::fputs("boys device probe — which CUDA entry is cheapest on the card this runs on\n"
-               "\n"
-               "usage: boys-device-probe [options]\n"
-               "\n"
-               "  --device=N         ordinal of the device to measure (default 0)\n"
-               "  --count=N          arguments per call (default 262144)\n"
-               "  --nmax=N           highest order any argument carries, 1..32\n"
-               "                     (default 32)\n"
-               "  --xrange=LO,HI     log-uniform argument range (default 1e-3,40)\n"
-               "  --seed=N           workload generator seed (default 47)\n"
-               "  --passes=N         timed passes (default 3)\n"
-               "  --rounds=N         rounds per pass (default 4)\n"
-               "  --reps=N           launches inside one timed region (default 32)\n"
-               "  --only=A,B,C       measure only these entries, named as the report\n"
-               "                     prints them (default: every entry this build\n"
-               "                     offers)\n"
-               "  --help             this text\n"
-               "\n"
-               "Transfer and host submission are outside the timed region by design: the\n"
-               "buffers are uploaded once and the launches are amortised over --reps. The\n"
-               "report says what it could and could not separate on this card, and names\n"
-               "the card.\n",
-               stdout);
+/// A double as the help prints it: enough to name the value, no more.
+std::string Number(double value) {
+    char buffer[32];
+
+    std::snprintf(buffer, sizeof buffer, "%g", value);
+
+    return buffer;
+}
+
+/// The usage text. Every default in it is read from the options a run starts
+/// from, so the text cannot name a default the program does not have.
+void Usage(const boys::DeviceProbeOptions& defaults) {
+    const std::string device = std::to_string(defaults.device);
+    const std::string count = std::to_string(defaults.count);
+    const std::string nmax = std::to_string(defaults.nmax);
+    const std::string xLo = Number(defaults.xLo);
+    const std::string xHi = Number(defaults.xHi);
+    const std::string seed = std::to_string(defaults.seed);
+    const std::string passes = std::to_string(defaults.passes);
+    const std::string rounds = std::to_string(defaults.rounds);
+    const std::string reps = std::to_string(defaults.repetitions);
+
+    std::printf("boys device probe — which CUDA entry is cheapest on the card this runs on\n"
+                "\n"
+                "usage: boys-device-probe [options]\n"
+                "\n"
+                "  --device=N         ordinal of the device to measure (default %s)\n"
+                "  --count=N          arguments per call (default %s)\n"
+                "  --nmax=N           highest order any argument carries, 1..32\n"
+                "                     (default %s)\n"
+                "  --xrange=LO,HI     log-uniform argument range (default %s,%s)\n"
+                "  --seed=N           workload generator seed (default %s)\n"
+                "  --passes=N         timed passes (default %s)\n"
+                "  --rounds=N         rounds per pass (default %s)\n"
+                "  --reps=N           launches inside one timed region (default %s)\n"
+                "  --only=A,B,C       measure only these entries, named as the report\n"
+                "                     prints them (default: every entry this build\n"
+                "                     offers)\n"
+                "  --help             this text\n"
+                "\n"
+                "Transfer and host submission are outside the timed region by design: the\n"
+                "buffers are uploaded once and the launches are amortised over --reps. The\n"
+                "report says what it could and could not separate on this card, and names\n"
+                "the card.\n",
+                device.c_str(),
+                count.c_str(),
+                nmax.c_str(),
+                xLo.c_str(),
+                xHi.c_str(),
+                seed.c_str(),
+                passes.c_str(),
+                rounds.c_str(),
+                reps.c_str());
 }
 
 /// A comma-separated list, split into the names the probe takes.
@@ -86,7 +115,7 @@ int main(int argc, char** argv) {
 
         if (arg == "--help")
         {
-            Usage();
+            Usage(options);
             return 0;
         } else if (arg.rfind("--device=", 0) == 0)
         {
