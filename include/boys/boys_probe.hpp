@@ -712,7 +712,17 @@ struct OptionProbeReport {
     std::vector<std::string> inseparable;
 
     /// One line naming how far the recommendation can be trusted, built from
-    /// the same numbers the verdict is.
+    /// the same numbers the verdict is, and carrying the run's clock check
+    /// whatever the verdict: how far the ratio of the widest-moving pair of
+    /// options travelled between the first and second half of the run, beside
+    /// the resolution that figure is read against, with a warning when it went
+    /// past it. The check is made rather than assumed because options can draw
+    /// the clock differently — a wider vector register is a lower frequency —
+    /// so the line also says whether every option this comparison put against
+    /// another ran the same arithmetic route, which is what decides whether two
+    /// register widths were ever compared. A run that ordered nothing still
+    /// carries it, so a reader can tell a clock that wandered from options that
+    /// were too close to separate.
     std::string confidence = "not measured";
 
     /// The option a static reading of the library's own tables picks, when the

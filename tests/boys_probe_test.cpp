@@ -504,6 +504,59 @@ TEST(ProbeTest, TheTextStatesTheResolution) {
     }
 }
 
+// The clock check, made rather than assumed, and made from the run's own rows.
+// Wider vector registers draw a lower clock, so two options that do not run one
+// arithmetic can be exposed to the machine differently; the report says which
+// case it measured instead of implying that an ordering holds at any clock. It
+// states how far the widest-moving pair's ratio travelled between the run's
+// halves beside the resolution that figure is read against, and whether every
+// option the comparison put against another ran the same arithmetic route.
+TEST(ProbeTest, TheClockCheckIsReadFromTheRunsOwnRows) {
+    const OptionProbeReport report = boys::RunOptionProbe(Timed());
+    const std::string text = boys::FormatOptionProbe(report);
+
+    std::size_t inClass = 0;
+    std::string route;
+    bool oneRoute = true;
+
+    for (const OptionProbeMeasurement& measurement : report.measurements) {
+        if (!measurement.measured || measurement.precision != boys::OptionPrecision::kFp64) {
+            continue;
+        }
+
+        if (inClass == 0) {
+            route = measurement.arithmetic;
+        } else if (measurement.arithmetic != route) {
+            oneRoute = false;
+        }
+
+        ++inClass;
+    }
+
+    if (report.pairedRounds < 4 || inClass < 2) {
+        EXPECT_EQ(report.confidence.find("No pair's ratio moved"), std::string::npos)
+            << report.confidence;
+        return;
+    }
+
+    const bool travelled = report.confidence.find("No pair's ratio moved") != std::string::npos;
+    const bool warned = report.confidence.find("WARNING: the pair") != std::string::npos;
+
+    EXPECT_NE(travelled, warned) << report.confidence;
+    EXPECT_NE(report.confidence.find("widest was"), std::string::npos) << report.confidence;
+
+    const std::string expected =
+        oneRoute ? "runs the same arithmetic" : "does not run one arithmetic";
+    EXPECT_NE(report.confidence.find(expected), std::string::npos)
+        << (oneRoute ? route : std::string("the class mixes routes")) << ": "
+        << report.confidence;
+    EXPECT_NE(text.find(expected), std::string::npos);
+
+    if (oneRoute) {
+        EXPECT_NE(report.confidence.find(route), std::string::npos) << report.confidence;
+    }
+}
+
 // A band is a lower and an upper quartile, and two rounds have neither: the
 // probe refuses rather than reporting a width it did not measure. The refusal
 // names the round count it needs, and it leaves the caller the static fallback —
@@ -636,6 +689,13 @@ TEST(ProbeTest, AMeasuredButUnorderedRunLabelsItsFallbackToo) {
     const std::string row = RowLine(text, report.heuristicOption);
     ASSERT_FALSE(row.empty());
     EXPECT_EQ(row.find("not measured"), std::string::npos) << row;
+
+    // A refusal is where the clock check earns its keep: it is the line that
+    // tells a reader whether the class's bands were wide because the clock
+    // wandered or because the options are close, so a refusal carries it too.
+    const bool clocked = report.confidence.find("No pair's ratio moved") != std::string::npos ||
+                         report.confidence.find("WARNING: the pair") != std::string::npos;
+    EXPECT_TRUE(clocked) << report.confidence;
 }
 
 // Whatever the machine did, the protocol's bookkeeping adds up: every pass was

@@ -1969,6 +1969,65 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
     // number bars nothing.
     report.resolution = doubles.widestBand;
 
+    // The clock check, done rather than assumed, and attached to whatever the
+    // verdict turns out to be. A pair whose ratio moves between the run's halves
+    // is a pair the two options do not carry a decaying clock alike, and the two
+    // differ in how exposed they are to the clock; a report that ordered without
+    // saying so would imply the ordering holds at any clock. A pair whose ratio
+    // held still inside the run's own resolution puts no such caveat on the
+    // ordering. Which clock an option draws is a property of the registers it
+    // runs in, so the clause also says whether the class this ordering compares
+    // put two different arithmetic routes - two vector register widths - against
+    // each other, read from the run's own rows rather than assumed.
+    const auto clock_clause = [&]() -> std::string {
+        if (doubles.members.size() < 2 || report.pairedRounds < kMinimumPairedRounds)
+        {
+            return std::string();
+        }
+
+        std::string clause;
+
+        if (std::abs(doubles.widestDrift) > report.resolution)
+        {
+            clause = Text(". WARNING: the pair %s moved %.1f%% between the run's first and second "
+                          "half of rounds, beyond the %.2f%% this run can order, so those two "
+                          "options are not equally exposed to this machine's clock and the ordering "
+                          "above is a property of this run's clock as well as of the options",
+                          doubles.driftPair.c_str(), 100.0 * doubles.widestDrift,
+                          100.0 * report.resolution);
+        } else
+        {
+            clause = Text(". No pair's ratio moved between the run's halves by more than the %.2f%% "
+                          "this run can order (the widest was %s at %.1f%%), so no measured pair was "
+                          "more exposed to the clock's drift than the ordering's own precision",
+                          100.0 * report.resolution, doubles.driftPair.c_str(),
+                          100.0 * doubles.widestDrift);
+        }
+
+        const std::string& route = doubles.members.front()->arithmetic;
+        const bool one_route = std::all_of(
+            doubles.members.begin(), doubles.members.end(),
+            [&route](const OptionProbeMeasurement* member) { return member->arithmetic == route; });
+
+        if (one_route)
+        {
+            clause += Text(". Every option this comparison puts against another runs the same "
+                           "arithmetic - %s for all %zu of them - so no pair here sets a wider vector "
+                           "register against a narrower one, and the frequency a wider register draws "
+                           "is not a difference between these options: what this run measured, above, "
+                           "is what is reported in place of assuming it",
+                           route.c_str(), doubles.members.size());
+        } else
+        {
+            clause += Text(". This class does not run one arithmetic throughout, so a pair of it may "
+                           "set a wider vector register against a narrower one and the two may draw "
+                           "different clocks; the drift above is the whole of what this run measured "
+                           "about that, and nothing here sets it aside");
+        }
+
+        return clause;
+    };
+
     if (!doubles.within.empty() || !doubles.ahead.empty())
     {
         std::vector<std::string> unplaced = doubles.within;
@@ -1992,7 +2051,8 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
                  "could not be ordered against '%s' over the %d paired rounds; the widest band the "
                  "class showed was %.2f%%",
                  unplaced.size(), doubles.members.size(), leader->name.c_str(),
-                 report.pairedRounds, 100.0 * report.resolution));
+                 report.pairedRounds, 100.0 * report.resolution) +
+                clock_clause());
         return;
     }
 
@@ -2034,31 +2094,8 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
                      "precision, so there is no rival of it to fall inside a resolution";
     }
 
-    // The clock check, done rather than assumed. A pair whose ratio moves between
-    // the run's halves is a pair that does not carry a decaying clock alike, and
-    // the two options of such a pair differ in how exposed they are to the
-    // clock; the report says so instead of implying the ordering holds at any
-    // clock. A pair whose ratio held still within the run's own resolution puts
-    // no such caveat on the ordering.
-    if (doubles.nearest == nullptr)
-    {
-        // Nothing to say: no rival was measured, so no pair was followed.
-    } else if (std::abs(doubles.widestDrift) > report.resolution)
-    {
-        confidence += Text(
-            ". WARNING: the pair %s moved %.1f%% between the run's first and second half of "
-            "rounds, beyond the %.2f%% this run can order, so those two options are not equally "
-            "exposed to this machine's clock and the ordering above is a property of this run's "
-            "clock as well as of the options",
-            doubles.driftPair.c_str(), 100.0 * doubles.widestDrift, 100.0 * report.resolution);
-    } else
-    {
-        confidence += Text(
-            ". No pair's ratio moved between the run's halves by more than the %.2f%% this run can "
-            "order (the widest was %s at %.1f%%), so no measured pair was more exposed to the "
-            "clock's drift than the ordering's own precision",
-            100.0 * report.resolution, doubles.driftPair.c_str(), 100.0 * doubles.widestDrift);
-    }
+    // The clock check, already built above so that a refusal carries it too.
+    confidence += clock_clause();
 
     if (leader->bound > report.referenceBound)
     {
