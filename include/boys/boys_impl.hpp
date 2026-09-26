@@ -1459,7 +1459,7 @@ template <double kAccuracyMultiplier, FitRoute kRoute, EvalScheme kScheme, BoysR
 double FloatBatchRegionASeedAtRung(int order, double x) noexcept {
     if constexpr (kRoute == FitRoute::kRationalMinimax)
     {
-        if (x >= RationalFit32::kRegionAFitsFrom)
+        if (x >= RationalFit32<>::kRegionAFitsFrom)
         {
             static constexpr detail::RationalRegionAPairs kPairsA =
                 detail::RationalRegionASeedDegrees<kAccuracyMultiplier, kRole>();
