@@ -200,6 +200,38 @@ const char* QuestionAsked(ProbeQuestion question) {
     }
 }
 
+/// The sentence a class opens with: what a class is, and what a ranking inside
+/// it therefore ranks.
+///
+/// The class is one precision, and the reason it is keyed on precision rather
+/// than on the accuracy a row achieves is the reason this sentence exists: a
+/// caller has already chosen fp64, fp32 or fp16 from the accuracy their
+/// calculation needs, so a row that trades accuracy for speed is a faster way to
+/// compute the precision they chose rather than a different precision. The
+/// bounds the rows document are then their own, and whether one class holds two
+/// of them is a fact about the rows, so it is read off them rather than assumed.
+std::string PrecisionNote(const std::string& precision, bool oneBound) {
+    std::string text = Text("every entry in this class runs %s. The class is one precision and not "
+                            "one accuracy: precision is the choice the caller made from the "
+                            "accuracy their calculation needs, so it is not traded for speed "
+                            "here, and no entry of this class is ordered against an entry of "
+                            "another. Each shape is ranked on its own, so the winner of a shape "
+                            "is the fastest %s entry of that shape at the bound its own row "
+                            "states, and the bound column above is that figure.",
+                            precision.c_str(),
+                            precision.c_str());
+
+    text += oneBound
+                ? std::string(" The rows of this class document one bound between them, so each "
+                              "of its rankings is at one accuracy.")
+                : std::string(" The rows of this class do not document one bound between them: a "
+                              "row of a looser bound is a faster way to compute this precision at "
+                              "the accuracy that row names, and both stand in the one shape "
+                              "ranking, which is what makes that ranking a ranking by cost.");
+
+    return text;
+}
+
 /// The option table, built from the library rather than from a literal list of
 /// what this build carries: the fp16 half of it is present only when the fp16
 /// seam is open, and the report says so instead of quietly offering fewer
@@ -663,14 +695,20 @@ bool RunRepetitionControl(const EntryInfo& info,
 }
 
 // ---------------------------------------------------------------------------
-// The conclusion for one question class.
+// The conclusion for one question shape of one precision.
 // ---------------------------------------------------------------------------
 
-/// Folds one class's live measurements into a verdict, on the CPU probe's rule:
+/// Folds one shape's live measurements into a verdict, on the CPU probe's rule:
 /// the resolution is what the run measured - the larger of the instrument's
 /// widest admitted spread and the leader's own spread across its clean passes -
 /// and a rival inside it is named rather than ordered.
-void Conclude(DeviceProbeClass& clause,
+///
+/// Every row handed in is already of one precision and one question shape, which
+/// is what makes them comparable at all. The bounds those rows document are
+/// columns of their own rows and are not what this orders on: two rows at
+/// different bounds are still two ways to compute the precision the caller
+/// chose, which is why the class holds them together.
+void Conclude(DeviceProbeRanking& clause,
               const std::vector<DeviceProbeMeasurement*>& live,
               double canarySpreadPercent,
               int cleanPasses,
@@ -705,15 +743,16 @@ void Conclude(DeviceProbeClass& clause,
 
     if (ordered.empty())
     {
-        clause.reason = Text("no entry of this class produced a figure that resolved above the "
+        clause.reason = Text("no entry of this shape produced a figure that resolved above the "
                              "%s it was measured against and held across its repetition control, "
                              "so there is nothing to order",
                              live.empty() ? "instrument" : "kernel without the call");
         clause.confidence =
-            Text("CANNOT DETERMINE: %zu of %zu entries in this class were measured and none "
-                 "resolved",
-                 ordered.size(),
-                 ordered.size());
+            live.empty()
+                ? std::string("CANNOT DETERMINE: no entry of this shape produced a figure at all")
+                : Text("CANNOT DETERMINE: %zu %s of this shape measured and none resolved",
+                       live.size(),
+                       live.size() == 1 ? "entry" : "entries");
         return;
     }
 
@@ -728,7 +767,7 @@ void Conclude(DeviceProbeClass& clause,
 
     if (cleanPasses < 2)
     {
-        clause.reason = Text("'%s' is the fastest entry of this class (%.3f ns/argument), but "
+        clause.reason = Text("'%s' is the fastest entry of this shape (%.3f ns/argument), but "
                              "only %d of %d passes was admitted, and how far two entries can be "
                              "ordered apart rests on how the admitted passes disagreed; a second "
                              "pass the canary vouches for is what this needs",
@@ -747,18 +786,35 @@ void Conclude(DeviceProbeClass& clause,
     {
         // A per-argument figure of zero is not a fast entry: it is a timed region
         // whose device time rounded away, which happens when the workload is too
-        // small for the clock that measured it. Ordering a class on that would
+        // small for the clock that measured it. Ordering a shape on that would
         // rank the workload rather than the arithmetic.
-        clause.reason = Text("no entry of this class produced a figure above zero: at this "
+        clause.reason = Text("no entry of this shape produced a figure above zero: at this "
                              "workload and this repetition count the timed regions' device time "
-                             "rounded away, so the class is not ordered. Raising the argument "
+                             "rounded away, so the shape is not ordered. Raising the argument "
                              "count or the repetition count is what this needs.");
-        clause.confidence = "CANNOT DETERMINE: the fastest figure in this class is zero, which is "
+        clause.confidence = "CANNOT DETERMINE: the fastest figure in this shape is zero, which is "
                             "the timer's resolution rather than a cost";
         return;
     }
 
     clause.resolution = std::max(canarySpreadPercent / 100.0, leader->spread - 1.0);
+
+    if (ordered.size() < 2)
+    {
+        // One entry is not a ranking. What the one figure says is that the entry
+        // is the fastest of the one entry this run measured of its shape; what it
+        // does not say is that the entry beats anything, and shipping it as a
+        // recommendation would be shipping a field of one as a result.
+        clause.reason = Text("'%s' is the fastest entry of this shape (%.3f ns/argument), but it "
+                             "is the only entry of it this run could order, so there is nothing to "
+                             "order it against: a ranking needs a second entry of the same shape "
+                             "and precision, and this run has one",
+                             leader->name.c_str(),
+                             leader->nsPerArgument);
+        clause.confidence = Text("CANNOT DETERMINE: one entry of this shape in this class could be "
+                                 "ordered, and one entry is not a ranking");
+        return;
+    }
 
     // Each rival is judged against its own spread as well as the leader's: a row
     // whose passes wandered 40% is not placed by a run that can order 2%, however
@@ -791,7 +847,7 @@ void Conclude(DeviceProbeClass& clause,
     {
         const InseparableRow& nearest = inseparable.front();
 
-        clause.reason = Text("'%s' is the fastest entry of this class (%.3f ns/argument), but "
+        clause.reason = Text("'%s' is the fastest entry of this shape (%.3f ns/argument), but "
                              "'%s' (%.3f ns/argument) is %.2f%% behind it, inside the %.2f%% "
                              "this run can order; the probe does not order noise",
                              leader->name.c_str(),
@@ -800,7 +856,7 @@ void Conclude(DeviceProbeClass& clause,
                              nearest.rival->nsPerArgument,
                              100.0 * (nearest.rival->nsPerArgument / leader->nsPerArgument - 1.0),
                              100.0 * nearest.threshold);
-        clause.confidence = Text("CANNOT DETERMINE: %zu of %zu entries in this class are inside "
+        clause.confidence = Text("CANNOT DETERMINE: %zu of %zu entries of this shape are inside "
                                  "the %.2f%% this run can order, which is what the canary and the "
                                  "spread of the two rows measured",
                                  inseparable.size(),
@@ -839,27 +895,12 @@ void Conclude(DeviceProbeClass& clause,
         }
     }
 
+    // A ranking needs two entries, and the one-entry case returned above, so a
+    // rival exists here: this is the nearest of them.
     clause.verdict = DeviceProbeVerdict::kRecommend;
     clause.recommended = leader->name;
 
-    if (nearest == nullptr)
-    {
-        clause.reason = Text("'%s' is the fastest entry of this class: %.3f ns/argument over %d "
-                             "admitted of %d passes, spread %.2fx",
-                             leader->name.c_str(),
-                             leader->nsPerArgument,
-                             leader->cleanPasses,
-                             totalPasses,
-                             leader->spread);
-        clause.confidence = Text("HIGH: it is the only entry of this class this run measured, so "
-                                 "there is nothing in the class to order it against (canary spread "
-                                 "%.2f%%, its own passes spread %.2f%%)",
-                                 canarySpreadPercent,
-                                 100.0 * (leader->spread - 1.0));
-        return;
-    }
-
-    clause.reason = Text("'%s' is the fastest entry of this class: %.3f ns/argument over %d "
+    clause.reason = Text("'%s' is the fastest entry of this shape: %.3f ns/argument over %d "
                          "admitted of %d passes, spread %.2fx",
                          leader->name.c_str(),
                          leader->nsPerArgument,
@@ -867,7 +908,7 @@ void Conclude(DeviceProbeClass& clause,
                          totalPasses,
                          leader->spread);
     clause.confidence =
-        Text("HIGH: the nearest rival in this class is at least %.2f%% behind, beyond the %.2f%% "
+        Text("HIGH: the nearest rival in this shape is at least %.2f%% behind, beyond the %.2f%% "
              "this pair can be ordered at (canary spread %.2f%%, leader's own passes "
              "spread %.2f%%, the rival's %.2f%%)",
              100.0 * (nearest->nsPerArgument / leader->nsPerArgument - 1.0),
@@ -1412,35 +1453,100 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
         (void)BoysCudaProbeSynchronize();
     }
 
-    // --- One conclusion per question class ----------------------------------
+    // --- The classes, one per precision --------------------------------------
     //
     // After the controls, because a row the controls set aside is not ranked, and
     // run to a fixed point: every row a class would recommend is put through the
     // repetition control first, and if it does not agree the class falls to the
     // next row, which is checked in its turn.
+    //
+    // A class is a precision and holds one ranking per question shape. The class
+    // set comes from the table of entries this run was asked for rather than from
+    // the rows that happened to measure, so a shape whose every row failed to
+    // measure is still reported as a shape of the class with nothing in it, and a
+    // class the caller did not ask about is not invented.
     const auto ConcludeClasses = [&]() {
         report.classes.clear();
 
-        for (int q = 0; q < static_cast<int>(ProbeQuestion::kCount); ++q)
+        for (const EntryInfo& info : entries)
         {
-            const auto question = static_cast<ProbeQuestion>(q);
+            std::size_t classAt = report.classes.size();
 
-            DeviceProbeClass clause;
-            clause.question = QuestionName(question);
-            clause.asked = QuestionAsked(question);
+            for (std::size_t c = 0; c < report.classes.size(); ++c)
+            {
+                if (report.classes[c].precision == info.precision)
+                {
+                    classAt = c;
+                }
+            }
+
+            if (classAt == report.classes.size())
+            {
+                DeviceProbeClass fresh;
+                fresh.precision = info.precision;
+                report.classes.push_back(fresh);
+
+                // Whether this class holds one bound or two is a fact about its
+                // rows, so it is read off them; the sentence says which, and a
+                // class whose rows document one bound between them says so rather
+                // than carrying the other sentence as a caution it does not need.
+                bool oneBound = true;
+                double first = 0.0;
+                bool haveFirst = false;
+
+                for (const EntryInfo& other : entries)
+                {
+                    if (other.precision != info.precision)
+                    {
+                        continue;
+                    }
+
+                    if (!haveFirst)
+                    {
+                        first = other.bound;
+                        haveFirst = true;
+                    } else if (other.bound != first)
+                    {
+                        oneBound = false;
+                    }
+                }
+
+                report.classes[classAt].note = PrecisionNote(info.precision, oneBound);
+            }
+
+            const std::string question = QuestionName(info.question);
+            bool haveShape = false;
+
+            for (const DeviceProbeRanking& ranking : report.classes[classAt].rankings)
+            {
+                if (ranking.question == question)
+                {
+                    haveShape = true;
+                }
+            }
+
+            if (haveShape)
+            {
+                continue;
+            }
+
+            DeviceProbeRanking ranking;
+            ranking.question = question;
+            ranking.asked = QuestionAsked(info.question);
 
             std::vector<DeviceProbeMeasurement*> live;
 
             for (DeviceProbeMeasurement& measurement : report.measurements)
             {
-                if (measurement.measured && measurement.question == clause.question)
+                if (measurement.measured && measurement.precision == info.precision &&
+                    measurement.question == question)
                 {
                     live.push_back(&measurement);
                 }
             }
 
-            Conclude(clause, live, report.canarySpread, report.cleanPasses, clamped.passes);
-            report.classes.push_back(clause);
+            Conclude(ranking, live, report.canarySpread, report.cleanPasses, clamped.passes);
+            report.classes[classAt].rankings.push_back(ranking);
         }
     };
 
@@ -1622,9 +1728,9 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
 
     // --- The conclusions, to a fixed point -----------------------------------
     //
-    // Every row the report names as a class's fastest or as its recommendation is
+    // Every row the report names as a shape's fastest or as its recommendation is
     // put through the repetition control before the report ships, and a row that
-    // does not agree is set aside and the class falls to the next. Looped,
+    // does not agree is set aside and the shape falls to the next. Looped,
     // because setting a row aside can name a new leader, which then has to be
     // checked in its turn. Bounded by the number of rows: each round checks at
     // least one row not checked before, and the loop leaves when there is none.
@@ -1636,15 +1742,18 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
 
         for (const DeviceProbeClass& clause : report.classes)
         {
-            for (DeviceProbeMeasurement& measurement : report.measurements)
+            for (const DeviceProbeRanking& ranking : clause.rankings)
             {
-                const bool named = !clause.recommended.empty()
-                                       ? measurement.name == clause.recommended
-                                       : measurement.name == clause.fastestOverall;
-
-                if (named && !measurement.repetitionChecked)
+                for (DeviceProbeMeasurement& measurement : report.measurements)
                 {
-                    unchecked = &measurement;
+                    const bool named = !ranking.recommended.empty()
+                                           ? measurement.name == ranking.recommended
+                                           : measurement.name == ranking.fastestOverall;
+
+                    if (named && !measurement.repetitionChecked)
+                    {
+                        unchecked = &measurement;
+                    }
                 }
             }
         }
@@ -1882,10 +1991,13 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
         }
     }
 
-    text += "\n  the bound column is what each entry's lane documents at full accuracy, read "
-            "from the\n  documentation and not measured here. What a lane delivers on this card "
-            "is the accuracy\n  gate's business; a faster precision is not a faster option at "
-            "the same accuracy, and\n  nothing below orders two precisions as though it were.\n";
+    text += "\n  the bound column is what each entry's lane documents at full accuracy, read from "
+            "the\n  documentation and not measured here. What a lane delivers on this card is the "
+            "accuracy\n  gate's business. The bounds in that column are not all the same, and a "
+            "row that carries a\n  looser one is a row that bought speed with accuracy: the "
+            "rankings below are per precision\n  and per question shape, so no row is ordered "
+            "against a row of another precision, and the\n  winner of a shape is the fastest "
+            "entry of that shape at the bound its own row states.\n";
 
     // --- The controls --------------------------------------------------------
     //
@@ -1951,94 +2063,243 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
     AppendControl("subtraction control", report.deviceCallControl, false);
 
     // --- The rankings --------------------------------------------------------
-    for (const DeviceProbeClass& clause : report.classes)
+    //
+    // One class per precision and one ranking per question shape inside it, which
+    // is the whole of the rule the table above is read under: precision is the
+    // choice the caller has already made from the accuracy their calculation
+    // needs and is not traded for speed, and two shapes have not produced the
+    // same amount of output for the same arguments.
+    if (!report.classes.empty())
     {
-        text += Text("\nranking - %s\n", clause.question.c_str());
-        text += Text("  every entry here was asked for %s\n", clause.asked.c_str());
+        std::string precisions;
 
-        if (clause.fastestOverall.empty())
+        for (const DeviceProbeClass& clause : report.classes)
         {
-            text += "  no entry of this class produced a figure\n";
-            text += Text("  reason: %s\n", clause.reason.c_str());
-            text += Text("  confidence: %s\n", clause.confidence.c_str());
-            continue;
+            if (!precisions.empty())
+            {
+                precisions += ", ";
+            }
+
+            precisions += clause.precision;
         }
 
-        text += Text("  fastest measured: %s\n", clause.fastestOverall.c_str());
+        text += Text("\nrankings - one class per precision, and one ranking per question shape "
+                     "inside a class.\n  This run's option table carries %s: no entry of one class "
+                     "is ordered against an entry of\n  another, and no entry of one shape is "
+                     "ordered against an entry of another.\n",
+                     precisions.c_str());
+    }
 
-        if (clause.resolution > 0.0)
-        {
-            text += Text("  resolution: entries closer than %.2f%% cannot be ordered on this run. "
-                         "The number\n              is measured, not assumed: it is the larger of "
-                         "the canary's widest\n              admitted spread and the leader's own "
-                         "spread across its clean passes.\n",
-                         100.0 * clause.resolution);
-        } else
-        {
-            text += "  resolution: not measurable on this run, so this class is not ordered\n";
-        }
-
-        bool looserThanAnotherLane = false;
-        double recommendedBound = 0.0;
+    /// The rows of the option table that stand in one ranking: the ones of that
+    /// class's precision whose question is that ranking's. It is the rows the
+    /// table lists, measured or not, because what a row documents is a fact about
+    /// the row whether or not this run got a figure out of it.
+    const auto ShapeRows = [&report](const DeviceProbeClass& clause,
+                                     const DeviceProbeRanking& ranking) {
+        std::vector<const DeviceProbeMeasurement*> rows;
 
         for (const DeviceProbeMeasurement& measurement : report.measurements)
         {
-            if (measurement.name != clause.recommended)
+            if (measurement.precision == clause.precision &&
+                measurement.question == ranking.question)
             {
+                rows.push_back(&measurement);
+            }
+        }
+
+        return rows;
+    };
+
+    for (const DeviceProbeClass& clause : report.classes)
+    {
+        text += Text("\nclass %s\n", clause.precision.c_str());
+        text += Text("  %s\n", clause.note.c_str());
+
+        for (const DeviceProbeRanking& ranking : clause.rankings)
+        {
+            const std::vector<const DeviceProbeMeasurement*> rows = ShapeRows(clause, ranking);
+
+            text += Text("\n  shape %s\n", ranking.question.c_str());
+            text += Text("    every entry here was asked for %s\n", ranking.asked.c_str());
+
+            // The question's name is the grouping key and the shape column of a
+            // row need not spell it the same way — the ladder to each argument's
+            // own order is produced by one all-orders call or by one call per
+            // order — so the shapes the rows of this ranking carry are stated
+            // where the two are not the same word.
+            std::vector<std::string> rowShapes;
+
+            for (const DeviceProbeMeasurement* row : rows)
+            {
+                if (std::find(rowShapes.begin(), rowShapes.end(), row->shape) == rowShapes.end())
+                {
+                    rowShapes.push_back(row->shape);
+                }
+            }
+
+            if (rowShapes.size() != 1 || rowShapes.front() != ranking.question)
+            {
+                std::string listed;
+
+                for (const std::string& shape : rowShapes)
+                {
+                    if (!listed.empty())
+                    {
+                        listed += ", ";
+                    }
+
+                    listed += shape;
+                }
+
+                text += Text("    the shape column above reports these rows as: %s\n",
+                             listed.c_str());
+            }
+
+            if (ranking.fastestOverall.empty())
+            {
+                // Nothing here is ordered, and the two ways that happens are not
+                // the same fact: a shape whose every row failed to measure has no
+                // figures at all, and a shape whose rows all failed a gate has
+                // figures that this run would not place. The rows' own lines in
+                // the table say which, and so do the set-aside reasons below.
+                std::size_t measuredRows = 0;
+
+                for (const DeviceProbeMeasurement* row : rows)
+                {
+                    if (row->measured)
+                    {
+                        ++measuredRows;
+                    }
+                }
+
+                text += measuredRows == 0 ? "    no entry of this shape produced a figure\n"
+                                          : "    no entry of this shape could be ordered\n";
+                text += Text("    reason: %s\n", ranking.reason.c_str());
+
+                for (const std::string& entry : ranking.notOrdered)
+                {
+                    text += Text("    set aside: %s\n", entry.c_str());
+                }
+
+                text += Text("    confidence: %s\n", ranking.confidence.c_str());
                 continue;
             }
 
-            recommendedBound = measurement.documentedBound;
+            text += Text("    fastest measured: %s\n", ranking.fastestOverall.c_str());
 
-            for (const DeviceProbeMeasurement& other : report.measurements)
+            if (ranking.resolution > 0.0)
             {
-                if (other.question == clause.question && other.documentedBound > 0.0 &&
-                    other.documentedBound < recommendedBound)
+                text += Text("    resolution: entries closer than %.2f%% cannot be ordered on this "
+                             "run. The\n                number is measured, not assumed: it is the "
+                             "larger of the canary's\n                widest admitted spread and "
+                             "the leader's own spread across its clean\n                passes.\n",
+                             100.0 * ranking.resolution);
+            } else
+            {
+                text += "    resolution: not measurable on this run, so this shape is not ordered\n";
+            }
+
+            text += Text("    verdict: %s\n",
+                         ranking.verdict != DeviceProbeVerdict::kRecommend ? "CANNOT DETERMINE"
+                                                                           : "RECOMMEND");
+
+            if (!ranking.recommended.empty())
+            {
+                text += Text("    recommended entry: %s\n", ranking.recommended.c_str());
+
+                // The bound is a column of a row and not the thing the class is
+                // keyed on, so the bound of the row being named is repeated here
+                // and the looser or tighter one beside it is named with it: this
+                // is the line that gets quoted, and it is the line a reader would
+                // quote as "the fastest" without the accuracy it is fastest at.
+                double recommendedBound = 0.0;
+
+                for (const DeviceProbeMeasurement* row : rows)
                 {
-                    looserThanAnotherLane = true;
+                    if (row->name == ranking.recommended)
+                    {
+                        recommendedBound = row->documentedBound;
+                    }
+                }
+
+                // Whether one shape holds one bound or two, and which bound the
+                // tightest row beside the winner documents, are both read off the
+                // rows rather than assumed from the precision they share.
+                bool oneBound = true;
+                double otherBound = 0.0;
+
+                for (const DeviceProbeMeasurement* row : rows)
+                {
+                    if (row->name == ranking.recommended || !(row->documentedBound > 0.0) ||
+                        row->documentedBound == recommendedBound)
+                    {
+                        continue;
+                    }
+
+                    oneBound = false;
+
+                    if (otherBound == 0.0 || row->documentedBound < otherBound)
+                    {
+                        otherBound = row->documentedBound;
+                    }
+                }
+
+                std::string otherNames;
+
+                for (const DeviceProbeMeasurement* row : rows)
+                {
+                    if (row->name == ranking.recommended || row->documentedBound != otherBound)
+                    {
+                        continue;
+                    }
+
+                    if (!otherNames.empty())
+                    {
+                        otherNames += ", ";
+                    }
+
+                    otherNames += row->name;
+                }
+
+                if (oneBound)
+                {
+                    text += Text("      this row and every other row of this shape document the "
+                                 "same bound, %.2g,\n      so the ranking is at one accuracy and "
+                                 "this is the fastest entry of the shape\n      in the %s class "
+                                 "at it.\n",
+                                 recommendedBound,
+                                 clause.precision.c_str());
+                } else
+                {
+                    // The named bound is the tightest one beside the winner, so
+                    // the direction holds for that row and the looser rows are
+                    // looser still.
+                    text += Text("      this row documents a bound of %.2g, %s the %.2g of %s.\n"
+                                 "      The winner of this shape is the fastest entry of it at the "
+                                 "bound its own row\n      states, which is not the same as the "
+                                 "fastest at one accuracy. The bound column above\n      is the "
+                                 "figure to weigh against this one.\n",
+                                 recommendedBound,
+                                 otherBound < recommendedBound ? "looser than" : "tighter than",
+                                 otherBound,
+                                 otherNames.c_str());
                 }
             }
-        }
 
-        text += Text("  verdict: %s\n",
-                     clause.verdict != DeviceProbeVerdict::kRecommend
-                         ? "CANNOT DETERMINE"
-                         : (looserThanAnotherLane
-                                ? "RECOMMEND BY COST ONLY - a lane in this class documents a "
-                                  "tighter bound"
-                                : "RECOMMEND"));
+            text += Text("    reason: %s\n", ranking.reason.c_str());
 
-        if (!clause.recommended.empty())
-        {
-            text += Text("  recommended entry: %s\n", clause.recommended.c_str());
-
-            // A class spans the lanes that answer the same question, so its
-            // ranking is by cost and not at one accuracy. The bound each lane
-            // documents is what a reader has to weigh against the figure, and it
-            // is repeated here because this line is the one that gets quoted.
-            if (recommendedBound > 0.0)
+            for (const std::string& entry : ranking.inseparable)
             {
-                text += Text("    this is a cost ranking, not a ranking at one accuracy: that "
-                             "entry's lane\n    documents a bound of %.1e, and the other lanes of "
-                             "this class document their own.\n    The bound column above is the "
-                             "figure to weigh against this one.\n",
-                             recommendedBound);
+                text += Text("    not separable: %s\n", entry.c_str());
             }
+
+            for (const std::string& entry : ranking.notOrdered)
+            {
+                text += Text("    set aside: %s\n", entry.c_str());
+            }
+
+            text += Text("    confidence: %s\n", ranking.confidence.c_str());
         }
-
-        text += Text("  reason: %s\n", clause.reason.c_str());
-
-        for (const std::string& entry : clause.inseparable)
-        {
-            text += Text("  not separable: %s\n", entry.c_str());
-        }
-
-        for (const std::string& entry : clause.notOrdered)
-        {
-            text += Text("  set aside: %s\n", entry.c_str());
-        }
-
-        text += Text("  confidence: %s\n", clause.confidence.c_str());
     }
 
     text += Text("\n%s\n", report.caveat.c_str());
