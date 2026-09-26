@@ -57,6 +57,7 @@ import shutil
 import struct
 import subprocess
 import sys
+from fractions import Fraction
 from functools import lru_cache
 
 try:
@@ -510,9 +511,10 @@ def fit_interval(n, a, b, tol, maxdeg, weighted, degs=None):
     return None
 
 
-def fit_order(n, region_b=False, f32=False):
+def fit_order(n, region_b=False, f32=False, maxdeg=None):
     tol = TOL_FLOAT if f32 else TOL_DOUBLE
-    maxdeg = MAX_DEG_FLOAT if f32 else MAX_DEG_DOUBLE
+    if maxdeg is None:
+        maxdeg = MAX_DEG_FLOAT if f32 else MAX_DEG_DOUBLE
     if region_b:
         return fit_interval(0, X0, X1, tol, maxdeg, weighted=False)
     pieces = []
@@ -1093,7 +1095,7 @@ def narrow_a_block_lines(narrow_a):
     return lines
 
 
-def narrow_block_lines(narrow_a, narrow_b):
+def narrow_block_lines(narrow_a, narrow_b, narrow_rat_a, narrow_rat_b):
     """The narrow partitions' tables as the header writes them, both regions.
 
     One function rather than one per region because the block is what is
@@ -1102,7 +1104,108 @@ def narrow_block_lines(narrow_a, narrow_b):
     the two regions are written in has to be one fact rather than two.
     write_header writes the same lines, so the two cannot drift.
     """
-    return narrow_a_block_lines(narrow_a) + [""] + narrow_b_block_lines(narrow_b)
+    return (narrow_a_block_lines(narrow_a) + [""] + narrow_b_block_lines(narrow_b)
+            + [""] + narrow_rational_block_lines(narrow_rat_a, narrow_rat_b))
+
+
+def narrow_rational_block_lines(narrow_rat_a, narrow_rat_b):
+    """The rational route's fits over the narrow partition, both regions.
+
+    The narrow partition's intervals are the Chebyshev route's - a partition is
+    a cut of the region, not a property of a family - so these tables carry the
+    pairs only and are read at the narrow pieces' own intervals and mapped
+    arguments. Region A's pieces are one per `kNarrowAPieces` row, in that
+    order; region B's are one per narrow region-B piece, in that order.
+    """
+    lines = [
+        "// The rational minimax family over the narrow partition: its own degree",
+        "// pair per narrow piece, over that piece's own interval and mapped",
+        "// argument. The intervals are the Chebyshev route's narrow ones - a",
+        "// partition is a cut of the region and not a property of a family - so",
+        "// this table carries pairs only and is read at kNarrowAPieces' intervals.",
+        "// Each row stores the numerator p_0..p_m and then the denominator's",
+        "// q_1..q_k with q_0 held at 1; the degree columns say how many of each.",
+        "// Every row was accepted at the bare 3e-14-class criterion the shipped",
+        "// rational pieces were accepted at, read in the kernel's own arithmetic",
+        "// at BOTH multiply-add routes with the worse taken (see the generator).",
+        "// A bound taken at one route is not a bound on the other's evaluation,",
+        "// which is the shape of defect a float table of this library's was",
+        "// withdrawn for; these rows are the reading of both.",
+    ]
+    per_order = narrow_rat_a["orders"]
+    a_coeffs = []
+    a_offset = []
+    a_numdeg = []
+    a_dendeg = []
+    for fits in per_order:
+        for fit in fits:
+            a_offset.append(len(a_coeffs))
+            a_numdeg.append(fit["m"])
+            a_dendeg.append(fit["k"])
+            a_coeffs.extend(fmt(float(c)) for c in fit["p"])
+            a_coeffs.extend(fmt(float(c)) for c in fit["q"])
+    lines.append("inline constexpr auto kNarrowRatACoeffs = std::to_array<double>({")
+    for i in range(0, len(a_coeffs), 6):
+        lines.append("  " + ", ".join(a_coeffs[i:i + 6]) + ",")
+    lines.append("});")
+    for name, column in (("kNarrowRatAOffset", a_offset), ("kNarrowRatANumDeg", a_numdeg),
+                         ("kNarrowRatADenDeg", a_dendeg)):
+        lines.append(f"inline constexpr auto {name} = std::to_array<int>({{")
+        for i in range(0, len(column), 12):
+            lines.append("  " + ", ".join(str(v) for v in column[i:i + 12]) + ",")
+        lines.append("});")
+    lines.append("static_assert(std::size(kNarrowRatAOffset) == std::size(kNarrowAPieces)\n"
+                 "                  && std::size(kNarrowRatANumDeg) == std::size(kNarrowAPieces)\n"
+                 "                  && std::size(kNarrowRatADenDeg) == std::size(kNarrowAPieces),\n"
+                 "              \"the narrow rational region-A route must cover every piece\");")
+
+    b_coeffs = []
+    b_offset = []
+    b_numdeg = []
+    b_dendeg = []
+    for fit in narrow_rat_b["pieces"]:
+        b_offset.append(len(b_coeffs))
+        b_numdeg.append(fit["m"])
+        b_dendeg.append(fit["k"])
+        b_coeffs.extend(fmt(float(c)) for c in fit["p"])
+        b_coeffs.extend(fmt(float(c)) for c in fit["q"])
+    lines.append("")
+    lines.append("// The same family over the narrow partition of region B: one pair")
+    lines.append("// per narrow region-B piece, read at that piece's own interval and")
+    lines.append("// at the mapped argument the Chebyshev seed on that piece uses, so")
+    lines.append("// the two routes over the piece read one t.")
+    lines.append("inline constexpr auto kNarrowRatBCoeffs = std::to_array<double>({")
+    for i in range(0, len(b_coeffs), 6):
+        lines.append("  " + ", ".join(b_coeffs[i:i + 6]) + ",")
+    lines.append("});")
+    for name, column in (("kNarrowRatBOffset", b_offset), ("kNarrowRatBNumDeg", b_numdeg),
+                         ("kNarrowRatBDenDeg", b_dendeg)):
+        lines.append(f"inline constexpr auto {name} = std::to_array<int>({{")
+        for i in range(0, len(column), 12):
+            lines.append("  " + ", ".join(str(v) for v in column[i:i + 12]) + ",")
+        lines.append("});")
+    lines.append("static_assert(std::size(kNarrowRatBOffset) == kNarrowBPieces\n"
+                 "                  && std::size(kNarrowRatBNumDeg) == kNarrowBPieces\n"
+                 "                  && std::size(kNarrowRatBDenDeg) == kNarrowBPieces,\n"
+                 "              \"the narrow rational region-B route must cover every piece\");")
+    lines.append("")
+    lines.append("// What the narrow rational route stores and what it delivers, at each")
+    lines.append("// multiply-add route, against the bar the shipped rational rows publish.")
+    lines.append("// Measured on the narrow pieces' own grids in the kernel's arithmetic on")
+    lines.append("// the stored coefficients, which is what the acceptance above read.")
+    lines.append(f"inline constexpr double kNarrowRatABound = {fmt(float(narrow_rat_a['bound']))};")
+    lines.append(f"inline constexpr int kNarrowRatAStored = {narrow_rat_a['stored']};")
+    lines.append("inline constexpr double kNarrowRatADeliveredFused = "
+                 f"{fmt(float(narrow_rat_a['worst'][0][0]))};")
+    lines.append("inline constexpr double kNarrowRatADeliveredSeparate = "
+                 f"{fmt(float(narrow_rat_a['worst'][0][1]))};")
+    lines.append(f"inline constexpr double kNarrowRatBBound = {fmt(float(narrow_rat_b['bar']))};")
+    lines.append(f"inline constexpr int kNarrowRatBStored = {narrow_rat_b['stored']};")
+    lines.append("inline constexpr double kNarrowRatBDeliveredFused = "
+                 f"{fmt(float(narrow_rat_b['worst'][0][0]))};")
+    lines.append("inline constexpr double kNarrowRatBDeliveredSeparate = "
+                 f"{fmt(float(narrow_rat_b['worst'][0][1]))};")
+    return lines
 
 
 def narrow_b_block_lines(narrow):
@@ -1382,17 +1485,25 @@ def rat_fma(a, b, c):
     return s + (((p - (s - bv)) + (c - bv)) + err)
 
 
-def rat_horner_double(cs, t):
+def rat_horner_double(cs, t, fused=True):
+    """Horner in double at a named multiply-add route."""
     acc = cs[-1]
     for c in reversed(cs[:-1]):
-        acc = rat_fma(acc, t, c)
+        acc = route_step(fused, acc, t, c)
     return acc
 
 
-def rat_eval_double(p, q, t):
-    """The kernel's evaluation of the route: Horner in double, fused throughout."""
-    num = rat_horner_double(p, t)
-    den = rat_fma(rat_horner_double(q, t), t, 1.0) if q else 1.0
+def rat_eval_double(p, q, t, fused=True):
+    """The kernel's evaluation of the route: Horner in double, at one route.
+
+    The kernel's step is `backend::ScalarFp64::MulAdd`, which is `std::fma` in
+    a default build and a bare `a * b + c` in a `BOYS_MULADD_SEPARATE` one, and
+    the two round differently. A pair accepted on one reading alone would be a
+    pair whose bound was never measured against the arithmetic the other build
+    runs, so every acceptance here reads both and takes the worse.
+    """
+    num = rat_horner_double(p, t, fused)
+    den = route_step(fused, rat_horner_double(q, t, fused), t, 1.0) if q else 1.0
     return num / den
 
 
@@ -1437,9 +1548,9 @@ def region_b_seed_chebyshev(cs, x):
     return clenshaw_split_double(cs, t)
 
 
-def region_b_seed_rational(p, q, x):
+def region_b_seed_rational(p, q, x, fused=True):
     t = 2.0 * (float(x) - float(X0)) / (float(X1) - float(X0)) - 1.0
-    return rat_eval_double(p, q, t)
+    return rat_eval_double(p, q, t, fused)
 
 
 def rat_nodes():
@@ -1625,12 +1736,12 @@ def rat_lawson(m, k, indices, ts, fs, ws=None, outer=300):
     return last
 
 
-def rat_delivered_error(p, q, xs, ref):
+def rat_delivered_error(p, q, xs, ref, fused=True):
     """The route's delivered worst |F0 - fit|, as the kernel evaluates it."""
     worst = mpf(0)
     at = None
     for x, f in zip(xs, ref):
-        e = abs(mpf(region_b_seed_rational(p, q, x)) - f)
+        e = abs(mpf(region_b_seed_rational(p, q, x, fused)) - f)
         if e > worst:
             worst, at = e, x
     return worst, at
@@ -1647,13 +1758,37 @@ def cheb_delivered_error(cs, xs, ref):
 
 
 def rat_delivered_on(p, q, indices, xs, ref):
-    """The route's delivered worst |F0 - fit| over `indices`, kernel arithmetic."""
+    """The route's delivered worst |F0 - fit| over `indices`."""
     worst = mpf(0)
     at = None
     for i in indices:
         e = abs(mpf(region_b_seed_rational(p, q, xs[i])) - ref[i])
         if e > worst:
             worst, at = e, xs[i]
+    return worst, at
+
+
+def rat_kernel_delivered_on(p, q, indices, xs, ref, fused):
+    """The same figure in the arithmetic the kernel runs, at one route.
+
+    `p` and `q` are the solved pairs as stored - every coefficient rounded to
+    binary64 before it is read - and the argument is mapped the way
+    `region_b_seed_rational` maps it. The region-B acceptance above measures
+    the solved pair at the working precision instead; that reading is what its
+    own table was certified on and this one does not disturb it, but a bound
+    taken from it is not a bound on the evaluation the kernel performs, so the
+    narrow table's acceptance reads this one at both routes and takes the worse.
+    """
+    pd = [float(c) for c in p]
+    qd = [float(c) for c in q]
+    worst = mpf(0)
+    at = None
+    for i in indices:
+        x = xs[i]
+        t = 2.0 * (float(x) - float(X0)) / (float(X1) - float(X0)) - 1.0
+        e = abs(mpf(rat_eval_double(pd, qd, t, fused)) - ref[i])
+        if e > worst:
+            worst, at = e, x
     return worst, at
 
 
@@ -2015,6 +2150,457 @@ def fit_region_a_rational(double_orders):
         "cheb_at": cheb_at, "bound": RAT_A_BOUND,
         "lo": XNEW0, "hi": X0,
     }
+
+
+# ---------------------------------------------------------------------------
+# The rational route over the narrow partition
+# ---------------------------------------------------------------------------
+# The route carried one partition because a rational minimax fit of a whole
+# interval is not a piece of anything: the family's region-A pieces follow the
+# shipped intervals and its region-B seed is one pair over [X0, X1). The narrow
+# partition is a second set of intervals in each region, and the family is
+# fitted over those: the narrow region-A pieces the Chebyshev route's walk
+# already placed, and the narrow region-B edges it already derived.
+#
+# **The acceptance is the shipped criterion read in the kernel's arithmetic.**
+# The shipped route's pieces were accepted on the delivered error of the stored
+# doubles evaluated fused, which is the arithmetic a default build runs and is
+# not the arithmetic a BOYS_MULADD_SEPARATE build runs: `ScalarFp64::MulAdd` is
+# `std::fma` in one and a bare `a * b + c` in the other, and the second rounds
+# twice. A bound taken at one route is not a bound on the other's evaluation,
+# which is the shape of defect a float table of this library's was withdrawn
+# for. Every acceptance below therefore reads both routes and takes the worse,
+# and the figure the row publishes is the worse of the two.
+#
+# The bars are the shipped route's own: RAT_A_ACCEPT for region A's pieces and
+# RAT_BAR for region B's seed, the counts the same total-stored search. What
+# changes is the partition, not the criterion.
+# The search is the shipped route's own: the same scan floor and cap on the
+# stored count, the same certifying grid, the same stride for the subsample the
+# count is first found on. A narrow piece that needs more than RAT_A_SCAN_MAX
+# is reported as that count rather than accepted at a looser bar.
+RAT_NARROW_A_SCAN_MIN = 6
+RAT_NARROW_A_SCAN_MAX = RAT_A_SCAN_MAX
+RAT_NARROW_B_SCAN_MIN = 4
+RAT_NARROW_B_SCAN_MAX = 20
+RAT_NARROW_GRID = RAT_A_GRID
+RAT_NARROW_STRIDE = RAT_A_SCAN_STRIDE
+
+
+def rat_a_kernel_delivered_on(p, q, ts, ref, indices):
+    """Worst |F_n - fit| over `indices`, both routes, the worse taken.
+
+    The pair is read as stored - every coefficient rounded to binary64 first -
+    and the argument is the kernel's own mapped t. Returns the figure and the
+    route that set it, because a table whose bound is set by one route and
+    published for both should say which one.
+    """
+    pd = [float(c) for c in p]
+    qd = [float(c) for c in q]
+    worst = mpf(0)
+    at = None
+    who = None
+    for fused in (True, False):
+        for i in indices:
+            e = abs(mpf(rat_eval_double(pd, qd, float(ts[i]), fused)) - ref[i])
+            if e > worst:
+                worst, at, who = e, ts[i], "fused" if fused else "separate"
+    return worst, at, who
+
+
+def rat_a_best_at_kernel(ts, ref, ws, indices, total):
+    """The best pair at `total` stored over `indices`, both routes held."""
+    best = None
+    for k in range(1, min(RAT_K_MAX, total - 2) + 1):
+        m = total - 1 - k
+        if m < 1:
+            continue
+        r = rat_remez(m, k, indices, ts, ref, ws)
+        if r is None:
+            continue
+        _, p, q = r
+        d, at, who = rat_a_kernel_delivered_on(p, q, ts, ref, indices)
+        if best is None or d < best[0]:
+            best = (d, m, k, p, q, at, who)
+    return best
+
+
+def rat_a_fit_piece_kernel(n, a, b):
+    """The smallest stored pair holding RAT_A_ACCEPT on [a, b) at both routes."""
+    ts, xs = rat_a_nodes(a, b, RAT_NARROW_GRID)
+    with mp.workdps(RAT_DPS):
+        ref = [boys_ref(n, x, RAT_TAIL_FLOOR, RAT_TERMS) for x in xs]
+    ws = [seed_weight(n, x) for x in xs]
+    coarse = list(range(0, RAT_NARROW_GRID + 1, RAT_NARROW_STRIDE))
+    full = list(range(RAT_NARROW_GRID + 1))
+
+    # The shipped search's own two stages: the smallest count the subsample
+    # accepts, then the same count re-solved on the certifying grid, resuming
+    # above a count the subsample accepted and the dense grid rejects.
+    total = RAT_NARROW_A_SCAN_MIN
+    while total <= RAT_NARROW_A_SCAN_MAX:
+        accepted = None
+        for t in range(total, RAT_NARROW_A_SCAN_MAX + 1):
+            r = rat_a_best_at_kernel(ts, ref, ws, coarse, t)
+            if r is not None and r[0] <= RAT_A_ACCEPT:
+                accepted = t
+                break
+        if accepted is None:
+            return None
+        r = rat_a_best_at_kernel(ts, ref, ws, full, accepted)
+        if r is not None and r[0] <= RAT_A_ACCEPT:
+            d, m, k, p, q, at, who = r
+            wf, wsm = rat_a_routes(p, q, ts, ref, full)
+            return {"a": float(a), "b": float(b), "m": m, "k": k, "p": p, "q": q,
+                    "stored": m + 1 + k, "delivered": d, "at": at, "route": who,
+                    "fused": wf, "separate": wsm}
+        total = accepted + 1
+    return None
+
+
+def rat_a_routes(p, q, ts, ref, indices):
+    """The accepted pair's delivered figure at each route, separately."""
+    pd = [float(c) for c in p]
+    qd = [float(c) for c in q]
+    out = []
+    for fused in (True, False):
+        w = mpf(0)
+        for i in indices:
+            e = abs(mpf(rat_eval_double(pd, qd, float(ts[i]), fused)) - ref[i])
+            if e > w:
+                w = e
+        out.append(w)
+    return out[0], out[1]
+
+
+def _rat_narrow_a_job(job):
+    n, pieces = job
+    mp.dps = RAT_DPS  # the scan's working precision; a spawn does not carry it
+    out = []
+    for (a, b, _deg, _cs, _ms) in pieces:
+        fit = rat_a_fit_piece_kernel(n, mpf(a), mpf(b))
+        if fit is None:
+            raise RuntimeError(
+                f"rational narrow region-A route: F{n} on [{a}, {b}) reaches no stored "
+                f"count up to {RAT_NARROW_A_SCAN_MAX} holding {mp.nstr(RAT_A_ACCEPT, 2)} "
+                f"in both multiply-add routes")
+        out.append(fit)
+    return n, out
+
+
+def narrow_region_a_rational(narrow_a):
+    """The rational route's own fits over the narrow partition's intervals.
+
+    The intervals are the narrow Chebyshev partition's, because a partition is
+    a cut of the region and not a property of a family: what the family brings
+    to it is its own degree pair per piece. The criterion is the shipped
+    rational route's - the plain delivered error of the stored pair in the
+    kernel's double arithmetic, accepted at RAT_A_ACCEPT under the 3e-14 bar -
+    read at both multiply-add routes with the worse taken.
+    """
+    print(f"fitting the rational route over the narrow partition of region A "
+          f"({RAT_DPS} dps, accepted at {mp.nstr(RAT_A_ACCEPT, 2)} plain at BOTH "
+          f"multiply-add routes) ...")
+    jobs = [(n, narrow_a["orders"][n]) for n in range(MAX_ORDER + 1)]
+    out = run_jobs(_rat_narrow_a_job, jobs)
+    per_order = [[] for _ in range(MAX_ORDER + 1)]
+    stored = 0
+    delivered = mpf(0)
+    at = None
+    worst_route = set()
+    fused = mpf(0)
+    separate = mpf(0)
+    for n, fits in out:
+        for fit in fits:
+            per_order[n].append(fit)
+            stored += fit["stored"]
+            fused = max(fused, fit["fused"])
+            separate = max(separate, fit["separate"])
+            if fit["delivered"] > delivered:
+                delivered, at = fit["delivered"], (n, fit["a"], fit["b"])
+                worst_route = {fit["route"]}
+            elif fit["delivered"] == delivered:
+                worst_route.add(fit["route"])
+    cheb = narrow_a
+    print(f"  rational {stored} stored, delivered {mp.nstr(delivered, 6)} at F{at[0]} "
+          f"[{at[1]:.6f}, {at[2]:.6f}) (set at the {', '.join(sorted(worst_route))} route)")
+    print(f"  rational per route: fused {mp.nstr(fused, 6)}, separate {mp.nstr(separate, 6)}")
+    print(f"  Chebyshev {sum(len(p) for p in cheb['orders']) * (NARROW_DEG + 1)} stored, "
+          f"delivered fused {cheb['worst'][0][0]:.6e} / separate {cheb['worst'][0][1]:.6e}")
+    return {"orders": per_order, "stored": stored, "delivered": delivered,
+            "at": at, "bound": RAT_A_BOUND,
+            "worst": [[float(fused), float(separate)] for _ in range(NARROW_SCHEMES)],
+            "route": sorted(worst_route)}
+
+
+def _rat_narrow_b_job(job):
+    a, b, ts, ref, coarse, full = job
+    mp.dps = RAT_DPS  # the scan's working precision; a spawn does not carry it
+    for total in range(RAT_NARROW_B_SCAN_MIN, RAT_NARROW_B_SCAN_MAX + 1):
+        # The scan is on a stride subsample and the pair that ships is re-solved
+        # on the whole grid, so a count the subsample accepts and the dense grid
+        # rejects is the subsample's error rather than the fit's - the same
+        # two-step the shipped region-A search takes.
+        best = None
+        for k in range(1, min(RAT_K_MAX, total - 2) + 1):
+            m = total - 1 - k
+            if m < 1:
+                continue
+            r = rat_remez(m, k, coarse, ts, ref, None)
+            if r is None:
+                continue
+            _, p, q = r
+            d, at, who = rat_kernel_delivered_both(p, q, ts, ref, full)
+            if best is None or d < best[0]:
+                best = (d, m, k, p, q, at, who)
+        if best is None or best[0] > RAT_BAR:
+            continue
+        _, m, k, _, _, _, _ = best
+        r = rat_remez(m, k, full, ts, ref, None)
+        if r is None:
+            continue
+        _, p, q = r
+        d, at, who = rat_kernel_delivered_both(p, q, ts, ref, full)
+        if d > RAT_BAR:
+            continue
+        wf, ws = rat_a_routes(p, q, ts, ref, full)
+        return {"a": a, "b": b, "m": m, "k": k, "p": p, "q": q,
+                "stored": m + 1 + k, "delivered": d, "at": at, "route": who,
+                "fused": wf, "separate": ws}
+    return None
+
+
+def rat_kernel_delivered_both(p, q, ts, ref, indices):
+    """Region B's delivered figure at both routes, the worse taken.
+
+    Region B is a seed read for itself: nothing amplifies its error, so the bar
+    is RAT_BAR for the pair whatever route reads it. As in region A, the pair
+    is read as stored and the argument is the kernel's own mapped t.
+    """
+    pd = [float(c) for c in p]
+    qd = [float(c) for c in q]
+    worst = mpf(0)
+    at = None
+    who = None
+    for fused in (True, False):
+        for i in indices:
+            e = abs(mpf(rat_eval_double(pd, qd, float(ts[i]), fused)) - ref[i])
+            if e > worst:
+                worst, at, who = e, ts[i], "fused" if fused else "separate"
+    return worst, at, who
+
+
+def narrow_region_b_rational(narrow_b):
+    """The rational route over the narrow partition of region B.
+
+    One pair per narrow piece, over the piece's own interval and in the same
+    mapped argument the Chebyshev piece there is read at, accepted at the same
+    RAT_BAR the shipped seed is. The interval edges are the narrow Chebyshev
+    partition's, for the reason region A's are.
+    """
+    print(f"fitting the rational route over the narrow partition of region B "
+          f"(bar {mp.nstr(RAT_BAR, 2)}, both multiply-add routes) ...")
+    pieces = []
+    jobs = []
+    refs = []
+    for (a, b, _deg, _cs, _ms) in narrow_b["pieces"]:
+        af, bf = float(a), float(b)
+        npts = 96
+        ts = []
+        xs = []
+        for i in range(npts + 1):
+            x = af + (bf - af) * i / npts
+            if x >= bf:
+                x = math.nextafter(bf, 0.0)
+            xs.append(mpf(x))
+            # The kernel maps x to t in binary64 over the piece's own interval,
+            # the expression NarrowRegionBSeed uses, so both routes over this
+            # interval read one t.
+            ts.append(mpf(2.0 * (x - af) / (bf - af) - 1.0))
+        jobs.append((af, bf, ts, list(range(0, npts + 1, 2)), list(range(npts + 1))))
+        with mp.workdps(RAT_DPS):
+            refs.append([boys_ref(0, x, RAT_TAIL_FLOOR, RAT_TERMS) for x in xs])
+    out = run_jobs(_rat_narrow_b_job,
+                   [(job[0], job[1], job[2], ref, job[3], job[4])
+                    for job, ref in zip(jobs, refs)])
+    stored = 0
+    delivered = mpf(0)
+    at = None
+    fused = mpf(0)
+    separate = mpf(0)
+    for (a, b, _deg, _cs, _ms), fit in zip(narrow_b["pieces"], out):
+        if fit is None:
+            raise RuntimeError(
+                f"rational narrow region-B route: [{a!r}, {b!r}) reaches no stored count "
+                f"up to {RAT_NARROW_B_SCAN_MAX} holding {mp.nstr(RAT_BAR, 2)} in both "
+                f"multiply-add routes")
+        pieces.append(fit)
+        stored += fit["stored"]
+        fused = max(fused, fit["fused"])
+        separate = max(separate, fit["separate"])
+        if fit["delivered"] > delivered:
+            delivered, at = fit["delivered"], (a, b)
+        print(f"  [{a!r}, {b!r}) -> [{fit['m']}/{fit['k']}] {fit['stored']} stored, "
+              f"delivered {mp.nstr(fit['delivered'], 6)} at t = {mp.nstr(fit['at'], 12)} "
+              f"({fit['route']})")
+    print(f"  rational region B: {stored} stored over {len(pieces)} pieces, delivered "
+          f"fused {mp.nstr(fused, 6)} / separate {mp.nstr(separate, 6)}, worst "
+          f"{mp.nstr(delivered, 6)} at [{at[0]!r}, {at[1]!r})")
+    return {"pieces": pieces, "stored": stored, "delivered": delivered, "at": at,
+            "bar": RAT_BAR, "worst": [[float(fused), float(separate)]
+                                      for _ in range(NARROW_SCHEMES)]}
+
+
+# ---------------------------------------------------------------------------
+# The float lane's narrow partition
+# ---------------------------------------------------------------------------
+# The float lane's own fits are placed by bisection on a sampled residual:
+# fit_interval accepts an interval when a 9-point sweep of the fitted series
+# against boys_ref is inside the budget, and the walk splits at the midpoint
+# when it is not. That is the placement law, and the degree cap is the lever
+# the narrow member of the axis pulls on it: at a lower degree the same law
+# accepts a narrower interval, so the partition comes back with more pieces of
+# fewer coefficients each - the trade the axis names, and not a saving.
+#
+# **The acceptance is the shipped criterion in the lane's own arithmetic.** The
+# shipped lane's pieces were accepted on a binary64 sweep of the fitted series,
+# and the entry does not evaluate in binary64: it evaluates in binary32 with a
+# rounding at every step of ClenshawSplit or HornerMono, whose step is
+# ScalarFp32::MulAdd - one rounding fused, two separate. Every piece below is
+# therefore fitted as the shipped ones are, and then held to the same weighted
+# budget TOL_FLOAT / 2 / seed_weight in binary32 at both routes, worse taken.
+# A piece that held the budget in binary64 and not in binary32 is a piece the
+# entry would deliver outside the bound its row publishes.
+F32_NARROW_DEG = 6
+F32_NARROW_GRID = 240
+
+
+def f32_route_delivered(cs, ms, n, a, b, npts):
+    """[[scheme][route]] worst |F_n - fit|, binary32, coefficients as stored."""
+    a32, b32 = r32(a), r32(b)
+    worst = [[0.0, 0.0], [0.0, 0.0]]
+    for i in range(npts + 1):
+        x = r32(a32 + (b32 - a32) * (i / npts))
+        if x >= b32:
+            x = math.nextafter(b32, 0.0)
+        ref = float(boys_ref(n, mpf(x)))
+        t = f32_map(a32, b32, x)
+        v = clenshaw_route32(cs, t, True)
+        w = clenshaw_route32(cs, t, False)
+        h = horner_mono_route32(ms, t, True)
+        j = horner_mono_route32(ms, t, False)
+        for scheme, pair in ((0, (v, w)), (1, (h, j))):
+            for route in (0, 1):
+                e = abs(pair[route] - ref)
+                if e > worst[scheme][route]:
+                    worst[scheme][route] = e
+    return worst
+
+
+def _f32_narrow_a_job(order):
+    mp.dps = 30  # the fit path's own reference precision; a spawn does not carry it
+    pieces = fit_order(order, f32=True, maxdeg=F32_NARROW_DEG)
+    worst = [[0.0, 0.0], [0.0, 0.0]]
+    budget = 0.0
+    at = None
+    for (a, b, _deg, cs, ms) in pieces:
+        w = f32_route_delivered(cs, ms, order, a, b, F32_NARROW_GRID)
+        for scheme in (0, 1):
+            for route in (0, 1):
+                if w[scheme][route] > worst[scheme][route]:
+                    worst[scheme][route] = w[scheme][route]
+        # The shipped criterion, in the lane's arithmetic: the piece is held to
+        # TOL_FLOAT / 2 / seed_weight at its own right end, which is where the
+        # batch entry's downward recursion amplifies it most.
+        lim = float(TOL_FLOAT * mpf("0.5") / seed_weight(order, mpf(b)))
+        if max(w[0]) > lim and (max(w[0]) > budget):
+            budget, at = max(w[0]), (a, b)
+    return order, pieces, worst, budget, at
+
+
+def narrow_region_a_f32():
+    """The float lane's narrow region-A partition, as its shipped walk lays it.
+
+    The same fit_interval acceptance and the same midpoint bisection, at
+    F32_NARROW_DEG instead of the lane's degree cap, so the partition is the
+    lane's own law applied at a narrower degree rather than a second design.
+    The delivered figure is then measured in the lane's arithmetic, which is
+    what the placement law does not do.
+    """
+    print(f"walking the float lane's narrow region-A partition (the lane's own "
+          f"weighted 1e-7 law, degree {F32_NARROW_DEG}) ...")
+    out = run_jobs(_f32_narrow_a_job, list(range(MAX_ORDER + 1)))
+    per_order = [[] for _ in range(MAX_ORDER + 1)]
+    worst = [[0.0, 0.0], [0.0, 0.0]]
+    over = 0
+    total = 0
+    for order, pieces, w, budget, at in out:
+        per_order[order] = pieces
+        total += len(pieces)
+        for scheme in (0, 1):
+            for route in (0, 1):
+                if w[scheme][route] > worst[scheme][route]:
+                    worst[scheme][route] = w[scheme][route]
+        if budget > 0.0:
+            over += 1
+            print(f"  F{order:>2}: a piece at [{at[0]:.6f}, {at[1]:.6f}) delivers "
+                  f"{budget:.6e} in binary32, over its weighted budget")
+    stored = sum(len(p) * (F32_NARROW_DEG + 1) for p in per_order)
+    print(f"  {total} pieces over {MAX_ORDER + 1} orders, {stored} stored, "
+          f"{over} order(s) with a piece over its own budget")
+    for scheme, name in enumerate(SCHEME_NAMES):
+        print(f"  {name:14s} worst {worst[scheme][0]:.6e} / {worst[scheme][1]:.6e} "
+              f"(fused / separate)")
+    bounds = [[scheme_bound(worst[s][r]) for r in (0, 1)]
+              for s in range(NARROW_SCHEMES)]
+    return {"orders": per_order, "stored": stored, "worst": worst, "bounds": bounds,
+            "over": over}
+
+
+def narrow_region_b_f32():
+    """The float lane's narrow region-B partition.
+
+    Region B's shipped seed is one fit over [kX0, kX1) at the lane's degree cap,
+    because fit_interval's bisection is the region-A walk's and region B has
+    none. The narrow member needs one, so the partition is derived by the same
+    law: bisect the interval until the lane's own fit_interval accepts a piece
+    at F32_NARROW_DEG. The pieces are then held to the lane's region-B budget
+    (TOL_FLOAT) in the lane's arithmetic, both routes.
+    """
+    print(f"splitting the float lane's narrow region-B partition (the lane's own "
+          f"1e-7 law, degree {F32_NARROW_DEG}) ...")
+    pieces = []
+    stack = [(X0, X1, 0)]
+    while stack:
+        a, b, depth = stack.pop()
+        r = fit_interval(0, a, b, TOL_FLOAT, F32_NARROW_DEG, weighted=False)
+        if r is None:
+            if depth > 40:
+                raise RuntimeError(f"float narrow region B: fit never converged on [{a},{b}]")
+            m = (a + b) / 2
+            stack.append((m, b, depth + 1))
+            stack.append((a, m, depth + 1))
+        else:
+            deg, cd, mono = r
+            pieces.append((float(a), float(b), deg, cd, mono))
+    pieces.sort(key=lambda p: p[0])
+    worst = [[0.0, 0.0], [0.0, 0.0]]
+    for (a, b, _deg, cs, ms) in pieces:
+        w = f32_route_delivered(cs, ms, 0, a, b, F32_NARROW_GRID)
+        for scheme in (0, 1):
+            for route in (0, 1):
+                if w[scheme][route] > worst[scheme][route]:
+                    worst[scheme][route] = w[scheme][route]
+    stored = len(pieces) * (F32_NARROW_DEG + 1)
+    print(f"  {len(pieces)} pieces, {stored} stored, region-B budget 1e-7:")
+    for (a, b, _deg, cs, _ms) in pieces:
+        print(f"    [{a!r}, {b!r})  width {b - a:.8f}")
+    for scheme, name in enumerate(SCHEME_NAMES):
+        print(f"  {name:14s} worst {worst[scheme][0]:.6e} / {worst[scheme][1]:.6e} "
+              f"(fused / separate)")
+    bounds = [[scheme_bound(worst[s][r]) for r in (0, 1)]
+              for s in range(NARROW_SCHEMES)]
+    return {"pieces": pieces, "stored": stored, "worst": worst, "bounds": bounds}
 
 
 # The float lane's rational route
@@ -2383,6 +2969,146 @@ def fma32(a, b, c):
     return r32(float(a) * float(b) + float(c))
 
 
+def _round32_exact(fr):
+    """The binary32 nearest-even rounding of an exact Fraction.
+
+    The separate multiply-add's second rounding is a rounding of an exact sum
+    of two binary32 values, and rounding that sum through binary64 first would
+    round twice. The sum is therefore formed exactly and rounded once, here, so
+    the figure the routed models deliver is the figure the kernel's arithmetic
+    delivers rather than a close relative of it.
+    """
+    if fr == 0:
+        return 0.0
+    neg = fr < 0
+    num, den = (fr.numerator, fr.denominator) if not neg else (-fr.numerator, fr.denominator)
+    e = num.bit_length() - den.bit_length()
+    if (num < (den << e)) if e >= 0 else ((num << -e) < den):
+        e -= 1
+    if e < -126:
+        raise ValueError("binary32 subnormal: outside the range this model rounds in")
+    shift = 23 - e
+    if shift >= 0:
+        div = den
+        q, r = divmod(num << shift, den)
+    else:
+        div = den << -shift
+        q, r = divmod(num, div)
+    # The half-way test is against the divisor actually used: past e > 23 the
+    # divisor is den scaled up, and testing r against den alone rounds every
+    # such tie the wrong way by one unit in the last place.
+    if 2 * r > div or (2 * r == div and (q & 1)):
+        q += 1
+    if q >= (1 << 24):
+        q >>= 1
+        e += 1
+    if e > 127:
+        raise ValueError("binary32 overflow")
+    # q was scaled by exactly 2^shift = 2^(23-e), so it carries the value
+    # (num/den) * 2^(23-e) and the result is q * 2^(e-23): the shift comes back
+    # out of the exponent. Dropping it is a factor of 2^23 in every cancellation
+    # this path exists to round.
+    v = math.ldexp(q, e - 23)
+    return -v if neg else v
+
+
+def add32(a, b):
+    """a + b, correctly rounded to binary32 (nearest, ties to even)."""
+    fa, fb = float(a), float(b)
+    if fa == 0.0 or fb == 0.0:
+        return r32(fa + fb)
+    # The exact sum of two binary32 values fits in binary64 while their
+    # exponents are within 29, so the binary64 sum is exact and one rounding to
+    # binary32 is the correctly rounded result. Past that the sum is formed
+    # exactly and rounded once, so the model is the kernel's arithmetic rather
+    # than a close relative of it.
+    if abs(math.frexp(fa)[1] - math.frexp(fb)[1]) <= 29:
+        return r32(fa + fb)
+    return _round32_exact(Fraction(fa) + Fraction(fb))
+
+
+def sub32(a, b):
+    """a - b, correctly rounded to binary32 (nearest, ties to even)."""
+    fb = float(b)
+    if fb == 0.0:
+        return r32(float(a))
+    return add32(a, -fb)
+
+
+def step32(fused, a, b, c):
+    """One multiply-add in binary32 at a named multiply-add route.
+
+    The kernel's step is `ScalarFp32::MulAdd`: one rounding under the fused
+    route and two under the separate one. A fit accepted on the fused reading
+    alone would be a fit whose bound was never taken on the arithmetic a
+    BOYS_MULADD_SEPARATE build runs, which is the defect a table this lane
+    shipped and withdrew was withdrawn for; every acceptance of this lane's own
+    partitions therefore reads both and takes the worse.
+    """
+    if fused:
+        return fma32(a, b, c)
+    return add32(r32(float(a) * float(b)), c)
+
+
+def clenshaw_route32(cs, t, fused):
+    """ClenshawSplit<ScalarFp32>, operation for operation, at one route."""
+    c = [r32(v) for v in cs]
+    t = r32(t)
+    deg = len(c) - 1
+    if deg == 0:
+        return c[0]
+    if deg == 1:
+        return step32(fused, t, c[1], c[0])
+    v = step32(fused, 2.0, r32(t * t), -1.0)
+    two_v = add32(v, v)
+    if deg == 2:
+        return step32(fused, t, c[1], step32(fused, v, c[2], c[0]))
+    m = deg // 2
+    b1, b2 = c[2 * m], 0.0
+    for k in range(m - 1, 0, -1):
+        b0 = step32(fused, two_v, b1, sub32(c[2 * k], b2))
+        b2, b1 = b1, b0
+    even = step32(fused, v, b1, sub32(c[0], b2))
+    o1, o2 = c[2 * m - 1], 0.0
+    for k in range(m - 2, 0, -1):
+        o0 = step32(fused, two_v, o1, sub32(c[2 * k + 1], o2))
+        o2, o1 = o1, o0
+    odd = step32(fused, sub32(two_v, 1.0), o1, sub32(c[1], o2))
+    return step32(fused, t, odd, even)
+
+
+def horner_mono_route32(ms, t, fused):
+    """HornerMono<ScalarFp32>, operation for operation, at one route."""
+    c = [r32(v) for v in ms]
+    t = r32(t)
+    acc = c[-1]
+    for j in range(len(c) - 2, -1, -1):
+        acc = step32(fused, acc, t, c[j])
+    return acc
+
+
+def rational_value_route32(p, q, t, fused):
+    """The kernel's rational evaluation in binary32, at one multiply-add route.
+
+    `rational_value_float` below is the same evaluation with the step fixed at
+    the fused form; this one names the route, which is what an acceptance that
+    has to bound both builds' arithmetic reads.
+    """
+    c = [r32(v) for v in p] + [r32(v) for v in q]
+    m = len(p) - 1
+    k = len(q)
+    t = r32(t)
+    num = c[m]
+    for j in range(m - 1, -1, -1):
+        num = step32(fused, num, t, c[j])
+    if k == 0:
+        return num
+    den = c[m + k]
+    for j in range(k - 1, 0, -1):
+        den = step32(fused, den, t, c[m + j])
+    return r32(num / step32(fused, den, t, 1.0))
+
+
 def clenshaw_split_float(cs, t, fused=True):
     """ClenshawSplit<ScalarFp32>, operation for operation.
 
@@ -2622,8 +3348,331 @@ def fit_region_b_rational_f32():
     return seed
 
 
-def write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32):
-    """The float lane's tables: the shipped Chebyshev lane, then the rational route."""
+def f32_rat_route_delivered(p, q, n, a, b, npts, weighted):
+    """Worst |F_n - fit| in the lane's own binary32, per multiply-add route.
+
+    `f32_rat_residual` above is this figure taken in exact arithmetic on the
+    rounded coefficients: the reading the shipped float rational pieces were
+    accepted on, and the reading that never bounded the arithmetic the entry
+    runs, because the entry rounds at every step of the Horner numerator and
+    denominator and rounds twice on the separate multiply-add route. This one
+    evaluates the kernel's own chain - `rational_value_route32`, operation for
+    operation - so an acceptance that reads it is taken on the delivered figure
+    rather than beside it.
+    """
+    a32, b32 = r32(a), r32(b)
+    worst = [0.0, 0.0]
+    for i in range(npts + 1):
+        x = r32(a32 + (b32 - a32) * (i / npts))
+        if x >= b32:
+            x = math.nextafter(b32, 0.0)
+        ref = float(boys_ref(n, mpf(x)))
+        t = f32_map(a32, b32, x)
+        w = float(seed_weight(n, mpf(x))) if weighted else 1.0
+        for index, fused in ((0, True), (1, False)):
+            e = abs(float(rational_value_route32(p, q, t, fused)) - ref) * w
+            if e > worst[index]:
+                worst[index] = e
+    return worst
+
+
+def f32_narrow_rat_piece(n, a, b, weighted, depth=0):
+    """The family's rational pieces over [a, b), in the kernel's arithmetic.
+
+    The family search is the shipped one - `f32_rat_piece` walks the stored
+    count upward and every split of it into numerator and denominator, and
+    accepts on the lane's own weighted target - and what this adds is the
+    arithmetic that target is read in: the piece is kept only when the kernel's
+    own binary32 evaluation holds the lane's bar too, under both multiply-add
+    routes with the worse taken.
+
+    The bar and not the search's target, because the target is not reachable
+    there: TOL_FLOAT / 2 is 5e-8 and the binary32 evaluation of F_0 near x = 0
+    cannot round closer than half an ulp of a value within 1e-4 of one, which
+    is 5.96e-8 - measured on this partition, the pieces nearest zero come back
+    at 4.9e-8 and the ones that do not are floor failures no stored count
+    fixes. What the lanes are certified against is kRegionAFitBar, and a piece
+    is kept when the figure the kernel delivers holds it. A piece that does not
+    is bisected, since the fit's own error falls with the interval even where
+    the rounding's does not; the count that costs is then the piece count this
+    returns, which the caller reports.
+    """
+    piece = f32_rat_piece(n, a, b, weighted=weighted)
+    if piece is not None:
+        routes = f32_rat_route_delivered(piece["p"], piece["q"], n, a, b,
+                                         F32_NARROW_GRID, weighted)
+        piece["fused"], piece["separate"] = routes[0], routes[1]
+        if routes[0] <= F32_RAT_BOUND and routes[1] <= F32_RAT_BOUND:
+            return [piece]
+    if depth >= F32_RAT_MAX_DEPTH:
+        return None
+    mid = r32((r32(a) + r32(b)) / 2.0)
+    if not (r32(a) < mid < r32(b)):
+        return None
+    left = f32_narrow_rat_piece(n, a, mid, weighted, depth + 1)
+    right = f32_narrow_rat_piece(n, mid, b, weighted, depth + 1)
+    if left is None or right is None:
+        return None
+    return left + right
+
+
+def _f32_narrow_rat_job(job):
+    n, pieces, weighted = job
+    mp.dps = F32_RAT_DPS  # the scan's working precision; a spawn does not carry it
+    out = []
+    for (a, b, _deg, _cs, _ms) in pieces:
+        cover = f32_narrow_rat_piece(n, mpf(a), mpf(b), weighted)
+        if cover is None:
+            raise RuntimeError(
+                f"float rational narrow region: F{n} on [{a}, {b}) reaches no piece "
+                f"holding the lane's {mp.nstr(F32_RAT_BOUND, 2)} bar in its own binary32 "
+                f"at both multiply-add routes within {F32_RAT_MAX_DEPTH} bisection(s)")
+        out.append(cover)
+    return n, out
+
+
+def fit_narrow_rational_f32(narrow_a_f32, narrow_b_f32):
+    """The float lane's rational route over its own narrow partition.
+
+    The partitions are the lane's narrow Chebyshev ones, because a partition is
+    a cut of the region and not a property of a family; what the rational
+    family brings is its own degree pair per piece, read at that piece's own
+    interval and mapped argument. The search is the lane's own rational one -
+    the weighted residual of the coefficients as stored, walked down to
+    F32_RAT_ACCEPT - and the piece is kept when the figure the entry actually
+    delivers holds the lane's own F32_RAT_BOUND bar, read in binary32 at both
+    multiply-add routes with the worse drawn. The bar rather than the search's
+    target, because the target is unreachable there: see f32_narrow_rat_piece.
+    Where a piece holds neither, it is bisected and the extra pieces are the
+    count the criterion costs; the figure is reported either way.
+    """
+    print(f"fitting the float lane's rational route over its narrow partition "
+          f"({F32_RAT_DPS} dps, the shipped search's {mp.nstr(F32_RAT_ACCEPT, 2)} target, "
+          f"kept at the lane's {mp.nstr(F32_RAT_BOUND, 2)} bar read in binary32 at BOTH "
+          f"multiply-add routes) ...")
+    jobs = [(n, narrow_a_f32["orders"][n], True) for n in range(MAX_ORDER + 1)]
+    out = run_jobs(_f32_narrow_rat_job, jobs)
+    orders = [[] for _ in range(MAX_ORDER + 1)]
+    stored = 0
+    pieces = 0
+    fused = 0.0
+    separate = 0.0
+    for n, covers in out:
+        for cover in covers:
+            for piece in cover:
+                orders[n].append(piece)
+                stored += piece["count"]
+                pieces += 1
+                fused = max(fused, piece["fused"])
+                separate = max(separate, piece["separate"])
+    n_pieces_a = sum(len(narrow_a_f32["orders"][n]) for n in range(MAX_ORDER + 1))
+    print(f"  region A: rational {stored} stored in {pieces} piece(s) over the Chebyshev "
+          f"partition's {n_pieces_a}, delivered fused {fused:.6e} / separate {separate:.6e}")
+
+    b_jobs = [(0, [piece], False) for piece in narrow_b_f32["pieces"]]
+    b_out = run_jobs(_f32_narrow_rat_job, b_jobs)
+    b_pieces = [piece for _, covers in b_out for cover in covers for piece in cover]
+    b_stored = sum(piece["count"] for piece in b_pieces)
+    b_fused = max(piece["fused"] for piece in b_pieces)
+    b_separate = max(piece["separate"] for piece in b_pieces)
+    print(f"  region B: rational {b_stored} stored in {len(b_pieces)} piece(s) over the "
+          f"partition's {len(narrow_b_f32['pieces'])}, delivered fused {b_fused:.6e} / "
+          f"separate {b_separate:.6e}")
+    return {"orders": orders, "stored": stored, "pieces": pieces,
+            "fused": fused, "separate": separate,
+            "b_pieces": b_pieces, "b_stored": b_stored,
+            "b_fused": b_fused, "b_separate": b_separate,
+            "bound": F32_RAT_BOUND, "accept": F32_RAT_ACCEPT}
+
+
+def narrow_rat_f32_block_lines(f, narrow_rat_f32, narrow_b_f32):
+    """The float lane's narrow partition under the rational route.
+
+    The same shape `kRatAPieces`/`kRatACoeffs` and the region-B pair have, at
+    the narrow pieces' own intervals: a piece table with its own degree pair
+    per row, so a bisected piece is a row like any other.
+    """
+    f.write("\n// The float lane's rational route over its own narrow partition: the\n"
+            "// family's own degree pair per piece, at each piece's own interval and\n"
+            "// mapped argument. The partitions are the narrow Chebyshev ones - a\n"
+            "// partition is a cut of the region, not a property of a family - so a\n"
+            "// piece the family could not hold the target on is bisected, and the\n"
+            "// piece table carries the result. Every row was accepted on the lane's\n"
+            "// own weighted target read in the lane's own binary32, at BOTH\n"
+            "// multiply-add routes with the worse taken, which is the arithmetic\n"
+            "// the entry runs and not the exact reading its shipped pieces were\n"
+            "// accepted on. The figure below is that worse reading, swept.\n")
+    a_pieces = [piece for n in range(MAX_ORDER + 1) for piece in narrow_rat_f32["orders"][n]]
+    a_coeffs = []
+    a_offsets = []
+    for piece in a_pieces:
+        a_offsets.append(len(a_coeffs))
+        a_coeffs.extend(piece["p"])
+        a_coeffs.extend(piece["q"])
+    f.write("inline constexpr auto kNarrowRatACoeffsF32 = std::to_array<float>({\n")
+    for i in range(0, len(a_coeffs), 6):
+        f.write("  " + ", ".join(fmtf(v) for v in a_coeffs[i:i + 6]) + ",\n")
+    f.write("});\n")
+    f.write("inline constexpr auto kNarrowRatAPiecesF32 = std::to_array<RatPiece>({\n")
+    starts = []
+    index = 0
+    for n in range(MAX_ORDER + 1):
+        starts.append(index)
+        for piece in narrow_rat_f32["orders"][n]:
+            f.write(f"  {{{fmtf(piece['a'])}, {fmtf(piece['b'])}, {piece['m']}, "
+                    f"{piece['k']}, {a_offsets[index]}}},  // F{n}\n")
+            index += 1
+    f.write("});\n")
+    starts.append(index)
+    f.write("inline constexpr auto kNarrowRatAPieceStartF32 = std::to_array<int>({"
+            + ", ".join(map(str, starts)) + "});\n")
+    f.write(f"inline constexpr int kNarrowRatAStoredF32 = {narrow_rat_f32['stored']};\n")
+    f.write(f"inline constexpr double kNarrowRatADeliveredFusedF32 = "
+            f"{fmt(mpf(narrow_rat_f32['fused']))};\n")
+    f.write(f"inline constexpr double kNarrowRatADeliveredSeparateF32 = "
+            f"{fmt(mpf(narrow_rat_f32['separate']))};\n")
+
+    b_pieces = narrow_rat_f32["b_pieces"]
+    b_coeffs = []
+    b_offsets = []
+    for piece in b_pieces:
+        b_offsets.append(len(b_coeffs))
+        b_coeffs.extend(piece["p"])
+        b_coeffs.extend(piece["q"])
+    f.write("\n// The same family over the narrow partition of region B, one pair per\n"
+            "// piece, read at the piece's own interval and at the mapped argument the\n"
+            "// narrow Chebyshev seed on that piece uses, so the two routes over a\n"
+            "// piece read one t.\n")
+    f.write("inline constexpr auto kNarrowRatBCoeffsF32 = std::to_array<float>({\n")
+    for i in range(0, len(b_coeffs), 6):
+        f.write("  " + ", ".join(fmtf(v) for v in b_coeffs[i:i + 6]) + ",\n")
+    f.write("});\n")
+    f.write("inline constexpr auto kNarrowRatBPiecesF32 = std::to_array<RatPiece>({\n")
+    for index, piece in enumerate(b_pieces):
+        f.write(f"  {{{fmtf(piece['a'])}, {fmtf(piece['b'])}, {piece['m']}, {piece['k']}, "
+                f"{b_offsets[index]}}},\n")
+    f.write("});\n")
+    f.write(f"inline constexpr int kNarrowRatBPiecesCountF32 = {len(b_pieces)};\n")
+    f.write(f"inline constexpr int kNarrowRatBStoredF32 = {narrow_rat_f32['b_stored']};\n")
+    f.write(f"inline constexpr double kNarrowRatBDeliveredFusedF32 = "
+            f"{fmt(mpf(narrow_rat_f32['b_fused']))};\n")
+    f.write(f"inline constexpr double kNarrowRatBDeliveredSeparateF32 = "
+            f"{fmt(mpf(narrow_rat_f32['b_separate']))};\n")
+
+
+def narrow_f32_block_lines(f, narrow_a_f32, narrow_b_f32):
+    """The float lane's own narrow partition, as the header writes it.
+
+    A function of its own because the block is what --narrow-only
+    reproduces on its own: write_f32_namespace calls it and so does that
+    path, so the two cannot drift.
+    """
+    # The lane's own narrow partition: the same fitted regions at a narrower
+    # degree, placed by the lane's own bisection law and measured in the lane's
+    # own binary32 arithmetic at both multiply-add routes.
+    f.write("\n// The float lane's narrow partition of region A: the lane's own\n"
+            "// weighted 1e-7 law and the same midpoint bisection the shipped pieces\n"
+            f"// were placed by, at degree {F32_NARROW_DEG} instead of the lane's degree cap.\n"
+            "// A lower degree accepts a narrower interval, so the partition comes\n"
+            "// back with more pieces of fewer coefficients each: the trade the\n"
+            "// granularity axis names, and not a saving. The shipped pieces above\n"
+            "// are untouched by this and are the same bytes whether or not the\n"
+            "// partition is named.\n")
+    f.write("inline constexpr int kNarrowADegF32 = " + str(F32_NARROW_DEG) + ";\n")
+    narrow_a32 = []
+    narrow_a32_mono = []
+    narrow_a32_meta = []
+    for n in range(MAX_ORDER + 1):
+        for (a, b, deg, cs, ms) in narrow_a_f32["orders"][n]:
+            narrow_a32_meta.append((n, a, b, deg, len(narrow_a32)))
+            narrow_a32.extend(fmtf(c) for c in cs)
+            narrow_a32_mono.extend(fmtf(c) for c in ms)
+    f.write("inline constexpr auto kNarrowACoeffsF32 = std::to_array<float>({\n")
+    for i in range(0, len(narrow_a32), 6):
+        f.write("  " + ", ".join(narrow_a32[i:i + 6]) + ",\n")
+    f.write("});\n")
+    f.write("inline constexpr auto kNarrowAMonoCoeffsF32 = std::to_array<float>({\n")
+    for i in range(0, len(narrow_a32_mono), 6):
+        f.write("  " + ", ".join(narrow_a32_mono[i:i + 6]) + ",\n")
+    f.write("});\n")
+    f.write("static_assert(std::size(kNarrowAMonoCoeffsF32) == std::size(kNarrowACoeffsF32),\n"
+            "              \"the monomial table must parallel the Chebyshev table\");\n")
+    f.write("inline constexpr auto kNarrowAPiecesF32 = std::to_array<OrderPiece>({\n")
+    for (n, a, b, deg, off) in narrow_a32_meta:
+        f.write(f"  {{{fmtf(mpf(a))}, {fmtf(mpf(b))}, {deg}, {off}}},  // F{n}\n")
+    f.write("});\n")
+    nstarts = []
+    index = 0
+    for n in range(MAX_ORDER + 1):
+        nstarts.append(index)
+        index += len(narrow_a_f32["orders"][n])
+    nstarts.append(index)
+    f.write("inline constexpr auto kNarrowAPieceStartF32 = std::to_array<int>({"
+            + ", ".join(map(str, nstarts)) + "});\n")
+    f.write("static_assert(std::size(kNarrowAPieceStartF32) == kMaxOrder + 2,\n"
+            "              \"narrow piece-start table must cover kMaxOrder\");\n")
+
+    f.write("\n// The float lane's narrow partition of region B: the same interval\n"
+            "// [kX0, kX1) split by the lane's own fit_interval acceptance at the\n"
+            "// narrow degree, because region B has no walk of its own to inherit.\n"
+            "// One evaluation reads kNarrowBDegF32 + 1 coefficients from the one piece\n"
+            "// the argument falls in, against the shipped seed's kBDeg + 1 from its\n"
+            "// single row.\n")
+    f.write("inline constexpr int kNarrowBDegF32 = " + str(F32_NARROW_DEG) + ";\n")
+    nbp = narrow_b_f32["pieces"]
+    f.write("inline constexpr int kNarrowBPiecesF32 = " + str(len(nbp)) + ";\n")
+    edges = [fmtf(mpf(nbp[0][0]))] + [fmtf(mpf(p[1])) for p in nbp]
+    f.write("inline constexpr auto kNarrowBEdgesF32 = std::to_array<float>({"
+            + ", ".join(edges) + "});\n")
+    nb_c = [fmtf(c) for p in nbp for c in p[3]]
+    nb_m = [fmtf(c) for p in nbp for c in p[4]]
+    f.write("inline constexpr auto kNarrowBcoeffsF32 = std::to_array<float>({\n")
+    for i in range(0, len(nb_c), 6):
+        f.write("  " + ", ".join(nb_c[i:i + 6]) + ",\n")
+    f.write("});\n")
+    f.write("inline constexpr auto kNarrowBMonoCoeffsF32 = std::to_array<float>({\n")
+    for i in range(0, len(nb_m), 6):
+        f.write("  " + ", ".join(nb_m[i:i + 6]) + ",\n")
+    f.write("});\n")
+    f.write("static_assert(std::size(kNarrowBEdgesF32) == kNarrowBPiecesF32 + 1\n"
+            "                  && std::size(kNarrowBcoeffsF32) == kNarrowBPiecesF32 * (kNarrowBDegF32 + 1)\n"
+            "                  && std::size(kNarrowBMonoCoeffsF32) == std::size(kNarrowBcoeffsF32),\n"
+            "              \"the narrow partition's pieces must tile [kX0, kX1)\");\n")
+
+    # What the narrow partition stores and what it delivers, in the lane's own
+    # arithmetic at each multiply-add route: the figure a row published for it
+    # is the worse of the two.
+    f.write("\n// What the lane's narrow partition stores and what it delivers, per\n"
+            "// multiply-add route. Measured on each piece's own grid against the\n"
+            "// lane's reference, in binary32 on the coefficients as stored, under\n"
+            "// both schemes the lane's entries sum by - which is the arithmetic the\n"
+            "// entries run and not the binary64 sweep the pieces were placed by. A\n"
+            "// swept maximum on a finite grid: the bar is kRegionAFitBar and, for\n"
+            "// region B, kRegionBFitBar.\n"
+            "struct NarrowRowF32 { int scheme, deg, pieces, stored;\n"
+            "                      double fused, separate; };\n"
+            "inline constexpr auto kNarrowARowsF32 = std::to_array<NarrowRowF32>({\n")
+    for scheme in range(NARROW_SCHEMES):
+        f.write(f"  {{{scheme}, {F32_NARROW_DEG}, "
+                f"{sum(len(p) for p in narrow_a_f32['orders'])}, "
+                f"{sum(len(p) for p in narrow_a_f32['orders']) * (F32_NARROW_DEG + 1)}, "
+                f"{fmt(narrow_a_f32['bounds'][scheme][0])}, "
+                f"{fmt(narrow_a_f32['bounds'][scheme][1])}}},\n")
+    f.write("});\n")
+    f.write("inline constexpr auto kNarrowBRowsF32 = std::to_array<NarrowRowF32>({\n")
+    for scheme in range(NARROW_SCHEMES):
+        f.write(f"  {{{scheme}, {F32_NARROW_DEG}, {len(nbp)}, "
+                f"{len(nbp) * (F32_NARROW_DEG + 1)}, "
+                f"{fmt(narrow_b_f32['bounds'][scheme][0])}, "
+                f"{fmt(narrow_b_f32['bounds'][scheme][1])}}},\n")
+    f.write("});\n")
+
+
+
+def write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32,
+                        narrow_a_f32, narrow_b_f32, narrow_rat_f32):
+    """The float lane's tables: the shipped lane, the rational route, the narrow
+    partition under both routes."""
     f.write("\nnamespace boys::detail::f32 {\n\n")
     all_coeffs = []
     all_mono = []
@@ -2781,11 +3830,15 @@ def write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32):
             "inline constexpr double kRegionBFitRatDelivered = "
             + fmt(rat_b_f32["delivered"]) + ";\n")
 
+    narrow_f32_block_lines(f, narrow_a_f32, narrow_b_f32)
+    narrow_rat_f32_block_lines(f, narrow_rat_f32, narrow_b_f32)
+
     f.write("\n}  // namespace boys::detail::f32\n")
 
 
 def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb,
-                 scheme_rows, rat_b, rat_a, rat_a_f32, rat_b_f32, narrow, narrow_a):
+                 scheme_rows, rat_b, rat_a, rat_a_f32, rat_b_f32, narrow, narrow_a,
+                 narrow_rat_a, narrow_rat_b, narrow_a_f32, narrow_b_f32):
     with open(path, "w", newline="\n") as f:
         f.write("// Generated by tools/gen_boys_coefficients.py - DO NOT EDIT.\n")
         f.write("// Piecewise Chebyshev (split Clenshaw) fits of F_n(x), region A seeds\n")
@@ -2903,7 +3956,7 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
         f.write("\n")
         # The narrow partitions of the same regions, beside the shipped fits
         # rather than in place of them. See narrow_block_lines.
-        for line in narrow_block_lines(narrow_a, narrow):
+        for line in narrow_block_lines(narrow_a, narrow, narrow_rat_a, narrow_rat_b):
             f.write(line + "\n")
         f.write("\n")
         ext_deg, ext_cs, ext_mono = ext_cheb
@@ -3030,7 +4083,9 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
         f.write("\n}  // namespace boys::detail\n")
 
         # Float lane.
-        write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32)
+        narrow_rat_f32 = fit_narrow_rational_f32(narrow_a_f32, narrow_b_f32)
+        write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32,
+                        narrow_a_f32, narrow_b_f32, narrow_rat_f32)
         f.write("\n/// \\endcond\n")
 
 
@@ -3237,15 +4292,23 @@ def main():
         # the scheme sweeps are what take the hours.
         narrow_a = narrow_region_a([fit_order(n) for n in range(MAX_ORDER + 1)])
         narrow = narrow_region_b()
+        narrow_rat_b = narrow_region_b_rational(narrow)
+        narrow_rat_a = narrow_region_a_rational(narrow_a)
+        narrow_a_f32 = narrow_region_a_f32()
+        narrow_b_f32 = narrow_region_b_f32()
         narrow_out = args.narrow_out or (args.header + ".narrow-tmp.hpp")
         os.makedirs(os.path.dirname(narrow_out) or ".", exist_ok=True)
         with open(narrow_out, "w", newline="\n") as f:
             f.write("#include <array>\n#include <cstddef>\n\n"
                     "namespace boys::detail {\n\n")
-            for line in narrow_block_lines(narrow_a, narrow):
+            for line in narrow_block_lines(narrow_a, narrow, narrow_rat_a, narrow_rat_b):
                 f.write(line + "\n")
-            f.write("\n}  // namespace boys::detail\n")
-        format_header(narrow_out)
+            f.write("\n}  // namespace boys::detail\n\n")
+            f.write("namespace boys::detail::f32 {\n\n")
+            narrow_f32_block_lines(f, narrow_a_f32, narrow_b_f32)
+            narrow_rat_f32_block_lines(f, fit_narrow_rational_f32(narrow_a_f32, narrow_b_f32),
+                                       narrow_b_f32)
+            f.write("\n}  // namespace boys::detail::f32\n")
         print(f"wrote {narrow_out}")
         print(f"the narrow partition of region A: {sum(len(p) for p in narrow_a['orders'])} "
               f"pieces over {MAX_ORDER + 1} orders, degree {NARROW_DEG}, "
@@ -3303,6 +4366,12 @@ def main():
               f"{narrow_a['worst'][scheme][1]:.6e} (fused / separate), bound "
               f"{narrow_a['bounds'][scheme][0]:.6e}")
 
+    # The rational route over the narrow partition: the same family and the
+    # same bars, fitted over the narrow intervals and accepted in the
+    # arithmetic the kernel runs at both multiply-add routes.
+    narrow_rat_b = narrow_region_b_rational(narrow)
+    narrow_rat_a = narrow_region_a_rational(narrow_a)
+
     # The rational region-B route, over the interval the Chebyshev region-B fit
     # was just given, so the two are compared on the same interval against the
     # same reference.
@@ -3318,6 +4387,11 @@ def main():
     rat_b_f32 = fit_region_b_rational_f32()
     print(f"  float lane region B: rational {rat_b_f32['m']}/{rat_b_f32['k']} "
           f"{rat_b_f32['count']} stored, delivered {mp.nstr(rat_b_f32['delivered'], 6)}")
+
+    # The float lane's own narrow partition: the lane's fitted regions at the
+    # narrow degree, accepted in the lane's binary32 arithmetic at both routes.
+    narrow_a_f32 = narrow_region_a_f32()
+    narrow_b_f32 = narrow_region_b_f32()
 
     print("fitting the extended band seed (F0 on [XNEW0, X0), tol 5e-14; "
           "the fixed-point loop) ...")
@@ -3365,7 +4439,8 @@ def main():
         try:
             write_header(tmp_header, double_orders, float_orders, b_cheb, b_cheb_f32,
                          (ext_deg, ext_cs, ext_mono), scheme_rows, rat_b, rat_a,
-                         rat_a_f32, rat_b_f32, narrow, narrow_a)
+                         rat_a_f32, rat_b_f32, narrow, narrow_a,
+                         narrow_rat_a, narrow_rat_b, narrow_a_f32, narrow_b_f32)
             format_header(tmp_header)
             write_reference(tmp_reference)
             ok = True
@@ -3384,7 +4459,8 @@ def main():
     os.makedirs(os.path.dirname(args.header) or ".", exist_ok=True)
     write_header(args.header, double_orders, float_orders, b_cheb, b_cheb_f32,
                  (ext_deg, ext_cs, ext_mono), scheme_rows, rat_b, rat_a,
-                 rat_a_f32, rat_b_f32, narrow, narrow_a)
+                 rat_a_f32, rat_b_f32, narrow, narrow_a,
+                 narrow_rat_a, narrow_rat_b, narrow_a_f32, narrow_b_f32)
     format_header(args.header)
     print(f"wrote {args.header}")
 

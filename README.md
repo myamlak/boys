@@ -307,6 +307,21 @@ every cell the accuracy gate sweeps. Half the lane's tolerance is not that crite
 at all: the rational route's reading sits above that half at 18 of the 33 orders under the fused
 arithmetic and 19 under the separate one, so a search against it does not close.
 
+**`FitGranularity::kNarrow` is served by this lane too, on both its routes.** The partition cuts
+region A of this lane into 218 pieces at degree 6 and region B into two pieces at the same degree,
+and each route stores its own fit on that cut: 1526 coefficients either way on the Chebyshev route
+against the shipped table's 1067, and 1238 on the rational route against 525. Region B's seed is
+where the narrowing is visible in the other direction: 14 stored on the Chebyshev route against the
+shipped seed's 11, and 11 on the rational route against its 6. The gate's single-entry policy rows read
+1.02681e-07 over region A and 1.29916e-07 over region B for the Chebyshev pair under both
+multiply-add routes, and for the rational pair 1.00057e-07 over region A under both and 2.99288e-08
+over region B with the multiply-add fused against 4.43557e-08 with it separate — every narrow row
+inside the lane's 1.5e-07 bar in both builds. The figures the generated header publishes for the
+narrow pieces are the worse of the two routes read in binary32 on the coefficients as stored —
+1.19209e-07 for the Chebyshev pieces, 1.12003e-07 over region A and 3.90533e-08 fused or 2.92450e-08
+separate over region B for the rational ones — and the route the build runs is the figure the gate
+judges the row against.
+
 **The Chebyshev route's fits are stored in both of the forms the two schemes read**, one monomial
 coefficient per Chebyshev coefficient: 1067 stored either way in region A and 11 in region B, the same
 pieces, intervals and degrees, so naming a scheme chooses a table and not a shape. Over region A the
@@ -408,9 +423,10 @@ region B derived from the proved truncation bound below rather than placed by sa
 | `FitGranularity::kNarrow` | 3476 | 316 | 11 |
 
 **Narrowing is a trade and not a saving.** The coefficients an evaluation reads fall from 19–21 to 11
-and the table a consumer carries grows from 1339 to 3476, with a piece lookup on every call. A
-consumer whose cost is per evaluation gains; one whose cost is the table gains nothing and pays the
-lookup.
+on the default route and to 6–9 on the rational one, while the table a consumer carries grows from
+1339 to 3476 on the default route, and the rational route's narrow table adds 2646 of its own over
+the same 316 piece rows, with a piece lookup on every call. A consumer whose cost is per evaluation
+gains; one whose cost is the table gains nothing and pays the lookup.
 
 **Region A's pieces are held to a second reading that region B's are not.** The batch entry seeds its
 downward recursion from the top order's piece, and that recursion carries the piece's error down to
@@ -438,9 +454,14 @@ size it is.
 reference over the interval its own pieces cover, `FitGranularity::kNarrow` delivers a worst absolute
 error of 2.22e-16 over region A at region A's published 1e-15 bar — the shipped table's own figure —
 and 7.21645e-16 over region B against the shipped seed's 9.9365e-15, a factor of 13.8. The gate's
-granularity block carries all 252 of its rows — one per partition, scheme, call shape and accuracy
-rung — each judged against the bar the published table holds for the cell it ran in times the rung's
-multiplier, with the worst cell named; and it reports the trade above and the 4079336 of 5639648 axis
+granularity block carries all 255 of its rows — one per partition, scheme, call shape and accuracy
+rung, plus three for the rational route over the narrow partition: its region-A pieces, its region-B
+seed and the batch entry read through it — each judged against the bar the published table holds for
+the cell it ran in times the rung's multiplier, with the worst cell named. Those three rational rows
+read 2.21663e-14 against the region's 3e-14, 4.12448e-14 against the seed's 5e-14 and 5e-14 against
+the batch lane's 5.5e-14; they are the figure the generated header publishes for those fits,
+measured under both multiply-add routes with the worse taken, and the rows hold with the
+multiply-add separate as well. The block reports the trade above and the 4079336 of 5639648 axis
 cells (72.3%) that can discriminate, the rest carrying a bound at least as large as the value itself.
 Those rows are counted apart from every other book the gate reports, so nothing the library already
 published moves.
@@ -458,15 +479,22 @@ interval the entry runs region C's asymptotic form, which no partition replaces,
 one of these figures against a wider range would be matching the fitted tables' promise to an error
 that is not theirs.
 
-**Where a combination has no narrow table it is refused where it is named**, with the reason, rather
-than answered from the shipped table: the rational minimax route (one numerator/denominator pair over
-the whole interval) and the single-precision lanes (which hold one coefficient set). Each names the
-table it would need and each is therefore unbuilt work rather than an impossible combination. The two
-partitions are different fits of the same function over the same interval, so a substitution would
-return the shipped values under the narrow partition's name. Two combinations that were refusals of
-that kind are built: the relaxed rungs `m > 1`, whose criterion is measured against the narrow
-partition's own pieces rather than against the shipped rows it truncates elsewhere, and the orders
-axis, whose packed lane reaches a per-order cut by fetching each order's own piece.
+**Where a combination has no narrow table or kernel it is refused where it is named**, with the
+reason, rather than answered from the shipped table. Two refusals this paragraph used to carry are
+now tables instead: the rational minimax route has a narrow fit over both regions, and the
+single-precision lanes serve narrow tables on both their routes. What remains has a narrower reason
+than a missing route or a missing lane, and each is a static assertion naming the table or the kernel
+it would need: the rational route over the narrow partition on the across-orders packing axis, whose
+lane steps one order's coefficients to the next at a fixed stride; the narrow partition on the
+single-precision lanes past the reference multiplier, which hold one coefficient set and one degree
+table; the same limit on the rational route's own rung table, which is derived from the shipped
+pairs; and the single-precision lanes' across-orders packed entry, which names no partition at all.
+Each is therefore unbuilt work rather than an impossible combination. The two partitions are
+different fits of the same function over the same interval, so a substitution would return the
+shipped values under the narrow partition's name. The relaxed rungs `m > 1` and the orders axis are
+otherwise built: a rung of the narrow partition is cut by a criterion measured against its own pieces
+rather than against the shipped rows, and the packed lane reaches a per-order cut by fetching each
+order's own piece.
 
 The proved bound is what the partition is derived from, and it needs no sampling: for this function
 `|F_n(z)| ≤ F_n(Re z)` holds exactly, so the max modulus on a Bernstein ellipse is at most its value

@@ -1664,14 +1664,19 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
         if constexpr (kGranularity != kDefaultFitGranularity)
         {
             // The narrow partition is a partition of the shipped route's own
-            // region-A fits; the rational route stores its pairs over the
-            // shipped pieces and has no narrow partition of them, which
-            // RouteFit refuses where such a policy is named rather than here.
+            // region-A fits, and this lane's narrow body is that partition's: it
+            // reads each of the four orders it holds its own piece and
+            // coefficients, because a per-order cut gives the four lanes no
+            // stride to share. The rational route's narrow fit is a pair per
+            // piece with no such four-order lane built over it, so a policy
+            // naming the route and the partition together is refused here.
             static_assert(kRoute == FitRoute::kChebyshev,
-                          "the rational route's region-A pairs cover the shipped partition's "
-                          "per-order pieces, and the narrow partition is cut per order, so "
-                          "there is no narrow partition of the route's pairs to read: the "
-                          "route carries the shipped partition on this axis");
+                          "this lane's narrow body reads each of the four orders it holds its own "
+                          "piece and coefficients, and the rational route's narrow fit is a pair "
+                          "per piece with no four-order lane built over it: naming the route and "
+                          "the partition together on this axis is a kernel to write rather than "
+                          "a combination that cannot be formed - read the narrow partition on "
+                          "the route's own entries, or the shipped partition on this axis");
             NarrowOrdersBody<OrdersSchemeOf(kScheme)>(
                 nmax, x, out, 1, RungDegree<decltype(kDegrees)>{kDegrees});
         } else if constexpr (kRoute == FitRoute::kRationalMinimax)

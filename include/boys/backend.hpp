@@ -231,23 +231,30 @@ const char* PackAxisName(PackAxis axis) noexcept;
 /// left is cut to the single-order bar alone. Both readings are parts of one
 /// criterion rather than a choice.
 ///
+/// Both routes and both precisions carry the member: the rational family is
+/// fitted over the narrow pieces as its own per-piece pairs, and the
+/// single-precision lanes carry their own narrow tables, each accepted in the
+/// arithmetic its lane runs at both multiply-add routes.
+///
 /// A member the build cannot serve is refused where it is named, with the
 /// reason, rather than answered from the shipped tables: the two partitions'
 /// coefficients are different fits of the same function over the same
 /// interval, so a silent substitution would return the shipped partition's
-/// values under the other's name. The refusals are the route that carries no
-/// narrow table - its region-B seed is a single numerator/denominator pair over
-/// the whole interval and has no partition of it - and the single-precision
-/// lanes, which hold one coefficient set and no second partition of it. The
-/// relaxed rungs and the across-orders packing axis were refusals of the same
-/// kind and both are built: a rung of this partition is derived against its own
-/// pieces rather than truncated from the shipped rows, and the packed lane
-/// reaches a per-order cut with a gathered fetch, reading each of the four
-/// orders it holds its own piece and coefficients instead of stepping one
-/// piece's coefficients at a fixed stride. Each refusal that remains names the
-/// table it would need - a narrow rational pair, a narrow float table - and is
-/// unbuilt work rather than an impossible combination, named where it is refused
-/// so that it can be counted.
+/// values under the other's name. The refusals are the rational route over the narrow
+/// partition on the packing axis - the route's region-A pairs cover the shipped
+/// per-order pieces and the packed lane steps one order's coefficients to the next at a
+/// fixed stride, so a packed kernel over the pairs' own narrow pieces is a kernel to
+/// write - and the narrow partition on the single-precision lanes past the reference
+/// multiplier, which hold one coefficient set and one degree table and so have no narrow
+/// rung table to cut. The relaxed rungs and the across-orders packing axis are otherwise
+/// built: a rung of this partition is derived against its own pieces rather than
+/// truncated from the shipped rows, and the packed lane reaches a per-order cut with a
+/// gathered fetch, reading each of the four orders it holds its own piece and
+/// coefficients instead of stepping one piece's coefficients at a fixed stride. Each
+/// refusal that remains names the work it would need - a packed kernel over the route's
+/// narrow pairs, a narrow rung table for the single-precision lanes - and is unbuilt
+/// work rather than an impossible combination, named where it is refused so that it can
+/// be counted.
 ///
 /// \ingroup boys
 enum class FitGranularity : std::uint8_t {
@@ -362,6 +369,9 @@ struct ChebyshevFit;
 
 struct RationalFit;
 
+/// The rational family over the narrow partition; see the specialization below.
+struct RationalFitNarrow;
+
 /// A route outside the FitRoute enumeration: not a selection this library can
 /// answer, and rejected where the caller names it rather than quietly evaluated
 /// at the default. The run-time selector takes the other reading - a route value
@@ -393,29 +403,16 @@ struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kShipped> {
     using Type = RationalFit;
 };
 
-/// The rational route under the narrow partition: refused where it is named.
-/// The route's region-B seed is one minimax pair over the whole interval and
-/// has no partition of its own, so there is no narrow rational table to read -
-/// and answering from the pair this route does ship would return the shipped
-/// partition's values under the narrow partition's name.
-///
-/// That is unbuilt work rather than an impossible combination: what is missing
-/// is the narrow rational pair itself, fitted over the narrow partition the way
-/// the shipped pair is fitted over the whole interval. The Chebyshev route's
-/// narrow table exists and is what this refusal points a caller at.
+/// The rational route under the narrow partition: the same family fitted over
+/// the narrow pieces' own intervals, one numerator/denominator pair per piece in
+/// both regions, in the same stored form and read at the same mapped arguments
+/// as the shipped member. The intervals are the Chebyshev route's narrow cut of
+/// the region - a partition is a cut of the region and not a property of a
+/// family - so what this member carries is the pairs, and it is one fit under
+/// either scheme for the reason the shipped member is.
 template <EvalScheme kScheme>
 struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kNarrow> {
-    static_assert(kScheme == EvalScheme::kSplitClenshaw && kScheme == EvalScheme::kHorner,
-                  "the rational minimax route's region-B seed is one numerator/denominator pair "
-                  "over the whole interval, and the narrow partition of it is a table to "
-                  "generate rather than one this route has: name FitGranularity::kShipped for "
-                  "this route, or FitRoute::kChebyshev for the narrow partition");
-
-    /// The fit a caller would have reached had the combination been served. The
-    /// assertion above holds at every scheme this specialisation can be
-    /// instantiated at, so no call reaches this alias; it is here because a
-    /// specialisation that names a route has to name its fit.
-    using Type = RationalFit;
+    using Type = RationalFitNarrow;
 };
 
 } // namespace detail
@@ -443,16 +440,17 @@ struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kNarrow> {
 /// value that is not an option fails.
 ///
 /// The one error the axes carry beyond a route outside the enumeration is a
-/// combination the build cannot serve - a partition for a route that has none,
-/// a partition on a lane that holds one coefficient set, a partition on the
-/// packing axis whose kernel reads the shipped pieces' shape from order to
-/// order - and each is refused where it is named rather than at a kernel,
-/// because the partitions are different fits of the same function over the same
-/// interval and a fallback would return the shipped values under the other
-/// partition's name. Each is unbuilt work and is refused with the work it names,
-/// so a gap is countable. The rungs are not among them: a relaxed rung cuts a
-/// stored fit's own coefficients, so the rung is derived per partition at
-/// compile time and every rung of every combination above is served.
+/// combination the build cannot serve - a partition on the packing axis whose kernel reads
+/// the shipped pieces' shape from order to order, where the route's pairs have no
+/// per-order table of their own - and each is refused where it is named rather than at a
+/// kernel, because the partitions are different fits of the same function over the same
+/// interval and a fallback would return the shipped values under the other partition's
+/// name. The single-precision lanes carry one more: their narrow partition is served at
+/// the reference multiplier and refused past it, where the rung reads the one degree
+/// table this lane stores. Each is unbuilt work and is refused with the work it names,
+/// so a gap is countable. The rungs are not among them on the double lane: a relaxed
+/// rung cuts a stored fit's own coefficients, so the rung is derived per partition at
+/// compile time and every rung of every combination above is served there.
 ///
 /// \tparam kFitRoute      the fit route; \c FitRoute::kChebyshev by default
 /// \tparam kEvalScheme    the scheme the fit's coefficients are summed in;
