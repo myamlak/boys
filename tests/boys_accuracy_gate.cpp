@@ -4865,7 +4865,9 @@ int main(int argc, char** argv) {
         kAllN,         // BoysAllN: every order over an array, the grouping done inside
         kAllNSorted,   // BoysAllN with the BoysSortedArgs overload
         kAllNAtOrders, // BoysAllNAtOrders: every order over an array, a top order per argument
+#ifdef BOYS_GATE_TIER
         kTierEntry,    // BoysAllOrdersAtTier: the scheme named at run time
+#endif
     };
 
     struct SchemeEntry {
@@ -9797,7 +9799,6 @@ int main(int argc, char** argv) {
                 "  entries the axis is carried on. The single-precision entries are not among\n"
                 "  them: the axis is refused on that lane, and the limits list below carries\n"
                 "  the reason and counts it\n");
-                "  entries the axis is carried on\n");
     std::printf("  CARRIED: the orders axis reads the narrow partition of region A: its pieces\n"
                 "  are cut per order, so the lane fetches each of the four orders it packs its\n"
                 "  own piece and coefficients instead of stepping one piece's coefficients at\n"
@@ -11098,6 +11099,7 @@ int main(int argc, char** argv) {
             std::snprintf(bar, sizeof(bar), "%.6g", rows[j].bound);
             granRow("rational x narrow",
                     "-",
+                    granRungLabels[0].c_str(),
                     rows[j].row,
                     bar,
                     GranularityClaims()[static_cast<std::size_t>(narrowRatClaims[j])]);
