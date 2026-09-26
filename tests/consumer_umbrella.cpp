@@ -2629,6 +2629,354 @@ void CheckGranularityLane(Report& report, const std::vector<Cell>& cells) {
     Covered("boys::GranularityName");
 }
 
+// --- the accuracy a combination carries, and the tolerance a caller names ----
+
+/// The three entries a consumer picks an option with: the bound a combination
+/// carries, the figure it was measured to deliver, and the entry that answers
+/// whether either is at the tolerance the caller names.
+///
+/// The first two are different numbers and the library says which is which in
+/// the `reading` field of each answer, so this check reads them apart rather
+/// than comparing them. The third is the question a caller with a target has -
+/// *is this at what I need* - and this check reads it the way such a caller
+/// does, at a request the run itself derives, and prints the numbers that
+/// decided each answer.
+///
+/// The whole cross is walked rather than a chosen pair, so the counts below are
+/// of every combination this build's tables name: the query's figures are
+/// required to be the accessors' figures, and its verdict is required to be the
+/// comparison of the request with them.
+void CheckOptionAccuracy(Report& report) {
+    const auto laneName = [](boys::Precision precision) {
+        for (const boys::LaneContractInfo& row : boys::BoysLaneContracts())
+        {
+            if (row.precision == precision)
+            {
+                return std::string(row.name);
+            }
+        }
+
+        return std::string("no lane of this library");
+    };
+
+    const auto routeName = [](boys::FitRoute route) {
+        for (const boys::FitRouteInfo& row : boys::BoysFitRoutes())
+        {
+            if (row.route == route)
+            {
+                return std::string(row.name);
+            }
+        }
+
+        return std::string("no fit route of this library");
+    };
+
+    const auto axesName = [&laneName, &routeName](boys::Precision precision,
+                                                  boys::FitRoute route,
+                                                  boys::EvalScheme scheme,
+                                                  boys::PackAxis axis,
+                                                  boys::FitGranularity granularity,
+                                                  boys::AccuracyTier tier) {
+        char text[256];
+        std::snprintf(text,
+                      sizeof(text),
+                      "%s, %s, %s, %s, %s, m = %g",
+                      laneName(precision).c_str(),
+                      routeName(route).c_str(),
+                      boys::EvalSchemeName(scheme),
+                      boys::PackAxisName(axis),
+                      boys::GranularityName(granularity),
+                      boys::AccuracyMultiplier(tier));
+        return std::string(text);
+    };
+
+    // A combination this build serves, taken as the first the cross names so
+    // that a lane's own default policy is the one the reader is shown.
+    bool haveServed = false;
+    boys::Precision servedPrecision = boys::Precision::kFp64;
+    boys::FitRoute servedRoute = boys::FitRoute::kChebyshev;
+    boys::EvalScheme servedScheme = boys::EvalScheme::kSplitClenshaw;
+    boys::PackAxis servedAxis = boys::PackAxis::kArguments;
+    boys::FitGranularity servedGranularity = boys::FitGranularity::kShipped;
+    boys::AccuracyTier servedTier = boys::AccuracyTier::kReference;
+
+    // A combination this build refuses, and the reason it gives: the first the
+    // cross refuses, so the example moves with the tables rather than with a
+    // hard-coded pair that a later revision could start serving.
+    bool haveRefused = false;
+    boys::Precision refusedPrecision = boys::Precision::kFp64;
+    boys::FitRoute refusedRoute = boys::FitRoute::kChebyshev;
+    boys::EvalScheme refusedScheme = boys::EvalScheme::kSplitClenshaw;
+    boys::PackAxis refusedAxis = boys::PackAxis::kArguments;
+    boys::FitGranularity refusedGranularity = boys::FitGranularity::kShipped;
+    boys::AccuracyTier refusedTier = boys::AccuracyTier::kReference;
+
+    std::size_t carried = 0;
+    std::size_t refused = 0;
+    std::size_t answeredOutside = 0;
+    std::size_t answeredOnTheMeasurement = 0;
+    std::size_t deliveredAbsent = 0;
+    std::size_t disagreements = 0;
+
+    for (const boys::LaneContractInfo& lane : boys::BoysLaneContracts())
+    {
+        for (const boys::FitRouteInfo& route : boys::BoysFitRoutes())
+        {
+            for (const boys::EvalSchemeInfo& scheme : boys::BoysEvalSchemes())
+            {
+                for (const boys::FitGranularityInfo& partition : boys::BoysFitGranularities())
+                {
+                    for (const boys::PackAxisInfo& axis : boys::BoysPackAxes())
+                    {
+                        for (int raw = 0; raw <= static_cast<int>(boys::AccuracyTier::kRelaxed65536);
+                             ++raw)
+                        {
+                            const boys::AccuracyTier tier =
+                                static_cast<boys::AccuracyTier>(raw);
+                            const boys::AccuracyFigure guaranteed = boys::BoysAccuracyGuaranteed(
+                                lane.precision, route.route, scheme.scheme, axis.axis,
+                                partition.granularity, tier);
+                            const boys::AccuracyFigure delivered = boys::BoysAccuracyDelivered(
+                                lane.precision, route.route, scheme.scheme, axis.axis,
+                                partition.granularity, tier);
+                            const boys::CombinationCoverage asked = boys::QueryCombination(
+                                lane.precision, route.route, scheme.scheme, axis.axis,
+                                partition.granularity, tier, guaranteed.value);
+
+                            if (!guaranteed.available)
+                            {
+                                ++refused;
+
+                                if (!haveRefused)
+                                {
+                                    haveRefused = true;
+                                    refusedPrecision = lane.precision;
+                                    refusedRoute = route.route;
+                                    refusedScheme = scheme.scheme;
+                                    refusedAxis = axis.axis;
+                                    refusedGranularity = partition.granularity;
+                                    refusedTier = tier;
+                                }
+
+                                disagreements +=
+                                    asked.verdict != boys::ToleranceVerdict::kNotCarried ||
+                                            asked.bound != 0.0 || asked.delivered != 0.0 ||
+                                            asked.deliveredKnown || asked.reason[0] == '\0' ||
+                                            guaranteed.value != 0.0 || delivered.value != 0.0
+                                        ? 1
+                                        : 0;
+
+                                continue;
+                            }
+
+                            ++carried;
+
+                            if (!haveServed)
+                            {
+                                haveServed = true;
+                                servedPrecision = lane.precision;
+                                servedRoute = route.route;
+                                servedScheme = scheme.scheme;
+                                servedAxis = axis.axis;
+                                servedGranularity = partition.granularity;
+                                servedTier = tier;
+                            }
+
+                            // The query is the comparison of the request with
+                            // the two figures, and the figures are the
+                            // accessors': both are required on every row rather
+                            // than on the row this check prints.
+                            if (asked.bound != guaranteed.value ||
+                                asked.deliveredKnown != delivered.available ||
+                                (delivered.available && asked.delivered != delivered.value) ||
+                                asked.requested != guaranteed.value ||
+                                asked.verdict != boys::ToleranceVerdict::kGuaranteedInside ||
+                                guaranteed.reading != boys::AccuracyReading::kGuaranteed ||
+                                delivered.reading != boys::AccuracyReading::kDelivered)
+                            {
+                                ++disagreements;
+
+                                continue;
+                            }
+
+                            const boys::CombinationCoverage half = boys::QueryCombination(
+                                lane.precision, route.route, scheme.scheme, axis.axis,
+                                partition.granularity, tier, guaranteed.value * 0.5);
+
+                            if (half.verdict == boys::ToleranceVerdict::kGuaranteedInside)
+                            {
+                                ++disagreements;
+                            } else if (half.verdict == boys::ToleranceVerdict::kDeliveredInside)
+                            {
+                                ++answeredOnTheMeasurement;
+                            } else
+                            {
+                                ++answeredOutside;
+                            }
+
+                            deliveredAbsent += delivered.available ? 0 : 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Require(report, haveServed, "some combination of this build is served");
+    Require(report, haveRefused, "some combination of this build is refused");
+    Require(report, disagreements == 0,
+            "the tolerance query answers the two accessors' figures and their comparison on every "
+            "combination of the cross");
+
+    // A caller with a target, read at requests on one combination: the numbers
+    // each answer was made on are printed beside it, so the "yes" and the "no"
+    // here are the caller's request against the library's own figures rather
+    // than a claim about them. The requests run from above the bound to below
+    // both figures, so every verdict this entry returns but a refusal is
+    // reached, and the request at the measured figure is made only where that
+    // figure is the tighter of the two: that is the case the two figures answer
+    // differently, and the case a single number could not have answered.
+    const boys::AccuracyFigure servedBound = boys::BoysAccuracyGuaranteed(
+        servedPrecision, servedRoute, servedScheme, servedAxis, servedGranularity, servedTier);
+    const boys::AccuracyFigure servedDelivered = boys::BoysAccuracyDelivered(
+        servedPrecision, servedRoute, servedScheme, servedAxis, servedGranularity, servedTier);
+    const double smaller = std::min(servedBound.value,
+                                    servedDelivered.available ? servedDelivered.value
+                                                              : servedBound.value);
+
+    std::printf("\n  a combination's accuracy, read from <boys/boys.hpp> alone: %s\n",
+                axesName(servedPrecision, servedRoute, servedScheme, servedAxis, servedGranularity,
+                         servedTier)
+                    .c_str());
+    std::printf("    the bound the lane documents, to rely on: %.6g, from %s (%s)\n",
+                servedBound.value,
+                servedBound.source,
+                servedBound.reading == boys::AccuracyReading::kGuaranteed ? "the guarantee"
+                                                                         : "not the guarantee");
+
+    if (servedDelivered.available)
+    {
+        std::printf("    the figure it was measured to deliver, to rank options by: %.6g, from %s "
+                    "(%s)\n",
+                    servedDelivered.value,
+                    servedDelivered.source,
+                    servedDelivered.reading == boys::AccuracyReading::kDelivered
+                        ? "a measurement"
+                        : "not a measurement");
+    } else
+    {
+        std::printf("    the figure it was measured to deliver: this build holds none (%s)\n",
+                    servedDelivered.reason);
+    }
+
+    std::vector<double> requests{servedBound.value * 2.0, servedBound.value, smaller * 0.5};
+    std::vector<const char*> requestNames{
+        "twice the bound", "the bound itself", "half of the smaller of the two figures"};
+
+    if (servedDelivered.available && servedDelivered.value < servedBound.value)
+    {
+        requests.insert(requests.begin() + 2, servedDelivered.value);
+        requestNames.insert(requestNames.begin() + 2, "the figure it was measured to deliver");
+    }
+
+    for (std::size_t i = 0; i < requests.size(); ++i)
+    {
+        const boys::CombinationCoverage asked = boys::QueryCombination(
+            servedPrecision, servedRoute, servedScheme, servedAxis, servedGranularity, servedTier,
+            requests[i]);
+        const char* const verdict = asked.verdict == boys::ToleranceVerdict::kGuaranteedInside
+                                        ? "yes, at the bound"
+                                    : asked.verdict == boys::ToleranceVerdict::kDeliveredInside
+                                        ? "yes, at the measurement - not at the bound"
+                                    : asked.verdict == boys::ToleranceVerdict::kOutside
+                                        ? "no"
+                                        : "no verdict (refused)";
+
+        std::printf("    asked for %.6g (%s): %s [bound %.6g", asked.requested, requestNames[i],
+                    verdict, asked.bound);
+
+        if (asked.deliveredKnown)
+        {
+            std::printf(", measured to deliver %.6g]\n", asked.delivered);
+        } else
+        {
+            std::printf(", no figure measured]\n");
+        }
+    }
+
+    const boys::CombinationCoverage above =
+        boys::QueryCombination(servedPrecision, servedRoute, servedScheme, servedAxis,
+                               servedGranularity, servedTier, servedBound.value * 2.0);
+    const boys::CombinationCoverage below = boys::QueryCombination(
+        servedPrecision, servedRoute, servedScheme, servedAxis, servedGranularity, servedTier,
+        smaller * 0.5);
+
+    Require(report, above.verdict == boys::ToleranceVerdict::kGuaranteedInside && above.bound != 0.0,
+            "a request the bound is inside answers yes");
+    Require(report, below.verdict == boys::ToleranceVerdict::kOutside && below.bound != 0.0 &&
+                        below.deliveredKnown == servedDelivered.available,
+            "a request below both figures answers no, with the figures still carried");
+
+    // A combination the library refuses: no figure, no verdict, and the reason
+    // is the library's own sentence rather than a second vocabulary.
+    const boys::CombinationCoverage refusedAsk =
+        boys::QueryCombination(refusedPrecision, refusedRoute, refusedScheme, refusedAxis,
+                               refusedGranularity, refusedTier, 1e-12);
+
+    std::printf("  a combination this build refuses, asked the same question: %s\n",
+                axesName(refusedPrecision, refusedRoute, refusedScheme, refusedAxis,
+                         refusedGranularity, refusedTier)
+                    .c_str());
+    std::printf("    verdict %s, bound %g, delivered %s, and the library's own reason: %s\n",
+                refusedAsk.verdict == boys::ToleranceVerdict::kNotCarried ? "no verdict"
+                                                                          : "a verdict",
+                refusedAsk.bound,
+                refusedAsk.deliveredKnown ? "held" : "not held",
+                refusedAsk.reason);
+
+    // And a precision no lane of this library answers for, which is the other
+    // kind of refusal: not work this library has not done, but a combination
+    // that is not a member of the space at all. The sentence says which.
+    const boys::CombinationCoverage noLane =
+        boys::QueryCombination(static_cast<boys::Precision>(99), servedRoute, servedScheme,
+                               servedAxis, servedGranularity, servedTier, 1e-12);
+    const boys::AccuracyFigure noLaneFigure = boys::BoysAccuracyGuaranteed(
+        static_cast<boys::Precision>(99), servedRoute, servedScheme, servedAxis, servedGranularity,
+        servedTier);
+
+    std::printf("    a precision with no lane: the accessor returns no figure (%s), and the "
+                "query agrees: %s\n",
+                noLaneFigure.reason,
+                noLane.verdict == boys::ToleranceVerdict::kNotCarried ? "no verdict" : "a verdict");
+
+    Require(report, noLaneFigure.value == 0.0 && !noLaneFigure.available && noLane.bound == 0.0 &&
+                        noLane.verdict == boys::ToleranceVerdict::kNotCarried,
+            "a combination this build does not carry returns no figure and no verdict");
+
+    std::printf("  the accuracy accessors over the whole cross: %zu combination(s) carried, %zu "
+                "refused;\n    every carried one asked at the figure its lane publishes "
+                "answered inside it, and asked\n    at half of that figure %zu more answered "
+                "outside while %zu were inside on the figure\n    they were measured to deliver; "
+                "%zu carried rows hold no measured figure to rank by;\n    %zu disagreement(s) "
+                "against the two accessors\n",
+                carried,
+                refused,
+                answeredOutside,
+                answeredOnTheMeasurement,
+                deliveredAbsent,
+                disagreements);
+
+    Covered("boys::AccuracyFigure");
+    Covered("boys::AccuracyReading");
+    Covered("boys::BoysAccuracyGuaranteed");
+    Covered("boys::BoysAccuracyDelivered");
+    Covered("boys::BoysLaneContracts");
+    Covered("boys::LaneContractInfo");
+    Covered("boys::CombinationCoverage");
+    Covered("boys::ToleranceVerdict");
+    Covered("boys::QueryCombination");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -2658,6 +3006,7 @@ int main(int argc, char** argv) {
     CheckNativeHalf(report, cells);
     CheckProductModes(report, cells);
     CheckHalf2Surface(report);
+    CheckOptionAccuracy(report);
 
     std::printf("consumer check through <boys/boys.hpp>: %zu grid cells\n", cells.size());
     PrintRules();

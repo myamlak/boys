@@ -1032,6 +1032,63 @@ AccuracyFigure BoysAccuracyDelivered(Precision precision,
     return figure;
 }
 
+CombinationCoverage QueryCombination(Precision precision,
+                                     FitRoute route,
+                                     EvalScheme scheme,
+                                     PackAxis axis,
+                                     FitGranularity granularity,
+                                     AccuracyTier tier,
+                                     double tolerance) noexcept
+{
+    // Both figures come from the two accessors above, so this entry holds no
+    // number of its own: the tables, the axes and the refusals are theirs.
+    CombinationCoverage coverage;
+    const AccuracyFigure guaranteed =
+        BoysAccuracyGuaranteed(precision, route, scheme, axis, granularity, tier);
+
+    coverage.requested = tolerance;
+    coverage.source = guaranteed.source;
+
+    if (!guaranteed.available)
+    {
+        // A refusal carries no figure and no verdict, and the reason is the
+        // library's own sentence: it names the work, so the two kinds of
+        // refusal stay apart here as they do at the accessor.
+        coverage.reason = guaranteed.reason;
+
+        return coverage;
+    }
+
+    const AccuracyFigure delivered =
+        BoysAccuracyDelivered(precision, route, scheme, axis, granularity, tier);
+
+    coverage.bound = guaranteed.value;
+    coverage.delivered = delivered.available ? delivered.value : 0.0;
+    coverage.deliveredKnown = delivered.available;
+
+    // The bound decides first, because it is the figure a calculation's safety
+    // can rest on. Only where it does not reach the request does the measured
+    // figure decide, and a request no figure is at or below - including one
+    // that is not positive or not finite - is kOutside rather than refused:
+    // the combination is carried, so there is a verdict, and the verdict is no.
+    if (coverage.bound <= tolerance)
+    {
+        coverage.verdict = ToleranceVerdict::kGuaranteedInside;
+    } else if (coverage.deliveredKnown && coverage.delivered <= tolerance)
+    {
+        coverage.verdict = ToleranceVerdict::kDeliveredInside;
+        // The measurement is the figure that decided this answer, so the
+        // source goes with it: naming the guarantee's table here would
+        // attribute the verdict to a figure that did not decide it.
+        coverage.source = delivered.source;
+    } else
+    {
+        coverage.verdict = ToleranceVerdict::kOutside;
+    }
+
+    return coverage;
+}
+
 } // namespace boys
 
 // The arithmetic backends this build carries, as a report prints them.
