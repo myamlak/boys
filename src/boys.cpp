@@ -569,6 +569,137 @@ std::span<const PackAxisInfo> BoysPackAxes() noexcept {
     return rows;
 }
 
+std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
+    // The rows are the tables' own counts and the certification's own figures,
+    // so a regeneration that moved a piece, a degree or a delivered error moves
+    // the row rather than leaving a number here to drift from it.
+    //
+    // What a row does not cover is as much a part of it as what it does. Both
+    // entries below carry the double lane's tables; the single-precision lanes
+    // hold one coefficient set each and take no partition. The shipped row
+    // carries every rung this build can name - the count is the tier
+    // enumeration's own - both packing axes, because the across-orders lane is
+    // instantiated for every scheme, rung and route over the shipped region-A
+    // pieces, and both fit routes, because the shipped partitions carry a table
+    // for each and the seeds are the routes' own. The narrow row carries the
+    // reference rung, the arguments axis and the chebyshev route alone: its
+    // region-A pieces are cut per order, so the across-orders lane, which steps
+    // one order's coefficients to the next at a fixed stride, has no narrow
+    // kernel, its degrees are the shipped rung's, so a relaxed rung has no
+    // narrow table to truncate, and only the chebyshev route was cut on it, so
+    // the rational route has no narrow table to evaluate. All three are unbuilt
+    // work rather than unavailable options, and saying so here is what lets a
+    // caller count them without reading the kernels.
+    static const std::array<FitGranularityInfo, 2> rows = [] {
+        static constexpr unsigned kBothAxes = (1u << static_cast<unsigned>(PackAxis::kArguments)) |
+                                              (1u << static_cast<unsigned>(PackAxis::kOrders));
+        static constexpr unsigned kChebBit = 1u << static_cast<unsigned>(FitRoute::kChebyshev);
+        static constexpr unsigned kRatBit =
+            1u << static_cast<unsigned>(FitRoute::kRationalMinimax);
+
+        // A route's own figures over a region, read from the route table rather
+        // than restated: these are the numbers the route rows publish, so a
+        // regeneration moves both readings together.
+        const auto routeStored = [](FitRoute route, AccuracyRegion region) {
+            int stored = 0;
+
+            for (const FitRouteInfo& row : BoysFitRoutes())
+            {
+                if (row.route == route && row.region == region)
+                {
+                    stored = row.stored;
+                }
+            }
+
+            return stored;
+        };
+
+        // The worst a partition delivers and the bar it is certified against,
+        // taken over the routes it holds and the regions they cover: a caller
+        // who does not name a route may read any of them.
+        const auto routeWorst = [](const auto& field) {
+            double worst = 0.0;
+
+            for (const FitRouteInfo& row : BoysFitRoutes())
+            {
+                worst = std::max(worst, field(row));
+            }
+
+            return worst;
+        };
+
+        int shippedADeg = 0;
+
+        for (const detail::OrderPiece& piece : detail::kPieces)
+        {
+            shippedADeg = std::max(shippedADeg, piece.deg);
+        }
+
+        // The rational route is cut on the same pieces, so its degrees are read
+        // over the same rows: numerator and denominator both bound what one
+        // evaluation of a piece costs.
+        for (const int deg : detail::kRatANumDeg)
+        {
+            shippedADeg = std::max(shippedADeg, deg);
+        }
+
+        for (const int deg : detail::kRatADenDeg)
+        {
+            shippedADeg = std::max(shippedADeg, deg);
+        }
+
+        int narrowADeg = 0;
+        int narrowAStored = 0;
+
+        for (const detail::OrderPiece& piece : detail::kNarrowAPieces)
+        {
+            narrowADeg = std::max(narrowADeg, piece.deg);
+            narrowAStored += piece.deg + 1;
+        }
+
+        std::array<FitGranularityInfo, 2> built{};
+
+        built[0].granularity = FitGranularity::kShipped;
+        built[0].name = GranularityName(FitGranularity::kShipped);
+        built[0].routes = kChebBit | kRatBit;
+        built[0].rungs = static_cast<int>(AccuracyTier::kRelaxed65536) + 1;
+        built[0].axes = kBothAxes;
+        built[0].regionAPieces = static_cast<int>(std::size(detail::kPieces));
+        built[0].regionADeg = shippedADeg;
+        built[0].regionAStored = routeStored(FitRoute::kChebyshev, AccuracyRegion::kA) +
+                                 routeStored(FitRoute::kRationalMinimax, AccuracyRegion::kA);
+        built[0].regionBPieces = 1;
+        built[0].regionBDeg = std::max({detail::kBDeg, detail::kRatBnumDeg, detail::kRatBdenDeg});
+        built[0].regionBStored = routeStored(FitRoute::kChebyshev, AccuracyRegion::kB) +
+                                 routeStored(FitRoute::kRationalMinimax, AccuracyRegion::kB);
+        built[0].delivered =
+            routeWorst([](const FitRouteInfo& row) { return row.delivered; });
+        built[0].bound = routeWorst([](const FitRouteInfo& row) { return row.bound; });
+
+        built[1].granularity = FitGranularity::kNarrow;
+        built[1].name = GranularityName(FitGranularity::kNarrow);
+        built[1].routes = kChebBit;
+        built[1].rungs = 1;
+        built[1].axes = 1u << static_cast<unsigned>(PackAxis::kArguments);
+        built[1].regionAPieces = static_cast<int>(std::size(detail::kNarrowAPieces));
+        built[1].regionADeg = narrowADeg;
+        built[1].regionAStored = narrowAStored;
+        built[1].regionBPieces = detail::kNarrowBPieces;
+        built[1].regionBDeg = detail::kNarrowBDeg;
+        built[1].regionBStored = static_cast<int>(std::size(detail::kNarrowBcoeffs));
+        // The narrow certification publishes a per-piece round-up of what each
+        // piece delivers rather than a bar the pieces were cut at, and that
+        // round-up is the figure a caller may rely on: it bounds a sweep and not
+        // only the one that measured it.
+        built[1].delivered = std::max(detail::kNarrowRows[0].fused, detail::kNarrowRows[0].separate);
+        built[1].bound = built[1].delivered;
+
+        return built;
+    }();
+
+    return rows;
+}
+
 } // namespace boys
 
 // The arithmetic backends this build carries, as a report prints them.
