@@ -774,6 +774,49 @@ inline double NarrowRegionBSeedWithDegrees(double x, int degree) noexcept {
                                                 t);
 }
 
+// A relaxed rung's two region reads, as one call: the degree table and the
+// piece table are one partition's pair, so a body that reaches a stored row at a
+// cut degree takes both from the policy it was named with rather than naming a
+// partition of its own. Each body below goes through these - the single-order
+// entry, the batch entry, the fixed-order entry and the all-N region bodies -
+// because a body that reads a coefficient table directly is exactly how a
+// narrow policy came to be handed the shipped partition's values under its own
+// name, and a fork taken once here cannot be left out of one of them.
+//
+// The role is the body's own: the single-order shapes read the per-order
+// amplification and the batch shapes the recursion's, and the criterion that
+// turns a tail into a degree differs between them.
+template <EvalPolicyLike Policy, double kAccuracyMultiplier, BoysRole kRole>
+inline double PolicyRegionAValueAtRung(int order, double x) noexcept {
+    if constexpr (Policy::kGranularity == kDefaultFitGranularity)
+    {
+        static constexpr auto kDegrees =
+            RegionADegrees<kAccuracyMultiplier, kRole, SchemeTailBasis<Policy::kScheme>()>();
+        return ChebyshevValueWithDegrees<Policy::kScheme>(order, x, kDegrees);
+    } else
+    {
+        static constexpr auto kDegrees =
+            NarrowRegionADegrees<kAccuracyMultiplier, kRole, SchemeTailBasis<Policy::kScheme>()>();
+        return NarrowRegionAValueWithDegrees<Policy::kScheme>(order, x, kDegrees);
+    }
+}
+
+template <EvalPolicyLike Policy, double kAccuracyMultiplier, BoysRole kRole>
+inline double PolicyRegionBSeedAtRung(double x, int order) noexcept {
+    if constexpr (Policy::kGranularity == kDefaultFitGranularity)
+    {
+        static constexpr auto kDegrees =
+            RegionBDegrees<kAccuracyMultiplier, kRole, SchemeTailBasis<Policy::kScheme>()>();
+        return RegionBSeedWithDegrees<Policy::kScheme>(x, kDegrees[static_cast<std::size_t>(order)]);
+    } else
+    {
+        static constexpr auto kDegrees =
+            NarrowRegionBDegrees<kAccuracyMultiplier, kRole, SchemeTailBasis<Policy::kScheme>()>();
+        return NarrowRegionBSeedWithDegrees<Policy::kScheme>(
+            x, kDegrees[static_cast<std::size_t>(order)]);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // The float lane's fit routes
 // ---------------------------------------------------------------------------
@@ -1208,39 +1251,12 @@ double BoysSingleImpl(int n, double x) noexcept {
 
         if (x < kX0)
         {
-            if constexpr (Policy::kGranularity == kDefaultFitGranularity)
-            {
-                static constexpr auto kDegreesA = RegionADegrees<kAccuracyMultiplier,
-                                                                 BoysRole::kDoubleSingle,
-                                                                 SchemeTailBasis<Policy::kScheme>()>();
-                return ChebyshevValueWithDegrees<Policy::kScheme>(n, x, kDegreesA);
-            } else
-            {
-                static constexpr auto kDegreesA =
-                    NarrowRegionADegrees<kAccuracyMultiplier,
-                                         BoysRole::kDoubleSingle,
-                                         SchemeTailBasis<Policy::kScheme>()>();
-                return NarrowRegionAValueWithDegrees<Policy::kScheme>(n, x, kDegreesA);
-            }
+            return PolicyRegionAValueAtRung<Policy, kAccuracyMultiplier, BoysRole::kDoubleSingle>(
+                n, x);
         }
 
-        double f = 0.0;
-
-        if constexpr (Policy::kGranularity == kDefaultFitGranularity)
-        {
-            static constexpr auto kDegreesB = RegionBDegrees<kAccuracyMultiplier,
-                                                             BoysRole::kDoubleSingle,
-                                                             SchemeTailBasis<Policy::kScheme>()>();
-            f = RegionBSeedWithDegrees<Policy::kScheme>(x, kDegreesB[static_cast<std::size_t>(n)]);
-        } else
-        {
-            static constexpr auto kDegreesB =
-                NarrowRegionBDegrees<kAccuracyMultiplier,
-                                     BoysRole::kDoubleSingle,
-                                     SchemeTailBasis<Policy::kScheme>()>();
-            f = NarrowRegionBSeedWithDegrees<Policy::kScheme>(
-                x, kDegreesB[static_cast<std::size_t>(n)]);
-        }
+        double f =
+            PolicyRegionBSeedAtRung<Policy, kAccuracyMultiplier, BoysRole::kDoubleSingle>(x, n);
 
         if (x < kX1)
         {
@@ -1330,23 +1346,9 @@ void BoysAllOrdersImpl(int nmax, double x, double* out) noexcept {
 
         if (x < kX0)
         {
-            double f = 0.0;
-
-            if constexpr (Policy::kGranularity == kDefaultFitGranularity)
-            {
-                static constexpr auto kDegreesA = RegionADegrees<kAccuracyMultiplier,
-                                                                 BoysRole::kDoubleBatch,
-                                                                 SchemeTailBasis<Policy::kScheme>()>();
-                f = ChebyshevValueWithDegrees<Policy::kScheme>(nmax, x, kDegreesA);
-            } else
-            {
-                static constexpr auto kDegreesA =
-                    NarrowRegionADegrees<kAccuracyMultiplier,
-                                         BoysRole::kDoubleBatch,
-                                         SchemeTailBasis<Policy::kScheme>()>();
-                f = NarrowRegionAValueWithDegrees<Policy::kScheme>(nmax, x, kDegreesA);
-            }
-
+            double f =
+                PolicyRegionAValueAtRung<Policy, kAccuracyMultiplier, BoysRole::kDoubleBatch>(
+                    nmax, x);
             out[nmax] = f;
             const double expx = 0.5 * std::exp(-x);
 
@@ -1376,23 +1378,8 @@ void BoysAllOrdersImpl(int nmax, double x, double* out) noexcept {
             // the order-n single-style path; seeding with kDegreesB[nmax]
             // leaves F0's error at Delta(d'(nmax)) — up to
             // (m-1)*B/A_B(nmax) — unbounded.
-            double f = 0.0;
-
-            if constexpr (Policy::kGranularity == kDefaultFitGranularity)
-            {
-                static constexpr auto kDegreesB = RegionBDegrees<kAccuracyMultiplier,
-                                                                 BoysRole::kDoubleBatch,
-                                                                 SchemeTailBasis<Policy::kScheme>()>();
-                f = RegionBSeedWithDegrees<Policy::kScheme>(x, kDegreesB[0]);
-            } else
-            {
-                static constexpr auto kDegreesB =
-                    NarrowRegionBDegrees<kAccuracyMultiplier,
-                                         BoysRole::kDoubleBatch,
-                                         SchemeTailBasis<Policy::kScheme>()>();
-                f = NarrowRegionBSeedWithDegrees<Policy::kScheme>(x, kDegreesB[0]);
-            }
-
+            double f = PolicyRegionBSeedAtRung<Policy, kAccuracyMultiplier, BoysRole::kDoubleBatch>(
+                x, 0);
             out[0] = f;
             const double expx = 0.5 * std::exp(-x);
 
@@ -1530,13 +1517,6 @@ void BoysFixedNImpl(
         }
     } else
     {
-        static constexpr auto kDegreesA = RegionADegrees<kAccuracyMultiplier,
-                                                         BoysRole::kDoubleSingle,
-                                                         SchemeTailBasis<Policy::kScheme>()>();
-        static constexpr auto kDegreesB = RegionBDegrees<kAccuracyMultiplier,
-                                                         BoysRole::kDoubleSingle,
-                                                         SchemeTailBasis<Policy::kScheme>()>();
-
         for (std::size_t i = 0; i < count; ++i)
         {
             const double xi = x[i];
@@ -1550,7 +1530,9 @@ void BoysFixedNImpl(
 
             if (xi < kX0)
             {
-                out[i * stride] = ChebyshevValueWithDegrees<Policy::kScheme>(n, xi, kDegreesA);
+                out[i * stride] =
+                    PolicyRegionAValueAtRung<Policy, kAccuracyMultiplier, BoysRole::kDoubleSingle>(
+                        n, xi);
                 continue;
             }
 
@@ -1558,7 +1540,8 @@ void BoysFixedNImpl(
             // path; the per-order amplification analysis of BoysSingleImpl
             // applies unchanged.
             double f =
-                RegionBSeedWithDegrees<Policy::kScheme>(xi, kDegreesB[static_cast<std::size_t>(n)]);
+                PolicyRegionBSeedAtRung<Policy, kAccuracyMultiplier, BoysRole::kDoubleSingle>(xi,
+                                                                                              n);
 
             if (xi < kX1)
             {
@@ -2157,23 +2140,8 @@ inline void BoysAllNBodyRegionADown(int nmax, double x, std::size_t count, doubl
     } else
     {
         RequireShippedRoute<Policy>();
-        double f = 0.0;
-
-        if constexpr (Policy::kGranularity == kDefaultFitGranularity)
-        {
-            static constexpr auto kDegreesA = RegionADegrees<kAccuracyMultiplier,
-                                                             BoysRole::kDoubleBatch,
-                                                             SchemeTailBasis<Policy::kScheme>()>();
-            f = ChebyshevValueWithDegrees<Policy::kScheme>(nmax, x, kDegreesA);
-        } else
-        {
-            static constexpr auto kDegreesA =
-                NarrowRegionADegrees<kAccuracyMultiplier,
-                                     BoysRole::kDoubleBatch,
-                                     SchemeTailBasis<Policy::kScheme>()>();
-            f = NarrowRegionAValueWithDegrees<Policy::kScheme>(nmax, x, kDegreesA);
-        }
-
+        double f =
+            PolicyRegionAValueAtRung<Policy, kAccuracyMultiplier, BoysRole::kDoubleBatch>(nmax, x);
         plane[static_cast<std::size_t>(nmax) * count] = f;
         const double expx = 0.5 * std::exp(-x);
 
@@ -2240,23 +2208,8 @@ inline void BoysAllNBodyRegionB(int nmax, double x, std::size_t count, double* p
         // error reaches every output order with amplification A_B(l), at most
         // 1 + 1.846e-17 over the supported orders (its maximum at l = 32).
         RequireShippedRoute<Policy>();
-        double f = 0.0;
-
-        if constexpr (Policy::kGranularity == kDefaultFitGranularity)
-        {
-            static constexpr auto kDegreesB = RegionBDegrees<kAccuracyMultiplier,
-                                                             BoysRole::kDoubleBatch,
-                                                             SchemeTailBasis<Policy::kScheme>()>();
-            f = RegionBSeedWithDegrees<Policy::kScheme>(x, kDegreesB[0]);
-        } else
-        {
-            static constexpr auto kDegreesB =
-                NarrowRegionBDegrees<kAccuracyMultiplier,
-                                     BoysRole::kDoubleBatch,
-                                     SchemeTailBasis<Policy::kScheme>()>();
-            f = NarrowRegionBSeedWithDegrees<Policy::kScheme>(x, kDegreesB[0]);
-        }
-
+        double f =
+            PolicyRegionBSeedAtRung<Policy, kAccuracyMultiplier, BoysRole::kDoubleBatch>(x, 0);
         plane[0] = f;
         const double expx = 0.5 * std::exp(-x);
 
