@@ -163,9 +163,10 @@ const char* StatusName(DeviceProbeStatus status) {
 }
 
 // ---------------------------------------------------------------------------
-// The entries this build offers.
+// The entries this build offers, as the library reports them.
 // ---------------------------------------------------------------------------
 
+/// One row of the library's report, with the label a probe row prints.
 struct EntryInfo {
     ProbeEntry entry;
     const char* name;
@@ -188,6 +189,22 @@ const char* QuestionName(ProbeQuestion question) {
     }
 }
 
+/// The order the classes print and rank in: one question per class, and the
+/// library's enumerators in the order the report's prose names them.
+int QuestionRank(ProbeQuestion question) {
+    switch (question)
+    {
+        case ProbeQuestion::kSingle:
+            return 0;
+        case ProbeQuestion::kAllOrders:
+            return 1;
+        default:
+            return 2;
+    }
+}
+
+/// The library's question, said in full: what the option produces for one
+/// argument, which is what makes two of them the same question.
 const char* QuestionAsked(ProbeQuestion question) {
     switch (question)
     {
@@ -197,6 +214,75 @@ const char* QuestionAsked(ProbeQuestion question) {
             return "a ladder per argument: F_0(x)..F_n(x) at that argument's own order n";
         default:
             return "one common ladder for the whole batch: F_0(x)..F_nmax(x) for every argument";
+    }
+}
+
+/// The precision, and the degree-table lane behind it, as the report spells
+/// both. The lane is not printed today � every row of a precision class reads
+/// one lane's tables in this build � and it is carried so that a probe which
+/// later separates the lanes can do it without asking the library again.
+const char* PrecisionName(DeviceOptionPrecision precision) {
+    switch (precision)
+    {
+        case DeviceOptionPrecision::kFp64:
+            return "fp64";
+        case DeviceOptionPrecision::kFp32:
+            return "fp32";
+        default:
+            return "fp16";
+    }
+}
+
+const char* ShapeName(DeviceOptionShape shape) {
+    switch (shape)
+    {
+        case DeviceOptionShape::kSingle:
+            return "single";
+        case DeviceOptionShape::kAllOrders:
+            return "all-orders";
+        case DeviceOptionShape::kAllN:
+            return "all-n";
+        default:
+            return "each-order";
+    }
+}
+
+const char* GroupName(DeviceOptionGroup group) {
+    return group == DeviceOptionGroup::kLaunched ? "launched" : "device";
+}
+
+/// The axis a row varies, with the member it is. A row with no axis states the
+/// one thing its entry is; a row with one states which member of it the row
+/// measured, because that is what its bound is the bound of.
+std::string AxisName(const DeviceOptionInfo& option) {
+    if (option.axis == DeviceOptionAxis::kNone)
+    {
+        return std::string("-");
+    }
+
+    return Text("region-B:%s",
+                option.regionBExp == RegionBExp::kFast ? "fast" : "accurate");
+}
+
+/// The degree tables a row reads. The lane is what makes two rows of one
+/// precision different arithmetic — the seed amplification it carries is the
+/// lane's — so a report that names the precision and not the lane has not said
+/// which arithmetic it measured.
+const char* LaneName(BoysDeviceLane lane) {
+    switch (lane)
+    {
+        case BoysDeviceLane::kF64Single:
+            return "f64-single";
+        case BoysDeviceLane::kF64Batch:
+            return "f64-batch";
+        case BoysDeviceLane::kF32Single:
+            return "f32-single";
+        case BoysDeviceLane::kF32Batch:
+            return "f32-batch";
+        case BoysDeviceLane::kF16Single:
+            return "f16-single";
+        default:
+            return "f16-batch";
     }
 }
 
@@ -232,80 +318,34 @@ std::string PrecisionNote(const std::string& precision, bool oneBound) {
     return text;
 }
 
-/// The option table, built from the library rather than from a literal list of
-/// what this build carries: the fp16 half of it is present only when the fp16
-/// seam is open, and the report says so instead of quietly offering fewer
-/// options.
-std::vector<EntryInfo> EnumerateEntries(bool fp16, std::vector<std::string>& unoffered) {
-    const auto row = [](ProbeEntry entry,
-                        const char* name,
-                        const char* precision,
-                        const char* shape,
-                        ProbeQuestion question,
-                        bool inKernel,
-                        double bound) {
-        return EntryInfo{entry, name, precision, shape, question, inKernel, bound};
-    };
+/// The option table, projected from the library's own report: one probe row per
+/// report row this build serves, and one unoffered entry per report row it does
+/// not, carrying the library's reason.
+///
+/// Nothing here names an option the library does not report. A row the library
+/// adds appears in this probe's table, and a row it refuses appears in the
+/// probe's list of what this build cannot serve, both without an edit here.
+std::vector<EntryInfo> EnumerateEntries(std::vector<std::string>& unoffered,
+                                       std::vector<std::string>& refusedBecause) {
+    std::vector<EntryInfo> entries;
 
-    std::vector<EntryInfo> entries{
-        row(ProbeEntry::kSingleF64, "single-fp64", "fp64", "single", ProbeQuestion::kSingle, false,
-            kFp64Bound),
-        row(ProbeEntry::kSingleF32, "single-fp32", "fp32", "single", ProbeQuestion::kSingle, false,
-            kFp32Bound),
-        row(ProbeEntry::kSingleF32Fast, "single-fp32-fast", "fp32", "single",
-            ProbeQuestion::kSingle, false, kFp32FastBound),
-        row(ProbeEntry::kAllOrdersF64, "all-orders-fp64", "fp64", "all-orders",
-            ProbeQuestion::kAllOrders, false, kFp64Bound),
-        row(ProbeEntry::kAllOrdersF32, "all-orders-fp32", "fp32", "all-orders",
-            ProbeQuestion::kAllOrders, false, kFp32Bound),
-        row(ProbeEntry::kAllNF64, "all-n-fp64", "fp64", "all-n", ProbeQuestion::kAllN, false,
-            kFp64Bound),
-        row(ProbeEntry::kAllNF32, "all-n-fp32", "fp32", "all-n", ProbeQuestion::kAllN, false,
-            kFp32Bound),
-        row(ProbeEntry::kDeviceSingleF64, "device-single-fp64", "fp64", "single",
-            ProbeQuestion::kSingle, true, kFp64Bound),
-        row(ProbeEntry::kDeviceSingleF32, "device-single-fp32", "fp32", "single",
-            ProbeQuestion::kSingle, true, kFp32Bound),
-        row(ProbeEntry::kDeviceAllOrdersF64, "device-all-orders-fp64", "fp64", "all-orders",
-            ProbeQuestion::kAllOrders, true, kFp64Bound),
-        row(ProbeEntry::kDeviceAllOrdersF32, "device-all-orders-fp32", "fp32", "all-orders",
-            ProbeQuestion::kAllOrders, true, kFp32Bound),
-        row(ProbeEntry::kDeviceAllNF64, "device-all-n-fp64", "fp64", "all-n", ProbeQuestion::kAllN,
-            true, kFp64Bound),
-        row(ProbeEntry::kDeviceAllNF32, "device-all-n-fp32", "fp32", "all-n", ProbeQuestion::kAllN,
-            true, kFp32Bound),
-        row(ProbeEntry::kDeviceEachOrderF64, "device-each-order-fp64", "fp64", "each-order",
-            ProbeQuestion::kAllOrders, true, kFp64Bound),
-        row(ProbeEntry::kDeviceEachOrderF32, "device-each-order-fp32", "fp32", "each-order",
-            ProbeQuestion::kAllOrders, true, kFp32Bound),
-    };
-
-    const EntryInfo fp16Rows[] = {
-        row(ProbeEntry::kSingleF16, "single-fp16", "fp16", "single", ProbeQuestion::kSingle, false,
-            kFp16Bound),
-        row(ProbeEntry::kAllOrdersF16, "all-orders-fp16", "fp16", "all-orders",
-            ProbeQuestion::kAllOrders, false, kFp16Bound),
-        row(ProbeEntry::kAllNF16, "all-n-fp16", "fp16", "all-n", ProbeQuestion::kAllN, false,
-            kFp16Bound),
-        row(ProbeEntry::kDeviceSingleF16, "device-single-fp16", "fp16", "single",
-            ProbeQuestion::kSingle, true, kFp16Bound),
-        row(ProbeEntry::kDeviceAllOrdersF16, "device-all-orders-fp16", "fp16", "all-orders",
-            ProbeQuestion::kAllOrders, true, kFp16Bound),
-        row(ProbeEntry::kDeviceAllNF16, "device-all-n-fp16", "fp16", "all-n", ProbeQuestion::kAllN,
-            true, kFp16Bound),
-        row(ProbeEntry::kDeviceEachOrderF16, "device-each-order-fp16", "fp16", "each-order",
-            ProbeQuestion::kAllOrders, true, kFp16Bound),
-    };
-
-    for (const EntryInfo& candidate : fp16Rows)
+    for (const DeviceOptionInfo& option : BoysDeviceOptions())
     {
-        if (fp16)
+        if (!option.built)
         {
-            entries.push_back(candidate);
-        } else
-        {
-            unoffered.push_back(candidate.name);
+            unoffered.push_back(option.name);
+            refusedBecause.push_back(option.refusedBecause != nullptr ? option.refusedBecause
+                                                                     : "not served by this build");
+            continue;
         }
+
+        entries.push_back(EntryInfo{option.entry,
+                                    option.name,
+                                    PrecisionName(option.precision),
+                                    ShapeName(option.shape),
+                                    option.question,
+                                    option.group == DeviceOptionGroup::kDeviceCallable,
+                                    option.bound});
     }
 
     return entries;
@@ -1056,8 +1096,6 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
         return report;
     }
 
-    const bool fp16 = handle.pieceStart32 != nullptr;
-
     // --- The workload, and the buffers it lives in ---------------------------
     DeviceProbeOptions clamped = options;
     clamped.count = std::max<std::size_t>(options.count, 1u);
@@ -1079,7 +1117,10 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
     const Workload work = BuildWorkload(clamped);
     report.workloadCount = clamped.count;
 
-    std::vector<EntryInfo> entries = EnumerateEntries(fp16, report.unoffered);
+    // The rows are the library's option space, projected: an option this build
+    // does not serve is in report.unoffered with the library's reason, and one
+    // it serves has a row here whether or not this probe has ever measured it.
+    std::vector<EntryInfo> entries = EnumerateEntries(report.unoffered, report.refusedBecause);
 
     if (!clamped.only.empty())
     {
@@ -1779,6 +1820,117 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
 // The text.
 // ---------------------------------------------------------------------------
 
+/// The library's report of its device option space, row by row, with the row
+/// this probe carries for each beside it.
+///
+/// This block is the probe's coverage statement and not a courtesy: the probe's
+/// option table is a projection of the library's, so every row listed here is
+/// either a row measured above or a refusal with the library's reason, and a
+/// row this probe carries that the library does not report would be a list kept
+/// beside the library rather than read from it. `probeRows` is what the run
+/// actually carried — the measurement table's own names, in its own order — so
+/// the comparison is against the report this run printed and not against a
+/// second reading of the same source.
+void AppendOptionSpace(std::string& text, const std::vector<std::string>& probeRows) {
+    const std::span<const DeviceOptionInfo> space = BoysDeviceOptions();
+    std::size_t served = 0;
+    std::size_t refused = 0;
+    std::size_t launched = 0;
+    std::size_t inKernel = 0;
+
+    for (const DeviceOptionInfo& option : space)
+    {
+        (option.built ? served : refused) += 1;
+        (option.group == DeviceOptionGroup::kLaunched ? launched : inKernel) += 1;
+    }
+
+    text += "\n\nthe option space - the library's own report of it, and the row this run carries "
+            "for each\n";
+
+    if (probeRows.empty())
+    {
+        text += Text("  (BoysDeviceOptions, include/boys/boys_cuda.hpp): %zu option(s) = %zu "
+                     "launched + %zu\n  device-callable, %zu this build serves and %zu it "
+                     "refuses. No row was measured on\n  this run, so the second column says so "
+                     "rather than naming one.\n",
+                     space.size(), launched, inKernel, served, refused);
+    } else
+    {
+        text += Text("  (BoysDeviceOptions, include/boys/boys_cuda.hpp): %zu option(s) = %zu "
+                     "launched + %zu\n  device-callable, %zu this build serves and %zu it "
+                     "refuses; %zu row(s) measured here\n",
+                     space.size(), launched, inKernel, served, refused, probeRows.size());
+    }
+
+    text += "  report row                 probe row                  group     precision  shape    "
+            "   question    axis          lane        bound     documented form\n";
+
+    for (const DeviceOptionInfo& option : space)
+    {
+        std::string carried = "not measured on this run";
+
+        for (const std::string& name : probeRows)
+        {
+            if (name == option.name)
+            {
+                carried = name;
+            }
+        }
+
+        text += Text("  %-26s %-26s %-9s %-10s %-11s %-11s %-13s %-11s %-9.2g %s\n",
+                     option.name,
+                     carried.c_str(),
+                     GroupName(option.group),
+                     PrecisionName(option.precision),
+                     ShapeName(option.shape),
+                     QuestionName(option.question),
+                     AxisName(option).c_str(),
+                     LaneName(option.lane),
+                     option.bound,
+                     option.boundForm);
+    }
+
+    // The other direction, and the one a hand-written list fails: a row this
+    // run carries that the report does not. It is named here rather than passed
+    // over, and the count is printed whether or not it is empty.
+    std::vector<std::string> unreported;
+
+    for (const std::string& name : probeRows)
+    {
+        bool reported = false;
+
+        for (const DeviceOptionInfo& option : space)
+        {
+            reported = reported || option.name == name;
+        }
+
+        if (!reported)
+        {
+            unreported.push_back(name);
+        }
+    }
+
+    if (unreported.empty())
+    {
+        text += "  rows this run carries that the library's report does not: none\n";
+    } else
+    {
+        text += "  rows this run carries that the library's report does not:";
+
+        for (const std::string& name : unreported)
+        {
+            text += Text(" %s", name.c_str());
+        }
+
+        text += "\n";
+    }
+
+    text += "  a refused row is refused by the library where it is named, and not by this probe: "
+            "the\n  option is absent from the table above because no build with this seam serves "
+            "it, and the\n  report states the seam. An option added to the library reaches this "
+            "table without an edit\n  here; one removed leaves it.\n";
+}
+
 std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
     std::string text;
 
@@ -1812,9 +1964,14 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
 
         for (const std::string& name : report.unoffered)
         {
-            text += Text("  not carried by this build: %s\n", name.c_str());
+            text += Text("  refused by the library: %s\n", name.c_str());
         }
 
+        // The space is a fact about the option the entry names and not about
+        // this host, so it is stated even when no figure could be taken: a
+        // reader of a failed run learns which options exist and which this
+        // build refuses, and what is missing is the measurement.
+        AppendOptionSpace(text, std::vector<std::string>());
         return text;
     }
 
@@ -1972,11 +2129,16 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
 
     if (!report.unoffered.empty())
     {
-        text += "\nentries this build does not carry, because its fp16 seam is closed:\n";
+        text += "\noptions of this library's device space that this build does not serve, refused\n"
+                "where the library names them:\n";
 
-        for (const std::string& name : report.unoffered)
+        for (std::size_t i = 0; i < report.unoffered.size(); ++i)
         {
-            text += Text("    %s\n", name.c_str());
+            const std::string reason = i < report.refusedBecause.size()
+                                           ? report.refusedBecause[i]
+                                           : std::string("this build serves it and the report "
+                                                         "names no reason");
+            text += Text("    %s\n      %s\n", report.unoffered[i].c_str(), reason.c_str());
         }
     }
 
@@ -1992,7 +2154,8 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
     }
 
     text += "\n  the bound column is what each entry's lane documents at full accuracy, read from "
-            "the\n  documentation and not measured here. What a lane delivers on this card is the "
+            "the\n  library's own report of the option space and not measured here. What a lane "
+            "delivers on this card is the "
             "accuracy\n  gate's business. The bounds in that column are not all the same, and a "
             "row that carries a\n  looser one is a row that bought speed with accuracy: the "
             "rankings below are per precision\n  and per question shape, so no row is ordered "
@@ -2303,6 +2466,17 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
     }
 
     text += Text("\n%s\n", report.caveat.c_str());
+
+    {
+        std::vector<std::string> probeRows;
+
+        for (const DeviceProbeMeasurement& measurement : report.measurements)
+        {
+            probeRows.push_back(measurement.name);
+        }
+
+        AppendOptionSpace(text, probeRows);
+    }
 
     text += "\nnot measured by this probe, by design: the relaxed accuracy multipliers (the "
             "device lane\n  fixes the multiplier at the call site, so ranking them would need an "

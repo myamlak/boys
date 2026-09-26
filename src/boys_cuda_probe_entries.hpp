@@ -1,62 +1,38 @@
 #pragma once
 
-// The option table the device-cost probe measures, shared by its host
+// The option space the device-cost probe measures, shared by its host
 // translation unit (boys_cuda_probe.cpp) and its device one
-// (boys_cuda_probe_kernels.cu). Both sides name the same enumerators, so the
-// integer crossing the boundary is never a literal on one side and a switch
-// arm on the other.
+// (boys_cuda_probe_kernels.cu). The rows are the library's own
+// (BoysDeviceOptions, boys_cuda_options.hpp) and this file only names them, so
+// the integer crossing the host/device boundary is never a literal on one side
+// and a switch arm on the other, and the two translation units cannot disagree
+// about which options exist.
 //
-// Header only, no CUDA runtime and no library header: the nvcc translation
-// unit gets a CUDA-safe include list (see the .cu preamble) and this file has
-// to be on it.
+// It includes one library header and it is CUDA-header-free, so the nvcc
+// translation unit's include list (see the .cu preamble) can hold it.
 
-#include <cstddef>
+#include "boys/boys_cuda_options.hpp"
 
 namespace boys {
 namespace probe_detail {
 
-/// One measurable entry of the CUDA lane.
-///
-/// The first group is launched by this library — a consumer call reaches them
-/// through boys_cuda.hpp. The second group is the device-callable entries of
-/// boys_cuda_device.hpp, which are designed to run inside the caller's own
-/// kernel: those are timed by subtraction against the same kernel with the
-/// call removed, which is why the table has to say which group an entry is in.
-///
-/// The enumerator order is the report's row order within a question class: the
-/// launched entry of a shape, then the device-callable one.
-enum class ProbeEntry : int {
-    kSingleF64 = 0,
-    kSingleF32,
-    kSingleF32Fast,
-    kSingleF16,
+/// The device option space the probe measures, as the library reports it. The
+/// rows are `boys::DeviceEntry`, the enumerators of BoysDeviceOptions(), so the
+/// integer crossing the host/device boundary is never a literal on one side and
+/// a switch arm on the other, and a row the library adds is a row this file
+/// has to handle rather than a row it silently lacks.
+using ProbeEntry = ::boys::DeviceEntry;
 
-    kAllOrdersF64,
-    kAllOrdersF32,
-    kAllOrdersF16,
+/// The question classes the report ranks inside, one per member of the
+/// library's own DeviceOptionQuestion: an entry produces a definite amount of
+/// output for a given workload, and two entries that produce different amounts
+/// are not being asked the same question.
+using ProbeQuestion = ::boys::DeviceOptionQuestion;
 
-    kAllNF64,
-    kAllNF32,
-    kAllNF16,
-
-    kDeviceSingleF64,
-    kDeviceSingleF32,
-    kDeviceSingleF16,
-
-    kDeviceAllOrdersF64,
-    kDeviceAllOrdersF32,
-    kDeviceAllOrdersF16,
-
-    kDeviceAllNF64,
-    kDeviceAllNF32,
-    kDeviceAllNF16,
-
-    kDeviceEachOrderF64,
-    kDeviceEachOrderF32,
-    kDeviceEachOrderF16,
-
-    kCount,
-};
+/// The two routes an option is reached by, the library's own grouping: the
+/// library launched it, or the caller's kernel calls it and this probe times
+/// the difference.
+using ProbeGroup = ::boys::DeviceOptionGroup;
 
 /// How an entry's figure was obtained. The two are not comparable as methods
 /// and the report names which one produced each row.
@@ -66,19 +42,6 @@ enum class ProbeRoute : int {
     /// The caller's kernel with the entry in it, minus the same kernel without
     /// it. No launch of this library's is inside either bracket.
     kInKernel,
-};
-
-/// The report's question classes: an entry produces a definite amount of output
-/// for a given workload, and two entries that produce different amounts are not
-/// being asked the same question. The probe orders entries only within a class.
-enum class ProbeQuestion : int {
-    /// F_n(x) for each argument, at that argument's own order.
-    kSingle = 0,
-    /// F_0(x)..F_n(x) for each argument, at that argument's own order.
-    kAllOrders,
-    /// F_0(x)..F_nmax(x) for every argument of the batch, one common top order.
-    kAllN,
-    kCount,
 };
 
 /// The device-callable entries are instantiated at one compile-time top order

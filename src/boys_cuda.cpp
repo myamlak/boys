@@ -6,6 +6,7 @@
 
 #include <array>
 #include <cstddef>
+#include <iterator>
 
 // Status layer of the CUDA lane. The kernels and the table uploads live in
 // boys_cuda.cu (C++20, CUDA-safe include list only — the C++23 headers of
@@ -646,5 +647,174 @@ template BoysStatus BoysCuda::DeviceTables<10.0>(BoysDeviceTables*);
 template BoysStatus BoysCuda::DeviceTables<100.0>(BoysDeviceTables*);
 template BoysStatus BoysCuda::DeviceTables<1e4>(BoysDeviceTables*);
 template BoysStatus BoysCuda::DeviceTables<1e8>(BoysDeviceTables*);
+
+// ---------------------------------------------------------------------------
+// The device option space.
+//
+// One row per option, and the rows are read from the entries above rather than
+// from a list kept beside them: a name here is the name an entry is documented
+// and reported under, a bound is the bound that entry states, and the degree
+// lane is the lane its own documentation names. Nothing in this table is a
+// figure of its own, so a report that enumerates it cannot state a bound the
+// entry does not carry.
+//
+// The fp16 rows are the build-time case of an unserved option: they are here
+// whatever the seam is set to, with the reason when it is closed, so the space
+// this revision defines is one number in every configuration.
+// ---------------------------------------------------------------------------
+
+#if BoysFp16
+constexpr bool kFp16Served = true;
+constexpr const char* kFp16Refusal = nullptr;
+#else
+constexpr bool kFp16Served = false;
+constexpr const char* kFp16Refusal = "the fp16 seam is closed in this build (BoysFp16 = 0)";
+#endif
+
+// The documented forms, as the entries of this header state them. The
+// multiplier m enters every one of them, and the two constant parts that are
+// not the lane's own bound are the reason the form is carried beside the
+// number: the fast f32 option's seed contribution and the fp16 lane's half
+// ULP are terms a report must state and cannot fold into one figure.
+constexpr const char* kFormF64 = "m * 5.5e-14";
+constexpr const char* kFormF32 = "m * 1.5e-7";
+constexpr const char* kFormF32Fast = "m * 1.5e-7 + 8e-8";
+constexpr const char* kFormF16 = "m * 1e-7 + half an ULP of the returned value";
+
+// The figures at m = 1, with any term a returned value decides dropped, which
+// is the fp16 half ULP and nothing else: every other form is a number here.
+constexpr double kBoundF64 = 5.5e-14;
+constexpr double kBoundF32 = 1.5e-7;
+constexpr double kBoundF32Fast = 1.5e-7 + 8e-8;
+constexpr double kBoundF16 = 1e-7;
+
+constexpr DeviceOptionInfo kDeviceOptions[] = {
+    {DeviceEntry::kSingleF64, "single-fp64", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp64, DeviceOptionShape::kSingle, DeviceOptionQuestion::kSingle,
+     DeviceOptionAxis::kNone, RegionBExp::kAccurate, BoysDeviceLane::kF64Single, kBoundF64,
+     kFormF64, true, nullptr},
+    {DeviceEntry::kSingleF32, "single-fp32", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kSingle, DeviceOptionQuestion::kSingle,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kAccurate, BoysDeviceLane::kF32Single, kBoundF32,
+     kFormF32, true, nullptr},
+    {DeviceEntry::kSingleF32Fast, "single-fp32-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kSingle, DeviceOptionQuestion::kSingle,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF32Single, kBoundF32Fast,
+     kFormF32Fast, true, nullptr},
+    {DeviceEntry::kSingleF16, "single-fp16", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kSingle, DeviceOptionQuestion::kSingle,
+     DeviceOptionAxis::kNone, RegionBExp::kAccurate, BoysDeviceLane::kF16Single, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+
+    {DeviceEntry::kAllOrdersF64, "all-orders-fp64", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kNone, RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64,
+     kFormF64, true, nullptr},
+    {DeviceEntry::kAllOrdersF32, "all-orders-fp32", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kNone, RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32,
+     kFormF32, true, nullptr},
+    {DeviceEntry::kAllOrdersF16, "all-orders-fp16", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kNone, RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+
+    {DeviceEntry::kAllNF64, "all-n-fp64", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllN, DeviceOptionQuestion::kAllN,
+     DeviceOptionAxis::kNone, RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64,
+     kFormF64, true, nullptr},
+    {DeviceEntry::kAllNF32, "all-n-fp32", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllN, DeviceOptionQuestion::kAllN,
+     DeviceOptionAxis::kNone, RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32,
+     kFormF32, true, nullptr},
+    {DeviceEntry::kAllNF16, "all-n-fp16", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllN, DeviceOptionQuestion::kAllN,
+     DeviceOptionAxis::kNone, RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+
+    {DeviceEntry::kDeviceSingleF64, "device-single-fp64", DeviceOptionGroup::kDeviceCallable,
+     DeviceOptionPrecision::kFp64, DeviceOptionShape::kSingle, DeviceOptionQuestion::kSingle,
+     DeviceOptionAxis::kNone, RegionBExp::kAccurate, BoysDeviceLane::kF64Single, kBoundF64,
+     kFormF64, true, nullptr},
+    {DeviceEntry::kDeviceSingleF32, "device-single-fp32", DeviceOptionGroup::kDeviceCallable,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kSingle, DeviceOptionQuestion::kSingle,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kAccurate, BoysDeviceLane::kF32Single, kBoundF32,
+     kFormF32, true, nullptr},
+    {DeviceEntry::kDeviceSingleF32Fast, "device-single-fp32-fast",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp32, DeviceOptionShape::kSingle,
+     DeviceOptionQuestion::kSingle, DeviceOptionAxis::kRegionBExp, RegionBExp::kFast,
+     BoysDeviceLane::kF32Single, kBoundF32Fast, kFormF32Fast, true, nullptr},
+    {DeviceEntry::kDeviceSingleF16, "device-single-fp16", DeviceOptionGroup::kDeviceCallable,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kSingle, DeviceOptionQuestion::kSingle,
+     DeviceOptionAxis::kNone, RegionBExp::kAccurate, BoysDeviceLane::kF16Single, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+
+    {DeviceEntry::kDeviceAllOrdersF64, "device-all-orders-fp64",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
+     DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kNone,
+     RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
+    {DeviceEntry::kDeviceAllOrdersF32, "device-all-orders-fp32",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp32,
+     DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kNone,
+     RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
+    {DeviceEntry::kDeviceAllOrdersF16, "device-all-orders-fp16",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kNone,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     kFp16Refusal},
+
+    {DeviceEntry::kDeviceAllNF64, "device-all-n-fp64", DeviceOptionGroup::kDeviceCallable,
+     DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllN, DeviceOptionQuestion::kAllN,
+     DeviceOptionAxis::kNone, RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64,
+     kFormF64, true, nullptr},
+    {DeviceEntry::kDeviceAllNF32, "device-all-n-fp32", DeviceOptionGroup::kDeviceCallable,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllN, DeviceOptionQuestion::kAllN,
+     DeviceOptionAxis::kNone, RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32,
+     kFormF32, true, nullptr},
+    {DeviceEntry::kDeviceAllNF16, "device-all-n-fp16", DeviceOptionGroup::kDeviceCallable,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllN, DeviceOptionQuestion::kAllN,
+     DeviceOptionAxis::kNone, RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+
+    {DeviceEntry::kDeviceEachOrderF64, "device-each-order-fp64",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
+     DeviceOptionShape::kEachOrder, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kNone,
+     RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
+    {DeviceEntry::kDeviceEachOrderF32, "device-each-order-fp32",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp32,
+     DeviceOptionShape::kEachOrder, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kNone,
+     RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
+    {DeviceEntry::kDeviceEachOrderF16, "device-each-order-fp16",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionShape::kEachOrder, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kNone,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     kFp16Refusal},
+};
+
+// The report's contract, checked at compile time rather than asserted in prose:
+// one row per DeviceEntry and row i is entry i. A row inserted for an entry
+// without its enumerator, or a row dropped, does not compile.
+constexpr bool DeviceOptionsAreInEnumeratorOrder() {
+    if (std::size(kDeviceOptions) != static_cast<std::size_t>(DeviceEntry::kCount))
+    {
+        return false;
+    }
+
+    for (std::size_t i = 0; i < std::size(kDeviceOptions); ++i)
+    {
+        if (static_cast<std::size_t>(kDeviceOptions[i].entry) != i)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static_assert(DeviceOptionsAreInEnumeratorOrder(),
+              "the device option report has one row per DeviceEntry, in its enumerator order");
+std::span<const DeviceOptionInfo> BoysDeviceOptions() noexcept {
+    return kDeviceOptions;
+}
 
 } // namespace boys

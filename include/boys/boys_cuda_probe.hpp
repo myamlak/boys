@@ -639,8 +639,15 @@ struct DeviceProbeReport {
     /// Nothing was measured for them.
     std::vector<std::string> notAnEntry;
 
-    /// Entries this build does not carry, because the fp16 seam is closed in it.
+    /// Options of the library's device space that this build does not serve,
+    /// as the library reports them, with the reason beside each in
+    /// \c refusedBecause. Read from BoysDeviceOptions(), so a row the library
+    /// adds to the space and this build cannot serve reaches a report without
+    /// an edit here.
     std::vector<std::string> unoffered;
+
+    /// The library's reason for each name in \c unoffered, in the same order.
+    std::vector<std::string> refusedBecause;
 
     /// Arguments in the workload, and the highest order any of them carries.
     std::size_t workloadCount = 0;

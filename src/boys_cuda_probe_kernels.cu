@@ -154,14 +154,23 @@ struct Dev64 {
 };
 
 /// The float lane; the region-A seed is double, as the entry documents.
-struct Dev32 {
+///
+/// The region-B exponential is the entry's one axis, and it is a template
+/// argument here because that is how the library offers it: two members, two
+/// bounds, the same tables. The parameter carries the member; every other
+/// method of this body is the same arithmetic for both.
+template <bool kFastExp>
+struct Dev32T {
     using Value = float;
 
     static __device__ __forceinline__ BoysDeviceStatus Single(const BoysDeviceTables& tables,
                                                               int order,
                                                               float x,
                                                               float* out) {
-        return BoysDeviceSingleF32(tables, order, x, out);
+        return BoysDeviceSingleF32<kFastExp ? RegionBExp::kFast : RegionBExp::kAccurate>(tables,
+                                                                                        order,
+                                                                                        x,
+                                                                                        out);
     }
 
     static __device__ __forceinline__ BoysDeviceStatus AllOrders(const BoysDeviceTables& tables,
@@ -190,6 +199,9 @@ struct Dev32 {
         return x * static_cast<float>(l + 1);
     }
 };
+
+using Dev32 = Dev32T<false>;
+using Dev32Fast = Dev32T<true>;
 
 /// The fp16 lane, which rounds at the boundary and runs the fp32 engine between.
 struct Dev16 {
@@ -357,6 +369,9 @@ int LaunchInKernel(ProbeEntry entry,
             case ProbeEntry::kDeviceSingleF32:
                 BOYS_PROBE_LAUNCH(Dev32, float, kSingle, xf);
                 break;
+            case ProbeEntry::kDeviceSingleF32Fast:
+                BOYS_PROBE_LAUNCH(Dev32Fast, float, kSingle, xf);
+                break;
             case ProbeEntry::kDeviceSingleF16:
                 BOYS_PROBE_LAUNCH(Dev16, __half, kSingle, xh);
                 break;
@@ -399,6 +414,9 @@ int LaunchInKernel(ProbeEntry entry,
                 break;
             case ProbeEntry::kDeviceSingleF32:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev32, float, kSingle, xf);
+                break;
+            case ProbeEntry::kDeviceSingleF32Fast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32Fast, float, kSingle, xf);
                 break;
             case ProbeEntry::kDeviceSingleF16:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16, __half, kSingle, xh);
