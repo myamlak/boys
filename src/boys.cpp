@@ -442,7 +442,7 @@ float BoysSingleF32WithRoute(FitRoute route, int n, float x) noexcept {
     // branch, which is the default entry's code for those arguments.
     if (route == FitRoute::kRationalMinimax)
     {
-        return detail::SingleOrderF32Body<detail::RationalFit32>(n, x);
+        return detail::SingleOrderF32Body<detail::RationalFit32<>>(n, x);
     }
 
     return BoysSingleF32<kBoysFullAccuracyMultiplier>(n, x);

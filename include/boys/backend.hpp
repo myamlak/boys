@@ -231,18 +231,23 @@ const char* PackAxisName(PackAxis axis) noexcept;
 /// left is cut to the single-order bar alone. Both readings are parts of one
 /// criterion rather than a choice.
 ///
+/// Both routes and both precisions carry the member: the rational family is
+/// fitted over the narrow pieces as its own per-piece pairs, and the
+/// single-precision lanes carry their own narrow tables, each accepted in the
+/// arithmetic its lane runs at both multiply-add routes.
+///
 /// A member the build cannot serve is refused where it is named, with the
 /// reason, rather than answered from the shipped tables: the two partitions'
 /// coefficients are different fits of the same function over the same
 /// interval, so a silent substitution would return the shipped partition's
-/// values under the other's name. The refusals are the route that carries no
-/// narrow table, the relaxed rungs that truncate the shipped fits to certified
-/// effective degrees, the single-precision lanes, which hold one coefficient
-/// set, and the across-orders packing axis, whose kernel reads one order's
-/// coefficients at a fixed stride and so needs the pieces to share their shape
-/// from order to order, which a per-order cut does not. Each is unbuilt work
-/// rather than an impossible combination, and each is named where it is refused
-/// so that it can be counted.
+/// values under the other's name. The refusals are the relaxed rungs that
+/// truncate the shipped fits to certified effective degrees, where no narrow
+/// counterpart of the effective-degree table has been derived, and the
+/// across-orders packing axis, whose kernel reads one order's coefficients at a
+/// fixed stride and so needs the pieces to share their shape from order to
+/// order, which a per-order cut does not. Each is unbuilt work rather than an
+/// impossible combination, and each is named where it is refused so that it can
+/// be counted.
 ///
 /// \ingroup boys
 enum class FitGranularity : std::uint8_t {
@@ -357,6 +362,9 @@ struct ChebyshevFit;
 
 struct RationalFit;
 
+/// The rational family over the narrow partition; see the specialization below.
+struct RationalFitNarrow;
+
 /// A route outside the FitRoute enumeration: not a selection this library can
 /// answer, and rejected where the caller names it rather than quietly evaluated
 /// at the default. The run-time selector takes the other reading - a route value
@@ -388,19 +396,16 @@ struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kShipped> {
     using Type = RationalFit;
 };
 
-/// The rational route under the narrow partition: refused where it is named.
-/// The route's region-B seed is one minimax pair over the whole interval and
-/// has no partition of its own, so there is no narrow rational table to read -
-/// and answering from the pair this route does ship would return the shipped
-/// partition's values under the narrow partition's name.
+/// The rational route under the narrow partition: the same family fitted over
+/// the narrow pieces' own intervals, one numerator/denominator pair per piece in
+/// both regions, in the same stored form and read at the same mapped arguments
+/// as the shipped member. The intervals are the Chebyshev route's narrow cut of
+/// the region - a partition is a cut of the region and not a property of a
+/// family - so what this member carries is the pairs, and it is one fit under
+/// either scheme for the reason the shipped member is.
 template <EvalScheme kScheme>
 struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kNarrow> {
-    static_assert(kScheme == EvalScheme::kSplitClenshaw && kScheme == EvalScheme::kHorner,
-                  "the rational minimax route carries one numerator/denominator pair over the "
-                  "whole of region B and no narrow partition of it: name "
-                  "FitGranularity::kShipped for this route, or FitRoute::kChebyshev for the "
-                  "narrow partition");
-    using Type = RationalFit;
+    using Type = RationalFitNarrow;
 };
 
 } // namespace detail
@@ -436,10 +441,9 @@ struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kNarrow> {
 /// value that is not an option fails.
 ///
 /// The one error the axes carry beyond a route outside the enumeration is a
-/// combination the build cannot serve - a partition for a route that has none,
-/// a partition on a rung that truncates the shipped fits, a partition on a lane
-/// that holds one coefficient set, a partition on the packing axis whose kernel
-/// reads the shipped pieces' shape from order to order - and each is refused
+/// combination the build cannot serve - a partition on a rung that truncates
+/// the shipped fits, a partition on the packing axis whose kernel reads the
+/// shipped pieces' shape from order to order - and each is refused
 /// where it is named rather than at a kernel, because the partitions are
 /// different fits of the same function over the same interval and a fallback
 /// would return the shipped values under the other partition's name. Each is

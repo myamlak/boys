@@ -2429,8 +2429,8 @@ int main(int argc, char** argv) {
     std::size_t f32PolicyOver = 0;
     std::size_t f32PolicyUncovered = 0;
     std::size_t f32PolicyNotCarried = 0;
-    std::size_t f32PolicySeedCells[2] = {0, 0};
-    std::size_t f32PolicySeedDiffer[2] = {0, 0};
+    std::size_t f32PolicySeedCells[4] = {0, 0, 0, 0};
+    std::size_t f32PolicySeedDiffer[4] = {0, 0, 0, 0};
     std::size_t f32PolicyShortOver = 0;
     std::size_t f32PolicyFloor = 0;
     double f32PolicyShortWorst = 0.0;
@@ -2454,9 +2454,24 @@ int main(int argc, char** argv) {
         using HornerPair =
             boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>;
         using RationalPair = boys::EvalPolicy<boys::FitRoute::kRationalMinimax>;
+        // The same two fits at the narrow partition of region A and its own
+        // region-B seed: the partition is the only difference from the pairs
+        // above, and naming it is the whole of that axis.
+        using NarrowPair =
+            boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                             boys::EvalScheme::kSplitClenshaw,
+                             boys::BoysBudget::kFloat,
+                             boys::PackAxis::kArguments,
+                             boys::FitGranularity::kNarrow>;
+        using NarrowRationalPair =
+            boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+                             boys::EvalScheme::kSplitClenshaw,
+                             boys::BoysBudget::kFloat,
+                             boys::PackAxis::kArguments,
+                             boys::FitGranularity::kNarrow>;
 
         constexpr int kEntries = 2;
-        constexpr int kPolicies = 3;
+        constexpr int kPolicies = 5;
         constexpr int kRegions = 2;
         constexpr int kSingleEntry = 0;
         constexpr int kBatchEntry = 1;
@@ -2469,10 +2484,22 @@ int main(int argc, char** argv) {
         const char* const entryName[kEntries] = {"single", "batch"};
         const char* const policyName[kPolicies] = {"chebyshev x Clenshaw",
                                                    "chebyshev x Horner",
-                                                   "rational minimax"};
+                                                   "rational minimax",
+                                                   "chebyshev x Clenshaw x narrow",
+                                                   "rational minimax x narrow"};
         const char* const regionName[kRegions] = {"A", "B"};
         const double bar[kRegions] = {boys::detail::f32::kRegionAFitBar,
                                       boys::detail::f32::kRegionBFitBar};
+        // The narrow partition's rows carry a figure per multiply-add route,
+        // and this build evaluates in one of them: the row it is read against is
+        // that route's own, not the worse of the two, so a build whose route the
+        // table meets less well has to say so here rather than be judged on the
+        // other route's figure.
+        const auto narrowPick = [](double fused, double separate) {
+            return boys::backend::detail::kSelectedRoute == boys::backend::MulAddRoute::kFused
+                       ? fused
+                       : separate;
+        };
         // The figure the generated header publishes for the fit each policy
         // reads, per policy and region. It is a figure for the single-order
         // entry, whose value is that fit; this is where a consumer's copy of it
@@ -2483,7 +2510,15 @@ int main(int argc, char** argv) {
             {boys::detail::f32::kRegionAFitChebDeliveredHorner,
              boys::detail::f32::kRegionBFitChebDeliveredHorner},
             {boys::detail::f32::kRegionAFitRatDelivered,
-             boys::detail::f32::kRegionBFitRatDelivered}};
+             boys::detail::f32::kRegionBFitRatDelivered},
+            {narrowPick(boys::detail::f32::kNarrowARowsF32[0].fused,
+                        boys::detail::f32::kNarrowARowsF32[0].separate),
+             narrowPick(boys::detail::f32::kNarrowBRowsF32[0].fused,
+                        boys::detail::f32::kNarrowBRowsF32[0].separate)},
+            {narrowPick(boys::detail::f32::kNarrowRatADeliveredFusedF32,
+                        boys::detail::f32::kNarrowRatADeliveredSeparateF32),
+             narrowPick(boys::detail::f32::kNarrowRatBDeliveredFusedF32,
+                        boys::detail::f32::kNarrowRatBDeliveredSeparateF32)}};
 
         for (int e = 0; e < kEntries; ++e)
         {
@@ -2563,7 +2598,9 @@ int main(int argc, char** argv) {
                     const float got[kPolicies] = {
                         boys::BoysSingleF32<1.0, ShippedPair>(n, xf),
                         boys::BoysSingleF32<1.0, HornerPair>(n, xf),
-                        boys::BoysSingleF32<1.0, RationalPair>(n, xf)};
+                        boys::BoysSingleF32<1.0, RationalPair>(n, xf),
+                        boys::BoysSingleF32<1.0, NarrowPair>(n, xf),
+                        boys::BoysSingleF32<1.0, NarrowRationalPair>(n, xf)};
 
                     sweepCell(kSingleEntry, n, xf, ref.Index(n, i), r, got);
                 }
@@ -2580,6 +2617,8 @@ int main(int argc, char** argv) {
             std::array<float, 33> shipped{};
             std::array<float, 33> horner{};
             std::array<float, 33> rational{};
+            std::array<float, 33> narrow{};
+            std::array<float, 33> narrowRational{};
 
             for (std::size_t i = 0; i < count; ++i)
             {
@@ -2593,12 +2632,17 @@ int main(int argc, char** argv) {
                 boys::BoysAllOrdersF32<1.0, ShippedPair>(nmax, xf, shipped.data());
                 boys::BoysAllOrdersF32<1.0, HornerPair>(nmax, xf, horner.data());
                 boys::BoysAllOrdersF32<1.0, RationalPair>(nmax, xf, rational.data());
+                boys::BoysAllOrdersF32<1.0, NarrowPair>(nmax, xf, narrow.data());
+                boys::BoysAllOrdersF32<1.0, NarrowRationalPair>(nmax, xf,
+                                                                narrowRational.data());
 
                 for (int n = 0; n <= nmax; ++n)
                 {
                     const float got[kPolicies] = {shipped[static_cast<std::size_t>(n)],
                                                   horner[static_cast<std::size_t>(n)],
-                                                  rational[static_cast<std::size_t>(n)]};
+                                                  rational[static_cast<std::size_t>(n)],
+                                                  narrow[static_cast<std::size_t>(n)],
+                                                  narrowRational[static_cast<std::size_t>(n)]};
 
                     sweepCell(kBatchEntry, n, xf, ref.Index(n, i), r, got);
                 }
@@ -2744,20 +2788,147 @@ int main(int argc, char** argv) {
                     f32PolicyUncovered,
                     f32PolicyFloor);
         std::printf("  rows of a policy other than the shipped pair whose value never differed from\n"
-                    "  the shipped pair's on any cell they cover: %zu of the 6 rows the count is\n"
+                    "  the shipped pair's on any cell they cover: %zu of the 12 rows the count is\n"
                     "  required for. The batch entry's region-A rows are counted apart, because\n"
-                    "  they seed from the double lane's fit at the policy's route and scheme\n"
-                    "  rather than from a table this lane stores: the scheme's row covers %zu "
-                    "cell(s)\n  and %zu of them differ, the route's row %zu and %zu\n",
+                    "  they seed from the double lane's fit at the policy's route, scheme and\n"
+                    "  partition rather than from a table this lane stores: the scheme's row covers\n"
+                    "  %zu cell(s) and %zu of them differ, the route's row %zu and %zu, the narrow\n"
+                    "  partition's %zu and %zu, and the narrow partition's rational route %zu and "
+                    "%zu\n",
                     f32PolicyNotCarried,
                     f32PolicySeedCells[0],
                     f32PolicySeedDiffer[0],
                     f32PolicySeedCells[1],
-                    f32PolicySeedDiffer[1]);
+                    f32PolicySeedDiffer[1],
+                    f32PolicySeedCells[2],
+                    f32PolicySeedDiffer[2],
+                    f32PolicySeedCells[3],
+                    f32PolicySeedDiffer[3]);
         std::printf("  single-order rows whose published figure is short of the measured one by more\n"
-                    "  than a tenth of the bar: %zu of 6, the worst by %.3g of the bar\n",
+                    "  than a tenth of the bar: %zu of 10, the worst by %.3g of the bar\n",
                     f32PolicyShortOver,
                     f32PolicyShortWorst);
+    }
+
+    // ---- the narrow partition's rational route -----------------------------
+    // The rational family fitted over the narrow partition is a table of its own:
+    // one numerator/denominator pair per narrow piece in each region, read at
+    // that piece's own interval and mapped argument, accepted in the arithmetic
+    // the kernel runs at both multiply-add routes. The rows below are where a
+    // consumer's figure for it meets a measurement, and they are held to the same
+    // bars the route book holds the shipped partition's rows to, because a
+    // partition is a trade in stored count and not a licence to leave the route's
+    // bound. The pieces are measured directly and the public batch entry is
+    // measured over the whole domain it serves, so a table that is right and an
+    // evaluation that is not are two rows rather than one assumption.
+    std::size_t narrowRatCells = 0;
+    std::size_t narrowRatDiffers = 0;
+    double narrowRatWorst = 0.0;
+    int narrowRatClaims[3] = {-1, -1, -1};
+    {
+        using NarrowRational =
+            boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+                             boys::EvalScheme::kSplitClenshaw,
+                             boys::BoysBudget::kFloat,
+                             boys::PackAxis::kArguments,
+                             boys::FitGranularity::kNarrow>;
+        using ShippedRational =
+            boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+                             boys::EvalScheme::kSplitClenshaw,
+                             boys::BoysBudget::kFloat,
+                             boys::PackAxis::kArguments,
+                             boys::FitGranularity::kShipped>;
+        using NarrowFit = boys::detail::RouteFit<boys::FitRoute::kRationalMinimax,
+                                                 boys::EvalScheme::kSplitClenshaw,
+                                                 boys::FitGranularity::kNarrow>::Type;
+
+        const int claimA = AddGranularityClaim("rational x narrow",
+                                               "region A pieces",
+                                               boys::detail::kRegionAFitBar);
+        const int claimB = AddGranularityClaim("rational x narrow",
+                                               "region B seed",
+                                               boys::detail::kRegionBFitBar);
+        const int claimEntry = AddGranularityClaim("rational x narrow",
+                                                   "batch entry, A..C",
+                                                   kBoundDoubleBatch);
+
+        narrowRatClaims[0] = claimA;
+        narrowRatClaims[1] = claimB;
+        narrowRatClaims[2] = claimEntry;
+
+        std::array<double, 33> narrow{};
+        std::array<double, 33> shipped{};
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const double x = ref.x[i];
+
+            boys::BoysAllOrders<1.0, NarrowRational>(nmax, x, narrow.data());
+            boys::BoysAllOrders<1.0, ShippedRational>(nmax, x, shipped.data());
+
+            for (int n = 0; n <= nmax; ++n)
+            {
+                const std::size_t k = ref.Index(n, i);
+                const double got = narrow[static_cast<std::size_t>(n)];
+
+                ++narrowRatCells;
+
+                if (got != shipped[static_cast<std::size_t>(n)])
+                {
+                    ++narrowRatDiffers;
+                }
+
+                MeasureInto(GranularityClaims(),
+                            claimEntry,
+                            n,
+                            x,
+                            got,
+                            ref.v[k],
+                            ref.decade[k],
+                            kBoundDoubleBatch,
+                            Unrepresentable(got, -1022));
+
+                if (x < boys::detail::kX0 && x >= NarrowFit::kRegionAFitsFrom)
+                {
+                    const double piece = boys::detail::RegionAValue<NarrowFit>(n, x);
+
+                    narrowRatWorst = std::max(narrowRatWorst, std::fabs(piece - ref.v[k]));
+                    MeasureInto(GranularityClaims(),
+                                claimA,
+                                n,
+                                x,
+                                piece,
+                                ref.v[k],
+                                ref.decade[k],
+                                boys::detail::kRegionAFitBar,
+                                Unrepresentable(piece, -1022));
+                }
+            }
+
+            if (x >= boys::detail::kX0 && x < boys::detail::kX1)
+            {
+                const std::size_t k = ref.Index(0, i);
+
+                MeasureInto(GranularityClaims(),
+                            claimB,
+                            0,
+                            x,
+                            narrow[0],
+                            ref.v[k],
+                            ref.decade[k],
+                            boys::detail::kRegionBFitBar,
+                            Unrepresentable(narrow[0], -1022));
+            }
+        }
+
+        std::printf("\n  the rational route over the narrow partition, measured against the "
+                    "same reference\n  the route rows are: %zu cell(s) through the batch entry, "
+                    "%zu of them a value the\n  shipped partition's route does not answer with "
+                    "(the carriage that makes naming it an\n  option rather than a spelling), "
+                    "worst piece value %.6g away from the reference.\n",
+                    narrowRatCells,
+                    narrowRatDiffers,
+                    narrowRatWorst);
     }
 
     // ---- fp16 and bf16, the store-half lane -------------------------------
@@ -7605,21 +7776,26 @@ int main(int argc, char** argv) {
                  "boys_impl.hpp, FloatBatchRegionASeed",
                  (f32PolicyNotCarried == 0 && f32PolicyUncovered == 0) ? Verdict::Verified
                                                                         : Verdict::Exceeded,
-                 Fmt("%zu of the 6 row(s) whose value a table of this lane's decides never "
+                 Fmt("%zu of the 12 row(s) whose value a table of this lane's decides never "
                      "differed from the shipped pair's value on any cell the row covers, which is "
                      "what an engine that ignored the policy would answer; %zu row(s) of the "
-                     "twelve were measured over no argument at all. The batch entry's region-A "
-                     "rows are reported apart: the scheme's row differs on %zu of %zu cell(s) and "
-                     "the route's on %zu of %zu, the route's differing where the lane's rational "
-                     "fits take over from the shipped ones. The count is bitwise on the returned "
-                     "float, and it is the reading that makes the accuracy rows above evidence "
-                     "for the option rather than for the table",
+                     "sixteen were measured over no argument at all. The batch entry's region-A "
+                     "rows are reported apart: the scheme's row differs on %zu of %zu cell(s), the "
+                     "route's on %zu of %zu, the narrow partition's on %zu of %zu and the narrow "
+                     "partition's rational route on %zu of %zu, the last two differing where the "
+                     "lane's narrow fits take over from the shipped ones. The count is bitwise on "
+                     "the returned float, and it is the reading that makes the accuracy rows above "
+                     "evidence for the option rather than for the table",
                      f32PolicyNotCarried,
                      f32PolicyUncovered,
                      f32PolicySeedDiffer[0],
                      f32PolicySeedCells[0],
                      f32PolicySeedDiffer[1],
-                     f32PolicySeedCells[1]));
+                     f32PolicySeedCells[1],
+                     f32PolicySeedDiffer[2],
+                     f32PolicySeedCells[2],
+                     f32PolicySeedDiffer[3],
+                     f32PolicySeedCells[3]));
 
 
         // Not a claim: this is what the two RESULT lines above and below already
@@ -9335,6 +9511,33 @@ int main(int argc, char** argv) {
         }
     }
 
+    // The rational route's rows over the narrow partition are in this book too:
+    // the rational family takes no scheme, and what they measure is a partition
+    // rather than a member of the axis, so they are read out here - judged and
+    // counted with the rows above rather than beside them, so a table that
+    // misses its bar is a failure of this axis and not a note.
+    {
+        struct NarrowRatRow {
+            const char* row;
+            double bound;
+        };
+        const NarrowRatRow rows[3] = {
+            {"region A pieces", boys::detail::kRegionAFitBar},
+            {"region B seed", boys::detail::kRegionBFitBar},
+            {"batch entry, A..C", kBoundDoubleBatch}};
+
+        for (int j = 0; j < 3; ++j)
+        {
+            char bar[32];
+            std::snprintf(bar, sizeof(bar), "%.6g", rows[j].bound);
+            granRow("rational x narrow",
+                    "-",
+                    rows[j].row,
+                    bar,
+                    GranularityClaims()[static_cast<std::size_t>(narrowRatClaims[j])]);
+        }
+    }
+
     std::printf("  %s\n", std::string(168, '-').c_str());
     std::printf("  GRANULARITY RESULT: %d of %zu granularity-axis rows met at this revision\n",
                 granMet,
@@ -9374,6 +9577,31 @@ int main(int argc, char** argv) {
                     narrowStored,
                     narrowRows,
                     boys::detail::kNarrowADeg + 1);
+
+        // The same partition on the route whose pieces are degree pairs: the
+        // rows and the intervals are the partition's, so the table differs in
+        // what each row stores and what an evaluation reads out of it. The
+        // read is the piece's own pair - its numerator p_0..p_m and the
+        // denominator's k coefficients - so the span is read off the pieces.
+        int ratReadLow = 0;
+        int ratReadHigh = 0;
+
+        for (std::size_t i = 0; i < std::size(boys::detail::kNarrowRatAOffset); ++i)
+        {
+            const int read = boys::detail::kNarrowRatANumDeg[i]
+                             + boys::detail::kNarrowRatADenDeg[i] + 1;
+            ratReadLow = ratReadLow == 0 || read < ratReadLow ? read : ratReadLow;
+            ratReadHigh = read > ratReadHigh ? read : ratReadHigh;
+        }
+
+        std::printf("                            the same partition on the rational route "
+                    "stores %zu coefficient(s) in the same %zu row(s), one evaluation reading "
+                    "%d to %d of them\n",
+                    std::size(boys::detail::kNarrowRatACoeffs)
+                        + std::size(boys::detail::kNarrowRatBCoeffs),
+                    narrowRows,
+                    ratReadLow,
+                    ratReadHigh);
     }
 
     if (granCellCount > 0)

@@ -296,7 +296,11 @@ that order's last shipped piece ends — so the narrow member serves the whole o
 nothing beyond it — at one degree, 10, under the budget above. The walk produces 311 pieces, 3421
 stored coefficients, and its widths show both readings at work: F_0's pieces grow to 1.78 at the
 widest, since the gain is 1 at order 0, while a high order's last pieces come back as narrow as
-0.057 where the envelope binds. The two partitions as tables:
+0.057 where the envelope binds. A piece is a cut of the region and not a property of a family, so the
+rational route is fitted over these same pieces, and a piece the family's own degree pair could not
+hold the target on is bisected: the result is 311 pieces again at 2611 stored coefficients, one
+evaluation reading 6 to 9 of them where the Chebyshev fits on the same pieces read 11. The two
+partitions as tables, the default route's counts beside them:
 
 | | `FitGranularity::kShipped` | `FitGranularity::kNarrow` |
 | --- | --- | --- |
@@ -304,6 +308,19 @@ widest, since the gain is 1 at order 0, while a high order's last pieces come ba
 | stored rows | 67 (66 pieces + 1 seed) | 316 (311 + 5) |
 | degree | 20 and 18 in region A, 18 in region B | 10 everywhere |
 | read per evaluation | 19 to 21 | 11 |
+
+**The rational route's narrow table, and what it adds to those counts.** The route fitted over the
+narrow cut stores 2646 coefficients in the same 316 rows — 2611 over region A and 35 over region B —
+against the 891 its shipped region-A cover and its 12-coefficient shipped seed cost, and a region-A
+evaluation reads 6 to 9 coefficients from a piece rather than the 11 the Chebyshev fits on the same
+pieces read. Its region-A pieces are fitted to the target the shipped rational table was fitted to and
+published at that route's 3e-14 bar, of which they deliver 2.42365e-14; its
+region-B seed is published at the seed's 5e-14 and delivers 4.09566e-14, and it is five pieces with
+their own degree pairs rather than one numerator/denominator pair over the region, because it is the
+narrow cut that makes a region-B seed of several pieces possible at all. Every one of those figures
+is the worse of the two multiply-add routes, measured in the arithmetic the kernel runs on the
+coefficients as they are stored, which is the criterion this lane's fits are accepted under and not
+the exact reading the shipped tables were accepted on.
 
 **What the member measures, and why it is not the narrowing that buys it.** Over region B the
 committed tables are the first row of the degree ladder, and over the interval their pieces cover the
@@ -339,12 +356,14 @@ bound that is conservative rather than vacuous looks like. **7 stored is what a 
 needs at a target near 1e-10, not at 1e-14, and the denominator here is 5.14888e-11 / 8.57068e-10
 — the measured truncation over the bound.**
 
-**The option is exposed, certified, and refused where it has no tables.** `FitGranularity::kNarrow`
-is a field of `EvalPolicy` and a name the report can print. Its tables are the generated header's,
+**The option is exposed, certified, and refused only where a table or a kernel is still owed.**
+`FitGranularity::kNarrow` is a field of `EvalPolicy` and a name the report can print. Its tables are
+the generated header's,
 reachable through the same entries as the shipped partition, and its certification is the accuracy
 gate's own block: 32 rows, one per partition, scheme and call shape, each judged against the bar the
-published table holds for the cell it ran in, with the worst cell named on the row. The call shapes
-are the stored fits read directly, the batch entry below the band (where the seeding fallback is
+published table holds for the cell it ran in, with the worst cell named on the row, and three more
+for the rational route over the narrow partition — 35 in all. The call shapes are the stored fits
+read directly, the batch entry below the band (where the seeding fallback is
 taken), the batch and plane entries over the band and below, the batch entry over region B, the
 single-order entry at region A's cell, and the single-order and plane entries over the whole grid.
 Three rows move between the partitions, and every other row is the same figure under either name:
@@ -357,22 +376,33 @@ Three rows move between the partitions, and every other row is the same figure u
 | stored fits and single entry, region A | 2.22045e-16 | 2.22045e-16 | 1e-15 |
 | batch and plane entry, band and below | 3.21618e-15 (n=16, x=4.89985) | 3.21618e-15 | 5.5e-14 |
 | single and plane entry, whole grid | 5e-14 (n=32, x=28.9893) | 5e-14 | per region (m × B_region) |
+| rational route, region-A pieces | 2.46e-14 (shipped cover) | 2.21663e-14 (n=2, x=9.88955) | 3e-14 |
+| rational route, region-B seed | 4.46e-14 (shipped seed) | 4.12448e-14 (n=0, x=12) | 5e-14 |
+| rational route, batch entry | — | 5e-14 (n=32, x=28.9893) | 5.5e-14 |
 
-**All 32 rows are met and the books around them do not move.** The block is counted apart from the
-lane book and from the scheme rows, and those read what they read before it existed: 39 of 39 claims,
+**All 35 rows are met and the books around them do not move.** The last three rows are the rational
+route's own narrow fits, judged against the route's published bars rather than the Chebyshev rows'
+figures: the shipped cover of region A delivers 2.46e-14 and the narrow pieces 2.21663e-14, the
+shipped seed of region B delivers 4.46e-14 and the five narrow seed pieces 4.12448e-14, and the batch
+entry read through the narrow route lands at 5e-14 against the batch lane's 5.5e-14. The block is
+counted apart from the lane book and from the scheme rows, and those read what they read before it
+existed: 39 of 39 claims,
 44 of 44 scheme rows, and the combinations book 28 of 28 with nothing owed. What does move is the
 option space, 28 members to 30 — the two new ones are the partitions themselves, each measured over
 289444 cells at both schemes with 150049 of them reading differently under the other partition and
-none over the bar its row is judged at. The block reports its own carrying fraction, 481700 of 578888
-cells (83.2%), as the cells able to discriminate; the other 97188 carry a bound at least as large as
+none over the bar its row is judged at. The block reports its own carrying fraction, 527857 of 649327
+cells (81.3%), as the cells able to discriminate; the other 121470 carry a bound at least as large as
 the value itself, so no error can exceed them, and they are not counted in the rows above.
 
-**What is refused is the combinations with no narrow table**, at compile time and where they are
-named: the rational minimax route, which is one numerator/denominator pair over the whole interval
-and has no partition of it; the relaxed rungs `m > 1`, which truncate the shipped fits to certified
-effective degrees and have no counterpart among pieces that are all at one degree, in either region;
-and the single-precision lanes, which hold one coefficient set and no narrow one. Each is a static
-assertion with the reason, and none of them falls back: the two partitions are different fits of the
+**What is refused has a narrower reason than a missing table that carries a route's name.** Two of
+the refusals this section used to state are gone: the rational minimax route now has its narrow
+table over both regions, and the single-precision lanes have narrow tables on both their routes. What
+remains, at compile time and where it is named, is the relaxed rungs `m > 1`, which truncate a fit by
+a table of certified effective degrees and that table is derived from one stored table of one family,
+so the degrees a narrow fit would be cut by are a derivation of their own; and the across-orders
+packing axis over the narrow partition, whose lane steps one order's coefficients to the next at a
+fixed stride and cannot do that over pieces that are cut per order — a kernel to write. Neither is a
+combination that cannot exist, and neither falls back: the two partitions are different fits of the
 same function over the same interval, so a substitution would return the shipped numbers under the
 narrow partition's name.
 
@@ -398,9 +428,10 @@ them.** The lane's `BoysSingleF32`, `BoysAllOrdersF32` and `BoysAllNF32` take th
 double lane's entries take, so the route is a template argument as well as a run-time selector, and
 the scheme — the choice between the Chebyshev table and the monomial form of the same fits — is
 offered beside it. At the reference multiplier every pair this lane stores is carried, and the gate
-measures the two entries with a policy as six rows, one per policy for each region the policy's fits
-serve: 176814 comparison cells, none of them outside the row's bar, and no row measured over no
-argument. The float lane's Horner reading is 7.68e-08 at its worst cell (order 0, x = 0.553691) over
+measures the two entries with a policy as ten rows, one per policy for each region the policy's fits
+serve — the six the lane shipped, plus the narrow partition's four — 294690 comparison cells with no
+row measured over no argument, and no narrow row of them outside its bar in either multiply-add
+route's build. The float lane's Horner reading is 7.68e-08 at its worst cell (order 0, x = 0.553691) over
 region A and 2.22e-08 (order 32, x = 11.8998) over region B, against the lane's 1.5e-07 bar; the
 rational route's and the shipped route's split Clenshaw figures are the table's above, unchanged.
 Past the reference multiplier the lane serves the shipped pair alone and a policy naming another one
@@ -420,6 +451,21 @@ Region A's rows count the lane's whole per-order table over [0, 11.8998481521084
 against the rational route's 52, and both routes cover that interval from zero: this lane reads each
 order from its own fit across the region, so it has no band boundary at which a selector would take
 over, and the row does not name one.
+
+**Both routes are open at the narrow partition as well**, which is a second cut of the same two
+regions at degree 6: 218 pieces over region A and two over region B, with each route storing its own
+fit on that cut. The Chebyshev route stores 1526 coefficients either way over region A and 14 over
+region B, the rational route 1238 over region A and 11 over region B, and the gate's single-entry
+policy rows measure them at 1.02681e-07 and 1.29916e-07 for the Chebyshev pair and 1.00057e-07 and
+2.99288e-08 for the rational pair, over region A and region B respectively, against the lane's
+1.5e-07 bar. The narrow rows are the same figures under the two multiply-add routes with one
+exception, the rational route's region-B row, which reads 2.99288e-08 with the multiply-add fused and
+4.43557e-08 with it separate — the figure the generated header publishes for that seed is the worse of
+the two, 3.90533e-08 fused and 2.92450e-08 separate, and the gate reads the route the build actually
+runs. Region B's seed is where the narrowing costs rather than saves: 14 stored against the shipped
+seed's 11 on the Chebyshev route, and 11 against 6 on the rational one, and a call there reads 7
+coefficients where the shipped seed reads 11. All four narrow rows are inside their bar under either
+route.
 
 **The stored counts are upper bounds, not minima.** Each count is the first the degree scan found
 holding the target, not the family's minimum, so a cheaper cover may exist. **The two routes are a
