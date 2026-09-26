@@ -339,15 +339,17 @@ bound that is conservative rather than vacuous looks like. **7 stored is what a 
 needs at a target near 1e-10, not at 1e-14, and the denominator here is 5.14888e-11 / 8.57068e-10
 — the measured truncation over the bound.**
 
-**The option is exposed, certified, and refused where it has no tables.** `FitGranularity::kNarrow`
-is a field of `EvalPolicy` and a name the report can print. Its tables are the generated header's,
-reachable through the same entries as the shipped partition, and its certification is the accuracy
-gate's own block: 32 rows, one per partition, scheme and call shape, each judged against the bar the
-published table holds for the cell it ran in, with the worst cell named on the row. The call shapes
-are the stored fits read directly, the batch entry below the band (where the seeding fallback is
-taken), the batch and plane entries over the band and below, the batch entry over region B, the
-single-order entry at region A's cell, and the single-order and plane entries over the whole grid.
-Three rows move between the partitions, and every other row is the same figure under either name:
+**The option is exposed, certified at every rung, and refused where it has no tables.**
+`FitGranularity::kNarrow` is a field of `EvalPolicy` and a name the report can print. Its tables are
+the generated header's, reachable through the same entries as the shipped partition, and its
+certification is the accuracy gate's own block: 252 rows — one per partition, scheme, call shape and
+accuracy rung — each judged against the bar the published table holds for the cell it ran in, times
+the rung's multiplier, with the worst cell named on the row. The call shapes are the stored fits read
+directly, the batch entry below the band (where the seeding fallback is taken), the batch and plane
+entries over the band and below, the batch entry over region B, the single-order entry at region A's
+cell, and the single-order, fixed-order and plane entries over the whole grid. Three rows move
+between the partitions, and every other row is the same figure under either name at the reference
+multiplier:
 
 | row, worst over both schemes | shipped | narrow | bar |
 | --- | --- | --- | --- |
@@ -356,25 +358,41 @@ Three rows move between the partitions, and every other row is the same figure u
 | batch entry, region B | 9.9365e-15 | 7.51675e-16 (n=32, x=11.8998) | 5.5e-14 |
 | stored fits and single entry, region A | 2.22045e-16 | 2.22045e-16 | 1e-15 |
 | batch and plane entry, band and below | 3.21618e-15 (n=16, x=4.89985) | 3.21618e-15 | 5.5e-14 |
-| single and plane entry, whole grid | 5e-14 (n=32, x=28.9893) | 5e-14 | per region (m × B_region) |
+| single, fixed-order and plane entry, whole grid | 5e-14 (n=32, x=28.9893) | 5e-14 | per region (m × B_region) |
 
-**All 32 rows are met and the books around them do not move.** The block is counted apart from the
+**The rungs are served on both partitions, and the narrow rows are derived from the narrow table.**
+A relaxed rung is a cut of a fit's stored coefficients: the effective-degree criterion is
+`d'(m) = min { d' : Delta(d') * A <= (m - 1) * B_region }` over `Delta(d')` the sum of the dropped
+tail's magnitudes, `A` the amplification the region's reading carries and `B_region` the bar the
+region is held to. The same criterion, applied to the narrow table's own coefficients, is what a
+narrow rung is: a compile-time derivation over numbers the generated header already stores, so
+nothing had to be regenerated and the shipped table's bytes did not move. What it delivers is the
+gate's own reading, over all seven rungs at both schemes: the worst figure any row comes in at is
+0.909 of the bar it promised at `m = 1`, 0.959 at `m = 64`, 0.997 at `m = 256`, 0.978 at `m = 1024`,
+0.995 at `m = 4096`, 0.992 at `m = 16384` and 0.991 at `m = 65536`, every rung inside its budget on
+every row. A relaxed narrow rung trades accuracy for work exactly as a relaxed shipped rung does: at
+`m = 65536` the narrow partition's stored region-A fits deliver 6.49285e-11 against the 6.5536e-11
+they promised, where the same row of the shipped partition at that rung delivers 6.44079e-11 against
+the same bar, and the degree one evaluation reads at that rung is 1 to 8 over the narrow pieces
+against 10 to 14 over the shipped ones, where at `m = 1` they are 10 and 18 to 20.
+
+**All 252 rows are met and the books around them do not move.** The block is counted apart from the
 lane book and from the scheme rows, and those read what they read before it existed: 39 of 39 claims,
 44 of 44 scheme rows, and the combinations book 28 of 28 with nothing owed. What does move is the
 option space, 28 members to 30 — the two new ones are the partitions themselves, each measured over
-289444 cells at both schemes with 150049 of them reading differently under the other partition and
-none over the bar its row is judged at. The block reports its own carrying fraction, 481700 of 578888
-cells (83.2%), as the cells able to discriminate; the other 97188 carry a bound at least as large as
-the value itself, so no error can exceed them, and they are not counted in the rows above.
+2819824 cells at both schemes with 1543959 of them reading differently under the other partition and
+none over the bar its row is judged at. The block reports its own carrying fraction, 4079336 of
+5639648 cells (72.3%), as the cells able to discriminate; the other 1560312 carry a bound at least as
+large as the value itself, so no error can exceed them, and they are not counted in the rows above.
 
 **What is refused is the combinations with no narrow table**, at compile time and where they are
 named: the rational minimax route, which is one numerator/denominator pair over the whole interval
-and has no partition of it; the relaxed rungs `m > 1`, which truncate the shipped fits to certified
-effective degrees and have no counterpart among pieces that are all at one degree, in either region;
-and the single-precision lanes, which hold one coefficient set and no narrow one. Each is a static
-assertion with the reason, and none of them falls back: the two partitions are different fits of the
-same function over the same interval, so a substitution would return the shipped numbers under the
-narrow partition's name.
+and has no partition of it; and the single-precision lanes, which hold one coefficient set and no
+narrow one. Each is a static assertion with the reason, each names the table it would need — a narrow
+rational pair, a narrow float table — and each is therefore unbuilt work rather than an impossible
+combination. None of them falls back: the two partitions are different fits of the same function over
+the same interval, so a substitution would return the shipped numbers under the narrow partition's
+name.
 
 ## float
 
@@ -400,15 +418,19 @@ the scheme — the choice between the Chebyshev table and the monomial form of t
 offered beside it. At the reference multiplier every pair this lane stores is carried, and the gate
 measures the two entries with a policy as six rows, one per policy for each region the policy's fits
 serve: 176814 comparison cells, none of them outside the row's bar, and no row measured over no
-argument. The float lane's Horner reading is 8.85e-08 at its worst cell (order 0, x = 0.45898) over
-region A and 2.22e-08 (order 32, x = 11.8998) over region B, against the lane's 1.5e-07 bar, and both
-are the worse of the lane's two multiply-add routes; the rational route's and the shipped route's
-split Clenshaw figures are the table's above, unchanged.
-Past the reference multiplier the lane serves the shipped pair alone and a policy naming another one
-does not build: the degrees a rung truncates by are derived from a family's stored table, and the
-float lane's derivation reads its Chebyshev table, so a monomial or a rational tail has no derived
-degrees to be cut by. That restriction is the narrower claim the policy carries, and it is a
-derivation owed rather than a combination that cannot exist.
+argument. The float lane's Horner reading is 7.68e-08 at its worst cell (order 0, x = 0.553691) over
+region A and 2.22e-08 (order 32, x = 11.8998) over region B, against the lane's 1.5e-07 bar; the
+rational route's and the shipped route's split Clenshaw figures are the table's above, unchanged.
+Past the reference multiplier the lane serves both of the schemes it stores: the degree a rung cuts
+by is derived from the table that scheme sums, and the lane holds a monomial table beside its
+Chebyshev one, so `EvalScheme::kHorner` at a rung builds and the gate measures it — 56 rows, one per
+scheme, entry, region and rung, 825132 cells, none of them outside the bar the rung documents, and
+the worst of the 56 coming in at 0.9997 of its bar (Horner, single entry, region A, `m = 65536`:
+0.00982766 against 0.0098304). The rational route is not served there, and that one is a derivation
+owed rather than a combination that cannot exist: a rung cuts a stored fit by the tail of its
+coefficients, and this route's fit is a numerator/denominator pair whose acceptance criterion is not
+a dropped tail. The configure probe compiles the call and reports the refusal, so the entry rests on
+a measurement rather than on the assertion's word.
 
 | Route | Region | Interval | Stored | Measured | Bar |
 |---|---|---|---|---|---|

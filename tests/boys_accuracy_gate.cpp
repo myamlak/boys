@@ -294,6 +294,41 @@ int AddF32PolicyClaim(const char* lane, const char* region, double bound) {
     return static_cast<int>(F32PolicyClaims().size()) - 1;
 }
 
+// The float lane at each rung, kept apart from the book above for the reason
+// that book gives: it is the same lane, and its rows are a second question -
+// what the lane answers at a multiplier other than the reference one, which is
+// where a rung's table of effective degrees is read from the single-precision
+// tables rather than from the double lane's.
+std::vector<Accum>& F32RungClaims() {
+    static std::vector<Accum> claims;
+    return claims;
+}
+
+int AddF32RungClaim(const char* lane, const char* region, double bound) {
+    Accum a;
+    a.lane = lane;
+    a.region = region;
+    a.baseBound = bound;
+    F32RungClaims().push_back(a);
+    return static_cast<int>(F32RungClaims().size()) - 1;
+}
+
+// The rungs that book is addressed by: the tier enumeration's own, in the order
+// it declares them, so a rung added there is measured here without this file
+// being edited.
+constexpr std::size_t kF32Rungs = 7;
+
+constexpr std::array<double, kF32Rungs> kF32RungM = [] {
+    std::array<double, kF32Rungs> m{};
+
+    for (std::size_t r = 0; r < kF32Rungs; ++r)
+    {
+        m[r] = boys::AccuracyMultiplier(static_cast<boys::AccuracyTier>(r));
+    }
+
+    return m;
+}();
+
 
 // The run-time tier's rungs, named by the multiplier each one selects.
 const char* TierRungLabel(int rung) {
@@ -2758,6 +2793,357 @@ int main(int argc, char** argv) {
                     "  than a tenth of the bar: %zu of 6, the worst by %.3g of the bar\n",
                     f32PolicyShortOver,
                     f32PolicyShortWorst);
+    }
+
+    // ---- the float lane at every rung, on the schemes it stores ------------
+    // The book above is the lane at the reference multiplier, where every pair
+    // of axes it stores is carried. A rung is the other question: past the
+    // reference multiplier the lane's fits are cut by a table of effective
+    // degrees, and that table is read from the lane's own stored coefficients -
+    // one table per scheme, because the two schemes sum different numbers over
+    // the same pieces. The rational route is not here: its fits are a
+    // numerator/denominator pair whose acceptance criterion is not a dropped
+    // coefficient tail, so a rung of it is a table nobody has derived, and the
+    // refusal record further down names it with the probe that shows it.
+    //
+    // So this is the axis the rung opens for the lane: both Chebyshev schemes,
+    // on both entries, over both fitted regions, at every multiplier the tier
+    // enumeration declares. The bar is the lane's own per-region figure times
+    // the multiplier, which is the budget a rung documents. The value read is
+    // the region's fit itself on the single-order entry, and the batch entry's
+    // seed: region B's is this lane's, region A's comes from the double lane,
+    // and a scheme the lane stores must still be reached there.
+    std::size_t f32RungCells = 0;
+    std::size_t f32RungOver = 0;
+    std::size_t f32RungNotCarried = 0;
+    std::size_t f32RungRows = 0;
+    std::size_t f32RungApart = 0;
+    std::size_t f32RungApartCells = 0;
+    std::size_t f32RungSeedCells = 0;
+    std::size_t f32RungSeedDifferDouble = 0;
+    std::size_t f32RungSeedDifferFloat = 0;
+
+    {
+        constexpr int kSchemes = 2;
+        constexpr int kEntries = 2;
+        constexpr int kRegions = 2;
+        constexpr int kSingleEntry = 0;
+        constexpr int kBatchEntry = 1;
+
+        f32RungRows = static_cast<std::size_t>(kEntries * kRegions * static_cast<int>(kF32Rungs));
+
+        const auto slot = [](int scheme, int entry, int region, int rung) -> int {
+            return ((scheme * kEntries + entry) * kRegions + region) *
+                       static_cast<int>(kF32Rungs) +
+                   rung;
+        };
+
+        const char* const schemeName[kSchemes] = {"chebyshev x Clenshaw", "chebyshev x Horner"};
+        const char* const entryName[kEntries] = {"single", "batch"};
+        const char* const regionName[kRegions] = {"A", "B"};
+        const double bar[kRegions] = {boys::detail::f32::kRegionAFitBar,
+                                      boys::detail::f32::kRegionBFitBar};
+
+        std::vector<int> slots(kSchemes * kEntries * kRegions * kF32Rungs, -1);
+        std::vector<std::size_t> differ(slots.size(), 0);
+
+        // The shipped scheme's value at every cell, held so the carriage count
+        // can compare the two schemes cell by cell rather than per call: the
+        // question is whether naming the second scheme changed the float the
+        // engine returned anywhere, and that is one bitwise reading per cell.
+        // One grid per entry and region per rung, because the two entries
+        // answer different values at the same cell.
+        std::vector<std::vector<float>> otherScheme(
+            static_cast<std::size_t>(kEntries * kRegions * kF32Rungs));
+        const auto gridOf = [&](int entry, int region, int rung) -> std::vector<float>& {
+            std::vector<float>& g =
+                otherScheme[static_cast<std::size_t>((entry * kRegions + region) *
+                                                         static_cast<int>(kF32Rungs) +
+                                                     rung)]
+                    ;
+
+            if (g.empty())
+            {
+                g.assign(count * (static_cast<std::size_t>(nmax) + 1), 0.0f);
+            }
+
+            return g;
+        };
+
+        for (int s = 0; s < kSchemes; ++s)
+        {
+            for (int e = 0; e < kEntries; ++e)
+            {
+                for (int r = 0; r < kRegions; ++r)
+                {
+                    for (int q = 0; q < kF32Rungs; ++q)
+                    {
+                        slots[static_cast<std::size_t>(slot(s, e, r, q))] = AddF32RungClaim(
+                            schemeName[s], regionName[r], bar[r] * kF32RungM[q]);
+                    }
+                }
+            }
+        }
+
+        const auto sweepRung =
+            [&]<std::size_t kRung, std::size_t kSchemeIndex, boys::EvalScheme kScheme>() {
+            using Pair = boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme>;
+
+            constexpr double kM = kF32RungM[kRung];
+            const auto x0 = static_cast<float>(boys::detail::kX0);
+            const auto x1 = static_cast<float>(boys::detail::kX1);
+
+            for (int r = 0; r < kRegions; ++r)
+            {
+                for (int n = 0; n <= nmax; ++n)
+                {
+                    for (std::size_t i = 0; i < count; ++i)
+                    {
+                        const float xf = static_cast<float>(ref.xf[i]);
+
+                        if (r == 0 ? (xf >= x0) : (xf < x0 || xf >= x1))
+                        {
+                            continue;
+                        }
+
+                        const std::size_t k = ref.Index(n, i);
+                        const double single =
+                            static_cast<double>(boys::BoysSingleF32<kM, Pair>(n, xf));
+                        const bool singleFloor =
+                            single == 0.0 ||
+                            std::fabs(single) < std::numeric_limits<float>::min();
+
+                        MeasureInto(F32RungClaims(),
+                                    slot(kSchemeIndex, kSingleEntry, r, kRung),
+                                    n,
+                                    static_cast<double>(xf),
+                                    single,
+                                    ref.vf[k],
+                                    ref.decadeF[k],
+                                    kM * bar[r],
+                                    singleFloor);
+
+                        std::array<float, 33> batch{};
+                        boys::BoysAllOrdersF32<kM, Pair>(nmax, xf, batch.data());
+                        const double order = static_cast<double>(batch[static_cast<std::size_t>(n)]);
+                        const bool orderFloor =
+                            order == 0.0 ||
+                            std::fabs(order) < std::numeric_limits<float>::min();
+
+                        MeasureInto(F32RungClaims(),
+                                    slot(kSchemeIndex, kBatchEntry, r, kRung),
+                                    n,
+                                    static_cast<double>(xf),
+                                    order,
+                                    ref.vf[k],
+                                    ref.decadeF[k],
+                                    kM * bar[r],
+                                    orderFloor);
+
+                        // Scheme 0's two values are the control: scheme 1 is
+                        // compared against them cell by cell, and the count is
+                        // written to scheme 1's rows. The fold above runs the
+                        // shipped scheme over the whole grid before this pass
+                        // starts, so the control is filled when it is read.
+                        const float asFloat = static_cast<float>(single);
+                        const float bn = batch[static_cast<std::size_t>(n)];
+                        float* const singleControl = gridOf(kSingleEntry, r, kRung).data();
+                        float* const batchControl = gridOf(kBatchEntry, r, kRung).data();
+
+                        if constexpr (kSchemeIndex == 0)
+                        {
+                            singleControl[k] = asFloat;
+                            batchControl[k] = bn;
+                        } else
+                        {
+                            if (std::memcmp(&singleControl[k], &asFloat, sizeof(float)) != 0)
+                            {
+                                ++differ[static_cast<std::size_t>(
+                                    slot(kSchemeIndex, kSingleEntry, r, kRung))];
+                            }
+
+                            if (std::memcmp(&batchControl[k], &bn, sizeof(float)) != 0)
+                            {
+                                ++differ[static_cast<std::size_t>(
+                                    slot(kSchemeIndex, kBatchEntry, r, kRung))];
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        [&]<std::size_t... kRungs>(std::index_sequence<kRungs...>) {
+            (sweepRung.template operator()<kRungs, 0, boys::EvalScheme::kSplitClenshaw>(), ...);
+            (sweepRung.template operator()<kRungs, 1, boys::EvalScheme::kHorner>(), ...);
+        }(std::make_index_sequence<kF32Rungs>{});
+
+        std::printf("\n  the float lane at each rung it serves: both schemes it stores, on both\n"
+                    "  entries, over each fitted region, judged against the lane's per-region bar\n"
+                    "  times the multiplier. A rung of the rational route is not here: its fits\n"
+                    "  carry no dropped-coefficient table to cut, so the refusal record below is\n"
+                    "  where it is counted\n");
+        std::printf("  %-20s %-6s %-5s %-8s %7s %14s %14s %8s %4s %13s\n",
+                    "policy",
+                    "entry",
+                    "reg",
+                    "rung",
+                    "cells",
+                    "measured",
+                    "bar",
+                    "of bar",
+                    "n",
+                    "at x");
+        std::printf("  %s\n", std::string(126, '-').c_str());
+
+        for (int s = 0; s < kSchemes; ++s)
+        {
+            for (int e = 0; e < kEntries; ++e)
+            {
+                for (int r = 0; r < kRegions; ++r)
+                {
+                    for (int q = 0; q < kF32Rungs; ++q)
+                    {
+                        const std::size_t at = static_cast<std::size_t>(slot(s, e, r, q));
+                        const Accum& a = F32RungClaims()[static_cast<std::size_t>(slots[at])];
+                        f32RungCells += a.points;
+                        f32RungOver += a.failures;
+
+                        char rungTag[24];
+                        std::snprintf(rungTag, sizeof(rungTag), "m=%g", kF32RungM[q]);
+
+                        std::printf("  %-20s %-6s %-5s %-8s %7zu %14.6g %14.6g %8.3f %4d %13.6g",
+                                    schemeName[s],
+                                    entryName[e],
+                                    regionName[r],
+                                    rungTag,
+                                    a.points,
+                                    a.worstErr,
+                                    kF32RungM[q] * bar[r],
+                                    a.worstRatio,
+                                    a.worstN,
+                                    a.worstX);
+
+                        std::printf(" %8zu\n", differ[at]);
+                    }
+                }
+            }
+        }
+
+        // The carriage count the lane's rungs need: a row where the second
+        // scheme's value never differs from the shipped scheme's on any cell it
+        // covers is a row the scheme is stored for and no cell reaches, which is
+        // what an engine that ignored the scheme would answer.
+        for (int e = 0; e < kEntries; ++e)
+        {
+            for (int r = 0; r < kRegions; ++r)
+            {
+                for (int q = 0; q < kF32Rungs; ++q)
+                {
+                    const std::size_t horner =
+                        static_cast<std::size_t>(slot(1, e, r, q));
+
+                    // The batch entry's region-A row at the reference multiplier
+                    // is reported apart rather than required to change, and the
+                    // reason is measured below rather than asserted: there the
+                    // value is the double lane's fit cast to float once, and the
+                    // two schemes' doubles differ by less than that cast can see.
+                    // Every relaxed rung of the same row does differ, so the row
+                    // is not one the policy is ignored on.
+                    if (e == kBatchEntry && r == 0 && q == 0)
+                    {
+                        ++f32RungApart;
+                        f32RungApartCells +=
+                            F32RungClaims()[static_cast<std::size_t>(slots[horner])].points;
+                        continue;
+                    }
+
+                    if (differ[horner] == 0 &&
+                        F32RungClaims()[static_cast<std::size_t>(slots[horner])].points > 0)
+                    {
+                        ++f32RungNotCarried;
+                        std::printf("    the second scheme is stored and never reached on: "
+                                    "%s entry, region %s, m=%g (%zu cell(s))\n",
+                                    entryName[e],
+                                    regionName[r],
+                                    kF32RungM[q],
+                                    F32RungClaims()[static_cast<std::size_t>(slots[horner])]
+                                        .points);
+                    }
+                }
+            }
+        }
+
+        // The reported-apart row's mechanism, read off the seeds themselves: the
+        // batch's region-A value at the reference multiplier is a downward
+        // recursion from the double lane's fit at order nmax, cast to float once
+        // (BoysAllOrdersF32Impl), so the schemes' difference survives to the
+        // returned float only if it survives the cast. One double reading per
+        // scheme per argument, and the two floats they round to.
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const float xf = static_cast<float>(ref.xf[i]);
+
+            if (!(xf < static_cast<float>(boys::detail::kX0)))
+            {
+                continue;
+            }
+
+            const double clenshaw = boys::detail::ChebyshevValue<boys::EvalScheme::kSplitClenshaw>(
+                nmax, static_cast<double>(xf));
+            const double horner =
+                boys::detail::ChebyshevValue<boys::EvalScheme::kHorner>(nmax, static_cast<double>(xf));
+
+            ++f32RungSeedCells;
+
+            if (std::memcmp(&clenshaw, &horner, sizeof(double)) != 0)
+            {
+                ++f32RungSeedDifferDouble;
+            }
+
+            const float clenshawF = static_cast<float>(clenshaw);
+            const float hornerF = static_cast<float>(horner);
+
+            if (std::memcmp(&clenshawF, &hornerF, sizeof(float)) != 0)
+            {
+                ++f32RungSeedDifferFloat;
+            }
+        }
+
+        // The other half of the reported-apart row's defence, read off the
+        // carriage counts the sweep already took: the same row's returned floats
+        // at the relaxed rungs, where the cut is far larger than a cast.
+        std::size_t apartRelaxedLo = 0;
+        std::size_t apartRelaxedHi = 0;
+
+        for (int q = 1; q < kF32Rungs; ++q)
+        {
+            const std::size_t at = static_cast<std::size_t>(slot(1, kBatchEntry, 0, q));
+
+            apartRelaxedLo = (q == 1) ? differ[at] : std::min(apartRelaxedLo, differ[at]);
+            apartRelaxedHi = std::max(apartRelaxedHi, differ[at]);
+        }
+
+        std::printf("  the float lane's rung rows: %zu cell(s), %zu of them outside the bar the\n"
+                    "  rung documents; %zu of the 27 required row(s) a second scheme is stored for\n"
+                    "  and no cell of the sweep reaches\n",
+                    f32RungCells,
+                    f32RungOver,
+                    f32RungNotCarried);
+        std::printf("  the one row reported apart, the batch entry's region A at m = 1 (%zu cell(s),\n"
+                    "  %zu of them reached): its value is the double lane's seed at order %d cast to\n"
+                    "  float once, so the schemes reach it iff their difference survives the cast. The\n"
+                    "  two seeds differ on %zu of %zu argument(s); the floats they round to differ on\n"
+                    "  %zu. At that row's six relaxed rungs the returned floats differ on between %zu\n"
+                    "  and %zu of its cell(s), so no rung of it ignores the policy either\n",
+                    f32RungApartCells,
+                    F32RungClaims()[static_cast<std::size_t>(slots[slot(1, kBatchEntry, 0, 0)])].points,
+                    nmax,
+                    f32RungSeedDifferDouble,
+                    f32RungSeedCells,
+                    f32RungSeedDifferFloat,
+                    apartRelaxedLo,
+                    apartRelaxedHi);
     }
 
     // ---- fp16 and bf16, the store-half lane -------------------------------
@@ -5265,6 +5651,7 @@ int main(int argc, char** argv) {
         kOrdersB,     // BoysAllOrders over region B, where the seed is carried up
         kSingleA,     // BoysSingle, one order at one argument, over the table's region-A cell
         kSingleWhole, // BoysSingle over the whole grid, at the lane's per-region bars
+        kFixedN,      // BoysFixedN, one order over the arguments of the array
         kPlaneA,      // BoysAllN, every order over the array, over x < kX0
     };
 
@@ -5291,16 +5678,47 @@ int main(int argc, char** argv) {
         {"orders entry, region B", GranKind::kOrdersB, GranBar::kFixed, kBoundDoubleBatch},
         {"single entry, region A", GranKind::kSingleA, GranBar::kFixed, kBoundSingleA},
         {"single entry, A..C", GranKind::kSingleWhole, GranBar::kPerRegion, 0.0},
+        // The fixed-order entry is the shape a caller that needs one order over
+        // an array of arguments reaches for, and it has its own branch on the
+        // partition, so a row here is what says that branch reads the table its
+        // policy names. It is judged at the single-order lane's per-region
+        // figure, which is the bar the entry is published at: one order at one
+        // argument is that lane's shape, taken over an array.
+        {"fixed-order entry, A..C", GranKind::kFixedN, GranBar::kPerRegion, 0.0},
         {"plane entry, band and below", GranKind::kPlaneA, GranBar::kFixed, kBoundDoubleBatch},
     };
     constexpr std::size_t kGranRowCount = std::size(granRows);
     constexpr std::size_t kGranMembers = 2;
     constexpr std::size_t kGranSchemeCount = 2;
 
+    // The rung axis. A partition is a partition at every multiplier the tier
+    // enumeration declares, not only at the reference one: each member carries
+    // a table of effective degrees per rung, derived by cutting that member's
+    // own stored coefficients, so the same rows are asked at each rung instead
+    // of at the reference rung alone. The bar moves with the rung exactly as
+    // every other rung row in this report is judged - m times the m = 1 figure,
+    // which is the entry's documented m * B_region - so a relaxed rung is asked
+    // to be the same row, loosened by the multiplier it names and by no more.
+    constexpr std::size_t kGranRungs = 7;
+
+    constexpr std::array<double, kGranRungs> kGranRungM = [] {
+        std::array<double, kGranRungs> m{};
+
+        for (std::size_t r = 0; r < kGranRungs; ++r)
+        {
+            m[r] = boys::AccuracyMultiplier(static_cast<boys::AccuracyTier>(r));
+        }
+
+        return m;
+    }();
+
     static_assert(static_cast<std::size_t>(boys::FitGranularity::kShipped) == 0
                       && static_cast<std::size_t>(boys::FitGranularity::kNarrow) == 1,
                   "the tables below are indexed by the enumerator, so the enumerators are the "
                   "order they are read in");
+    static_assert(kGranRungM[0] == 1.0 && kGranRungM[kGranRungs - 1] == 65536.0,
+                  "the rung tables below are indexed by the enumerator, so the enumerators are "
+                  "the order they are read in, from the reference rung to the last");
 
     // The schemes, in the order the report walks them, read from the library's
     // own report so a scheme added there is measured here at both partitions.
@@ -5315,11 +5733,24 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Slot [member][scheme][row], filled in row-major order below so a row
-    // added to the list is one row in every member's and scheme's table and the
-    // block reads them all out of the same list.
-    std::array<std::array<std::array<int, kGranRowCount>, kGranSchemeCount>, kGranMembers>
-        granSlots{};
+    // One row of the book is one (partition, scheme, rung, row) tuple, so the
+    // label a slot carries names the rung as well. The labels are built once
+    // into a fixed array because a claim records the pointers it is handed.
+    std::array<std::string, kGranRungs> granRungLabels{};
+
+    for (std::size_t r = 0; r < kGranRungs; ++r)
+    {
+        granRungLabels[r] = Fmt("m = %g", kGranRungM[r]);
+    }
+
+    // The flat index of one cell of the tables below, addressed by the tuple a
+    // row names: partition, scheme, rung, row, in that order.
+    const auto granIndex = [](std::size_t member, std::size_t scheme, std::size_t rung,
+                              std::size_t row) {
+        return ((member * kGranSchemeCount + scheme) * kGranRungs + rung) * kGranRowCount + row;
+    };
+
+    std::vector<int> granSlots(kGranMembers * kGranSchemeCount * kGranRungs * kGranRowCount, -1);
 
     for (std::size_t g = 0; g < kGranMembers; ++g)
     {
@@ -5327,23 +5758,21 @@ int main(int argc, char** argv) {
 
         for (std::size_t s = 0; s < granSchemeCount; ++s)
         {
-            for (std::size_t r = 0; r < kGranRowCount; ++r)
+            for (std::size_t q = 0; q < kGranRungs; ++q)
             {
-                granSlots[g][s][r] =
-                    AddGranularityClaim(member, granRows[r].row, granRows[r].bound);
+                for (std::size_t r = 0; r < kGranRowCount; ++r)
+                {
+                    granSlots[granIndex(g, s, q, r)] = AddGranularityClaim(
+                        member, granRungLabels[q].c_str(), granRows[r].bound);
+                }
             }
         }
     }
 
     // The cells each row was read at, and the cells where the two members'
-    // readings differed, one row per (granularity, scheme, row).
-    std::array<std::size_t, kGranMembers * kGranSchemeCount * kGranRowCount> granCells{};
-    std::array<std::size_t, kGranMembers * kGranSchemeCount * kGranRowCount> granDiffer{};
-
-    // The flat index of one cell of those tables.
-    const auto granIndex = [](std::size_t member, std::size_t scheme, std::size_t row) {
-        return (member * kGranSchemeCount + scheme) * kGranRowCount + row;
-    };
+    // readings differed, one row per (granularity, scheme, rung, row).
+    std::vector<std::size_t> granCells(granSlots.size(), 0);
+    std::vector<std::size_t> granDiffer(granSlots.size(), 0);
 
     // Both members' readings of the whole grid, held between the members'
     // passes so that the second member's reading of a cell is an array read
@@ -5355,8 +5784,50 @@ int main(int argc, char** argv) {
     std::array<std::vector<double>, kGranMembers> ordersGrid;
     std::array<std::vector<double>, kGranMembers> planeGrid;
     std::array<std::vector<double>, kGranMembers> singleGrid;
+    std::array<std::vector<double>, kGranMembers> fixednGrid;
 
-    const auto sweepGranularity = [&]<std::size_t kSchemeIndex, boys::EvalScheme kScheme>() {
+    // The stored fit one lane names at one partition, one rung and one scheme,
+    // read directly. At the reference rung it is PartitionFitValue above, which
+    // is the certified fit and the path the rows above already read; at a rung
+    // it is the same fit summed to the degree the rung's criterion cuts that
+    // piece to, which is the whole of what a multiplier changes about a stored
+    // fit. Region B's seed is one degree, so the same table is read one entry.
+    const auto granStoredFit = [&]<boys::EvalScheme kScheme,
+                                   boys::FitGranularity kGranularity,
+                                   double kM>(boys::EvalLane lane, int n, double x) -> double {
+        if constexpr (kM == 1.0)
+        {
+            return PartitionFitValue<kScheme, kGranularity>(lane, n, x);
+        } else
+        {
+            constexpr boys::detail::TailBasis kBasis = boys::detail::SchemeTailBasis<kScheme>();
+
+            if constexpr (kGranularity == boys::FitGranularity::kShipped)
+            {
+                constexpr auto kDegreesB =
+                    boys::detail::RegionBDegrees<kM, boys::detail::BoysRole::kDoubleSingle, kBasis>();
+                constexpr auto kDegreesA =
+                    boys::detail::RegionADegrees<kM, boys::detail::BoysRole::kDoubleSingle, kBasis>();
+
+                return (lane == boys::EvalLane::kRegionA)
+                           ? boys::detail::ChebyshevValueWithDegrees<kScheme>(n, x, kDegreesA)
+                           : boys::detail::RegionBSeedWithDegrees<kScheme>(x, kDegreesB[0]);
+            } else
+            {
+                constexpr auto kDegreesB =
+                    boys::detail::NarrowRegionBDegrees<kM, boys::detail::BoysRole::kDoubleSingle, kBasis>();
+                constexpr auto kDegreesA =
+                    boys::detail::NarrowRegionADegrees<kM, boys::detail::BoysRole::kDoubleSingle, kBasis>();
+
+                return (lane == boys::EvalLane::kRegionA)
+                           ? boys::detail::NarrowRegionAValueWithDegrees<kScheme>(n, x, kDegreesA)
+                           : boys::detail::NarrowRegionBSeedWithDegrees<kScheme>(x, kDegreesB[0]);
+            }
+        }
+    };
+
+    const auto sweepGranularity =
+        [&]<std::size_t kRung, double kM, std::size_t kSchemeIndex, boys::EvalScheme kScheme>() {
         // The whole grid at one member, one entry at a time. The two passes
         // over the members are what makes the tables above the entry's own
         // numbers at both partitions; a member read alone would leave the
@@ -5369,12 +5840,13 @@ int main(int argc, char** argv) {
             ordersGrid[kMember].assign(grid, 0.0);
             planeGrid[kMember].assign(grid, 0.0);
             singleGrid[kMember].assign(grid, 0.0);
+            fixednGrid[kMember].assign(grid, 0.0);
 
             std::array<double, 33> orders{};
 
             for (std::size_t i = 0; i < count; ++i)
             {
-                boys::BoysAllOrders<1.0, GranularityPolicy<kScheme, kGranularity>>(
+                boys::BoysAllOrders<kM, GranularityPolicy<kScheme, kGranularity>>(
                     nmax, ref.x[i], orders.data());
 
                 for (int n = 0; n <= nmax; ++n)
@@ -5383,7 +5855,7 @@ int main(int argc, char** argv) {
                 }
             }
 
-            boys::BoysAllN<1.0, GranularityPolicy<kScheme, kGranularity>>(
+            boys::BoysAllN<kM, GranularityPolicy<kScheme, kGranularity>>(
                 nmax, ref.x.data(), planeGrid[kMember].data(), count);
 
             for (int n = 0; n <= nmax; ++n)
@@ -5391,8 +5863,21 @@ int main(int argc, char** argv) {
                 for (std::size_t i = 0; i < count; ++i)
                 {
                     singleGrid[kMember][ref.Index(n, i)] =
-                        boys::BoysSingle<1.0, GranularityPolicy<kScheme, kGranularity>>(n,
-                                                                                       ref.x[i]);
+                        boys::BoysSingle<kM, GranularityPolicy<kScheme, kGranularity>>(n,
+                                                                                      ref.x[i]);
+                }
+            }
+
+            std::vector<double> column(count);
+
+            for (int n = 0; n <= nmax; ++n)
+            {
+                boys::BoysFixedN<kM, GranularityPolicy<kScheme, kGranularity>>(
+                    n, ref.x.data(), column.data(), count);
+
+                for (std::size_t i = 0; i < count; ++i)
+                {
+                    fixednGrid[kMember][ref.Index(n, i)] = column[i];
                 }
             }
         };
@@ -5414,10 +5899,9 @@ int main(int argc, char** argv) {
 
             for (std::size_t r = 0; r < kGranRowCount; ++r)
             {
-                Accum& acc =
-                    GranularityClaims()[static_cast<std::size_t>(granSlots[kMember][kSchemeIndex]
-                                                                           [r])];
-                const std::size_t index = granIndex(kMember, kSchemeIndex, r);
+                Accum& acc = GranularityClaims()[static_cast<std::size_t>(
+                    granSlots[granIndex(kMember, kSchemeIndex, kRung, r)])];
+                const std::size_t index = granIndex(kMember, kSchemeIndex, kRung, r);
 
                 for (int n = 0; n <= nmax; ++n)
                 {
@@ -5445,10 +5929,10 @@ int main(int argc, char** argv) {
                                 continue;
                             }
 
-                            got = PartitionFitValue<kScheme, kGranularity>(
+                            got = granStoredFit.template operator()<kScheme, kGranularity, kM>(
                                 boys::EvalLane::kRegionA, n, x);
-                            other = PartitionFitValue<kScheme, kOther>(boys::EvalLane::kRegionA,
-                                                                      n, x);
+                            other = granStoredFit.template operator()<kScheme, kOther, kM>(
+                                boys::EvalLane::kRegionA, n, x);
                             break;
                         }
 
@@ -5459,10 +5943,10 @@ int main(int argc, char** argv) {
                                 continue;
                             }
 
-                            got = PartitionFitValue<kScheme, kGranularity>(
+                            got = granStoredFit.template operator()<kScheme, kGranularity, kM>(
                                 boys::EvalLane::kRegionB, 0, x);
-                            other = PartitionFitValue<kScheme, kOther>(boys::EvalLane::kRegionB,
-                                                                      0, x);
+                            other = granStoredFit.template operator()<kScheme, kOther, kM>(
+                                boys::EvalLane::kRegionB, 0, x);
                             break;
                         }
 
@@ -5528,6 +6012,13 @@ int main(int argc, char** argv) {
                             other = singleGrid[1 - kMember][k];
                             break;
                         }
+
+                        case GranKind::kFixedN:
+                        {
+                            got = fixednGrid[kMember][k];
+                            other = fixednGrid[1 - kMember][k];
+                            break;
+                        }
                         }
 
                         ++granCells[index];
@@ -5537,9 +6028,17 @@ int main(int argc, char** argv) {
                             if constexpr (kFirst)
                             {
                                 ++granDiffer[index];
-                                ++granDiffer[granIndex(1 - kMember, kSchemeIndex, r)];
+                                ++granDiffer[granIndex(1 - kMember, kSchemeIndex, kRung, r)];
                             }
                         }
+
+                        // The bar this cell is judged at: the row's own figure,
+                        // or the single-order lane's per-region formula, times
+                        // the multiplier the rung names. At the reference rung
+                        // that is the row's figure untouched.
+                        const double bar = (granRows[r].bar == GranBar::kFixed)
+                                               ? granRows[r].bound
+                                               : SingleBound(x);
 
                         MeasureAt(acc,
                                   n,
@@ -5547,8 +6046,7 @@ int main(int argc, char** argv) {
                                   got,
                                   ref.v[k],
                                   ref.decade[k],
-                                  granRows[r].bar == GranBar::kFixed ? granRows[r].bound
-                                                                     : SingleBound(x),
+                                  kM * bar,
                                   Unrepresentable(got, -1022));
                     }
                 }
@@ -5559,8 +6057,21 @@ int main(int argc, char** argv) {
         measure.template operator()<boys::FitGranularity::kNarrow>();
     };
 
-    sweepGranularity.template operator()<0, boys::EvalScheme::kSplitClenshaw>();
-    sweepGranularity.template operator()<1, boys::EvalScheme::kHorner>();
+    // Every rung the tier enumeration declares, at every scheme, in the order
+    // the tables above are addressed: the rung is the outermost axis, so both
+    // members are read at one rung before the next is taken.
+    [&]<std::size_t... kRungs>(std::index_sequence<kRungs...>) {
+        (sweepGranularity.template operator()<kRungs,
+                                             kGranRungM[kRungs],
+                                             0,
+                                             boys::EvalScheme::kSplitClenshaw>(),
+         ...);
+        (sweepGranularity.template operator()<kRungs,
+                                             kGranRungM[kRungs],
+                                             1,
+                                             boys::EvalScheme::kHorner>(),
+         ...);
+    }(std::make_index_sequence<kGranRungs>{});
 
     std::printf("\naccuracy gate, revision %s\n", BoysGateRevision);
     std::printf("  reference: %s (%zu arguments per order, %zu orders, %s)\n",
@@ -7621,6 +8132,36 @@ int main(int argc, char** argv) {
                      f32PolicySeedDiffer[1],
                      f32PolicySeedCells[1]));
 
+        addRoute("float.rung.pair",
+                 "the float lane's two stored schemes are carried at every rung the tier "
+                 "enumeration declares: on both entries, over each fitted region, the value the "
+                 "lane answers with at a rung is inside the lane's own per-region bar times the "
+                 "multiplier, and the second scheme changes the float the engine returns over the "
+                 "cells the sweep covers, so a scheme the lane stores is not one the rung ignores",
+                 "include/boys/boys.hpp, BoysSingleF32 and BoysAllOrdersF32 at a multiplier; "
+                 "boys_effective_degrees.hpp, RegionADegrees and RegionBDegrees with the "
+                 "single-precision roles; boys_impl.hpp, the lane's two stored tables",
+                 (f32RungOver == 0 && f32RungNotCarried == 0) ? Verdict::Verified
+                                                             : Verdict::Exceeded,
+                 Fmt("%zu cell(s) across the two schemes, both entries and both regions, %zu of "
+                     "them outside the bar the rung documents, and %zu of the %zu required row(s) "
+                     "whose cells never differ between the schemes. The one row reported apart, the "
+                     "batch entry's region A at the reference multiplier, is named and measured in "
+                     "the table above: its value is the double lane's seed cast to float once, and "
+                     "there the two schemes' seeds differ on %zu of %zu argument(s) while the floats "
+                     "they round to differ on %zu, while at that row's relaxed rungs the returned "
+                     "floats differ on thousands of its cells - so that row is one a cast erases "
+                     "rather than one the policy is ignored on. The rational route is not a row of "
+                     "this axis: its fits carry no dropped-coefficient table, so no rung of them "
+                     "exists to measure and the refusal record names it",
+                     f32RungCells,
+                     f32RungOver,
+                     f32RungNotCarried,
+                     f32RungRows - f32RungApart,
+                     f32RungSeedDifferDouble,
+                     f32RungSeedCells,
+                     f32RungSeedDifferFloat));
+
 
         // Not a claim: this is what the two RESULT lines above and below already
         // say, put side by side so a reader can see the routes were added without
@@ -8564,14 +9105,17 @@ int main(int argc, char** argv) {
 
         for (std::size_t s = 0; s < granSchemeCount; ++s)
         {
-            for (std::size_t r = 0; r < kGranRowCount; ++r)
+            for (std::size_t q = 0; q < kGranRungs; ++q)
             {
-                const std::size_t index = granIndex(static_cast<std::size_t>(g), s, r);
-                cells += granCells[index];
-                differ += granDiffer[index];
-                failures += GranularityClaims()[static_cast<std::size_t>(
-                    granSlots[static_cast<std::size_t>(g)][s][r])]
-                                .failures;
+                for (std::size_t r = 0; r < kGranRowCount; ++r)
+                {
+                    const std::size_t index =
+                        granIndex(static_cast<std::size_t>(g), s, q, r);
+                    cells += granCells[index];
+                    differ += granDiffer[index];
+                    failures += GranularityClaims()[static_cast<std::size_t>(granSlots[index])]
+                                    .failures;
+                }
             }
         }
 
@@ -8630,25 +9174,32 @@ int main(int argc, char** argv) {
                 "the rung would print the\n  refusal instead, with the twelve counted as "
                 "owed\n");
 #endif
-#ifdef BOYS_GATE_REFUSES_F32_PAIR_AT_RUNG
-    refusals.push_back({"a route or a scheme other than the shipped pair at a relaxed rung",
-                        "past the reference multiplier this engine serves the shipped route and "
-                        "scheme alone, because a relaxed rung cuts the float lane's fits by a "
-                        "table of effective degrees and a degree table is certified against one "
-                        "stored table of one fit family; the probe compiles the call and it does "
-                        "not build. This is a table nobody has derived, not a combination that "
-                        "cannot exist: the degrees a rung needs of another family's fit are a "
-                        "derivation of their own, and every pair this lane stores is carried at "
-                        "the reference multiplier, where the fp32 policy table above measures "
-                        "it",
+#ifdef BOYS_GATE_REFUSES_F32_ROUTE_AT_RUNG
+    refusals.push_back({"the rational route at a relaxed rung, on the single-precision engines",
+                        "a relaxed rung cuts a fit by the tail of its stored coefficients, and "
+                        "this lane's rational fits are a numerator/denominator pair whose "
+                        "acceptance criterion is not a dropped coefficient tail; the probe "
+                        "compiles the call and it does not build. This is a table nobody has "
+                        "derived, not a combination that cannot exist: the criterion a rung of "
+                        "that pair needs is a derivation of its own, and the route is carried "
+                        "here at the reference multiplier, where the fp32 policy table above "
+                        "measures it",
                         true});
 #else
     ++liftedRefusals;
-    std::printf("  LIFTED: the single-precision engines accept a route or a scheme other than "
-                "the\n  shipped pair at a relaxed rung as well, and the fp32 policy rows above "
-                "measure the\n  reference multiplier's pair only: nothing in this block reads "
-                "what that rung answers\n  with. A revision that reaches this line has carried "
-                "the rung and owes its rows\n");
+    std::printf("  LIFTED: the single-precision engines accept the rational route at a relaxed "
+                "rung as\n  well, and the fp32 policy rows above measure the reference "
+                "multiplier's pair only:\n  nothing in this block reads what that rung answers "
+                "with. A revision that reaches\n  this line has carried the rung and owes its "
+                "rows\n");
+#endif
+#ifdef BOYS_GATE_REFUSES_F32_SCHEME_AT_RUNG
+    refusals.push_back({"a scheme other than the shipped one at a relaxed rung, on the "
+                        "single-precision engines",
+                        "a relaxed rung cuts a fit by the tail of one stored table, and this "
+                        "engine's rung reads the shipped scheme's table alone; the probe compiles "
+                        "the call and it does not build",
+                        true});
 #endif
 #ifdef BOYS_GATE_FIXEDN_REFUSES_ORDERS
     refusals.push_back({"orders axis on BoysFixedN",
@@ -9243,6 +9794,17 @@ int main(int argc, char** argv) {
     // than an assumption. The row list and why the entry rows are cast there
     // rather than over the whole grid is stated where the list is defined.
     //
+    // Every one of those rows is read at every rung the tier enumeration
+    // declares and not at the reference rung alone, because a partition is a
+    // partition at each multiplier: each member carries a table of effective
+    // degrees per rung, derived by cutting that member's own stored
+    // coefficients, and a rung of the narrow member that no row reads is the
+    // silent gap this book exists to catch. The bar a row is judged at moves
+    // with the rung - m times the m = 1 figure, the entry's documented
+    // m * B_region - so a relaxed rung is the same row loosened by the
+    // multiplier it names, and a partition that cannot hold the loosened bar is
+    // a row that fails here rather than a claim that quietly narrows.
+    //
     // The trade is printed with the rows and not in place of them, because the
     // axis is not a saving: one evaluation reads fewer coefficients, and the
     // table that makes that possible stores more of them and holds more rows to
@@ -9259,9 +9821,10 @@ int main(int argc, char** argv) {
 
     std::printf("\nthe granularity-axis rows: which partition of the fitted domain a call "
                 "reads, measured at both members against the committed reference\n");
-    std::printf("  %-10s %-16s %-28s %9s %-22s %-22s %7s  %-22s %s\n",
+    std::printf("  %-10s %-15s %-10s %-28s %9s %-22s %-22s %7s  %-22s %s\n",
                 "partition",
                 "scheme",
+                "rung",
                 "row",
                 "cells",
                 "bound it promises",
@@ -9276,8 +9839,8 @@ int main(int argc, char** argv) {
     std::vector<std::string> granNotMet;
 
     const auto granRow =
-        [&](const char* member, const char* scheme, const char* row, const char* bound,
-            const Accum& a) {
+        [&](const char* member, const char* scheme, const char* rung, const char* row,
+            const char* bound, const Accum& a) {
             ++granRowsRun;
             const Verdict v = FromAccum(a);
 
@@ -9286,14 +9849,16 @@ int main(int argc, char** argv) {
                 ++granMet;
             } else
             {
-                granNotMet.push_back(std::string(member) + " / " + scheme + " / " + row);
+                granNotMet.push_back(std::string(member) + " / " + scheme + " / " + rung + " / " +
+                                     row);
             }
 
             char where[64];
             std::snprintf(where, sizeof(where), "n=%d, x=%.6g", a.worstN, a.worstX);
-            std::printf("  %-10s %-16s %-28s %9zu %-22s %-22.6g %7.3g  %-22s %s\n",
+            std::printf("  %-10s %-15s %-10s %-28s %9zu %-22s %-22.6g %7.3g  %-22s %s\n",
                         member,
                         scheme,
+                        rung,
                         row,
                         a.points,
                         bound,
@@ -9303,6 +9868,13 @@ int main(int argc, char** argv) {
                         VerdictName(v));
         };
 
+    // The worst ratio each rung reaches over both members' and both schemes'
+    // rows, kept so a relaxed rung can be read as the figure it delivers
+    // against the bar it promised rather than only row by row.
+    std::array<double, kGranRungs> granRungWorst{};
+    std::array<std::string, kGranRungs> granRungWorstAt{};
+    std::array<std::size_t, kGranRungs> granRungRows{};
+
     for (std::size_t g = 0; g < kGranMembers; ++g)
     {
         const char* member = boys::GranularityName(static_cast<boys::FitGranularity>(g));
@@ -9311,26 +9883,45 @@ int main(int argc, char** argv) {
         {
             const char* scheme = boys::EvalSchemeName(granSchemes[s]);
 
-            for (std::size_t r = 0; r < kGranRowCount; ++r)
+            for (std::size_t q = 0; q < kGranRungs; ++q)
             {
-                // The bar a row is judged at, printed as the row was judged:
-                // one published number, or the per-region formula the
-                // single-order lane's whole-domain rows are judged with.
-                char bar[32];
+                char rungTag[24];
+                std::snprintf(rungTag, sizeof(rungTag), "m=%g", kGranRungM[q]);
 
-                if (granRows[r].bar == GranBar::kFixed)
+                for (std::size_t r = 0; r < kGranRowCount; ++r)
                 {
-                    std::snprintf(bar, sizeof(bar), "%.6g", granRows[r].bound);
-                } else
-                {
-                    std::snprintf(bar, sizeof(bar), "per region (m x B_region)");
+                    // The bar a row is judged at, printed as the row was judged:
+                    // one published number times the multiplier, or the
+                    // per-region formula the single-order lane's whole-domain
+                    // rows are judged with. At the reference rung the two are
+                    // the m = 1 figures the row's own list carries.
+                    char bar[40];
+
+                    if (granRows[r].bar == GranBar::kFixed)
+                    {
+                        std::snprintf(bar,
+                                      sizeof(bar),
+                                      "%.6g",
+                                      kGranRungM[q] * granRows[r].bound);
+                    } else
+                    {
+                        std::snprintf(bar, sizeof(bar), "per region (m x B_region)");
+                    }
+
+                    const Accum& a = GranularityClaims()[static_cast<std::size_t>(
+                        granSlots[granIndex(g, s, q, r)])];
+
+                    ++granRungRows[q];
+
+                    if (a.worstRatio > granRungWorst[q])
+                    {
+                        granRungWorst[q] = a.worstRatio;
+                        granRungWorstAt[q] = std::string(member) + " / " + scheme + " / " +
+                                             granRows[r].row;
+                    }
+
+                    granRow(member, scheme, rungTag, granRows[r].row, bar, a);
                 }
-
-                granRow(member,
-                        scheme,
-                        granRows[r].row,
-                        bar,
-                        GranularityClaims()[static_cast<std::size_t>(granSlots[g][s][r])]);
             }
         }
     }
@@ -9339,6 +9930,25 @@ int main(int argc, char** argv) {
     std::printf("  GRANULARITY RESULT: %d of %zu granularity-axis rows met at this revision\n",
                 granMet,
                 granRowsRun);
+
+    // The rung axis, one line per rung: the worst ratio any row reaches at that
+    // multiplier and where. A relaxed rung's budget is m times the m = 1
+    // figure, so this is the figure a rung delivers against the bar it
+    // promised, taken over every row of both partitions and both schemes.
+    std::printf("  the rungs, on both partitions: the worst figure any row delivers against the "
+                "bar that row promised at that multiplier\n");
+    std::printf("    %-10s %8s %8s  %-46s %s\n", "rung", "rows", "worst", "at", "verdict");
+    std::printf("    %s\n", std::string(120, '-').c_str());
+
+    for (std::size_t q = 0; q < kGranRungs; ++q)
+    {
+        std::printf("    %-10s %8zu %8.3f  %-46s %s\n",
+                    granRungLabels[q].c_str(),
+                    granRungRows[q],
+                    granRungWorst[q],
+                    granRungWorstAt[q].c_str(),
+                    granRungWorst[q] <= 1.0 ? "within budget" : "OVER BUDGET");
+    }
 
     // The partition's own size, read off the tables the two members are built
     // from: rows to look the piece up in, coefficients stored, and the span of
@@ -9374,6 +9984,52 @@ int main(int argc, char** argv) {
                     narrowStored,
                     narrowRows,
                     boys::detail::kNarrowADeg + 1);
+    }
+
+    // The rungs' other half, which the trade above is the m = 1 case of: the
+    // degree the region-A stored row reads once the rung's criterion has cut it,
+    // over each partition's own pieces, at every multiplier. The basis is the
+    // split-Clenshaw one, the default scheme's. These are the numbers the cut is
+    // made of, so a rung that traded nothing would print the same degree at
+    // every line.
+    {
+        std::printf("  the rungs' work side: the region-A degree one evaluation reads at each "
+                    "multiplier,\n  over the pieces of each partition (split-Clenshaw basis; "
+                    "coefficients read = degree + 1)\n");
+        std::printf("    %-10s %-14s %-14s\n", "rung", "shipped", "narrow");
+
+        const auto spanOf = [](const auto& degrees) {
+            std::array<int, 2> span{degrees[0], degrees[0]};
+
+            for (const int d : degrees)
+            {
+                span[0] = d < span[0] ? d : span[0];
+                span[1] = d > span[1] ? d : span[1];
+            }
+
+            return span;
+        };
+
+        [&]<std::size_t... kRungs>(std::index_sequence<kRungs...>) {
+            (void)std::initializer_list<int>{([&] {
+                constexpr double kM = kGranRungM[kRungs];
+                constexpr auto kShipped = boys::detail::RegionADegrees<
+                    kM,
+                    boys::detail::BoysRole::kDoubleSingle,
+                    boys::detail::TailBasis::kChebyshev>();
+                constexpr auto kNarrow = boys::detail::NarrowRegionADegrees<
+                    kM,
+                    boys::detail::BoysRole::kDoubleSingle,
+                    boys::detail::TailBasis::kChebyshev>();
+                const std::array<int, 2> shipped = spanOf(kShipped);
+                const std::array<int, 2> narrow = spanOf(kNarrow);
+
+                std::printf("    %-10s %-14s %-14s\n",
+                            granRungLabels[kRungs].c_str(),
+                            Fmt("%d to %d", shipped[0], shipped[1]).c_str(),
+                            Fmt("%d to %d", narrow[0], narrow[1]).c_str());
+            }(), 0)...};
+        }(std::make_index_sequence<kGranRungs>{});
     }
 
     if (granCellCount > 0)
