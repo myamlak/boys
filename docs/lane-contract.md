@@ -400,9 +400,10 @@ the scheme — the choice between the Chebyshev table and the monomial form of t
 offered beside it. At the reference multiplier every pair this lane stores is carried, and the gate
 measures the two entries with a policy as six rows, one per policy for each region the policy's fits
 serve: 176814 comparison cells, none of them outside the row's bar, and no row measured over no
-argument. The float lane's Horner reading is 7.68e-08 at its worst cell (order 0, x = 0.553691) over
-region A and 2.22e-08 (order 32, x = 11.8998) over region B, against the lane's 1.5e-07 bar; the
-rational route's and the shipped route's split Clenshaw figures are the table's above, unchanged.
+argument. The float lane's Horner reading is 8.85e-08 at its worst cell (order 0, x = 0.45898) over
+region A and 2.22e-08 (order 32, x = 11.8998) over region B, against the lane's 1.5e-07 bar, and both
+are the worse of the lane's two multiply-add routes; the rational route's and the shipped route's
+split Clenshaw figures are the table's above, unchanged.
 Past the reference multiplier the lane serves the shipped pair alone and a policy naming another one
 does not build: the degrees a rung truncates by are derived from a family's stored table, and the
 float lane's derivation reads its Chebyshev table, so a monomial or a rational tail has no derived
@@ -411,20 +412,24 @@ derivation owed rather than a combination that cannot exist.
 
 | Route | Region | Interval | Stored | Measured | Bar |
 |---|---|---|---|---|---|
-| chebyshev (default) | A | 0 | 1067 | 1.06e-07 | 1.5e-07 |
-| rational minimax | A | 0 | 525 | 1.11e-07 | 1.5e-07 |
-| chebyshev (default) | B | 11.899848152108484 | 11 | 2.77e-08 | 1.5e-07 |
+| chebyshev (default) | A | 0 | 1067 | 1.24e-07 | 1.5e-07 |
+| rational minimax | A | 0 | 465 | 1.44e-07 | 1.5e-07 |
+| chebyshev (default) | B | 11.899848152108484 | 11 | 3.14e-08 | 1.5e-07 |
 | rational minimax | B | 11.899848152108484 | 6 | 7.50e-08 | 1.5e-07 |
 
+Each measured figure is the worse of the lane's two multiply-add routes: a build runs one of the
+two, so a figure that covers one of them understates the other. The gate prints each row's published
+figure beside the worst it measures itself.
+
 Region A's rows count the lane's whole per-order table over [0, 11.899848152108484), 97 pieces
-against the rational route's 52, and both routes cover that interval from zero: this lane reads each
+against the rational route's 47, and both routes cover that interval from zero: this lane reads each
 order from its own fit across the region, so it has no band boundary at which a selector would take
 over, and the row does not name one.
 
 **The stored counts are upper bounds, not minima.** Each count is the first the degree scan found
 holding the target, not the family's minimum, so a cheaper cover may exist. **The two routes are a
-trade and not a ranking**: region A stores 525 coefficients against 1067 and delivers 1.11e-07
-against 1.06e-07, and region B stores 6 against 11 and delivers 7.50e-08 against 2.77e-08. Half the
+trade and not a ranking**: region A stores 465 coefficients against 1067 and delivers 1.44e-07
+against 1.24e-07, and region B stores 6 against 11 and delivers 7.50e-08 against 3.14e-08. Half the
 coefficients at more error is worth having on a machine that pays for coefficient fetches and not on
 one that does not, and no measurement here ranks the two.
 

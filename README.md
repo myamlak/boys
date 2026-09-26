@@ -288,29 +288,34 @@ the row states no `servesFrom` above zero.
 
 | Route | Region | Interval | Stored | Measured | Bar |
 |---|---|---|---|---|---|
-| chebyshev (default) | A | [0, 11.899848152108484) | 1067 | 1.06e-07 | 1.5e-07 |
-| rational minimax | A | [0, 11.899848152108484) | 525 | 1.11e-07 | 1.5e-07 |
-| chebyshev (default) | B | [11.899848152108484, 28.98933773882074) | 11 | 2.77e-08 | 1.5e-07 |
+| chebyshev (default) | A | [0, 11.899848152108484) | 1067 | 1.24e-07 | 1.5e-07 |
+| rational minimax | A | [0, 11.899848152108484) | 465 | 1.44e-07 | 1.5e-07 |
+| chebyshev (default) | B | [11.899848152108484, 28.98933773882074) | 11 | 3.14e-08 | 1.5e-07 |
 | rational minimax | B | [11.899848152108484, 28.98933773882074) | 6 | 7.50e-08 | 1.5e-07 |
 
-The measured column is the accuracy gate's own worst over the committed reference grid, on the
-entry the row names, every order 0..32 and every sample of the row's interval; the gate prints the
-same sweep beside it. Both routes hold the lane's own bound, and the two region-A rows are the
-comparison: the same interval, the same reference, the same arithmetic, 525 stored coefficients
+The measured column is the figure the generated header publishes for the row, and every one of them
+is **the worse of the lane's two multiply-add routes**, because a build runs one of the two and a
+figure that covers one of them understates the other; the gate prints each row's published figure
+beside the worst it measures itself, on the entry the row names, every order 0..32 and every sample
+of the row's interval. Both routes hold the lane's own bound, and the two region-A rows are the
+comparison: the same interval, the same reference, the same arithmetic, 465 stored coefficients
 against 1067. The rational route's pieces are its own cover of each order's interval rather than the
-Chebyshev table's breaks, and both were accepted against the same criterion — half the lane's
-tolerance, weighted by the downward recursion's gain, **on the coefficients as they are stored**,
-because at this target the binary32 rounding is part of the fit and not a last-digit detail.
+Chebyshev table's breaks, and both were accepted against the same criterion — the lane's own bar,
+weighted by the downward recursion's gain, **on the coefficients as they are stored**, read in both
+multiply-add routes with the worse taken, at every argument of the region's acceptance grid and at
+every cell the accuracy gate sweeps. Half the lane's tolerance is not that criterion and is not one
+at all: the rational route's reading sits above that half at 18 of the 33 orders under the fused
+arithmetic and 19 under the separate one, so a search against it does not close.
 
 **The Chebyshev route's fits are stored in both of the forms the two schemes read**, one monomial
 coefficient per Chebyshev coefficient: 1067 stored either way in region A and 11 in region B, the same
 pieces, intervals and degrees, so naming a scheme chooses a table and not a shape. Over region A the
-gate reads 1.06e-07 at the worst cell of the split Clenshaw reading and 7.68e-08 of the Horner
-reading, over region B 2.77e-08 and 2.22e-08, all inside the lane's 1.5e-07 bar. The second form costs
+worse route reads 1.24e-07 at the split Clenshaw reading's worst cell and 8.98e-08 of the Horner
+reading, over region B 3.14e-08 and 2.19e-08, all inside the lane's 1.5e-07 bar. The second form costs
 this lane nothing, and the reason is the length of its pieces: the monomial coefficients of any one
 piece sum in absolute value to at most 1.6, so rounding the monomial table to binary32 moves a value
 by at most 0.64 of the bar even if every coefficient rounds against it, and the measured reading is
-half the bar.
+0.6 of the bar.
 
 **The stored counts are upper bounds and not minima.** The degree search is a scan that stops at the
 first count holding the target, not an exhaustive minimax search over the family, so a cheaper cover
@@ -318,7 +323,7 @@ of the same intervals may exist; the counts above are what the search found, and
 them is comparing what the two tables cost as generated.
 
 **Region B is the other direction.** There the rational seed stores 6 coefficients against the
-Chebyshev seed's 11 and delivers 7.50e-08 against 2.77e-08. Half the coefficients at more error is a
+Chebyshev seed's 11 and delivers 7.50e-08 against 3.14e-08. Half the coefficients at more error is a
 trade, not an improvement, and which side of it a caller wants depends on what their machine charges
 for a coefficient fetch; **no speed is claimed in either direction**. A caller that needs the
 accuracy should read the two measured figures and pick; the default is unchanged, value for value.
