@@ -396,10 +396,10 @@ struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kShipped> {
 template <EvalScheme kScheme>
 struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kNarrow> {
     static_assert(kScheme == EvalScheme::kSplitClenshaw && kScheme == EvalScheme::kHorner,
-                  "the rational minimax route carries one numerator/denominator pair over the "
-                  "whole of region B and no narrow partition of it: name "
-                  "FitGranularity::kShipped for this route, or FitRoute::kChebyshev for the "
-                  "narrow partition");
+                  "the rational minimax route's region-B seed is one numerator/denominator pair "
+                  "over the whole interval, and the narrow partition of it is a table to "
+                  "generate rather than one this route has: name FitGranularity::kShipped for "
+                  "this route, or FitRoute::kChebyshev for the narrow partition");
 
     /// The fit a caller would have reached had the combination been served. The
     /// assertion above holds at every scheme this specialisation can be

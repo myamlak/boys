@@ -508,8 +508,8 @@ constexpr auto RegionADegrees() noexcept {
                   "a monomial tail's effective degrees are derived from the table its own fits "
                   "are cut from, and this derivation reads the double lane's tables for the "
                   "roles that take them and the float lane's Chebyshev table for the rest, so a "
-                  "monomial tail on a single-precision single role has no degrees derived for "
-                  "it here");
+                  "monomial tail on a single-precision single role has none derived here yet: "
+                  "that derivation is a table to extend, not one the combination cannot have");
 
     if constexpr (RoleUsesDoubleTables(kRole))
     {
