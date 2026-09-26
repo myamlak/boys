@@ -190,6 +190,24 @@ The GPU and CPU float lanes agree to within 3.5e-7. That is a cross-lane stateme
 |GPU − CPU| and not a bound on either lane's distance from F_n(x): the default CUDA fp32 entry is
 held to 1.5e-7 above, and the fast option's looser bound is not covered by the 3.5e-7 figure.
 
+### Choosing a combination
+
+The lanes above are one axis of six. A call is a lane, a fit route, an evaluation scheme, an interval
+partition, a packing axis and an accuracy multiplier, and the library offers the product of all six:
+2 routes × 2 schemes × 2 partitions × 2 axes × 7 rungs, in 4 lanes — **448 combinations, of which 78
+are certified and published, 363 refused with the library's own reason and owed, and 7 not runnable
+on a host without a CUDA device** (revision `623a8e2`; the gate command below prints the three
+counts and the arithmetic between them). `BoysAccuracyGuaranteed(...)` returns the bound a
+combination carries — its lane's figure times the rung, plus the lane's own additive term where it
+documents one — and `BoysAccuracyDelivered(...)` returns the figure it was measured to deliver,
+which is the one to rank two combinations by. They are different questions, and the `reading` field
+of the returned `AccuracyFigure` says which answer a figure is. A combination this revision does not
+carry has no figure: both accessors say so and give the library's own reason rather than returning a
+number. **The bound is the lane's, and no other axis moves it** — what the other axes change is what
+a call delivers, and the gate prints every combination's measured figure beside its bound. The
+per-lane counts, the reasons and the figures are in
+[docs/lane-contract.md](docs/lane-contract.md#every-combination-and-the-bound-each-one-carries).
+
 ### Check the figures yourself
 
 Every figure above is measured, and the measurement ships in this tree. Build the gate and run it:

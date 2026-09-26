@@ -468,6 +468,164 @@ constexpr bool FitGranularityHasAxis(const FitGranularityInfo& partition, PackAx
 /// \ingroup boys
 std::span<const FitGranularityInfo> BoysFitGranularities() noexcept;
 
+/// The precision lane a call runs in.
+///
+/// A lane is a precision and an arithmetic, not a region and not a route: the
+/// same combination of the other axes exists in every lane this build carries,
+/// and the figure it delivers differs by lane because the fits and the
+/// arithmetic do. \c kFp16 is the fp16 and bfloat16 entries, which round a
+/// 32-bit engine's result to the format at the boundary and are compiled behind
+/// this build's fp16 seam; \c kFp32Device is the device lane, whose entries a
+/// host without a CUDA device cannot run - both are named here because a caller
+/// choosing a combination has to be able to name the combination it chose, and
+/// \c BoysLaneContracts says where each lane's figure comes from.
+///
+/// \ingroup boys
+enum class Precision : std::uint8_t {
+    kFp64 = 0, ///< double precision, the certified lane every other is measured against
+    kFp32, ///< single precision, the host's fp32 engine
+    kFp16, ///< half precision: the fp16 and bfloat16 entries, whose figure carries a term of the format
+    kFp32Device, ///< single precision as the device lane runs it
+};
+
+/// One precision lane's contract, as a report states it.
+///
+/// \c bound is the base figure the lane documents for one value at the
+/// reference accuracy multiplier, over the whole of x >= 0: a caller multiplies
+/// it by a rung's multiplier to get the base a rung promises, and it is the
+/// guarantee rather than a measurement. \c additive is a term the lane documents
+/// beside it - zero where the lane has none - so that the figure a lane
+/// promises at a rung is \c bound times the multiplier plus \c additive, which
+/// is what \c BoysAccuracyGuaranteed answers with. \c source states the terms
+/// the base figure does not carry, because a row whose bound is not a flat
+/// constant over the whole of its domain has to say so rather than let a reader
+/// take the number for the whole claim: the half-precision rows carry half of
+/// the last representable digit of the returned value beside the base, and that
+/// term is a property of the value the caller receives, not of the call.
+///
+/// Every figure here is the one the README's contract table publishes for the
+/// lane, and the four are stated together so that the table, the accuracy gate
+/// and the accessor above them are one number rather than four transcriptions
+/// of one.
+///
+/// \ingroup boys
+struct LaneContractInfo {
+    Precision precision = Precision::kFp64; ///< the lane this row describes
+    const char* name = ""; ///< the name a report prints it under
+    double bound = 0.0; ///< the documented base figure per value at the reference multiplier
+    double additive = 0.0; ///< a term the lane adds beside the base, 0.0 where it has none
+    const char* source = ""; ///< the figures beside the base, empty where the base is the whole claim
+};
+
+/// The precision lanes this build carries, each with the figure it documents.
+///
+/// \returns one row per lane, in enumerator order
+///
+/// \ingroup boys
+std::span<const LaneContractInfo> BoysLaneContracts() noexcept;
+
+/// Which of a combination's two accuracy figures a reading is.
+///
+/// The two are different numbers and neither substitutes for the other: a
+/// caller deciding whether a calculation is safe needs the guarantee, and a
+/// caller ranking two combinations against each other needs what each was
+/// measured to deliver.
+///
+/// \ingroup boys
+enum class AccuracyReading : std::uint8_t {
+    kGuaranteed = 0, ///< an upper bound the lane documents: what a caller may rely on
+    kDelivered, ///< the figure the combination was measured to deliver: what ranks options
+};
+
+/// The accuracy one combination of this library's option space provides.
+///
+/// \c value is the figure, as an absolute error per value of F_n. It is a
+/// number only where \c available is true; where the library does not carry the
+/// combination there is no figure to read and \c value is 0.0 with \c reason
+/// set, so a caller cannot mistake a refusal for an accuracy.
+///
+/// \ingroup boys
+struct AccuracyFigure {
+    double value = 0.0; ///< the figure, or 0.0 where none is available
+    bool available = false; ///< whether this revision carries the combination
+    AccuracyReading reading = AccuracyReading::kGuaranteed; ///< which of the two figures this is
+    const char* source = ""; ///< the table the figure was read from
+    const char* reason = ""; ///< why no figure is available, empty where one is
+};
+
+/// The accuracy a combination is guaranteed: an upper bound the lane documents
+/// for it, at the rung named.
+///
+/// This answers the safety question - may a caller rely on this combination
+/// being at least this accurate - and it is the figure the lane's contract
+/// table publishes, times the rung's multiplier, plus the lane's own additive
+/// term where it documents one. A combination the library does not carry has no
+/// figure and says so.
+///
+/// The bound is the lane's and not the axes': a way to read any of the five
+/// axes that narrowed it would be a bound this build does not certify, and the
+/// per-axis figures are the ones each axis's own row publishes. What the axes
+/// change is the *delivered* figure - see \c BoysAccuracyDelivered - and that is
+/// the one to rank two combinations by.
+///
+/// \param precision   the lane
+/// \param route       the fit route
+/// \param scheme      the evaluation scheme
+/// \param axis        the packing axis
+/// \param granularity the interval partition
+/// \param tier        the accuracy rung
+/// \returns the figure, and whether this revision carries the combination
+///
+/// \ingroup boys
+AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
+                                      FitRoute route,
+                                      EvalScheme scheme,
+                                      PackAxis axis,
+                                      FitGranularity granularity,
+                                      AccuracyTier tier) noexcept;
+
+/// The accuracy a combination was measured to deliver, which is the figure that
+/// ranks two combinations against each other.
+///
+/// What this is, precisely, because a caller ranking two options on it needs to
+/// know: it is the worst figure over the rows the combination names - the fit
+/// route's row, the partition's row and the scheme's row, each of which
+/// publishes what it was measured to deliver - and those are the figures of the
+/// *fits* the combination names. A call adds its own recurrences over those
+/// fits, so this is a floor on the error a whole call delivers and not the
+/// whole call's figure: it is the number to compare two combinations by, and it
+/// is not a number to quote as what a call achieves. What a call achieves is
+/// what the accuracy gate measures, over a committed reference grid, and the
+/// gate's report is where that figure lives for every combination.
+///
+/// This is a swept maximum and not a bound, and the two are stated apart for
+/// the reason the contract table's measured column and published column are.
+/// It is available at the reference multiplier, because a delivered figure is a
+/// measurement and the rows carry one at the multiplier they were measured at.
+/// At a relaxed rung no row carries a measured figure, so the answer is that
+/// there is none rather than a number scaled from the rung.
+///
+/// It is absent for the half-precision lanes, whose error is dominated by the
+/// format's own quantum at the returned value: no row of this library measured
+/// a half-typed return, and the guaranteed figure above is the one to use.
+///
+/// \param precision   the lane
+/// \param route       the fit route
+/// \param scheme      the evaluation scheme
+/// \param axis        the packing axis
+/// \param granularity the interval partition
+/// \param tier        the accuracy rung
+/// \returns the figure, and whether this revision carries the combination and
+///          measured it
+///
+/// \ingroup boys
+AccuracyFigure BoysAccuracyDelivered(Precision precision,
+                                     FitRoute route,
+                                     EvalScheme scheme,
+                                     PackAxis axis,
+                                     FitGranularity granularity,
+                                     AccuracyTier tier) noexcept;
+
 /// What a tier delivers in one region, and what limits it when a tighter
 /// error than that is asked for.
 ///
