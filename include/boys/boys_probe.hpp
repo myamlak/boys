@@ -29,9 +29,31 @@
 ///
 /// **What it reports per option**: the cost per argument, the spread of that
 /// cost over the passes it was measured in, the machine load each pass was
-/// taken under, and the accuracy the option actually delivered — so a consumer
-/// can see whether a faster option was faster at the same accuracy or merely at
-/// a lower one.
+/// taken under, the axes the option instantiates, and the accuracy the option
+/// actually delivered — so a consumer can see whether a faster option was faster
+/// at the same accuracy or merely at a lower one.
+///
+/// **The whole option space, enumerated from the library.** The library lets a
+/// caller choose a fit route, an evaluation scheme, a partition of the fitted
+/// regions and a packing axis, and each of those choices is a member of a
+/// reported set (BoysFitRoutes, BoysEvalSchemes, BoysFitGranularities,
+/// BoysPackAxes) crossed with the accuracy rungs the build can name. The probe
+/// walks that product rather than a list written beside it, so a member this
+/// change did not think of, or one a later change adds, is measured without the
+/// probe being edited. A cell the library does not serve is refused where it is
+/// named, and the probe states every refused cell with the library's reason, in
+/// a coverage section that accounts for the whole product — an unstated
+/// omission would read as an option that does not exist.
+///
+/// **The classes are precisions, and a bound is a column.** fp64, fp32, fp16 and
+/// bf16 are separate classes and options are ordered only inside one of them:
+/// the precision is the choice the caller has already made from the accuracy
+/// their calculation needs, and halving the precision is not a faster answer to
+/// the same question. Bounds inside a class differ by row — a relaxed rung, the
+/// across-orders lane and the narrow partition are all documented at their own
+/// figures — so a class's leader is the fastest option at *some* accuracy in
+/// that precision, and the report says so where it prints the ranking. A caller
+/// who needs a particular accuracy reads the bound column.
 ///
 /// **It refuses to order noise, and it says how close it could look.** The
 /// reported cost of an option is the minimum of its clean passes, and its spread
@@ -44,8 +66,8 @@
 /// could not separate. The same refusal happens when no pass could be admitted
 /// at all, when fewer than two were — a spread needs two passes to exist, and a
 /// single pass reports a precision the run never measured — and when nothing was
-/// measured at the certified accuracy. A wrong recommendation is worse than
-/// none, so the refusal path is the one this entry is most careful about.
+/// measured in the class. A wrong recommendation is worse than none, so the
+/// refusal path is the one this entry is most careful about.
 ///
 /// **The instrument, and what admits a pass.** Every pass carries runs of a
 /// fixed-work integer spin — the canary — bracketing the timed region and taken
@@ -85,7 +107,10 @@
 /// read from the library and printed, and a difference at or below it means the
 /// two are indistinguishable at this comparison's resolution — not that the
 /// option is proven to that bound, which is what the committed reference grid
-/// and the test suite are for.
+/// and the test suite are for. A row whose measured difference is above its own
+/// bound but at or below that floor is reported in a third state rather than as
+/// a failure: the difference between two partitions or two rungs carries the
+/// certified lane's own error with it, and that error is what the floor is.
 ///
 /// **What this probe does not measure**, and why. The native half lane is left
 /// out: it covers region C only, its orders are useful up to 8, and its results
@@ -96,6 +121,17 @@
 /// composition would be measured rather than the entry. The CUDA lanes are left
 /// out: they are a separate optional build that needs a device, and the options
 /// this probe ranks are the CPU ones the caller's own build carries.
+///
+/// What the option space itself refuses is not left out but named: the cells
+/// the library cannot serve are listed with their reasons in the report's
+/// coverage section, counted rather than omitted. They are the narrow partition
+/// crossed with the rational route (which carries no narrow table), with the
+/// across-orders packing axis (whose kernel needs the shipped partition's shared
+/// piece shape), and with a relaxed accuracy rung (the narrow degrees are the
+/// shipped rung's); and the partition axis on the single-precision lanes, which
+/// hold one coefficient set each. Each is unbuilt work — a table to generate or
+/// a kernel to write — and a later change that builds one moves the cell out of
+/// the refused list and into the measured table.
 ///
 /// **This result is about the machine it was measured on.** The report says so
 /// in its own output, not only here, because a table of costs pasted into a
@@ -175,9 +211,13 @@ struct ProbeOptions {
     ///
     /// Naming a set narrows every figure and every conclusion below to that
     /// set: the fastest option reported is then the fastest of the ones asked
-    /// for. A name that is no option of this library is reported apart from one
-    /// this build cannot serve, so a misspelling is told apart from a build
-    /// fact rather than read as a machine on which nothing is fast.
+    /// for. A name is answered in one of three ways and the report keeps them
+    /// apart, because the three mean different things to a caller: an option this
+    /// build serves is measured; a cell of the option space that the library
+    /// refuses where it is named is reported with the library's reason, which is
+    /// unbuilt work and not a misspelling; and a name that is neither is reported
+    /// as no option of this library, so a typo is never read as a machine on
+    /// which nothing is fast.
     std::vector<std::string> only;
 };
 
@@ -213,12 +253,62 @@ struct OptionProbePass {
     bool disturbed = false;
 };
 
+/// The precision an option computes in: the class this probe ranks it in.
+///
+/// Precision is the choice the caller has already made, from the accuracy their
+/// calculation needs, and it is not available to be traded for speed: a lane
+/// that halves the precision of the argument and the return is not a faster
+/// answer to the double lane's question, it is an answer to a different one. So
+/// an option is only ever ordered against an option of its own precision, and
+/// the classes below are the whole of that partition.
+///
+/// The documented bound is a column of each class, not its key. Two options in
+/// one class can be documented at different bounds — a relaxed accuracy rung
+/// against the certified one, the across-orders lane against the per-argument
+/// one — and the report shows each row's own bound beside it, so a class's
+/// leader is the fastest option at *some* accuracy in that precision, never
+/// "the fastest at your accuracy".
+///
+/// \ingroup boys
+enum class OptionPrecision : int {
+    /// The certified double lane's precision, and the lanes that carry it.
+    kFp64 = 0,
+    /// Single precision throughout: the argument, the arithmetic and the return.
+    kFp32,
+    /// Binary16 arguments and returns, computed in single precision.
+    kFp16,
+    /// Bfloat16 arguments and returns, computed in single precision.
+    kBf16,
+};
+
+/// The name a report prints a precision class under.
+///
+/// \param precision the class
+/// \returns         a string literal naming it
+///
+/// \ingroup boys
+const char* PrecisionName(OptionPrecision precision) noexcept;
+
 /// One option, as this machine measured it.
 ///
 /// \ingroup boys
 struct OptionProbeMeasurement {
     /// The option's name, as the report prints it.
     std::string name;
+
+    /// The precision class this option is ranked in, and the only set of options
+    /// it is ever ordered against.
+    OptionPrecision precision = OptionPrecision::kFp64;
+
+    /// The axes the option instantiates, as the library reports them: the route
+    /// whose fits it reads, the scheme it sums them with, the partition of the
+    /// fitted regions it reads, and the packing axis its entry carries. A
+    /// defaulted axis is still printed, so a row states the whole combination
+    /// rather than the part that differs from a default.
+    FitRoute route = kDefaultFitRoute;
+    EvalScheme scheme = kDefaultEvalScheme;
+    FitGranularity granularity = kDefaultFitGranularity;
+    PackAxis pack = PackAxis::kArguments;
 
     /// The arithmetic the option ran in, named by the library's own backend
     /// table (see backend::BoysBackends), so the number is attributable to the
@@ -259,9 +349,10 @@ struct OptionProbeMeasurement {
     /// argument, over the workload.
     double maxError = 0.0;
 
-    /// The bound the option is held to at the reference accuracy multiplier:
-    /// read from the library for the fp64 options, and the published per-lane
-    /// bound for the narrower ones. A measured error at or below it is the
+    /// The bound this option is judged against, read from the library: the
+    /// accuracy rung's own figure for a rung option, the partition's own
+    /// certified figure for a partition option, and the published per-lane
+    /// bound for the narrower lanes. A measured error at or below it is the
     /// contract being met on this workload.
     double bound = 0.0;
 
@@ -272,21 +363,96 @@ struct OptionProbeMeasurement {
     /// Whether the measured error is at or below the bound above.
     bool meetsBound = false;
 
+    /// Whether the measured error is above the bound above but at or below the
+    /// certified lane's own documented figure, so the two partitions or rungs
+    /// cannot be told apart by this comparison. A row can be honest at its own
+    /// bound and still read this state: the column compares against the
+    /// certified lane, whose own error the difference carries with it.
+    bool withinReferenceFloor = false;
+
     /// Sum of every value the option returned, so a caller can see that the
     /// timed work ran and ran on the intended arguments.
     double checkedSum = 0.0;
+};
+
+/// One precision's ranking: that precision's options, fastest measured first.
+///
+/// A class is one precision and nothing else. The bounds inside it are not
+/// equal and are not meant to be: each row carries its own, so the leader is
+/// the fastest option at some accuracy in this precision. A caller who needs a
+/// particular accuracy reads the bound column and takes the fastest row whose
+/// bound is theirs; the probe does not make that choice for them by mixing
+/// precisions or by hiding a looser bound.
+///
+/// \ingroup boys
+struct OptionProbeClass {
+    /// The precision this class is.
+    OptionPrecision precision = OptionPrecision::kFp64;
+
+    /// The name a report prints it under.
+    std::string name;
+
+    /// This precision's measured options, fastest first, with their bounds
+    /// beside them. Empty when nothing of this precision was measured.
+    std::vector<std::string> ranked;
+
+    /// The fastest of them, empty when the class is empty.
+    std::string leader;
+
+    /// The leader's cost per argument, nanoseconds.
+    double leaderNsPerArgument = 0.0;
+
+    /// Whether the leader is clear of every other option in the class by more
+    /// than this run's resolution, so an order exists.
+    bool ordered = false;
+
+    /// What the class's ordering rests on, or why it was not made.
+    std::string note;
+};
+
+/// One cell of the option space this library defines: one combination of the
+/// five axes an evaluation policy carries, and whether this build serves it.
+///
+/// The space is finite and small — two routes by two schemes by two partitions
+/// by two packing axes by the accuracy rungs this build can name — so the probe
+/// enumerates all of it and states a reason for every cell it does not measure.
+/// A cell that is not served is refused by the library, not by the probe: the
+/// reason is the library's own, and the work it describes is unbuilt rather
+/// than impossible.
+///
+/// \ingroup boys
+struct OptionProbeCell {
+    /// The cell's name, in the report's own option grammar, so a caller can
+    /// name it in ProbeOptions::only and be told what this build does with it.
+    std::string name;
+
+    /// The axes this cell fixes.
+    FitRoute route = kDefaultFitRoute;
+    EvalScheme scheme = kDefaultEvalScheme;
+    FitGranularity granularity = kDefaultFitGranularity;
+    PackAxis pack = PackAxis::kArguments;
+    AccuracyTier tier = AccuracyTier::kReference;
+
+    /// Whether this build serves the cell, so a served cell has an option row in
+    /// this report unless the run was narrowed by ProbeOptions::only. The
+    /// coverage is the library's book rather than the caller's selection, so a
+    /// narrowed run still accounts for every cell.
+    bool served = false;
+
+    /// Why not, when it does not.
+    std::string reason;
 };
 
 /// What the probe concluded, and the two ways it can end.
 ///
 /// \ingroup boys
 enum class OptionProbeVerdict : int {
-    /// One option leads and every other option in its accuracy class is further
-    /// behind it than the resolution this run measured.
+    /// One option leads its precision class and every other option in that class
+    /// is further behind it than the resolution this run measured.
     kRecommend = 0,
-    /// The probe declined: no clean pass, fewer than two, nothing at the
-    /// certified accuracy, or a rival inside the resolution, so the two cannot be
-    /// ordered against each other. See the report's reason.
+    /// The probe declined: no clean pass, fewer than two, nothing measured in
+    /// the class, or a rival inside the resolution, so the two cannot be ordered
+    /// against each other. See the report's reason.
     kCannotDetermine,
 };
 
@@ -328,8 +494,23 @@ struct OptionProbeReport {
     /// names the measurements above are attributed to come from this table.
     std::span<const backend::BackendInfo> backends;
 
+    /// The partitions of the fitted regions this build ships, read from the
+    /// library. The report prints what each one's tables hold and which cells
+    /// its kernels cover.
+    std::span<const FitGranularityInfo> granularities;
+
     /// One entry per option measured, in the order the report prints them.
     std::vector<OptionProbeMeasurement> measurements;
+
+    /// One entry per precision measured, in the classes' own order. The ranking
+    /// inside a class is that precision's own and never crosses into another.
+    std::vector<OptionProbeClass> classes;
+
+    /// Every cell of the option space, served ones and refused ones alike. The
+    /// coverage is the library's, not the caller's selection: it is the same
+    /// book whichever set was asked for, so a cell this build does not serve is
+    /// never absent from a narrowed run either.
+    std::vector<OptionProbeCell> cells;
 
     /// Options the library offers on other builds but not on this one, because
     /// this build's backend table does not carry the arithmetic they run in.
@@ -340,6 +521,13 @@ struct OptionProbeReport {
     /// has and this build cannot serve: a name here is a misspelling, and
     /// nothing was measured for it.
     std::vector<std::string> notAnOption;
+
+    /// Names the caller asked for that are cells of this library's option space
+    /// which the library refuses where they are named, with the reason. Kept
+    /// apart from both lists above: a refused cell is neither a misspelling nor
+    /// an option some other build carries, and reading it as either would hide
+    /// the work it names.
+    std::vector<std::string> refused;
 
     /// Order runs the workload's arguments fall into: the number of calls the
     /// grouped options make for one pass, and the shape the per-argument
@@ -374,21 +562,28 @@ struct OptionProbeReport {
 
     /// The loudest bound the reference option is documented at, read from the
     /// library. This is the floor of the accuracy comparison: two options that
-    /// agree to within it cannot be separated by this probe.
+    /// agree to within it cannot be separated by this probe, whichever
+    /// precision class they are in.
     double referenceBound = 0.0;
 
     /// Whether the probe named a winner.
     OptionProbeVerdict verdict = OptionProbeVerdict::kCannotDetermine;
 
-    /// The option the probe recommends, empty when it declined.
+    /// The option the probe recommends: the leader of the certified double
+    /// lane's precision class, empty when it declined or when that class
+    /// produced no figure.
     std::string recommended;
 
-    /// The fastest option measured whose accuracy is indistinguishable from the
-    /// certified lane's, empty when no such option was measured.
+    /// The fastest option measured in the double lane's precision whose own
+    /// bound is at or below the certified lane's, empty when no such option was
+    /// measured. This is the fastest row a caller at the certified accuracy can
+    /// take, and it is the narrowest reading of the fp64 class's ranking.
     std::string fastestAtReferenceAccuracy;
 
-    /// The fastest option measured, whatever its accuracy, empty when no option
-    /// was measured.
+    /// The fastest option measured, whatever its precision, empty when no option
+    /// was measured. It is a row to read beside the classes, never across them:
+    /// a faster lane of a different precision is faster at a different accuracy,
+    /// which is what the classes exist to keep apart.
     std::string fastestOverall;
 
     /// One sentence saying what the verdict rests on.
@@ -410,9 +605,13 @@ struct OptionProbeReport {
 /// arithmetic each option runs in is resolved against backend::BoysBackends(),
 /// so an option whose arithmetic the build does not carry is reported through
 /// OptionProbeReport::unoffered instead of being measured under a name that is
-/// not this build's; and the relaxed accuracy tiers are found by asking the
-/// library what each tier it can name delivers, so a build serving fewer rungs
-/// offers fewer options.
+/// not this build's; the relaxed accuracy tiers are found by asking the library
+/// what each tier it can name delivers, so a build serving fewer rungs offers
+/// fewer options; and the four axes a policy carries are walked over the sets
+/// the library reports — BoysFitRoutes, BoysEvalSchemes, BoysFitGranularities
+/// and BoysPackAxes — crossed with those rungs, so the option space is the
+/// library's own and the coverage section can account for every cell of it,
+/// served or refused.
 ///
 /// Then it runs the pass protocol in ProbeOptions: each pass carries runs of the
 /// fixed-work canary, a pass whose canary runs disagree by more than
