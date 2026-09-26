@@ -2046,14 +2046,32 @@ def fit_region_a_rational(double_orders):
 # The count ladder, the split of a count between numerator and denominator and
 # the dyadic cover are the double route's: the smallest stored count holding
 # the target, every split of it tried, and a cover taken where one piece
-# cannot. The target is half the lane's own tolerance, which is where the
-# shipped lane's region-A seeds are fitted, so the two families are read at
-# one bar.
+# cannot. The target IS the lane's published bound, so the criterion and the
+# promise are the same sentence: a piece is accepted exactly when the figure it
+# delivers - the lane's own arithmetic, the worse of the two multiply-add
+# routes, weighted by the recursion's gain - holds the bar the lane publishes.
+# Half the lane's tolerance is not that, and is not a criterion at all: at the
+# two lowest orders what stands between the family and a smaller number is
+# binary32's own rounding in the Horner evaluation (F0) and the family's
+# approximation (F1), in both routes, and neither is removed by any admissible
+# pair - so a target below the bar yields a generator that cannot run rather
+# than a table that is better.
 F32_RAT_DPS = 30
 F32_RAT_REF_DPS = 40
-F32_RAT_ACCEPT = TOL_FLOAT / 2
 F32_RAT_BOUND = mpf("1.5e-7")
+F32_RAT_ACCEPT = F32_RAT_BOUND
 F32_RAT_GRID = 240
+# The grid a piece's figure is READ on, as against the grid it is FITTED on
+# above. The fit grid is uniform over the piece; the reading is taken over
+# region A at F32_RAT_DENSE_GRID intervals and AT EVERY CELL THE ACCURACY GATE
+# SWEEPS, because the gate judges a route at the arguments of its own reference
+# grid - 646 of them below kX0 - and its verdict is what the lane publishes. A
+# piece that holds on the fit grid's 241 points can be over the bar at a cell
+# of the gate's: the committed table was, at one cell of F16 under the separate
+# multiply-add route, and that is the red this route is being fitted against.
+# The dense grid is what the reading falls back on between the gate's cells,
+# which are logarithmically spaced and reach a spacing of 0.0745 near kX0.
+F32_RAT_DENSE_GRID = 8 * F32_RAT_GRID
 F32_RAT_SEARCH_GRID = 60
 F32_RAT_COUNT_MIN = 3
 F32_RAT_COUNT_MAX = 14
@@ -2061,6 +2079,12 @@ F32_RAT_K_MAX = 6
 F32_RAT_SCAN_ITERS = 12
 F32_RAT_POLISH_ITERS = 60
 F32_RAT_MAX_DEPTH = 3
+# The gate's committed reference grid, read for its arguments and the values it
+# judges them against. Regenerating the float route without it would fit the
+# promise on a grid the promise is not read on, so its absence is an error.
+F32_RAT_GATE_REFERENCE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), os.pardir, "tests", "data",
+    "boys_accuracy_gate_reference.csv")
 
 
 def r32(v):
@@ -2096,6 +2120,130 @@ def f32_rat_grid(a, b, npts):
 def f32_rat_reference(n, xs):
     with mp.workdps(F32_RAT_REF_DPS):
         return [boys_ref(n, mpf(x)) for x in xs]
+
+
+_F32_RAT_DENSE = {}
+_F32_RAT_GATE_CELLS = None
+_F32_RAT_GATE = {}
+# The regions the float lane's routes cover, and so the regions the acceptance
+# grid is laid over: A, then B's single interval.
+F32_RAT_DENSE_REGIONS = ((0.0, X0), (X0, X1))
+
+
+def f32_rat_gate_cells():
+    """The accuracy gate's own cells: its arguments and the values it reads.
+
+    Read from the gate's committed reference grid rather than rebuilt, so the
+    arguments are the gate's arguments and the reference values are the gate's
+    own numbers, at the arguments the gate actually sweeps: the x column as a
+    float and the value column evaluated at that float. Both of the float
+    lane's regions are kept; a read over a piece slices out the cells that
+    piece covers.
+    """
+    global _F32_RAT_GATE_CELLS
+    if _F32_RAT_GATE_CELLS is None:
+        import csv
+        if not os.path.exists(F32_RAT_GATE_REFERENCE):
+            raise RuntimeError(
+                f"the float rational route's reading is taken at the accuracy gate's own "
+                f"cells, and the gate's reference grid is missing: {F32_RAT_GATE_REFERENCE}")
+        order = set()
+        values = {}
+        x1f = r32(X1)
+        with open(F32_RAT_GATE_REFERENCE, newline="") as fh:
+            for row in csv.DictReader(fh):
+                x = r32(float(row["xf"]))
+                if x >= x1f:
+                    continue
+                n = int(row["n"])
+                order.add(x)
+                values.setdefault(n, {})[x] = mpf(row["valuef"])
+        _F32_RAT_GATE_CELLS = {"xs": sorted(order), "values": values}
+    return _F32_RAT_GATE_CELLS
+
+
+def f32_rat_dense_grid(region, n):
+    """The acceptance grid over one region for one order: points, reference, weights.
+
+    The mapped arguments are not held here: the mapping is the piece's, so it
+    is taken where the piece is known. What is per order - the reference and
+    the recursion's weight - is the expensive part, so it is built once per
+    region and order and the pieces slice it.
+    """
+    if (region, n) not in _F32_RAT_DENSE:
+        a, b = F32_RAT_DENSE_REGIONS[region]
+        xs, _ts = f32_rat_grid(a, b, F32_RAT_DENSE_GRID)
+        _F32_RAT_DENSE[(region, n)] = (xs, f32_rat_reference(n, xs),
+                                       [seed_weight(n, mpf(x)) for x in xs])
+    return _F32_RAT_DENSE[(region, n)]
+
+
+def f32_rat_gate_grid(n):
+    """The gate's cells for one order, with the reference and the weight.
+
+    The arguments stay binary32 - the gate sweeps the float of its x column,
+    and the mapped argument is taken from that float - so a cell and a grid
+    point that are the same number are one point and not two.
+    """
+    if n not in _F32_RAT_GATE:
+        cells = f32_rat_gate_cells()
+        xs = cells["xs"]
+        _F32_RAT_GATE[n] = (list(xs), [cells["values"][n][x] for x in xs],
+                            [seed_weight(n, mpf(x)) for x in xs])
+    return _F32_RAT_GATE[n]
+
+
+def f32_rat_read_points(n, a, b, weighted=True):
+    """The points a piece's figure is read on, in the piece's own mapping.
+
+    Every acceptance region's grid and the gate's own cells, all sliced to
+    [a, b] by the piece's float endpoints - the comparison the gate itself
+    makes - plus the piece's own two ends, so a piece is read where it meets
+    its neighbours as well as inside. One point per argument: a cell and a grid
+    point coincide where the grid lands on the gate's grid, and a duplicate
+    would be paid for twice and counted once.
+    """
+    a32, b32 = r32(a), r32(b)
+    points = {}
+    for region in range(len(F32_RAT_DENSE_REGIONS)):
+        xs, ref, ws = f32_rat_dense_grid(region, n)
+        for x, r, w in zip(xs, ref, ws):
+            if a32 <= x <= b32 and x not in points:
+                points[x] = (r, w)
+    xs, ref, ws = f32_rat_gate_grid(n)
+    for x, r, w in zip(xs, ref, ws):
+        if a32 <= x <= b32 and x not in points:
+            points[x] = (r, w)
+    with mp.workdps(F32_RAT_REF_DPS):
+        for x in (a32, b32):
+            if x not in points:
+                points[x] = (boys_ref(n, mpf(x)), seed_weight(n, mpf(x)))
+    return [(x, f32_map(a32, b32, x), r, w if weighted else mpf(1))
+            for x, (r, w) in sorted(points.items())]
+
+
+def f32_rat_dense_read(n, a, b, p, q, weighted=True):
+    """A piece's figure as the promise reads it.
+
+    Both multiply-add routes over every point of f32_rat_read_points, the worse
+    of the two taken, weighted by the recursion's gain where the reading is the
+    acceptance's. Returns the weighted worst and its argument, the worse
+    route's unweighted worst and its argument - the figure the lane publishes -
+    and each route's own worst.
+    """
+    ww, wat = mpf(0), None
+    dw, dat = mpf(0), None
+    fw, sw = mpf(0), mpf(0)
+    for (x, t, r, w) in f32_rat_read_points(n, a, b, weighted):
+        ef = abs(mpf(rational_value_float(p, q, float(t), True)) - r)
+        es = abs(mpf(rational_value_float(p, q, float(t), False)) - r)
+        fw, sw = max(fw, ef), max(sw, es)
+        e = max(ef, es)
+        if e * w > ww:
+            ww, wat = e * w, x
+        if e > dw:
+            dw, dat = e, x
+    return ww, wat, dw, dat, fw, sw
 
 
 def f32_rat_worst(p, q, t, ref_i):
@@ -2147,11 +2295,19 @@ def f32_rat_piece(n, a, b, weighted=True):
 
     The count search walks the stored count upward and at each count every
     split of it into numerator and denominator, so the piece returned is the
-    cheapest the family offers rather than the cheapest of one split. Each
-    count the search accepts on the coarse grid is re-solved and re-measured
-    on the dense grid, and a count that fails there resumes the search above
-    itself, so the coarser grid can only make a piece cost more than the
-    family's minimum and never less.
+    cheapest the family offers rather than the cheapest of one split. Two grids
+    are in play and only one of them decides. The piece's own F32_RAT_GRID
+    points are the FIT grid: the exchange solves on them, at one node in
+    F32_RAT_SEARCH_GRID for the count scan and at every node for the polish.
+    The acceptance is read on f32_rat_read_points - the acceptance grid and the
+    accuracy gate's own cells - because that is where the promise is read: the
+    gate judges the route at its own arguments, and a pair that holds on the
+    fit grid alone can be over the bar at one of them. Every split the coarse
+    scan passes is polished and then read on the acceptance's points, and the
+    split that ships at a count is the one whose acceptance reading is lowest,
+    so the fit grid can only make a piece cost more than the family's minimum
+    and never less: a count whose every split fails the reading resumes the
+    search above itself.
     """
     xs, ts = f32_rat_grid(a, b, F32_RAT_GRID)
     ref = f32_rat_reference(n, xs)
@@ -2161,7 +2317,7 @@ def f32_rat_piece(n, a, b, weighted=True):
 
     for total in range(F32_RAT_COUNT_MIN, F32_RAT_COUNT_MAX + 1):
         best = None
-        pair = None
+        chosen = None
         for k in range(1, min(F32_RAT_K_MAX, total - 2) + 1):
             m = total - 1 - k
             if m < 1:
@@ -2169,20 +2325,21 @@ def f32_rat_piece(n, a, b, weighted=True):
             r = f32_rat_try(m, k, sx, ts, ref, ws, F32_RAT_SCAN_ITERS)
             if r is None or r[0] > F32_RAT_ACCEPT:
                 continue
-            if best is None or r[0] < best[0]:
-                best, pair = r, (m, k)
-        if best is None:
+            cand = f32_rat_try(m, k, full, ts, ref, ws, F32_RAT_POLISH_ITERS)
+            if cand is None or cand[0] > F32_RAT_ACCEPT:
+                continue
+            _, p, q, _ = cand
+            read = f32_rat_dense_read(n, a, b, p, q, weighted)
+            if read[0] > F32_RAT_ACCEPT:
+                continue
+            if best is None or read[0] < best:
+                best, chosen = read[0], (m, k, p, q) + read
+        if chosen is None:
             continue
-        m, k = pair
-        polished = f32_rat_try(m, k, full, ts, ref, ws, F32_RAT_POLISH_ITERS)
-        if polished is not None and polished[0] < best[0]:
-            best = polished
-        if best[0] > F32_RAT_ACCEPT:
-            continue
-        d, p, q, _ = best
-        delivered, _ = f32_rat_delivered(p, q, ts, ref)
+        m, k, p, q, ww, wat, dw, dat, fw, sw = chosen
         return {"a": r32(a), "b": r32(b), "m": m, "k": k, "p": p, "q": q,
-                "count": m + 1 + k, "residual": d, "delivered": delivered}
+                "count": m + 1 + k, "residual": ww, "residual_at": wat,
+                "delivered": dw, "delivered_at": dat, "fused": fw, "separate": sw}
     return None
 
 
@@ -2226,12 +2383,15 @@ def fma32(a, b, c):
     return r32(float(a) * float(b) + float(c))
 
 
-def clenshaw_split_float(cs, t):
+def clenshaw_split_float(cs, t, fused=True):
     """ClenshawSplit<ScalarFp32>, operation for operation.
 
-    The shipped split Clenshaw in the lane's own width, so a delivered error
-    measured here is the error the entry delivers rather than the error a
-    wider evaluation of the same coefficients would.
+    The shipped split Clenshaw in the lane's own width, at the caller's
+    multiply-add route, so a delivered error measured here is the error the
+    entry delivers rather than the error a wider evaluation of the same
+    coefficients would. Every step the kernel spells as a multiply-add is one
+    here, at that route; the steps it spells as a plain add, subtract or
+    multiply are the same rounding either way.
     """
     c = [r32(v) for v in cs]
     t = r32(t)
@@ -2239,38 +2399,38 @@ def clenshaw_split_float(cs, t):
     if deg == 0:
         return c[0]
     if deg == 1:
-        return fma32(t, c[1], c[0])
-    v = fma32(2.0, r32(t * t), -1.0)
+        return route_step32(fused, t, c[1], c[0])
+    v = route_step32(fused, 2.0, r32(t * t), -1.0)
     two_v = r32(v + v)
     if deg == 2:
-        return fma32(t, c[1], fma32(v, c[2], c[0]))
+        return route_step32(fused, t, c[1], route_step32(fused, v, c[2], c[0]))
     m = deg // 2
     b1, b2 = c[2 * m], 0.0
     for k in range(m - 1, 0, -1):
-        b0 = fma32(two_v, b1, r32(c[2 * k] - b2))
+        b0 = route_step32(fused, two_v, b1, r32(c[2 * k] - b2))
         b2, b1 = b1, b0
-    even = fma32(v, b1, r32(c[0] - b2))
+    even = route_step32(fused, v, b1, r32(c[0] - b2))
     o1, o2 = c[2 * m - 1], 0.0
     for k in range(m - 2, 0, -1):
-        o0 = fma32(two_v, o1, r32(c[2 * k + 1] - o2))
+        o0 = route_step32(fused, two_v, o1, r32(c[2 * k + 1] - o2))
         o2, o1 = o1, o0
-    odd = fma32(r32(two_v - 1.0), o1, r32(c[1] - o2))
-    return fma32(t, odd, even)
+    odd = route_step32(fused, r32(two_v - 1.0), o1, r32(c[1] - o2))
+    return route_step32(fused, t, odd, even)
 
 
-def horner_mono_float(ms, t):
+def horner_mono_float(ms, t, fused=True):
     """HornerMono<ScalarFp32>, operation for operation.
 
     The monomial form of the same fit read by the other scheme, in the lane's
-    own width, so a delivered error measured here is the error the entry
-    delivers under that scheme rather than the error the Chebyshev recurrence
-    would have carried.
+    own width and at the caller's multiply-add route, so a delivered error
+    measured here is the error the entry delivers under that scheme rather
+    than the error the Chebyshev recurrence would have carried.
     """
     c = [r32(v) for v in ms]
     t = r32(t)
     acc = c[-1]
     for j in range(len(c) - 2, -1, -1):
-        acc = fma32(acc, t, c[j])
+        acc = route_step32(fused, acc, t, c[j])
     return acc
 
 
@@ -2300,15 +2460,16 @@ def f32_rat_delivered_float(cover, n):
     """The rational route's worst |F_n - fit| over its own pieces, as delivered.
 
     Both multiply-add routes are measured and the worse is reported, so the
-    figure the lane publishes covers the arithmetic of either build."""
+    figure the lane publishes covers the arithmetic of either build. The figure
+    is read on the acceptance's points - the acceptance grid and the gate's own
+    cells - so what is published is the number the piece was accepted on and
+    not a coarser sweep of it.
+    """
     worst = mpf(0)
     for pc in cover:
-        xs, ts = f32_rat_grid(pc["a"], pc["b"], F32_RAT_GRID)
-        ref = f32_rat_reference(n, xs)
-        for i, t in enumerate(ts):
-            e = f32_rat_worst(pc["p"], pc["q"], t, ref[i])
-            if e > worst:
-                worst = e
+        _, _, dw, _, _, _ = f32_rat_dense_read(n, pc["a"], pc["b"], pc["p"], pc["q"])
+        if dw > worst:
+            worst = dw
     return worst
 
 
@@ -2316,38 +2477,42 @@ def f32_rat_cheb_delivered(float_orders):
     """The shipped float lane's own worst |F_n - fit| over [0, X0).
 
     Measured on the same construction the rational route is measured on -
-    each piece's own grid, the float-mapped argument, the reference the fits
-    are validated against, the lane's own arithmetic - so the two routes'
-    delivered figures are a comparison rather than two measurements.
+    each piece read on the same points, the float-mapped argument, the
+    reference the fits are validated against, the lane's own arithmetic - so
+    the two routes' delivered figures are a comparison rather than two
+    measurements. Both multiply-add routes are measured and the worse is
+    reported, for the reason the rational route's figure takes the worse: a
+    build runs one of them, and a figure that covers one of the two understates
+    the other by more than the gate's shortfall allowance - which is what the
+    separate build's reading of this figure was.
     """
     worst = mpf(0)
     for n in range(MAX_ORDER + 1):
         for (a, b, deg, cs, _ms) in float_orders[n]:
-            xs, ts = f32_rat_grid(a, b, F32_RAT_GRID)
-            ref = f32_rat_reference(n, xs)
-            for i, t in enumerate(ts):
-                e = abs(mpf(clenshaw_split_float(cs, float(t))) - ref[i])
-                if e > worst:
-                    worst = e
+            for (_x, t, r, _w) in f32_rat_read_points(n, a, b):
+                for fused in (True, False):
+                    e = abs(mpf(clenshaw_split_float(cs, float(t), fused)) - r)
+                    if e > worst:
+                        worst = e
     return worst
 
 
 def f32_rat_cheb_delivered_horner(float_orders):
-    """The same lane, the same grid, the same reference, read by Horner.
+    """The same lane, the same points, the same reference, read by Horner.
 
     Only the summation differs from f32_rat_cheb_delivered above - same
-    pieces, same arguments, same coefficients as stored - so the two figures
-    are a comparison of the two schemes rather than two measurements.
+    pieces, same arguments, same coefficients as stored, the same two routes
+    with the worse taken - so the two figures are a comparison of the two
+    schemes rather than two measurements.
     """
     worst = mpf(0)
     for n in range(MAX_ORDER + 1):
         for (a, b, deg, cs, ms) in float_orders[n]:
-            xs, ts = f32_rat_grid(a, b, F32_RAT_GRID)
-            ref = f32_rat_reference(n, xs)
-            for i, t in enumerate(ts):
-                e = abs(mpf(horner_mono_float(ms, float(t))) - ref[i])
-                if e > worst:
-                    worst = e
+            for (_x, t, r, _w) in f32_rat_read_points(n, a, b):
+                for fused in (True, False):
+                    e = abs(mpf(horner_mono_float(ms, float(t), fused)) - r)
+                    if e > worst:
+                        worst = e
     return worst
 
 
@@ -2359,10 +2524,11 @@ def fit_region_a_rational_f32(float_orders):
     where the fit needs them, and the shipped table's breaks are where that
     family - a different one - needed its own.
     """
-    print(f"fitting the float lane's rational region-A route ({F32_RAT_DPS} dps, "
-          f"accepted at {mp.nstr(F32_RAT_ACCEPT, 2)} on the coefficients as stored in the "
-          f"lane's own arithmetic, worse route, bar {mp.nstr(F32_RAT_BOUND, 2)}, fitted "
-          f"under the shipped weighting) ...")
+    print(f"fitting the float lane's rational region-A route ({F32_RAT_DPS} dps, the lane's "
+          f"own bar {mp.nstr(F32_RAT_BOUND, 2)} as the target: the coefficients as stored, in "
+          f"the lane's own arithmetic, both multiply-add routes, the worse taken, fitted "
+          f"under the shipped weighting, and read on the region's acceptance grid together "
+          f"with every cell the accuracy gate sweeps in it) ...")
     orders = []
     stored = 0
     pieces = 0
@@ -2414,23 +2580,24 @@ def fit_region_a_rational_f32(float_orders):
 def f32_rat_region_b_delivered():
     """The two float region-B seeds' worst |F_0 - fit| over [kX0, kX1).
 
-    The shipped seed first, then the rational one, both on one grid, in the
-    lane's own arithmetic, against the reference the fits are validated
-    against, so the two stored counts sit beside a comparison rather than
-    beside two measurements.
+    The shipped seed first, then the rational one, both read on the same
+    points - region B's own acceptance grid and the gate's cells in the
+    interval - in the lane's own arithmetic, against the reference the fits are
+    validated against, so the two stored counts sit beside a comparison rather
+    than beside two measurements. Both multiply-add routes are read and the
+    worse is taken, for the reason the region-A figures take the worse.
     """
     deg, cs, mono = fit_order(0, region_b=True, f32=True)
-    xs, ts = f32_rat_grid(X0, X1, F32_RAT_GRID)
-    ref = f32_rat_reference(0, xs)
     cheb = mpf(0)
     horner = mpf(0)
-    for i, t in enumerate(ts):
-        e = abs(mpf(clenshaw_split_float(cs, float(t))) - ref[i])
-        if e > cheb:
-            cheb = e
-        e = abs(mpf(horner_mono_float(mono, float(t))) - ref[i])
-        if e > horner:
-            horner = e
+    for (_x, t, r, _w) in f32_rat_read_points(0, X0, X1):
+        for fused in (True, False):
+            e = abs(mpf(clenshaw_split_float(cs, float(t), fused)) - r)
+            if e > cheb:
+                cheb = e
+            e = abs(mpf(horner_mono_float(mono, float(t), fused)) - r)
+            if e > horner:
+                horner = e
     return deg + 1, cheb, horner
 
 
@@ -2560,16 +2727,26 @@ def write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32):
     # The two routes as the generator measures them: the stored coefficients
     # each evaluates over region A, and the worst |F_n - fit| each reaches over
     # each order's own intervals at the lane's own precision, on the
-    # coefficients as stored. A swept maximum on a finite grid, not a bound:
-    # the bar the route is certified against is kRegionAFitBar.
+    # coefficients as stored. Every piece is read at every argument of the
+    # region's own grid and at every cell the accuracy gate sweeps in the
+    # region - the arguments the published bar is read at - so the figures are
+    # a reading of the same promise the gate holds them to. A swept maximum on
+    # a finite grid, not a bound: the bar both routes are certified against is
+    # kRegionAFitBar. Every figure here is the worse of the two multiply-add
+    # routes, because a build runs one of them and a figure that covers one
+    # understates the other.
     f.write("\n// The two region-A routes as the generator measures them, over\n"
             "// [0, kX0): the stored coefficients each evaluates and the worst\n"
-            "// |F_n - fit| each reaches over each order's own intervals, swept on a\n"
-            "// stride-1 grid of each piece's own interval, in the lane's own\n"
+            "// |F_n - fit| each reaches over each order's own intervals, read at\n"
+            "// every argument of the region's acceptance grid and at every cell\n"
+            "// the accuracy gate sweeps in the region, in the lane's own\n"
             "// arithmetic - the evaluation the single-precision single entry\n"
             "// performs - and on the coefficients as stored. A swept maximum on a\n"
             "// finite grid, not a bound: the bar both routes are certified against\n"
-            "// is kRegionAFitBar. The Chebyshev table is stored once and read by\n"
+            "// is kRegionAFitBar. Every figure here is the worse of the two\n"
+            "// multiply-add routes, because a build runs one of them and a figure\n"
+            "// that covers one understates the other. The Chebyshev table is\n"
+            "// stored once and read by\n"
             "// both schemes, so it carries one delivered figure for each and one\n"
             "// stored count and piece list for the two.\n"
             f"inline constexpr double kRegionAFitBar = {fmt(rat_a_f32['bound'])};\n"
@@ -2587,9 +2764,12 @@ def write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32):
     # The region-B seeds, the two routes over one interval.
     f.write("\n// The two region-B seeds as the generator measures them: the stored\n"
             "// coefficients each evaluates and the worst |F_0 - fit| each reaches\n"
-            "// over [kX0, kX1), same interval, same reference, same arithmetic as the\n"
-            "// region-A figures above. A swept maximum, not a bound: the bar both\n"
-            "// seeds are certified against is kRegionBFitBar.\n"
+            "// over [kX0, kX1), on the same points as the region-A figures above -\n"
+            "// region B's acceptance grid and the gate's cells in the interval -\n"
+            "// against the same reference and in the same arithmetic, the worse of\n"
+            "// the two multiply-add routes taken. A swept\n"
+            "// maximum, not a bound: the bar both seeds are certified against is\n"
+            "// kRegionBFitBar.\n"
             f"inline constexpr double kRegionBFitBar = {fmt(rat_a_f32['bound'])};\n"
             "inline constexpr int kRegionBFitChebStored = "
             + str(rat_b_f32["cheb_stored"]) + ";\n"
