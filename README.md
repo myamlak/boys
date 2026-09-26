@@ -522,6 +522,16 @@ shape with the resolution that ranking was ordered at, and the entries it could 
     cmake --build build-cuda --target boys-device-probe
     ./build-cuda/Release/boys-device-probe     # the config directory is your generator's
 
+The option space the probe ranks is the library's own, reported by `boys::BoysDeviceOptions()` in
+`boys_cuda_options.hpp` beside the entries it describes. A row carries what a chooser needs to place
+an option: the entry, the precision it computes in, the question shape it answers, the axis it varies
+where it has one — the single fp32 entry's region-B exponential, whose two members carry different
+bounds — the degree tables it reads, and the bound its own documentation states. The probe's rows are
+a projection of that report, so a precision, a shape or an axis member added to the surface appears in
+both without an edit to the probe, and an option this build does not serve is carried with the reason
+rather than left out. The device accuracy gate reads the same report for the same bounds, so what a
+chooser is told and what the gate certifies cannot come apart.
+
 The figures are device time only. The arguments and the output are uploaded and allocated once,
 before the first clock, and every figure is a CUDA event pair around many back-to-back launches into
 those resident buffers, divided by the number of launches and by the number of arguments — so neither
