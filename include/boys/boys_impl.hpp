@@ -496,7 +496,10 @@ inline const detail::f32::OrderPiece& FindPieceF32(int order, float x) noexcept 
     return detail::f32::kPieces[last - 1];
 }
 
-// Float-lane region-A seed; see ChebyshevValue.
+// Float-lane region-A seed; see ChebyshevValue. The scheme picks which of the
+// two parallel coefficient tables - the Chebyshev one ClenshawSplit reads or
+// the monomial one HornerMono reads - the piece is summed from; the pieces,
+// their intervals and their degrees are the same table under either.
 // Forced inline: the m = 1 F32-single engine must keep the full-accuracy
 // code shape (piece scan inlined); with two call sites (the kFloat and the
 // kFp16 budget instantiations) MSVC's size heuristic keeps this helper
@@ -509,19 +512,25 @@ inline const detail::f32::OrderPiece& FindPieceF32(int order, float x) noexcept 
 #else
 #define BoysForceInline inline __attribute__((always_inline))
 #endif
+template <EvalScheme kScheme = kDefaultEvalScheme>
 BoysForceInline float ChebyshevValueF32(int order, float x) noexcept {
     const detail::f32::OrderPiece& piece = FindPieceF32(order, x);
     const float* c = detail::f32::kCoeffs.data() + piece.offset;
+    const float* m = detail::f32::kMonoCoeffs.data() + piece.offset;
     const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
-    return ClenshawSplit<backend::ScalarFp32>(c, piece.deg, t);
+    return FitSum<kScheme, backend::ScalarFp32>(c, m, piece.deg, t);
 }
 
 #undef BoysForceInline
 
 // Float-lane region-B seed; see RegionBSeed.
+template <EvalScheme kScheme = kDefaultEvalScheme>
 inline float RegionBSeedF32(float x) noexcept {
     const float t = 2.0f * (x - static_cast<float>(kX0)) / static_cast<float>(kX1 - kX0) - 1.0f;
-    return ClenshawSplit<backend::ScalarFp32>(detail::f32::kBcoeffs.data(), detail::f32::kBDeg, t);
+    return FitSum<kScheme, backend::ScalarFp32>(detail::f32::kBcoeffs.data(),
+                                               detail::f32::kMonoBcoeffs.data(),
+                                               detail::f32::kBDeg,
+                                               t);
 }
 
 // ---------------------------------------------------------------------------
@@ -660,15 +669,48 @@ inline float RegionBSeedRationalF32(float x) noexcept {
 // The two routes as one float-lane call reads them. Each policy forwards to
 // the helper above, so the default policy's arithmetic is the shipped one
 // operation for operation.
+template <EvalScheme kScheme = kDefaultEvalScheme>
 struct ChebyshevFit32 {
-    static float EvalOrder(int n, float x) noexcept { return ChebyshevValueF32(n, x); }
-    static float RegionBSeed(float x) noexcept { return RegionBSeedF32(x); }
+    static float EvalOrder(int n, float x) noexcept { return ChebyshevValueF32<kScheme>(n, x); }
+    static float RegionBSeed(float x) noexcept { return RegionBSeedF32<kScheme>(x); }
 };
 
+// The rational family takes no scheme: its numerator and denominator are stored
+// in monomial form and read by Horner, so there is no second table for a scheme
+// to choose between. A policy that names this family therefore composes with
+// either scheme and evaluates the same values under both - which is what the
+// double lane's rational route does with its own scheme axis as well.
 struct RationalFit32 {
     static float EvalOrder(int n, float x) noexcept { return RationalValueF32(n, x); }
     static float RegionBSeed(float x) noexcept { return RegionBSeedRationalF32(x); }
 };
+
+// The two families under one name: what a float engine that takes a route and a
+// scheme reads, the way the double bodies read Policy::Fit.
+template <FitRoute kRoute, EvalScheme kScheme>
+using FloatRouteFit =
+    std::conditional_t<kRoute == FitRoute::kChebyshev, ChebyshevFit32<kScheme>, RationalFit32>;
+
+// Region-A seed of a float-lane batch, in the double precision the downward
+// recursion needs (see the batch body below). The route's own fit answers where
+// that route's selector takes over, and the shipped family answers below it:
+// the same pair of choices, gated by the same constant, that the double lane's
+// batch makes for its own seed. It is the double lane's fit and not this
+// lane's for the reason the batch body gives - a 1.5e-7 seed is a 5e-3 result
+// at nmax = 8, so the per-order floats this lane is certified at cannot seed a
+// batch at any order worth the name.
+template <FitRoute kRoute, EvalScheme kScheme>
+double FloatBatchRegionASeed(int order, double x) noexcept {
+    if constexpr (kRoute == FitRoute::kRationalMinimax)
+    {
+        if (x >= RationalFit::kRegionAFitsFrom)
+        {
+            return RegionAValue<RationalFit>(order, x);
+        }
+    }
+
+    return ChebyshevValue<kScheme>(order, x);
+}
 
 // The float lane's single-order body over a fit policy: one body, so the
 // route names the two fits and changes nothing else. Region C reads no
@@ -1288,62 +1330,35 @@ void BoysFixedNImpl(
 // evaluation), serving the band at the float budget. The certified table
 // is the double recursion's; the float band is measured, not certified.
 //
-// The lanes hold the shipped route's single-precision fits and its split
-// Clenshaw recurrence and no monomial coefficient set, and the rational set
-// they hold is served by BoysSingleF32WithRoute rather than through a policy,
-// so the policy reaches this engine as its budget alone: another route or
-// another scheme is rejected here rather than silently evaluated at this one.
+// At the reference multiplier the policy reaches this engine as the pair of
+// fits its two seeds are read from and the table those fits are summed out of:
+// the route picks the family - the shipped Chebyshev fits or the rational set
+// BoysSingleF32WithRoute serves - and the scheme picks which of the two
+// parallel tables the Chebyshev family is read from, the same choice the double
+// lane's bodies make. The engine is one body per route, so naming a policy
+// cannot reach a fit the caller did not name.
+//
+// Past the reference multiplier the policy still reaches the engine as its
+// budget alone, and the route and the scheme are restricted to the shipped pair
+// below: the relaxed rungs cut the fits by a table of effective degrees, and a
+// degree table is certified against one stored table of one family.
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 float BoysSingleF32Impl(int n, float x) noexcept {
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
-    static_assert(Policy::kRoute == kDefaultFitRoute && Policy::kScheme == kDefaultEvalScheme,
-                  "the single-precision lanes evaluate the shipped Chebyshev fits by the split "
-                  "Clenshaw recurrence and this engine reads one table by one scheme: the "
-                  "rational set is served by BoysSingleF32WithRoute, which takes no scheme, and "
-                  "the monomial set is the double lane's");
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(x >= 0.0f);
 
     if constexpr (kAccuracyMultiplier == 1.0)
     {
-        if (x == 0.0f)
-        {
-            return 1.0f / (2.0f * static_cast<float>(n) + 1.0f);
-        }
-
-        const float x0 = static_cast<float>(kX0);
-        const float x1 = static_cast<float>(kX1);
-
-        if (x < x0)
-        {
-            return ChebyshevValueF32(n, x);
-        }
-
-        float f = RegionBSeedF32(x);
-
-        if (x < x1)
-        {
-            const float expx = 0.5f * std::exp(-x);
-
-            for (int l = 0; l < n; ++l)
-            {
-                f = ((static_cast<float>(l) + 0.5f) * f - expx) / x;
-            }
-
-            return f;
-        }
-
-        f = kBoysHalfSqrtPiF32 / std::sqrt(x);
-
-        for (int l = 0; l < n; ++l)
-        {
-            f = (static_cast<float>(l) + 0.5f) * f / x;
-        }
-
-        return f;
+        return SingleOrderF32Body<FloatRouteFit<Policy::kRoute, Policy::kScheme>>(n, x);
     } else
     {
+        static_assert(Policy::kRoute == kDefaultFitRoute && Policy::kScheme == kDefaultEvalScheme,
+                      "the relaxed rungs cut the float lane's fits by a table of effective "
+                      "degrees, and a degree table is certified against one stored table of one "
+                      "fit family: past the reference multiplier this engine serves the shipped "
+                      "route and scheme alone, and every route and scheme is served at it");
         constexpr BoysRole kRole =
             (Policy::kBudget == BoysBudget::kFloat) ? BoysRole::kF32Single : BoysRole::kF32Fp16Single;
         static constexpr auto kDegreesA = RegionADegrees<kAccuracyMultiplier, kRole>();
@@ -1391,11 +1406,6 @@ template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
-    static_assert(Policy::kRoute == kDefaultFitRoute && Policy::kScheme == kDefaultEvalScheme,
-                  "the single-precision lanes evaluate the shipped Chebyshev fits by the split "
-                  "Clenshaw recurrence and this engine reads one table by one scheme: the "
-                  "rational set is served by BoysSingleF32WithRoute, which takes no scheme, and "
-                  "the monomial set is the double lane's");
     assert(nmax >= 0 && nmax <= kMaxBoysOrder);
     assert(x >= 0.0f);
     assert(out != nullptr);
@@ -1422,7 +1432,9 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
             // (5e4 at nmax=8), far beyond the certified 1.5e-7 float budget;
             // one double evaluation per batch is negligible; the recursion
             // itself stays in float.
-            const double seed = ChebyshevValue(nmax, static_cast<double>(x));
+            const double seed =
+                FloatBatchRegionASeed<Policy::kRoute, Policy::kScheme>(nmax,
+                                                                       static_cast<double>(x));
             out[nmax] = static_cast<float>(seed);
             float f = out[nmax];
             const float expx = 0.5f * std::exp(-x);
@@ -1436,7 +1448,7 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
             return;
         }
 
-        float f = RegionBSeedF32(x);
+        float f = FloatRouteFit<Policy::kRoute, Policy::kScheme>::RegionBSeed(x);
         out[0] = f;
 
         if (x < x1)
@@ -1462,6 +1474,11 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
         }
     } else
     {
+        static_assert(Policy::kRoute == kDefaultFitRoute && Policy::kScheme == kDefaultEvalScheme,
+                      "the relaxed rungs cut the float lane's fits by a table of effective "
+                      "degrees, and a degree table is certified against one stored table of one "
+                      "fit family: past the reference multiplier this engine serves the shipped "
+                      "route and scheme alone, and every route and scheme is served at it");
         constexpr BoysRole kRole =
             (Policy::kBudget == BoysBudget::kFloat) ? BoysRole::kF32Batch : BoysRole::kF32Fp16Batch;
         static constexpr auto kDegreesA = RegionADegrees<kAccuracyMultiplier, kRole>();

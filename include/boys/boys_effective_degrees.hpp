@@ -505,8 +505,11 @@ constexpr void RationalPairCut(const NumArray& num,
 template <double kAccuracyMultiplier, BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
 constexpr auto RegionADegrees() noexcept {
     static_assert(kBasis == TailBasis::kChebyshev || RoleUsesDoubleTables(kRole),
-                  "the single-precision lanes hold no monomial coefficient table, so a "
-                  "monomial tail has no table to be read from there");
+                  "a monomial tail's effective degrees are derived from the table its own fits "
+                  "are cut from, and this derivation reads the double lane's tables for the "
+                  "roles that take them and the float lane's Chebyshev table for the rest, so a "
+                  "monomial tail on a single-precision single role has no degrees derived for "
+                  "it here");
 
     if constexpr (RoleUsesDoubleTables(kRole))
     {
@@ -560,8 +563,10 @@ template <double kAccuracyMultiplier, BoysRole kRole, TailBasis kBasis = TailBas
 constexpr auto RegionBDegrees() noexcept {
     static_assert(kBasis == TailBasis::kChebyshev || kRole == BoysRole::kDoubleSingle ||
                       kRole == BoysRole::kDoubleBatch,
-                  "the single-precision lanes hold no monomial coefficient table, so a "
-                  "monomial tail has no table to be read from there");
+                  "a monomial tail's effective degrees are derived from the table its own fits "
+                  "are cut from, and this derivation reads the double lane's region-B seed "
+                  "tables, so a monomial tail on a single-precision role has no degrees derived "
+                  "for it here");
 
     if constexpr (kRole == BoysRole::kDoubleSingle || kRole == BoysRole::kDoubleBatch)
     {

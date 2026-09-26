@@ -443,37 +443,17 @@ int main() {
             "compiling the call")
     endif()
 
-    if (BOYS_GATE_RATIONAL_RUNG_ACCEPTED)
-        message(STATUS "boys: the rational route at a relaxed rung is ACCEPTED by the probe")
-    else()
-        message(STATUS "boys: the rational route at a relaxed rung is REFUSED, measured by "
-            "compiling the call")
-    endif()
-
-    if (BOYS_GATE_F32_PAIR_ACCEPTED)
-        message(STATUS "boys: the single-precision engines accept another route or scheme")
-    else()
-        message(STATUS "boys: the single-precision engines REFUSE another route or scheme, "
-            "measured by compiling the call")
-    endif()
-
-    if (NOT BOYS_GATE_ORDERS_ROUTE_ACCEPTED)
-        target_compile_definitions(boys-accuracy-gate PRIVATE BOYS_GATE_ORDERS_REFUSES_ROUTE=1)
-        message(STATUS "boys: the orders axis with a route other than the shipped one is REFUSED, "
-            "measured by compiling the call")
-    else()
-        message(STATUS "boys: the orders axis ACCEPTS another route")
-    endif()
-
-    # The other two refusals this gate's record carries, each measured by
-    # compiling the call it names rather than by quoting the assertion that
-    # states it. A refusal the library asserts and cannot show is the same
-    # sentence the record forbids: citing our own refusal as the reason a bound
-    # is not owed. Both of these are refusals the gate reports as owed work, so
-    # what the probe establishes is narrower than for the two above - it says
-    # the call does not build, not that it cannot.
+    # The two refusals this gate's record carries that the library reports as
+    # owed work - a rung on a route whose degree table is not derived, and a
+    # route or a scheme other than the shipped pair at a relaxed rung on the
+    # single-precision engines - each measured by compiling the call it names
+    # rather than by quoting the assertion that states it. A refusal the library
+    # asserts and cannot show is the same sentence the record forbids: citing our
+    # own refusal as the reason a bound is not owed. What these probes establish
+    # is narrower than for the two above - they say the call does not build, not
+    # that it cannot.
     unset(BOYS_GATE_RATIONAL_RUNG_ACCEPTED CACHE)
-    unset(BOYS_GATE_F32_PAIR_ACCEPTED CACHE)
+    unset(BOYS_GATE_F32_PAIR_AT_RUNG_ACCEPTED CACHE)
     set(_boys_probe_target_type "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
     set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
     set(CMAKE_REQUIRED_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -494,13 +474,13 @@ int main() {
 #include <boys/boys.hpp>
 int main() {
     float out[33] = {};
-    boys::BoysAllOrdersF32<1.0, boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(1, 1.0f, out);
-    boys::BoysAllOrdersF32<1.0,
-                           boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>>(
-        1, 1.0f, out);
+    boys::BoysAllOrdersF32<8.0, boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(1, 1.0f, out);
+    boys::BoysSingleF32<8.0,
+                        boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>>(
+        1, 1.0f);
     return 0;
 }
-" BOYS_GATE_F32_PAIR_ACCEPTED)
+" BOYS_GATE_F32_PAIR_AT_RUNG_ACCEPTED)
     unset(BOYS_GATE_ORDERS_ROUTE_ACCEPTED CACHE)
     check_cxx_source_compiles("
 #include <boys/boys.hpp>
@@ -523,8 +503,30 @@ int main() {
         target_compile_definitions(boys-accuracy-gate PRIVATE BOYS_GATE_REFUSES_RATIONAL_RUNG=1)
     endif()
 
-    if (NOT BOYS_GATE_F32_PAIR_ACCEPTED)
-        target_compile_definitions(boys-accuracy-gate PRIVATE BOYS_GATE_REFUSES_F32_PAIR=1)
+    # Both statements below read a variable the probes above have just measured.
+    if (BOYS_GATE_RATIONAL_RUNG_ACCEPTED)
+        message(STATUS "boys: the rational route at a relaxed rung is ACCEPTED by the probe")
+    else()
+        message(STATUS "boys: the rational route at a relaxed rung is REFUSED, measured by "
+            "compiling the call")
+    endif()
+
+    if (NOT BOYS_GATE_ORDERS_ROUTE_ACCEPTED)
+        target_compile_definitions(boys-accuracy-gate PRIVATE BOYS_GATE_ORDERS_REFUSES_ROUTE=1)
+        message(STATUS "boys: the orders axis with a route other than the shipped one is REFUSED, "
+            "measured by compiling the call")
+    else()
+        message(STATUS "boys: the orders axis ACCEPTS another route")
+    endif()
+
+    if (NOT BOYS_GATE_F32_PAIR_AT_RUNG_ACCEPTED)
+        target_compile_definitions(boys-accuracy-gate PRIVATE
+            BOYS_GATE_REFUSES_F32_PAIR_AT_RUNG=1)
+        message(STATUS "boys: a route or a scheme other than the shipped pair at a relaxed rung "
+            "on the single-precision engines is REFUSED, measured by compiling the call")
+    else()
+        message(STATUS "boys: the single-precision engines ACCEPT another route or scheme at a "
+            "relaxed rung")
     endif()
 
     if (BOYS_GATE_HAS_TIER)

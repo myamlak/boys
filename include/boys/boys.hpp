@@ -1031,12 +1031,16 @@ constexpr bool BoysPackedLaneServes(EvalScheme scheme) noexcept
 /// This is the recommended lane for GPU integral evaluation.
 ///
 /// \tparam kAccuracyMultiplier see BoysSingle
-/// \tparam Policy see BoysSingle. The one axis this lane reads from it is the
-///         engine budget. At the reference multiplier the lane evaluates its
-///         full fits and the budget selects nothing, so naming either value
-///         returns the same values; from \c m = 2 upward the budget picks the
-///         degree table the truncation targets, which is what tells the float
-///         lane's 1.5e-7 apart from the half lanes' 1e-7.
+/// \tparam Policy see BoysSingle. At the reference multiplier this lane reads
+///         the policy's fit route and its evaluation scheme: the route selects
+///         which family supplies the lane's own fits - the shipped Chebyshev
+///         table or the rational minimax one - and the scheme selects which of
+///         the Chebyshev family's two parallel tables, the Chebyshev form or the
+///         monomial form of the same fits, is summed. The budget selects
+///         nothing there. From \c m = 2 upward the lane serves the shipped
+///         route and scheme alone and the budget is the axis it reads, picking
+///         the degree table the truncation targets - which is what tells the
+///         float lane's 1.5e-7 apart from the half lanes' 1e-7.
 /// \param n     order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0
 /// \returns     F_n(x)
@@ -1049,8 +1053,10 @@ float BoysSingleF32(int n, float x) noexcept;
 /// F_0(x)..F_nmax(x) in single precision, |F̂ − F| ≤ m·1.5e-7 per value.
 ///
 /// \tparam kAccuracyMultiplier see BoysSingle
-/// \tparam Policy see BoysSingleF32: the engine budget is the axis this lane
-///         reads, and it selects nothing at the reference multiplier
+/// \tparam Policy see BoysSingleF32: at the reference multiplier the route and
+///         the scheme select the fits - the route for this lane's region-B seed
+///         and for the double lane's fit that seeds region A - and the budget
+///         selects nothing
 /// \param nmax  highest order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0
 /// \param out   receives nmax + 1 values, out[k] = F_k(x)
@@ -1088,8 +1094,8 @@ void BoysAllOrdersF32(int nmax, float x, float* out) noexcept;
 /// own threads; distinct batches share nothing.
 ///
 /// \tparam kAccuracyMultiplier see BoysSingle
-/// \tparam Policy see BoysSingleF32: the engine budget is the axis this lane
-///         reads, and it selects nothing at the reference multiplier
+/// \tparam Policy see BoysSingleF32: at the reference multiplier the route and
+///         the scheme select the fits, and the budget selects nothing
 /// \param nmax  highest order, 0..kMaxBoysOrder
 /// \param x     array of count arguments, each >= 0
 /// \param out   receives count * (nmax + 1) floats, out[k * count + i] = F_k(x[i])
@@ -1109,9 +1115,10 @@ void BoysAllNF32(int nmax, const float* x, float* out, std::size_t count) noexce
 ///
 /// This is \c BoysSingleF32 with one thing changed: which fit supplies the
 /// lane's region-A seed and its region-B seed. The route is a property of the
-/// float lane's own tables, so it is offered on the entry that reads them;
-/// \c BoysAllOrdersF32 seeds its region-A recursion from the double lane's
-/// fits and carries no route selector.
+/// float lane's own tables, so it is offered on the entry that reads them, at
+/// run time and without a scheme. A caller who templates on a policy names the
+/// same route there, and \c BoysAllOrdersF32 reads it for the double lane's
+/// fit that seeds its region-A recursion.
 ///
 /// The route selects fits and changes nothing else. Region C holds no
 /// coefficient under either route, and an argument there is the default

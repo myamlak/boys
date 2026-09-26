@@ -184,8 +184,9 @@ throughput, and the measurements that would settle it have not been taken. The r
 because they are different shapes, not because one is known to be faster.
 
 The route and the evaluation scheme compose: they are the two fields of one `EvalPolicy`, which every
-templated double-precision entry takes as its second parameter, and `BoysAllOrdersWithRoute` names
-both at run time. The route names the fits; the scheme names the summation the Chebyshev
+templated entry takes as its second parameter — the double lane's, and the float lane's
+`BoysSingleF32`, `BoysAllOrdersF32` and `BoysAllNF32` — and `BoysAllOrdersWithRoute` names both at run
+time. The route names the fits; the scheme names the summation the Chebyshev
 coefficients are read in, and it reaches the parts of a call the named route's own fits do not serve.
 A route whose own fit has one stored form — the rational minimax family — evaluates that fit the same
 way under either scheme, so naming a scheme changes the values only where the shipped family answers.
@@ -264,10 +265,20 @@ of the three by instruction count and the slowest by retired slots.
 #### The float lane's routes
 
 The float lane's region-A table and its region-B seed are its own, and they come in the same two
-routes. They are selected with `BoysSingleF32WithRoute`, which is `BoysSingleF32` with one thing
-changed — which fit supplies the lane's region-A seed and its region-B seed — and `BoysFitRoutesF32()`
-reports them the way `BoysFitRoutes()` reports the double lane's. Region C holds no coefficient under
-either route, so naming one there changes nothing.
+routes. They are selected at run time with `BoysSingleF32WithRoute`, which is `BoysSingleF32` with
+one thing changed — which fit supplies the lane's region-A seed and its region-B seed — and
+`BoysFitRoutesF32()` reports them the way `BoysFitRoutes()` reports the double lane's. Region C holds
+no coefficient under either route, so naming one there changes nothing.
+
+**The same choice is open at compile time, and there it carries the scheme as well.** The lane's
+entries take the `EvalPolicy` above, so a caller who templates on it names the route and the scheme as
+the second template argument instead of calling `BoysSingleF32WithRoute`. At the reference multiplier
+both fields are read: the route selects which family supplies the lane's fits, and the scheme selects
+which of the Chebyshev family's two stored forms is summed. Past the reference multiplier the lane
+serves the shipped pair alone — a rung cuts a fit by a table of effective degrees, and the degrees the
+float lane's fits are cut by are derived from the lane's Chebyshev table, so a policy naming another
+pair at a relaxed rung does not build; a build writes the measurement that says so. `BoysAllNF32`
+forwards its policy to the batch entry's body once per argument.
 
 The float lane's rational route covers the whole of region A from zero: the lane reads every order
 from its own fit over the region, so there is no band boundary for a selector to take over at and
@@ -288,6 +299,16 @@ against 1067. The rational route's pieces are its own cover of each order's inte
 Chebyshev table's breaks, and both were accepted against the same criterion — half the lane's
 tolerance, weighted by the downward recursion's gain, **on the coefficients as they are stored**,
 because at this target the binary32 rounding is part of the fit and not a last-digit detail.
+
+**The Chebyshev route's fits are stored in both of the forms the two schemes read**, one monomial
+coefficient per Chebyshev coefficient: 1067 stored either way in region A and 11 in region B, the same
+pieces, intervals and degrees, so naming a scheme chooses a table and not a shape. Over region A the
+gate reads 1.06e-07 at the worst cell of the split Clenshaw reading and 7.68e-08 of the Horner
+reading, over region B 2.77e-08 and 2.22e-08, all inside the lane's 1.5e-07 bar. The second form costs
+this lane nothing, and the reason is the length of its pieces: the monomial coefficients of any one
+piece sum in absolute value to at most 1.6, so rounding the monomial table to binary32 moves a value
+by at most 0.64 of the bar even if every coefficient rounds against it, and the measured reading is
+half the bar.
 
 **The stored counts are upper bounds and not minima.** The degree search is a scan that stops at the
 first count holding the target, not an exhaustive minimax search over the family, so a cheaper cover
