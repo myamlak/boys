@@ -660,6 +660,15 @@ TEST(BoysAcrossOrders, TheRationalRouteOnTheAxisIsTheRoutesOwnReading) {
 // values move where a degree was cut, and are the reference multiplier's bit
 // for bit where none was.
 //
+// One interval is outside that rule, and it is the extended band. There the
+// reference rung answers from the band's seed and its upward recursion while a
+// relaxed one keeps the region-A fit, so the two are two readings of two
+// different things and part by their own size - by design, and stated in the
+// band's own comment in boys_impl.hpp as the m = 1 lane's alone. So the band's
+// cells are counted apart from the rest, the identity is asserted over the
+// arguments where both readings really are the fit, and the band joins it only
+// where the orders axis is the packed lane and both calls are that one body.
+//
 // The fallback is that per-order lane's body, compiled in the packed unit
 // rather than in this file, and region B's recurrence ends each step in a
 // multiply and a subtract that a compiler may round as one operation or as two.
@@ -687,6 +696,7 @@ TEST(BoysAcrossOrders, TheRelaxedRungOnTheAxisIsTheRungsOwnReading) {
         }
 
         std::size_t differing = 0;
+        std::size_t differingInBand = 0;
         double worst = 0.0;
 
         for (double x : grid)
@@ -701,25 +711,49 @@ TEST(BoysAcrossOrders, TheRelaxedRungOnTheAxisIsTheRungsOwnReading) {
 
                 if (!SameBits(a, b))
                 {
-                    ++differing;
+                    // The extended band is the one interval where the two
+                    // multipliers are two readings rather than one table read
+                    // twice: the reference rung answers [kExtendedBX0, kX0) from
+                    // the band's seed and its upward recursion, and the relaxed
+                    // branch keeps the region-A fit there. The two are counted
+                    // apart so the identity below is claimed only where both
+                    // readings really are the fit.
+                    if (x >= boys::detail::kExtendedBX0)
+                    {
+                        ++differingInBand;
+                    } else
+                    {
+                        ++differing;
+                    }
+
                     worst = std::max(worst, std::abs(a - b));
                 }
             }
         }
 
         std::printf("  rung m = %g on the axis, %-14s: the criterion cuts %zu of %zu piece "
-                    "degrees, %zu order values moved against the reference rung, worst %e\n",
+                    "degrees, %zu order values moved outside the band, %zu inside it, worst %e\n",
                     kRungMultiplier,
                     name,
                     cutPieces,
                     kCut.size(),
                     differing,
+                    differingInBand,
                     worst);
 
         if (cutPieces == 0)
         {
             EXPECT_EQ(differing, 0u) << name << ": the table is certified whole at this rung, so "
-                                     << "the values have to be the reference rung's";
+                                     << "outside the band the values have to be the reference "
+                                     << "rung's";
+
+            if (VectorTier())
+            {
+                EXPECT_EQ(differingInBand, 0u)
+                    << name << ": on a host whose orders axis is the packed lane both readings "
+                    << "are that lane's body, so no cut means the band's values are the "
+                    << "reference rung's too";
+            }
         } else
         {
             EXPECT_GT(differing, 0u) << name << ": the multiplier did not reach the fits";

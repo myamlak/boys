@@ -358,6 +358,74 @@ failed rather than describe it. If you suspect the generated tables,
 `python3 tools/gen_boys_coefficients.py --check` re-derives them and the reference grid and reports
 any drift, and `ctest --test-dir build --output-on-failure` runs the whole suite.
 
+### Interval granularity
+
+How narrowly the fitted domain is cut into pieces is the fifth field of `EvalPolicy`, and it is a
+choice with a price on each side. A narrower piece needs a lower degree to hold the same bound —
+halving a piece buys about `2^d` in the truncation, so **splitting is the lever and more degree is
+not** — and the cost is that a table of narrow pieces stores more in total and needs a piece lookup
+per call. Two partitions are offered and no spectrum between them: `FitGranularity::kShipped`, which
+is the committed table and the default, and `FitGranularity::kNarrow`, a partition of region A and of
+region B derived from the proved truncation bound below rather than placed by sampling.
+`tools/gen_boys_coefficients.py --derive-partition` prints the design law's answer.
+
+| partition | stored coefficients | stored rows | read per evaluation |
+| --- | --- | --- | --- |
+| `FitGranularity::kShipped` | 1339 | 67 | 19 to 21 |
+| `FitGranularity::kNarrow` | 3476 | 316 | 11 |
+
+**Narrowing is a trade and not a saving.** The coefficients an evaluation reads fall from 19–21 to 11
+and the table a consumer carries grows from 1339 to 3476, with a piece lookup on every call. A
+consumer whose cost is per evaluation gains; one whose cost is the table gains nothing and pays the
+lookup.
+
+**Region A's pieces are held to a second reading that region B's are not.** The batch entry seeds its
+downward recursion from the top order's piece, and that recursion carries the piece's error down to
+F_0 multiplied by `w(n, b) = max(1, b^n / ∏(j + ½))` at the piece's right end `b` — 1.04436e5 at
+order 12 and the region's right edge. A region-A cut must therefore hold `Δ(d')·w(b) ≤ target` as well
+as its own size, so the walk places each piece under the tighter of the two: the 1e-15 bar the
+single-order lane publishes for region A, and the batch lane's own `2.5e-14 / w(n, b)`. The gain
+exceeds 25 on a trailing run of each order's pieces and tightens 127 of the partition's 311, the
+tightest budget being 2.394e-19 at order 12's last piece, which ends at the region's right edge.
+
+**The gain the walk holds is the envelope; the most a call in this revision reaches is 2.1711.** The
+seeding fallback is taken only below the band's left edge, x < 1.0855, and what a call pays there is
+its own top order's gain rather than the region's worst. For a fixed x the ratio x^n / ∏(j + ½) rises
+with the order only until the order passes x − ½ and falls after, so below the band edge the largest
+value it has at an order of 3 or more is order 3's 0.68: a call whose top order is 3 or more seeds at
+gain 1. The two orders below that do amplify — 1.5712 at order 2 and 2.1711 at order 1, the second
+only as x approaches the band's edge — a factor of 4.8e4 below the envelope the walk holds. Holding
+the envelope rather than the reachable figure is deliberate, so that no piece's reading depends on
+which order an entry happens to seed from, and the price it charges shows up as narrower pieces at
+the high orders' right ends rather than as accuracy. The extended band is the same fit at either
+granularity, because the upward recursion it feeds runs the other way and an error in it stays the
+size it is.
+
+**The member is certified.** Measured against the committed high-precision reference over the
+interval its own pieces cover, `FitGranularity::kNarrow` delivers a worst absolute error of 2.22e-16
+over region A at region A's published 1e-15 bar — the shipped table's own figure — and 7.21645e-16
+over region B against the shipped seed's 9.9365e-15, a factor of 13.8. The gate's granularity block
+carries all 32 of its rows, one per partition, scheme and call shape, each judged against the bar the
+published table holds for the cell it ran in, with the worst cell named; and it reports the trade
+above and the 481700 of 578888 axis cells (83.2%) that can discriminate, the rest carrying a bound at
+least as large as the value itself. Those rows are counted apart from every other book the gate
+reports, so nothing the library already published moves.
+
+**Where a combination has no narrow table it is refused where it is named**, with the reason, rather
+than answered from the shipped table: the rational minimax route (one numerator/denominator pair over
+the whole interval), the relaxed rungs `m > 1` (which truncate the shipped fits to certified
+effective degrees), and the single-precision lanes (which hold one coefficient set). The two
+partitions are different fits of the same function over the same interval, so a substitution would
+return the shipped values under the narrow partition's name.
+
+The proved bound is what the partition is derived from, and it needs no sampling: for this function
+`|F_n(z)| ≤ F_n(Re z)` holds exactly, so the max modulus on a Bernstein ellipse is at most its value
+at the ellipse's leftmost point, and Trefethen's interpolant bound gives the truncation. Its
+computation reproduces the figures this tree's generator carries from an earlier instrument
+(6.4676e-16 and 3.14e-18, to five significant figures), and `docs/lane-contract.md` states the
+derivation, the full trade curve and a quoted "19 → 7" measurement **that does not survive the
+check**: at width 17.09/7 the target needs degree 10, not degree 6.
+
 ## Version
 
 This tree is **version 2.0.0**. That number is written down once, in `CMakeLists.txt`'s

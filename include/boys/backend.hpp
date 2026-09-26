@@ -51,8 +51,9 @@
 ///
 /// What a call site selects about *how* an evaluation runs — the fit route
 /// (FitRoute), the scheme the fit's coefficients are summed in (EvalScheme),
-/// a single-precision engine's budget (BoysBudget) and the axis a packed
-/// evaluation vectorises over (PackAxis) — is named here too, and is
+/// a single-precision engine's budget (BoysBudget), the axis a packed
+/// evaluation vectorises over (PackAxis) and how narrowly the fitted domain is
+/// cut into pieces (FitGranularity) — is named here too, and is
 /// carried as ONE parameter (EvalPolicy) rather than as one parameter per axis,
 /// so a further axis is a field on the policy rather than a parameter on every
 /// entry, engine and kernel between the call site and the fit. The contract a
@@ -190,6 +191,86 @@ inline constexpr PackAxis kDefaultPackAxis = PackAxis::kArguments;
 ///
 /// \returns a string literal naming it
 const char* PackAxisName(PackAxis axis) noexcept;
+/// How narrowly the fitted domain is cut into pieces.
+///
+/// A stored fit is a polynomial over one interval, and a narrower interval
+/// needs a lower degree to hold the same bound: the truncation bound carries
+/// the interval's half-width as `(h/(2d))^d`, so halving a piece buys roughly
+/// `2^d` and raising the degree at a fixed width buys far less. Splitting is
+/// therefore the lever, and how far to take it is a choice with a price on each
+/// side — a narrower piece is fewer coefficients to evaluate per call and more
+/// pieces to store and to select between.
+///
+/// Two partitions are offered rather than a spectrum. Each carries its own
+/// stored counts and its own certified bound, and neither is a rung of the
+/// other: naming one changes the fits that serve the intervals its own report
+/// names, and the shipped partition's coefficients are byte-identical whether
+/// or not the other exists.
+///
+/// **Narrowing is a trade and not a saving.** A narrower piece is fewer
+/// coefficients to read per evaluation and more pieces to store and to look up
+/// in, so the axis trades per-evaluation work against table size. A consumer
+/// whose cost is per evaluation gains; one whose cost is the table gains
+/// nothing and pays the lookup. It is offered for a consumer to choose between
+/// and not as a winner.
+///
+/// **The axis cuts both fitted regions, and region A pays a second criterion.**
+/// Region B's seed is read for itself, so a narrow piece there is held to the
+/// same bound as any other fit of that interval. Region A's pieces are read two
+/// ways: a single-order call reads one for its own value, and the batch entry's
+/// relaxed path reads one as the seed of a downward recursion that carries its
+/// error down to F_0 with a gain of `max(1, b^n / prod(j + 1/2))` at the piece's
+/// right end `b`. That gain's envelope over region A reaches 1.04e5, at order 12
+/// and the region's right edge, while the seeding fallback is taken only below
+/// the band's left edge, where the gain a call reaches is the calling order's
+/// own - 2.18 at order 1, 1.58 at order 2 and 1 at every order from 3 up - and
+/// the walk holds the envelope rather than that, so that no piece's reading
+/// depends on which order an entry seeds from. A narrow piece is therefore held
+/// to whichever of the two readings is tighter at its own right end, so the gain
+/// binds only where it exceeds the ratio of the two bars, and a piece far enough
+/// left is cut to the single-order bar alone. Both readings are parts of one
+/// criterion rather than a choice.
+///
+/// A member the build cannot serve is refused where it is named, with the
+/// reason, rather than answered from the shipped tables: the two partitions'
+/// coefficients are different fits of the same function over the same
+/// interval, so a silent substitution would return the shipped partition's
+/// values under the other's name. The refusals are the route that carries no
+/// narrow table, the relaxed rungs that truncate the shipped fits to certified
+/// effective degrees, the single-precision lanes, which hold one coefficient
+/// set, and the across-orders packing axis, whose kernel reads one order's
+/// coefficients at a fixed stride and so needs the pieces to share their shape
+/// from order to order, which a per-order cut does not. Each is unbuilt work
+/// rather than an impossible combination, and each is named where it is refused
+/// so that it can be counted.
+///
+/// \ingroup boys
+enum class FitGranularity : std::uint8_t {
+    /// The partition this library has always shipped: region A's two bands per
+    /// order and region B's single seed, at the degrees the committed tables
+    /// carry. The default, and the partition every certified lane is defined
+    /// by.
+    kShipped = 0,
+
+    /// A deliberately narrower partition of both fitted regions, at the degrees
+    /// the proved truncation bound gives a piece of that width at the bar the
+    /// piece is read under. Fewer coefficients per evaluation, more pieces in
+    /// the table.
+    kNarrow = 1,
+};
+
+/// The partition the entries evaluate when the caller names none.
+///
+/// The shipped one, so a call site that names no partition compiles the tables
+/// it always did.
+inline constexpr FitGranularity kDefaultFitGranularity = FitGranularity::kShipped;
+
+/// The name a report prints a granularity under.
+///
+/// \param granularity the partition
+///
+/// \returns a string literal naming it
+const char* GranularityName(FitGranularity granularity) noexcept;
 
 /// The computation budget a single-precision engine evaluates at.
 ///
@@ -207,6 +288,22 @@ enum class BoysBudget : std::uint8_t {
     kFp16 = 1,
 };
 
+/// The region-A partition a fit reads: which piece of the region an argument
+/// falls in and what that piece is.
+///
+/// A fit names its partition rather than carrying a lookup of its own, because
+/// the lookup is the same on every partition - scan the order's pieces for the
+/// first whose right edge is past the argument - and only the table differs.
+/// The two members are that lookup and that table, so a fit over a second
+/// partition of the same region is the same evaluation over other rows.
+///
+/// \ingroup boys
+template <typename P>
+concept RegionAPartition = requires(std::size_t index, int order, double x) {
+    { P::PieceIndex(order, x) } -> std::convertible_to<std::size_t>;
+    { P::PieceAt(index) };
+};
+
 /// The fit one region-A route evaluates: its coefficient set and the scheme
 /// the coefficients are read in, named as a type so the evaluation body around
 /// it is written once and instantiated per route. The body is in
@@ -216,12 +313,14 @@ enum class BoysBudget : std::uint8_t {
 /// The body owns everything that is not the fit - the zero argument's closed
 /// form, the region split, the piece lookup, the mapped argument, the
 /// recurrences, the per-order rule and the domains - so a route cannot drift
-/// from the lane around it, and asks a policy for three things:
+/// from the lane around it, and asks a policy for four things:
 ///
+///  - `Partition` is the region-A partition the fit's pieces are stored in, as
+///    a model of RegionAPartition. The pieces, their intervals and the mapping
+///    are that table's, so two fits over one region differ in the scheme or in
+///    the partition rather than in how either is read.
 ///  - `EvalPiece(index, t)` is one region-A piece's value at its own mapped
-///    argument `t`, named by the piece's index in the shared piece table. The
-///    pieces, their intervals and the mapping are that table's, so two routes
-///    over one region differ in the scheme rather than in the partition.
+///    argument `t`, named by the piece's index in that partition.
 ///  - `RegionBSeed(x)` is region B's seed F_0(x).
 ///  - `BandSource` reads the orders the band's regime covers. A source is
 ///    constructed at an argument and stepped order by order, so a batch pays
@@ -238,7 +337,7 @@ concept FitPolicy = requires(std::size_t index, double t, double x, int l) {
     { F::EvalPiece(index, t) } -> std::same_as<double>;
     { F::RegionBSeed(x) } -> std::same_as<double>;
     { typename F::BandSource(x).Next(l, x) } -> std::same_as<double>;
-};
+} && RegionAPartition<typename F::Partition>;
 
 /// The fit one (route, scheme) pair evaluates. The families themselves are in
 /// boys_impl.hpp beside the coefficient tables they read, and this is the join
@@ -253,7 +352,7 @@ concept FitPolicy = requires(std::size_t index, double t, double x, int l) {
 /// outside the route enumeration.
 namespace detail {
 
-template <EvalScheme kScheme>
+template <EvalScheme kScheme, FitGranularity kGranularity>
 struct ChebyshevFit;
 
 struct RationalFit;
@@ -263,29 +362,44 @@ struct RationalFit;
 /// at the default. The run-time selector takes the other reading - a route value
 /// outside the enumeration is the default there - because a value that arrives
 /// at run time is not a caller's compile-time claim that the option exists.
-template <FitRoute kRoute, EvalScheme kScheme>
+template <FitRoute kRoute, EvalScheme kScheme, FitGranularity kGranularity>
 struct RouteFit {
     static_assert(kRoute == FitRoute::kChebyshev || kRoute == FitRoute::kRationalMinimax,
                   "a fit route outside the FitRoute enumeration is not a route the library "
                   "carries: name FitRoute::kChebyshev or FitRoute::kRationalMinimax");
     /// Unreachable: the static assert above refuses a call site naming a route
     /// outside the enumeration, so only the two specializations below are asked.
-    using Type = ChebyshevFit<kScheme>;
+    using Type = ChebyshevFit<kScheme, kGranularity>;
 };
 
 /// The Chebyshev family: it holds both coefficient sets, so either scheme is
-/// defined for it.
-template <EvalScheme kScheme>
-struct RouteFit<FitRoute::kChebyshev, kScheme> {
+/// defined for it, and both partitions, so either granularity is too.
+template <EvalScheme kScheme, FitGranularity kGranularity>
+struct RouteFit<FitRoute::kChebyshev, kScheme, kGranularity> {
     /// The Chebyshev coefficients at this scheme.
-    using Type = ChebyshevFit<kScheme>;
+    using Type = ChebyshevFit<kScheme, kGranularity>;
 };
 
 /// The rational family: one fit under either scheme, because its coefficients
 /// are a monomial numerator and denominator with no Chebyshev form to sum.
 template <EvalScheme kScheme>
-struct RouteFit<FitRoute::kRationalMinimax, kScheme> {
+struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kShipped> {
     /// The single rational fit, shared by both schemes.
+    using Type = RationalFit;
+};
+
+/// The rational route under the narrow partition: refused where it is named.
+/// The route's region-B seed is one minimax pair over the whole interval and
+/// has no partition of its own, so there is no narrow rational table to read -
+/// and answering from the pair this route does ship would return the shipped
+/// partition's values under the narrow partition's name.
+template <EvalScheme kScheme>
+struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kNarrow> {
+    static_assert(kScheme == EvalScheme::kSplitClenshaw && kScheme == EvalScheme::kHorner,
+                  "the rational minimax route carries one numerator/denominator pair over the "
+                  "whole of region B and no narrow partition of it: name "
+                  "FitGranularity::kShipped for this route, or FitRoute::kChebyshev for the "
+                  "narrow partition");
     using Type = RationalFit;
 };
 
@@ -307,11 +421,29 @@ struct RouteFit<FitRoute::kRationalMinimax, kScheme> {
 /// values are spread over, so it is read by the entries that have a wide axis
 /// to fill and changes nothing about which fit answers. It composes with the
 /// other axes rather than selecting among them.
+/// coefficients are summed in, and the budget a single-precision engine runs
+/// at. One parameter rather than one per axis, so an axis added later is a
+/// field here rather than an argument on every entry, engine and kernel between
+/// the call site and the fit.
+///
+/// The axes are selected together because they are one evaluation rather than
+/// because either implies the other: each names a different thing, and the pair
+/// names the fit the bodies evaluate. \c Fit is where that join happens.
 ///
 /// The one error this type can carry is a route outside the FitRoute
 /// enumeration, and it is reported where it is named: the entries constrain
 /// their parameter with EvalPolicyLike, and RouteFit's own assertion is where a
 /// value that is not an option fails.
+///
+/// The one error the axes carry beyond a route outside the enumeration is a
+/// combination the build cannot serve - a partition for a route that has none,
+/// a partition on a rung that truncates the shipped fits, a partition on a lane
+/// that holds one coefficient set, a partition on the packing axis whose kernel
+/// reads the shipped pieces' shape from order to order - and each is refused
+/// where it is named rather than at a kernel, because the partitions are
+/// different fits of the same function over the same interval and a fallback
+/// would return the shipped values under the other partition's name. Each is
+/// unbuilt work and is refused with the work it names, so a gap is countable.
 ///
 /// \tparam kFitRoute      the fit route; \c FitRoute::kChebyshev by default
 /// \tparam kEvalScheme    the scheme the fit's coefficients are summed in;
@@ -322,15 +454,19 @@ struct RouteFit<FitRoute::kRationalMinimax, kScheme> {
 /// \tparam kPackedAxis    the axis a packed evaluation vectorises over, read by
 ///                        the entries that have a wide axis to fill;
 ///                        \c PackAxis::kArguments by default
+/// \tparam kGranularity   how narrowly the fitted domain is cut into pieces;
+///                        \c FitGranularity::kShipped by default
 ///
 /// \ingroup boys
 template <FitRoute kFitRoute = kDefaultFitRoute,
           EvalScheme kEvalScheme = kDefaultEvalScheme,
           BoysBudget kEngineBudget = BoysBudget::kFloat,
-          PackAxis kPackedAxis = kDefaultPackAxis>
+          PackAxis kPackedAxis = kDefaultPackAxis,
+          FitGranularity kFitGranularity = kDefaultFitGranularity>
 struct EvalPolicy {
-    /// The fit this pair evaluates, where the pair is one the library carries.
-    using Fit = typename detail::RouteFit<kFitRoute, kEvalScheme>::Type;
+    /// The fit this policy evaluates, where the combination is one the library
+    /// carries.
+    using Fit = typename detail::RouteFit<kFitRoute, kEvalScheme, kFitGranularity>::Type;
 
     /// The fit route. This is the fit route, not the multiply-add route a
     /// BackendInfo carries: the two are different selections of different
@@ -345,6 +481,8 @@ struct EvalPolicy {
 
     /// The axis a packed evaluation vectorises over.
     static constexpr PackAxis kPack = kPackedAxis;
+    /// How narrowly the fitted domain is cut into pieces.
+    static constexpr FitGranularity kGranularity = kFitGranularity;
 };
 
 /// The constraint the entries put on a policy, so a combination the library
@@ -362,6 +500,7 @@ concept EvalPolicyLike = requires {
     { P::kScheme } -> std::convertible_to<EvalScheme>;
     { P::kBudget } -> std::convertible_to<BoysBudget>;
     { P::kPack } -> std::convertible_to<PackAxis>;
+    { P::kGranularity } -> std::convertible_to<FitGranularity>;
 };
 
 namespace backend {

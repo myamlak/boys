@@ -79,6 +79,58 @@ inline const detail::OrderPiece& FindPiece(int order, double x) noexcept {
     return detail::kPieces[last - 1];
 }
 
+// ---------------------------------------------------------------------------
+// The two stored partitions of region A
+// ---------------------------------------------------------------------------
+// A fit reads one of two stored partitions of the same region, and what it asks
+// of one is the same on both: which piece the argument falls in, and what that
+// piece's interval is. So the partitions differ in the tables they name and in
+// nothing the body can see, and the body asks the fit for its partition rather
+// than the fit carrying a lookup of its own.
+//
+// The shipped partition is the per-order piecewise table the lane has always
+// read. The narrow one is the second partition of the same region, derived at a
+// lower degree per piece and more pieces: the same values at fewer coefficients
+// per evaluation, against more stored rows and a longer scan to the piece.
+struct ShippedRegionAPartition {
+    static std::size_t PieceIndex(int order, double x) noexcept {
+        return static_cast<std::size_t>(&FindPiece(order, x) - detail::kPieces.data());
+    }
+
+    static const detail::OrderPiece& PieceAt(std::size_t index) noexcept {
+        return detail::kPieces[index];
+    }
+};
+
+// The narrow partition's piece containing x for this order; see FindPiece, whose
+// scan this is over the second partition's rows for the same order.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): (order, x) reads naturally.
+inline const detail::OrderPiece& FindNarrowAPiece(int order, double x) noexcept {
+    const int first = detail::kNarrowAPieceStart[order];
+    const int last = detail::kNarrowAPieceStart[order + 1];
+
+    for (int i = first; i < last - 1; ++i)
+    {
+        if (x < detail::kNarrowAPieces[i].b)
+        {
+            return detail::kNarrowAPieces[i];
+        }
+    }
+
+    return detail::kNarrowAPieces[last - 1];
+}
+
+struct NarrowRegionAPartition {
+    static std::size_t PieceIndex(int order, double x) noexcept {
+        return static_cast<std::size_t>(&FindNarrowAPiece(order, x)
+                                        - detail::kNarrowAPieces.data());
+    }
+
+    static const detail::OrderPiece& PieceAt(std::size_t index) noexcept {
+        return detail::kNarrowAPieces[index];
+    }
+};
+
 // The even/odd split Clenshaw evaluation of a Chebyshev sum, in the arithmetic
 // of backend B and at its width. One body, one arithmetic per instantiation:
 // the lanes differ in the width of their values and in nothing else here, and
@@ -252,39 +304,104 @@ inline double UpwardStep(int l, double f, double x, double expx) noexcept {
     return ((l - 0.5) * f - expx) / x;
 }
 
-// Region-A F_order(x) in a fit's own scheme, over the piece the shared table
-// puts the argument in and at that piece's own mapped argument.
+// Region-A F_order(x) in a fit's own scheme, over the piece the fit's own
+// partition of the region puts the argument in and at that piece's own mapped
+// argument.
 template <FitPolicy Fit>
 inline double RegionAValue(int order, double x) noexcept {
-    const std::size_t index =
-        static_cast<std::size_t>(&FindPiece(order, x) - detail::kPieces.data());
-    const detail::OrderPiece& piece = detail::kPieces[index];
+    using Partition = typename Fit::Partition;
+    const std::size_t index = Partition::PieceIndex(order, x);
+    const detail::OrderPiece& piece = Partition::PieceAt(index);
     const double t = 2.0 * (x - piece.a) / (piece.b - piece.a) - 1.0;
     return Fit::EvalPiece(index, t);
+}
+
+// Which piece of the narrow partition an argument falls in. The edges are the
+// derived partition's own, non-decreasing, and the last is kX1, so the scan
+// ends inside the table for any argument region B dispatches here.
+inline int NarrowBPieceOf(double x) noexcept {
+    int piece = 0;
+
+    while (piece + 1 < detail::kNarrowBPieces && x >= detail::kNarrowBEdges[static_cast<std::size_t>(piece + 1)])
+    {
+        ++piece;
+    }
+
+    return piece;
+}
+
+// Region B's seed from the narrow partition: the piece the argument falls in,
+// at that piece's own mapped argument. The pieces tile the interval the shipped
+// seed serves, so this answers the same domain at fewer coefficients per
+// evaluation and more table rows.
+template <EvalScheme kScheme>
+inline double NarrowRegionBSeed(double x) noexcept {
+    const int piece = NarrowBPieceOf(x);
+    const std::size_t index = static_cast<std::size_t>(piece);
+    const double a = detail::kNarrowBEdges[index];
+    const double b = detail::kNarrowBEdges[index + 1];
+    const double t = 2.0 * (x - a) / (b - a) - 1.0;
+    const std::size_t offset =
+        index * (static_cast<std::size_t>(detail::kNarrowBDeg) + 1);
+
+    return FitSum<kScheme, backend::ScalarFp64>(detail::kNarrowBcoeffs.data() + offset,
+                                                detail::kNarrowBMonoCoeffs.data() + offset,
+                                                detail::kNarrowBDeg,
+                                                t);
 }
 
 // The Chebyshev route, at the scheme its coefficients are summed in. The shipped
 // family, and the one that holds both stored forms: the Chebyshev table the
 // split Clenshaw recurrence reads and the monomial table Horner reads, over the
 // same pieces at the same degrees.
-template <EvalScheme kScheme>
+//
+// It holds both partitions of both regions as well, which is what the
+// granularity axis selects: region A's pieces and region B's seed are read from
+// the shipped tables or from the narrow ones by the granularity. The two
+// partitions answer the same domain, so everything around them - the recurrences,
+// the region split, the per-order rule - is the same code either way. See
+// FitGranularity for what the axis is and is not.
+template <EvalScheme kScheme, FitGranularity kGranularity>
 struct ChebyshevFit {
+    // The region-A partition this fit reads; the bodies ask for it rather than
+    // for the table, so a route over the fit does not have to know which.
+    using Partition = std::conditional_t<kGranularity == FitGranularity::kShipped,
+                                         ShippedRegionAPartition,
+                                         NarrowRegionAPartition>;
+
     // The band's orders are read from the band's seed, so this route's own
     // answer starts at the band's left edge.
     static constexpr double kRegionAFitsFrom = detail::kTierThresholds[0];
 
     static double EvalPiece(std::size_t index, double t) noexcept {
-        const detail::OrderPiece& piece = detail::kPieces[index];
-        return FitSum<kScheme, backend::ScalarFp64>(detail::kCoeffs.data() + piece.offset,
-                                                    detail::kMonoCoeffs.data() + piece.offset,
-                                                    piece.deg,
-                                                    t);
+        if constexpr (kGranularity == FitGranularity::kShipped)
+        {
+            const detail::OrderPiece& piece = detail::kPieces[index];
+            return FitSum<kScheme, backend::ScalarFp64>(detail::kCoeffs.data() + piece.offset,
+                                                        detail::kMonoCoeffs.data() + piece.offset,
+                                                        piece.deg,
+                                                        t);
+        } else
+        {
+            const detail::OrderPiece& piece = detail::kNarrowAPieces[index];
+            return FitSum<kScheme, backend::ScalarFp64>(
+                detail::kNarrowACoeffs.data() + piece.offset,
+                detail::kNarrowAMonoCoeffs.data() + piece.offset,
+                piece.deg,
+                t);
+        }
     }
 
     static double RegionBSeed(double x) noexcept {
-        const double t = 2.0 * (x - kX0) / (kX1 - kX0) - 1.0;
-        return FitSum<kScheme, backend::ScalarFp64>(
-            detail::kBcoeffs.data(), detail::kMonoBcoeffs.data(), detail::kBDeg, t);
+        if constexpr (kGranularity == FitGranularity::kShipped)
+        {
+            const double t = 2.0 * (x - kX0) / (kX1 - kX0) - 1.0;
+            return FitSum<kScheme, backend::ScalarFp64>(
+                detail::kBcoeffs.data(), detail::kMonoBcoeffs.data(), detail::kBDeg, t);
+        } else
+        {
+            return NarrowRegionBSeed<kScheme>(x);
+        }
     }
 
     // The band's orders: one seed at the band's left edge, then one upward step
@@ -310,6 +427,12 @@ struct ChebyshevFit {
 // replacement: the same pieces, the same intervals, the same mapping, the
 // other scheme.
 struct RationalFit {
+    // The shipped partition. This route's pieces are fitted over the shipped
+    // pieces' own intervals - one minimax pair per piece - so there is no
+    // second partition for it to read, and a policy naming both is refused
+    // where it is named (see RouteFit).
+    using Partition = ShippedRegionAPartition;
+
     // Below this argument the order's own piece is what the lane documents, at
     // the per-order 1e-15; at and above it the lane reads the order from the
     // band and documents the band's bound, which is the bar these fits hold.
@@ -441,6 +564,10 @@ struct RationalFitAtRung {
     static constexpr detail::RationalRegionBPairs kPairsB =
         detail::RationalRegionBDegrees<kAccuracyMultiplier>();
 
+    // The shipped partition, as the uncut rational route reads it; see
+    // RationalFit.
+    using Partition = ShippedRegionAPartition;
+
     // The route hands each order over at its own region-A boundary, as the
     // uncut rational family does: below it the shipped lane's value is the one
     // that order is documented at.
@@ -467,13 +594,41 @@ struct RationalFitAtRung {
 // and the reports that read one fit rather than a whole route.
 template <EvalScheme kScheme = kDefaultEvalScheme>
 inline double ChebyshevValue(int order, double x) noexcept {
-    return RegionAValue<ChebyshevFit<kScheme>>(order, x);
+    return RegionAValue<ChebyshevFit<kScheme, kDefaultFitGranularity>>(order, x);
 }
 
 // Region-B seed F_0(x) of the Chebyshev route at a scheme, valid on [kX0, kX1).
 template <EvalScheme kScheme = kDefaultEvalScheme>
 inline double RegionBSeed(double x) noexcept {
-    return ChebyshevFit<kScheme>::RegionBSeed(x);
+    return ChebyshevFit<kScheme, kDefaultFitGranularity>::RegionBSeed(x);
+}
+
+// Region B's seed at the partition a policy names. The bodies that call this
+// read the Chebyshev family's seed by construction - they are region B's own
+// bodies, and the route's fit is read where the policy's fit is read - so this
+// is the Chebyshev seed at the policy's scheme and granularity and it does not
+// consult the route. It exists so that a region-B seed read from a policy is
+// the partition that policy names rather than always the shipped one.
+template <EvalPolicyLike Policy>
+inline double PolicyRegionBSeed(double x) noexcept {
+    return ChebyshevFit<Policy::kScheme, Policy::kGranularity>::RegionBSeed(x);
+}
+
+// Region A's per-order value at the partition a policy names, for the bodies
+// that read the Chebyshev route's region-A pieces directly rather than through
+// a policy's fit. It is the Chebyshev partition for the same reason
+// PolicyRegionBSeed is - the piece tables are the Chebyshev family's, and the
+// bodies that call this read them by construction - and it is the policy's
+// granularity so that naming the narrow partition reaches every region-A read
+// in a policy-driven body, not only the ones a route's own fit answers.
+//
+// The rational routes hold the shipped partition, so a policy naming one reads
+// the shipped pieces here; that is the partition its own fits-only tail is
+// documented at, and the narrow partition beside it is refused where it is
+// named (see RouteFit).
+template <EvalPolicyLike Policy>
+inline double PolicyRegionAValue(int order, double x) noexcept {
+    return RegionAValue<ChebyshevFit<Policy::kScheme, Policy::kGranularity>>(order, x);
 }
 
 // ---------------------------------------------------------------------------
@@ -760,8 +915,9 @@ float SingleOrderF32Body(int n, float x) noexcept {
 // A body takes the policy as its ONE selection parameter and reads the axes as
 // fields, so the fit family, the scheme and anything added later reach the
 // recurrences without a parameter per axis: the family is Policy::Fit, the
-// scheme is Policy::kScheme, and the tail orders an order's own fit does not
-// answer are the shipped family's at that scheme.
+// scheme is Policy::kScheme, the partition is Policy::kGranularity, and the
+// tail orders an order's own fit does not answer are the Chebyshev family's at
+// that scheme and that partition.
 // The fit is the policy's by default and is overridden only by the relaxed rung
 // of a route whose rung is a fit of its own rather than a cut of the shipped
 // one (see RationalFitAtRung); everything else about the body - the zero
@@ -769,8 +925,6 @@ float SingleOrderF32Body(int n, float x) noexcept {
 // under either, which is why the rung is a parameter here and not a second body.
 template <EvalPolicyLike Policy, typename Fit = typename Policy::Fit>
 void AllOrdersBody(int nmax, double x, double* out) noexcept {
-    using Shipped = ChebyshevFit<Policy::kScheme>;
-
     static_assert(FitPolicy<Fit>,
                   "the fit a policy names must satisfy the contract the bodies are written "
                   "against (backend.hpp, FitPolicy)");
@@ -789,12 +943,13 @@ void AllOrdersBody(int nmax, double x, double* out) noexcept {
         // The pure per-(n, x) dispatch, driven by the n-indexed threshold
         // table: the orders k with x >= kTierThresholds[k] are a prefix (the
         // thresholds are non-decreasing in n) and are read from this route's
-        // own band answer; the tail orders keep the shipped piece's value,
-        // which is the value the lane documents for them - below its own end an
-        // order is documented at the per-order 1e-15, and a route whose fits
-        // hold the wider bar does not answer there. On the shipped route out[k]
-        // is bit-identical to the single-order entry's value for every k: that
-        // entry applies the same per-(n, x) rule to the same fits.
+        // own band answer; the tail orders keep the per-order piece value, at
+        // the partition the policy names, which is the value the lane documents
+        // for them - below its own end an order is documented at the per-order
+        // 1e-15, and a route whose fits hold the wider bar does not answer
+        // there. On the Chebyshev route out[k] is bit-identical to the
+        // single-order entry's value for every k: that entry applies the same
+        // per-(n, x) rule to the same fits.
         //
         // The fallback below, taken when x is under the band's left edge and no
         // order takes the band's answer at all, is the one case that is not: it
@@ -825,13 +980,13 @@ void AllOrdersBody(int nmax, double x, double* out) noexcept {
 
             for (int l = served + 1; l <= nmax; ++l)
             {
-                out[l] = RegionAValue<Shipped>(l, x);
+                out[l] = PolicyRegionAValue<Policy>(l, x);
             }
 
             return;
         }
 
-        double f = RegionAValue<Shipped>(nmax, x);
+        double f = PolicyRegionAValue<Policy>(nmax, x);
         out[nmax] = f;
         const double expx = 0.5 * std::exp(-x);
 
@@ -873,8 +1028,6 @@ void AllOrdersBody(int nmax, double x, double* out) noexcept {
 // overridden by the relaxed rung as it is in AllOrdersBody, for the same reason.
 template <EvalPolicyLike Policy, typename Fit = typename Policy::Fit>
 double SingleOrder(int n, double x) noexcept {
-    using Shipped = ChebyshevFit<Policy::kScheme>;
-
     static_assert(FitPolicy<Fit>,
                   "the fit a policy names must satisfy the contract the bodies are written "
                   "against (backend.hpp, FitPolicy)");
@@ -899,7 +1052,7 @@ double SingleOrder(int n, double x) noexcept {
             return f;
         }
 
-        return RegionAValue<Shipped>(n, x);
+        return PolicyRegionAValue<Policy>(n, x);
     }
 
     if (x < kX1)
@@ -966,6 +1119,22 @@ constexpr void RequireShippedRoute() noexcept
                   "instead, and this shape is not instantiated for one");
 }
 
+// A relaxed rung truncates a stored row to a per-order effective degree, and
+// only the shipped row carries that degree table: the narrow partition's pieces
+// are one fit at one degree each, so a truncation of a piece is a different fit
+// from the shipped row truncated. Every m > 1 branch asks for the shipped
+// partition here, for the same reason RequireShippedRoute gives: rejected where
+// the rung is instantiated rather than answered at a degree the table does not
+// certify.
+template <EvalPolicyLike Policy>
+constexpr void RequireShippedPartition() noexcept
+{
+    static_assert(Policy::kGranularity == kDefaultFitGranularity,
+                  "a relaxed rung reads a stored row at a per-order effective degree, and only "
+                  "the shipped row carries such a degree table: the multiplier selects a rung "
+                  "of the shipped partition only");
+}
+
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 double BoysSingleImpl(int n, double x) noexcept {
     static_assert(kAccuracyMultiplier >= 1.0,
@@ -995,6 +1164,7 @@ double BoysSingleImpl(int n, double x) noexcept {
     } else
     {
         RequireShippedRoute<Policy>();
+        RequireShippedPartition<Policy>();
         static constexpr auto kDegreesA = RegionADegrees<kAccuracyMultiplier,
                                                          BoysRole::kDoubleSingle,
                                                          SchemeTailBasis<Policy::kScheme>()>();
@@ -1059,6 +1229,14 @@ void BoysAllOrdersImpl(int nmax, double x, double* out) noexcept {
                           Policy::kRoute == FitRoute::kRationalMinimax,
                       "a policy naming a route outside the FitRoute enumeration is not one this "
                       "library serves: name FitRoute::kChebyshev or FitRoute::kRationalMinimax");
+        static_assert(Policy::kGranularity == kDefaultFitGranularity,
+                      "the across-orders packed lane steps one order's coefficients to the next "
+                      "order's at a fixed stride, which the shipped region-A table has because "
+                      "every order's pieces share their intervals and degrees; the narrow "
+                      "region-A pieces are cut per order and do not, so this axis has no narrow "
+                      "kernel and the combination is unbuilt work rather than an unavailable "
+                      "option: read the narrow partition on the arguments axis, or the shipped "
+                      "one on this axis");
         // The across-orders packed lane carries every combination the axis
         // offers: either route's region-A fits, and any rung. The three choices
         // reach the lane as its template arguments, so what the entry answers
@@ -1239,11 +1417,11 @@ void BoysFixedNImpl(
                     continue;
                 }
 
-                out[i * stride] = ChebyshevValue<Policy::kScheme>(n, xi);
+                out[i * stride] = PolicyRegionAValue<Policy>(n, xi);
                 continue;
             }
 
-            double f = RegionBSeed<Policy::kScheme>(xi);
+            double f = PolicyRegionBSeed<Policy>(xi);
 
             if (xi < kX1)
             {
@@ -1347,6 +1525,12 @@ template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 float BoysSingleF32Impl(int n, float x) noexcept {
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
+    static_assert(Policy::kGranularity == kDefaultFitGranularity,
+                  "the single-precision lane's fits are its own, one partition of region A and "
+                  "one region-B seed, with no narrow counterpart: naming the narrow granularity "
+                  "on this lane is unbuilt work rather than an unavailable option, since the "
+                  "float lane's own narrow table is a table to generate - read the narrow "
+                  "partition on the double lane, or the shipped one here");
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(x >= 0.0f);
 
@@ -1407,6 +1591,12 @@ template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
+    static_assert(Policy::kGranularity == kDefaultFitGranularity,
+                  "the single-precision lane's fits are its own, one partition of region A and "
+                  "one region-B seed, with no narrow counterpart: naming the narrow granularity "
+                  "on this lane is unbuilt work rather than an unavailable option, since the "
+                  "float lane's own narrow table is a table to generate - read the narrow "
+                  "partition on the double lane, or the shipped one here");
     assert(nmax >= 0 && nmax <= kMaxBoysOrder);
     assert(x >= 0.0f);
     assert(out != nullptr);
@@ -1862,7 +2052,7 @@ template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 inline void BoysAllNBodyRegionADown(int nmax, double x, std::size_t count, double* plane) noexcept {
     if constexpr (kAccuracyMultiplier == 1.0)
     {
-        double f = ChebyshevValue<Policy::kScheme>(nmax, x);
+        double f = PolicyRegionAValue<Policy>(nmax, x);
         plane[static_cast<std::size_t>(nmax) * count] = f;
         const double expx = 0.5 * std::exp(-x);
 
@@ -1874,6 +2064,7 @@ inline void BoysAllNBodyRegionADown(int nmax, double x, std::size_t count, doubl
     } else
     {
         RequireShippedRoute<Policy>();
+        RequireShippedPartition<Policy>();
         static constexpr auto kDegreesA = RegionADegrees<kAccuracyMultiplier,
                                                          BoysRole::kDoubleBatch,
                                                          SchemeTailBasis<Policy::kScheme>()>();
@@ -1920,7 +2111,7 @@ inline void BoysAllNBodyRegionAExtended(int nmax,
 
     for (int l = served + 1; l <= nmax; ++l)
     {
-        plane[static_cast<std::size_t>(l) * count] = ChebyshevValue<Policy::kScheme>(l, x);
+        plane[static_cast<std::size_t>(l) * count] = PolicyRegionAValue<Policy>(l, x);
     }
 }
 
@@ -1929,7 +2120,7 @@ template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 inline void BoysAllNBodyRegionB(int nmax, double x, std::size_t count, double* plane) noexcept {
     if constexpr (kAccuracyMultiplier == 1.0)
     {
-        double f = RegionBSeed<Policy::kScheme>(x);
+        double f = PolicyRegionBSeed<Policy>(x);
         plane[0] = f;
         const double expx = 0.5 * std::exp(-x);
 
@@ -1944,6 +2135,7 @@ inline void BoysAllNBodyRegionB(int nmax, double x, std::size_t count, double* p
         // error reaches every output order with amplification A_B(l), at most
         // 1 + 1.846e-17 over the supported orders (its maximum at l = 32).
         RequireShippedRoute<Policy>();
+        RequireShippedPartition<Policy>();
         static constexpr auto kDegreesB = RegionBDegrees<kAccuracyMultiplier,
                                                          BoysRole::kDoubleBatch,
                                                          SchemeTailBasis<Policy::kScheme>()>();
@@ -2070,9 +2262,17 @@ void BoysAllNRun(int nmax,
     // path, and its lane packs four orders of one argument instead. The
     // condition is stated rather than inherited from that path, because which
     // axis a packed lane fills is the property this kernel implements.
+    //
+    // The narrow partition is the scalar bodies' here as well: the grouped
+    // kernel reads the shipped piece table by index, one order at a time, so
+    // the granularity joins the condition above rather than the lane. What a
+    // narrow policy trades away on this entry is the four-wide lane, which is a
+    // cost of the option and not a value it returns - the scalar bodies below
+    // are the per-argument path's own, exact to the bit.
     if constexpr (kAccuracyMultiplier == 1.0 && Policy::kRoute == kDefaultFitRoute &&
                   Policy::kScheme == EvalScheme::kSplitClenshaw &&
-                  Policy::kPack == PackAxis::kArguments)
+                  Policy::kPack == PackAxis::kArguments &&
+                  Policy::kGranularity == kDefaultFitGranularity)
     {
         // The lane serves region A below the crossover order; at and above it
         // the scalar body is the faster of the two.

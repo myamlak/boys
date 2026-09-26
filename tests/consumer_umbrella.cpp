@@ -2490,6 +2490,145 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
     Covered("boys::kDefaultFitRoute");
 }
 
+// The interval-granularity axis, reached the way a consumer reaches it: by
+// naming the partition on the policy and calling the entries.
+//
+// The member is a second partition of the fitted domain - region A's pieces and
+// region B's seed - so the things a consumer has to be able to read from it are
+// that naming it changes the values over the fitted domain at both of the
+// regions the two tables are cut in, so that the member is a partition and not
+// the shipped tables under another name; that it changes nothing at or above the
+// fitted domain's end, the axis being a selection between two stored tables and
+// not a second arithmetic path; that naming the shipped member is the default
+// call bit for bit, so the default is a member of the axis rather than a third
+// reading beside it; and that every value it returns is inside the lane's
+// published bound, so the member does not widen the contract a caller already
+// relies on.
+//
+// The counts the partition costs - the coefficients one evaluation reads and
+// the coefficients the table stores - are the generated header's own
+// static_assert and the gate's narrow rows; what is asserted here is that the
+// policy carries the partition it was named with, so a call site that names one
+// is not silently handed the other.
+void CheckGranularityLane(Report& report, const std::vector<Cell>& cells) {
+    using NarrowPolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                          boys::EvalScheme::kSplitClenshaw,
+                                          boys::BoysBudget::kFloat,
+                                          boys::kDefaultPackAxis,
+                                          boys::FitGranularity::kNarrow>;
+    using ShippedPolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                           boys::EvalScheme::kSplitClenshaw,
+                                           boys::BoysBudget::kFloat,
+                                           boys::kDefaultPackAxis,
+                                           boys::FitGranularity::kShipped>;
+
+    static_assert(NarrowPolicy{}.kGranularity == boys::FitGranularity::kNarrow &&
+                      ShippedPolicy{}.kGranularity == boys::FitGranularity::kShipped,
+                  "a policy carries the partition it was named with");
+    static_assert(!std::is_same_v<NarrowPolicy::Fit, ShippedPolicy::Fit>,
+                  "the two partitions are different fits: neither is the other under a second "
+                  "name");
+
+    Require(report,
+            std::strcmp(boys::GranularityName(boys::FitGranularity::kShipped),
+                        boys::GranularityName(boys::FitGranularity::kNarrow)) != 0,
+            "the two partitions are reported under different names rather than one blank");
+
+    Rule& rule = NewRule("granularity: the narrow partition through the entries");
+
+    // x1, where the fitted domain ends and the asymptotic path takes over, as
+    // the umbrella header publishes it - region B runs x0 <= x < x1 and region C
+    // is x >= x1. The public surface names no constant for it, so it is
+    // transcribed the way the lane bounds at the head of this file are.
+    constexpr double kFittedDomainEnd = 28.98933773882074;
+
+    std::size_t inA = 0;
+    std::size_t changedInA = 0;
+    std::size_t inB = 0;
+    std::size_t changedInB = 0;
+    std::size_t aboveDomain = 0;
+    std::size_t changedAboveDomain = 0;
+    std::size_t shippedDiffering = 0;
+
+    for (const Cell& cell : cells)
+    {
+        const double byDefault = boys::BoysSingle<boys::kBoysFullAccuracyMultiplier>(cell.n, cell.x);
+        const double narrow =
+            boys::BoysSingle<boys::kBoysFullAccuracyMultiplier, NarrowPolicy>(cell.n, cell.x);
+        const double named =
+            boys::BoysSingle<boys::kBoysFullAccuracyMultiplier, ShippedPolicy>(cell.n, cell.x);
+
+        if (cell.x < boys::kRegionAEnd)
+        {
+            ++inA;
+
+            if (narrow != byDefault)
+            {
+                ++changedInA;
+            }
+        } else if (cell.x < kFittedDomainEnd)
+        {
+            ++inB;
+
+            if (narrow != byDefault)
+            {
+                ++changedInB;
+            }
+        } else
+        {
+            ++aboveDomain;
+
+            if (narrow != byDefault)
+            {
+                ++changedAboveDomain;
+            }
+        }
+
+        if (named != byDefault)
+        {
+            ++shippedDiffering;
+        }
+
+        Judge(rule, narrow, cell.value, SingleBound(cell.x, 1.0), cell.n, cell.x);
+    }
+
+    // Each rule says which cells it measured rather than passing on an empty
+    // sweep: a grid that carries no argument of a region would otherwise leave
+    // the reading vacuous.
+    Require(report,
+            inA > 0 && changedInA > 0,
+            "naming the narrow partition changes region A's values: the member cuts region A's "
+            "pieces as well as region B's seed, and the change is visible through the entry");
+    Require(report,
+            inB > 0 && changedInB > 0,
+            "naming the narrow partition changes region B's values: the member is a partition "
+            "and not the shipped seed under another name");
+    Require(report,
+            aboveDomain > 0 && changedAboveDomain == 0,
+            "naming the narrow partition changes nothing at or above the fitted domain's end: "
+            "above it the entry reads the asymptotic path, which no partition of the stored "
+            "fits is part of");
+    Require(report,
+            shippedDiffering == 0,
+            "naming the shipped partition is the default call bit for bit, so the default is "
+            "that member and not a third reading beside the two");
+
+    std::printf("  %-56s %7zu cells  %zu of %zu in region A changed, %zu of %zu in region B, "
+                "%zu of %zu above the fitted domain\n",
+                rule.name.c_str(),
+                rule.cells,
+                changedInA,
+                inA,
+                changedInB,
+                inB,
+                changedAboveDomain,
+                aboveDomain);
+
+    Covered("boys::FitGranularity");
+    Covered("boys::kDefaultFitGranularity");
+    Covered("boys::GranularityName");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -2506,6 +2645,7 @@ int main(int argc, char** argv) {
     CheckConstants(report);
     CheckTiers(report);
     CheckEvalSchemes(report, cells);
+    CheckGranularityLane(report, cells);
     CheckDoubleLanes(report, cells);
     CheckFitRoutes(report, cells);
     CheckFitRoutesF32(report, cells);
