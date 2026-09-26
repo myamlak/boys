@@ -89,10 +89,12 @@ constexpr double kRegionBudget = 5.5e-14;
 // the other route's name cannot hide inside it.
 constexpr double kArithmeticSlack = 1e-15;
 
-// The two figures a region-A cell of the double single lane can be documented
-// at: 1e-15 below the extended band, 3e-14 inside it. The orders axis carries
-// the tighter of the two across the whole of region A, because that is the
-// figure its own section states for the lane at m = 1.
+// The two figures a region-A cell of the double single lane is documented at:
+// 1e-15 below the extended band, 3e-14 inside it. The band is a region of its
+// own for that lane - it is answered from the band's seed and its upward
+// recursion, and the lane's published figure there is the band's - so a row
+// over region A judges each cell at the figure for that cell's region and not
+// at the tighter of the two over the whole range.
 constexpr double kSingleBarA = boys::detail::RegionABudget(boys::detail::BoysRole::kDoubleSingle);
 constexpr double kSingleBarBand = 3e-14;
 
@@ -242,23 +244,36 @@ WorstError SchemeAgainstReference(boys::detail::OrdersScheme scheme,
     return worst;
 }
 
-// The worst absolute error one public policy reaches on the committed reference
-// grid, and the cell it reaches it at. The measure the lane test above takes,
-// through a policy rather than through the lane: what a caller naming this
-// policy is handed.
-template <double kMultiplier, class Policy>
-WorstError PolicyAgainstReference(const std::vector<ReferenceCell>& cells) {
-    WorstError worst;
+// The cell one public policy sits highest above its own figure at, the error it
+// delivers there, and the figure that cell is documented at. The measure the
+// lane test above takes, through a policy rather than through the lane: what a
+// caller naming this policy is handed. The figure travels with the cell because
+// a bar that changes with the region - the single lane's is 1e-15 below the
+// extended band and 3e-14 inside it - makes the worst shortfall a different
+// cell from the worst error.
+struct BarShortfall {
+    double error = 0.0;
+    double figure = 0.0;
+    int n = 0;
+    double x = 0.0;
+};
+
+template <double kMultiplier, class Policy, class Bar>
+BarShortfall PolicyAgainstReference(const std::vector<ReferenceCell>& cells, Bar bar) {
+    BarShortfall worst;
+    double worstFraction = -1.0;
     std::vector<double> out(static_cast<std::size_t>(kNmax) + 1);
 
     for (const ReferenceCell& cell : cells)
     {
         boys::BoysAllOrders<kMultiplier, Policy>(kNmax, cell.x, out.data());
         const double error = std::abs(out[static_cast<std::size_t>(cell.n)] - cell.value);
+        const double figure = bar(cell.x);
 
-        if (error > worst.error)
+        if (error / figure > worstFraction)
         {
-            worst = WorstError{error, cell.n, cell.x};
+            worstFraction = error / figure;
+            worst = BarShortfall{error, figure, cell.n, cell.x};
         }
     }
 
@@ -1176,36 +1191,39 @@ TEST(BoysAcrossOrders, TheOpenedCallsMeetTheirFiguresOnTheReferenceGrid) {
     constexpr double kRungBound = kRungMultiplier *
                                   boys::detail::RegionABudget(boys::detail::BoysRole::kDoubleSingle);
 
-    // The narrow partition's pieces are read for their own value one order at a
-    // time, so the bar that covers them is the single lane's per-order one and
-    // not the batch lane's, and it is the figure the packing book judges the
-    // narrow rows at as well.
-    constexpr double kPerOrderBound = kSingleBarA;
+    // A batch-route or rung cell is documented at one figure wherever it sits,
+    // so those rows carry a flat bar.
+    const auto routeBar = [](double) { return kRouteBound; };
+    const auto rungBar = [](double) { return kRungBound; };
 
-    const auto measure = [&]<double kMultiplier, class Policy>(const char* label, double bound) {
-        const WorstError worst = PolicyAgainstReference<kMultiplier, Policy>(cells);
+    const auto measure = [&]<double kMultiplier, class Policy, class Bar>(const char* label,
+                                                                          Bar bar) {
+        const BarShortfall worst = PolicyAgainstReference<kMultiplier, Policy>(cells, bar);
 
         std::printf("  %-34s worst %.6e at n = %d, x = %.12g  (figure %.2e)\n",
                     label,
                     worst.error,
                     worst.n,
                     worst.x,
-                    bound);
-        EXPECT_LE(worst.error, bound) << label;
+                    worst.figure);
+        EXPECT_LE(worst.error, worst.figure) << label;
     };
 
     measure.template operator()<1.0, RationalOrdersPolicy<boys::EvalScheme::kSplitClenshaw>>(
-        "rational route, split clenshaw", kRouteBound);
+        "rational route, split clenshaw", routeBar);
     measure.template operator()<1.0, RationalOrdersPolicy<boys::EvalScheme::kHorner>>(
-        "rational route, horner", kRouteBound);
+        "rational route, horner", routeBar);
     measure.template operator()<kRungMultiplier, OrdersPolicy<boys::EvalScheme::kSplitClenshaw>>(
-        "rung m=64 shipped route, split clenshaw", kRungBound);
+        "rung m=64 shipped route, split clenshaw", rungBar);
     measure.template operator()<kRungMultiplier, OrdersPolicy<boys::EvalScheme::kHorner>>(
-        "rung m=64 shipped route, horner", kRungBound);
+        "rung m=64 shipped route, horner", rungBar);
+    // The narrow partition reads the single lane's own fits one order at a time,
+    // so its rows are the lane's own figures - and each cell is judged at the
+    // figure for its region, the band's included.
     measure.template operator()<1.0, NarrowOrdersPolicy<boys::EvalScheme::kSplitClenshaw>>(
-        "narrow partition on the axis, split clenshaw", kPerOrderBound);
+        "narrow partition on the axis, split clenshaw", SingleBar);
     measure.template operator()<1.0, NarrowOrdersPolicy<boys::EvalScheme::kHorner>>(
-        "narrow partition on the axis, horner", kPerOrderBound);
+        "narrow partition on the axis, horner", SingleBar);
 
     std::printf("  cells: %zu region-A cells of the committed reference grid\n", cells.size());
 }
