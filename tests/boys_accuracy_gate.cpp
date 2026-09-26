@@ -866,8 +866,43 @@ double LargestXSparsable(const Reference& ref, int order, double field)
 //                  so it is counted apart from the verified ones;
 //   EvidenceAbsent the artifact the claim names is not in this tree, so this
 //                  revision cannot check it. Counted apart again, and never
-//                  as a pass.
-enum class Verdict { Verified, MetOverDomain, Exceeded, Vacuous, EvidenceAbsent };
+//                  as a pass;
+//   NotCarried     this build does not carry the artifact the claim is about -
+//                  the half-precision entries it names are declared behind the
+//                  BoysFp16 seam, and this build's seam is closed - so the row
+//                  has no subject here and there is nothing to judge. This is
+//                  a fact about the build and not about the tree: the claim is
+//                  not withdrawn, the entry is not denied, and no measurement
+//                  is missing. The two are not the same state and must not
+//                  share one, because a consumer who closes that seam on
+//                  purpose is entitled to a suite that does not redden at a
+//                  row their build never had - while a claim whose evidence the
+//                  tree does not carry still fails, which is what the gate is
+//                  for. Counted apart, named with its reason, and neither a
+//                  pass nor a failure.
+enum class Verdict
+{
+    Verified,
+    MetOverDomain,
+    Exceeded,
+    Vacuous,
+    EvidenceAbsent,
+    NotCarried
+};
+
+// What the rows about the native packed half lane report when it was not
+// measured here. The two reasons are different facts and get different
+// verdicts: a revision with no boys/half2.hpp at all has not carried the lane's
+// evidence, which is the state the gate exists to catch, while a build that has
+// the type and a closed fp16 seam does not carry the lane's subject - there is
+// no entry to call, so nothing to judge. Either way the row stays in the book
+// and prints which of the two applies.
+constexpr Verdict kNativeHalfNotMeasured =
+#if defined(BOYS_GATE_NATIVE_HALF) || !defined(BOYS_GATE_NATIVE_HALF_HEADER)
+    Verdict::EvidenceAbsent;
+#else
+    Verdict::NotCarried;
+#endif
 
 // A domain-scoped claim - one the document itself restricts to a stated set of
 // regions, orders or arguments - is met when it holds over that domain, and it
@@ -878,6 +913,19 @@ enum class Verdict { Verified, MetOverDomain, Exceeded, Vacuous, EvidenceAbsent 
 bool IsMet(Verdict v)
 {
     return v == Verdict::Verified || v == Verdict::MetOverDomain;
+}
+
+// Whether a row leaves this run red. A row is a failure when it is not met and
+// the build carries the thing it is about: a claim this build carries and
+// cannot verify at this revision is the defect the gate exists to find, and it
+// fails here whatever the reason it could not be verified. A claim whose
+// subject the build does not carry is not one of those - there is no entry to
+// call, no cell to judge and no claim to make about it - so it is reported,
+// counted and named apart, and fails nothing. Not-carried rows are named in
+// full beside the row that carries the reason, never dropped.
+bool FailsTheGate(Verdict v)
+{
+    return !IsMet(v) && v != Verdict::NotCarried;
 }
 
 // The order the verdicts worsen in, for an accumulation that takes the worst
@@ -897,6 +945,12 @@ int VerdictRank(Verdict v)
         return 3;
     case Verdict::Exceeded:
         return 4;
+    case Verdict::NotCarried:
+        // Not a verdict an accumulation can reach - FromAccum has no path to it
+        // - and deliberately below every measured state: if one ever did reach
+        // an accumulation, a row the build does not carry must not outrank a
+        // row the build measured and failed.
+        return -1;
     }
 
     return 5;
@@ -916,6 +970,8 @@ const char* VerdictName(Verdict v)
         return "vacuous only";
     case Verdict::EvidenceAbsent:
         return "evidence absent from the tree";
+    case Verdict::NotCarried:
+        return "not carried by this build";
     }
 
     return "?";
@@ -946,6 +1002,12 @@ const char* ClassFalsifier(Verdict v)
                "cannot be reached";
     case Verdict::EvidenceAbsent:
         return "the artifact this row names would have to enter the tree and be measured";
+    case Verdict::NotCarried:
+        return "nothing here can falsify this row: the build under test does not carry the "
+               "thing the claim is about, so there is no entry to call and no cell to judge. "
+               "It becomes a check, and can then fail, in a build that carries the entry - one "
+               "whose fp16 seam is open - and the reason this build does not is printed with "
+               "the row";
     }
 
     return "?";
@@ -1324,9 +1386,21 @@ int main(int argc, char** argv) {
         }
     }
 
+    // --strict is the default verdict, stated rather than toggled: the flag is
+    // accepted so a caller can name what they get either way. What it scopes
+    // over is the claims this build carries. A row the build does not carry has
+    // no entry to call and no claim to make about it, so it is named with its
+    // reason on a line of its own and fails nothing here; a row the build does
+    // carry that this revision cannot verify still fails, which is the
+    // semantics the flag exists for.
     std::printf("verdict      : %s\n",
-                strict ? "strict (--strict: the default verdict, stated)"
-                       : "strict (any claim not verified at this revision fails the gate)");
+                strict ? "strict (--strict: the default verdict, stated) - a claim this build "
+                         "carries and cannot verify at this revision fails the gate, while a "
+                         "claim whose subject this build does not carry is named with its "
+                         "reason and fails nothing here"
+                       : "strict (a claim this build carries and does not verify at this "
+                         "revision fails the gate; a claim whose subject this build does not "
+                         "carry is named with its reason and fails nothing here)");
 
     const std::size_t count = ref.count;
     const int nmax = boys::kMaxBoysOrder;
@@ -6894,11 +6968,12 @@ int main(int argc, char** argv) {
         "counted-apart cells in LC.half.vacuous_floor are exactly the cells that reading would "
         "turn into failures");
 #else
-        Verdict::EvidenceAbsent,
+        Verdict::NotCarried,
         "no lane was called and no cell was measured: the two lanes are declared behind the "
         "BoysFp16 seam, which this build has closed, so the contract this row is about has no "
         "subject here. The claim is not withdrawn - it is carried by the builds that close "
         "nothing, and this one neither confirms nor denies it",
+        {},
         "the row's subject is the fp16 and bf16 lanes; a build that carries neither has no cell "
         "of it to judge, which is reported rather than counted as a pass");
 #endif // BOYS_GATE_FP16
@@ -7213,11 +7288,12 @@ int main(int argc, char** argv) {
         "domain's edge moves down to arguments where the return is the format's floor: the "
         "counts are in LC.half.vacuous_floor");
 #else
-        Verdict::EvidenceAbsent,
+        Verdict::NotCarried,
         "not measured: the lane this row is about is declared behind the BoysFp16 seam, which "
         "this build has closed, so there is no entry to call and no cell to judge",
+        {},
         "the row's subject is the fp16 and bf16 lanes; a build that carries neither reports the "
-        "claim as one it has no evidence for rather than passing it");
+        "claim as one it does not carry rather than passing it");
 #endif // BOYS_GATE_FP16
 
 #ifdef BOYS_GATE_FP16
@@ -7293,12 +7369,13 @@ int main(int argc, char** argv) {
         "of a per cent - a fragility, not a margin of 1%",
         "docs/lane-contract.md, half (read before this revision: \"a worst cell of 0.990 of "
         "budget at order 0, x = 721 - a margin of 1%\")",
-        Verdict::EvidenceAbsent,
+        Verdict::NotCarried,
         "not measured: neither the published cell nor either format's sweep exists in this "
         "build, because the half lane is declared behind the BoysFp16 seam it has closed. The "
         "row's claim is about a lane, and this build carries no lane to measure it on",
+        {},
         "the row's subject is the fp16 and bf16 lanes; a build that carries neither reports the "
-        "claim as one it has no evidence for rather than passing it");
+        "claim as one it does not carry rather than passing it");
 #endif // BOYS_GATE_FP16
 
     add("LC.half.representation_share",
@@ -7308,7 +7385,7 @@ int main(int argc, char** argv) {
         std::abs(cellShare - 0.99) <= 0.02 ? Verdict::Verified : Verdict::Exceeded,
         Fmt("measured %.4f at (n=0, x=721)", cellShare));
 #else
-        Verdict::EvidenceAbsent,
+        Verdict::NotCarried,
         "not measured: the share is the representation term of a value the half lane returned "
         "at x = 721, and this build carries no half lane to return it");
 #endif // BOYS_GATE_FP16
@@ -7346,13 +7423,14 @@ int main(int argc, char** argv) {
         "failure, and the counters above are the number of them; it also fails if a point "
         "past the ceiling returns a usable value the count does not carry");
 #else
-        Verdict::EvidenceAbsent,
+        Verdict::NotCarried,
         "not measured: the counted cells are returns of the fp16 and bf16 lanes, which this "
         "build does not carry - its BoysFp16 seam is closed - so there is no return to count "
         "on either side of the ceiling. The domain restriction the row states is a property of "
         "those lanes and is neither confirmed nor denied here",
+        {},
         "the row's subject is the fp16 and bf16 lanes' returns past their ceiling; a build that "
-        "carries no such lane reports the claim as one it has no evidence for");
+        "carries no such lane reports the claim as one it does not carry");
 #endif // BOYS_GATE_FP16
 
     // The half lane binds where |F_n(x)| exceeds its ceiling, and F_n falls
@@ -7458,13 +7536,14 @@ int main(int argc, char** argv) {
         "claimed there. Orders 3, 4 and 5 are inside the range the lane does claim over: "
         "they still carry cells whose value exceeds the ceiling",
         "docs/lane-contract.md, half",
-        Verdict::EvidenceAbsent,
+        Verdict::NotCarried,
         "not measured: the onset order is the first order whose every region-C return is "
         "subnormal or zero, and this build has no half lane to return one - its BoysFp16 seam "
         "is closed. The reference side of the same statement is measured by "
         "LC.half.no_scaling_past_38",
+        {},
         "the row's subject is the fp16 lane's own returns; a build that carries no such lane "
-        "reports the claim as one it has no evidence for");
+        "reports the claim as one it does not carry");
 #endif // BOYS_GATE_FP16
 
     // Withdrawn: "a per-order power-of-two scale carries order 3 to x ~ 361,
@@ -7551,12 +7630,21 @@ int main(int argc, char** argv) {
             driftScalarZeroX,
             driftScalarZeroN));
 #else
-        kSimdTierTarget ? Verdict::EvidenceAbsent : Verdict::MetOverDomain,
-        "this build's BoysFp16 seam is closed, so it carries neither the 8-wide half-I/O region "
-        "kernels nor the certified scalar half entry they are compared against: the claim has "
-        "no subject in this build, and no cell of it was measured. The reference grid's fp16 "
-        "and bf16 columns are read from the build but no lane is called to produce the values "
-        "they are compared against");
+        Verdict::NotCarried,
+        // The seam is the reason here and not the target: with it closed this
+        // build has neither the 8-wide kernels nor the certified scalar half
+        // entry they are compared against, on any target, so the row is not
+        // carried whatever the tier is. The tier is printed anyway, because
+        // with the seam open it is the thing that decides whether the row is
+        // judged or scoped.
+        Fmt("this build's BoysFp16 seam is closed, so it carries neither the 8-wide half-I/O "
+            "region kernels nor the certified scalar half entry they are compared against: the "
+            "claim has no subject in this build, and no cell of it was measured. The reference "
+            "grid's fp16 and bf16 columns are read from the build but no lane is called to "
+            "produce the values they are compared against. The AVX2 half tier is %s on this "
+            "target, which is what would scope the row rather than judge it if the seam were "
+            "open",
+            kSimdTierTarget ? "compiled in" : "not compiled in"));
 #endif // BOYS_GATE_FP16
 
     add("code.half_simd_cells",
@@ -7567,7 +7655,7 @@ int main(int argc, char** argv) {
         verdictOf({kF16PackedA, kF16PackedB, kF16PackedC, kBf16PackedA, kBf16PackedB, kBf16PackedC}),
         worstOf({kF16PackedA, kF16PackedB, kF16PackedC, kBf16PackedA, kBf16PackedB, kBf16PackedC}));
 #else
-        Verdict::EvidenceAbsent,
+        Verdict::NotCarried,
         "not measured: the six cells are the 8-wide half-I/O kernels' own, and this build "
         "carries no half entry and no half kernel - its BoysFp16 seam is closed. The claim has "
         "no subject here rather than a cell that passed");
@@ -7591,10 +7679,18 @@ int main(int argc, char** argv) {
             "number or the format's zero, the bound is met by the format's floor, and no "
             "accuracy is claimed",
             "include/boys/boys.hpp, the half lanes' budget paragraph",
+#ifdef BOYS_GATE_FP16
             halfDomain.points == 0
                 ? Verdict::EvidenceAbsent
                 : ((halfDomain.outside == 0 && halfDomain.zero == 0) ? Verdict::Verified
                                                                      : Verdict::Exceeded),
+#else
+            // The seam is closed, so the ten slots were never swept. The zero
+            // their accumulations carry is this build's shape and not a domain
+            // that came out empty, and the row says which of the two it is
+            // rather than leaving a reader to guess from a zero.
+            Verdict::NotCarried,
+#endif
 #ifdef BOYS_GATE_FP16
             Fmt("the ten half lane x region cells over the whole sweep: %zu points in the "
                 "binding domain, %zu of them returned the format's zero (largest |F_n(x)| so "
@@ -7608,11 +7704,13 @@ int main(int argc, char** argv) {
                 halfDomain.outside,
                 halfDomain.subnormal));
 #else
-            std::string("not measured: the ten cells are cells of the fp16 and bf16 lanes, and "
-                        "this build carries neither - its BoysFp16 seam is closed - so the sweep "
-                        "produced no point on either side of the ceiling. The domain "
-                        "restriction the claim states is a property of those lanes and is "
-                        "neither confirmed nor denied here"));
+            Fmt("not measured: the ten cells are cells of the fp16 and bf16 lanes, and this "
+                "build carries neither - its BoysFp16 seam is closed - so the sweep produced "
+                "no point on either side of the ceiling: the ten slots' accumulations hold %zu "
+                "swept points between them, which is what a closed seam leaves and not a "
+                "domain that came out empty. The domain restriction the claim states is a "
+                "property of those lanes and is neither confirmed nor denied here",
+                halfDomain.points));
 #endif // BOYS_GATE_FP16
     }
 
@@ -7788,7 +7886,7 @@ int main(int argc, char** argv) {
             "the arguments whose returned value is a normal half",
             "docs/lane-contract.md, packed half - the native lane",
             packedAcc.points == 0
-                ? Verdict::EvidenceAbsent
+                ? kNativeHalfNotMeasured
                 : ((packedAcc.failures == 0 && batchAcc.failures == 0) ? Verdict::MetOverDomain
                                                                       : Verdict::Exceeded),
             packedAcc.points == 0
@@ -7820,7 +7918,7 @@ int main(int argc, char** argv) {
             "30 at orders 3 / 4 / 8",
             "docs/lane-contract.md, packed half - the native lane",
             nativeCells == 0
-                ? Verdict::EvidenceAbsent
+                ? kNativeHalfNotMeasured
                 : (nativeExcusedFailures == 0 ? Verdict::MetOverDomain : Verdict::Exceeded),
             nativeCells == 0
                 ? std::string(kNativeHalfAbsent)
@@ -7861,7 +7959,7 @@ int main(int argc, char** argv) {
             "whole",
             "include/boys/half2.hpp; the lane's own suite measures the same claim",
             nativeCells == 0
-                ? Verdict::EvidenceAbsent
+                ? kNativeHalfNotMeasured
                 : ((nativeBatchMismatch == 0 && nativePastOneUlp > 0) ? Verdict::MetOverDomain
                                                                      : Verdict::Exceeded),
             nativeCells == 0
@@ -7904,7 +8002,7 @@ int main(int argc, char** argv) {
             "budget leaves it (the prototype's finding, measured on the lane that is here)",
             "docs/lane-contract.md, packed half - the native lane",
             nativeCells == 0
-                ? Verdict::EvidenceAbsent
+                ? kNativeHalfNotMeasured
                 : (nativeWorstUlp > 0.5 ? Verdict::Verified : Verdict::Exceeded),
             nativeCells == 0
                 ? std::string(kNativeHalfAbsent)
@@ -8213,6 +8311,7 @@ int main(int argc, char** argv) {
     int exceeded = 0;
     int vacuousOnly = 0;
     int absent = 0;
+    int notCarried = 0;
     int modelDerived = 0;
 
     for (const DocClaim& c : book)
@@ -8239,6 +8338,9 @@ int main(int argc, char** argv) {
             break;
         case Verdict::EvidenceAbsent:
             ++absent;
+            break;
+        case Verdict::NotCarried:
+            ++notCarried;
             break;
         }
 
@@ -8299,14 +8401,45 @@ int main(int argc, char** argv) {
 
     std::printf("\n  RESULT: %d of %zu claims met at this revision (%d verified outright, "
                 "%d met over a stated domain, %d exceeded, %d vacuous only, %d evidence "
-                "absent; neither of the last two counted as met)\n",
+                "absent, %d not carried by this build; none of the last four counted as met)\n",
                 verified + metOverDomain,
                 book.size(),
                 verified,
                 metOverDomain,
                 exceeded,
                 vacuousOnly,
-                absent);
+                absent,
+                notCarried);
+
+    // The rows this build does not carry, named in full with the reason they
+    // are not carried. A reader of this build has to be able to see which rows
+    // of the published book it does not have, and why - the alternative, a row
+    // that vanishes with the seam, is how a claim stops being checked without
+    // anyone deciding to stop checking it. Each of these rows prints the same
+    // reason in place of a measurement, and none of them is a pass.
+    if (notCarried > 0)
+    {
+        std::printf("          %d of those rows are not carried by this build: the entries "
+                    "they are about are declared behind the fp16 seam this build has closed, "
+                    "so the row has no entry to call and no cell to judge. That is a fact "
+                    "about this build and not about the tree - no measurement is missing and "
+                    "the claim is neither confirmed nor denied here. A build that carries the "
+                    "entry is where the claim is checked, and the rows there are the same "
+                    "rows, at the same count\n",
+                    notCarried);
+        std::printf("  NOT CARRIED by this build (named so a reader can see which claims this "
+                    "build does not have; neither met nor failed here):");
+
+        for (const DocClaim& c : book)
+        {
+            if (c.verdict == Verdict::NotCarried)
+            {
+                std::printf(" %s", c.id.c_str());
+            }
+        }
+
+        std::printf("\n");
+    }
 
     // The certified total, stated apart from the book's. A row whose arithmetic
     // ran on this machine is certified by its measurement; a row resting on a
@@ -8387,6 +8520,11 @@ int main(int argc, char** argv) {
                 return 3;
             case Verdict::Exceeded:
                 return 4;
+            case Verdict::NotCarried:
+                // Below every measured state, for the same reason as VerdictRank's
+                // entry: not reachable here, and if it ever were it must not
+                // outrank a row this build measured and failed.
+                return -1;
             }
 
             return 5;
@@ -8806,6 +8944,7 @@ int main(int argc, char** argv) {
         int rExceeded = 0;
         int rVacuousOnly = 0;
         int rAbsent = 0;
+        int rNotCarried = 0;
 
         // The carriage table first: the rows below are the routes' contracts,
         // and whether an entry reads the route it is handed is the question
@@ -8882,6 +9021,9 @@ int main(int argc, char** argv) {
             case Verdict::EvidenceAbsent:
                 ++rAbsent;
                 break;
+            case Verdict::NotCarried:
+                ++rNotCarried;
+                break;
             }
 
             if (c.domain.empty())
@@ -8944,23 +9086,24 @@ int main(int argc, char** argv) {
 
         std::printf("\n  RESULT (routes, counted apart from the lanes above): %d of %zu route "
                     "claims met at this revision (%d verified outright, %d met over a stated "
-                    "domain, %d exceeded, %d vacuous only, %d evidence absent; neither of the "
-                    "last two counted as met)\n",
+                    "domain, %d exceeded, %d vacuous only, %d evidence absent, %d not carried "
+                    "by this build; none of the last four counted as met)\n",
                     rVerified + rMetOverDomain,
                     routeBook.size(),
                     rVerified,
                     rMetOverDomain,
                     rExceeded,
                     rVacuousOnly,
-                    rAbsent);
+                    rAbsent,
+                    rNotCarried);
 
-        if (rVerified + rMetOverDomain < static_cast<int>(routeBook.size()))
+        if (rVerified + rMetOverDomain + rNotCarried < static_cast<int>(routeBook.size()))
         {
             std::printf("  NOT MET at this revision (routes):");
 
             for (const DocClaim& c : routeBook)
             {
-                if (!IsMet(c.verdict))
+                if (FailsTheGate(c.verdict))
                 {
                     std::printf(" %s", c.id.c_str());
                 }
@@ -8969,21 +9112,40 @@ int main(int argc, char** argv) {
             std::printf("\n  FAIL (the route book above; the scheme book is still measured and "
                         "printed)\n");
             failed = true;
+        } else if (rNotCarried > 0)
+        {
+            std::printf("  NOT CARRIED by this build (routes, named neither met nor failed "
+                        "here):");
+
+            for (const DocClaim& c : routeBook)
+            {
+                if (c.verdict == Verdict::NotCarried)
+                {
+                    std::printf(" %s", c.id.c_str());
+                }
+            }
+
+            std::printf("\n");
         }
     }
 
-    // The verdict is strict by construction: a claim that is not met at this
-    // revision - whether it was measured exceeded, measured vacuous only, or
-    // rests on evidence this revision cannot re-run - leaves the gate red and
-    // names itself below. --strict is accepted for callers that pass it and is
-    // the same verdict.
-    if (verified + metOverDomain < static_cast<int>(book.size()))
+    // The verdict is strict over the claims this build carries: a claim that is
+    // carried and not met at this revision - whether it was measured exceeded,
+    // measured vacuous only, or rests on evidence this revision cannot re-run -
+    // leaves the gate red and names itself below. A claim whose subject this
+    // build does not carry is named above with its reason and is not counted
+    // here: there is no measurement to fail with, and reddening a suite over a
+    // row a consumer's build never had is not a verdict about anything. The
+    // rows the build does not carry are still printed and still counted in the
+    // RESULT line, so nothing leaves this report silently. --strict is accepted
+    // for callers that pass it and is the same verdict.
+    if (verified + metOverDomain + notCarried < static_cast<int>(book.size()))
     {
         std::printf("  NOT MET at this revision:");
 
         for (const DocClaim& c : book)
         {
-            if (!IsMet(c.verdict))
+            if (FailsTheGate(c.verdict))
             {
                 std::printf(" %s", c.id.c_str());
             }
@@ -8992,6 +9154,12 @@ int main(int argc, char** argv) {
         std::printf("\n  FAIL (the lane book above; the books after it are still measured and "
                     "printed)\n");
         failed = true;
+    } else if (notCarried > 0)
+    {
+        std::printf("  OK, for the claims this build carries (the lane book above): every row "
+                    "the build carries is met at this revision, and the %d it does not carry "
+                    "are named above rather than counted for it\n",
+                    notCarried);
     }
 
     // ---- the evaluation-scheme rows, counted apart --------------------------
@@ -11605,6 +11773,19 @@ int main(int argc, char** argv) {
         std::printf("\n  FAIL (exit status 1; the granularity-axis rows are judged with the "
                     "books above)\n");
         return 1;
+    }
+
+    // The last line, and the only one a caller that reads nothing else sees. It
+    // says what was checked and what was not: a build that does not carry some
+    // of the book has claims it never judged, and a PASS that read as though it
+    // had would be the one sentence here that is false.
+    if (notCarried > 0)
+    {
+        std::printf("  PASS: every documented claim this build carries is met at this revision; "
+                    "the %d it does not carry are named above with their reason, and are "
+                    "neither met nor failed here\n",
+                    notCarried);
+        return 0;
     }
 
     std::printf("  PASS: every documented claim met at this revision\n");
