@@ -1849,14 +1849,14 @@ void AppendOptionSpace(std::string& text, const std::vector<std::string>& probeR
 
     if (probeRows.empty())
     {
-        text += Text("  (BoysDeviceOptions, include/boys/boys_cuda.hpp): %zu option(s) = %zu "
+        text += Text("  (BoysDeviceOptions, include/boys/boys_cuda_options.hpp): %zu option(s) = %zu "
                      "launched + %zu\n  device-callable, %zu this build serves and %zu it "
                      "refuses. No row was measured on\n  this run, so the second column says so "
                      "rather than naming one.\n",
                      space.size(), launched, inKernel, served, refused);
     } else
     {
-        text += Text("  (BoysDeviceOptions, include/boys/boys_cuda.hpp): %zu option(s) = %zu "
+        text += Text("  (BoysDeviceOptions, include/boys/boys_cuda_options.hpp): %zu option(s) = %zu "
                      "launched + %zu\n  device-callable, %zu this build serves and %zu it "
                      "refuses; %zu row(s) measured here\n",
                      space.size(), launched, inKernel, served, refused, probeRows.size());
