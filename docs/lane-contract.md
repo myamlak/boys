@@ -205,6 +205,46 @@ about 6e-8 relative. The bound is 1.5e-7 absolute, so for values of order one th
 factor of about two and a half of each other. Much smaller values are bounded loosely, because an
 absolute bound says less about a small number than a relative one would.
 
+**The single entry carries two fit routes, and both hold the bound above.** `BoysSingleF32WithRoute`
+is `BoysSingleF32` with the fits that supply the lane's region-A seed and region-B seed selected
+instead of fixed, and `BoysFitRoutesF32` reports them. The measured column is the gate's own sweep of
+the committed reference, every order and every sample of the row's interval.
+
+**The same two routes are open at compile time, on the policy, and there the scheme comes with
+them.** The lane's `BoysSingleF32`, `BoysAllOrdersF32` and `BoysAllNF32` take the `EvalPolicy` the
+double lane's entries take, so the route is a template argument as well as a run-time selector, and
+the scheme — the choice between the Chebyshev table and the monomial form of the same fits — is
+offered beside it. At the reference multiplier every pair this lane stores is carried, and the gate
+measures the two entries with a policy as six rows, one per policy for each region the policy's fits
+serve: 176814 comparison cells, none of them outside the row's bar, and no row measured over no
+argument. The float lane's Horner reading is 7.68e-08 at its worst cell (order 0, x = 0.553691) over
+region A and 2.22e-08 (order 32, x = 11.8998) over region B, against the lane's 1.5e-07 bar; the
+rational route's and the shipped route's split Clenshaw figures are the table's above, unchanged.
+Past the reference multiplier the lane serves the shipped pair alone and a policy naming another one
+does not build: the degrees a rung truncates by are derived from a family's stored table, and the
+float lane's derivation reads its Chebyshev table, so a monomial or a rational tail has no derived
+degrees to be cut by. That restriction is the narrower claim the policy carries, and it is a
+derivation owed rather than a combination that cannot exist.
+
+| Route | Region | Interval | Stored | Measured | Bar |
+|---|---|---|---|---|---|
+| chebyshev (default) | A | 0 | 1067 | 1.06e-07 | 1.5e-07 |
+| rational minimax | A | 0 | 525 | 1.11e-07 | 1.5e-07 |
+| chebyshev (default) | B | 11.899848152108484 | 11 | 2.77e-08 | 1.5e-07 |
+| rational minimax | B | 11.899848152108484 | 6 | 7.50e-08 | 1.5e-07 |
+
+Region A's rows count the lane's whole per-order table over [0, 11.899848152108484), 97 pieces
+against the rational route's 52, and both routes cover that interval from zero: this lane reads each
+order from its own fit across the region, so it has no band boundary at which a selector would take
+over, and the row does not name one.
+
+**The stored counts are upper bounds, not minima.** Each count is the first the degree scan found
+holding the target, not the family's minimum, so a cheaper cover may exist. **The two routes are a
+trade and not a ranking**: region A stores 525 coefficients against 1067 and delivers 1.11e-07
+against 1.06e-07, and region B stores 6 against 11 and delivers 7.50e-08 against 2.77e-08. Half the
+coefficients at more error is worth having on a machine that pays for coefficient fetches and not on
+one that does not, and no measurement here ranks the two.
+
 ## the region-A transform lane
 
 A separate entry computes the fits of region A as a matrix product instead of by the fitted
@@ -520,8 +560,8 @@ route is a name a report prints only where it is really two roundings.
 
 ### The evaluation scheme: split Clenshaw or Horner
 
-A stored fit is a polynomial, and the recurrence above is one way to sum it. The double single lane
-offers a second: the same fit, at the same degree over the same interval, evaluated by Horner's rule
+A stored fit is a polynomial, and the recurrence above is one way to sum it. The single lanes offer a
+second: the same fit, at the same degree over the same interval, evaluated by Horner's rule
 on the monomial form of the same coefficients. **Both are offered and neither replaces the other.**
 A call site that names no scheme is compiled exactly as it was before the second one existed, so the
 certified route is the default and its figures on this page are unchanged.
@@ -561,12 +601,17 @@ The monomial conversion is benign for the reason the fits are: the argument neve
 the conversion's conditioning cannot grow.
 
 **What the scheme reaches.** The double single lane at every multiplier: the per-order region-A fits,
-the region-B seed and the extended-band seed. **What it does not reach, and why.** Region C is
-evaluated by its closed form and stores no fit to sum, so it is the same arithmetic under either
-scheme. The half lanes, the packed region-A lane and the CUDA device lane are the split Clenshaw's
-and are not offered under the other scheme: the device kernels carry the Chebyshev tables only, and
-the packed region-A lane's kernel is bypassed under Horner, which costs the accelerated path and not
-the value.
+the region-B seed and the extended-band seed. It reaches the float lane's single and batch entries as
+well, at the reference multiplier: those entries read the same pair of tables through their own
+policy, and the float lane's Chebyshev fits are stored in both forms as the double lane's are.
+**What it does not reach, and why.** Region C is evaluated by its closed form and stores no fit to
+sum, so it is the same arithmetic under either scheme. The half lanes, the packed region-A lane and
+the CUDA device lane are the split Clenshaw's and are not offered under the other scheme: the device
+kernels carry the Chebyshev tables only, and the packed region-A lane's kernel is bypassed under
+Horner, which costs the accelerated path and not the value. On the float lane the scheme is a
+reference-multiplier reading: past it that lane serves the shipped pair alone, because a relaxed rung
+cuts a fit by a table of effective degrees and the degrees its fits are cut by are derived from the
+lane's Chebyshev table.
 
 `BoysEvalSchemes()` and `BoysEvalSchemeFits()` answer what exists and what each scheme promises on
 each stored fit in the route in force, so a caller can ask without reading the kernel, and the

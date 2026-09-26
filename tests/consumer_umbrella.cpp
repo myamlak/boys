@@ -1388,6 +1388,214 @@ void CheckFitRoutes(Report& report, const std::vector<Cell>& cells) {
     Covered("boys::BoysAllOrdersWithRoute");
 }
 
+/// The float lane's fit routes, reached the same way: every figure this file
+/// judges a row by comes from BoysFitRoutesF32's own row rather than from a
+/// number carried here, so the report and the entry cannot agree with each
+/// other and both be wrong.
+void CheckFitRoutesF32(Report& report, const std::vector<Cell>& cells) {
+    const std::span<const boys::FitRouteInfo> routes = boys::BoysFitRoutesF32();
+    const std::vector<double> args = DistinctArgs(cells);
+
+    Require(report, !routes.empty(), "BoysFitRoutesF32 reports the routes this build carries");
+
+    bool chebyshev = false;
+    bool rational = false;
+
+    for (const boys::FitRouteInfo& row : routes)
+    {
+        Require(report, row.name != nullptr && row.name[0] != '\0', "a float route row names its route");
+        Require(report, row.lo < row.hi, "a float route row states a non-empty interval");
+        Require(report,
+                row.servesFrom >= row.lo && row.servesFrom < row.hi,
+                "a float route row's served domain is inside the interval its fit covers");
+        Require(report, row.stored > 0, "a float route row states the coefficients its fit stores");
+        Require(report,
+                row.delivered <= row.bound,
+                "a float route row's bar covers the error it reports delivering");
+
+        chebyshev = chebyshev || row.route == boys::FitRoute::kChebyshev;
+        rational = rational || row.route == boys::FitRoute::kRationalMinimax;
+
+        const std::string name =
+            std::string("BoysSingleF32WithRoute(") + row.name +
+            (row.region == boys::AccuracyRegion::kA ? ", region A)" : ", region B)");
+        NewRule(name);
+        std::size_t changed = 0;
+        std::size_t unknownDiff = 0;
+
+        for (const double x : args)
+        {
+            if (x < row.servesFrom || x >= row.hi)
+            {
+                continue;
+            }
+
+            const float xf = static_cast<float>(x);
+
+            for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+            {
+                const float plain = boys::BoysSingleF32(n, xf);
+                const float selected = boys::BoysSingleF32WithRoute(row.route, n, xf);
+                const float unknown =
+                    boys::BoysSingleF32WithRoute(static_cast<boys::FitRoute>(99), n, xf);
+
+                Require(report,
+                        std::isfinite(selected),
+                        "a float route row's entry returns a finite value over the domain it "
+                        "serves");
+
+                if (selected != plain)
+                {
+                    ++changed;
+                }
+
+                if (unknown != plain)
+                {
+                    ++unknownDiff;
+                }
+            }
+        }
+
+        // The default route is the default entry by construction, so only a
+        // row that names a different fit is required to change a value.
+        Require(report,
+                row.route == boys::FitRoute::kChebyshev || changed > 0,
+                "naming a float route other than the default changes values inside the domain "
+                "its own row serves");
+        Require(report,
+                unknownDiff == 0,
+                "an unnamed route value is the default entry, bit for bit, on the float lane");
+    }
+
+    Require(report, chebyshev, "BoysFitRoutesF32 carries the default route");
+    Require(report, rational, "BoysFitRoutesF32 carries the rational route");
+
+    Covered("boys::BoysSingleF32WithRoute");
+    Covered("boys::BoysFitRoutesF32");
+}
+
+/// The float lane's policy path, which a consumer reaches as a template argument
+/// on the entries themselves rather than through the run-time selector. Three
+/// readings make that path an option rather than a name: a policy naming the
+/// shipped pair is the entry naming no policy, bit for bit; naming the other
+/// scheme changes values the shipped scheme answers with; and each route's policy
+/// answers exactly what that route's run-time selector answers, which is one body
+/// reached two ways rather than two wirings that happen to agree.
+void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
+    using Shipped = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw>;
+    using Horner = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>;
+    using Rational = boys::EvalPolicy<boys::FitRoute::kRationalMinimax>;
+
+    static_assert(Shipped{}.kRoute == boys::kDefaultFitRoute &&
+                      Shipped{}.kScheme == boys::kDefaultEvalScheme,
+                  "the pair this check calls the shipped one is the library's own default pair");
+
+    std::size_t sameAsDefault = 0;
+    std::size_t sameAsSelector[2] = {0, 0};
+    std::size_t changedByScheme = 0;
+    std::size_t changedByRoute = 0;
+    bool allFinite = true;
+
+    for (const Cell& cell : cells)
+    {
+        const float xf = static_cast<float>(cell.x);
+        const float byDefault = boys::BoysSingleF32(cell.n, xf);
+        const float shipped =
+            boys::BoysSingleF32<boys::kBoysFullAccuracyMultiplier, Shipped>(cell.n, xf);
+        const float horner =
+            boys::BoysSingleF32<boys::kBoysFullAccuracyMultiplier, Horner>(cell.n, xf);
+        const float rational =
+            boys::BoysSingleF32<boys::kBoysFullAccuracyMultiplier, Rational>(cell.n, xf);
+        const float bySelector[2] = {
+            boys::BoysSingleF32WithRoute(boys::FitRoute::kChebyshev, cell.n, xf),
+            boys::BoysSingleF32WithRoute(boys::FitRoute::kRationalMinimax, cell.n, xf)};
+
+        sameAsDefault += (shipped == byDefault) ? 1 : 0;
+        sameAsSelector[0] += (shipped == bySelector[0]) ? 1 : 0;
+        sameAsSelector[1] += (rational == bySelector[1]) ? 1 : 0;
+        changedByScheme += (horner != shipped) ? 1 : 0;
+        changedByRoute += (rational != shipped) ? 1 : 0;
+        allFinite = allFinite && std::isfinite(horner) && std::isfinite(rational);
+    }
+
+    Require(report,
+            allFinite,
+            "a float policy this build stores answers a finite value at every cell of the "
+            "reference grid");
+    Require(report,
+            cells.size() > 0 && sameAsDefault == cells.size(),
+            "naming the shipped route and scheme is the entry naming no policy, bit for bit, at "
+            "every cell of the reference grid");
+    Require(report,
+            sameAsSelector[0] == cells.size() && sameAsSelector[1] == cells.size(),
+            "each route's policy answers what that route's run-time selector answers, bit for "
+            "bit, so the two ways in read one body");
+    Require(report,
+            changedByScheme > 0,
+            "naming the Horner scheme on the float lane changes values the shipped scheme "
+            "answers with");
+    Require(report,
+            changedByRoute > 0,
+            "naming the rational route on the float lane changes values the shipped route "
+            "answers with somewhere on the reference grid");
+
+    // The same pair on the all-orders shape. Its seeds are not the single
+    // entry's - region A's is the double lane's fit at the policy's route and
+    // scheme, region B's is this lane's - so the two entries answer the same fit
+    // by different roads and the reading here is reachability, not identity: the
+    // pair reaches this entry too, and it is the shipped pair by default.
+    std::size_t batchSameAsDefault = 0;
+    std::size_t batchChangedByScheme = 0;
+    std::size_t batchChangedByRoute = 0;
+    std::size_t batchArgs = 0;
+    bool batchFinite = true;
+
+    for (const double x : DistinctArgs(cells))
+    {
+        const float xf = static_cast<float>(x);
+        std::array<float, boys::kMaxBoysOrder + 1> plain = {};
+        std::array<float, boys::kMaxBoysOrder + 1> named = {};
+        std::array<float, boys::kMaxBoysOrder + 1> horner = {};
+        std::array<float, boys::kMaxBoysOrder + 1> rational = {};
+
+        boys::BoysAllOrdersF32(boys::kMaxBoysOrder, xf, plain.data());
+        boys::BoysAllOrdersF32<boys::kBoysFullAccuracyMultiplier, Shipped>(
+            boys::kMaxBoysOrder, xf, named.data());
+        boys::BoysAllOrdersF32<boys::kBoysFullAccuracyMultiplier, Horner>(
+            boys::kMaxBoysOrder, xf, horner.data());
+        boys::BoysAllOrdersF32<boys::kBoysFullAccuracyMultiplier, Rational>(
+            boys::kMaxBoysOrder, xf, rational.data());
+
+        ++batchArgs;
+        batchSameAsDefault +=
+            std::memcmp(plain.data(), named.data(), sizeof(plain)) == 0 ? 1 : 0;
+        batchChangedByScheme +=
+            std::memcmp(plain.data(), horner.data(), sizeof(plain)) == 0 ? 0 : 1;
+        batchChangedByRoute +=
+            std::memcmp(plain.data(), rational.data(), sizeof(plain)) == 0 ? 0 : 1;
+
+        for (std::size_t k = 0; k < plain.size(); ++k)
+        {
+            batchFinite = batchFinite && std::isfinite(horner[k]) && std::isfinite(rational[k]);
+        }
+    }
+
+    Require(report,
+            batchFinite,
+            "a policy this build stores answers a finite value at every order of the batch entry");
+    Require(report,
+            batchArgs > 0 && batchSameAsDefault == batchArgs,
+            "naming the shipped pair on the batch entry is the call naming no policy, bit for "
+            "bit, at every argument of the reference grid");
+    Require(report,
+            batchChangedByScheme > 0 && batchChangedByRoute > 0,
+            "the batch entry reads the pair a caller names: another route or scheme changes the "
+            "values it answers with");
+
+    Covered("boys::BoysSingleF32");
+    Covered("boys::BoysAllOrdersF32");
+}
+
 /// The many-argument entry in all four of its documented shapes: the
 /// workspace-supplied call, the internally allocated one, the sorted-argument
 /// overload, and arguments in the wrong order.
@@ -2300,6 +2508,8 @@ int main(int argc, char** argv) {
     CheckEvalSchemes(report, cells);
     CheckDoubleLanes(report, cells);
     CheckFitRoutes(report, cells);
+    CheckFitRoutesF32(report, cells);
+    CheckFloatPolicies(report, cells);
     CheckManyArgumentLanes(report, cells);
     CheckPerElementOrderLanes(report, cells);
     CheckTierLane(cells);

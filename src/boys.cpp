@@ -376,6 +376,78 @@ constexpr double DeliveredIn(const EvalFitInfo& fit, backend::MulAddRoute route)
     return route == backend::MulAddRoute::kSeparate ? fit.separate : fit.fused;
 }
 
+std::span<const FitRouteInfo> BoysFitRoutesF32() noexcept {
+    // The float lane's rows, from the same generated header the double lane's
+    // rows read, so a regeneration that moved a delivered error moves these
+    // too. The lane's own tables are what the two region-A routes evaluate -
+    // its shipped per-order fits and the rational cover - and its route
+    // covers the whole of region A, so the rows state no servesFrom boundary
+    // above zero: naming either route changes a value at every argument of
+    // the interval.
+    static const std::span<const FitRouteInfo> kRoutes = [] {
+        static const FitRouteInfo kRows[] = {
+            {FitRoute::kChebyshev,
+             "chebyshev",
+             AccuracyComponent::kRegionASeed,
+             AccuracyRegion::kA,
+             0.0,
+             detail::kX0,
+             0.0,
+             detail::f32::kRegionAFitChebStored,
+             detail::f32::kRegionAFitChebDelivered,
+             detail::f32::kRegionAFitBar},
+            {FitRoute::kRationalMinimax,
+             "rational-minimax",
+             AccuracyComponent::kRegionASeed,
+             AccuracyRegion::kA,
+             0.0,
+             detail::kX0,
+             0.0,
+             detail::f32::kRegionAFitRatStored,
+             detail::f32::kRegionAFitRatDelivered,
+             detail::f32::kRegionAFitBar},
+            {FitRoute::kChebyshev,
+             "chebyshev",
+             AccuracyComponent::kRegionBFit,
+             AccuracyRegion::kB,
+             detail::kX0,
+             detail::kX1,
+             detail::kX0,
+             detail::f32::kRegionBFitChebStored,
+             detail::f32::kRegionBFitChebDelivered,
+             detail::f32::kRegionBFitBar},
+            {FitRoute::kRationalMinimax,
+             "rational-minimax",
+             AccuracyComponent::kRegionBFit,
+             AccuracyRegion::kB,
+             detail::kX0,
+             detail::kX1,
+             detail::kX0,
+             detail::f32::kRegionBFitRatStored,
+             detail::f32::kRegionBFitRatDelivered,
+             detail::f32::kRegionBFitBar},
+        };
+        return std::span<const FitRouteInfo>(kRows);
+    }();
+
+    return kRoutes;
+}
+
+float BoysSingleF32WithRoute(FitRoute route, int n, float x) noexcept {
+    // One body instantiated per route, as the double lane's selector is: the
+    // closed form at zero, the region split, the two recurrences and the
+    // domains are the body's, and the route names only its two fits. So
+    // naming a route cannot reach a fit the caller did not name, and region C
+    // - which reads no coefficient at all - is answered by the body's own
+    // branch, which is the default entry's code for those arguments.
+    if (route == FitRoute::kRationalMinimax)
+    {
+        return detail::SingleOrderF32Body<detail::RationalFit32>(n, x);
+    }
+
+    return BoysSingleF32<kBoysFullAccuracyMultiplier>(n, x);
+}
+
 std::span<const EvalFitInfo> BoysEvalSchemeFits() noexcept {
     static const std::array<EvalFitInfo, std::size(detail::kSchemeRows)> rows = [] {
         std::array<EvalFitInfo, std::size(detail::kSchemeRows)> built{};

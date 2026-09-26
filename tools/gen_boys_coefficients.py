@@ -53,6 +53,7 @@ import concurrent.futures
 import math
 import os
 import shutil
+import struct
 import subprocess
 import sys
 from functools import lru_cache
@@ -527,7 +528,6 @@ def fmtf(v):
     emission round-trips the double exactly, so rounding that decimal to
     float32 in C++ and rounding the double here (struct.pack, correctly
     rounded) are the same operation on the same real value."""
-    import struct
     f32 = struct.unpack("<f", struct.pack("<f", float(v)))[0]
     return f"{f32:.17e}f"
 
@@ -1360,8 +1360,552 @@ def fit_region_a_rational(double_orders):
     }
 
 
+# The float lane's rational route
+#
+# The double lane's rational construction at the float lane's own target. Two
+# things differ from it, and both are forced by the format rather than chosen:
+#
+# - The lane stores binary32, so the rounding of every solved coefficient is
+#   part of the fit a caller receives. At a 1e-7 target that rounding is a
+#   material term and not a last-digit detail, so a piece is accepted on the
+#   coefficients AS STORED, measured in the double arithmetic the acceptance
+#   uses, and never on the ones the exchange solved.
+# - The lane maps x to t in binary32 too, so the grid is float-representable
+#   arguments and the t values they map to, and the residual is read at those
+#   t rather than at an exactly-mapped argument.
+#
+# The count ladder, the split of a count between numerator and denominator and
+# the dyadic cover are the double route's: the smallest stored count holding
+# the target, every split of it tried, and a cover taken where one piece
+# cannot. The target is half the lane's own tolerance, which is where the
+# shipped lane's region-A seeds are fitted, so the two families are read at
+# one bar.
+F32_RAT_DPS = 30
+F32_RAT_REF_DPS = 40
+F32_RAT_ACCEPT = TOL_FLOAT / 2
+F32_RAT_BOUND = mpf("1.5e-7")
+F32_RAT_GRID = 240
+F32_RAT_SEARCH_GRID = 60
+F32_RAT_COUNT_MIN = 3
+F32_RAT_COUNT_MAX = 14
+F32_RAT_K_MAX = 6
+F32_RAT_SCAN_ITERS = 12
+F32_RAT_POLISH_ITERS = 60
+F32_RAT_MAX_DEPTH = 3
+
+
+def r32(v):
+    """The float a stored constant rounds to."""
+    return struct.unpack("<f", struct.pack("<f", float(v)))[0]
+
+
+def f32_map(a, b, x):
+    """The kernel's mapped argument, in the kernel's width.
+
+    The float lane maps x to t in binary32 - 2*(x - a)/(b - a) - 1 with every
+    step a single rounding - so a grid of float arguments maps to the t values
+    the kernel actually evaluates at.
+    """
+    span = r32(float(b) - float(a))
+    if span == 0.0:
+        return 0.0
+    u = r32(r32(float(x) - float(a)) / span)
+    return r32(2.0 * u - 1.0)
+
+
+def f32_rat_grid(a, b, npts):
+    """Float-representable arguments across [a, b] and the mapped t each."""
+    a32, b32 = r32(a), r32(b)
+    xs, ts = [], []
+    for i in range(npts + 1):
+        x = r32(a32 + (b32 - a32) * (i / npts))
+        xs.append(x)
+        ts.append(mpf(repr(f32_map(a32, b32, x))))
+    return xs, ts
+
+
+def f32_rat_reference(n, xs):
+    with mp.workdps(F32_RAT_REF_DPS):
+        return [boys_ref(n, mpf(x)) for x in xs]
+
+
+def f32_rat_residual(p, q, ts, ref, ws):
+    """The weighted residual of the coefficients AS STORED, and where it is worst."""
+    p32 = [mpf(r32(v)) for v in p]
+    q32 = [mpf(r32(v)) for v in q]
+    worst, at = mpf(0), None
+    for i, t in enumerate(ts):
+        e = abs(rat_value(p32, q32, t) - ref[i]) * ws[i]
+        if e > worst:
+            worst, at = e, t
+    return worst, at
+
+
+def f32_rat_delivered(p, q, ts, ref):
+    """The unweighted error of the stored coefficients, the figure a route publishes."""
+    p32 = [mpf(r32(v)) for v in p]
+    q32 = [mpf(r32(v)) for v in q]
+    worst, at = mpf(0), None
+    for i, t in enumerate(ts):
+        e = abs(rat_value(p32, q32, t) - ref[i])
+        if e > worst:
+            worst, at = e, t
+    return worst, at
+
+
+def f32_rat_try(m, k, indices, ts, ref, ws, iters):
+    """The exchange's fit at a degree pair, measured on its stored coefficients."""
+    r = rat_remez(m, k, indices, ts, ref, ws, iters=iters)
+    if r is None:
+        return None
+    _, p, q = r
+    d, at = f32_rat_residual(p, q, ts, ref, ws)
+    return (d, p, q, at)
+
+
+def f32_rat_piece(n, a, b, weighted=True):
+    """The smallest stored pair holding the lane's target on [a, b), or None.
+
+    The count search walks the stored count upward and at each count every
+    split of it into numerator and denominator, so the piece returned is the
+    cheapest the family offers rather than the cheapest of one split. Each
+    count the search accepts on the coarse grid is re-solved and re-measured
+    on the dense grid, and a count that fails there resumes the search above
+    itself, so the coarser grid can only make a piece cost more than the
+    family's minimum and never less.
+    """
+    xs, ts = f32_rat_grid(a, b, F32_RAT_GRID)
+    ref = f32_rat_reference(n, xs)
+    ws = [seed_weight(n, mpf(x)) if weighted else mpf(1) for x in xs]
+    sx = list(range(0, F32_RAT_GRID + 1, F32_RAT_GRID // F32_RAT_SEARCH_GRID))
+    full = list(range(F32_RAT_GRID + 1))
+
+    for total in range(F32_RAT_COUNT_MIN, F32_RAT_COUNT_MAX + 1):
+        best = None
+        pair = None
+        for k in range(1, min(F32_RAT_K_MAX, total - 2) + 1):
+            m = total - 1 - k
+            if m < 1:
+                continue
+            r = f32_rat_try(m, k, sx, ts, ref, ws, F32_RAT_SCAN_ITERS)
+            if r is None or r[0] > F32_RAT_ACCEPT:
+                continue
+            if best is None or r[0] < best[0]:
+                best, pair = r, (m, k)
+        if best is None:
+            continue
+        m, k = pair
+        polished = f32_rat_try(m, k, full, ts, ref, ws, F32_RAT_POLISH_ITERS)
+        if polished is not None and polished[0] < best[0]:
+            best = polished
+        if best[0] > F32_RAT_ACCEPT:
+            continue
+        d, p, q, _ = best
+        delivered, _ = f32_rat_delivered(p, q, ts, ref)
+        return {"a": r32(a), "b": r32(b), "m": m, "k": k, "p": p, "q": q,
+                "count": m + 1 + k, "residual": d, "delivered": delivered}
+    return None
+
+
+def f32_rat_cover(n, a, b, depth):
+    """The cheapest dyadic cover of [a, b) the family holds the target on."""
+    options = []
+    single = f32_rat_piece(n, a, b)
+    if single is not None:
+        options.append([single])
+    if depth < F32_RAT_MAX_DEPTH or single is None:
+        mid = r32((r32(a) + r32(b)) / 2.0)
+        if r32(a) < mid < r32(b):
+            left = f32_rat_cover(n, a, mid, depth + 1)
+            right = f32_rat_cover(n, mid, b, depth + 1)
+            if left is not None and right is not None:
+                options.append(left + right)
+    if not options:
+        return None
+    return min(options, key=lambda cover: sum(pc["count"] for pc in cover))
+
+
+def fma32(a, b, c):
+    """One fused multiply-add in binary32.
+
+    a*b + c with binary32 inputs is exact in binary64 (the product of two
+    24-bit significands is 48 bits wide), so rounding that sum once to
+    binary32 is the correctly rounded fused step and not an approximation of
+    it.
+    """
+    return r32(float(a) * float(b) + float(c))
+
+
+def clenshaw_split_float(cs, t):
+    """ClenshawSplit<ScalarFp32>, operation for operation.
+
+    The shipped split Clenshaw in the lane's own width, so a delivered error
+    measured here is the error the entry delivers rather than the error a
+    wider evaluation of the same coefficients would.
+    """
+    c = [r32(v) for v in cs]
+    t = r32(t)
+    deg = len(c) - 1
+    if deg == 0:
+        return c[0]
+    if deg == 1:
+        return fma32(t, c[1], c[0])
+    v = fma32(2.0, r32(t * t), -1.0)
+    two_v = r32(v + v)
+    if deg == 2:
+        return fma32(t, c[1], fma32(v, c[2], c[0]))
+    m = deg // 2
+    b1, b2 = c[2 * m], 0.0
+    for k in range(m - 1, 0, -1):
+        b0 = fma32(two_v, b1, r32(c[2 * k] - b2))
+        b2, b1 = b1, b0
+    even = fma32(v, b1, r32(c[0] - b2))
+    o1, o2 = c[2 * m - 1], 0.0
+    for k in range(m - 2, 0, -1):
+        o0 = fma32(two_v, o1, r32(c[2 * k + 1] - o2))
+        o2, o1 = o1, o0
+    odd = fma32(r32(two_v - 1.0), o1, r32(c[1] - o2))
+    return fma32(t, odd, even)
+
+
+def horner_mono_float(ms, t):
+    """HornerMono<ScalarFp32>, operation for operation.
+
+    The monomial form of the same fit read by the other scheme, in the lane's
+    own width, so a delivered error measured here is the error the entry
+    delivers under that scheme rather than the error the Chebyshev recurrence
+    would have carried.
+    """
+    c = [r32(v) for v in ms]
+    t = r32(t)
+    acc = c[-1]
+    for j in range(len(c) - 2, -1, -1):
+        acc = fma32(acc, t, c[j])
+    return acc
+
+
+def rational_value_float(p, q, t):
+    """The kernel's rational evaluation, in the lane's own arithmetic."""
+    c = [r32(v) for v in p] + [r32(v) for v in q]
+    m = len(p) - 1
+    k = len(q)
+    t = r32(t)
+    num = c[m]
+    for j in range(m - 1, -1, -1):
+        num = fma32(num, t, c[j])
+    if k == 0:
+        return num
+    den = c[m + k]
+    for j in range(k - 1, 0, -1):
+        den = fma32(den, t, c[m + j])
+    return r32(num / fma32(den, t, 1.0))
+
+
+def f32_rat_delivered_float(cover, n):
+    """The rational route's worst |F_n - fit| over its own pieces, as delivered."""
+    worst = mpf(0)
+    for pc in cover:
+        xs, ts = f32_rat_grid(pc["a"], pc["b"], F32_RAT_GRID)
+        ref = f32_rat_reference(n, xs)
+        for i, t in enumerate(ts):
+            e = abs(mpf(rational_value_float(pc["p"], pc["q"], float(t))) - ref[i])
+            if e > worst:
+                worst = e
+    return worst
+
+
+def f32_rat_cheb_delivered(float_orders):
+    """The shipped float lane's own worst |F_n - fit| over [0, X0).
+
+    Measured on the same construction the rational route is measured on -
+    each piece's own grid, the float-mapped argument, the reference the fits
+    are validated against, the lane's own arithmetic - so the two routes'
+    delivered figures are a comparison rather than two measurements.
+    """
+    worst = mpf(0)
+    for n in range(MAX_ORDER + 1):
+        for (a, b, deg, cs, _ms) in float_orders[n]:
+            xs, ts = f32_rat_grid(a, b, F32_RAT_GRID)
+            ref = f32_rat_reference(n, xs)
+            for i, t in enumerate(ts):
+                e = abs(mpf(clenshaw_split_float(cs, float(t))) - ref[i])
+                if e > worst:
+                    worst = e
+    return worst
+
+
+def f32_rat_cheb_delivered_horner(float_orders):
+    """The same lane, the same grid, the same reference, read by Horner.
+
+    Only the summation differs from f32_rat_cheb_delivered above - same
+    pieces, same arguments, same coefficients as stored - so the two figures
+    are a comparison of the two schemes rather than two measurements.
+    """
+    worst = mpf(0)
+    for n in range(MAX_ORDER + 1):
+        for (a, b, deg, cs, ms) in float_orders[n]:
+            xs, ts = f32_rat_grid(a, b, F32_RAT_GRID)
+            ref = f32_rat_reference(n, xs)
+            for i, t in enumerate(ts):
+                e = abs(mpf(horner_mono_float(ms, float(t))) - ref[i])
+                if e > worst:
+                    worst = e
+    return worst
+
+
+def fit_region_a_rational_f32(float_orders):
+    """The float lane's region-A rational cover: every order over [0, X0).
+
+    The pieces are the family's own cover of each order's interval rather than
+    the shipped Chebyshev table's pieces: a cover is free to place its breaks
+    where the fit needs them, and the shipped table's breaks are where that
+    family - a different one - needed its own.
+    """
+    print(f"fitting the float lane's rational region-A route ({F32_RAT_DPS} dps, "
+          f"accepted at {mp.nstr(F32_RAT_ACCEPT, 2)} on the coefficients as stored, "
+          f"bar {mp.nstr(F32_RAT_BOUND, 2)}, fitted under the shipped weighting) ...")
+    orders = []
+    stored = 0
+    pieces = 0
+    delivered = mpf(0)
+    at = None
+    residual = mpf(0)
+    for n in range(MAX_ORDER + 1):
+        cover = f32_rat_cover(n, 0.0, X0, 0)
+        if cover is None:
+            raise RuntimeError(f"float rational region-A route: F{n} on [0, {X0}) reaches "
+                               f"no stored count up to {F32_RAT_COUNT_MAX} holding "
+                               f"{mp.nstr(F32_RAT_ACCEPT, 2)}")
+        orders.append(cover)
+        stored += sum(pc["count"] for pc in cover)
+        pieces += len(cover)
+        route_delivered = f32_rat_delivered_float(cover, n)
+        if route_delivered > delivered:
+            delivered = route_delivered
+        for pc in cover:
+            if pc["residual"] > residual:
+                residual = pc["residual"]
+        print("  F{:2d}: {} stored in {} piece(s), delivered {} ({})".format(
+            n, sum(pc["count"] for pc in cover), len(cover),
+            mp.nstr(route_delivered, 3),
+            ", ".join("[{}, {}) {}/{} {}".format(
+                mp.nstr(mpf(pc["a"]), 6), mp.nstr(mpf(pc["b"]), 6),
+                pc["m"], pc["k"], mp.nstr(pc["delivered"], 3)) for pc in cover)))
+        sys.stdout.flush()
+
+    print(f"  region A: rational {stored} stored in {pieces} pieces, delivered "
+          f"{mp.nstr(delivered, 6)}, worst weighted residual {mp.nstr(residual, 6)}")
+    cheb_delivered = f32_rat_cheb_delivered(float_orders)
+    cheb_delivered_horner = f32_rat_cheb_delivered_horner(float_orders)
+    cheb_stored = sum(sum(d + 1 for _, _, d, _, _ in float_orders[n])
+                      for n in range(MAX_ORDER + 1))
+    cheb_pieces = sum(len(float_orders[n]) for n in range(MAX_ORDER + 1))
+    print(f"  region A: Chebyshev {cheb_stored} stored in {cheb_pieces} pieces, delivered "
+          f"{mp.nstr(cheb_delivered, 6)} (split Clenshaw), "
+          f"{mp.nstr(cheb_delivered_horner, 6)} (Horner)")
+    return {"orders": orders, "stored": stored, "pieces": pieces,
+            "delivered": delivered, "at": at, "residual": residual,
+            "cheb_stored": cheb_stored, "cheb_pieces": cheb_pieces,
+            "cheb_delivered": cheb_delivered,
+            "cheb_delivered_horner": cheb_delivered_horner,
+            "bound": F32_RAT_BOUND, "lo": mpf(0), "hi": X0}
+
+
+def f32_rat_region_b_delivered():
+    """The two float region-B seeds' worst |F_0 - fit| over [kX0, kX1).
+
+    The shipped seed first, then the rational one, both on one grid, in the
+    lane's own arithmetic, against the reference the fits are validated
+    against, so the two stored counts sit beside a comparison rather than
+    beside two measurements.
+    """
+    deg, cs, mono = fit_order(0, region_b=True, f32=True)
+    xs, ts = f32_rat_grid(X0, X1, F32_RAT_GRID)
+    ref = f32_rat_reference(0, xs)
+    cheb = mpf(0)
+    horner = mpf(0)
+    for i, t in enumerate(ts):
+        e = abs(mpf(clenshaw_split_float(cs, float(t))) - ref[i])
+        if e > cheb:
+            cheb = e
+        e = abs(mpf(horner_mono_float(mono, float(t))) - ref[i])
+        if e > horner:
+            horner = e
+    return deg + 1, cheb, horner
+
+
+def fit_region_b_rational_f32():
+    """The float lane's region-B F_0 seed from the region's own minimax pair.
+
+    The weight is one here: region B reads the seed and recurses upward, so
+    there is no amplification between the fit and the value a caller receives
+    and the criterion is the lane's own tolerance.
+    """
+    seed = f32_rat_piece(0, X0, X1, weighted=False)
+    if seed is None:
+        raise RuntimeError(f"float rational region-B seed: no stored count up to "
+                           f"{F32_RAT_COUNT_MAX} holds {mp.nstr(F32_RAT_ACCEPT, 2)} on "
+                           f"[{X0}, {X1})")
+    delivered = f32_rat_delivered_float([seed], 0)
+    cheb_stored, cheb_delivered, cheb_delivered_horner = f32_rat_region_b_delivered()
+    seed["delivered"] = delivered
+    seed["cheb_stored"] = cheb_stored
+    seed["cheb_delivered"] = cheb_delivered
+    seed["cheb_delivered_horner"] = cheb_delivered_horner
+    return seed
+
+
+def write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32):
+    """The float lane's tables: the shipped Chebyshev lane, then the rational route."""
+    f.write("\nnamespace boys::detail::f32 {\n\n")
+    all_coeffs = []
+    all_mono = []
+    meta = []
+    for n in range(MAX_ORDER + 1):
+        for (a, b, deg, cs, ms) in float_orders[n]:
+            meta.append((n, a, b, deg, len(all_coeffs)))
+            all_coeffs.extend(fmtf(c) for c in cs)
+            all_mono.extend(fmtf(c) for c in ms)
+    f.write("inline constexpr auto kCoeffs = std::to_array<float>({\n")
+    for i in range(0, len(all_coeffs), 6):
+        f.write("  " + ", ".join(all_coeffs[i:i + 6]) + ",\n")
+    f.write("});\n\n")
+    # The monomial form of the same fits, one stored coefficient per Chebyshev
+    # coefficient: same pieces, same intervals, same degrees, same offsets, so
+    # an evaluation scheme picks a table and not a shape. Converted from the
+    # exact Chebyshev coefficients and rounded once, in the lane's own width.
+    f.write("// The same fits in monomial form, ascending, for the Horner\n"
+            "// evaluation scheme: same pieces, degrees and offsets as kCoeffs.\n")
+    f.write("inline constexpr auto kMonoCoeffs = std::to_array<float>({\n")
+    for i in range(0, len(all_mono), 6):
+        f.write("  " + ", ".join(all_mono[i:i + 6]) + ",\n")
+    f.write("});\n")
+    f.write("static_assert(std::size(kMonoCoeffs) == std::size(kCoeffs),\n"
+            "              \"the monomial table must parallel the Chebyshev table\");\n\n")
+    f.write("struct OrderPiece { float a, b; int deg; int offset; };\n")
+    f.write("inline constexpr auto kPieces = std::to_array<OrderPiece>({\n")
+    for (n, a, b, deg, off) in meta:
+        f.write(f"  {{{fmtf(mpf(a))}, {fmtf(mpf(b))}, {deg}, {off}}},  // F{n}\n")
+    f.write("});\n")
+    starts = []
+    index = 0
+    for n in range(MAX_ORDER + 1):
+        starts.append(index)
+        index += len(float_orders[n])
+    starts.append(index)
+    f.write("inline constexpr auto kPieceStart = std::to_array<int>({"
+            + ", ".join(map(str, starts)) + "});\n")
+    f.write("static_assert(std::size(kPieceStart) == kMaxOrder + 2,\n"
+            "              \"piece-start table must cover kMaxOrder\");\n\n")
+    deg, cs, ms = b_cheb_f32
+    f.write("inline constexpr auto kBcoeffs = std::to_array<float>({"
+            + ", ".join(fmtf(c) for c in cs) + "});\n")
+    f.write("inline constexpr auto kMonoBcoeffs = std::to_array<float>({"
+            + ", ".join(fmtf(c) for c in ms) + "});\n")
+    f.write(f"inline constexpr int kBDeg = {deg};\n")
+
+    # The rational route. Its pieces are the family's own dyadic cover of each
+    # order's interval rather than the Chebyshev table's breaks, because a
+    # cover places its breaks where its own fit needs them; the table is
+    # flattened the same way, with the per-order ranges in kRatAPieceStart.
+    pieces = []
+    stored = []
+    for n in range(MAX_ORDER + 1):
+        for pc in rat_a_f32["orders"][n]:
+            pieces.append((n, pc))
+            stored.extend(fmtf(v) for v in pc["p"])
+            stored.extend(fmtf(v) for v in pc["q"])
+    f.write("\n// The float lane's rational route: a weighted minimax fit of each\n"
+            "// order's interval, evaluated as num / (1 + t*horner(q, t)) in the\n"
+            "// same mapped argument the Chebyshev piece uses, and read in the\n"
+            "// lane's own precision. It is an offered alternative, not a\n"
+            "// replacement: the Chebyshev tables above are the default route and\n"
+            "// are unchanged by its presence.\n")
+    f.write("inline constexpr auto kRatACoeffs = std::to_array<float>({\n")
+    for i in range(0, len(stored), 6):
+        f.write("  " + ", ".join(stored[i:i + 6]) + ",\n")
+    f.write("});\n\n")
+    f.write("struct RatPiece { float a, b; int numdeg; int dendeg; int offset; };\n")
+    f.write("inline constexpr auto kRatAPieces = std::to_array<RatPiece>({\n")
+    index = 0
+    for (n, pc) in pieces:
+        f.write(f"  {{{fmtf(mpf(pc['a']))}, {fmtf(mpf(pc['b']))}, {pc['m']}, {pc['k']}, "
+                f"{index}}},  // F{n}\n")
+        index += pc["count"]
+    f.write("});\n")
+    rstart = []
+    index = 0
+    for n in range(MAX_ORDER + 1):
+        rstart.append(index)
+        index += len(rat_a_f32["orders"][n])
+    rstart.append(index)
+    f.write("inline constexpr auto kRatAPieceStart = std::to_array<int>({"
+            + ", ".join(map(str, rstart)) + "});\n")
+    f.write("static_assert(std::size(kRatAPieceStart) == kMaxOrder + 2,\n"
+            "              \"rational piece-start table must cover kMaxOrder\");\n")
+    f.write("static_assert(std::size(kRatACoeffs) == "
+            + str(sum(pc["count"] for _, pc in pieces)) + ",\n"
+            "              \"the rational tables must account for every stored coefficient\");\n")
+
+    f.write("\n// The rational region-B seed: p(t)/q(t) over the same interval and\n"
+            "// in the same mapped argument as kBcoeffs above. q is stored as\n"
+            "// q_1..q_k with its constant term held at 1.\n")
+    f.write("inline constexpr auto kRatBnum = std::to_array<float>({"
+            + ", ".join(fmtf(v) for v in rat_b_f32["p"]) + "});\n")
+    f.write(f"inline constexpr int kRatBnumDeg = {rat_b_f32['m']};\n")
+    f.write("inline constexpr auto kRatBden = std::to_array<float>({"
+            + ", ".join(fmtf(v) for v in rat_b_f32["q"]) + "});\n")
+    f.write(f"inline constexpr int kRatBdenDeg = {rat_b_f32['k']};\n")
+
+    # The two routes as the generator measures them: the stored coefficients
+    # each evaluates over region A, and the worst |F_n - fit| each reaches over
+    # each order's own intervals at the lane's own precision, on the
+    # coefficients as stored. A swept maximum on a finite grid, not a bound:
+    # the bar the route is certified against is kRegionAFitBar.
+    f.write("\n// The two region-A routes as the generator measures them, over\n"
+            "// [0, kX0): the stored coefficients each evaluates and the worst\n"
+            "// |F_n - fit| each reaches over each order's own intervals, swept on a\n"
+            "// stride-1 grid of each piece's own interval, in the lane's own\n"
+            "// arithmetic - the evaluation the single-precision single entry\n"
+            "// performs - and on the coefficients as stored. A swept maximum on a\n"
+            "// finite grid, not a bound: the bar both routes are certified against\n"
+            "// is kRegionAFitBar. The Chebyshev table is stored once and read by\n"
+            "// both schemes, so it carries one delivered figure for each and one\n"
+            "// stored count and piece list for the two.\n"
+            f"inline constexpr double kRegionAFitBar = {fmt(rat_a_f32['bound'])};\n"
+            "inline constexpr int kRegionAFitChebStored = "
+            + str(rat_a_f32["cheb_stored"]) + ";\n"
+            "inline constexpr double kRegionAFitChebDelivered = "
+            + fmt(rat_a_f32["cheb_delivered"]) + ";\n"
+            "inline constexpr double kRegionAFitChebDeliveredHorner = "
+            + fmt(rat_a_f32["cheb_delivered_horner"]) + ";\n"
+            "inline constexpr int kRegionAFitRatStored = "
+            + str(rat_a_f32["stored"]) + ";\n"
+            "inline constexpr double kRegionAFitRatDelivered = "
+            + fmt(rat_a_f32["delivered"]) + ";\n")
+
+    # The region-B seeds, the two routes over one interval.
+    f.write("\n// The two region-B seeds as the generator measures them: the stored\n"
+            "// coefficients each evaluates and the worst |F_0 - fit| each reaches\n"
+            "// over [kX0, kX1), same interval, same reference, same arithmetic as the\n"
+            "// region-A figures above. A swept maximum, not a bound: the bar both\n"
+            "// seeds are certified against is kRegionBFitBar.\n"
+            f"inline constexpr double kRegionBFitBar = {fmt(rat_a_f32['bound'])};\n"
+            "inline constexpr int kRegionBFitChebStored = "
+            + str(rat_b_f32["cheb_stored"]) + ";\n"
+            "inline constexpr double kRegionBFitChebDelivered = "
+            + fmt(rat_b_f32["cheb_delivered"]) + ";\n"
+            "inline constexpr double kRegionBFitChebDeliveredHorner = "
+            + fmt(rat_b_f32["cheb_delivered_horner"]) + ";\n"
+            "inline constexpr int kRegionBFitRatStored = " + str(rat_b_f32["count"]) + ";\n"
+            "inline constexpr double kRegionBFitRatDelivered = "
+            + fmt(rat_b_f32["delivered"]) + ";\n")
+
+    f.write("\n}  // namespace boys::detail::f32\n")
+
+
 def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb,
-                 scheme_rows, rat_b, rat_a):
+                 scheme_rows, rat_b, rat_a, rat_a_f32, rat_b_f32):
     with open(path, "w", newline="\n") as f:
         f.write("// Generated by tools/gen_boys_coefficients.py - DO NOT EDIT.\n")
         f.write("// Piecewise Chebyshev (split Clenshaw) fits of F_n(x), region A seeds\n")
@@ -1601,37 +2145,7 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
         f.write("\n}  // namespace boys::detail\n")
 
         # Float lane.
-        f.write("\nnamespace boys::detail::f32 {\n\n")
-        all_coeffs = []
-        meta = []
-        for n in range(MAX_ORDER + 1):
-            for (a, b, deg, cs, _ms) in float_orders[n]:
-                meta.append((n, a, b, deg, len(all_coeffs)))
-                all_coeffs.extend(fmtf(c) for c in cs)
-        f.write("inline constexpr auto kCoeffs = std::to_array<float>({\n")
-        for i in range(0, len(all_coeffs), 6):
-            f.write("  " + ", ".join(all_coeffs[i:i + 6]) + ",\n")
-        f.write("});\n\n")
-        f.write("struct OrderPiece { float a, b; int deg; int offset; };\n")
-        f.write("inline constexpr auto kPieces = std::to_array<OrderPiece>({\n")
-        for (n, a, b, deg, off) in meta:
-            f.write(f"  {{{fmtf(mpf(a))}, {fmtf(mpf(b))}, {deg}, {off}}},  // F{n}\n")
-        f.write("});\n")
-        starts = []
-        index = 0
-        for n in range(MAX_ORDER + 1):
-            starts.append(index)
-            index += len(float_orders[n])
-        starts.append(index)
-        f.write("inline constexpr auto kPieceStart = std::to_array<int>({"
-                + ", ".join(map(str, starts)) + "});\n")
-        f.write("static_assert(std::size(kPieceStart) == kMaxOrder + 2,\n"
-                "              \"piece-start table must cover kMaxOrder\");\n\n")
-        deg, cs, _ms = b_cheb_f32
-        f.write("inline constexpr auto kBcoeffs = std::to_array<float>({"
-                + ", ".join(fmtf(c) for c in cs) + "});\n")
-        f.write(f"inline constexpr int kBDeg = {deg};\n")
-        f.write("\n}  // namespace boys::detail::f32\n")
+        write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32)
         f.write("\n/// \\endcond\n")
 
 
@@ -1828,6 +2342,13 @@ def main():
     # the two routes over region A are compared piece for piece.
     rat_a = fit_region_a_rational(double_orders)
 
+    # The float lane's rational route, the double one's construction at that
+    # lane's target and in that lane's width.
+    rat_a_f32 = fit_region_a_rational_f32(float_orders)
+    rat_b_f32 = fit_region_b_rational_f32()
+    print(f"  float lane region B: rational {rat_b_f32['m']}/{rat_b_f32['k']} "
+          f"{rat_b_f32['count']} stored, delivered {mp.nstr(rat_b_f32['delivered'], 6)}")
+
     print("fitting the extended band seed (F0 on [XNEW0, X0), tol 5e-14; "
           "the fixed-point loop) ...")
     ext_deg, ext_cs, ext_mono, ext_crossings = fit_extended_band(b_cheb=b_cheb)
@@ -1860,17 +2381,21 @@ def main():
               f"  published fused {fb:.3e} separate {sb:.3e}")
 
     if args.check:
-        import tempfile
-        # The scratch header lives next to the committed one: clang-format
-        # must discover the repo .clang-format, which it does relative to the
-        # file's directory - a foreign temp dir would silently format the
-        # scratch copy with the LLVM default style and every check would
-        # false-positive on wrapping.
+        # Both scratch copies live beside the file they are compared against.
+        # The header must: clang-format discovers the repo .clang-format
+        # relative to the file's directory, and a foreign temp dir would
+        # silently format the scratch copy with the LLVM default style, so
+        # every check would false-positive on wrapping. The reference must for
+        # a different reason: one fixed path in the system temp directory is
+        # shared by every checkout on the machine, so two runs at once
+        # overwrite each other's grid and report drift in one of the two files
+        # they were pointed at.
         tmp_header = args.header + ".check-tmp.hpp"
-        tmp_reference = os.path.join(tempfile.gettempdir(), "boys_reference-check-tmp.csv")
+        tmp_reference = args.reference + ".check-tmp.csv"
         try:
             write_header(tmp_header, double_orders, float_orders, b_cheb, b_cheb_f32,
-                         (ext_deg, ext_cs, ext_mono), scheme_rows, rat_b, rat_a)
+                         (ext_deg, ext_cs, ext_mono), scheme_rows, rat_b, rat_a,
+                         rat_a_f32, rat_b_f32)
             format_header(tmp_header)
             write_reference(tmp_reference)
             ok = True
@@ -1888,7 +2413,8 @@ def main():
 
     os.makedirs(os.path.dirname(args.header) or ".", exist_ok=True)
     write_header(args.header, double_orders, float_orders, b_cheb, b_cheb_f32,
-                 (ext_deg, ext_cs, ext_mono), scheme_rows, rat_b, rat_a)
+                 (ext_deg, ext_cs, ext_mono), scheme_rows, rat_b, rat_a,
+                 rat_a_f32, rat_b_f32)
     format_header(args.header)
     print(f"wrote {args.header}")
 
