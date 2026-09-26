@@ -85,8 +85,12 @@ the report says `CANNOT DETERMINE`, names each option it could not place behind 
 band that pair fell in, and prints the run's resolution, rather than ordering noise. A refusal leaves
 a consumer a default: the report names the option a static reading of the library's own tables picks
 — the degree its partition evaluates and the coefficients it stores, counted rather than timed — in
-its own section, labelled as a heuristic and never printed beside a measured figure. The result is
-about the machine it was measured on, and the report says so in its own output.
+its own section, labelled as a heuristic and never printed beside a measured figure. The clock is
+checked rather than assumed, because options need not draw it alike — a wider vector register runs
+at a lower frequency — so the confidence line reports how far the widest-moving pair's ratio
+travelled between the run's first and second half beside the resolution that figure is read
+against, and whether every option the comparison put against another ran one arithmetic route. The
+result is about the machine it was measured on, and the report says so in its own output.
 
 ## Architecture
 

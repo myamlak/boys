@@ -605,9 +605,13 @@ When two options are closer than that spread — a pair whose within-round ratio
 the probe prints `CANNOT DETERMINE` and names every option it could not place behind the leader,
 with the band each pair fell in, rather than ordering noise. A refusal still leaves you a default:
 the report names the option a static reading of the library's own tables picks, in its own section,
-labelled as a heuristic and not as a measurement. `boys::RunOptionProbe` is the entry and
-`boys::ProbeOptions` moves the workload to your basis; the text it prints says the result is about
-the machine it ran on.
+labelled as a heuristic and not as a measurement. It also checks the clock rather than assuming it:
+options can draw the clock differently, since a wider vector register runs at a lower frequency, so
+the confidence line says how far the widest-moving pair's ratio travelled between the run's first
+and second half beside the resolution that figure is read against — warning when it went further —
+and whether every option the comparison put against another ran one arithmetic route.
+`boys::RunOptionProbe` is the entry and `boys::ProbeOptions` moves the workload to your basis; the
+text it prints says the result is about the machine it ran on.
 
 ## Which CUDA entry is cheapest on your card
 
