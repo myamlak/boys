@@ -1318,9 +1318,10 @@ count, and fails the run the same way: those four rows are the half lane's narro
 the reference multiplier, on the Chebyshev route at both schemes and both axes, where the lane
 measures 1.29916e-07 against the 1e-07 bar it publishes, with three cells outside it (the worst at
 n = 32, x = 11.8998), and they are a defect in the lane rather than a shape the call cannot have. The
-count of rows whose figure the accessor's own reading does
-not match is printed beside them and is not a failure: the accessor reports the worst fit a
-combination names and the call adds its recurrences over them. The run is at revision `f2b5cee`. By
+block fails the run on one more count: the 12 rows whose delivered figure the accessor reports above
+what the whole call measured, where the block prints its own reading of the relation — the accessor
+names the worst fit a combination carries and the call adds its recurrences over them — and counts
+the rows against the coverage anyway. The run is at revision `f2b5cee`. By
 lane:
 
 | Lane | Certified and published | Refused, reason owed | Not runnable on this host | Outside the bound their lane publishes | Members |
