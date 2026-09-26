@@ -588,20 +588,26 @@ recommendation — a probe you build and run where you deploy:
     cmake --build build --target boys-option-probe
     ./build/Release/boys-option-probe      # the config directory is your generator's
 
-It reports, per option, the cost per argument, the spread over the passes it was measured in, the
-machine load each pass was taken under, and the accuracy that option delivered against the certified
-fp64 lane — so you can see whether a faster option was faster at the same accuracy or merely at a
-lower one. Every pass carries repeated runs of a fixed-work canary, and a pass is admitted only if
-those runs agree closely enough with each other: a steady load slows every option alike and leaves
-their order alone, an unsteady one is what corrupts a comparison, and the canary's own spread
-measures that unsteadiness directly. A pass it cannot vouch for is discarded rather than averaged in,
-and the figure is the minimum of the admitted passes.
+It reports, per option, the cost per argument, the spread of that cost over the paired rounds it was
+measured in, the machine load those rounds were taken under, and the accuracy that option delivered
+against the certified fp64 lane — so you can see whether a faster option was faster at the same
+accuracy or merely at a lower one. The comparison is paired: every option is called once in every
+round, and two options are compared by the ratio of their times *within one round*, so a clock that
+drifts through a run cancels in that ratio instead of being read as a difference between the two
+options. Each pass carries runs of a fixed-work canary beside its rounds. It is a diagnostic that
+gates nothing: a fixed work read by wall clock measures the clock as much as the load, so a decaying
+clock widens the canary on a machine that is doing nothing else, and a rule that discarded a pass on
+that would discard the measurement rather than the machine. What the ordering is made in is the
+spread of the paired ratios, which the report measures. The reported figure is the lower quartile of
+the rounds with its spread printed beside it, not the minimum.
 
-When two options are closer than the resolution the run measured — the larger of the canary's widest
-admitted spread and the leading option's own spread across its admitted passes, both measured rather
-than assumed — it prints `CANNOT DETERMINE` and names what it could not separate rather than ordering
-noise. `boys::RunOptionProbe` is the entry and `boys::ProbeOptions` moves the workload to your basis;
-the text it prints says the result is about the machine it ran on.
+When two options are closer than that spread — a pair whose within-round ratio band straddles one —
+the probe prints `CANNOT DETERMINE` and names every option it could not place behind the leader,
+with the band each pair fell in, rather than ordering noise. A refusal still leaves you a default:
+the report names the option a static reading of the library's own tables picks, in its own section,
+labelled as a heuristic and not as a measurement. `boys::RunOptionProbe` is the entry and
+`boys::ProbeOptions` moves the workload to your basis; the text it prints says the result is about
+the machine it ran on.
 
 ## Which CUDA entry is cheapest on your card
 
