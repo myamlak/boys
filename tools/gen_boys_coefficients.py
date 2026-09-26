@@ -2036,11 +2036,12 @@ def fit_region_a_rational(double_orders):
 #   worse, which is a figure the lane cannot stand behind.
 # - Splitting the interval is not a way out of a target the lane's own
 #   arithmetic cannot hold. Where binary32 rounding is what stands between a
-#   fit and the target, the rounding does not shrink as the interval does, and
-#   no cover of the region holds the target there. The cover is therefore
-#   bounded by F32_RAT_MAX_DEPTH: an order no cover holds is raised with both
-#   the count and the depth that were tried, rather than walked towards through
-#   a tree as deep as the float exponent range.
+#   fit and the target, the rounding does not shrink as the interval does, so a
+#   branch can keep splitting without closing and the order is never reported.
+#   The cover is therefore bounded by F32_RAT_MAX_DEPTH: an order no cover
+#   holds within that bound is raised with both the count and the depth that
+#   were tried, rather than walked towards through a tree as deep as the float
+#   exponent range.
 #
 # The count ladder, the split of a count between numerator and denominator and
 # the dyadic cover are the double route's: the smallest stored count holding
@@ -2192,11 +2193,11 @@ def f32_rat_cover(n, a, b, depth):
     target a claim the generator can report on rather than one it can only walk
     towards. Splitting is not a way out of a target the lane's own arithmetic
     cannot hold: where a value's binary32 rounding is what stands between the
-    fit and the target, the rounding does not shrink as the interval does, so
-    the recursion descends towards the smallest float interval without ever
-    finding a piece. Unbounded, that descent is a walk of astronomical length
-    and the order is never reported; bounded, it returns None and the caller
-    says which order and which targets were tried.
+    fit and the target, the rounding does not shrink as the interval does, so a
+    branch can keep splitting without ever closing - unbounded, the walk
+    descends past the region's own scale and the order is never reported.
+    Bounded, it returns None and the caller says which order and which targets
+    were tried.
     """
     options = []
     single = f32_rat_piece(n, a, b)
