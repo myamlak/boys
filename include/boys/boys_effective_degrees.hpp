@@ -252,6 +252,19 @@ constexpr int EffectiveDegree(const CoeffArray& coeffs,
     return deg;
 }
 
+// Which of a piece table's two stored forms the scan reads: the Chebyshev
+// table or the monomial one. Every table this library stores a rung's degrees
+// for is carried in both, so the choice is the basis and nothing else, and a
+// table that carried one form would be a table to store the other for. It
+// stands above the derivations rather than beside them because each of them
+// names it with explicit template arguments over a dependent array, and a
+// compiler that looks the name up where the derivation is written would not
+// find it below.
+template <TailBasis kBasis, typename Table>
+constexpr const auto& TailTable(const Table& chebyshev, const Table& monomial) noexcept {
+    return (kBasis == TailBasis::kChebyshev) ? chebyshev : monomial;
+}
+
 // The narrow partition's own effective-degree tables. The narrow pieces carry
 // their own coefficients, so the criterion above applies to them unchanged: the
 // tail a rung drops from *this* piece's stored coefficients, times the path's
@@ -590,14 +603,6 @@ constexpr void RationalPairCut(const NumArray& num,
 // region B; the flat form keeps the tables constexpr on MSVC). The NTTP
 // forms are instantiation-local constants — zero mutable state on the CPU
 // path.
-// Which of a piece table's two stored forms the scan reads: the Chebyshev
-// table or the monomial one. Every table this library stores a rung's degrees
-// for is carried in both, so the choice is the basis and nothing else, and a
-// table that carried one form would be a table to store the other for.
-template <TailBasis kBasis, typename Table>
-constexpr const auto& TailTable(const Table& chebyshev, const Table& monomial) noexcept {
-    return (kBasis == TailBasis::kChebyshev) ? chebyshev : monomial;
-}
 
 template <double kAccuracyMultiplier, BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
 constexpr auto RegionADegrees() noexcept {
