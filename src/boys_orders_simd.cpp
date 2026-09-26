@@ -90,6 +90,39 @@ bool UniformPieces() noexcept {
     return uniform;
 }
 
+// --- The premise the narrow partition's lane rests on ------------------------
+//
+// The narrow partition does not carry the premise above: its pieces are cut per
+// order, so a fixed argument selects a different piece for each of the four
+// orders a vector holds. The lane reads them anyway, and the count of pieces an
+// order has is the table's own - 8 to 11 of them, against the shipped
+// partition's single shape - which is the whole difference between the two
+// fetching rules below.
+//
+// What it does need is one thing the premise above also implied: every piece is
+// stored to the SAME degree. A group is read at the largest of its four lanes'
+// certified degrees - one recurrence serves all four - so a lane whose own cut
+// is lower is still read up to the group's degree, and that read has to stay
+// inside the lane's own stored block rather than run off the end of the table.
+// A uniform stored degree is what makes it so, and it is a property of the
+// generated table rather than a given, so it is checked against the table.
+bool NarrowPiecesShareDegree() noexcept {
+    for (const OrderPiece& piece : kNarrowAPieces)
+    {
+        if (piece.deg != kNarrowADeg)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool NarrowPiecesUniform() noexcept {
+    static const bool uniform = NarrowPiecesShareDegree();
+    return uniform;
+}
+
 // The coefficients one step of a summation reads, for the four orders the
 // vector carries, at the stride the table already has between one order's
 // coefficients and the next order's.
@@ -392,6 +425,120 @@ void OrdersBody(int nmax, double x, double* out, std::size_t stride, Degrees deg
     }
 }
 
+// --- The narrow partition on the orders axis ---------------------------------
+//
+// The same axis over the other partition. Four orders of one argument still
+// share a vector register; what changes is where each lane's coefficients come
+// from. The shipped lane's fetch is a stride through one shared piece - the
+// four orders' copies of it lie one order apart - and the narrow partition has
+// no such stride, because each order's region-A fit is cut at its own edges:
+// at one argument the four lanes are routinely in four different pieces, of
+// four different degrees, with four different mapped arguments.
+//
+// So the fetch is per lane rather than by stride. Each lane's own piece is
+// looked up, each lane's own interval maps the argument, and the four
+// coefficients a step reads are gathered from the four lanes' own offsets -
+// one gather whose index vector is the lanes' piece offsets, which is a
+// gathered fetch of four different pieces rather than of four copies of one.
+// The recurrences, the store and the scalar tail are the shipped body's,
+// unchanged, so the values this lane returns are the stored narrow fits summed
+// exactly as the shipped lane sums its own.
+//
+// What the lane costs is the lookup: the shipped body maps the argument once
+// and derives the whole group's geometry from the single piece it lands in,
+// where this one runs a scan and a mapping per lane. That is the price of a
+// partition cut per order, and it is measured rather than assumed away.
+
+// One group's four lanes at one argument: their pieces' coefficient offsets,
+// the argument mapped into each lane's own interval, and the largest of their
+// certified degrees.
+template <class Degrees>
+void NarrowGeometry(int l,
+                    double x,
+                    Degrees degrees,
+                    __m128i& offsets,
+                    int& deg,
+                    __m256d& tv) noexcept {
+    alignas(32) double mapped[4];
+    int off[4];
+    int degs[4];
+
+    for (int j = 0; j < 4; ++j)
+    {
+        const OrderPiece& piece = FindNarrowAPiece(l + j, x);
+        const std::size_t flat = static_cast<std::size_t>(&piece - kNarrowAPieces.data());
+        off[j] = piece.offset;
+        degs[j] = degrees.At(flat, piece.deg);
+        // The shipped lane's own mapping, so a lane's value here is the value
+        // its fit would return under the same summation. The narrow partition
+        // is cut at its own edges, so the interval is read from the lane's own
+        // piece rather than shared across the group.
+        mapped[j] = std::fma(x - piece.a, 2.0 / (piece.b - piece.a), -1.0);
+    }
+
+    offsets = _mm_loadu_si128(reinterpret_cast<const __m128i*>(off));
+    tv = _mm256_load_pd(mapped);
+
+    deg = degs[0];
+
+    for (int j = 1; j < 4; ++j)
+    {
+        deg = degs[j] > deg ? degs[j] : deg;
+    }
+}
+
+// One vector of four orders from the narrow pieces, each lane fetched from its
+// own piece's block: `offsets` holds the four lanes' coefficient offsets, so
+// the gather at step k reads the k-th coefficient of each lane's own piece.
+template <OrdersScheme kScheme>
+__m256d NarrowGroup(const double* table, __m128i offsets, int deg, __m256d tv) noexcept {
+    const auto coeff = [&](int k) { return _mm256_i32gather_pd(table + k, offsets, 8); };
+
+    if constexpr (kScheme == OrdersScheme::kHorner)
+    {
+        return HornerGathered(coeff, deg, tv);
+    } else if constexpr (kScheme == OrdersScheme::kDirectSum)
+    {
+        return ChebyshevDirectSum(coeff, deg, tv);
+    } else
+    {
+        return ClenshawSplitGathered(coeff, deg, tv);
+    }
+}
+
+// The narrow partition's region-A body: per-lane geometry, then vector groups
+// of four orders and a scalar tail for the remainder, exactly as the shipped
+// body is shaped.
+template <OrdersScheme kScheme, class Degrees>
+void NarrowOrdersBody(int nmax, double x, double* out, std::size_t stride, Degrees degrees) noexcept {
+    const double* const table =
+        (kScheme == OrdersScheme::kHorner) ? kNarrowAMonoCoeffs.data() : kNarrowACoeffs.data();
+
+    int l = 0;
+
+    if (nmax >= 3)
+    {
+        for (; l + 3 <= nmax; l += 4)
+        {
+            __m128i offsets{};
+            int deg = 0;
+            __m256d tv{};
+            NarrowGeometry(l, x, degrees, offsets, deg, tv);
+            StoreGroup(out, l, stride, NarrowGroup<kScheme>(table, offsets, deg, tv));
+        }
+    }
+
+    for (; l <= nmax; ++l)
+    {
+        const OrderPiece& piece = FindNarrowAPiece(l, x);
+        const std::size_t flat = static_cast<std::size_t>(&piece - kNarrowAPieces.data());
+        const double t = std::fma(x - piece.a, 2.0 / (piece.b - piece.a), -1.0);
+
+        out[static_cast<std::size_t>(l) * stride] =
+            ScalarFit<kScheme>(table + piece.offset, degrees.At(flat, piece.deg), t);
+    }
+}
+
 template <bool kComposed>
 void OrdersByScheme(OrdersScheme scheme, int nmax, double x, double* out, std::size_t stride) {
     const StoredDegree degrees{};
@@ -617,6 +764,14 @@ bool OrdersLaneApplies(double x) noexcept {
     return !(x >= kX0) && BoysAvx2Available() && UniformPieces();
 }
 
+// The same question for the narrow partition's lane. Its premise is the one
+// above's weaker form - the pieces need not share their edges, only their
+// stored degree - and the interval is the same, because the narrow partition
+// tiles the same region A and ends at the same kX0.
+bool NarrowOrdersLaneApplies(double x) noexcept {
+    return !(x >= kX0) && BoysAvx2Available() && NarrowPiecesUniform();
+}
+
 // The certified scalar single lane at the policy the axis names, one order at
 // a time: what the entry is outside the packed interval, on a host without the
 // vector tier, and against a table that does not carry the lane's premise.
@@ -625,9 +780,16 @@ bool OrdersLaneApplies(double x) noexcept {
 // per-order lane rather than to the full-accuracy one. The budget is the
 // policy's engine choice and this path is the double engine at every budget,
 // so the fallback names the float budget the double entries are built with.
-template <EvalScheme kScheme, double kAccuracyMultiplier, FitRoute kRoute>
+// The partition is the policy's too, for the same reason: the fallback is the
+// partition the caller named, at the rung the caller named, and never another
+// one's values under this one's name.
+template <EvalScheme kScheme,
+          double kAccuracyMultiplier,
+          FitRoute kRoute,
+          FitGranularity kGranularity>
 void ScalarOrders(int nmax, double x, double* out, std::size_t stride) noexcept {
-    using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFloat, PackAxis::kArguments>;
+    using Policy =
+        EvalPolicy<kRoute, kScheme, BoysBudget::kFloat, PackAxis::kArguments, kGranularity>;
 
     for (int l = 0; l <= nmax; ++l)
     {
@@ -659,7 +821,8 @@ bool OrdersShortcut(int nmax, double x, double* out, std::size_t stride) noexcep
 
     if (!OrdersLaneApplies(x))
     {
-        ScalarOrders<kScheme, kAccuracyMultiplier, kRoute>(nmax, x, out, stride);
+        ScalarOrders<kScheme, kAccuracyMultiplier, kRoute, kDefaultFitGranularity>(
+            nmax, x, out, stride);
         return true;
     }
 
@@ -692,7 +855,7 @@ void BoysAllOrdersSimdComposed(
 
 // The entry the public surface's orders axis dispatches to (boys_impl.hpp).
 //
-// Three choices reach this one entry and each is a template argument:
+// Four choices reach this one entry and each is a template argument:
 //
 //  - the scheme, which picks the polynomial table and the summation the
 //    shipped route's fits are read with;
@@ -702,14 +865,23 @@ void BoysAllOrdersSimdComposed(
 //  - the accuracy multiplier, which picks the degree a fit is read at. At the
 //    reference rung every fit is read whole, which is the lane's shipped
 //    reading; at a relaxed rung each fit is read at the degree the truncation
-//    criterion certifies for that fit's piece and that multiplier.
+//    criterion certifies for that fit's piece and that multiplier;
+//  - the partition, which picks the table the lane reads. The shipped one is
+//    the per-order pieces the lane has always read, whose shared shape is what
+//    lets one stride fetch four orders' coefficients; the narrow one is cut
+//    per order, so the lane reads each order's own piece instead.
 //
 // The stored fit is summed composed rather than gathered: the two fetches are
 // the same lane value for value, and the composed one is the cheaper of the two
 // in the counter that decides - retired slots - on the machine this lane was
 // measured on, where the gather is a microcode assist worth several slots per
 // step. The gathered entry stays beside it so the pair remains measurable.
-template <EvalScheme kScheme, double kAccuracyMultiplier, FitRoute kRoute>
+// The narrow partition's fetch is a gather by construction - the four lanes'
+// pieces have no stride between them - so it has no composed twin.
+template <EvalScheme kScheme,
+          double kAccuracyMultiplier,
+          FitRoute kRoute,
+          FitGranularity kGranularity>
 void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
@@ -720,11 +892,16 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
     assert(x >= 0.0);
     assert(out != nullptr);
 
-    if constexpr (kRoute == kDefaultFitRoute && kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
+    if constexpr (kRoute == kDefaultFitRoute &&
+                  kAccuracyMultiplier == kBoysFullAccuracyMultiplier &&
+                  kGranularity == kDefaultFitGranularity)
     {
-        // The reference rung of the shipped route is the lane exactly as it
-        // shipped: the same body, so the same tables, the same arithmetic and
-        // the same fallback the suite pins bit for bit.
+        // The reference rung of the shipped route, on the shipped partition, is
+        // the lane exactly as it shipped: the same body, so the same tables, the
+        // same arithmetic and the same fallback the suite pins bit for bit. The
+        // partition is part of the condition and not only the rung, because
+        // that body reads the shipped table: a policy naming the narrow one
+        // reaches the narrow body below instead.
         BoysAllOrdersSimdComposed(OrdersSchemeOf(kScheme), nmax, x, out, 1);
         return;
     } else
@@ -739,21 +916,46 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
             return;
         }
 
-        if (!OrdersLaneApplies(x))
+        if constexpr (kGranularity == kDefaultFitGranularity)
         {
-            ScalarOrders<kScheme, kAccuracyMultiplier, kRoute>(nmax, x, out, 1);
-            return;
+            if (!OrdersLaneApplies(x))
+            {
+                ScalarOrders<kScheme, kAccuracyMultiplier, kRoute, kGranularity>(nmax, x, out, 1);
+                return;
+            }
+        } else
+        {
+            if (!NarrowOrdersLaneApplies(x))
+            {
+                ScalarOrders<kScheme, kAccuracyMultiplier, kRoute, kGranularity>(nmax, x, out, 1);
+                return;
+            }
         }
 
-        // The degrees the shipped table's fits are read at. The criterion's
-        // budget is zero at the reference rung, which leaves every fit at its
-        // stored degree - the same reading the entry above takes - so the one
-        // table covers both rungs.
-        static constexpr auto kDegrees = RegionADegrees<kAccuracyMultiplier,
-                                                        BoysRole::kDoubleSingle,
-                                                        SchemeTailBasis<kScheme>()>();
+        // The degrees this partition's fits are read at. The criterion's budget
+        // is zero at the reference rung, which leaves every fit at its stored
+        // degree - the same reading the shipped path takes - so the one table
+        // covers every rung.
+        static constexpr auto kDegrees =
+            RegionADegreeTableOf<kAccuracyMultiplier,
+                                 EvalPolicy<kRoute, kScheme, BoysBudget::kFloat,
+                                            PackAxis::kOrders, kGranularity>,
+                                 BoysRole::kDoubleSingle>();
 
-        if constexpr (kRoute == FitRoute::kRationalMinimax)
+        if constexpr (kGranularity != kDefaultFitGranularity)
+        {
+            // The narrow partition is a partition of the shipped route's own
+            // region-A fits; the rational route stores its pairs over the
+            // shipped pieces and has no narrow partition of them, which
+            // RouteFit refuses where such a policy is named rather than here.
+            static_assert(kRoute == FitRoute::kChebyshev,
+                          "the rational route's region-A pairs cover the shipped partition's "
+                          "per-order pieces, and the narrow partition is cut per order, so "
+                          "there is no narrow partition of the route's pairs to read: the "
+                          "route carries the shipped partition on this axis");
+            NarrowOrdersBody<OrdersSchemeOf(kScheme)>(
+                nmax, x, out, 1, RungDegree<decltype(kDegrees)>{kDegrees});
+        } else if constexpr (kRoute == FitRoute::kRationalMinimax)
         {
             static constexpr auto kPairs = RationalRegionADegrees<kAccuracyMultiplier>();
 
@@ -805,10 +1007,31 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
                                                                                     double*)       \
         noexcept;
 
+// The narrow partition, at both schemes and every rung, on the shipped route
+// alone: the partition is a partition of that route's region-A fits.
+#define BOYS_ORDERS_NARROW_INSTANTIATIONS(kScheme)                                                 \
+    template void BoysAllOrdersPacked<kScheme, 1.0, FitRoute::kChebyshev, FitGranularity::kNarrow>( \
+        int, double, double*) noexcept;                                                            \
+    template void BoysAllOrdersPacked<kScheme, 64.0, FitRoute::kChebyshev, FitGranularity::kNarrow>( \
+        int, double, double*) noexcept;                                                            \
+    template void BoysAllOrdersPacked<kScheme, 256.0, FitRoute::kChebyshev,                        \
+                                      FitGranularity::kNarrow>(int, double, double*) noexcept;     \
+    template void BoysAllOrdersPacked<kScheme, 1024.0, FitRoute::kChebyshev,                       \
+                                      FitGranularity::kNarrow>(int, double, double*) noexcept;     \
+    template void BoysAllOrdersPacked<kScheme, 4096.0, FitRoute::kChebyshev,                       \
+                                      FitGranularity::kNarrow>(int, double, double*) noexcept;     \
+    template void BoysAllOrdersPacked<kScheme, 16384.0, FitRoute::kChebyshev,                      \
+                                      FitGranularity::kNarrow>(int, double, double*) noexcept;     \
+    template void BoysAllOrdersPacked<kScheme, 65536.0, FitRoute::kChebyshev,                      \
+                                      FitGranularity::kNarrow>(int, double, double*) noexcept;
+
 BOYS_ORDERS_PACKED_INSTANTIATIONS(kDefaultEvalScheme)
 BOYS_ORDERS_PACKED_INSTANTIATIONS(EvalScheme::kHorner)
+BOYS_ORDERS_NARROW_INSTANTIATIONS(kDefaultEvalScheme)
+BOYS_ORDERS_NARROW_INSTANTIATIONS(EvalScheme::kHorner)
 
 #undef BOYS_ORDERS_PACKED_INSTANTIATIONS
+#undef BOYS_ORDERS_NARROW_INSTANTIATIONS
 
 } // namespace boys::detail
 
@@ -844,9 +1067,13 @@ void BoysAllOrdersSimdComposed(
 // certified scalar single lane the packed bodies fall back to, at the policy
 // the axis names, so the option exists, is defined and is the policy's own
 // answer everywhere the library is.
-template <EvalScheme kScheme, double kAccuracyMultiplier, FitRoute kRoute>
+template <EvalScheme kScheme,
+          double kAccuracyMultiplier,
+          FitRoute kRoute,
+          FitGranularity kGranularity>
 void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
-    using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFloat, PackAxis::kArguments>;
+    using Policy =
+        EvalPolicy<kRoute, kScheme, BoysBudget::kFloat, PackAxis::kArguments, kGranularity>;
 
     for (int l = 0; l <= nmax; ++l)
     {
@@ -888,10 +1115,31 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
                                                                                     double*)       \
         noexcept;
 
+// The narrow partition, at both schemes and every rung, on the shipped route
+// alone: the partition is a partition of that route's region-A fits.
+#define BOYS_ORDERS_NARROW_INSTANTIATIONS(kScheme)                                                 \
+    template void BoysAllOrdersPacked<kScheme, 1.0, FitRoute::kChebyshev, FitGranularity::kNarrow>( \
+        int, double, double*) noexcept;                                                            \
+    template void BoysAllOrdersPacked<kScheme, 64.0, FitRoute::kChebyshev, FitGranularity::kNarrow>( \
+        int, double, double*) noexcept;                                                            \
+    template void BoysAllOrdersPacked<kScheme, 256.0, FitRoute::kChebyshev,                        \
+                                      FitGranularity::kNarrow>(int, double, double*) noexcept;     \
+    template void BoysAllOrdersPacked<kScheme, 1024.0, FitRoute::kChebyshev,                       \
+                                      FitGranularity::kNarrow>(int, double, double*) noexcept;     \
+    template void BoysAllOrdersPacked<kScheme, 4096.0, FitRoute::kChebyshev,                       \
+                                      FitGranularity::kNarrow>(int, double, double*) noexcept;     \
+    template void BoysAllOrdersPacked<kScheme, 16384.0, FitRoute::kChebyshev,                      \
+                                      FitGranularity::kNarrow>(int, double, double*) noexcept;     \
+    template void BoysAllOrdersPacked<kScheme, 65536.0, FitRoute::kChebyshev,                      \
+                                      FitGranularity::kNarrow>(int, double, double*) noexcept;
+
 BOYS_ORDERS_PACKED_INSTANTIATIONS(kDefaultEvalScheme)
 BOYS_ORDERS_PACKED_INSTANTIATIONS(EvalScheme::kHorner)
+BOYS_ORDERS_NARROW_INSTANTIATIONS(kDefaultEvalScheme)
+BOYS_ORDERS_NARROW_INSTANTIATIONS(EvalScheme::kHorner)
 
 #undef BOYS_ORDERS_PACKED_INSTANTIATIONS
+#undef BOYS_ORDERS_NARROW_INSTANTIATIONS
 
 } // namespace boys::detail
 

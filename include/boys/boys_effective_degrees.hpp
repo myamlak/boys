@@ -602,6 +602,91 @@ constexpr auto RegionBDegrees() noexcept {
     }
 }
 
+// ---------------------------------------------------------------------------
+// The narrow partition's own rungs
+// ---------------------------------------------------------------------------
+// The second partition of both fitted regions carries its own pieces, at its
+// own degrees and with its own edges, so a rung of it is its own derivation:
+// the same criterion, over the other table. Naming the partition does not
+// change which criterion a rung is cut by, only which coefficients the cut is
+// measured against.
+//
+// Region A's pieces are cut per order rather than shared across them, so the
+// table is flat over `kNarrowAPieces` exactly as the shipped one is over
+// `kPieces` - one entry per row of the partition, at that row's own degree -
+// and the amplification is the same region A gain the shipped derivation uses
+// for the role.
+//
+// These are double lane tables: the narrow partition is a partition of the
+// double lane's fits, and there is no single-precision second partition.
+template <double kAccuracyMultiplier, BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
+constexpr auto NarrowRegionADegrees() noexcept {
+    static_assert(RoleUsesDoubleTables(kRole),
+                  "the narrow partition is a partition of the double lane's stored fits, so its "
+                  "effective degrees are derived for the roles that evaluate those fits");
+
+    constexpr const auto& coeffs = (kBasis == TailBasis::kChebyshev) ? kNarrowACoeffs
+                                                                     : kNarrowAMonoCoeffs;
+    std::array<int, std::size(kNarrowAPieces)> degrees{};
+
+    for (int order = 0; order <= kMaxOrder; ++order)
+    {
+        for (int p = kNarrowAPieceStart[order]; p < kNarrowAPieceStart[order + 1]; ++p)
+        {
+            const OrderPiece& piece = kNarrowAPieces[static_cast<std::size_t>(p)];
+            const double amplification =
+                RoleUsesBatchAmplification(kRole) ? RegionAAmplification(order, piece.b) : 1.0;
+            degrees[static_cast<std::size_t>(p)] =
+                EffectiveDegree(coeffs,
+                                static_cast<std::size_t>(piece.offset),
+                                piece.deg,
+                                kAccuracyMultiplier,
+                                amplification,
+                                RegionABudget(kRole));
+        }
+    }
+
+    return degrees;
+}
+
+// The narrow partition of region B. Its seed is one polynomial per piece, and
+// an argument selects the piece it falls in, so a row is the pair (piece,
+// order): the piece whose tail the cut drops, and the order the seed's error
+// reaches. Flat, indexed piece * (kMaxOrder + 1) + order, for the reason the
+// other tables are flat.
+//
+// The gain is the shipped region B one, A_B(n), because the seed is carried up
+// the same recursion either partition feeds: which pieces the seed was cut
+// from is what the partition decides, and no piece of it reaches the output
+// orders by another path.
+template <double kAccuracyMultiplier, BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
+constexpr auto NarrowRegionBDegrees() noexcept {
+    static_assert(RoleUsesDoubleTables(kRole),
+                  "the narrow partition is a partition of the double lane's stored fits, so its "
+                  "effective degrees are derived for the roles that evaluate those fits");
+
+    constexpr const auto& coeffs = (kBasis == TailBasis::kChebyshev) ? kNarrowBcoeffs
+                                                                     : kNarrowBMonoCoeffs;
+    std::array<int, static_cast<std::size_t>(kNarrowBPieces) * (kMaxOrder + 1)> degrees{};
+
+    for (int piece = 0; piece < kNarrowBPieces; ++piece)
+    {
+        for (int order = 0; order <= kMaxOrder; ++order)
+        {
+            degrees[static_cast<std::size_t>(piece) * (kMaxOrder + 1)
+                    + static_cast<std::size_t>(order)] =
+                EffectiveDegree(coeffs,
+                                static_cast<std::size_t>(piece) * (kNarrowBDeg + 1),
+                                kNarrowBDeg,
+                                kAccuracyMultiplier,
+                                RegionBAmplification(order),
+                                RegionBBudget(kRole));
+        }
+    }
+
+    return degrees;
+}
+
 // The rational pair tables at a rung: per region-A piece and per region-B
 // order, the numerator and the denominator degree the pair criterion certifies.
 // Two flat int arrays rather than one of pairs, for the same reason the

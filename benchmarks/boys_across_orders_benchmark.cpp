@@ -16,6 +16,17 @@
 //     orders (an argument-major loop), and pays the plane's order stride on
 //     the store because AVX2 has no scatter.
 //
+//   * THE PARTITION. Both readings above are of the shipped region-A pieces,
+//     whose every order shares its intervals and degrees. That is what lets the
+//     lane fetch one piece's coefficients at a fixed stride and hold four orders
+//     of ONE piece. The narrow partition is cut per order, so no such stride
+//     exists: the narrow lane fetches each of the four orders it packs its own
+//     piece and coefficients, and one group is four different pieces evaluated
+//     together. The per-order loop beside it is that partition read one order at
+//     a time by the library's own single-order entry - the shape a fallback onto
+//     scalar calls would have - and the pair's two counts are what says whether
+//     the packed form is a vector path or four scalar calls carrying its name.
+//
 // WHAT THIS PROGRAM REPORTS. It drives one variant at a time over a fixed
 // workload and prints the work it did - calls, output values, and the worst
 // deviation from the shipped entry, so a measurement can never be of a broken
@@ -33,6 +44,13 @@
 // Reproducing an instruction count, one variant per run:
 //   perf stat -e instructions:u,uops_retired.retire_slots:u
 //     boys-across-orders-benchmark --variant=orders-across-direct --reps=20000
+//
+// The narrow partition's packed lane against the per-order loop it replaces,
+// one run each and both counters read:
+//   perf stat -e instructions:u,uops_retired.retire_slots:u
+//     boys-across-orders-benchmark --variant=orders-narrow-clenshaw --reps=20000
+//   perf stat -e instructions:u,uops_retired.retire_slots:u
+//     boys-across-orders-benchmark --variant=orders-narrow-scalar-clenshaw --reps=20000
 
 #include "boys/boys.hpp"
 #include "boys/boys_coefficients.hpp"
@@ -125,6 +143,19 @@ constexpr Variant kVariants[] = {
     {"balln-across-direct-composed",
      "BoysAllN(nmax, x[], count)",
      "the across-orders lane per argument, direct sum, coefficients composed"},
+    {"orders-narrow-clenshaw",
+     "BoysAllOrders(nmax, x)",
+     "the orders axis on the narrow partition, split Clenshaw"},
+    {"orders-narrow-horner",
+     "BoysAllOrders(nmax, x)",
+     "the orders axis on the narrow partition, Horner on the monomial coefficients"},
+    {"orders-narrow-scalar-clenshaw",
+     "BoysAllOrders(nmax, x)",
+     "the narrow partition read one order at a time by the scalar single entry: the lane this "
+     "axis replaces, and the count that says whether it does"},
+    {"orders-narrow-scalar-horner",
+     "BoysAllOrders(nmax, x)",
+     "the same per-order loop at the Horner scheme"},
 };
 
 const Variant* FindVariant(const std::string& name) {
@@ -162,6 +193,57 @@ struct Deviation {
     double relative = 0.0;
 };
 
+// The narrow partition's lane at one argument, at the scheme the variant
+// names: the four orders of a group fetch each its own piece and coefficients,
+// because the narrow pieces are cut per order and do not share a stride.
+//
+// The library's packed entry carries the two certified schemes on this
+// partition. The direct Chebyshev sum is this driver's own extra reading of the
+// shipped lane and is not a scheme of the library's, so this partition has no
+// direct-sum variant rather than one answered with another scheme's numbers.
+void NarrowLane(boys::EvalScheme scheme, int nmax, double x, double* out) noexcept {
+    if (scheme == boys::EvalScheme::kHorner)
+    {
+        boys::detail::BoysAllOrdersPacked<boys::EvalScheme::kHorner,
+                                          1.0,
+                                          boys::FitRoute::kChebyshev,
+                                          boys::FitGranularity::kNarrow>(nmax, x, out);
+    } else
+    {
+        boys::detail::BoysAllOrdersPacked<boys::EvalScheme::kSplitClenshaw,
+                                          1.0,
+                                          boys::FitRoute::kChebyshev,
+                                          boys::FitGranularity::kNarrow>(nmax, x, out);
+    }
+}
+
+// The lane the refusal would have left a caller with: the same partition's
+// certified single-order fit, called once per order in a loop, with no vector
+// group anywhere. The library's own entry, not a restatement of the body, so
+// the two columns of a count are the same arithmetic over the same pieces.
+void NarrowPerOrderFits(boys::EvalScheme scheme, int nmax, double x, double* out) noexcept {
+    for (int l = 0; l <= nmax; ++l)
+    {
+        if (scheme == boys::EvalScheme::kHorner)
+        {
+            out[l] = boys::BoysSingle<1.0,
+                                      boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                                       boys::EvalScheme::kHorner,
+                                                       boys::BoysBudget::kFloat,
+                                                       boys::PackAxis::kArguments,
+                                                       boys::FitGranularity::kNarrow>>(l, x);
+        } else
+        {
+            out[l] = boys::BoysSingle<1.0,
+                                      boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                                       boys::EvalScheme::kSplitClenshaw,
+                                                       boys::BoysBudget::kFloat,
+                                                       boys::PackAxis::kArguments,
+                                                       boys::FitGranularity::kNarrow>>(l, x);
+        }
+    }
+}
+
 Deviation CompareToShipped(const std::string& variant,
                            int nmax,
                            const std::vector<double>& x,
@@ -176,13 +258,23 @@ Deviation CompareToShipped(const std::string& variant,
     const bool composed = (variant.find("-composed") != std::string::npos);
     const bool direct = (variant.find("direct") != std::string::npos);
     const bool horner = (variant.find("horner") != std::string::npos);
+    const bool narrow = (variant.rfind("orders-narrow-", 0) == 0);
+    const bool narrowScalar = narrow && (variant.find("scalar") != std::string::npos);
     const auto scheme = direct ? boys::detail::OrdersScheme::kDirectSum
                                : (horner ? boys::detail::OrdersScheme::kHorner
                                          : boys::detail::OrdersScheme::kSplitClenshaw);
+    const auto narrowScheme =
+        horner ? boys::EvalScheme::kHorner : boys::EvalScheme::kSplitClenshaw;
 
     for (std::size_t i = 0; i < count; ++i)
     {
-        if (composed)
+        if (narrowScalar)
+        {
+            NarrowPerOrderFits(narrowScheme, nmax, x[i], mine.data());
+        } else if (narrow)
+        {
+            NarrowLane(narrowScheme, nmax, x[i], mine.data());
+        } else if (composed)
         {
             boys::detail::BoysAllOrdersSimdComposed(scheme, nmax, x[i], mine.data(), 1);
         } else
@@ -257,6 +349,27 @@ double Run(const Config& config) {
                     boys::detail::BoysRegionASimd<boys::kBoysFullAccuracyMultiplier>(
                         static_cast<int>(l), duplicate, lanes, 4);
                     out[l] = lanes[0];
+                }
+            }
+
+            return x.size() * orders;
+        });
+    } else if (name.rfind("orders-narrow-", 0) == 0)
+    {
+        const bool scalarFits = (name.find("scalar") != std::string::npos);
+        const bool horner = (name.find("horner") != std::string::npos);
+        const auto narrowScheme =
+            horner ? boys::EvalScheme::kHorner : boys::EvalScheme::kSplitClenshaw;
+
+        values = Drive(config, [&](const std::vector<double>& x, std::vector<double>& out) {
+            for (double xi : x)
+            {
+                if (scalarFits)
+                {
+                    NarrowPerOrderFits(narrowScheme, nmax, xi, out.data());
+                } else
+                {
+                    NarrowLane(narrowScheme, nmax, xi, out.data());
                 }
             }
 
@@ -415,7 +528,8 @@ int main(int argc, char** argv) {
 
     // The correctness guard: the variant is measured only over arguments on
     // which it agrees with the shipped entry inside the shipped budget.
-    if (!config.variant.empty() && config.variant.rfind("orders-across-", 0) == 0)
+    if (!config.variant.empty() && (config.variant.rfind("orders-across-", 0) == 0 ||
+                                    config.variant.rfind("orders-narrow-", 0) == 0))
     {
         const std::vector<double> sample = MakeArguments(std::min<std::size_t>(config.count, 64));
         const Deviation deviation =

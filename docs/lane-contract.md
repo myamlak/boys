@@ -367,14 +367,19 @@ none over the bar its row is judged at. The block reports its own carrying fract
 cells (83.2%), as the cells able to discriminate; the other 97188 carry a bound at least as large as
 the value itself, so no error can exceed them, and they are not counted in the rows above.
 
-**What is refused is the combinations with no narrow table**, at compile time and where they are
-named: the rational minimax route, which is one numerator/denominator pair over the whole interval
-and has no partition of it; the relaxed rungs `m > 1`, which truncate the shipped fits to certified
-effective degrees and have no counterpart among pieces that are all at one degree, in either region;
-and the single-precision lanes, which hold one coefficient set and no narrow one. Each is a static
-assertion with the reason, and none of them falls back: the two partitions are different fits of the
-same function over the same interval, so a substitution would return the shipped numbers under the
-narrow partition's name.
+**What is carried, and what is still refused.** The narrow partition is a field of `EvalPolicy` and
+a name the report prints, and every double-precision entry this library has reads it: the stored fits
+directly, the batch entry's seeding fallback, the single-order entry, the plane entry, and the
+across-orders packed lane. The relaxed rungs `m > 1` are carried on it too — the criterion is the
+same one, measured against the partition's own pieces rather than against the shipped rows, and its
+table is derived over them — so a rung of the narrow partition is a rung of *it* and not the shipped
+table truncated. Two combinations are still refused, at compile time and where they are named: the
+rational minimax route, which is one numerator/denominator pair over the whole interval and has no
+partition of it; and the single-precision lanes, which hold one coefficient set and no narrow one.
+Each is a static assertion with the reason, and neither falls back: the two partitions are different
+fits of the same function over the same interval, so a substitution would return the shipped numbers
+under the narrow partition's name. Both are unbuilt tables rather than unavailable options, and each
+is named where it is refused so that it can be counted.
 
 ## float
 
@@ -848,13 +853,50 @@ at a rung is the same dropped-tail criterion this library's other rungs are trun
 the degree the lane reads; and the rational route's region-A fits cover the same per-order intervals
 as the shipped piece table, so the lane reads them where it read that one. The gate's packing book
 measures every rung the tier enumeration declares, on both routes, through both entries that carry the
-axis, each against the figure that combination documents.
+axis, each against the figure that combination documents — and every rung again on the narrow
+partition, on the shipped route.
+
+**The narrow partition, where the axis had no kernel.** The lane's third limit looked structural and
+was not. The shipped fetch steps from one order's coefficients to the next at a fixed stride, which
+works because every order's piece in the shipped region-A table shares its interval and its degree
+with the ones beside it; the narrow partition's pieces are cut per order, 311 pieces at 10 coefficients
+each with their own intervals, so no such stride exists. A stride is one way to fill a register, not a
+requirement of the axis: the lane fills it the other way, by fetching each of the four orders it holds
+its own piece's start and its own coefficients — one gather per stored coefficient rather than one
+stride per group — and summing the four as one vector. The value the row promises is unchanged, and so
+is the figure: **|F̂ − F| ≤ 1e-15 over `0 <= x < kX0`** at m = 1, the per-order region-A bar.
+
+**Two lanes, two mappings, and the reference as the third party.** The narrow partition cannot carry
+the bit-for-bit row above, and it is worth saying why rather than letting a reader find the gap. That
+identity is between two lanes that map the argument the same way — `fma(x - a, 2/(b - a), -1)`. The
+per-order narrow lane is the *scalar* entry, whose mapping is `2 (x - a) / (b - a) - 1`, and the two
+roundings are not the same bits. So the narrow axis is measured as a difference in values from the
+per-order narrow lane, and where the two part by more than 1e-15 the 80-digit reference says which
+reading is the right one. Measured over the committed reference grid's 21,285 region-A cells:
+
+| quantity | split Clenshaw | Horner |
+| --- | --- | --- |
+| axis, worst against the reference | 2.22e-16 | 2.22e-16 |
+| per-order narrow lane, worst against the reference | 3.22e-15 | 3.22e-15 |
+| cells where the two lanes part by more than 1e-15 | 32 | 30 |
+| ... of those, the reference is on the axis's side | 32 | 30 |
+| ... of those, the axis is inside its 1e-15 | 32 | 30 |
+| ... of those, the per-order lane is outside its own figure | 0 | 0 |
+
+Every parting cell sits in the extended band, where the single lane's own figure is 3e-14 and not
+1e-15, and the per-order lane is inside that figure at all of them: the two are held to different
+budgets because they are different lanes. The worst of the parting cells, at n = 16 and
+x = 4.8998472055064735, has the axis **5.82e-17** from the reference and the per-order lane
+**3.22e-15**, and the same reference the axis is measured against is the one this page measures every
+other region-A row at.
 
 **The domain is region A, and its bounds are the fits' own.** The orders lane covers `0 <= x < kX0`
 and is certified against the per-order region-A bar, **|F̂ − F| ≤ m·1e-15**. At the certified split
 Clenshaw scheme its values are the across-arguments lane's values **bit for bit** — one exact
 comparison over 3,009 arguments and every order, 99,297 of 99,297 values, with no tolerance, because
-a reordered step or a coefficient read one index out would still return a plausible number. Past
+a reordered step or a coefficient read one index out would still return a plausible number. That row
+is the shipped partition's, for the reason in the paragraph above; on the narrow partition the same
+question is answered by the reference table instead. Past
 `kX0` the entry runs the certified scalar single lane one order at a time, so it is defined for
 every argument the library accepts; that path is bit-identical to `BoysSingle`, and the gate measures
 it over the whole reference grid rather than assuming it.
@@ -894,6 +936,48 @@ over the 2,048,000 calls measured. A call evaluates its 33 orders as 8 vector gr
 tail, and each group performs one fetch per stored coefficient — 21 at the first band's degree 20 —
 which is 169 fetches a call here. So the gather's own excess is 2,358 / 169 = **13.95 retired slots
 per fetch**, which is the mechanism rather than the whole figure.
+
+**The narrow partition's lane, in the same units.** The narrow partition's orders axis is measured
+against the loop of four scalar evaluations it replaces — what the axis would otherwise be at that
+partition — over the same call, the same machine and the same counter pair. One variant per process,
+so no pair is subtracted across runs:
+
+| variant | instructions | retired slots | slots per call | slots per value |
+| --- | --- | --- | --- | --- |
+| narrow partition, orders axis, split Clenshaw | 6,061,196,228 | 8,887,109,142 | 4,339.4 | 131.50 |
+| the four scalar orders it replaces, same scheme | 19,665,326,588 | 21,004,501,686 | 10,256.1 | 310.79 |
+| narrow partition, orders axis, Horner | 5,149,807,654 | 7,963,896,750 | 3,888.6 | 117.84 |
+| the four scalar orders it replaces, same scheme | 14,361,758,765 | 15,037,495,121 | 7,342.5 | 222.50 |
+
+The packed lane retires **2.36×** fewer slots and **3.24×** fewer instructions than the loop at split
+Clenshaw, and **1.89×** and **2.79×** at Horner: on this machine the gathered fetch is cheaper than
+the four scalar calls it replaces, so the price the gather pays against the composed fetch above is
+still a price paid against a loop that pays more. It is a vector path by source and not by count
+alone — four orders in one `__m256d`, the group's four piece offsets in one `__m128i`, and one
+`_mm256_i32gather_pd` per stored coefficient index, or `deg + 1` a group, where `deg` is the largest
+of the group's four certified degrees. A call evaluates its 33 orders as 8 vector groups and one
+scalar tail, so at the stored degree 10 it performs 11 gathers a group and **88 a call**, against the
+shipped partition's 169 — and it retires 623,566,216 fewer slots over the same 2,048,000 calls while
+also paying a per-lane piece scan and mapping the shipped lane does not, so those 81 gathers a call
+are worth **at least 3.76 slots each**, the lane's extra geometry already inside that difference.
+
+What the two lanes cannot be compared on is identity: the narrow axis reads its fits under the
+shipped lane's `fma` mapping and the per-order narrow lane under `2 (x - a) / (b - a) - 1`, so the
+narrow axis is held to the reference above instead of to a bit-for-bit row, for the mapping reason
+given with it.
+
+**The composed row, re-measured at this revision.** The composed and gathered rows of the fetch table
+were taken before the second partition's tables and the effective-degree cuts landed, and the
+re-measurement obligation below is this section's own. Measured again over the same calls and the
+same shape: the composed variant now retires **6,570,938,098** instructions and **6,845,085,236**
+slots, in three runs agreeing to within 232 instructions and 0.02% of slots, where the table says
+5,072,522,334 and 4,719,806,211. The gathered row reproduces to within a percent (4,115,182,612 /
+9,510,675,358) and the shipped entry's row reproduces (6,326,030,697 instructions, the published
+figure to seven digits, and 6,729,655,927 slots, within a percent). The **1.42** and **2.02** ratios
+drawn from the composed figure therefore belong to the revision they were measured at, and the
+composed row is due a re-derivation at the current tables — the row is left as measured rather than
+quietly restated, because the two variants the lane in this section shares its counters with are the
+ones that reproduce.
 
 **The re-measurement obligation.** A second packed path is re-measured whenever another axis moves,
 because every figure above is a property of one build's code and one machine's microarchitecture — a

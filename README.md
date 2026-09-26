@@ -333,7 +333,10 @@ that entry computes every order at a single argument. `BoysPackAxes()` reports b
 interval each one's packed lane evaluates. The orders axis covers region A at the same per-order fits
 and the same ≤ m·1e-15 bar the scalar region-A path holds, and naming it changes the region-A values
 a caller receives — the shipped entry reaches most orders by a recursion from a seed where this lane
-evaluates each order's own fit — with both inside the bound.
+evaluates each order's own fit — with both inside the bound. Both partitions of region A are carried
+on it: the shipped table's pieces are shared across the orders of a piece, which lets the lane fetch
+one piece's coefficients at a fixed stride, and the narrow partition's are cut per order, which the
+lane reaches with a gathered fetch that reads each of the four orders it holds its own piece.
 
 [docs/lane-contract.md](docs/lane-contract.md#the-packing-axis-which-of-a-calls-values-share-a-vector)
 carries the axis in full: which entries carry it, which two calls cannot form it and why they are
@@ -350,7 +353,9 @@ signature and not a body nobody built.
 Every other combination the axis names is built and measured. A relaxed multiplier is answered by the
 same effective-degree cut this library's other rungs are truncated by, applied at the degree the lane
 reads; a route other than the shipped one is answered by that route's own region-A fits, whose pieces
-cover the same per-order intervals as the shipped table. The gate's packing book carries a measured
+cover the same per-order intervals as the shipped table; and the narrow partition is answered by the
+very fits the scalar entry reads there, fetched one order at a time instead of by a stride. The gate's
+packing book carries a measured
 row for every rung the tier enumeration declares, on both routes, at both schemes, through both
 entries that carry the axis, and names the worst cell of each.
 
@@ -416,10 +421,12 @@ reports, so nothing the library already published moves.
 
 **Where a combination has no narrow table it is refused where it is named**, with the reason, rather
 than answered from the shipped table: the rational minimax route (one numerator/denominator pair over
-the whole interval), the relaxed rungs `m > 1` (which truncate the shipped fits to certified
-effective degrees), and the single-precision lanes (which hold one coefficient set). The two
+the whole interval) and the single-precision lanes (which hold one coefficient set). The two
 partitions are different fits of the same function over the same interval, so a substitution would
-return the shipped values under the narrow partition's name.
+return the shipped values under the narrow partition's name. Two combinations that were refusals of
+that kind are built: the relaxed rungs `m > 1`, whose criterion is measured against the narrow
+partition's own pieces rather than against the shipped rows it truncates elsewhere, and the orders
+axis, whose packed lane reaches a per-order cut by fetching each order's own piece.
 
 The proved bound is what the partition is derived from, and it needs no sampling: for this function
 `|F_n(z)| ≤ F_n(Re z)` holds exactly, so the max modulus on a Bernstein ellipse is at most its value

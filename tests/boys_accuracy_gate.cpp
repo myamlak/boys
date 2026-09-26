@@ -4970,92 +4970,138 @@ int main(int argc, char** argv) {
     // rational route is the one the orders axis did not carry.
     const char* const kRouteTag[2] = {"cheb", "rat"};
 
+    // The partition a row's region-A fits were read from. Every row above this
+    // block measured the shipped pieces; the narrow partition is the one the
+    // orders axis did not carry, and its pieces are cut per order, so the axis
+    // reaches them by fetching each order's own piece rather than by stepping
+    // one piece's coefficients at a fixed stride.
+    const char* const kPartitionTag[2] = {"", "narrow "};
+
+    // The flat index of one combination's four labels: partition, rung, route
+    // and row kind, in that order.
+    const auto openedLabel = [](std::size_t partIdx,
+                                std::size_t rungIdx,
+                                std::size_t routeIdx,
+                                std::size_t kind) {
+        return (((partIdx * 7u + rungIdx) * 2u + routeIdx) * 4u + kind);
+    };
+
     // A claim records the pointers it is handed rather than copying them, so a
     // row's label has to outlive the loop that makes it. A fixed array of
     // strings does: its elements are built once and never moved afterwards.
-    std::array<std::string, 7u * 2u * 4u> openedLabels{};
+    std::array<std::string, 7u * 2u * 2u * 4u> openedLabels{};
 
-    for (std::size_t rungIdx = 0; rungIdx < 7; ++rungIdx)
+    for (std::size_t partIdx = 0; partIdx < 2; ++partIdx)
     {
-        const double m = boys::AccuracyMultiplier(static_cast<boys::AccuracyTier>(rungIdx));
-
-        for (std::size_t routeIdx = 0; routeIdx < 2; ++routeIdx)
+        for (std::size_t rungIdx = 0; rungIdx < 7; ++rungIdx)
         {
-            for (std::size_t kind = 0; kind < 4; ++kind)
+            const double m = boys::AccuracyMultiplier(static_cast<boys::AccuracyTier>(rungIdx));
+
+            for (std::size_t routeIdx = 0; routeIdx < 2; ++routeIdx)
             {
-                openedLabels[(rungIdx * 2u + routeIdx) * 4u + kind] =
-                    Fmt("m=%g %s %s", m, kRouteTag[routeIdx], kRowKind[kind]);
+                for (std::size_t kind = 0; kind < 4; ++kind)
+                {
+                    openedLabels[openedLabel(partIdx, rungIdx, routeIdx, kind)] =
+                        Fmt("%sm=%g %s %s",
+                            kPartitionTag[partIdx],
+                            m,
+                            kRouteTag[routeIdx],
+                            kRowKind[kind]);
+                }
             }
         }
     }
 
     // One slot per combination, addressed by the tuple the entry names: rung,
-    // route, scheme, entry and region, in that order. The reference rows' own
-    // eight are not in this book - they are the rows above - so their slots stay
-    // at -1, which no measurement below reads.
-    std::vector<int> openedSlots(7u * 2u * 2u * 2u * 2u, -1);
+    // route, partition, scheme, entry and region, in that order. This table is
+    // how a sweep finds the row it fills: a combination's claim is the index
+    // held here for its tuple, so a tuple that grows a member - a partition,
+    // say - is measured where it is published and not wherever its combination
+    // happens to fall in the reading order. The reference rows' own eight are
+    // not in this book - they are the rows above - so their slots stay at -1,
+    // which no measurement below reads. The narrow partition has no rational
+    // route, so its rational slots are left at -1 as well.
+    std::vector<int> openedSlots(7u * 2u * 2u * 2u * 2u * 2u, -1);
 
     const auto openedSlot = [](std::size_t rungIdx,
                                std::size_t routeIdx,
+                               std::size_t partIdx,
                                std::size_t schemeIdx,
                                std::size_t entry,
                                std::size_t region) {
-        return static_cast<std::size_t>(((rungIdx * 2u + routeIdx) * 2u + schemeIdx) * 2u + entry) *
-                   2u +
-               region;
+        return static_cast<std::size_t>(
+                   ((((rungIdx * 2u + routeIdx) * 2u + partIdx) * 2u + schemeIdx) * 2u + entry) *
+                       2u +
+                   region);
     };
 
-    for (std::size_t rungIdx = 0; rungIdx < 7; ++rungIdx)
+    for (std::size_t partIdx = 0; partIdx < 2; ++partIdx)
     {
-        const double m = boys::AccuracyMultiplier(static_cast<boys::AccuracyTier>(rungIdx));
-
-        for (std::size_t routeIdx = 0; routeIdx < 2; ++routeIdx)
+        for (std::size_t rungIdx = 0; rungIdx < 7; ++rungIdx)
         {
-            if (rungIdx == 0 && routeIdx == 0)
+            const double m = boys::AccuracyMultiplier(static_cast<boys::AccuracyTier>(rungIdx));
+
+            for (std::size_t routeIdx = 0; routeIdx < 2; ++routeIdx)
             {
-                continue; // the shipped route at the reference multiplier: the rows above
-            }
-
-            // The figure a row is published at, which is the largest figure any
-            // of its own cells is judged at. Inside the packed lane's interval
-            // that figure is the bar the rung's fits are cut for - the single
-            // lane's per-order region-A budget for the shipped route's table,
-            // the batch role's for the rational one, which is what its pair
-            // criterion spends - both times m, because a rung may spend the
-            // whole relaxed budget on top of the full-degree fit's own error.
-            // The whole grid is the tier's own documented m * 5.5e-14, which is
-            // the figure every other rung row in this report is judged at. Where
-            // the host has no packed lane the region-A rows are the certified
-            // scalar single lane's, whose loosest region-A figure at the same
-            // multiplier is the band's.
-            const double packedBar = (routeIdx == 1) ? kBoundDoubleBatch : kBoundSingleA;
-            const double regionARow = boys::BoysAvx2Available()
-                                          ? m * packedBar
-                                          : m * std::max(packedBar, kBoundSingleBand);
-            const double rowBound[4] = {regionARow,
-                                        m * kBoundSingleC,
-                                        regionARow,
-                                        m * kBoundDoubleBatch};
-
-            for (std::size_t schemeIdx = 0; schemeIdx < 2; ++schemeIdx)
-            {
-                const char* axis = boys::EvalSchemeName(static_cast<boys::EvalScheme>(schemeIdx));
-
-                for (std::size_t entry = 0; entry < 2; ++entry)
+                if (partIdx == 0 && rungIdx == 0 && routeIdx == 0)
                 {
-                    for (std::size_t region = 0; region < 2; ++region)
-                    {
-                        const std::size_t at = entry * 2u + region;
-                        const std::size_t label = (rungIdx * 2u + routeIdx) * 4u + at;
-                        const int slot = AddPackClaim(axis,
-                                                      openedLabels[label].c_str(),
-                                                      rowBound[at]);
+                    continue; // the shipped route at the reference multiplier: the rows above
+                }
 
-                        openedSlots[openedSlot(rungIdx, routeIdx, schemeIdx, entry, region)] = slot;
-                        openedRows.push_back(OpenedRow{axis,
-                                                       openedLabels[label],
-                                                       rowBound[at],
-                                                       static_cast<std::size_t>(slot)});
+                if (partIdx == 1 && routeIdx == 1)
+                {
+                    continue; // the narrow partition carries no rational region-A route
+                }
+
+                // The figure a row is published at, which is the largest figure any
+                // of its own cells is judged at. Inside the packed lane's interval
+                // that figure is the bar the rung's fits are cut for - the single
+                // lane's per-order region-A budget for the chebyshev route's table,
+                // the batch role's for the rational one, which is what its pair
+                // criterion spends - both times m, because a rung may spend the
+                // whole relaxed budget on top of the full-degree fit's own error.
+                // The narrow partition's own pieces are cut to a bar narrower than
+                // the shipped lane's, so the shipped figure bounds them too and one
+                // figure covers both partitions' rows. The whole grid is the tier's
+                // own documented m * 5.5e-14, which is the figure every other rung
+                // row in this report is judged at. Where the host has no packed lane
+                // the region-A rows are the certified scalar single lane's, whose
+                // loosest region-A figure at the same multiplier is the band's.
+                const double packedBar = (routeIdx == 1) ? kBoundDoubleBatch : kBoundSingleA;
+                const double regionARow = boys::BoysAvx2Available()
+                                              ? m * packedBar
+                                              : m * std::max(packedBar, kBoundSingleBand);
+                const double rowBound[4] = {regionARow,
+                                            m * kBoundSingleC,
+                                            regionARow,
+                                            m * kBoundDoubleBatch};
+
+                for (std::size_t schemeIdx = 0; schemeIdx < 2; ++schemeIdx)
+                {
+                    const char* axis =
+                        boys::EvalSchemeName(static_cast<boys::EvalScheme>(schemeIdx));
+
+                    for (std::size_t entry = 0; entry < 2; ++entry)
+                    {
+                        for (std::size_t region = 0; region < 2; ++region)
+                        {
+                            const std::size_t at = entry * 2u + region;
+                            const std::size_t label = openedLabel(partIdx, rungIdx, routeIdx, at);
+                            const int slot = AddPackClaim(axis,
+                                                          openedLabels[label].c_str(),
+                                                          rowBound[at]);
+
+                            openedSlots[openedSlot(rungIdx,
+                                                   routeIdx,
+                                                   partIdx,
+                                                   schemeIdx,
+                                                   entry,
+                                                   region)] = slot;
+                            openedRows.push_back(OpenedRow{axis,
+                                                           openedLabels[label],
+                                                           rowBound[at],
+                                                           static_cast<std::size_t>(slot)});
+                        }
                     }
                 }
             }
@@ -5091,19 +5137,46 @@ int main(int argc, char** argv) {
     // fits are cut for, and every argument of the grid at the entry's own
     // documented figure - so a combination is four rows and all four are swept
     // here, each with the worst cell recorded against it.
+    //
+    // The combination includes the partition, because a partition is not a
+    // property of the axis's values but of what it reads to reach them: the
+    // shipped pieces share an interval, a degree and a stride from one order to
+    // the next, and the narrow partition's pieces are cut per order, so the
+    // lane fetches each of its four orders' own piece instead. One arithmetic
+    // per partition, and a row per partition so that a reading is never taken
+    // from one and published under the other's name.
     const auto measureOpened =
-        [&]<boys::EvalScheme kScheme, std::size_t kRung, boys::FitRoute kRoute>() {
+        [&]<boys::EvalScheme kScheme,
+            std::size_t kRung,
+            boys::FitRoute kRoute,
+            boys::FitGranularity kPart =
+                boys::FitGranularity::kShipped>() {
             constexpr double kMultiplier =
                 boys::AccuracyMultiplier(static_cast<boys::AccuracyTier>(kRung));
             constexpr std::size_t kSchemeIdx = static_cast<std::size_t>(kScheme);
             constexpr std::size_t kRouteIdx = static_cast<std::size_t>(kRoute);
-            using Policy =
-                boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFloat, boys::PackAxis::kOrders>;
+            constexpr std::size_t kPartIdx = static_cast<std::size_t>(kPart);
+            using Policy = boys::EvalPolicy<kRoute,
+                                            kScheme,
+                                            boys::BoysBudget::kFloat,
+                                            boys::PackAxis::kOrders,
+                                            kPart>;
 
-            const std::size_t ordersRegionA = openedSlot(kRung, kRouteIdx, kSchemeIdx, 0, 0);
-            const std::size_t ordersGrid = openedSlot(kRung, kRouteIdx, kSchemeIdx, 0, 1);
-            const std::size_t planeRegionA = openedSlot(kRung, kRouteIdx, kSchemeIdx, 1, 0);
-            const std::size_t planeGrid = openedSlot(kRung, kRouteIdx, kSchemeIdx, 1, 1);
+            // The claim a combination fills is the one the table above holds for
+            // its tuple. Reading it back rather than deriving it from the
+            // reading order is what keeps a sweep and its row together: the
+            // order the sweeps run in and the order the rows are published in
+            // are two different orders, and only the table knows the second.
+            const auto claimSlot = [&](std::size_t entry, std::size_t region) {
+                const std::size_t at =
+                    openedSlot(kRung, kRouteIdx, kPartIdx, kSchemeIdx, entry, region);
+                return static_cast<std::size_t>(openedSlots[at]);
+            };
+
+            const std::size_t ordersRegionA = claimSlot(0, 0);
+            const std::size_t ordersGrid = claimSlot(0, 1);
+            const std::size_t planeRegionA = claimSlot(1, 0);
+            const std::size_t planeGrid = claimSlot(1, 1);
             std::vector<double> planes(count * (static_cast<std::size_t>(nmax) + 1));
 
             boys::BoysAllN<kMultiplier, Policy>(nmax, ref.x.data(), planes.data(), count);
@@ -5209,6 +5282,27 @@ int main(int argc, char** argv) {
     measureOpened.template operator()<kHorner, 5u, kRat>();
     measureOpened.template operator()<kHorner, 6u, kCheb>();
     measureOpened.template operator()<kHorner, 6u, kRat>();
+
+    // The same axis over the other partition, at each rung and each scheme. The
+    // shipped route is the only one it carries: the narrow partition's region-A
+    // route set is the chebyshev table, and the rational route over it is a
+    // combination this library does not have, so the two rational rows of each
+    // combination are the reference rows' own route and are already above.
+    measureOpened.template operator()<kSplit, 0u, kCheb, boys::FitGranularity::kNarrow>();
+    measureOpened.template operator()<kSplit, 1u, kCheb, boys::FitGranularity::kNarrow>();
+    measureOpened.template operator()<kSplit, 2u, kCheb, boys::FitGranularity::kNarrow>();
+    measureOpened.template operator()<kSplit, 3u, kCheb, boys::FitGranularity::kNarrow>();
+    measureOpened.template operator()<kSplit, 4u, kCheb, boys::FitGranularity::kNarrow>();
+    measureOpened.template operator()<kSplit, 5u, kCheb, boys::FitGranularity::kNarrow>();
+    measureOpened.template operator()<kSplit, 6u, kCheb, boys::FitGranularity::kNarrow>();
+
+    measureOpened.template operator()<kHorner, 0u, kCheb, boys::FitGranularity::kNarrow>();
+    measureOpened.template operator()<kHorner, 1u, kCheb, boys::FitGranularity::kNarrow>();
+    measureOpened.template operator()<kHorner, 2u, kCheb, boys::FitGranularity::kNarrow>();
+    measureOpened.template operator()<kHorner, 3u, kCheb, boys::FitGranularity::kNarrow>();
+    measureOpened.template operator()<kHorner, 4u, kCheb, boys::FitGranularity::kNarrow>();
+    measureOpened.template operator()<kHorner, 5u, kCheb, boys::FitGranularity::kNarrow>();
+    measureOpened.template operator()<kHorner, 6u, kCheb, boys::FitGranularity::kNarrow>();
 
     // ---- the granularity axis ----------------------------------------------
     // Two partitions of the fitted domain, and the axis is which one a call
@@ -8740,13 +8834,14 @@ int main(int argc, char** argv) {
                 "orders to\n  fill - a value this entry cannot produce under any revision of it. "
                 "A revision\n  that reaches this line has changed what the entry is\n");
 #endif
-    // The orders axis carried two limits until this revision, and both are gone:
-    // it answers a relaxed multiplier and it answers a route other than the
-    // shipped one. Neither landing is silent - the packing-axis rows above
-    // measure every rung on both routes, through both entries that carry the
-    // axis, each against the figure that combination documents - so the lines
-    // here name where those rows are rather than what is missing, the way the
-    // route-carriage line above does.
+    // The orders axis carried three limits until this revision, and all three
+    // are gone: it answers a relaxed multiplier, it answers a route other than
+    // the shipped one, and it answers the narrow partition of region A. None of
+    // the three landings is silent - the packing-axis rows above measure every
+    // rung on both routes and both partitions, through both entries that carry
+    // the axis, each against the figure that combination documents - so the
+    // lines here name where those rows are rather than what is missing, the way
+    // the route-carriage line above does.
     std::printf("  CARRIED: the orders axis runs at a relaxed multiplier: the effective-degree\n"
                 "  table it reads is the cut this library's other lanes' rungs are truncated\n"
                 "  from, applied at the full degree the lane reads, and the packing-axis rows\n"
@@ -8755,6 +8850,13 @@ int main(int argc, char** argv) {
                 "  rational route's region-A fits cover the same per-order intervals as the\n"
                 "  shipped piece table, and the packing-axis rows above measure them on both\n"
                 "  entries the axis is carried on\n");
+    std::printf("  CARRIED: the orders axis reads the narrow partition of region A: its pieces\n"
+                "  are cut per order, so the lane fetches each of the four orders it packs its\n"
+                "  own piece and coefficients instead of stepping one piece's coefficients at\n"
+                "  a fixed stride, and the packing-axis rows above measure every rung and both\n"
+                "  schemes on both entries, each against the shipped lane's own region-A\n"
+                "  figure - the bar the narrow pieces are cut under is the narrower of the\n"
+                "  two\n");
 
     std::printf("  limits the library states at the call site (%zu). Each row's own line says "
                 "which of\n  the two it is: a table or a body that has not been built, which is "
@@ -9188,12 +9290,14 @@ int main(int argc, char** argv) {
     }
 
     // The rest of the axis: every rung the tier enumeration declares, on both
-    // routes, at both schemes, on both entries. A row's name is the multiplier,
-    // the route its region-A fits were read from (cheb, rat), and which entry
-    // and interval it covers - "A" is inside the packed lane's own interval,
-    // "A..C" the whole committed grid, and "pl" marks the plane entry's rows.
-    // Every one of them is judged at the figure printed beside it, which is the
-    // figure that entry documents for that combination, times the multiplier.
+    // routes, at both schemes, on both entries, over both partitions. A row's
+    // name is the partition its region-A fits were read from ("narrow" where it
+    // is the per-order pieces, absent where it is the shipped table), the
+    // multiplier, the route (cheb, rat), and which entry and interval it covers
+    // - "A" is inside the packed lane's own interval, "A..C" the whole committed
+    // grid, and "pl" marks the plane entry's rows. Every one of them is judged at
+    // the figure printed beside it, which is the figure that entry documents for
+    // that combination, times the multiplier.
     std::printf("  %s\n", std::string(160, '-').c_str());
 
     for (const OpenedRow& row : openedRows)
