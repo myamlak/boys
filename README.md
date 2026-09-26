@@ -206,9 +206,12 @@ the bound actually binds on; `--probe n x` prints one cell from every lane for o
 The run ends with a verdict line and an exit status: `PASS: every documented claim met at this
 revision`, or the numbers of the claims that did not hold, with a non-zero status. `ctest` runs this
 binary as one of its tests, but a passing `ctest` prints only how long the test took — the table is
-in this binary's own output.
+in this binary's own output. CI runs this gate on every platform below and fails the build if a claim
+does not hold, so these figures cannot drift from the code without a red run. A figure is one host's:
+your own run is the answer for your platform, your compiler and your arithmetic, and the rows are
+compared cell by cell rather than as one number.
 
-Run at revision 1e6887d, it printed this (an excerpt; the full run carries one row per lane and
+Run at revision f5c08f6, it printed this (an excerpt; the full run carries one row per lane and
 region):
 
 | Lane | Region | Worst delivered | Bound claimed |
