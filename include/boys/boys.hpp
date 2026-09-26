@@ -1030,16 +1030,24 @@ constexpr bool BoysPackedLaneServes(EvalScheme scheme) noexcept
 /// This is the recommended lane for GPU integral evaluation.
 ///
 /// \tparam kAccuracyMultiplier see BoysSingle
-/// \tparam Policy see BoysSingle. At the reference multiplier this lane reads
-///         the policy's fit route and its evaluation scheme: the route selects
-///         which family supplies the lane's own fits - the shipped Chebyshev
-///         table or the rational minimax one - and the scheme selects which of
-///         the Chebyshev family's two parallel tables, the Chebyshev form or the
-///         monomial form of the same fits, is summed. The budget selects
-///         nothing there. From \c m = 2 upward the lane serves the shipped
-///         route and scheme alone and the budget is the axis it reads, picking
-///         the degree table the truncation targets - which is what tells the
-///         float lane's 1.5e-7 apart from the half lanes' 1e-7.
+/// \tparam Policy see BoysSingle. The lane reads the policy's fit route and its
+///         evaluation scheme at every multiplier: the route selects which family
+///         supplies the lane's own fits - the shipped Chebyshev table or the
+///         rational minimax one - and the scheme selects which of the Chebyshev
+///         family's two parallel tables, the Chebyshev form or the monomial form
+///         of the same fits, is summed. At a multiplier past the reference one
+///         the route and the scheme also name which of those tables the rung's
+///         truncation is cut from, so the degrees are the ones that policy's own
+///         table supports: the Chebyshev and monomial tables are cut from
+///         themselves by their own coefficient tails, and the rational route's
+///         pieces by the tail of the pair it stores, numerator and denominator
+///         together. The budget is a different axis: it picks the region budget
+///         the cut targets, which is what tells the float lane's 1.5e-7 apart
+///         from the half lanes' 1e-7, and it changes the degrees the cut lands on
+///         without changing the route or the scheme. The packing axis is not an
+///         axis of this shape and is refused where it is named: this entry
+///         answers one order at one argument, so the value is a single float and
+///         neither axis has a lane to fill
 /// \param n     order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0
 /// \returns     F_n(x)
@@ -1052,10 +1060,18 @@ float BoysSingleF32(int n, float x) noexcept;
 /// F_0(x)..F_nmax(x) in single precision, |F̂ − F| ≤ m·1.5e-7 per value.
 ///
 /// \tparam kAccuracyMultiplier see BoysSingle
-/// \tparam Policy see BoysSingleF32: at the reference multiplier the route and
-///         the scheme select the fits - the route for this lane's region-B seed
-///         and for the double lane's fit that seeds region A - and the budget
-///         selects nothing
+/// \tparam Policy see BoysSingleF32: the route and the scheme select the fits at
+///         every multiplier - the route for this lane's region-B seed and for
+///         the double lane's fit that seeds region A, the scheme for which of
+///         the route's tables each of those reads - and the budget selects the
+///         region budget the degree cut targets. Region A's seed is the double
+///         lane's fit at the policy's pair, so its degrees are that lane's rung
+///         table; region B's is this lane's own. The packing axis is refused
+///         where it is named, and this is the one shape in the float lane where
+///         the axis is not empty: nmax + 1 orders of one argument is exactly what
+///         a packed lane would hold, and the axis is refused here because this
+///         lane has no packed body to answer it with rather than because the call
+///         has nothing to pack
 /// \param nmax  highest order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0
 /// \param out   receives nmax + 1 values, out[k] = F_k(x)
@@ -1093,8 +1109,13 @@ void BoysAllOrdersF32(int nmax, float x, float* out) noexcept;
 /// own threads; distinct batches share nothing.
 ///
 /// \tparam kAccuracyMultiplier see BoysSingle
-/// \tparam Policy see BoysSingleF32: at the reference multiplier the route and
-///         the scheme select the fits, and the budget selects nothing
+/// \tparam Policy see BoysSingleF32: the route and the scheme select the fits at
+///         every multiplier - the route for this lane's own region-B seed, the
+///         scheme for which of the route's tables it is read from - and the
+///         budget selects the region budget the degree cut targets. The packing
+///         axis is refused where it is named: this entry answers each argument
+///         through the all-orders entry, whose own paragraph says why the float
+///         lane cannot serve the orders axis
 /// \param nmax  highest order, 0..kMaxBoysOrder
 /// \param x     array of count arguments, each >= 0
 /// \param out   receives count * (nmax + 1) floats, out[k * count + i] = F_k(x[i])
@@ -1133,6 +1154,9 @@ void BoysAllNF32(int nmax, const float* x, float* out, std::size_t count) noexce
 /// certified against the lane's own bound.
 ///
 /// The multiplier is the reference one: this entry selects a fit, not a rung.
+/// The rung and the route are independent — the templated entries read the
+/// route at every multiplier — and a caller who wants both names the route in
+/// the policy it templates on.
 ///
 /// A route this build does not serve evaluates at the default route, the same
 /// fallback the \c FitRoute enumeration's contract describes.
