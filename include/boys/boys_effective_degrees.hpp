@@ -600,7 +600,12 @@ constexpr void RationalPairCut(const NumArray& num,
 // region B; the flat form keeps the tables constexpr on MSVC). The NTTP
 // forms are instantiation-local constants — zero mutable state on the CPU
 // path.
-
+// The region-A degrees of one role and one basis. The basis selects the table
+// the tail is summed from, and each lane stores both forms of its own fits, so
+// the branch below is which lane's tables the role reads - the double lane's
+// stored piece table or the float lane's - and the basis picks the form within
+// it: the Chebyshev coefficients ClenshawSplit reads, or the monomial ones
+// HornerMono reads, over the same pieces at the same degrees.
 template <double kAccuracyMultiplier, BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
 constexpr auto RegionADegrees() noexcept {
     if constexpr (RoleUsesDoubleTables(kRole))
@@ -656,6 +661,9 @@ constexpr auto RegionADegrees() noexcept {
     }
 }
 
+// The region-B degrees of one role and one basis; see RegionADegrees for what
+// the basis selects and why each lane's own seed table is the one its role
+// reads.
 template <double kAccuracyMultiplier, BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
 constexpr auto RegionBDegrees() noexcept {
     if constexpr (kRole == BoysRole::kDoubleSingle || kRole == BoysRole::kDoubleBatch)
@@ -773,6 +781,149 @@ constexpr RationalRegionBPairs RationalRegionBDegrees() noexcept {
                     0,
                     kRatBnumDeg,
                     kRatBdenDeg,
+                    kAccuracyMultiplier,
+                    RegionBAmplification(0),
+                    kBudget,
+                    numDeg,
+                    denDeg);
+
+    for (int order = 0; order <= kMaxOrder; ++order)
+    {
+        pairs.num[static_cast<std::size_t>(order)] = numDeg;
+        pairs.den[static_cast<std::size_t>(order)] = denDeg;
+    }
+
+    return pairs;
+}
+
+// ---------------------------------------------------------------------------
+// The rational pair at a batch seed's reading
+// ---------------------------------------------------------------------------
+// The cut above is the one a per-order reading of the route pays: the piece's
+// value is the order's value and nothing amplifies the cut. An engine that
+// seeds a batch from the top order's piece and recurses down instead pays the
+// batch amplification at that piece's right end, which is the polynomial
+// tables' w(b) - the same quantity RegionADegrees spends for a batch role. The
+// cut below is the same pair over the same pieces at that reading, so a batch
+// engine can seed a rung from the route's fit rather than reading the route
+// per order.
+//
+// The pair is the double lane's stored one: an engine that needs a batch seed's
+// precision reads this lane's rational fit, not the float lane's own pair (see
+// the float lane's batch body for why a 1.5e-7 seed cannot start a batch).
+template <double kAccuracyMultiplier, BoysRole kRole>
+constexpr RationalRegionAPairs RationalRegionASeedDegrees() noexcept {
+    static_assert(RoleUsesBatchAmplification(kRole),
+                  "this reading of the rational pair is the batch recursion's - the cut is "
+                  "judged at the piece's own w(b) because the seed is carried down by it - so "
+                  "it belongs to a batch role; a role whose region-A seed is the order's own "
+                  "value pays A = 1 and reads RationalRegionADegrees instead");
+
+    constexpr double kBudget = RegionABudget(kRole);
+    RationalRegionAPairs pairs{};
+
+    for (int order = 0; order <= kMaxOrder; ++order)
+    {
+        for (int p = kPieceStart[order]; p < kPieceStart[order + 1]; ++p)
+        {
+            const std::size_t index = static_cast<std::size_t>(p);
+            const OrderPiece& piece = kPieces[index];
+            const int numDeg = kRatANumDeg[index];
+            const int denDeg = kRatADenDeg[index];
+
+            RationalPairCut(kRatACoeffs,
+                            static_cast<std::size_t>(kRatAOffset[index]),
+                            kRatACoeffs,
+                            static_cast<std::size_t>(kRatAOffset[index] + numDeg + 1),
+                            numDeg,
+                            denDeg,
+                            kAccuracyMultiplier,
+                            RegionAAmplification(order, piece.b),
+                            kBudget,
+                            pairs.num[index],
+                            pairs.den[index]);
+        }
+    }
+
+    return pairs;
+}
+
+// ---------------------------------------------------------------------------
+// The single-precision lane's own rational pairs at a rung
+// ---------------------------------------------------------------------------
+// The float lane carries the rational family as its own stored tables: a
+// numerator/denominator pair per piece of its own region-A cover, and one pair
+// for its region-B seed. They are different stored numbers from the double
+// lane's pair over the same region - their own cover, their own fit, their own
+// roundings - so a rung of this family on this lane is a cut of THESE tables,
+// derived by the same pair criterion and read at the role's own budget.
+//
+// Region A's reading is the single-order one: the piece is the order's value
+// and nothing amplifies the cut, so A = 1 exactly as the double lane's
+// per-order route pays it. (The float lane's batch seeds its recursion from the
+// double lane's pair, which is the seed table above and not this one.)
+struct RationalRegionAF32Pairs {
+    std::array<int, std::size(f32::kRatAPieces)> num{};
+    std::array<int, std::size(f32::kRatAPieces)> den{};
+};
+
+struct RationalRegionBF32Pairs {
+    std::array<int, kMaxOrder + 1> num{};
+    std::array<int, kMaxOrder + 1> den{};
+};
+
+template <double kAccuracyMultiplier, BoysRole kRole>
+constexpr RationalRegionAF32Pairs RationalRegionAF32Degrees() noexcept {
+    constexpr double kBudget = RegionABudget(kRole);
+    RationalRegionAF32Pairs pairs{};
+
+    for (int order = 0; order <= kMaxOrder; ++order)
+    {
+        for (int p = f32::kRatAPieceStart[order]; p < f32::kRatAPieceStart[order + 1]; ++p)
+        {
+            const std::size_t index = static_cast<std::size_t>(p);
+            const f32::RatPiece& piece = f32::kRatAPieces[index];
+
+            RationalPairCut(f32::kRatACoeffs,
+                            static_cast<std::size_t>(piece.offset),
+                            f32::kRatACoeffs,
+                            static_cast<std::size_t>(piece.offset + piece.numdeg + 1),
+                            piece.numdeg,
+                            piece.dendeg,
+                            kAccuracyMultiplier,
+                            RoleUsesBatchAmplification(kRole)
+                                ? RegionAAmplification(order, static_cast<double>(piece.b))
+                                : 1.0,
+                            kBudget,
+                            pairs.num[index],
+                            pairs.den[index]);
+        }
+    }
+
+    return pairs;
+}
+
+// The float lane's region-B seed pair at a rung; the same shape as the double
+// lane's table above and for the same reason - the region holds one seed rather
+// than one fit per order, so the cut is one pair repeated down the table, judged
+// at order 0's amplification, which is the largest this region pays: every
+// order's gain is A_B(n) = prod_{j<n}(j+1/2)/kX0^n, and kX0 is the argument at
+// which that product first reaches one, so A_B(n) <= A_B(0) = 1 for every order
+// the table covers.
+template <double kAccuracyMultiplier, BoysRole kRole>
+constexpr RationalRegionBF32Pairs RationalRegionBF32Degrees() noexcept {
+    constexpr double kBudget = RegionBBudget(kRole);
+    RationalRegionBF32Pairs pairs{};
+
+    int numDeg = 0;
+    int denDeg = 0;
+
+    RationalPairCut(f32::kRatBnum,
+                    0,
+                    f32::kRatBden,
+                    0,
+                    f32::kRatBnumDeg,
+                    f32::kRatBdenDeg,
                     kAccuracyMultiplier,
                     RegionBAmplification(0),
                     kBudget,

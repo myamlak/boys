@@ -527,6 +527,19 @@ int main() {
     unset(BOYS_GATE_RATIONAL_RUNG_ACCEPTED CACHE)
     unset(BOYS_GATE_F32_ROUTE_AT_RUNG_ACCEPTED CACHE)
     unset(BOYS_GATE_F32_SCHEME_AT_RUNG_ACCEPTED CACHE)
+    #   the single-precision lane  a packed lane keeps four values of one call
+    #                              in a register, and the all-orders entry
+    #                              produces nmax + 1 ORDERS of one argument:
+    #                              the axis has something to pack here, so this
+    #                              refusal is not the shape's. This lane carries
+    #                              no packed body - the AVX2 tier is double and
+    #                              half only - so an orders-axis policy would be
+    #                              read and then silently ignored, and the
+    #                              engine refuses it instead. That is a body
+    #                              nobody has written, counted with the
+    #                              outstanding combinations, and not a
+    #                              combination the call cannot form.
+    unset(BOYS_GATE_F32_ACCEPTS_ORDERS CACHE)
     set(_boys_probe_target_type "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
     set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
     set(CMAKE_REQUIRED_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -567,6 +580,19 @@ int main() {
     return 0;
 }
 " BOYS_GATE_F32_SCHEME_AT_RUNG_ACCEPTED)
+    check_cxx_source_compiles("
+#include <boys/boys.hpp>
+int main() {
+    float in[33] = {};
+    float out[33] = {};
+    using OrdersAxis = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
+                                        boys::BoysBudget::kFloat, boys::PackAxis::kOrders>;
+    boys::BoysAllOrdersF32<1.0, OrdersAxis>(1, 1.0f, out);
+    boys::BoysSingleF32<1.0, OrdersAxis>(1, 1.0f);
+    boys::BoysAllNF32<1.0, OrdersAxis>(1, in, out, 1);
+    return 0;
+}
+" BOYS_GATE_F32_ACCEPTS_ORDERS)
     set(CMAKE_TRY_COMPILE_TARGET_TYPE "${_boys_probe_target_type}")
     unset(_boys_probe_target_type)
     unset(CMAKE_REQUIRED_FLAGS)
@@ -602,6 +628,14 @@ int main() {
     else()
         message(STATUS "boys: the single-precision engines ACCEPT a second scheme at a relaxed "
             "rung")
+    endif()
+
+    if (NOT BOYS_GATE_F32_ACCEPTS_ORDERS)
+        target_compile_definitions(boys-accuracy-gate PRIVATE BOYS_GATE_F32_REFUSES_ORDERS=1)
+        message(STATUS "boys: the orders packing axis on the single-precision engines is REFUSED, "
+            "measured by compiling the call — the lane has no packed body to answer it with")
+    else()
+        message(STATUS "boys: the single-precision engines ACCEPT the orders packing axis")
     endif()
 
     if (BOYS_GATE_HAS_TIER)

@@ -427,16 +427,20 @@ serve: 176814 comparison cells, none of them outside the row's bar, and no row m
 argument. The float lane's Horner reading is 7.68e-08 at its worst cell (order 0, x = 0.553691) over
 region A and 2.22e-08 (order 32, x = 11.8998) over region B, against the lane's 1.5e-07 bar; the
 rational route's and the shipped route's split Clenshaw figures are the table's above, unchanged.
-Past the reference multiplier the lane serves both of the schemes it stores: the degree a rung cuts
-by is derived from the table that scheme sums, and the lane holds a monomial table beside its
-Chebyshev one, so `EvalScheme::kHorner` at a rung builds and the gate measures it — 56 rows, one per
-scheme, entry, region and rung, 825132 cells, none of them outside the bar the rung documents, and
-the worst of the 56 coming in at 0.9997 of its bar (Horner, single entry, region A, `m = 65536`:
-0.00982766 against 0.0098304). The rational route is not served there, and that one is a derivation
-owed rather than a combination that cannot exist: a rung cuts a stored fit by the tail of its
-coefficients, and this route's fit is a numerator/denominator pair whose acceptance criterion is not
-a dropped tail. The configure probe compiles the call and reports the refusal, so the entry rests on
-a measurement rather than on the assertion's word.
+
+**A relaxed rung keeps both of them.** The rung's degrees are derived from the table the policy
+actually reads: under the Chebyshev route each per-order fit is cut from whichever of the two stored
+forms the scheme sums, under the rational route from the tail of the pair that route stores — the
+numerator and the denominator cut together — and region B's seed from its own table at the budget the
+policy names. The gate measures every pair on both entries, at the tier's first rung and at its last
+and again at the fp16/bf16 budget, as thirty-six rows judged against `m · 1.5e-7`: 530442 comparison
+cells, none of them outside the row's bar and no row measured over no argument, at the fused
+multiply-add route and at the separate one alike. The tightest row is the single entry's Horner row at
+`m = 65536`, 9.82766e-03 against 9.8304e-03, which is 0.9997 of that rung's bar at order 7,
+x = 1e-12; the separate route delivers the same figure, so that is the criterion's own cut —
+`(m − 1) · 1.5e-7` aimed at the truncation and the remainder left to the fit's `m = 1` error — and not
+a rounding. Every other row is at or below 0.98 of its bar, and the worst of the relaxed pair is
+0.977, the single entry's split Clenshaw row over region B at `m = 64`.
 
 | Route | Region | Interval | Stored | Measured | Bar |
 |---|---|---|---|---|---|
@@ -824,10 +828,10 @@ policy, and the float lane's Chebyshev fits are stored in both forms as the doub
 sum, so it is the same arithmetic under either scheme. The half lanes, the packed region-A lane and
 the CUDA device lane are the split Clenshaw's and are not offered under the other scheme: the device
 kernels carry the Chebyshev tables only, and the packed region-A lane's kernel is bypassed under
-Horner, which costs the accelerated path and not the value. On the float lane the scheme is a
-reference-multiplier reading: past it that lane serves the shipped pair alone, because a relaxed rung
-cuts a fit by a table of effective degrees and the degrees its fits are cut by are derived from the
-lane's Chebyshev table.
+Horner, which costs the accelerated path and not the value. On the float lane the scheme reaches
+every multiplier: the batch entry's region-A seed is the double lane's fit at the scheme the policy
+names, and the single entry's fits and the batch entry's region-B seed are this lane's own, cut from
+the monomial form when Horner is named.
 
 `BoysEvalSchemes()` and `BoysEvalSchemeFits()` answer what exists and what each scheme promises on
 each stored fit in the route in force, so a caller can ask without reading the kernel, and the
@@ -874,6 +878,14 @@ rather than by quoting an assertion. `BoysFixedN` produces exactly one order at 
 array: a packed lane keeps four orders of one argument, the call has one, and no revision of that
 entry produces four — the axis cannot be formed on it, which is a property of the call and not a table
 nobody built.
+
+The single-precision entries are refused for the opposite reason, and the two are not the same debt.
+`BoysAllOrdersF32(nmax, x, out)` produces nmax + 1 orders of one argument, which is exactly what a
+packed lane would hold, so the axis names real work on that shape; what the lane does not have is a
+packed body — the AVX2 tier is double and half only — so a policy naming the axis there would be read
+and then ignored, and the entry refuses it at the call site instead. `BoysSingleF32` answers one order
+at one argument and has no lane to fill on either axis. The gate's refusal record separates the two
+kinds and counts the first as outstanding work rather than as a limit of the call.
 
 A relaxed multiplier on the axis, and a route other than the shipped one, were limits of the other
 kind — a table the lane did not carry — and both are built. The effective-degree table the lane reads

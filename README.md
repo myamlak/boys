@@ -274,13 +274,13 @@ no coefficient under either route, so naming one there changes nothing.
 
 **The same choice is open at compile time, and there it carries the scheme as well.** The lane's
 entries take the `EvalPolicy` above, so a caller who templates on it names the route and the scheme as
-the second template argument instead of calling `BoysSingleF32WithRoute`. At the reference multiplier
-both fields are read: the route selects which family supplies the lane's fits, and the scheme selects
-which of the Chebyshev family's two stored forms is summed. Past the reference multiplier the lane
-serves the shipped pair alone — a rung cuts a fit by a table of effective degrees, and the degrees the
-float lane's fits are cut by are derived from the lane's Chebyshev table, so a policy naming another
-pair at a relaxed rung does not build; a build writes the measurement that says so. `BoysAllNF32`
-forwards its policy to the batch entry's body once per argument.
+the second template argument instead of calling `BoysSingleF32WithRoute`. Both fields are read at every
+multiplier: the route selects which family supplies the lane's fits, and the scheme selects which of
+that family's stored forms is summed. A rung past the reference multiplier cuts each fit by degrees
+derived from the table the policy actually reads — the Chebyshev family's two forms for the Chebyshev
+route, the numerator/denominator pair for the rational one, and region B's seed from its own table at
+the budget the policy names — so naming another pair there is answered rather than refused.
+`BoysAllNF32` forwards its policy to the batch entry's body once per argument.
 
 The float lane's rational route covers the whole of region A from zero: the lane reads every order
 from its own fit over the region, so there is no band boundary for a selector to take over at and
@@ -354,6 +354,13 @@ One call cannot form the axis, and it is refused where the call is named rather 
 `BoysFixedN` computes exactly one order at every argument of an array: a packed lane keeps four
 orders, and this call has one, so there are not four to fill a lane with — that is the entry's
 signature and not a body nobody built.
+
+**The single-precision entries refuse the axis too, for the opposite reason.**
+`BoysAllOrdersF32(nmax, x, out)` has nmax + 1 orders of one argument, which is exactly what a packed
+lane would hold, so the axis names real work on that shape; what the lane lacks is a packed body to
+answer it with — the AVX2 tier is double and half only — so an orders-axis policy there would be
+read and then ignored, and the entry refuses it at the call site instead. That refusal is counted as
+outstanding work in the gate's record rather than as a boundary of the call.
 
 Every other combination the axis names is built and measured. A relaxed multiplier is answered by the
 same effective-degree cut this library's other rungs are truncated by, applied at the degree the lane

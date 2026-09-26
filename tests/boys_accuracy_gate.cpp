@@ -294,42 +294,6 @@ int AddF32PolicyClaim(const char* lane, const char* region, double bound) {
     return static_cast<int>(F32PolicyClaims().size()) - 1;
 }
 
-// The float lane at each rung, kept apart from the book above for the reason
-// that book gives: it is the same lane, and its rows are a second question -
-// what the lane answers at a multiplier other than the reference one, which is
-// where a rung's table of effective degrees is read from the single-precision
-// tables rather than from the double lane's.
-std::vector<Accum>& F32RungClaims() {
-    static std::vector<Accum> claims;
-    return claims;
-}
-
-int AddF32RungClaim(const char* lane, const char* region, double bound) {
-    Accum a;
-    a.lane = lane;
-    a.region = region;
-    a.baseBound = bound;
-    F32RungClaims().push_back(a);
-    return static_cast<int>(F32RungClaims().size()) - 1;
-}
-
-// The rungs that book is addressed by: the tier enumeration's own, in the order
-// it declares them, so a rung added there is measured here without this file
-// being edited.
-constexpr std::size_t kF32Rungs = 7;
-
-constexpr std::array<double, kF32Rungs> kF32RungM = [] {
-    std::array<double, kF32Rungs> m{};
-
-    for (std::size_t r = 0; r < kF32Rungs; ++r)
-    {
-        m[r] = boys::AccuracyMultiplier(static_cast<boys::AccuracyTier>(r));
-    }
-
-    return m;
-}();
-
-
 // The run-time tier's rungs, named by the multiplier each one selects.
 const char* TierRungLabel(int rung) {
     switch (rung)
@@ -630,6 +594,52 @@ void RunProbe(const Reference& ref, int n, double x)
         row("BoysAllOrdersBf16[n]",
             static_cast<double>(static_cast<float>(outb[static_cast<std::size_t>(n)])),
             refB);
+    }
+
+    // The float lane's routes and schemes at a rung: the same argument and the
+    // same order as the two entries above, at a multiplier the engine's own
+    // template parameter names rather than the reference one, and at a policy
+    // that is not the shipped pair. The m = 1 rows above are the control, so the
+    // pair of readings says what the rung and the pair changed - the tables the
+    // fit is read from - rather than only what the value came out at.
+    {
+        const float xf = static_cast<float>(x);
+        const std::size_t k = static_cast<std::size_t>(n);
+
+        const auto rungRow = [&](const std::string& label, double got) {
+            std::printf("  %-28s %-24.17g err=%-12.6g\n", label.c_str(), got, std::abs(got - refF));
+        };
+
+        using Ship = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw>;
+        using Horn = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>;
+        using Rat = boys::EvalPolicy<boys::FitRoute::kRationalMinimax>;
+
+        std::array<float, 33> ship{};
+        std::array<float, 33> horn{};
+        std::array<float, 33> rat{};
+
+        boys::BoysAllOrdersF32<64.0, Ship>(n, xf, ship.data());
+        boys::BoysAllOrdersF32<64.0, Horn>(n, xf, horn.data());
+        boys::BoysAllOrdersF32<64.0, Rat>(n, xf, rat.data());
+        rungRow("BoysSingleF32<64> cheb x Clenshaw",
+                static_cast<double>(boys::BoysSingleF32<64.0, Ship>(n, xf)));
+        rungRow("BoysSingleF32<64> cheb x Horner",
+                static_cast<double>(boys::BoysSingleF32<64.0, Horn>(n, xf)));
+        rungRow("BoysSingleF32<64> rational",
+                static_cast<double>(boys::BoysSingleF32<64.0, Rat>(n, xf)));
+        rungRow("BoysAllOrdersF32<64> cheb x Clenshaw [n]", static_cast<double>(ship[k]));
+        rungRow("BoysAllOrdersF32<64> cheb x Horner [n]", static_cast<double>(horn[k]));
+        rungRow("BoysAllOrdersF32<64> rational [n]", static_cast<double>(rat[k]));
+
+        boys::BoysAllOrdersF32<65536.0, Horn>(n, xf, horn.data());
+        boys::BoysAllOrdersF32<65536.0, Rat>(n, xf, rat.data());
+        rungRow("BoysSingleF32<65536> cheb x Horner",
+                static_cast<double>(boys::BoysSingleF32<65536.0, Horn>(n, xf)));
+        rungRow("BoysSingleF32<65536> rational",
+                static_cast<double>(boys::BoysSingleF32<65536.0, Rat>(n, xf)));
+        rungRow("BoysAllOrdersF32<65536> cheb x Horner [n]", static_cast<double>(horn[k]));
+        rungRow("BoysAllOrdersF32<65536> rational [n]", static_cast<double>(rat[k]));
     }
 
     if (!boys::BoysAvx2Available())
@@ -952,6 +962,141 @@ DD DivDD(DD a, DD b)
     const double q1 = a.hi / b.hi;
     const DD r = SubDD(a, MulDD(b, DD{q1, 0.0}));
     return TwoSumDD(q1, (r.hi + r.lo) / b.hi);
+}
+
+// --- the float lane's routes and schemes at a relaxed rung -----------------
+// The bar this lane's rungs are judged against: the float lane publishes
+// 1.5e-7 at the reference multiplier and the tier documents m times it at a
+// rung, which is what the rung's criterion spends - (m - 1) * 1.5e-7 on the
+// truncation, the remainder left for the m = 1 base the criterion assumes.
+// The fp16/bf16 engine budget reads its own cut, from a 1e-7 region budget, and
+// is still promised this lane's bound: the budget selects how many coefficients
+// are read, not a different bar (see the lane's own test).
+constexpr double kF32RungRegionBound = 1.5e-7;
+
+// The float lane's rows at a relaxed rung, kept apart from the policy book -
+// which is the reference multiplier's - for the reason that book is kept apart
+// from the lane cells: the rung is a third axis, its bar is the rung's, and a
+// row added here must not move a total printed there. A slot is one
+// (rung, entry, policy, region).
+std::vector<Accum>& F32RungClaims() {
+    static std::vector<Accum> claims;
+    return claims;
+}
+
+int AddF32RungClaim(double m, const char* budget, const char* entry, const char* region,
+                    double bound) {
+    Accum a;
+    a.lane = Fmt("m = %g, %s budget, %s", m, budget, entry);
+    a.region = region;
+    a.baseBound = bound;
+    F32RungClaims().push_back(a);
+    return static_cast<int>(F32RungClaims().size()) - 1;
+}
+
+// One rung of the float lane's route x scheme crossing, measured the way the
+// reference multiplier's block measures its rows: the entry's value at every
+// cell of the region against the committed reference, at the bar this rung
+// documents, with the count of the row's cells whose value is not the shipped
+// pair's at the same cell and the same rung.
+//
+// The multiplier is a template parameter of these entries, so the crossing's
+// rung axis is a table of instantiations rather than a run-time product and
+// this is a function template: the block below names the rungs the table holds.
+// Six rows are filled per call - two entries, three policies, two regions - in
+// the slot order the reference multiplier's block uses.
+template <double kM, typename Shipped, typename Horner, typename Rational>
+void MeasureF32RungCross(const Reference& ref,
+                         int entry,
+                         std::vector<Accum>& acc,
+                         std::size_t slotBase,
+                         std::vector<std::size_t>& differ) {
+    constexpr int kPolicies = 3;
+    constexpr int kRegions = 2;
+    const int nmax = boys::kMaxBoysOrder;
+    const double bound = kM * kF32RungRegionBound;
+    const auto slot = [&](int policy, int region) {
+        return slotBase + static_cast<std::size_t>(policy * kRegions + region);
+    };
+    const auto inRegion = [](int region, float xf) {
+        const auto x0 = static_cast<float>(boys::detail::kX0);
+        const auto x1 = static_cast<float>(boys::detail::kX1);
+        return region == 0 ? (xf < x0) : (xf >= x0 && xf < x1);
+    };
+    const auto add = [&](int region, int n, float xf, std::size_t k, const float got[3]) {
+        for (int p = 0; p < kPolicies; ++p)
+        {
+            const double asDouble = static_cast<double>(got[p]);
+            const bool unrepresentable =
+                got[p] == 0.0f || std::fabs(asDouble) < std::numeric_limits<float>::min();
+
+            MeasureInto(acc,
+                        static_cast<int>(slot(p, region)),
+                        n,
+                        static_cast<double>(xf),
+                        asDouble,
+                        ref.vf[k],
+                        ref.decadeF[k],
+                        bound,
+                        unrepresentable);
+
+            if (p > 0 && std::memcmp(&got[p], &got[0], sizeof(float)) != 0)
+            {
+                ++differ[slot(p, region)];
+            }
+        }
+    };
+
+    for (int r = 0; r < kRegions; ++r)
+    {
+        if (entry == 0)
+        {
+            for (int n = 0; n <= nmax; ++n)
+            {
+                for (std::size_t i = 0; i < ref.count; ++i)
+                {
+                    const float xf = static_cast<float>(ref.xf[i]);
+
+                    if (!inRegion(r, xf))
+                    {
+                        continue;
+                    }
+
+                    const float got[kPolicies] = {boys::BoysSingleF32<kM, Shipped>(n, xf),
+                                                  boys::BoysSingleF32<kM, Horner>(n, xf),
+                                                  boys::BoysSingleF32<kM, Rational>(n, xf)};
+                    add(r, n, xf, ref.Index(n, i), got);
+                }
+            }
+        } else
+        {
+            std::array<float, 33> shipped{};
+            std::array<float, 33> horner{};
+            std::array<float, 33> rational{};
+
+            for (std::size_t i = 0; i < ref.count; ++i)
+            {
+                const float xf = static_cast<float>(ref.xf[i]);
+
+                if (!inRegion(r, xf))
+                {
+                    continue;
+                }
+
+                boys::BoysAllOrdersF32<kM, Shipped>(nmax, xf, shipped.data());
+                boys::BoysAllOrdersF32<kM, Horner>(nmax, xf, horner.data());
+                boys::BoysAllOrdersF32<kM, Rational>(nmax, xf, rational.data());
+
+                for (int n = 0; n <= nmax; ++n)
+                {
+                    const float got[kPolicies] = {shipped[static_cast<std::size_t>(n)],
+                                                  horner[static_cast<std::size_t>(n)],
+                                                  rational[static_cast<std::size_t>(n)]};
+                    add(r, n, xf, ref.Index(n, i), got);
+                }
+            }
+        }
+    }
 }
 
 } // namespace
@@ -2795,355 +2940,256 @@ int main(int argc, char** argv) {
                     f32PolicyShortWorst);
     }
 
-    // ---- the float lane at every rung, on the schemes it stores ------------
-    // The book above is the lane at the reference multiplier, where every pair
-    // of axes it stores is carried. A rung is the other question: past the
-    // reference multiplier the lane's fits are cut by a table of effective
-    // degrees, and that table is read from the lane's own stored coefficients -
-    // one table per scheme, because the two schemes sum different numbers over
-    // the same pieces. The rational route is not here: its fits are a
-    // numerator/denominator pair whose acceptance criterion is not a dropped
-    // coefficient tail, so a rung of it is a table nobody has derived, and the
-    // refusal record further down names it with the probe that shows it.
+    // ---- the float lane's routes and schemes at a relaxed rung -------------
+    // The block above measures the pairs this lane stores at the multiplier the
+    // fits are published at; this one measures the same pairs at a rung, which
+    // is the crossing a call naming a route or a scheme reaches once the rung is
+    // not the reference one.
     //
-    // So this is the axis the rung opens for the lane: both Chebyshev schemes,
-    // on both entries, over both fitted regions, at every multiplier the tier
-    // enumeration declares. The bar is the lane's own per-region figure times
-    // the multiplier, which is the budget a rung documents. The value read is
-    // the region's fit itself on the single-order entry, and the batch entry's
-    // seed: region B's is this lane's, region A's comes from the double lane,
-    // and a scheme the lane stores must still be reached there.
+    // The multiplier is a template parameter of these entries, so the rung axis
+    // is a table of instantiations rather than a run-time product, and the block
+    // names the rungs it holds: the tier's first relaxed rung and its last, and
+    // the first again at the fp16/bf16 engine budget, which reads a cut derived
+    // from its own 1e-7 region budget. The two ends of the axis are where these
+    // degree tables are shallowest and deepest; between them the same criterion
+    // runs at another multiplier, so the ends are the reading and not a sample.
     std::size_t f32RungCells = 0;
     std::size_t f32RungOver = 0;
+    std::size_t f32RungCellsPerEntry[2] = {0, 0};
+    std::size_t f32RungOverPerEntry[2] = {0, 0};
+    std::size_t f32RungUncovered = 0;
     std::size_t f32RungNotCarried = 0;
-    std::size_t f32RungRows = 0;
-    std::size_t f32RungApart = 0;
-    std::size_t f32RungApartCells = 0;
     std::size_t f32RungSeedCells = 0;
-    std::size_t f32RungSeedDifferDouble = 0;
-    std::size_t f32RungSeedDifferFloat = 0;
+    std::size_t f32RungSeedDiffer = 0;
+    Verdict f32RungVerdict[2] = {Verdict::Verified, Verdict::Verified};
+    double f32RungWorstRatio[2] = {0.0, 0.0};
+    double f32RungWorstErr[2] = {0.0, 0.0};
+    double f32RungWorstBar[2] = {0.0, 0.0};
+    int f32RungWorstN[2] = {-1, -1};
+    double f32RungWorstX[2] = {0.0, 0.0};
+
+    // The rungs this block measures, named once so that the rows below and the
+    // option space's members for them cannot disagree about what was run. The
+    // per-(rung, entry) tallies are filled where the rows are read rather than
+    // recomputed later, so the option space reads this block's own reading.
+    constexpr int kF32RungPasses = 3;
+    constexpr int kF32RungEntries = 2;
+    const double f32RungPassM[kF32RungPasses] = {64.0, 65536.0, 64.0};
+    const char* const f32RungPassBudget[kF32RungPasses] = {"float", "float", "fp16"};
+    const char* const f32RungEntryName[kF32RungEntries] = {"single", "batch"};
+    const char* const f32RungEntryCall[kF32RungEntries] = {"BoysSingleF32", "BoysAllOrdersF32"};
+    std::size_t f32RungCellsAt[kF32RungPasses][kF32RungEntries] = {};
+    std::size_t f32RungOverAt[kF32RungPasses][kF32RungEntries] = {};
+    std::size_t f32RungDifferAt[kF32RungPasses][kF32RungEntries] = {};
+    double f32RungWorstAt[kF32RungPasses][kF32RungEntries] = {};
+    int f32RungWorstNAt[kF32RungPasses][kF32RungEntries] = {{-1, -1}, {-1, -1}, {-1, -1}};
+    double f32RungWorstXAt[kF32RungPasses][kF32RungEntries] = {};
 
     {
-        constexpr int kSchemes = 2;
-        constexpr int kEntries = 2;
+        using ShippedPair =
+            boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw>;
+        using HornerPair =
+            boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>;
+        using RationalPair = boys::EvalPolicy<boys::FitRoute::kRationalMinimax>;
+        using ShippedFp16 = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                             boys::EvalScheme::kSplitClenshaw,
+                                             boys::BoysBudget::kFp16>;
+        using HornerFp16 = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner,
+                                            boys::BoysBudget::kFp16>;
+        using RationalFp16 = boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+                                              boys::EvalScheme::kSplitClenshaw,
+                                              boys::BoysBudget::kFp16>;
+
+        constexpr int kEntries = kF32RungEntries;
+        constexpr int kPolicies = 3;
         constexpr int kRegions = 2;
-        constexpr int kSingleEntry = 0;
-        constexpr int kBatchEntry = 1;
-
-        f32RungRows = static_cast<std::size_t>(kEntries * kRegions * static_cast<int>(kF32Rungs));
-
-        const auto slot = [](int scheme, int entry, int region, int rung) -> int {
-            return ((scheme * kEntries + entry) * kRegions + region) *
-                       static_cast<int>(kF32Rungs) +
-                   rung;
-        };
-
-        const char* const schemeName[kSchemes] = {"chebyshev x Clenshaw", "chebyshev x Horner"};
-        const char* const entryName[kEntries] = {"single", "batch"};
+        constexpr int kPasses = kF32RungPasses;
+        const int kSingleEntry = 0;
+        const int kBatchEntry = 1;
+        const char* const* const entryName = f32RungEntryName;
+        const char* const policyName[kPolicies] = {"chebyshev x Clenshaw",
+                                                   "chebyshev x Horner",
+                                                   "rational minimax"};
         const char* const regionName[kRegions] = {"A", "B"};
-        const double bar[kRegions] = {boys::detail::f32::kRegionAFitBar,
-                                      boys::detail::f32::kRegionBFitBar};
+        const double* const passM = f32RungPassM;
+        const char* const* const passBudget = f32RungPassBudget;
 
-        std::vector<int> slots(kSchemes * kEntries * kRegions * kF32Rungs, -1);
-        std::vector<std::size_t> differ(slots.size(), 0);
-
-        // The shipped scheme's value at every cell, held so the carriage count
-        // can compare the two schemes cell by cell rather than per call: the
-        // question is whether naming the second scheme changed the float the
-        // engine returned anywhere, and that is one bitwise reading per cell.
-        // One grid per entry and region per rung, because the two entries
-        // answer different values at the same cell.
-        std::vector<std::vector<float>> otherScheme(
-            static_cast<std::size_t>(kEntries * kRegions * kF32Rungs));
-        const auto gridOf = [&](int entry, int region, int rung) -> std::vector<float>& {
-            std::vector<float>& g =
-                otherScheme[static_cast<std::size_t>((entry * kRegions + region) *
-                                                         static_cast<int>(kF32Rungs) +
-                                                     rung)]
-                    ;
-
-            if (g.empty())
-            {
-                g.assign(count * (static_cast<std::size_t>(nmax) + 1), 0.0f);
-            }
-
-            return g;
+        // The slot of one row, in the order the claims are registered: the
+        // pass, then the entry, then the policy, then the region.
+        const auto base = [](int pass, int entry) {
+            return static_cast<std::size_t>((pass * kEntries + entry) * kPolicies * kRegions);
+        };
+        const auto slot = [&](int pass, int entry, int policy, int region) {
+            return base(pass, entry) + static_cast<std::size_t>(policy * kRegions + region);
         };
 
-        for (int s = 0; s < kSchemes; ++s)
+        std::vector<std::size_t> differ(
+            static_cast<std::size_t>(kPasses * kEntries * kPolicies * kRegions), 0);
+
+        for (int g = 0; g < kPasses; ++g)
         {
             for (int e = 0; e < kEntries; ++e)
             {
-                for (int r = 0; r < kRegions; ++r)
+                for (int p = 0; p < kPolicies; ++p)
                 {
-                    for (int q = 0; q < kF32Rungs; ++q)
+                    for (int r = 0; r < kRegions; ++r)
                     {
-                        slots[static_cast<std::size_t>(slot(s, e, r, q))] = AddF32RungClaim(
-                            schemeName[s], regionName[r], bar[r] * kF32RungM[q]);
+                        AddF32RungClaim(passM[g],
+                                        passBudget[g],
+                                        entryName[e],
+                                        regionName[r],
+                                        passM[g] * kF32RungRegionBound);
                     }
                 }
             }
         }
 
-        const auto sweepRung =
-            [&]<std::size_t kRung, std::size_t kSchemeIndex, boys::EvalScheme kScheme>() {
-            using Pair = boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme>;
+        MeasureF32RungCross<64.0, ShippedPair, HornerPair, RationalPair>(
+            ref, kSingleEntry, F32RungClaims(), base(0, 0), differ);
+        MeasureF32RungCross<64.0, ShippedPair, HornerPair, RationalPair>(
+            ref, kBatchEntry, F32RungClaims(), base(0, 1), differ);
+        MeasureF32RungCross<65536.0, ShippedPair, HornerPair, RationalPair>(
+            ref, kSingleEntry, F32RungClaims(), base(1, 0), differ);
+        MeasureF32RungCross<65536.0, ShippedPair, HornerPair, RationalPair>(
+            ref, kBatchEntry, F32RungClaims(), base(1, 1), differ);
+        MeasureF32RungCross<64.0, ShippedFp16, HornerFp16, RationalFp16>(
+            ref, kSingleEntry, F32RungClaims(), base(2, 0), differ);
+        MeasureF32RungCross<64.0, ShippedFp16, HornerFp16, RationalFp16>(
+            ref, kBatchEntry, F32RungClaims(), base(2, 1), differ);
 
-            constexpr double kM = kF32RungM[kRung];
-            const auto x0 = static_cast<float>(boys::detail::kX0);
-            const auto x1 = static_cast<float>(boys::detail::kX1);
-
-            for (int r = 0; r < kRegions; ++r)
-            {
-                for (int n = 0; n <= nmax; ++n)
-                {
-                    for (std::size_t i = 0; i < count; ++i)
-                    {
-                        const float xf = static_cast<float>(ref.xf[i]);
-
-                        if (r == 0 ? (xf >= x0) : (xf < x0 || xf >= x1))
-                        {
-                            continue;
-                        }
-
-                        const std::size_t k = ref.Index(n, i);
-                        const double single =
-                            static_cast<double>(boys::BoysSingleF32<kM, Pair>(n, xf));
-                        const bool singleFloor =
-                            single == 0.0 ||
-                            std::fabs(single) < std::numeric_limits<float>::min();
-
-                        MeasureInto(F32RungClaims(),
-                                    slot(kSchemeIndex, kSingleEntry, r, kRung),
-                                    n,
-                                    static_cast<double>(xf),
-                                    single,
-                                    ref.vf[k],
-                                    ref.decadeF[k],
-                                    kM * bar[r],
-                                    singleFloor);
-
-                        std::array<float, 33> batch{};
-                        boys::BoysAllOrdersF32<kM, Pair>(nmax, xf, batch.data());
-                        const double order = static_cast<double>(batch[static_cast<std::size_t>(n)]);
-                        const bool orderFloor =
-                            order == 0.0 ||
-                            std::fabs(order) < std::numeric_limits<float>::min();
-
-                        MeasureInto(F32RungClaims(),
-                                    slot(kSchemeIndex, kBatchEntry, r, kRung),
-                                    n,
-                                    static_cast<double>(xf),
-                                    order,
-                                    ref.vf[k],
-                                    ref.decadeF[k],
-                                    kM * bar[r],
-                                    orderFloor);
-
-                        // Scheme 0's two values are the control: scheme 1 is
-                        // compared against them cell by cell, and the count is
-                        // written to scheme 1's rows. The fold above runs the
-                        // shipped scheme over the whole grid before this pass
-                        // starts, so the control is filled when it is read.
-                        const float asFloat = static_cast<float>(single);
-                        const float bn = batch[static_cast<std::size_t>(n)];
-                        float* const singleControl = gridOf(kSingleEntry, r, kRung).data();
-                        float* const batchControl = gridOf(kBatchEntry, r, kRung).data();
-
-                        if constexpr (kSchemeIndex == 0)
-                        {
-                            singleControl[k] = asFloat;
-                            batchControl[k] = bn;
-                        } else
-                        {
-                            if (std::memcmp(&singleControl[k], &asFloat, sizeof(float)) != 0)
-                            {
-                                ++differ[static_cast<std::size_t>(
-                                    slot(kSchemeIndex, kSingleEntry, r, kRung))];
-                            }
-
-                            if (std::memcmp(&batchControl[k], &bn, sizeof(float)) != 0)
-                            {
-                                ++differ[static_cast<std::size_t>(
-                                    slot(kSchemeIndex, kBatchEntry, r, kRung))];
-                            }
-                        }
-                    }
-                }
-            }
-        };
-
-        [&]<std::size_t... kRungs>(std::index_sequence<kRungs...>) {
-            (sweepRung.template operator()<kRungs, 0, boys::EvalScheme::kSplitClenshaw>(), ...);
-            (sweepRung.template operator()<kRungs, 1, boys::EvalScheme::kHorner>(), ...);
-        }(std::make_index_sequence<kF32Rungs>{});
-
-        std::printf("\n  the float lane at each rung it serves: both schemes it stores, on both\n"
-                    "  entries, over each fitted region, judged against the lane's per-region bar\n"
-                    "  times the multiplier. A rung of the rational route is not here: its fits\n"
-                    "  carry no dropped-coefficient table to cut, so the refusal record below is\n"
-                    "  where it is counted\n");
-        std::printf("  %-20s %-6s %-5s %-8s %7s %14s %14s %8s %4s %13s\n",
-                    "policy",
-                    "entry",
-                    "reg",
+        std::printf("\n  the float lane's routes and schemes at a relaxed rung. Every row is one\n"
+                    "  entry and one policy over one region's whole interval, every order, at the\n"
+                    "  bar that rung documents (m times the lane's published region bound, "
+                    "1.5e-7):\n"
+                    "  what the criterion spends on the truncation is (m - 1) of it, and the rest\n"
+                    "  is the m = 1 base the criterion assumes. This is the crossing a call "
+                    "naming\n"
+                    "  another route or scheme reaches once the rung is not the reference one. "
+                    "The\n"
+                    "  two budgets are the same lane's arithmetic at the two region budgets the\n"
+                    "  engine reads - the float one and the fp16/bf16 one - and both are promised\n"
+                    "  the lane's published bound, so both are judged at it here.\n");
+        std::printf("  %-8s %-6s %-7s %-20s %-4s %8s %14s %14s %9s %4s %12s %8s\n",
                     "rung",
+                    "budget",
+                    "entry",
+                    "policy",
+                    "reg",
                     "cells",
-                    "measured",
+                    "delivered",
                     "bar",
                     "of bar",
                     "n",
-                    "at x");
-        std::printf("  %s\n", std::string(126, '-').c_str());
+                    "at x",
+                    "differs");
+        std::printf("  %s\n", std::string(140, '-').c_str());
 
-        for (int s = 0; s < kSchemes; ++s)
+        for (int g = 0; g < kPasses; ++g)
         {
             for (int e = 0; e < kEntries; ++e)
             {
-                for (int r = 0; r < kRegions; ++r)
+                for (int p = 0; p < kPolicies; ++p)
                 {
-                    for (int q = 0; q < kF32Rungs; ++q)
+                    for (int r = 0; r < kRegions; ++r)
                     {
-                        const std::size_t at = static_cast<std::size_t>(slot(s, e, r, q));
-                        const Accum& a = F32RungClaims()[static_cast<std::size_t>(slots[at])];
+                        const std::size_t s = slot(g, e, p, r);
+                        const Accum& a = F32RungClaims()[s];
                         f32RungCells += a.points;
                         f32RungOver += a.failures;
+                        f32RungCellsPerEntry[e] += a.points;
+                        f32RungOverPerEntry[e] += a.failures;
+                        f32RungCellsAt[g][e] += a.points;
+                        f32RungOverAt[g][e] += a.failures;
+                        f32RungDifferAt[g][e] += differ[s];
 
-                        char rungTag[24];
-                        std::snprintf(rungTag, sizeof(rungTag), "m=%g", kF32RungM[q]);
+                        if (a.points > 0 && a.worstRatio > f32RungWorstAt[g][e])
+                        {
+                            f32RungWorstAt[g][e] = a.worstRatio;
+                            f32RungWorstNAt[g][e] = a.worstN;
+                            f32RungWorstXAt[g][e] = a.worstX;
+                        }
 
-                        std::printf("  %-20s %-6s %-5s %-8s %7zu %14.6g %14.6g %8.3f %4d %13.6g",
-                                    schemeName[s],
+                        if (a.points == 0)
+                        {
+                            ++f32RungUncovered;
+                        }
+
+                        if (VerdictRank(FromAccum(a)) > VerdictRank(f32RungVerdict[e]))
+                        {
+                            f32RungVerdict[e] = FromAccum(a);
+                        }
+
+                        if (a.points > 0 && a.worstRatio > f32RungWorstRatio[e])
+                        {
+                            f32RungWorstRatio[e] = a.worstRatio;
+                            f32RungWorstErr[e] = a.worstErr;
+                            f32RungWorstBar[e] = a.worstBound;
+                            f32RungWorstN[e] = a.worstN;
+                            f32RungWorstX[e] = a.worstX;
+                        }
+
+                        // The carriage count is required of the rows whose value
+                        // a table of this lane's decides: the single entry's two
+                        // regions and the batch entry's region-B seed. The batch
+                        // entry's region-A rows seed from the double lane's fit
+                        // at the pair the policy names, exactly as they do at the
+                        // reference multiplier, so they are reported apart.
+                        if (p > 0 && e == kBatchEntry && r == 0)
+                        {
+                            f32RungSeedCells += a.points;
+                            f32RungSeedDiffer += differ[s];
+                        } else if (p > 0 && differ[s] == 0)
+                        {
+                            ++f32RungNotCarried;
+                        }
+
+                        std::printf("  %-8.6g %-6s %-7s %-20s %-4s %8zu %14.6g %14.6g %9.4f %4d "
+                                    "%12.6g",
+                                    passM[g],
+                                    passBudget[g],
                                     entryName[e],
+                                    policyName[p],
                                     regionName[r],
-                                    rungTag,
                                     a.points,
                                     a.worstErr,
-                                    kF32RungM[q] * bar[r],
+                                    a.worstBound,
                                     a.worstRatio,
                                     a.worstN,
                                     a.worstX);
 
-                        std::printf(" %8zu\n", differ[at]);
+                        if (p == 0)
+                        {
+                            std::printf(" %8s\n", "n/a");
+                        } else
+                        {
+                            std::printf(" %8zu\n", differ[s]);
+                        }
                     }
                 }
             }
         }
 
-        // The carriage count the lane's rungs need: a row where the second
-        // scheme's value never differs from the shipped scheme's on any cell it
-        // covers is a row the scheme is stored for and no cell reaches, which is
-        // what an engine that ignored the scheme would answer.
-        for (int e = 0; e < kEntries; ++e)
-        {
-            for (int r = 0; r < kRegions; ++r)
-            {
-                for (int q = 0; q < kF32Rungs; ++q)
-                {
-                    const std::size_t horner =
-                        static_cast<std::size_t>(slot(1, e, r, q));
-
-                    // The batch entry's region-A row at the reference multiplier
-                    // is reported apart rather than required to change, and the
-                    // reason is measured below rather than asserted: there the
-                    // value is the double lane's fit cast to float once, and the
-                    // two schemes' doubles differ by less than that cast can see.
-                    // Every relaxed rung of the same row does differ, so the row
-                    // is not one the policy is ignored on.
-                    if (e == kBatchEntry && r == 0 && q == 0)
-                    {
-                        ++f32RungApart;
-                        f32RungApartCells +=
-                            F32RungClaims()[static_cast<std::size_t>(slots[horner])].points;
-                        continue;
-                    }
-
-                    if (differ[horner] == 0 &&
-                        F32RungClaims()[static_cast<std::size_t>(slots[horner])].points > 0)
-                    {
-                        ++f32RungNotCarried;
-                        std::printf("    the second scheme is stored and never reached on: "
-                                    "%s entry, region %s, m=%g (%zu cell(s))\n",
-                                    entryName[e],
-                                    regionName[r],
-                                    kF32RungM[q],
-                                    F32RungClaims()[static_cast<std::size_t>(slots[horner])]
-                                        .points);
-                    }
-                }
-            }
-        }
-
-        // The reported-apart row's mechanism, read off the seeds themselves: the
-        // batch's region-A value at the reference multiplier is a downward
-        // recursion from the double lane's fit at order nmax, cast to float once
-        // (BoysAllOrdersF32Impl), so the schemes' difference survives to the
-        // returned float only if it survives the cast. One double reading per
-        // scheme per argument, and the two floats they round to.
-        for (std::size_t i = 0; i < count; ++i)
-        {
-            const float xf = static_cast<float>(ref.xf[i]);
-
-            if (!(xf < static_cast<float>(boys::detail::kX0)))
-            {
-                continue;
-            }
-
-            const double clenshaw = boys::detail::ChebyshevValue<boys::EvalScheme::kSplitClenshaw>(
-                nmax, static_cast<double>(xf));
-            const double horner =
-                boys::detail::ChebyshevValue<boys::EvalScheme::kHorner>(nmax, static_cast<double>(xf));
-
-            ++f32RungSeedCells;
-
-            if (std::memcmp(&clenshaw, &horner, sizeof(double)) != 0)
-            {
-                ++f32RungSeedDifferDouble;
-            }
-
-            const float clenshawF = static_cast<float>(clenshaw);
-            const float hornerF = static_cast<float>(horner);
-
-            if (std::memcmp(&clenshawF, &hornerF, sizeof(float)) != 0)
-            {
-                ++f32RungSeedDifferFloat;
-            }
-        }
-
-        // The other half of the reported-apart row's defence, read off the
-        // carriage counts the sweep already took: the same row's returned floats
-        // at the relaxed rungs, where the cut is far larger than a cast.
-        std::size_t apartRelaxedLo = 0;
-        std::size_t apartRelaxedHi = 0;
-
-        for (int q = 1; q < kF32Rungs; ++q)
-        {
-            const std::size_t at = static_cast<std::size_t>(slot(1, kBatchEntry, 0, q));
-
-            apartRelaxedLo = (q == 1) ? differ[at] : std::min(apartRelaxedLo, differ[at]);
-            apartRelaxedHi = std::max(apartRelaxedHi, differ[at]);
-        }
-
-        std::printf("  the float lane's rung rows: %zu cell(s), %zu of them outside the bar the\n"
-                    "  rung documents; %zu of the 27 required row(s) a second scheme is stored for\n"
-                    "  and no cell of the sweep reaches\n",
+        std::printf("  %s\n", std::string(140, '-').c_str());
+        std::printf("  the rung rows: %zu cell(s), %zu of them outside the row's bar, %zu row(s)\n"
+                    "  measured over no argument at all, %zu rung-and-entry pair(s) of the %d the\n"
+                    "  block names. The margin is not slack: the criterion spends (m - 1) of the\n"
+                    "  bar on the truncation, so the delivered figure is expected to approach the\n"
+                    "  bar as m grows - it is (m - 1)/m of it in the limit, which is what the\n"
+                    "  m = 1 base the criterion assumes leaves it.\n",
                     f32RungCells,
                     f32RungOver,
-                    f32RungNotCarried);
-        std::printf("  the one row reported apart, the batch entry's region A at m = 1 (%zu cell(s),\n"
-                    "  %zu of them reached): its value is the double lane's seed at order %d cast to\n"
-                    "  float once, so the schemes reach it iff their difference survives the cast. The\n"
-                    "  two seeds differ on %zu of %zu argument(s); the floats they round to differ on\n"
-                    "  %zu. At that row's six relaxed rungs the returned floats differ on between %zu\n"
-                    "  and %zu of its cell(s), so no rung of it ignores the policy either\n",
-                    f32RungApartCells,
-                    F32RungClaims()[static_cast<std::size_t>(slots[slot(1, kBatchEntry, 0, 0)])].points,
-                    nmax,
-                    f32RungSeedDifferDouble,
+                    f32RungUncovered,
+                    (f32RungCells == 0) ? std::size_t{2 * kPasses} : std::size_t{0},
+                    2 * kPasses);
+        std::printf("  rung rows of a policy other than the shipped pair whose value never "
+                    "differed\n"
+                    "  from the shipped pair's at the same rung and cell: %zu of the %d rows the\n"
+                    "  count is required for. The batch entry's region-A rows are reported apart:\n"
+                    "  %zu cell(s), %zu of them differing\n",
+                    f32RungNotCarried,
+                    kPasses * 6,
                     f32RungSeedCells,
-                    f32RungSeedDifferFloat,
-                    apartRelaxedLo,
-                    apartRelaxedHi);
+                    f32RungSeedDiffer);
     }
 
     // ---- fp16 and bf16, the store-half lane -------------------------------
@@ -7945,6 +7991,8 @@ int main(int argc, char** argv) {
         // The float lane's policy rows are the route book's too: a policy names a route and a
         // scheme, so their cells are the route axis's cells and not the lane sweep's.
         routeCells += f32PolicyCells;
+        // ... and the same rows at a rung, which are the route axis's for the same reason.
+        routeCells += f32RungCells;
 
         for (std::size_t r = 0; r < routeLaneClaim.size(); ++r)
         {
@@ -8234,44 +8282,79 @@ int main(int argc, char** argv) {
                      f32PolicySeedDiffer[1],
                      f32PolicySeedCells[1]));
 
-        addRoute("float.rung.pair",
-                 "the float lane's two stored schemes are carried at every rung the tier "
-                 "enumeration declares: on both entries, over each fitted region, the value the "
-                 "lane answers with at a rung is inside the lane's own per-region bar times the "
-                 "multiplier, and the second scheme changes the float the engine returns over the "
-                 "cells the sweep covers, so a scheme the lane stores is not one the rung ignores",
-                 "include/boys/boys.hpp, BoysSingleF32 and BoysAllOrdersF32 at a multiplier; "
-                 "boys_effective_degrees.hpp, RegionADegrees and RegionBDegrees with the "
-                 "single-precision roles; boys_impl.hpp, the lane's two stored tables",
-                 (f32RungOver == 0 && f32RungNotCarried == 0) ? Verdict::Verified
-                                                             : Verdict::Exceeded,
-                 Fmt("%zu cell(s) across the two schemes, both entries and both regions, %zu of "
-                     "them outside the bar the rung documents, and %zu of the %zu required row(s) "
-                     "whose cells never differ between the schemes. The one row reported apart, the "
-                     "batch entry's region A at the reference multiplier, is named and measured in "
-                     "the table above: its value is the double lane's seed cast to float once, and "
-                     "there the two schemes' seeds differ on %zu of %zu argument(s) while the floats "
-                     "they round to differ on %zu, while at that row's relaxed rungs the returned "
-                     "floats differ on thousands of its cells - so that row is one a cast erases "
-                     "rather than one the policy is ignored on. The rational route is not a row of "
-                     "this axis: its fits carry no dropped-coefficient table, so no rung of them "
-                     "exists to measure and the refusal record names it",
-                     f32RungCells,
-                     f32RungOver,
-                     f32RungNotCarried,
-                     f32RungRows - f32RungApart,
-                     f32RungSeedDifferDouble,
-                     f32RungSeedCells,
-                     f32RungSeedDifferFloat));
+        // The rung rows, on the same terms as the policy rows above: the rung is
+        // a third axis, so it is a row of this book rather than a note, and the
+        // bar it is judged against is the rung's own - m times the bar the lane
+        // publishes, which is what the rung's documented budget says the fit may
+        // spend on the truncation plus the m = 1 base the criterion assumes.
+        addRoute("float.rung.single",
+                 "BoysSingleF32, at a rung the engine's multiplier selects and at a policy naming "
+                 "any route and any scheme the entry accepts, delivers no worse than the bar that "
+                 "rung documents, over each region's whole interval and every order",
+                 "include/boys/boys.hpp, BoysSingleF32 and its \\tparam AccuracyMultiplier; "
+                 "boys_effective_degrees.hpp, RegionADegrees, RegionBDegrees, "
+                 "RationalRegionAF32Degrees and RationalRegionBF32Degrees",
+                 f32RungVerdict[0],
+                 Fmt("worst %.3g of the rung's bar at (n=%d, x=%.6g): delivered %.6g against "
+                     "%.6g, over %zu comparison cell(s) across the rung's rows; %zu of them "
+                     "outside the bar. The rungs named are the tier's first and its last, at both "
+                     "of the lane's region budgets, and the bar is m times the %g the lane "
+                     "publishes rather than a figure of its own",
+                     f32RungWorstRatio[0],
+                     f32RungWorstN[0],
+                     f32RungWorstX[0],
+                     f32RungWorstErr[0],
+                     f32RungWorstBar[0],
+                     f32RungCellsPerEntry[0],
+                     f32RungOverPerEntry[0],
+                     kF32RungRegionBound));
 
+        addRoute("float.rung.batch",
+                 "BoysAllOrdersF32, at a rung the engine's multiplier selects and at a policy "
+                 "naming any route and any scheme the entry accepts, delivers no worse than the "
+                 "bar that rung documents, over each region's whole interval and every order",
+                 "include/boys/boys.hpp, BoysAllOrdersF32 and its \\tparam AccuracyMultiplier; "
+                 "boys_impl.hpp, FloatBatchRegionASeedAtRung",
+                 f32RungVerdict[1],
+                 Fmt("worst %.3g of the rung's bar at (n=%d, x=%.6g): delivered %.6g against "
+                     "%.6g, over %zu comparison cell(s) across the rung's rows; %zu of them "
+                     "outside the bar. The batch entry's region-A seed is the double lane's fit "
+                     "at the pair the policy names, whose rung is derived in this library's "
+                     "double lane, and its region-B seed is this lane's own",
+                     f32RungWorstRatio[1],
+                     f32RungWorstN[1],
+                     f32RungWorstX[1],
+                     f32RungWorstErr[1],
+                     f32RungWorstBar[1],
+                     f32RungCellsPerEntry[1],
+                     f32RungOverPerEntry[1]));
+
+        addRoute("float.rung.carries",
+                 "at a rung as well, each policy the float lane's engines accept is read: on "
+                 "every row whose value a table of this lane's decides, naming a route or a "
+                 "scheme other than the shipped pair changes the float the engine answers with",
+                 "include/boys/boys.hpp, EvalPolicy and the float entries' \\tparam Policy; "
+                 "boys_impl.hpp, FloatRouteFitAtRung",
+                 (f32RungNotCarried == 0 && f32RungUncovered == 0) ? Verdict::Verified
+                                                                   : Verdict::Exceeded,
+                 Fmt("%zu of the 18 rung row(s) whose value a table of this lane's decides never "
+                     "differed from the shipped pair's value on any cell the row covers, which is "
+                     "what an engine that derived one pair's degrees and read them under another "
+                     "pair's name would answer; %zu row(s) of the thirty-six were measured over "
+                     "no argument at all. The batch entry's region-A rows are reported apart, as "
+                     "they are at the reference multiplier: %zu cell(s), %zu of them differing",
+                     f32RungNotCarried,
+                     f32RungUncovered,
+                     f32RungSeedCells,
+                     f32RungSeedDiffer));
 
         // Not a claim: this is what the two RESULT lines above and below already
         // say, put side by side so a reader can see the routes were added without
         // the lanes' totals moving rather than having to trust that they were.
         std::printf("\n  the routes are counted apart from the lanes: the lane RESULT above reads "
                     "%d of %zu\n  claims carried by %zu of %zu comparison cells, and the route "
-                    "rows and the\n  float lane's policy rows contribute %zu cells of their own, "
-                    "none of them in that\n  total\n",
+                    "rows, the float lane's\n  policy rows and those rows again at a rung "
+                    "contribute %zu cells of their own, none of\n  them in that total\n",
                     verified + metOverDomain,
                     book.size(),
                     gateCells - gateNonDiscriminating,
@@ -8392,25 +8475,13 @@ int main(int argc, char** argv) {
             const char* why;
         };
 
-        const std::array<RouteUncoveredSite, 2> routeUncoveredList{{
-            {"a route or a scheme other than the shipped pair, past the reference multiplier, "
-             "on the single-precision engines (BoysSingleF32, BoysAllOrdersF32) and the "
-             "fp16/bf16 lanes built on them",
-             "the engines assert at compile time that such a policy names the shipped route and "
-             "scheme, because a relaxed rung cuts a fit by a table of effective degrees and a "
-             "degree table is certified against one stored table of one family, so the call does "
-             "not build and there is no value to sweep there. The probe compiles that call and it "
-             "does not build, so this entry rests on a measurement rather than on the "
-             "assertion's word. At the reference multiplier every "
-             "pair this lane stores is carried, and the fp32 policy table above is where those "
-             "rows are measured; no entry on the fp16/bf16 lanes names a route at all. The fp32 "
-             "lane's own routes are not in this list: BoysSingleF32WithRoute serves them, and the "
-             "two rows the float route table above prints are rows of this book"},
+        const std::array<RouteUncoveredSite, 1> routeUncoveredList{{
             {"a relaxed rung on a policy naming the rational route",
-             "carried and not swept here: the rational route's own degree table is derived, and "
-             "the rung combinations are measured in the combinations block below through the "
-             "entries that name a route at run time. The carriage rows above are the shipped "
-             "route's rungs only, which is why this book has no row of its own on that pair"},
+             "carried and not swept here: the float lane's rungs are rows of this book's "
+             "float.rung.single, float.rung.batch and float.rung.carries, and the double lane's "
+             "rung combinations are measured in the combinations block below through the entries "
+             "that name a route at run time. The carriage rows above are the shipped route's "
+             "rungs only, which is why this book has no row of its own on that pair here"},
         }};
 
         std::printf("\n  route-reading sites this book does NOT sweep, and why (these are the "
@@ -8423,6 +8494,13 @@ int main(int argc, char** argv) {
 
         std::printf("    %zu site(s) above; none of them is a row of this book\n",
                     routeUncoveredList.size());
+
+        std::printf("\n  the float lane's routes and schemes at a relaxed rung are NOT among "
+                    "them:\n"
+                    "  the fp32 rung table above is rows of this book (float.rung.single,\n"
+                    "  float.rung.batch, float.rung.carries), one row per entry, policy and "
+                    "region,\n"
+                    "  each judged against the bar its rung documents\n");
 
         std::printf("\n  RESULT (routes, counted apart from the lanes above): %d of %zu route "
                     "claims met at this revision (%d verified outright, %d met over a stated "
@@ -8801,20 +8879,19 @@ int main(int argc, char** argv) {
     };
 
     const std::array<UncoveredSite, 4> uncovered{{
-        {"a route or a scheme other than the shipped pair, past the reference multiplier, on "
-         "the single-precision engines (BoysSingleF32, BoysAllOrdersF32) and the fp16/bf16 "
-         "lanes built on them",
-         "the policy's fit route and its scheme, where the rung is not the reference one",
-         "refused where it is named rather than carried: past the reference multiplier both "
-         "engines assert at compile time that the policy names the shipped route and scheme, "
-         "because a relaxed rung cuts a fit by a table of effective degrees and a degree table "
-         "is certified against one stored table of one family. A call naming another pair at "
-         "such a rung does not build, so there is no value to sweep. The probe compiles "
-         "that call and it does not build, which is the measurement this entry rests on "
-         "rather than the assertion's word. At the reference "
-         "multiplier every pair this lane stores is carried, and the fp32 policy table above "
-         "measures those rows; that table says nothing about the rungs past it, which is the "
-         "half of the site this entry keeps"},
+        {"a route or a scheme other than the shipped pair, on the single-precision engines "
+         "(BoysSingleF32, BoysAllOrdersF32) and the fp16/bf16 lanes built on them",
+         "the policy's fit route and its scheme, at the reference multiplier and at a relaxed "
+         "rung",
+         "not swept by this book, and not refused: a policy names a route and a scheme together, "
+         "so this lane's rows are keyed on the pair and belong to the route book - "
+         "float.policy.single, float.policy.batch and float.policy.carries at the reference "
+         "multiplier, and float.rung.single, float.rung.batch and float.rung.carries at a rung, "
+         "each judged against the bar the row documents. This book's rows are the scheme axis "
+         "read on its own, through the entries that name a scheme, and no entry on this lane "
+         "takes one: the engines take a policy. No entry on the fp16/bf16 lanes names a route at "
+         "all. A revision that dropped either pair of the route book's rows would leave this "
+         "site unswept and unrefused, which is what the run-time probe is read for"},
         {"a relaxed rung on a policy naming the rational route, at every double entry that takes "
          "a policy",
          "the policy's fit route, at a relaxed rung",
@@ -9094,6 +9171,40 @@ int main(int argc, char** argv) {
         optionSpace.push_back(std::move(m));
     }
 
+    // The float lane's routes and schemes at a rung: the same crossing the rung
+    // members above name, on the entries that read this lane's tables. A member
+    // is one rung on one entry over both regions and all three policies, so it
+    // is supported exactly when the rows for it were measured - which they are
+    // for every pair this lane stores, since the rung's degrees are derived from
+    // the table the policy actually reads - and bounded when none of those rows
+    // is over the bar its rung documents. The bar is the rung's own, m times the
+    // 1.5e-7 this lane publishes, and the note prints the delivered figure
+    // against it rather than only the verdict.
+    for (int g = 0; g < kF32RungPasses; ++g)
+    {
+        for (int e = 0; e < kF32RungEntries; ++e)
+        {
+            OptionMember o;
+            o.kind = "rung (float lane)";
+            o.member = Fmt("m = %g at %s, %s budget",
+                           f32RungPassM[g],
+                           f32RungEntryCall[e],
+                           f32RungPassBudget[g]);
+            o.supported = f32RungCellsAt[g][e] > 0;
+            o.bounded = o.supported && f32RungOverAt[g][e] == 0;
+            o.reachable = f32RungDifferAt[g][e] > 0;
+            o.note = Fmt("%zu cell(s), worst delivered %.6g of the m*1.5e-07 bar at n=%d, "
+                         "x=%g, %zu over it, %zu cell(s) differing from the shipped pair's value",
+                         f32RungCellsAt[g][e],
+                         f32RungWorstAt[g][e],
+                         f32RungWorstNAt[g][e],
+                         f32RungWorstXAt[g][e],
+                         f32RungOverAt[g][e],
+                         f32RungDifferAt[g][e]);
+            optionSpace.push_back(std::move(o));
+        }
+    }
+
     // The accuracy rungs, each at each scheme. The tier's multiplier comes from
     // the library's own AccuracyMultiplier, so a tier added to the enum is
     // measured here at the multiplier it declares.
@@ -9240,10 +9351,17 @@ int main(int argc, char** argv) {
     // refusal is a result rather than a sentence. This is the one list in this
     // block written by hand; it is labelled as such and it is checked against
     // the probes, not trusted.
+    //
+    // `unbuilt` is what separates the two kinds the print below names: a body
+    // or a table this library has not written, which is owed work and counts
+    // with the outstanding combinations, and a limit of the call itself, which
+    // no revision of the entry can lift. A refusal records the first kind only
+    // where the second is not available - the count of the first is the debt.
     struct Refusal {
         const char* member;
         const char* why;
         bool backed = false;
+        bool unbuilt = false;
     };
 
     std::vector<Refusal> refusals;
@@ -9288,12 +9406,21 @@ int main(int argc, char** argv) {
                         "measures it",
                         true});
 #else
-    ++liftedRefusals;
-    std::printf("  LIFTED: the single-precision engines accept the rational route at a relaxed "
-                "rung as\n  well, and the fp32 policy rows above measure the reference "
-                "multiplier's pair only:\n  nothing in this block reads what that rung answers "
-                "with. A revision that reaches\n  this line has carried the rung and owes its "
-                "rows\n");
+    // The rung is derived and carried. The refusal above is the shape of the
+    // debt, printed only where the probe finds the call does not build; here the
+    // probe compiled it, and the rung's own rows are measured in the fp32 rung
+    // table above at the bar that rung documents - every pair this lane stores,
+    // at a rung, on both float entries and at both of the lane's region budgets.
+    // Neither direction is silent: the probe decides which of the two lines
+    // prints, and the delivered figure beside each row's bar is the second
+    // reading of the same fact.
+    std::printf("  CARRIED: the single-precision engines compile a policy naming another route "
+                "or\n  another scheme at a relaxed rung, so a rung's degrees are the role's own, "
+                "derived\n  from the table that policy's route and scheme actually read. The fp32 "
+                "rung table\n  above measures what they answer with, at two rungs of the tier and "
+                "at both of the\n  lane's region budgets, on both float entries. The probe is the "
+                "reading that says so; a\n  revision that dropped the derivation would print the "
+                "refusal instead\n");
 #endif
 #ifdef BOYS_GATE_REFUSES_F32_SCHEME_AT_RUNG
     refusals.push_back({"a scheme other than the shipped one at a relaxed rung, on the "
@@ -9312,6 +9439,27 @@ int main(int argc, char** argv) {
                         "the call and not a table nobody built: no revision of this entry "
                         "produces four orders for the axis to pack",
                         true});
+#endif
+#ifdef BOYS_GATE_F32_REFUSES_ORDERS
+    refusals.push_back({"orders axis on the single-precision entries",
+                        "the single-precision engines read the policy's packing axis and have "
+                        "no packed body to answer it with - the AVX2 tier is double and half "
+                        "only - so an orders-axis policy here would be read and ignored; the "
+                        "probe compiles the call and it does not build. This one is the "
+                        "opposite of the entry above: the all-orders shape has nmax + 1 orders "
+                        "of one argument and a packed lane would hold exactly those, so the "
+                        "axis names real work here and what is missing is a float packed body "
+                        "nobody has written, not a property of the call",
+                        true,
+                        true});
+#else
+    // The other direction, and here it is a gap rather than a landing: the probe
+    // compiled the call, so the assertion is gone - and a compiled call is not a
+    // served axis. The packed float body this lane would need is what the
+    // packing-axis book above has to measure, and that book has no float row, so
+    // the lifted-refusal check below fails on it rather than a CARRIED line
+    // claiming a body nobody has seen run. The refusal list stays as it is: this
+    // revision has no refusal to record, and the entry is the check below.
 #endif
 
     // ---- what the check found ----------------------------------------------
@@ -9350,12 +9498,18 @@ int main(int argc, char** argv) {
     std::printf("  %s\n", std::string(150, '-').c_str());
 
     std::size_t unbackedRefusals = 0;
+    std::size_t unbuiltLimits = 0;
 
     for (const Refusal& r : refusals)
     {
         if (!r.backed)
         {
             ++unbackedRefusals;
+        }
+
+        if (r.unbuilt)
+        {
+            ++unbuiltLimits;
         }
     }
 
@@ -9383,15 +9537,24 @@ int main(int argc, char** argv) {
                 "than the\n  shipped pair, and the fp32 policy rows above measure what they "
                 "answer with it: one\n  row per policy, region and entry, each judged against "
                 "the bar the lane publishes\n  for that region, with the count of the row's "
-                "cells that differ from the shipped\n  pair's value beside it. The measurement "
-                "is the reference multiplier's; what a relaxed\n  rung does with such a policy "
-                "is the configure probe's reading, and the list below\n  prints which way it "
-                "went\n");
+                "cells that differ from the shipped\n  pair's value beside it. The rung past "
+                "that multiplier is measured the same way: the\n  fp32 rung table above holds "
+                "the same rows at a rung, judged against the bar the\n  rung documents, so the "
+                "figure the engine delivers there is printed beside the bar it\n  is held to "
+                "rather than left to the configure probe's verdict\n");
 #ifndef BOYS_GATE_FIXEDN_REFUSES_ORDERS
     ++liftedRefusals;
     std::printf("  LIFTED: BoysFixedN accepts the orders axis, which its call shape has no "
                 "orders to\n  fill - a value this entry cannot produce under any revision of it. "
                 "A revision\n  that reaches this line has changed what the entry is\n");
+#endif
+#ifndef BOYS_GATE_F32_REFUSES_ORDERS
+    ++liftedRefusals;
+    std::printf("  LIFTED: the single-precision engines accept an orders-axis policy, and the "
+                "packing\n  book above has no float row to measure what that policy answers "
+                "with: a call that\n  compiles is not an axis that is served, and a lane without "
+                "a packed body reads the\n  field and ignores it. A revision that reaches this "
+                "line has to carry the float\n  lane's packed cells in that book\n");
 #endif
     // The orders axis carried three limits until this revision, and all three
     // are gone: it answers a relaxed multiplier, it answers a route other than
@@ -9408,6 +9571,9 @@ int main(int argc, char** argv) {
     std::printf("  CARRIED: the orders axis reads a route other than the shipped one: the\n"
                 "  rational route's region-A fits cover the same per-order intervals as the\n"
                 "  shipped piece table, and the packing-axis rows above measure them on both\n"
+                "  entries the axis is carried on. The single-precision entries are not among\n"
+                "  them: the axis is refused on that lane, and the limits list below carries\n"
+                "  the reason and counts it\n");
                 "  entries the axis is carried on\n");
     std::printf("  CARRIED: the orders axis reads the narrow partition of region A: its pieces\n"
                 "  are cut per order, so the lane fetches each of the four orders it packs its\n"
@@ -9425,6 +9591,12 @@ int main(int argc, char** argv) {
                 "refused call and the rest\n  name the static assertion that states it\n",
                 refusals.size(),
                 refusals.size() - unbackedRefusals);
+    std::printf("  of these, %zu name a body or a table this library has not built, and %zu are "
+                "shapes the\n  call cannot have; the first count is the debt and it is owed the "
+                "way the outstanding\n  combinations below are, which is what keeps a refusal "
+                "from reading as a boundary\n",
+                unbuiltLimits,
+                refusals.size() - unbuiltLimits);
 
     for (const Refusal& r : refusals)
     {
@@ -9688,9 +9860,11 @@ int main(int argc, char** argv) {
                 "does not exist.\n  The refusal is the library's own and not a property of the "
                 "combinations, and each\n  such combination is owed to a consumer who asks for "
                 "it - so they are listed and\n  counted rather than dismissed. %zu "
-                "combination(s) are not runnable on this host\n",
+                "combination(s) are not runnable on this host, and %zu\n  call-site limit(s) "
+                "above name unbuilt work and are owed the same way\n",
                 combOwed,
-                combHostLimited);
+                combHostLimited,
+                unbuiltLimits);
 
     if (combOwed > 0)
     {
