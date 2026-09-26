@@ -426,7 +426,23 @@ struct Option {
     FitGranularity granularity = kDefaultFitGranularity;
     PackAxis pack = PackAxis::kArguments;
     AccuracyTier tier = AccuracyTier::kReference;
+
+    /// The figure the row is judged against, and it is a whole-domain one for
+    /// every option: the figure the library documents for the entry the option
+    /// reaches. Naming a partition changes which tables that entry reads, not
+    /// the entry's own figure, so a partition option carries the same figure as
+    /// the option that reads the shipped tables.
     double bound = 0.0;
+
+    /// The figure the option's own tables are certified at, where it has any of
+    /// its own, and the interval that figure holds on. Zero for an option that
+    /// reads the shipped tables, and then the interval is not printed. A
+    /// partition's figures are its stored fits', and they say nothing about the
+    /// arguments outside the interval, where the entry runs its own arithmetic —
+    /// so they inform the row rather than judge it.
+    double ownBound = 0.0;
+    double ownLo = 0.0;
+    double ownHi = std::numeric_limits<double>::infinity();
 };
 
 /// The packed backends' names, which the library's own backend test pins. The
@@ -837,10 +853,13 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
                kDefaultFitGranularity, PackAxis::kArguments, tier, fp64, TierBound(tier));
     }
 
-    // The bound of a cell option is the bound its own lane documents: the
-    // partition's certified figure where the cell reads a partition's tables, and
-    // the rung's own budget everywhere else. Read from the library either way, so
-    // a regeneration that moved a figure moves the row.
+    // The bound of every cell option is the figure the library documents for the
+    // entry the cell reaches, which is what the run-time tier entry reports
+    // through QueryTier whatever partition it reads: naming a partition replaces
+    // the fitted tables the entry reads and leaves the entry's own figure where
+    // it was. The partition's own figures are recorded beside it, with the
+    // interval they hold on, because they are figures for the fitted interval
+    // alone and the row prints them as such.
     for (Option& option : options)
     {
         if (option.kind != OptionKind::kFp64Cell)
@@ -848,18 +867,19 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
             continue;
         }
 
+        option.bound = TierBound(option.tier);
+
         if (option.granularity == FitGranularity::kNarrow)
         {
             for (const FitGranularityInfo& partition : partitions)
             {
                 if (partition.granularity == FitGranularity::kNarrow)
                 {
-                    option.bound = partition.bound;
+                    option.ownBound = partition.bound;
+                    option.ownLo = partition.lo;
+                    option.ownHi = partition.hi;
                 }
             }
-        } else
-        {
-            option.bound = TierBound(option.tier);
         }
     }
 
@@ -1718,8 +1738,20 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
         measurement.granularity = options_[index].granularity;
         measurement.pack = options_[index].pack;
         measurement.bound = options_[index].bound;
+        measurement.ownBound = options_[index].ownBound;
+        measurement.ownLo = options_[index].ownLo;
+        measurement.ownHi = options_[index].ownHi;
         measurement.maxError = walker.MaxError();
         measurement.bitIdenticalToReference = walker.BitIdentical();
+
+        // One figure judges the whole row, and it is a whole-domain one: the
+        // entry's own, which the library reports through QueryTier whatever
+        // partition the entry reads. A partition's own figures are certified for
+        // the fitted interval alone, and the measured column is a difference from
+        // the certified lane rather than an error against the true function, so
+        // judging the wider measurement by the narrower figure would report the
+        // partition as missing a promise it never made — the row carries that
+        // figure and its interval as information instead.
         measurement.meetsBound = measurement.maxError <= measurement.bound;
         measurement.withinReferenceFloor =
             !measurement.meetsBound && measurement.maxError <= report.referenceBound;
@@ -2018,6 +2050,20 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
             verdict = "reference";
         }
 
+        // An option whose own tables are certified at a figure of their own says
+        // so here, in the row and not only in the prose below. The column is the
+        // entry's whole-domain figure, which is a different promise from the
+        // option's own fitted-interval one, and the interval is printed with it:
+        // without both, a reader would take the fitted interval's figure for the
+        // figure the row was judged at, or the judged figure for the size of the
+        // partition's own error.
+        if (measurement.ownBound > 0.0)
+        {
+            verdict += Text(" (whole-domain figure; the partition's own fits are certified at "
+                            "%.3g, on x in [%.4g, %.4g) alone)",
+                            measurement.ownBound, measurement.ownLo, measurement.ownHi);
+        }
+
         if (measurement.measured)
         {
             text += Text("  %-*s %-6s %-13s %-9s %12.2f  %6.2fx  %2d/%d  %6.1f  %11.3e  %10.3g  %s\n",
@@ -2061,12 +2107,33 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
                  report.referenceBound);
     text += "   separate, and 'ABOVE BOUND' means the option did not deliver what its own lane "
             "documents.\n";
-    text += "   Every bound in the column is read from the library: the certified lane's own figure "
-            "for\n";
-    text += "   the certified rows, the accuracy rung's for a rung, the partition's for a "
-            "partition, and\n";
-    text += "   the published per-lane figure for the narrower lanes. The verdict does not wait on "
-            "a pass:\n";
+    text += "   Every bound in the column is read from the library, and every one of them applies "
+            "over\n";
+    text += "   every argument the row was measured on: the certified lane's own figure for the "
+            "certified\n";
+    text += "   rows, the accuracy rung's for a rung, and the figure the library documents for the "
+            "entry\n";
+    text += "   the row reaches for the narrower lanes and for the partitions — naming a partition "
+            "changes\n";
+    text += "   which fitted tables that entry reads, not the entry's own figure. A partition also "
+            "publishes\n";
+    text += "   a figure of its own, for its stored fits over the interval those fits cover and for "
+            "nothing\n";
+    text += "   outside it, and that figure is not the row's judgement: the measured column is a "
+            "difference\n";
+    text += "   from the certified lane rather than an error against the true function, and past "
+            "the fitted\n";
+    text += "   interval the entry is running the certified lane's own arithmetic. A row reading a "
+            "partition\n";
+    text += "   therefore names that figure and the interval it holds on beside its verdict, and "
+            "the column\n";
+    text += "   stays the entry's whole-domain figure. The measured column itself is the worst "
+            "difference\n";
+    text += "   over the arguments this run sampled, so it moves with --xrange and --count: a "
+            "figure from\n";
+    text += "   one range is not comparable with one from another, while the verdict is, because "
+            "the figure\n";
+    text += "   it is judged against does not move. The verdict does not wait on a pass:\n";
     text += "   the values a lane returns are a property of the build, so a run whose passes were "
             "all\n";
     text += "   discarded by the load instrument still reports which rows delivered what they "
@@ -2236,8 +2303,10 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
                      FitGranularityHasAxis(partition, PackAxis::kOrders) ? 1 : 0,
                      partition.regionAPieces, partition.regionADeg, partition.regionAStored,
                      partition.regionBPieces, partition.regionBDeg, partition.regionBStored);
-        text += Text("             route(s) %s | delivered %.3g | bound %.3g\n",
-                     PartitionRouteNames(partition).c_str(), partition.delivered, partition.bound);
+        text += Text("             route(s) %s | stored fits: delivered %.3g | bound %.3g, on "
+                     "x in [%.4g, %.4g) alone\n",
+                     PartitionRouteNames(partition).c_str(), partition.delivered, partition.bound,
+                     partition.lo, partition.hi);
     }
 
     std::vector<std::string> servedCells;
@@ -2450,6 +2519,14 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
             "composing the\n";
     text += "    rest of an evaluation, and the composition would be what got measured);\n";
     text += "  * the CUDA lanes (a separate optional build that needs a device);\n";
+    text += "  * a partition's stored fits read directly: the figure a partition row prints beside "
+            "its\n";
+    text += "    verdict is the library's published figure for that partition's fits, and every row "
+            "above\n";
+    text += "    is an entry read end to end, so nothing here measures a fit's own error against "
+            "the true\n";
+    text += "    function over the interval it is cut for — the library's accuracy gate measures "
+            "that book;\n";
     text += Text("  * the %zu cells of the option space this build refuses, of %zu: %zu on the "
                  "rational route\n",
                  refused, report.cells.size(), refusedRoute);

@@ -350,17 +350,35 @@ struct OptionProbeMeasurement {
     double maxError = 0.0;
 
     /// The bound this option is judged against, read from the library: the
-    /// accuracy rung's own figure for a rung option, the partition's own
-    /// certified figure for a partition option, and the published per-lane
-    /// bound for the narrower lanes. A measured error at or below it is the
-    /// contract being met on this workload.
+    /// accuracy rung's own figure for a rung option, the figure the library
+    /// documents for the entry the option reaches for a cell, and the published
+    /// per-lane bound for the narrower lanes. A measured error at or below it is
+    /// the contract being met on this workload. It applies over every argument
+    /// the row was measured on, whatever the row's measured range was, so a
+    /// verdict does not move with \c --xrange.
+    ///
+    /// Naming a partition does not change it: a partition replaces the fitted
+    /// tables an entry reads and leaves the entry's own figure where it was. The
+    /// partition's own figure is over its stored fits' interval and nothing
+    /// outside it, and it is not what the measured difference is judged by —
+    /// past that interval the entry runs the certified lane's arithmetic, and the
+    /// measured column is a difference from that lane rather than an error
+    /// against the true function. It is carried in \c ownBound and the row prints
+    /// it, with its interval, beside the verdict.
     double bound = 0.0;
+
+    /// The figure the option's own fitted tables are certified at, and the
+    /// interval that figure holds on. Zero, with the interval unread, for an
+    /// option whose arithmetic is the shipped tables'.
+    double ownBound = 0.0;
+    double ownLo = 0.0;
+    double ownHi = 0.0;
 
     /// Whether every value was bit-identical to the certified lane's, at the
     /// same order and the same argument.
     bool bitIdenticalToReference = false;
 
-    /// Whether the measured error is at or below the bound above.
+    /// Whether the measured error is at or below \c bound.
     bool meetsBound = false;
 
     /// Whether the measured error is above the bound above but at or below the

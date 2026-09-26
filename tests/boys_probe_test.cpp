@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <gtest/gtest.h>
+#include <limits>
 #include <set>
 #include <string>
 #include <vector>
@@ -73,6 +74,25 @@ const OptionProbeMeasurement* Find(const OptionProbeReport& report, const std::s
         }
     }
     return nullptr;
+}
+
+// The printed line an option's row occupies, so a test about what a row says
+// reads the row and not the prose around it. Empty when the row is not printed.
+std::string RowLine(const std::string& text, const std::string& name) {
+    const std::string lead = "  " + name + " ";
+
+    for (std::size_t at = text.find('\n'); at != std::string::npos;) {
+        const std::size_t begin = at + 1;
+        const std::size_t end = text.find('\n', begin);
+
+        if (text.compare(begin, lead.size(), lead) == 0) {
+            return text.substr(begin, end - begin);
+        }
+
+        at = end;
+    }
+
+    return {};
 }
 
 // The leader of the double lane's precision class: the fastest option of the
@@ -934,7 +954,14 @@ TEST(ProbeTest, ARefusedCellIsNotAMisspelling) {
 // the library, and its error is reported against the certified lane's floor
 // when the two partitions differ by more than the row's own bound allows — the
 // honest third state, rather than a pass bought by comparing two partitions.
-TEST(ProbeTest, TheNarrowPartitionIsHeldToTheLibrarysOwnFigure) {
+// A partition's figures are its stored fits' figures, certified over the
+// interval those fits cover, and the row is judged by the entry's whole-domain
+// figure instead: naming a partition changes the tables an entry reads and not
+// the entry's own documented accuracy. The defect this pins is the other way
+// round — the partition's figure used as the row's judgement, over a workload
+// running past the fitted interval, which reported the narrow partition as
+// missing a promise it never made.
+TEST(ProbeTest, APartitionRowIsJudgedByTheEntrysWholeDomainFigure) {
     const OptionProbeReport report = boys::RunOptionProbe(Untimed());
 
     const boys::FitGranularityInfo* narrow = nullptr;
@@ -947,13 +974,84 @@ TEST(ProbeTest, TheNarrowPartitionIsHeldToTheLibrarysOwnFigure) {
     ASSERT_NE(narrow, nullptr) << "this build's partition table carries no narrow partition";
 
     const OptionProbeMeasurement* measured = Find(report, "narrow-fp64");
+    const OptionProbeMeasurement* shipped = Find(report, "batch-fp64");
     ASSERT_NE(measured, nullptr);
-    EXPECT_DOUBLE_EQ(measured->bound, narrow->bound)
-        << "the narrow row is not held to the partition's own certified figure";
+    ASSERT_NE(shipped, nullptr);
 
-    EXPECT_TRUE(measured->meetsBound || measured->withinReferenceFloor)
-        << "narrow-fp64 delivered " << measured->maxError << " against its own bound of "
-        << measured->bound << " and the comparison floor of " << report.referenceBound;
+    EXPECT_DOUBLE_EQ(measured->bound, shipped->bound)
+        << "naming a partition moved the figure the row is judged against";
+
+    EXPECT_DOUBLE_EQ(measured->ownBound, narrow->bound);
+    EXPECT_DOUBLE_EQ(measured->ownLo, narrow->lo);
+    EXPECT_DOUBLE_EQ(measured->ownHi, narrow->hi);
+    EXPECT_LT(measured->ownBound, measured->bound)
+        << "the partition's own figure was carried as one covering the whole line";
+    EXPECT_LT(measured->ownHi, std::numeric_limits<double>::infinity())
+        << "the partition's own figure was carried with no interval at all";
+
+    EXPECT_TRUE(measured->meetsBound)
+        << "narrow-fp64 delivered " << measured->maxError << " against the entry's figure of "
+        << measured->bound;
+}
+
+// The figure a row is judged by must hold over the arguments the row was
+// measured on, and the workload range is the caller's to choose, so the verdict
+// and the bound behind it must read the same over a range inside the fitted
+// interval and over the default one that runs past it. Before this the narrow
+// rows read "within bound" confined and "within the floor" at the default range,
+// which was the judgement moving and not the option.
+TEST(ProbeTest, TheVerdictDoesNotMoveWithTheWorkloadRange) {
+    ProbeOptions whole = Untimed();
+
+    ProbeOptions fitted = Untimed();
+    fitted.xLo = 1e-3;
+    fitted.xHi = 11.8; // inside the fitted tables' interval and below region B
+
+    const OptionProbeReport wholeReport = boys::RunOptionProbe(whole);
+    const OptionProbeReport fittedReport = boys::RunOptionProbe(fitted);
+
+    for (const std::string name : {"narrow-fp64", "narrow-horner-fp64"}) {
+        const OptionProbeMeasurement* overWhole = Find(wholeReport, name);
+        const OptionProbeMeasurement* overFitted = Find(fittedReport, name);
+        ASSERT_NE(overWhole, nullptr) << name;
+        ASSERT_NE(overFitted, nullptr) << name;
+
+        EXPECT_DOUBLE_EQ(overWhole->bound, overFitted->bound)
+            << name << " is judged at a figure that moved with the workload range";
+        EXPECT_TRUE(overWhole->meetsBound && overFitted->meetsBound)
+            << name << " delivered " << overWhole->maxError << " against " << overWhole->bound
+            << " over the whole range and " << overFitted->maxError << " against "
+            << overFitted->bound << " over the fitted one";
+    }
+}
+
+// A partition's own figure covers a narrower domain than the cells a row is
+// measured on, so the row says which figure it was judged at and which figure is
+// the partition's, with the interval the second holds on. A reader comparing two
+// rows must not have to reach the prose below the table to learn that.
+TEST(ProbeTest, APartitionRowPrintsItsOwnFiguresInterval) {
+    const OptionProbeReport report = boys::RunOptionProbe(Untimed());
+    const std::string text = boys::FormatOptionProbe(report);
+
+    const OptionProbeMeasurement* measured = Find(report, "narrow-fp64");
+    ASSERT_NE(measured, nullptr);
+
+    const std::string row = RowLine(text, measured->name);
+    ASSERT_FALSE(row.empty()) << "the narrow row is not in the printed table";
+
+    char interval[64];
+    std::snprintf(interval, sizeof(interval), "on x in [%.4g, %.4g) alone", measured->ownLo,
+                  measured->ownHi);
+    EXPECT_NE(row.find(interval), std::string::npos)
+        << "the narrow row does not print the interval its own figure holds on: " << row;
+
+    char figure[64];
+    std::snprintf(figure, sizeof(figure), "%.3g", measured->ownBound);
+    EXPECT_NE(row.find(figure), std::string::npos)
+        << "the narrow row does not print the partition's own figure: " << row;
+
+    EXPECT_NE(row.find("whole-domain figure"), std::string::npos)
+        << "the narrow row does not say which of the two figures is the column's: " << row;
 }
 
 // What the probe does not measure is stated in its own output, with the counts:
