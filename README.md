@@ -267,28 +267,51 @@ choice with a price on each side. A narrower piece needs a lower degree to hold 
 halving a piece buys about `2^d` in the truncation, so **splitting is the lever and more degree is
 not** — and the cost is that a table of narrow pieces stores more in total and needs a piece lookup
 per call. Two partitions are offered and no spectrum between them: `FitGranularity::kShipped`, which
-is the committed table and the default, and `FitGranularity::kNarrow`, a deliberately narrower
-partition of region B's seed derived from the proved truncation bound at the quantum-chemistry
-target of 1e-14. `tools/gen_boys_coefficients.py --derive-partition` prints the design law's answer:
-the narrow partition is five pieces of width 2.86 to 4.95 at degree 10, **11 stored coefficients
-against the shipped seed's 19** for each evaluation, with the table growing from 19 to 55.
+is the committed table and the default, and `FitGranularity::kNarrow`, a partition of region A and of
+region B derived from the proved truncation bound below rather than placed by sampling.
+`tools/gen_boys_coefficients.py --derive-partition` prints the design law's answer.
 
-**Narrowing is a trade and not a saving.** The coefficients an evaluation reads fall from 19 to 11
-and the table a consumer carries grows from 19 to 55, with a piece lookup on every call. A consumer
-whose cost is per evaluation gains; one whose cost is the table gains nothing and pays the lookup.
+| partition | stored coefficients | stored rows | read per evaluation |
+| --- | --- | --- | --- |
+| `FitGranularity::kShipped` | 1339 | 67 | 19 to 21 |
+| `FitGranularity::kNarrow` | 3476 | 316 | 11 |
+
+**Narrowing is a trade and not a saving.** The coefficients an evaluation reads fall from 19–21 to 11
+and the table a consumer carries grows from 1339 to 3476, with a piece lookup on every call. A
+consumer whose cost is per evaluation gains; one whose cost is the table gains nothing and pays the
+lookup.
+
+**Region A's pieces are held to a second reading that region B's are not.** The batch entry seeds its
+downward recursion from the top order's piece, and that recursion carries the piece's error down to
+F_0 multiplied by `w(n, b) = max(1, b^n / ∏(j + ½))` at the piece's right end `b` — 1.04436e5 at
+order 12 and the region's right edge. A region-A cut must therefore hold `Δ(d')·w(b) ≤ target` as well
+as its own size, so the walk places each piece under the tighter of the two: the 1e-15 bar the
+single-order lane publishes for region A, and the batch lane's own `2.5e-14 / w(n, b)`. The gain
+exceeds 25 on a trailing run of each order's pieces and tightens 127 of the partition's 311, the
+tightest budget being 2.394e-19 at order 12's last piece, which ends at the region's right edge.
+
+**The gain the walk holds is the envelope; the most a call in this revision reaches is 2.1711.** The
+seeding fallback is taken only below the band's left edge, x < 1.0855, and what a call pays there is
+its own top order's gain rather than the region's worst. For a fixed x the ratio x^n / ∏(j + ½) rises
+with the order only until the order passes x − ½ and falls after, so below the band edge the largest
+value it has at an order of 3 or more is order 3's 0.68: a call whose top order is 3 or more seeds at
+gain 1. The two orders below that do amplify — 1.5712 at order 2 and 2.1711 at order 1, the second
+only as x approaches the band's edge — a factor of 4.8e4 below the envelope the walk holds. Holding
+the envelope rather than the reachable figure is deliberate, so that no piece's reading depends on
+which order an entry happens to seed from, and the price it charges shows up as narrower pieces at
+the high orders' right ends rather than as accuracy. The extended band is the same fit at either
+granularity, because the upward recursion it feeds runs the other way and an error in it stays the
+size it is.
 
 **The member is certified.** Measured against the committed high-precision reference over the
-interval its own pieces cover, `FitGranularity::kNarrow` delivers a worst absolute error of 7.2e-16
-at n = 0, against a published bound of 8.9e-16 — the coefficient an evaluation reads falls by eight
-and the error falls with it, both because the partition is derived from the proved bound at the 1e-14
-target where the shipped seed was placed by sampling at 5e-14. The narrow partition's own gate rows
-carry that measurement and its carrying fraction; they are counted apart from every other row the
-gate reports, so nothing the library already published moves.
-
-**The axis is a selection over region B**, which is the interval the truncation bound decides on its
-own. Region A's pieces seed the batch entry's downward recursion under a gain that peaks at 1.04e5,
-a criterion that bound does not carry, so region A and the extended band are the same fits at either
-granularity and **region A's narrow partition is outstanding work**.
+interval its own pieces cover, `FitGranularity::kNarrow` delivers a worst absolute error of 2.22e-16
+over region A at region A's published 1e-15 bar — the shipped table's own figure — and 7.21645e-16
+over region B against the shipped seed's 9.9365e-15, a factor of 13.8. The gate's granularity block
+carries all 32 of its rows, one per partition, scheme and call shape, each judged against the bar the
+published table holds for the cell it ran in, with the worst cell named; and it reports the trade
+above and the 481700 of 578888 axis cells (83.2%) that can discriminate, the rest carrying a bound at
+least as large as the value itself. Those rows are counted apart from every other book the gate
+reports, so nothing the library already published moves.
 
 **Where a combination has no narrow table it is refused where it is named**, with the reason, rather
 than answered from the shipped table: the rational minimax route (one numerator/denominator pair over
