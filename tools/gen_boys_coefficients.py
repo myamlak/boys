@@ -331,6 +331,32 @@ def route_step(fused, a, b, c):
     return rat_fma(a, b, c) if fused else a * b + c
 
 
+def route_step32(fused, a, b, c):
+    """One multiply-add in binary32 as the kernel's arithmetic spells it: the
+    fused step rounds the sum once, the separate step rounds the product and
+    then the sum.
+
+    The fused step is spelled by fma32 rather than by a library call, for the
+    same reason route_step spells its own with rat_fma: math.fma is Python 3.13
+    and later, and this script's output is byte-compared on machines that need
+    not run the same Python. The two are the same operation - a*b + c with
+    binary32 inputs is exact in binary64, so rounding that sum once to
+    binary32 is the correctly rounded fused step and not an approximation of
+    it.
+
+    The separate step is two roundings of the same expression, and it is
+    spelled here as the two roundings rather than as a single expression the
+    host might contract: the product rounds to binary32, then the sum of two
+    binary32 values rounds to binary32. Rounding that sum in binary64 first
+    cannot change the binary32 result. Where the two addends differ by more
+    than 53 binades the binary64 sum is already the larger addend, and an
+    addend under half an ulp of the other rounds the sum to the other one in
+    binary32 as well; where they do not, the binary64 sum is exact and the
+    single rounding that follows is the one the kernel makes.
+    """
+    return fma32(a, b, c) if fused else r32(r32(a * b) + c)
+
+
 def clenshaw_route(cs, x, a, b, fused):
     """The split Clenshaw recurrence in IEEE double with every step written as
     the backend's multiply-add.
@@ -1999,11 +2025,22 @@ def fit_region_a_rational(double_orders):
 # - The lane stores binary32, so the rounding of every solved coefficient is
 #   part of the fit a caller receives. At a 1e-7 target that rounding is a
 #   material term and not a last-digit detail, so a piece is accepted on the
-#   coefficients AS STORED, measured in the double arithmetic the acceptance
-#   uses, and never on the ones the exchange solved.
+#   coefficients AS STORED, measured in the lane's own arithmetic, and never
+#   on the ones the exchange solved.
 # - The lane maps x to t in binary32 too, so the grid is float-representable
 #   arguments and the t values they map to, and the residual is read at those
 #   t rather than at an exactly-mapped argument.
+# - The lane's multiply-add has two routes and a build runs one of them, so
+#   the acceptance and the published figure are both the worse of the two. A
+#   criterion read at one route certifies a fit the other route delivers
+#   worse, which is a figure the lane cannot stand behind.
+# - Splitting the interval is not a way out of a target the lane's own
+#   arithmetic cannot hold. Where binary32 rounding is what stands between a
+#   fit and the target, the rounding does not shrink as the interval does, and
+#   no cover of the region holds the target there. The cover is therefore
+#   bounded by F32_RAT_MAX_DEPTH: an order no cover holds is raised with both
+#   the count and the depth that were tried, rather than walked towards through
+#   a tree as deep as the float exponent range.
 #
 # The count ladder, the split of a count between numerator and denominator and
 # the dyadic cover are the double route's: the smallest stored count holding
@@ -2060,25 +2097,35 @@ def f32_rat_reference(n, xs):
         return [boys_ref(n, mpf(x)) for x in xs]
 
 
+def f32_rat_worst(p, q, t, ref_i):
+    """The worse of the two routes' |fit - reference| at one argument."""
+    return max(abs(mpf(rational_value_float(p, q, float(t), fused)) - ref_i)
+               for fused in (True, False))
+
+
 def f32_rat_residual(p, q, ts, ref, ws):
-    """The weighted residual of the coefficients AS STORED, and where it is worst."""
-    p32 = [mpf(r32(v)) for v in p]
-    q32 = [mpf(r32(v)) for v in q]
+    """The weighted residual of the coefficients AS STORED, in the lane's own
+    arithmetic, and where it is worst.
+
+    The two multiply-add routes are both measured and the worse of the two is
+    the residual: a build runs one of them and the lane publishes one figure,
+    so a pair is accepted only where it holds the target whichever route the
+    build in force selected."""
     worst, at = mpf(0), None
     for i, t in enumerate(ts):
-        e = abs(rat_value(p32, q32, t) - ref[i]) * ws[i]
+        e = f32_rat_worst(p, q, t, ref[i]) * ws[i]
         if e > worst:
             worst, at = e, t
     return worst, at
 
 
 def f32_rat_delivered(p, q, ts, ref):
-    """The unweighted error of the stored coefficients, the figure a route publishes."""
-    p32 = [mpf(r32(v)) for v in p]
-    q32 = [mpf(r32(v)) for v in q]
+    """The unweighted error of the stored coefficients in the lane's own
+    arithmetic, the figure a route publishes: the worse of the two routes, for
+    the same reason the residual takes the worse."""
     worst, at = mpf(0), None
     for i, t in enumerate(ts):
-        e = abs(rat_value(p32, q32, t) - ref[i])
+        e = f32_rat_worst(p, q, t, ref[i])
         if e > worst:
             worst, at = e, t
     return worst, at
@@ -2139,12 +2186,23 @@ def f32_rat_piece(n, a, b, weighted=True):
 
 
 def f32_rat_cover(n, a, b, depth):
-    """The cheapest dyadic cover of [a, b) the family holds the target on."""
+    """The cheapest dyadic cover of [a, b) the family holds the target on.
+
+    The split is bounded by F32_RAT_MAX_DEPTH, and the bound is what makes the
+    target a claim the generator can report on rather than one it can only walk
+    towards. Splitting is not a way out of a target the lane's own arithmetic
+    cannot hold: where a value's binary32 rounding is what stands between the
+    fit and the target, the rounding does not shrink as the interval does, so
+    the recursion descends towards the smallest float interval without ever
+    finding a piece. Unbounded, that descent is a walk of astronomical length
+    and the order is never reported; bounded, it returns None and the caller
+    says which order and which targets were tried.
+    """
     options = []
     single = f32_rat_piece(n, a, b)
     if single is not None:
         options.append([single])
-    if depth < F32_RAT_MAX_DEPTH or single is None:
+    if depth < F32_RAT_MAX_DEPTH:
         mid = r32((r32(a) + r32(b)) / 2.0)
         if r32(a) < mid < r32(b):
             left = f32_rat_cover(n, a, mid, depth + 1)
@@ -2215,31 +2273,39 @@ def horner_mono_float(ms, t):
     return acc
 
 
-def rational_value_float(p, q, t):
-    """The kernel's rational evaluation, in the lane's own arithmetic."""
+def rational_value_float(p, q, t, fused):
+    """The kernel's rational evaluation, in the lane's own arithmetic, at one
+    route.
+
+    Every step is the backend's multiply-add at that route, so the value
+    returned is the one the entry spells rather than the one a wider
+    evaluation of the same coefficients would reach."""
     c = [r32(v) for v in p] + [r32(v) for v in q]
     m = len(p) - 1
     k = len(q)
     t = r32(t)
     num = c[m]
     for j in range(m - 1, -1, -1):
-        num = fma32(num, t, c[j])
+        num = route_step32(fused, num, t, c[j])
     if k == 0:
         return num
     den = c[m + k]
     for j in range(k - 1, 0, -1):
-        den = fma32(den, t, c[m + j])
-    return r32(num / fma32(den, t, 1.0))
+        den = route_step32(fused, den, t, c[m + j])
+    return r32(num / route_step32(fused, den, t, 1.0))
 
 
 def f32_rat_delivered_float(cover, n):
-    """The rational route's worst |F_n - fit| over its own pieces, as delivered."""
+    """The rational route's worst |F_n - fit| over its own pieces, as delivered.
+
+    Both multiply-add routes are measured and the worse is reported, so the
+    figure the lane publishes covers the arithmetic of either build."""
     worst = mpf(0)
     for pc in cover:
         xs, ts = f32_rat_grid(pc["a"], pc["b"], F32_RAT_GRID)
         ref = f32_rat_reference(n, xs)
         for i, t in enumerate(ts):
-            e = abs(mpf(rational_value_float(pc["p"], pc["q"], float(t))) - ref[i])
+            e = f32_rat_worst(pc["p"], pc["q"], t, ref[i])
             if e > worst:
                 worst = e
     return worst
@@ -2293,8 +2359,9 @@ def fit_region_a_rational_f32(float_orders):
     family - a different one - needed its own.
     """
     print(f"fitting the float lane's rational region-A route ({F32_RAT_DPS} dps, "
-          f"accepted at {mp.nstr(F32_RAT_ACCEPT, 2)} on the coefficients as stored, "
-          f"bar {mp.nstr(F32_RAT_BOUND, 2)}, fitted under the shipped weighting) ...")
+          f"accepted at {mp.nstr(F32_RAT_ACCEPT, 2)} on the coefficients as stored in the "
+          f"lane's own arithmetic, worse route, bar {mp.nstr(F32_RAT_BOUND, 2)}, fitted "
+          f"under the shipped weighting) ...")
     orders = []
     stored = 0
     pieces = 0
@@ -2304,9 +2371,10 @@ def fit_region_a_rational_f32(float_orders):
     for n in range(MAX_ORDER + 1):
         cover = f32_rat_cover(n, 0.0, X0, 0)
         if cover is None:
-            raise RuntimeError(f"float rational region-A route: F{n} on [0, {X0}) reaches "
-                               f"no stored count up to {F32_RAT_COUNT_MAX} holding "
-                               f"{mp.nstr(F32_RAT_ACCEPT, 2)}")
+            raise RuntimeError(f"float rational region-A route: F{n} on [0, {X0}) has no "
+                               f"cover within {F32_RAT_MAX_DEPTH} level(s) of splitting "
+                               f"whose every piece holds {mp.nstr(F32_RAT_ACCEPT, 2)} at "
+                               f"a stored count up to {F32_RAT_COUNT_MAX}")
         orders.append(cover)
         stored += sum(pc["count"] for pc in cover)
         pieces += len(cover)
