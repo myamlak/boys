@@ -581,15 +581,15 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
     // enumeration's own - both packing axes, because the across-orders lane is
     // instantiated for every scheme, rung and route over the shipped region-A
     // pieces, and both fit routes, because the shipped partitions carry a table
-    // for each and the seeds are the routes' own. The narrow row carries the
-    // reference rung, the arguments axis and the chebyshev route alone: its
-    // region-A pieces are cut per order, so the across-orders lane, which steps
-    // one order's coefficients to the next at a fixed stride, has no narrow
-    // kernel, its degrees are the shipped rung's, so a relaxed rung has no
-    // narrow table to truncate, and only the chebyshev route was cut on it, so
-    // the rational route has no narrow table to evaluate. All three are unbuilt
-    // work rather than unavailable options, and saying so here is what lets a
-    // caller count them without reading the kernels.
+    // for each and the seeds are the routes' own. The narrow row carries every
+    // rung this build can name and both packing axes, because each of the two
+    // reads a cut of this partition's own pieces - a relaxed rung truncates the
+    // partition's stored fits against a degree table derived over them, and the
+    // across-orders lane gathers each of the orders it holds its own piece and
+    // coefficients - and the chebyshev route alone, because only that route was
+    // cut on this partition, so the rational route has no narrow table to
+    // evaluate. That one is unbuilt work rather than an unavailable option, and
+    // saying so here is what lets a caller count it without reading the kernels.
     static const std::array<FitGranularityInfo, 2> rows = [] {
         static constexpr unsigned kBothAxes = (1u << static_cast<unsigned>(PackAxis::kArguments)) |
                                               (1u << static_cast<unsigned>(PackAxis::kOrders));
@@ -709,7 +709,7 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
         built[1].name = GranularityName(FitGranularity::kNarrow);
         built[1].routes = kChebBit;
         built[1].rungs = static_cast<int>(AccuracyTier::kRelaxed65536) + 1;
-        built[1].axes = 1u << static_cast<unsigned>(PackAxis::kArguments);
+        built[1].axes = kBothAxes;
         built[1].regionAPieces = static_cast<int>(std::size(detail::kNarrowAPieces));
         built[1].regionADeg = narrowADeg;
         built[1].regionAStored = narrowAStored;

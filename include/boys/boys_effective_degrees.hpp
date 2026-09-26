@@ -273,6 +273,12 @@ constexpr const auto& TailTable(const Table& chebyshev, const Table& monomial) n
 // interval, so the tail it drops at a degree and the gain it is read under are
 // its own numbers.
 //
+// Region A's pieces are cut per order rather than shared across them, so the
+// table is flat over `kNarrowAPieces` exactly as the shipped one is over
+// `kPieces` - one entry per row of the partition, at that row's own degree -
+// and the amplification is the same region A gain the shipped derivation uses
+// for the role.
+//
 // The narrow partition is the double lane's: the single-precision lanes hold
 // one coefficient set each and no second partition, which is why these take no
 // basis table from f32 and stand beside a refusal there rather than beside
@@ -306,48 +312,39 @@ constexpr auto NarrowRegionADegrees() noexcept {
     return degrees;
 }
 
-// Region B's narrow seed at a rung. The seed is a second partition of the same
-// interval - kNarrowBPieces fits, every one at kNarrowBDeg, and the evaluation
-// reads the piece the argument falls in - so the rung needs one degree per
-// order that is admissible for *every* piece, not one per piece: the table the
-// body reads is indexed by order alone.
+// The narrow partition of region B. Its seed is one polynomial per piece, and
+// an argument selects the piece it falls in, so a row is the pair (piece,
+// order): the piece whose tail the cut drops, and the order the seed's error
+// reaches. Flat, indexed piece * (kMaxOrder + 1) + order, for the reason the
+// other tables are flat.
 //
-// The largest of the pieces' effective degrees is that degree, and it is
-// admissible for each piece because the tail is non-increasing in the cut - a
-// piece admissible at d'_p is admissible at any larger degree, since the sum
-// the tail adds is over non-negative magnitudes. The criterion is therefore
-// applied to every piece and the rung pays the widest cut any of them needs;
-// taking the smallest instead would relax the pieces the argument reaches
-// beyond what their own coefficients carry.
+// The gain is the shipped region B one, A_B(n), because the seed is carried up
+// the same recursion either partition feeds: which pieces the seed was cut
+// from is what the partition decides, and no piece of it reaches the output
+// orders by another path.
 template <double kAccuracyMultiplier, BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
 constexpr auto NarrowRegionBDegrees() noexcept {
     static_assert(RoleUsesDoubleTables(kRole),
-                  "the narrow partition is the double lane's, so this derivation reads the "
-                  "double lane's narrow table and no single-precision role has one to cut");
+                  "the narrow partition is a partition of the double lane's stored fits, so its "
+                  "effective degrees are derived for the roles that evaluate those fits");
 
-    constexpr const auto& coeffs = TailTable<kBasis>(kNarrowBcoeffs, kNarrowBMonoCoeffs);
-    std::array<int, kMaxOrder + 1> degrees{};
+    constexpr const auto& coeffs = (kBasis == TailBasis::kChebyshev) ? kNarrowBcoeffs
+                                                                     : kNarrowBMonoCoeffs;
+    std::array<int, static_cast<std::size_t>(kNarrowBPieces) * (kMaxOrder + 1)> degrees{};
 
-    for (int order = 0; order <= kMaxOrder; ++order)
+    for (int piece = 0; piece < kNarrowBPieces; ++piece)
     {
-        const double amplification = RegionBAmplification(order);
-        int widest = 0;
-
-        for (int q = 0; q < kNarrowBPieces; ++q)
+        for (int order = 0; order <= kMaxOrder; ++order)
         {
-            const int pieceDegree =
+            degrees[static_cast<std::size_t>(piece) * (kMaxOrder + 1)
+                    + static_cast<std::size_t>(order)] =
                 EffectiveDegree(coeffs,
-                                static_cast<std::size_t>(q) *
-                                    (static_cast<std::size_t>(kNarrowBDeg) + 1),
+                                static_cast<std::size_t>(piece) * (kNarrowBDeg + 1),
                                 kNarrowBDeg,
                                 kAccuracyMultiplier,
-                                amplification,
+                                RegionBAmplification(order),
                                 RegionBBudget(kRole));
-
-            widest = pieceDegree > widest ? pieceDegree : widest;
         }
-
-        degrees[static_cast<std::size_t>(order)] = widest;
     }
 
     return degrees;

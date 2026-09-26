@@ -43,6 +43,16 @@
 //     reference grid at the figure the library publishes for them: the route at
 //     the batch budget its fits hold, the rung at the multiplier times the
 //     m = 1 contract of the table it reads. The worst cell is printed.
+//
+//  7. A LANE THAT FETCHES THE WRONG PARTITION'S PIECES. The narrow partition
+//     cuts region A per order, so the axis cannot step one piece's
+//     coefficients at a fixed stride and fetches each packed order its own
+//     piece instead. Its values are therefore measured as a DIFFERENCE from the
+//     per-order narrow lane - the worst cell and the count that differ at all,
+//     printed - and held to that lane wherever the difference is wider than the
+//     two mappings' own arithmetic. A second count says which table it read:
+//     the shipped-table axis is the same body at the same scheme, so the cells
+//     where the two part are the cells the partition argument reached.
 
 #include "boys/boys.hpp"
 #include "boys/boys_coefficients.hpp"
@@ -78,6 +88,18 @@ constexpr double kRegionBudget = 5.5e-14;
 // own region-A readings, so a lane that kept one route's table while carrying
 // the other route's name cannot hide inside it.
 constexpr double kArithmeticSlack = 1e-15;
+
+// The two figures a region-A cell of the double single lane can be documented
+// at: 1e-15 below the extended band, 3e-14 inside it. The orders axis carries
+// the tighter of the two across the whole of region A, because that is the
+// figure its own section states for the lane at m = 1.
+constexpr double kSingleBarA = boys::detail::RegionABudget(boys::detail::BoysRole::kDoubleSingle);
+constexpr double kSingleBarBand = 3e-14;
+
+// The bar a cell of the single lane is judged at, by the cell's own region.
+double SingleBar(double x) {
+    return x < boys::detail::kExtendedBX0 ? kSingleBarA : kSingleBarBand;
+}
 
 bool SameBits(double a, double b) noexcept {
     return std::memcmp(&a, &b, sizeof(double)) == 0;
@@ -492,6 +514,24 @@ using PerOrderPolicy =
     boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
                      boys::PackAxis::kArguments>;
 
+// The narrow partition on the axis. Its region-A pieces are cut per order, so
+// the packed lane has no shared stride to step and fetches each of the four
+// orders it packs its own piece and coefficients. The shipped-table axis is
+// the same body at the same scheme, which is what makes the two comparable
+// cell for cell: the partition is the only thing that differs between them.
+template <boys::EvalScheme kScheme>
+using NarrowOrdersPolicy =
+    boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
+                     boys::PackAxis::kOrders, boys::FitGranularity::kNarrow>;
+
+// The same partition read one order at a time by the certified scalar single
+// entry: the reading the packed lane's gathered fetch has to reproduce, and
+// the lane a call would fall back to if the axis had no narrow kernel.
+template <boys::EvalScheme kScheme>
+using NarrowPerOrderPolicy =
+    boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
+                     boys::PackAxis::kArguments, boys::FitGranularity::kNarrow>;
+
 // The first relaxed rung, named as a caller names it: a tier, through the
 // library's own mapping from the tier to its multiplier.
 constexpr double kRungMultiplier = boys::AccuracyMultiplier(boys::AccuracyTier::kRelaxed64);
@@ -649,6 +689,232 @@ TEST(BoysAcrossOrders, TheRationalRouteOnTheAxisIsTheRoutesOwnReading) {
     compareWithTheRoutedEntry.template operator()<boys::EvalScheme::kSplitClenshaw>(
         "split clenshaw");
     compareWithTheRoutedEntry.template operator()<boys::EvalScheme::kHorner>("horner");
+}
+
+// The narrow partition on the axis. The shipped lane's fetch steps from one
+// order's coefficients to the next at a fixed stride, which the shipped
+// region-A table has because every order's pieces share their intervals and
+// degrees. The narrow partition's pieces are cut per order, so there is no such
+// stride to step: the lane fetches each of the four orders it packs its own
+// piece and coefficients, and one group is four different pieces evaluated
+// together rather than one piece read four orders deep.
+//
+// What that costs is measured here as a DIFFERENCE IN VALUES from the
+// per-order narrow lane, not asserted to agree with it. The two are two
+// mappings of one argument into one piece - the scalar entry's
+// `2 (x - a) / (b - a) - 1` against the packed lane's
+// `fma(x - a, 2 / (b - a), -1)`, which are the same number up to the rounding
+// of those operations - so the two can part by that arithmetic. The worst cell,
+// the count of order values that differ at all and the count outside the slack
+// are printed, so the cost of the gathered fetch is a number in the log rather
+// than a promise.
+//
+// Which table the lane read is a second measurement, and the shipped-table axis
+// is the lane to measure it against: the same body at the same scheme, so its
+// only difference from this call is the partition the policy names. The count of
+// order values whose bits differ from that lane's has to be nonzero for the row
+// to mean anything - a lane that ignored the partition argument would return
+// that lane's bits exactly.
+//
+// Where the two narrow lanes part by more than the slack, this test does not
+// decide which of them is right: the next one does, against the committed
+// reference. Here the parting is a measurement, and the two assertions are the
+// ones this grid can carry - that the axis is not the per-order lane's bits and
+// not the shipped axis's.
+TEST(BoysAcrossOrders, TheNarrowPartitionOnTheAxisIsTheNarrowLanesOwnReading) {
+    if (!VectorTier())
+    {
+        GTEST_SKIP() << "the AVX2 tier is not available on this target";
+    }
+
+    const std::vector<double> grid = RegionAGrid();
+
+    const auto compareWithThePerOrderLane = [&]<boys::EvalScheme kScheme>(const char* name) {
+        std::vector<double> packed(static_cast<std::size_t>(kNmax) + 1);
+        std::vector<double> perOrder(static_cast<std::size_t>(kNmax) + 1);
+        std::vector<double> shippedLane(static_cast<std::size_t>(kNmax) + 1);
+        std::size_t compared = 0;
+        std::size_t differing = 0;
+        std::size_t discriminating = 0;
+        std::size_t parting = 0;
+        double worst = 0.0;
+        double worstX = 0.0;
+        int worstOrder = 0;
+
+        for (double x : grid)
+        {
+            boys::BoysAllOrders<1.0, NarrowOrdersPolicy<kScheme>>(kNmax, x, packed.data());
+            boys::BoysAllOrders<1.0, OrdersPolicy<kScheme>>(kNmax, x, shippedLane.data());
+
+            for (int l = 0; l <= kNmax; ++l)
+            {
+                perOrder[static_cast<std::size_t>(l)] =
+                    boys::BoysSingle<1.0, NarrowPerOrderPolicy<kScheme>>(l, x);
+            }
+
+            for (int l = 0; l <= kNmax; ++l)
+            {
+                const std::size_t at = static_cast<std::size_t>(l);
+                const double fromPerOrder = std::abs(packed[at] - perOrder[at]);
+                ++compared;
+
+                if (fromPerOrder > worst)
+                {
+                    worst = fromPerOrder;
+                    worstX = x;
+                    worstOrder = l;
+                }
+
+                if (!SameBits(packed[at], perOrder[at]))
+                {
+                    ++differing;
+                }
+
+                if (!SameBits(packed[at], shippedLane[at]))
+                {
+                    ++discriminating;
+                }
+
+                if (fromPerOrder > kArithmeticSlack)
+                {
+                    ++parting;
+                }
+            }
+        }
+
+        std::printf("  narrow partition on the axis, %-14s: worst %.6e from the per-order narrow "
+                    "lane at n = %d, x = %.12g, over %zu order values; %zu differ at all, %zu read "
+                    "a table the shipped axis did not, %zu outside the arithmetic slack\n",
+                    name,
+                    worst,
+                    worstOrder,
+                    worstX,
+                    compared,
+                    differing,
+                    discriminating,
+                    parting);
+        EXPECT_GT(differing, 0u)
+            << name << ": the axis returned the per-order lane's bits exactly, which is the "
+                       "scalar lane's arithmetic and not a packed group's";
+        EXPECT_GT(discriminating, 0u)
+            << name << ": the axis returned the shipped-table axis's bits exactly, so the "
+                       "partition it named is not the one it read";
+    };
+
+    compareWithThePerOrderLane.template operator()<boys::EvalScheme::kSplitClenshaw>(
+        "split clenshaw");
+    compareWithThePerOrderLane.template operator()<boys::EvalScheme::kHorner>("horner");
+}
+
+// The axis and the per-order narrow lane are two readings of one fit, and where
+// they part by more than the slack this test asks a third party which reading is
+// right: the committed 80-digit reference. It is a difference in values resolved
+// against the function rather than an agreement asserted between the two lanes.
+//
+// Each cell is judged at the figure the lane that produced it documents. The
+// axis carries the orders lane's own 1e-15 over the whole of region A. The
+// per-order narrow lane is the single lane, so its figure is 1e-15 below the
+// extended band and 3e-14 inside it - the two readings are held to different
+// budgets because they are different lanes, and the count of cells where the
+// per-order lane is outside its own budget is printed rather than assumed.
+TEST(BoysAcrossOrders, WhereTheNarrowAxisPartsFromThePerOrderLaneTheReferenceIsOnTheAxis) {
+    if (!VectorTier())
+    {
+        GTEST_SKIP() << "the AVX2 tier is not available on this target";
+    }
+
+    const std::vector<ReferenceCell> cells = RegionAReference();
+
+    if (cells.empty())
+    {
+        GTEST_SKIP() << "the reference grid is not present in this tree";
+    }
+
+    const auto referee = [&]<boys::EvalScheme kScheme>(const char* name) {
+        std::vector<double> packed(static_cast<std::size_t>(kNmax) + 1);
+        std::size_t part = 0;
+        std::size_t partInRegionA = 0;
+        std::size_t closer = 0;
+        std::size_t inBar = 0;
+        std::size_t perOrderOver = 0;
+        double axisWorst = 0.0;
+        double perOrderWorst = 0.0;
+        double worstPart = 0.0;
+        double worstPartAxis = 0.0;
+        double worstPartPerOrder = 0.0;
+        double worstPartX = 0.0;
+        int worstPartOrder = 0;
+
+        for (const ReferenceCell& cell : cells)
+        {
+            boys::BoysAllOrders<1.0, NarrowOrdersPolicy<kScheme>>(kNmax, cell.x, packed.data());
+            const double axis = packed[static_cast<std::size_t>(cell.n)];
+            const double perOrder =
+                boys::BoysSingle<1.0, NarrowPerOrderPolicy<kScheme>>(cell.n, cell.x);
+            const double axisError = std::abs(axis - cell.value);
+            const double perOrderError = std::abs(perOrder - cell.value);
+            const double partBy = std::abs(axis - perOrder);
+
+            axisWorst = std::max(axisWorst, axisError);
+            perOrderWorst = std::max(perOrderWorst, perOrderError);
+
+            if (partBy > kArithmeticSlack)
+            {
+                ++part;
+                partInRegionA += cell.x < boys::detail::kExtendedBX0;
+                closer += axisError < perOrderError;
+                inBar += axisError <= kSingleBarA;
+                perOrderOver += perOrderError > SingleBar(cell.x);
+
+                if (partBy > worstPart)
+                {
+                    worstPart = partBy;
+                    worstPartAxis = axisError;
+                    worstPartPerOrder = perOrderError;
+                    worstPartX = cell.x;
+                    worstPartOrder = cell.n;
+                }
+            }
+        }
+
+        std::printf("  narrow axis against the per-order narrow lane, %-14s: %zu of %zu cells "
+                    "part by more than %.0e (%zu of those in region A proper); the reference is "
+                    "on the axis's side at %zu, the axis is inside %.0e at %zu, the per-order "
+                    "lane is outside its own figure at %zu\n",
+                    name,
+                    part,
+                    cells.size(),
+                    kArithmeticSlack,
+                    partInRegionA,
+                    closer,
+                    kSingleBarA,
+                    inBar,
+                    perOrderOver);
+        std::printf("    worst of them n = %d, x = %.12g: axis %.6e, per-order lane %.6e from the "
+                    "reference\n",
+                    worstPartOrder,
+                    worstPartX,
+                    worstPartAxis,
+                    worstPartPerOrder);
+        std::printf("    worst over the whole grid: axis %.6e (figure %.0e), per-order lane %.6e\n",
+                    axisWorst,
+                    kSingleBarA,
+                    perOrderWorst);
+
+        EXPECT_GT(part, 0u) << name << ": the two readings never part, so this grid cannot say "
+                                        "which of them the reference agrees with";
+        EXPECT_EQ(closer, part)
+            << name << ": at a cell where the axis parts from the per-order lane, the per-order "
+                       "lane is the reading the reference agrees with";
+        EXPECT_EQ(inBar, part)
+            << name << ": the axis left its own region-A figure at a cell where it parts from "
+                       "the per-order lane";
+        EXPECT_LE(axisWorst, kSingleBarA)
+            << name << ": the axis is outside the region-A figure its own section states";
+    };
+
+    referee.template operator()<boys::EvalScheme::kSplitClenshaw>("split clenshaw");
+    referee.template operator()<boys::EvalScheme::kHorner>("horner");
 }
 
 // The rung on the axis: a call naming a relaxed multiplier reads the degrees
@@ -910,6 +1176,12 @@ TEST(BoysAcrossOrders, TheOpenedCallsMeetTheirFiguresOnTheReferenceGrid) {
     constexpr double kRungBound = kRungMultiplier *
                                   boys::detail::RegionABudget(boys::detail::BoysRole::kDoubleSingle);
 
+    // The narrow partition's pieces are read for their own value one order at a
+    // time, so the bar that covers them is the single lane's per-order one and
+    // not the batch lane's, and it is the figure the packing book judges the
+    // narrow rows at as well.
+    constexpr double kPerOrderBound = kSingleBarA;
+
     const auto measure = [&]<double kMultiplier, class Policy>(const char* label, double bound) {
         const WorstError worst = PolicyAgainstReference<kMultiplier, Policy>(cells);
 
@@ -930,6 +1202,10 @@ TEST(BoysAcrossOrders, TheOpenedCallsMeetTheirFiguresOnTheReferenceGrid) {
         "rung m=64 shipped route, split clenshaw", kRungBound);
     measure.template operator()<kRungMultiplier, OrdersPolicy<boys::EvalScheme::kHorner>>(
         "rung m=64 shipped route, horner", kRungBound);
+    measure.template operator()<1.0, NarrowOrdersPolicy<boys::EvalScheme::kSplitClenshaw>>(
+        "narrow partition on the axis, split clenshaw", kPerOrderBound);
+    measure.template operator()<1.0, NarrowOrdersPolicy<boys::EvalScheme::kHorner>>(
+        "narrow partition on the axis, horner", kPerOrderBound);
 
     std::printf("  cells: %zu region-A cells of the committed reference grid\n", cells.size());
 }

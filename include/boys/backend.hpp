@@ -236,17 +236,18 @@ const char* PackAxisName(PackAxis axis) noexcept;
 /// coefficients are different fits of the same function over the same
 /// interval, so a silent substitution would return the shipped partition's
 /// values under the other's name. The refusals are the route that carries no
-/// narrow table, the single-precision lanes, which hold one coefficient set,
-/// and the across-orders packing axis, whose kernel reads one order's
-/// coefficients at a fixed stride and so needs the pieces to share their shape
-/// from order to order, which a per-order cut does not. The accuracy rungs are
-/// not among them: a relaxed rung is a cut of a stored fit's own coefficients,
-/// so each partition's rungs are derived from that partition's own table, at
-/// compile time, and every rung of every member here is served. Each refusal
-/// that remains names the table it would need - a narrow rational pair, a
-/// narrow float table, a narrow orders-axis kernel - and is unbuilt work rather
-/// than an impossible combination, named where it is refused so that it can be
-/// counted.
+/// narrow table - its region-B seed is a single numerator/denominator pair over
+/// the whole interval and has no partition of it - and the single-precision
+/// lanes, which hold one coefficient set and no second partition of it. The
+/// relaxed rungs and the across-orders packing axis were refusals of the same
+/// kind and both are built: a rung of this partition is derived against its own
+/// pieces rather than truncated from the shipped rows, and the packed lane
+/// reaches a per-order cut with a gathered fetch, reading each of the four
+/// orders it holds its own piece and coefficients instead of stepping one
+/// piece's coefficients at a fixed stride. Each refusal that remains names the
+/// table it would need - a narrow rational pair, a narrow float table - and is
+/// unbuilt work rather than an impossible combination, named where it is refused
+/// so that it can be counted.
 ///
 /// \ingroup boys
 enum class FitGranularity : std::uint8_t {
