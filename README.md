@@ -202,10 +202,10 @@ held to 1.5e-7 above, and the fast option's looser bound is not covered by the 3
 
 The lanes above are one axis of six. A call is a lane, a fit route, an evaluation scheme, an interval
 partition, a packing axis and an accuracy multiplier, and the library offers the product of all six:
-2 routes × 2 schemes × 2 partitions × 2 axes × 7 rungs, in 4 lanes — **448 combinations, of which 78
-are certified and published, 363 refused with the library's own reason and owed, and 7 not runnable
-on a host without a CUDA device** (revision `623a8e2`; the gate command below prints the three
-counts and the arithmetic between them). `BoysAccuracyGuaranteed(...)` returns the bound a
+2 routes × 2 schemes × 2 partitions × 2 axes × 7 rungs, in 4 lanes — **448 combinations, of which 174
+are certified and published, 263 refused with the library's own reason and owed, 7 not runnable on a
+host without a CUDA device, and 4 measured delivering outside the bound their lane publishes**
+(revision `f2b5cee`; the gate command below prints those counts and the arithmetic between them). `BoysAccuracyGuaranteed(...)` returns the bound a
 combination carries — its lane's figure times the rung, plus the lane's own additive term where it
 documents one — and `BoysAccuracyDelivered(...)` returns the figure it was measured to deliver,
 which is the one to rank two combinations by. They are different questions, and the `reading` field
@@ -487,8 +487,8 @@ the cell it ran in times the rung's multiplier, with the worst cell named. Those
 read 2.21663e-14 against the region's 3e-14, 4.12448e-14 against the seed's 5e-14 and 5e-14 against
 the batch lane's 5.5e-14; they are the figure the generated header publishes for those fits,
 measured under both multiply-add routes with the worse taken, and the rows hold with the
-multiply-add separate as well. The block reports the trade above and the 4079336 of 5639648 axis
-cells (72.3%) that can discriminate, the rest carrying a bound at least as large as the value itself.
+multiply-add separate as well. The block reports the trade above and the 4125493 of 5710087 axis
+cells (72.2%) that can discriminate, the rest carrying a bound at least as large as the value itself.
 Those rows are counted apart from every other book the gate reports, so nothing the library already
 published moves.
 
