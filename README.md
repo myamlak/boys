@@ -377,9 +377,10 @@ shipped axis, puts four arguments at one order in a register, and `PackAxis::kOr
 orders at one argument there — which is the axis `BoysAllOrders(nmax, x, out)` actually has, since
 that entry computes every order at a single argument. `BoysPackAxes()` reports both, with the
 interval each one's packed lane evaluates. The orders axis covers region A at the same per-order fits
-and the same ≤ m·1e-15 bar the scalar region-A path holds, and naming it changes the region-A values
-a caller receives — the shipped entry reaches most orders by a recursion from a seed where this lane
-evaluates each order's own fit — with both inside the bound. Both partitions of region A are carried
+and the same bars the scalar region-A path holds, ≤ m·1e-15 on those fits and ≤ m·3e-14 on the
+extended band, and naming it changes the region-A values a caller receives — the shipped entry reaches
+most orders by a recursion from a seed where this lane evaluates each order's own fit — with both
+inside the bound. Both partitions of region A are carried
 on it: the shipped table's pieces are shared across the orders of a piece, which lets the lane fetch
 one piece's coefficients at a fixed stride, and the narrow partition's are cut per order, which the
 lane reaches with a gathered fetch that reads each of the four orders it holds its own piece.
