@@ -29,6 +29,10 @@ struct Avx2Fp64 {
     static constexpr std::size_t kWidth = 4;
     static constexpr const char* kName = "avx2-fp64";
 
+    /// The fused route, and not a selection: this backend's multiply-add names
+    /// its instruction, so there is no route to choose and no call to avoid.
+    static constexpr MulAddRoute kRoute = MulAddRoute::kFused;
+
     static Packed Load(const Storage* p) noexcept { return _mm256_loadu_pd(p); }
     static void Store(Storage* p, Packed v) noexcept { _mm256_storeu_pd(p, v); }
     static Packed Broadcast(Value v) noexcept { return _mm256_set1_pd(v); }
@@ -61,6 +65,9 @@ struct Avx2Fp32 {
 
     static constexpr std::size_t kWidth = 8;
     static constexpr const char* kName = "avx2-fp32";
+
+    /// The fused route; see the double backend.
+    static constexpr MulAddRoute kRoute = MulAddRoute::kFused;
 
     static Packed Load(const Storage* p) noexcept { return _mm256_loadu_ps(p); }
     static void Store(Storage* p, Packed v) noexcept { _mm256_storeu_ps(p, v); }

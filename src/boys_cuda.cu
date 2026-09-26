@@ -4,7 +4,7 @@
 // C++20 with a CUDA-safe include list only: the library's C++23 headers
 // would poison the nvcc translation unit.
 
-#include "boys/boys_coefficients.hpp"
+#include "boys/boys_cuda_arithmetic.hpp"
 
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
@@ -16,10 +16,6 @@ namespace {
 
 constexpr int kMaxPieces = 12;
 constexpr int kMaxCoeffs = 2304;
-
-constexpr double kX0d = detail::kX0;
-constexpr double kX1d = detail::kX1;
-constexpr double kHalfSqrtPi = 0.886226925452758014;
 
 // Constant-memory tables (double lane: 1876 coeffs ~ 15KB; float lane ~ 6KB;
 // piece metadata small - all within the 64KB constant budget).
@@ -65,210 +61,276 @@ __constant__ int cDegEff[kEffLaneCount][33][kMaxPieces];
 __constant__ int cBDegEff[kEffLaneCount][33];
 
 // ---------------------------------------------------------------------------
-// device helpers
+// the flat device image: the tables a caller's own kernel reads
 // ---------------------------------------------------------------------------
-__device__ __forceinline__ double DevClenshawSplit(const double* c, int deg, double t) {
-    if (deg == 0)
-    {
-        return c[0];
-    }
+// A consumer's kernel cannot name this translation unit's __constant__ arrays
+// (naming them across translation units takes relocatable device code in the
+// consumer's build), so the tables are copied a second time into __device__
+// globals whose addresses the host hands out. The piece metadata is the flat
+// form of the __constant__ tables — indexed by pieceStart[order] + piece,
+// which is the piece-start table the coefficient header already carries, so no
+// stride constant has to agree between the library and a consumer. The handle
+// a caller passes to a device entry is a value, and kernel parameters live in
+// the constant bank, so reading it costs no global memory traffic.
+//
+// The two lanes' piece tables are separate: the float lane cuts its orders
+// differently and needs its own starts, degrees and pool.
+constexpr int kPiecesTotal = detail::kPieceStart[detail::kMaxOrder + 1];
+constexpr int kPiecesTotal32 = detail::f32::kPieceStart[detail::kMaxOrder + 1];
 
-    if (deg == 1)
-    {
-        return __fma_rn(t, c[1], c[0]);
-    }
+__device__ int dPieceStart[detail::kMaxOrder + 2];
+__device__ int dOffset[kPiecesTotal];
+__device__ double dA[kPiecesTotal];
+__device__ double dB[kPiecesTotal];
+__device__ int dDeg[kPiecesTotal];
+__device__ double dCoeffs[kMaxCoeffs];
+__device__ double dBSeed[24];
 
-    const double v = __fma_rn(2.0, t * t, -1.0);
-    const double twoV = v + v;
+__device__ int dPieceStart32[detail::kMaxOrder + 2];
+__device__ int dOffset32[kPiecesTotal32];
+__device__ float dA32[kPiecesTotal32];
+__device__ float dB32[kPiecesTotal32];
+__device__ int dDeg32[kPiecesTotal32];
+__device__ float dCoeffs32[kMaxCoeffs];
+__device__ float dBSeed32[24];
 
-    if (deg == 2)
-    {
-        // T_2(t) = 2t^2 - 1 = v; the even/odd split below assumes deg >= 4
-        // (the odd part's m = 1 finalization would double the t*c[1] term).
-        return __fma_rn(t, c[1], __fma_rn(v, c[2], c[0]));
-    }
+// The relaxed degrees, in the same flat form and one set for the whole device:
+// one rung is resident at a time, so a table per rung is not what a caller can
+// have. The stride is the larger of the two lanes' piece counts, so one lane
+// axis serves both piece tables; a lane's own entries are indexed with the
+// piece-start table its region-A seed reads its coefficients with, exactly as
+// the full-accuracy table above is.
+//
+// The lane order is cDegEff's: 0 double single, 1 double batch, 2 float single,
+// 3 float batch, 4 fp16 single, 5 fp16 batch. Lanes 0, 1, 3 and 5 are indexed by
+// the double piece table (the batch lanes' region-A seed is computed in double
+// whatever precision they return — RoleUsesDoubleTables) and lanes 2 and 4 by
+// the float one.
+constexpr int kRelaxedPieces = kPiecesTotal > kPiecesTotal32 ? kPiecesTotal : kPiecesTotal32;
 
-    const int m = deg / 2;
-    double b1 = c[2 * m];
-    double b2 = 0.0;
-
-    for (int k = m - 1; k >= 1; --k)
-    {
-        const double b0 = __fma_rn(twoV, b1, c[2 * k] - b2);
-        b2 = b1;
-        b1 = b0;
-    }
-
-    const double even = __fma_rn(v, b1, c[0] - b2);
-
-    double o1 = c[2 * m - 1];
-    double o2 = 0.0;
-
-    for (int k = m - 2; k >= 1; --k)
-    {
-        const double o0 = __fma_rn(twoV, o1, c[2 * k + 1] - o2);
-        o2 = o1;
-        o1 = o0;
-    }
-
-    const double odd = __fma_rn(twoV - 1.0, o1, c[1] - o2);
-    return __fma_rn(t, odd, even);
-}
-
-__device__ __forceinline__ float DevClenshawSplit32(const float* c, int deg, float t) {
-    if (deg == 0)
-    {
-        return c[0];
-    }
-
-    if (deg == 1)
-    {
-        return __fmaf_rn(t, c[1], c[0]);
-    }
-
-    const float v = __fmaf_rn(2.0f, t * t, -1.0f);
-    const float twoV = v + v;
-
-    if (deg == 2)
-    {
-        // T_2(t) = 2t^2 - 1 = v; the even/odd split below assumes deg >= 4
-        // (the odd part's m = 1 finalization would double the t*c[1] term).
-        return __fmaf_rn(t, c[1], __fmaf_rn(v, c[2], c[0]));
-    }
-
-    const int m = deg / 2;
-    float b1 = c[2 * m];
-    float b2 = 0.0f;
-
-    for (int k = m - 1; k >= 1; --k)
-    {
-        const float b0 = __fmaf_rn(twoV, b1, c[2 * k] - b2);
-        b2 = b1;
-        b1 = b0;
-    }
-
-    const float even = __fmaf_rn(v, b1, c[0] - b2);
-
-    float o1 = c[2 * m - 1];
-    float o2 = 0.0f;
-
-    for (int k = m - 2; k >= 1; --k)
-    {
-        const float o0 = __fmaf_rn(twoV, o1, c[2 * k + 1] - o2);
-        o2 = o1;
-        o1 = o0;
-    }
-
-    const float odd = __fmaf_rn(twoV - 1.0f, o1, c[1] - o2);
-    return __fmaf_rn(t, odd, even);
-}
-
-__device__ __forceinline__ double DevSeed(int order, double x) {
-    const int count = cCount[order];
-    int p = count - 1;
-
-    for (int i = 0; i < count; ++i)
-    {
-        if (x < cB[order][i])
-        {
-            p = i;
-            break;
-        }
-    }
-
-    const double* c = cCoeffs + cOffset[order][p];
-    const double t = 2.0 * (x - cA[order][p]) / (cB[order][p] - cA[order][p]) - 1.0;
-    return DevClenshawSplit(c, cDeg[order][p], t);
-}
-
-__device__ __forceinline__ float DevSeed32(int order, float x) {
-    const int count = cCount32[order];
-    int p = count - 1;
-
-    for (int i = 0; i < count; ++i)
-    {
-        if (x < cB32[order][i])
-        {
-            p = i;
-            break;
-        }
-    }
-
-    const float* c = cCoeffs32 + cOffset32[order][p];
-    const float t = 2.0f * (x - cA32[order][p]) / (cB32[order][p] - cA32[order][p]) - 1.0f;
-    return DevClenshawSplit32(c, cDeg32[order][p], t);
-}
-
-__device__ __forceinline__ double DevSeedB(double x) {
-    const double t = 2.0 * (x - kX0d) / (kX1d - kX0d) - 1.0;
-    return DevClenshawSplit(cBcoeffs, cBDeg, t);
-}
-
-__device__ __forceinline__ float DevSeedB32(float x) {
-    const float t = 2.0f * (x - static_cast<float>(kX0d)) / static_cast<float>(kX1d - kX0d) - 1.0f;
-    return DevClenshawSplit32(cBcoeffs32, cBDeg32, t);
-}
+__device__ int dDegEff[kEffLaneCount * kRelaxedPieces];
+__device__ int dBDegEff[kEffLaneCount * (detail::kMaxOrder + 1)];
+// The rung the two arrays above are cut for, zero when none has been uploaded.
+// It is read through the handle a consumer holds rather than copied into it, so
+// a handle filled for one rung reports itself as retired when another rung
+// replaces it instead of running tables that have since been overwritten.
+__device__ double dRelaxedM;
 
 // ---------------------------------------------------------------------------
-// effective-degree variants (the relaxation path)
+// the lanes: what the kernels below hand the shared arithmetic
 // ---------------------------------------------------------------------------
-// Identical shapes to the full-accuracy helpers above; the degrees come from
-// the per-lane cDegEff/cBDegEff tables instead of cDeg/cBDeg. kLane is the
-// compile-time lane index of the calling kernel (cDegEff[0..5] above); the
-// region-B entry is the per-order degree for the single lanes and the
-// order-0 entry for the batch lanes (the F0 seed's error reaches every
-// output with gain <= 1 + 1.846e-17 — the CPU fix, boys_impl.hpp).
-template <int kLane> __device__ __forceinline__ double DevSeedEff(int order, double x) {
-    const int count = cCount[order];
-    int p = count - 1;
+// boys_cuda_arithmetic.hpp holds one body per (precision, shape), and it takes
+// the tables as a lane object rather than reading a symbol, so the kernels
+// here and the device-callable entries a caller's own kernel calls run the
+// same code. These six lane objects are the kernels' side of that: the
+// __constant__ tables of this translation unit.
+//
+// The relaxed lanes read their degrees from cDegEff/cBDegEff. Which degree
+// table a lane reads, and whether its region-B degree is the per-order entry
+// or the order-0 one, is the identity of the lane a kernel names — 0 double
+// single, 1 double batch, 2 float single, 3 float batch, 4 fp16 single,
+// 5 fp16 batch — and it is the only thing the relaxed lane objects differ in.
+// The batch lanes read the order-0 region-B entry because the F0 seed's error
+// reaches every output with gain at most 1 + 1.846e-17, and the per-order
+// region-A entry at the batch's top order, which is the order the batch
+// bodies pass.
 
-    for (int i = 0; i < count; ++i)
-    {
-        if (x < cB[order][i])
-        {
-            p = i;
-            break;
-        }
+struct Lane64Full {
+    __device__ __forceinline__ int Count(int order) const {
+        return cCount[order];
     }
 
-    const double* c = cCoeffs + cOffset[order][p];
-    const double t = 2.0 * (x - cA[order][p]) / (cB[order][p] - cA[order][p]) - 1.0;
-    return DevClenshawSplit(c, cDegEff[kLane][order][p], t);
-}
-
-template <int kLane> __device__ __forceinline__ float DevSeed32Eff(int order, float x) {
-    const int count = cCount32[order];
-    int p = count - 1;
-
-    for (int i = 0; i < count; ++i)
-    {
-        if (x < cB32[order][i])
-        {
-            p = i;
-            break;
-        }
+    __device__ __forceinline__ double A(int order, int piece) const {
+        return cA[order][piece];
     }
 
-    const float* c = cCoeffs32 + cOffset32[order][p];
-    const float t = 2.0f * (x - cA32[order][p]) / (cB32[order][p] - cA32[order][p]) - 1.0f;
-    return DevClenshawSplit32(c, cDegEff[kLane][order][p], t);
-}
+    __device__ __forceinline__ double B(int order, int piece) const {
+        return cB[order][piece];
+    }
 
-template <int kLane> __device__ __forceinline__ double DevSeedBEff(double x, int order) {
-    const double t = 2.0 * (x - kX0d) / (kX1d - kX0d) - 1.0;
-    return DevClenshawSplit(cBcoeffs, cBDegEff[kLane][order], t);
-}
+    __device__ __forceinline__ const double* Coeffs(int order, int piece) const {
+        return cCoeffs + cOffset[order][piece];
+    }
 
-template <int kLane> __device__ __forceinline__ float DevSeedB32Eff(float x, int order) {
-    const float t = 2.0f * (x - static_cast<float>(kX0d)) / static_cast<float>(kX1d - kX0d) - 1.0f;
-    return DevClenshawSplit32(cBcoeffs32, cBDegEff[kLane][order], t);
-}
+    __device__ __forceinline__ int Deg(int order, int piece) const {
+        return cDeg[order][piece];
+    }
+
+    __device__ __forceinline__ const double* BSeedCoeffs() const {
+        return cBcoeffs;
+    }
+
+    __device__ __forceinline__ int BSeedDeg(int) const {
+        return cBDeg;
+    }
+};
+
+struct Lane32Full {
+    __device__ __forceinline__ int Count(int order) const {
+        return cCount32[order];
+    }
+
+    __device__ __forceinline__ float A(int order, int piece) const {
+        return cA32[order][piece];
+    }
+
+    __device__ __forceinline__ float B(int order, int piece) const {
+        return cB32[order][piece];
+    }
+
+    __device__ __forceinline__ const float* Coeffs(int order, int piece) const {
+        return cCoeffs32 + cOffset32[order][piece];
+    }
+
+    __device__ __forceinline__ int Deg(int order, int piece) const {
+        return cDeg32[order][piece];
+    }
+
+    __device__ __forceinline__ const float* BSeedCoeffs() const {
+        return cBcoeffs32;
+    }
+
+    __device__ __forceinline__ int BSeedDeg(int) const {
+        return cBDeg32;
+    }
+};
+
+// kLane 0 and 1, the double single and the double batch.
+template <int kLane> struct Lane64EffSingle {
+    __device__ __forceinline__ int Count(int order) const {
+        return cCount[order];
+    }
+
+    __device__ __forceinline__ double A(int order, int piece) const {
+        return cA[order][piece];
+    }
+
+    __device__ __forceinline__ double B(int order, int piece) const {
+        return cB[order][piece];
+    }
+
+    __device__ __forceinline__ const double* Coeffs(int order, int piece) const {
+        return cCoeffs + cOffset[order][piece];
+    }
+
+    __device__ __forceinline__ int Deg(int order, int piece) const {
+        return cDegEff[kLane][order][piece];
+    }
+
+    __device__ __forceinline__ const double* BSeedCoeffs() const {
+        return cBcoeffs;
+    }
+
+    __device__ __forceinline__ int BSeedDeg(int order) const {
+        return cBDegEff[kLane][order];
+    }
+};
+
+template <int kLane> struct Lane64EffBatch {
+    __device__ __forceinline__ int Count(int order) const {
+        return cCount[order];
+    }
+
+    __device__ __forceinline__ double A(int order, int piece) const {
+        return cA[order][piece];
+    }
+
+    __device__ __forceinline__ double B(int order, int piece) const {
+        return cB[order][piece];
+    }
+
+    __device__ __forceinline__ const double* Coeffs(int order, int piece) const {
+        return cCoeffs + cOffset[order][piece];
+    }
+
+    __device__ __forceinline__ int Deg(int order, int piece) const {
+        return cDegEff[kLane][order][piece];
+    }
+
+    __device__ __forceinline__ const double* BSeedCoeffs() const {
+        return cBcoeffs;
+    }
+
+    // The order-0 entry, whatever order the batch's body passes.
+    __device__ __forceinline__ int BSeedDeg(int) const {
+        return cBDegEff[kLane][0];
+    }
+};
+
+// kLane 2 and 3, the float single and the float batch.
+template <int kLane> struct Lane32EffSingle {
+    __device__ __forceinline__ int Count(int order) const {
+        return cCount32[order];
+    }
+
+    __device__ __forceinline__ float A(int order, int piece) const {
+        return cA32[order][piece];
+    }
+
+    __device__ __forceinline__ float B(int order, int piece) const {
+        return cB32[order][piece];
+    }
+
+    __device__ __forceinline__ const float* Coeffs(int order, int piece) const {
+        return cCoeffs32 + cOffset32[order][piece];
+    }
+
+    __device__ __forceinline__ int Deg(int order, int piece) const {
+        return cDegEff[kLane][order][piece];
+    }
+
+    __device__ __forceinline__ const float* BSeedCoeffs() const {
+        return cBcoeffs32;
+    }
+
+    __device__ __forceinline__ int BSeedDeg(int order) const {
+        return cBDegEff[kLane][order];
+    }
+};
+
+template <int kLane> struct Lane32EffBatch {
+    __device__ __forceinline__ int Count(int order) const {
+        return cCount32[order];
+    }
+
+    __device__ __forceinline__ float A(int order, int piece) const {
+        return cA32[order][piece];
+    }
+
+    __device__ __forceinline__ float B(int order, int piece) const {
+        return cB32[order][piece];
+    }
+
+    __device__ __forceinline__ const float* Coeffs(int order, int piece) const {
+        return cCoeffs32 + cOffset32[order][piece];
+    }
+
+    __device__ __forceinline__ int Deg(int order, int piece) const {
+        return cDegEff[kLane][order][piece];
+    }
+
+    __device__ __forceinline__ const float* BSeedCoeffs() const {
+        return cBcoeffs32;
+    }
+
+    // The order-0 entry, whatever order the batch's body passes.
+    __device__ __forceinline__ int BSeedDeg(int) const {
+        return cBDegEff[kLane][0];
+    }
+};
 
 // ---------------------------------------------------------------------------
 // kernels
 // ---------------------------------------------------------------------------
-// __restrict__ on x/out: the buffers are distinct DeviceBuffers by construction,
-// and without it every out store would force nvcc to reload x (assumed aliasing).
+// Each of these is one thread's worth of index arithmetic around one call into
+// the shared bodies of boys_cuda_arithmetic.hpp — the same bodies the
+// device-callable entries run. The batch kernels and a caller's own fused
+// kernel are therefore one piece of arithmetic rather than two that can drift.
+//
+// __restrict__ on x/out: the buffers are distinct DeviceBuffers by
+// construction, and without it every out store would force nvcc to reload x
+// (assumed aliasing).
+template <bool kFastExp>
 __global__ void BoysSingleF32Kernel(const int* n,
                                     const double* __restrict__ x,
                                     float* __restrict__ out,
@@ -280,94 +342,13 @@ __global__ void BoysSingleF32Kernel(const int* n,
         return;
     }
 
-    const int order = n[i];
-    const float xx = static_cast<float>(x[i]);
-
-    if (xx < static_cast<float>(kX0d))
-    {
-        out[i] = DevSeed32(order, xx);
-        return;
-    }
-
-    if (xx < static_cast<float>(kX1d))
-    {
-        float f = DevSeedB32(xx);
-        const float expx = 0.5f * __expf(-xx);
-
-        for (int l = 0; l < order; ++l)
-        {
-            f = ((l + 0.5f) * f - expx) / xx;
-        }
-
-        out[i] = f;
-        return;
-    }
-
-    float f = static_cast<float>(kHalfSqrtPi) * rsqrtf(xx);
-
-    for (int l = 0; l < order; ++l)
-    {
-        f = (l + 0.5f) * f / xx;
-    }
-
-    out[i] = f;
+    out[i] = detail::DeviceSingleF32<kFastExp>(Lane32Full{}, n[i], static_cast<float>(x[i]));
 }
 
-__device__ __forceinline__ void DevAllOrdersF32(
-    int order, float xx, float* __restrict__ out, size_t i, size_t count) {
-    if (xx < static_cast<float>(kX0d))
-    {
-        // Double seed: the downward recursion amplifies a float seed error
-        // beyond the certified 1.5e-7 float budget (see BoysAllOrdersF32 in
-        // boys.cpp).
-        const double seed = DevSeed(order, static_cast<double>(xx));
-        float f = static_cast<float>(seed);
-        out[order * count + i] = f;
-        // expf, not __expf: the downward recursion amplifies the e^{-x}
-        // rounding error; 2 ulp of __expf would eat most of the 1.5e-7
-        // budget.
-        const float expx = 0.5f * expf(-xx);
-
-        for (int l = order - 1; l >= 0; --l)
-        {
-            f = (xx * f + expx) / (l + 0.5f);
-            out[l * count + i] = f;
-        }
-
-        return;
-    }
-
-    float f = DevSeedB32(xx);
-    out[i] = f;
-
-    if (xx < static_cast<float>(kX1d))
-    {
-        const float expx = 0.5f * expf(-xx);
-
-        for (int l = 1; l <= order; ++l)
-        {
-            f = ((l - 0.5f) * f - expx) / xx;
-            out[l * count + i] = f;
-        }
-
-        return;
-    }
-
-    f = static_cast<float>(kHalfSqrtPi) * rsqrtf(xx);
-    out[i] = f; // F_0 from the asymptotic form (the region-B seed stored
-                // above is outside its validity domain here)
-    for (int l = 1; l <= order; ++l)
-    {
-        f = (l - 0.5f) * f / xx;
-        out[l * count + i] = f;
-    }
-}
-
-// See BoysSingleF32Kernel: x and out never alias.
 __global__ void BoysAllOrdersF32Kernel(const int* n,
-                                   const double* __restrict__ x,
-                                   float* __restrict__ out,
-                                   size_t count) {
+                                       const double* __restrict__ x,
+                                       float* __restrict__ out,
+                                       size_t count) {
     const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
 
     if (i >= count)
@@ -375,7 +356,11 @@ __global__ void BoysAllOrdersF32Kernel(const int* n,
         return;
     }
 
-    DevAllOrdersF32(n[i], static_cast<float>(x[i]), out, i, count);
+    detail::DeviceAllOrdersF32(Lane64Full{},
+                               Lane32Full{},
+                               n[i],
+                               static_cast<float>(x[i]),
+                               [&](int l, float v) { out[l * count + i] = v; });
 }
 
 // The uniform-order entry: one nmax for the whole batch, so the recursion
@@ -391,7 +376,11 @@ __global__ void BoysAllNF32Kernel(int nmax,
         return;
     }
 
-    DevAllOrdersF32(nmax, static_cast<float>(x[i]), out, i, count);
+    detail::DeviceAllOrdersF32(Lane64Full{},
+                               Lane32Full{},
+                               nmax,
+                               static_cast<float>(x[i]),
+                               [&](int l, float v) { out[l * count + i] = v; });
 }
 
 __global__ void BoysSingleF64Kernel(const int* n, const double* x, double* out, size_t count) {
@@ -402,90 +391,7 @@ __global__ void BoysSingleF64Kernel(const int* n, const double* x, double* out, 
         return;
     }
 
-    const int order = n[i];
-    const double xx = x[i];
-
-    if (xx < kX0d)
-    {
-        out[i] = DevSeed(order, xx);
-        return;
-    }
-
-    double f = DevSeedB(xx);
-
-    if (xx < kX1d)
-    {
-        const double expx = 0.5 * exp(-xx);
-
-        for (int l = 0; l < order; ++l)
-        {
-            f = ((l + 0.5) * f - expx) / xx;
-        }
-
-        out[i] = f;
-        return;
-    }
-
-    f = kHalfSqrtPi * rsqrt(xx);
-
-    for (int l = 0; l < order; ++l)
-    {
-        f = (l + 0.5) * f / xx;
-    }
-
-    out[i] = f;
-}
-
-// ---------------------------------------------------------------------------
-// all-orders bodies: one argument, every order 0..order, written into the
-// caller's order-major planes (out[l * count + i] = F_l(x)). One body per
-// precision family, shared by the two kernels that reach it — the per-element
-// order array and the batch's single nmax (the uniform entry) — so the two
-// cannot drift apart numerically.
-// ---------------------------------------------------------------------------
-__device__ __forceinline__ void DevAllOrdersF64(
-    int order, double x, double* __restrict__ out, size_t i, size_t count) {
-    const double xx = x;
-
-    if (xx < kX0d)
-    {
-        double f = DevSeed(order, xx);
-        out[order * count + i] = f;
-        const double expx = 0.5 * exp(-xx);
-
-        for (int l = order - 1; l >= 0; --l)
-        {
-            f = (xx * f + expx) / (l + 0.5);
-            out[l * count + i] = f;
-        }
-
-        return;
-    }
-
-    double f = DevSeedB(xx);
-    out[i] = f;
-
-    if (xx < kX1d)
-    {
-        const double expx = 0.5 * exp(-xx);
-
-        for (int l = 1; l <= order; ++l)
-        {
-            f = ((l - 0.5) * f - expx) / xx;
-            out[l * count + i] = f;
-        }
-
-        return;
-    }
-
-    f = kHalfSqrtPi * rsqrt(xx);
-    out[i] = f; // F_0 from the asymptotic form (the region-B seed stored
-                // above is outside its validity domain here)
-    for (int l = 1; l <= order; ++l)
-    {
-        f = (l - 0.5) * f / xx;
-        out[l * count + i] = f;
-    }
+    out[i] = detail::DeviceSingleF64(Lane64Full{}, n[i], x[i]);
 }
 
 __global__ void BoysAllOrdersF64Kernel(const int* n, const double* x, double* out, size_t count) {
@@ -496,7 +402,9 @@ __global__ void BoysAllOrdersF64Kernel(const int* n, const double* x, double* ou
         return;
     }
 
-    DevAllOrdersF64(n[i], x[i], out, i, count);
+    detail::DeviceAllOrdersF64(Lane64Full{}, n[i], x[i], [&](int l, double v) {
+        out[l * count + i] = v;
+    });
 }
 
 // The uniform-order entry: one nmax for the whole batch, so the recursion
@@ -509,14 +417,15 @@ __global__ void BoysAllNF64Kernel(int nmax, const double* x, double* out, size_t
         return;
     }
 
-    DevAllOrdersF64(nmax, x[i], out, i, count);
+    detail::DeviceAllOrdersF64(Lane64Full{}, nmax, x[i], [&](int l, double v) {
+        out[l * count + i] = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
 // fp16 lane (the certified mixed-precision extension; BoysFp16 seam).
 // __half I/O around the fp32 engine above -- the same __constant__ tables,
-// the same region-partitioned dispatch, exactly the DevSeed*/expf paths of
-// the F32 kernels.
+// the same region-partitioned dispatch, the same bodies.
 // ---------------------------------------------------------------------------
 #if BoysFp16
 __global__ void BoysSingleF16Kernel(const int* n,
@@ -530,87 +439,14 @@ __global__ void BoysSingleF16Kernel(const int* n,
         return;
     }
 
-    const int order = n[i];
-    const float xx = __half2float(x[i]);
-
-    float f;
-
-    if (xx < static_cast<float>(kX0d))
-    {
-        f = DevSeed32(order, xx);
-    } else if (xx < static_cast<float>(kX1d))
-    {
-        f = DevSeedB32(xx);
-        const float expx = 0.5f * expf(-xx);
-
-        for (int l = 0; l < order; ++l)
-        {
-            f = ((l + 0.5f) * f - expx) / xx;
-        }
-    } else
-    {
-        f = static_cast<float>(kHalfSqrtPi) * rsqrtf(xx);
-
-        for (int l = 0; l < order; ++l)
-        {
-            f = (l + 0.5f) * f / xx;
-        }
-    }
-
-    out[i] = __float2half(f);
+    out[i] = __float2half(
+        detail::DeviceSingleF32<false>(Lane32Full{}, n[i], __half2float(x[i])));
 }
 
-__device__ __forceinline__ void DevAllOrdersF16(
-    int order, float xx, __half* __restrict__ out, size_t i, size_t count) {
-    if (xx < static_cast<float>(kX0d))
-    {
-        const double seed = DevSeed(order, static_cast<double>(xx));
-        float f = static_cast<float>(seed);
-        out[order * count + i] = __float2half(f);
-        const float expx = 0.5f * expf(-xx);
-
-        for (int l = order - 1; l >= 0; --l)
-        {
-            f = (xx * f + expx) / (l + 0.5f);
-            out[l * count + i] = __float2half(f);
-        }
-
-        return;
-    }
-
-    float f = DevSeedB32(xx);
-    out[i] = __float2half(f);
-
-    if (xx < static_cast<float>(kX1d))
-    {
-        const float expx = 0.5f * expf(-xx);
-
-        for (int l = 1; l <= order; ++l)
-        {
-            f = ((l - 0.5f) * f - expx) / xx;
-            out[l * count + i] = __float2half(f);
-        }
-
-        return;
-    }
-
-    f = static_cast<float>(kHalfSqrtPi) * rsqrtf(xx);
-    out[i] = __float2half(f); // F_0 from the asymptotic form (see the F32 kernel)
-
-    for (int l = 1; l <= order; ++l)
-    {
-        f = (l - 0.5f) * f / xx;
-        out[l * count + i] = __float2half(f);
-    }
-}
-
-// See BoysSingleF16Kernel; the batch layout matches BoysAllOrdersF32Kernel
-// (the region-A seed in double precision -- the downward recursion
-// amplifies float seed errors beyond the 1e-7 budget).
 __global__ void BoysAllOrdersF16Kernel(const int* n,
-                                   const __half* __restrict__ x,
-                                   __half* __restrict__ out,
-                                   size_t count) {
+                                       const __half* __restrict__ x,
+                                       __half* __restrict__ out,
+                                       size_t count) {
     const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
 
     if (i >= count)
@@ -618,7 +454,11 @@ __global__ void BoysAllOrdersF16Kernel(const int* n,
         return;
     }
 
-    DevAllOrdersF16(n[i], __half2float(x[i]), out, i, count);
+    detail::DeviceAllOrdersF32(Lane64Full{},
+                               Lane32Full{},
+                               n[i],
+                               __half2float(x[i]),
+                               [&](int l, float v) { out[l * count + i] = __float2half(v); });
 }
 
 // The uniform-order entry (see BoysAllNF64Kernel).
@@ -633,7 +473,11 @@ __global__ void BoysAllNF16Kernel(int nmax,
         return;
     }
 
-    DevAllOrdersF16(nmax, __half2float(x[i]), out, i, count);
+    detail::DeviceAllOrdersF32(Lane64Full{},
+                               Lane32Full{},
+                               nmax,
+                               __half2float(x[i]),
+                               [&](int l, float v) { out[l * count + i] = __float2half(v); });
 }
 #endif // BoysFp16
 
@@ -650,7 +494,11 @@ __global__ void BoysAllNF16Kernel(int nmax,
 // The batch lanes read the order-0 region-B entry (the F0 seed's error
 // reaches every output with gain <= 1 + 1.846e-17) and the per-order
 // region-A entry at the batch's top order (the A_A(nmax) amplification
-// covers the downward recursion) — exactly the CPU relaxed batches.
+// covers the downward recursion) — exactly the CPU relaxed batches. Which
+// lane object a kernel passes is the whole of the difference from the kernels
+// above: the relaxed single lanes read their region-B degree per order, and
+// the relaxed batch lanes read the order-0 entry whatever order their body
+// hands them.
 template <int kLane>
 __global__ void BoysSingleF64KernelEff(const int* n, const double* x, double* out, size_t count) {
     const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
@@ -660,84 +508,7 @@ __global__ void BoysSingleF64KernelEff(const int* n, const double* x, double* ou
         return;
     }
 
-    const int order = n[i];
-    const double xx = x[i];
-
-    if (xx < kX0d)
-    {
-        out[i] = DevSeedEff<kLane>(order, xx);
-        return;
-    }
-
-    double f = DevSeedBEff<kLane>(xx, order);
-
-    if (xx < kX1d)
-    {
-        const double expx = 0.5 * exp(-xx);
-
-        for (int l = 0; l < order; ++l)
-        {
-            f = ((l + 0.5) * f - expx) / xx;
-        }
-
-        out[i] = f;
-        return;
-    }
-
-    f = kHalfSqrtPi * rsqrt(xx);
-
-    for (int l = 0; l < order; ++l)
-    {
-        f = (l + 0.5) * f / xx;
-    }
-
-    out[i] = f;
-}
-
-template <int kLane>
-__device__ __forceinline__ void DevAllOrdersF64Eff(
-    int order, double x, double* __restrict__ out, size_t i, size_t count) {
-    const double xx = x;
-
-    if (xx < kX0d)
-    {
-        double f = DevSeedEff<kLane>(order, xx);
-        out[order * count + i] = f;
-        const double expx = 0.5 * exp(-xx);
-
-        for (int l = order - 1; l >= 0; --l)
-        {
-            f = (xx * f + expx) / (l + 0.5);
-            out[l * count + i] = f;
-        }
-
-        return;
-    }
-
-    double f = DevSeedBEff<kLane>(xx, 0);
-    out[i] = f;
-
-    if (xx < kX1d)
-    {
-        const double expx = 0.5 * exp(-xx);
-
-        for (int l = 1; l <= order; ++l)
-        {
-            f = ((l - 0.5) * f - expx) / xx;
-            out[l * count + i] = f;
-        }
-
-        return;
-    }
-
-    f = kHalfSqrtPi * rsqrt(xx);
-    out[i] = f; // F_0 from the asymptotic form (the region-B seed stored
-                // above is outside its validity domain here)
-    for (int l = 1; l <= order; ++l)
-    {
-        f = (l - 0.5) * f / xx;
-        out[l * count + i] = f;
-    }
+    out[i] = detail::DeviceSingleF64(Lane64EffSingle<kLane>{}, n[i], x[i]);
 }
 
 template <int kLane>
@@ -749,7 +520,9 @@ __global__ void BoysAllOrdersF64KernelEff(const int* n, const double* x, double*
         return;
     }
 
-    DevAllOrdersF64Eff<kLane>(n[i], x[i], out, i, count);
+    detail::DeviceAllOrdersF64(Lane64EffBatch<kLane>{}, n[i], x[i], [&](int l, double v) {
+        out[l * count + i] = v;
+    });
 }
 
 // The uniform-order entry reads its lane's degree table exactly as its
@@ -764,10 +537,12 @@ __global__ void BoysAllNF64KernelEff(int nmax, const double* x, double* out, siz
         return;
     }
 
-    DevAllOrdersF64Eff<kLane>(nmax, x[i], out, i, count);
+    detail::DeviceAllOrdersF64(Lane64EffBatch<kLane>{}, nmax, x[i], [&](int l, double v) {
+        out[l * count + i] = v;
+    });
 }
 
-template <int kLane>
+template <int kLane, bool kFastExp>
 __global__ void BoysSingleF32KernelEff(const int* n,
                                        const double* __restrict__ x,
                                        float* __restrict__ out,
@@ -779,92 +554,15 @@ __global__ void BoysSingleF32KernelEff(const int* n,
         return;
     }
 
-    const int order = n[i];
-    const float xx = static_cast<float>(x[i]);
-
-    if (xx < static_cast<float>(kX0d))
-    {
-        out[i] = DevSeed32Eff<kLane>(order, xx);
-        return;
-    }
-
-    if (xx < static_cast<float>(kX1d))
-    {
-        float f = DevSeedB32Eff<kLane>(xx, order);
-        const float expx = 0.5f * __expf(-xx);
-
-        for (int l = 0; l < order; ++l)
-        {
-            f = ((l + 0.5f) * f - expx) / xx;
-        }
-
-        out[i] = f;
-        return;
-    }
-
-    float f = static_cast<float>(kHalfSqrtPi) * rsqrtf(xx);
-
-    for (int l = 0; l < order; ++l)
-    {
-        f = (l + 0.5f) * f / xx;
-    }
-
-    out[i] = f;
-}
-
-template <int kLane>
-__device__ __forceinline__ void DevAllOrdersF32Eff(
-    int order, float xx, float* __restrict__ out, size_t i, size_t count) {
-    if (xx < static_cast<float>(kX0d))
-    {
-        // Double seed, as the full-accuracy kernel: the downward recursion
-        // amplifies a float seed error beyond the lane budget (the float
-        // lane's 1.5e-7; the fp16 roles' tighter 1e-7 base).
-        const double seed = DevSeedEff<kLane>(order, static_cast<double>(xx));
-        float f = static_cast<float>(seed);
-        out[order * count + i] = f;
-        const float expx = 0.5f * expf(-xx);
-
-        for (int l = order - 1; l >= 0; --l)
-        {
-            f = (xx * f + expx) / (l + 0.5f);
-            out[l * count + i] = f;
-        }
-
-        return;
-    }
-
-    float f = DevSeedB32Eff<kLane>(xx, 0);
-    out[i] = f;
-
-    if (xx < static_cast<float>(kX1d))
-    {
-        const float expx = 0.5f * expf(-xx);
-
-        for (int l = 1; l <= order; ++l)
-        {
-            f = ((l - 0.5f) * f - expx) / xx;
-            out[l * count + i] = f;
-        }
-
-        return;
-    }
-
-    f = static_cast<float>(kHalfSqrtPi) * rsqrtf(xx);
-    out[i] = f; // F_0 from the asymptotic form (the region-B seed stored
-                // above is outside its validity domain here)
-    for (int l = 1; l <= order; ++l)
-    {
-        f = (l - 0.5f) * f / xx;
-        out[l * count + i] = f;
-    }
+    out[i] = detail::DeviceSingleF32<kFastExp>(
+        Lane32EffSingle<kLane>{}, n[i], static_cast<float>(x[i]));
 }
 
 template <int kLane>
 __global__ void BoysAllOrdersF32KernelEff(const int* n,
-                                      const double* __restrict__ x,
-                                      float* __restrict__ out,
-                                      size_t count) {
+                                          const double* __restrict__ x,
+                                          float* __restrict__ out,
+                                          size_t count) {
     const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
 
     if (i >= count)
@@ -872,7 +570,11 @@ __global__ void BoysAllOrdersF32KernelEff(const int* n,
         return;
     }
 
-    DevAllOrdersF32Eff<kLane>(n[i], static_cast<float>(x[i]), out, i, count);
+    detail::DeviceAllOrdersF32(Lane64EffBatch<kLane>{},
+                               Lane32EffBatch<kLane>{},
+                               n[i],
+                               static_cast<float>(x[i]),
+                               [&](int l, float v) { out[l * count + i] = v; });
 }
 
 template <int kLane>
@@ -887,7 +589,11 @@ __global__ void BoysAllNF32KernelEff(int nmax,
         return;
     }
 
-    DevAllOrdersF32Eff<kLane>(nmax, static_cast<float>(x[i]), out, i, count);
+    detail::DeviceAllOrdersF32(Lane64EffBatch<kLane>{},
+                               Lane32EffBatch<kLane>{},
+                               nmax,
+                               static_cast<float>(x[i]),
+                               [&](int l, float v) { out[l * count + i] = v; });
 }
 
 #if BoysFp16
@@ -903,86 +609,15 @@ __global__ void BoysSingleF16KernelEff(const int* n,
         return;
     }
 
-    const int order = n[i];
-    const float xx = __half2float(x[i]);
-
-    float f;
-
-    if (xx < static_cast<float>(kX0d))
-    {
-        f = DevSeed32Eff<kLane>(order, xx);
-    } else if (xx < static_cast<float>(kX1d))
-    {
-        f = DevSeedB32Eff<kLane>(xx, order);
-        const float expx = 0.5f * expf(-xx);
-
-        for (int l = 0; l < order; ++l)
-        {
-            f = ((l + 0.5f) * f - expx) / xx;
-        }
-    } else
-    {
-        f = static_cast<float>(kHalfSqrtPi) * rsqrtf(xx);
-
-        for (int l = 0; l < order; ++l)
-        {
-            f = (l + 0.5f) * f / xx;
-        }
-    }
-
-    out[i] = __float2half(f);
-}
-
-template <int kLane>
-__device__ __forceinline__ void DevAllOrdersF16Eff(
-    int order, float xx, __half* __restrict__ out, size_t i, size_t count) {
-    if (xx < static_cast<float>(kX0d))
-    {
-        const double seed = DevSeedEff<kLane>(order, static_cast<double>(xx));
-        float f = static_cast<float>(seed);
-        out[order * count + i] = __float2half(f);
-        const float expx = 0.5f * expf(-xx);
-
-        for (int l = order - 1; l >= 0; --l)
-        {
-            f = (xx * f + expx) / (l + 0.5f);
-            out[l * count + i] = __float2half(f);
-        }
-
-        return;
-    }
-
-    float f = DevSeedB32Eff<kLane>(xx, 0);
-    out[i] = __float2half(f);
-
-    if (xx < static_cast<float>(kX1d))
-    {
-        const float expx = 0.5f * expf(-xx);
-
-        for (int l = 1; l <= order; ++l)
-        {
-            f = ((l - 0.5f) * f - expx) / xx;
-            out[l * count + i] = __float2half(f);
-        }
-
-        return;
-    }
-
-    f = static_cast<float>(kHalfSqrtPi) * rsqrtf(xx);
-    out[i] = __float2half(f);
-
-    for (int l = 1; l <= order; ++l)
-    {
-        f = (l - 0.5f) * f / xx;
-        out[l * count + i] = __float2half(f);
-    }
+    out[i] = __float2half(
+        detail::DeviceSingleF32<false>(Lane32EffSingle<kLane>{}, n[i], __half2float(x[i])));
 }
 
 template <int kLane>
 __global__ void BoysAllOrdersF16KernelEff(const int* n,
-                                      const __half* __restrict__ x,
-                                      __half* __restrict__ out,
-                                      size_t count) {
+                                          const __half* __restrict__ x,
+                                          __half* __restrict__ out,
+                                          size_t count) {
     const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
 
     if (i >= count)
@@ -990,7 +625,11 @@ __global__ void BoysAllOrdersF16KernelEff(const int* n,
         return;
     }
 
-    DevAllOrdersF16Eff<kLane>(n[i], __half2float(x[i]), out, i, count);
+    detail::DeviceAllOrdersF32(Lane64EffBatch<kLane>{},
+                               Lane32EffBatch<kLane>{},
+                               n[i],
+                               __half2float(x[i]),
+                               [&](int l, float v) { out[l * count + i] = __float2half(v); });
 }
 
 template <int kLane>
@@ -1005,7 +644,11 @@ __global__ void BoysAllNF16KernelEff(int nmax,
         return;
     }
 
-    DevAllOrdersF16Eff<kLane>(nmax, __half2float(x[i]), out, i, count);
+    detail::DeviceAllOrdersF32(Lane64EffBatch<kLane>{},
+                               Lane32EffBatch<kLane>{},
+                               nmax,
+                               __half2float(x[i]),
+                               [&](int l, float v) { out[l * count + i] = __float2half(v); });
 }
 #endif // BoysFp16
 
@@ -1036,7 +679,18 @@ extern "C" int BoysCudaUploadTables() {
         double b[33][kMaxPieces] = {};
         int deg[33][kMaxPieces] = {};
         int count[33] = {};
+        // The flat image of the same tables, for the device-callable entries.
+        int flatStart[detail::kMaxOrder + 2] = {};
+        int flatOffset[kPiecesTotal] = {};
+        double flatA[kPiecesTotal] = {};
+        double flatB[kPiecesTotal] = {};
+        int flatDeg[kPiecesTotal] = {};
         int runningOffset = 0;
+
+        for (int o = 0; o <= detail::kMaxOrder + 1; ++o)
+        {
+            flatStart[o] = detail::kPieceStart[o];
+        }
 
         for (int o = 0; o <= detail::kMaxOrder; ++o)
         {
@@ -1056,6 +710,10 @@ extern "C" int BoysCudaUploadTables() {
                 b[o][index] = piece.b;
                 deg[o][index] = piece.deg;
                 offset[o][index] = runningOffset;
+                flatA[p] = piece.a;
+                flatB[p] = piece.b;
+                flatDeg[p] = piece.deg;
+                flatOffset[p] = runningOffset;
 
                 for (int k = 0; k <= piece.deg; ++k)
                 {
@@ -1115,6 +773,43 @@ extern "C" int BoysCudaUploadTables() {
         {
             return 2;
         }
+
+        // The flat image the device-callable entries read.
+        if (cudaMemcpyToSymbol(dPieceStart, flatStart, sizeof(flatStart)) != cudaSuccess)
+        {
+            return 2;
+        }
+
+        if (cudaMemcpyToSymbol(dOffset, flatOffset, sizeof(flatOffset)) != cudaSuccess)
+        {
+            return 2;
+        }
+
+        if (cudaMemcpyToSymbol(dA, flatA, sizeof(flatA)) != cudaSuccess)
+        {
+            return 2;
+        }
+
+        if (cudaMemcpyToSymbol(dB, flatB, sizeof(flatB)) != cudaSuccess)
+        {
+            return 2;
+        }
+
+        if (cudaMemcpyToSymbol(dDeg, flatDeg, sizeof(flatDeg)) != cudaSuccess)
+        {
+            return 2;
+        }
+
+        if (cudaMemcpyToSymbol(dCoeffs, coeffs, sizeof(coeffs)) != cudaSuccess)
+        {
+            return 2;
+        }
+
+        if (cudaMemcpyToSymbol(dBSeed, detail::kBcoeffs.data(), sizeof(detail::kBcoeffs)) !=
+            cudaSuccess)
+        {
+            return 2;
+        }
     }
 
     // Float lane.
@@ -1125,7 +820,17 @@ extern "C" int BoysCudaUploadTables() {
         float b[33][kMaxPieces] = {};
         int deg[33][kMaxPieces] = {};
         int count[33] = {};
+        int flatStart[detail::kMaxOrder + 2] = {};
+        int flatOffset[kPiecesTotal32] = {};
+        float flatA[kPiecesTotal32] = {};
+        float flatB[kPiecesTotal32] = {};
+        int flatDeg[kPiecesTotal32] = {};
         int runningOffset = 0;
+
+        for (int o = 0; o <= detail::kMaxOrder + 1; ++o)
+        {
+            flatStart[o] = detail::f32::kPieceStart[o];
+        }
 
         for (int o = 0; o <= detail::kMaxOrder; ++o)
         {
@@ -1145,6 +850,10 @@ extern "C" int BoysCudaUploadTables() {
                 b[o][index] = piece.b;
                 deg[o][index] = piece.deg;
                 offset[o][index] = runningOffset;
+                flatA[p] = piece.a;
+                flatB[p] = piece.b;
+                flatDeg[p] = piece.deg;
+                flatOffset[p] = runningOffset;
 
                 for (int k = 0; k <= piece.deg; ++k)
                 {
@@ -1205,6 +914,43 @@ extern "C" int BoysCudaUploadTables() {
         {
             return 2;
         }
+
+        if (cudaMemcpyToSymbol(dPieceStart32, flatStart, sizeof(flatStart)) != cudaSuccess)
+        {
+            return 2;
+        }
+
+        if (cudaMemcpyToSymbol(dOffset32, flatOffset, sizeof(flatOffset)) != cudaSuccess)
+        {
+            return 2;
+        }
+
+        if (cudaMemcpyToSymbol(dA32, flatA, sizeof(flatA)) != cudaSuccess)
+        {
+            return 2;
+        }
+
+        if (cudaMemcpyToSymbol(dB32, flatB, sizeof(flatB)) != cudaSuccess)
+        {
+            return 2;
+        }
+
+        if (cudaMemcpyToSymbol(dDeg32, flatDeg, sizeof(flatDeg)) != cudaSuccess)
+        {
+            return 2;
+        }
+
+        if (cudaMemcpyToSymbol(dCoeffs32, coeffs, sizeof(coeffs)) != cudaSuccess)
+        {
+            return 2;
+        }
+
+        if (cudaMemcpyToSymbol(dBSeed32,
+                               detail::f32::kBcoeffs.data(),
+                               sizeof(detail::f32::kBcoeffs)) != cudaSuccess)
+        {
+            return 2;
+        }
     }
 
     // The cudaMemcpyToSymbol calls above are asynchronous (default stream);
@@ -1221,6 +967,45 @@ extern "C" int BoysCudaUploadTables() {
     return 0;
 }
 
+// The addresses of the flat device image, in the order the status layer fills
+// BoysDeviceTables (boys_cuda.hpp): the double lane's pieceStart, offset, a, b,
+// deg, coeffs and region-B seed, then the float lane's seven, then the relaxed
+// image's three. The status layer cannot name a CUDA symbol, so the order is
+// the seam between this file and boys_cuda.cpp and both sides state it.
+// Uploads first, so a caller that skipped InitializeTables still gets a table
+// rather than a null pointer.
+extern "C" int BoysCudaDeviceTableAddresses(void** out) {
+    const int uploaded = BoysCudaUploadTables();
+
+    if (uploaded != 0)
+    {
+        return uploaded;
+    }
+
+    // The element type is const void*, not void**: cudaGetSymbolAddress has a
+    // template overload taking const T&, and a void** lvalue binds to it as
+    // T = void**, which hands the runtime the address of the array slot instead
+    // of the address of the variable. A const void* value matches the
+    // non-template overload, which is the one that resolves a symbol.
+    const void* const symbols[] = {&dPieceStart, &dOffset,     &dA,       &dB,
+                                  &dDeg,        &dCoeffs,     &dBSeed,   &dPieceStart32,
+                                  &dOffset32,   &dA32,        &dB32,     &dDeg32,
+                                  &dCoeffs32,   &dBSeed32,    &dRelaxedM, &dDegEff,
+                                  &dBDegEff};
+
+    for (int i = 0; i < 17; ++i)
+    {
+        const cudaError_t got = cudaGetSymbolAddress(&out[i], symbols[i]);
+
+        if (got != cudaSuccess)
+        {
+            return 2;
+        }
+    }
+
+    return 0;
+}
+
 namespace {
 
 int LaunchBlocks(std::size_t count) {
@@ -1232,8 +1017,15 @@ int LaunchBlocks(std::size_t count) {
 
 extern "C" int BoysCudaLaunchSingleF32(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    BoysSingleF32Kernel<<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
-        n, x, out, count);
+    BoysSingleF32Kernel<false>
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchSingleF32Fast(
+    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    BoysSingleF32Kernel<true>
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
     return static_cast<int>(cudaGetLastError());
 }
 
@@ -1309,6 +1101,34 @@ extern "C" int BoysCudaLaunchAllNF16(
 int gEffDevice = -1;
 double gEffM = -1.0;
 
+// Whether this multiplier's tables are resident on this device, given the
+// record of what was last uploaded and where. The record carries the device as
+// well as the multiplier because cDegEff and cBDegEff are per-device copies: a
+// comparison on the multiplier alone would answer for a device that has never
+// held them, and a device no upload has reached reads zero-initialized
+// constants. The device arrives as an argument rather than from a call so that
+// every row of the comparison is exercisable on one card, the row that matters
+// included — record naming device 0, caller asking about device 1, same
+// multiplier, which must answer not resident.
+extern "C" int BoysCudaEffTablesResidentOn(
+    int device, double m, int recordedDevice, double recordedM) {
+    return (device == recordedDevice && m == recordedM) ? 1 : 0;
+}
+
+// The same question for the device the calling thread is on. A query that
+// cannot name a device answers not resident, which costs an upload rather than
+// returning a wrong answer.
+extern "C" int BoysCudaEffTablesResident(double m) {
+    int device = 0;
+
+    if (cudaGetDevice(&device) != cudaSuccess)
+    {
+        return 0;
+    }
+
+    return BoysCudaEffTablesResidentOn(device, m, gEffDevice, gEffM);
+}
+
 extern "C" int BoysCudaUploadEffTables(double m, const int* degA, const int* degB) {
     int device = 0;
 
@@ -1317,7 +1137,7 @@ extern "C" int BoysCudaUploadEffTables(double m, const int* degA, const int* deg
         return 2;
     }
 
-    if (gEffDevice == device && gEffM == m)
+    if (BoysCudaEffTablesResidentOn(device, m, gEffDevice, gEffM) == 1)
     {
         return 0;
     }
@@ -1329,6 +1149,61 @@ extern "C" int BoysCudaUploadEffTables(double m, const int* degA, const int* deg
     }
 
     if (cudaMemcpyToSymbol(cBDegEff, degB, kEffLaneCount * 33 * sizeof(int)) != cudaSuccess)
+    {
+        return 2;
+    }
+
+    // The flat image the device entries read (dDegEff/dBDegEff), cut from the
+    // same tables the constant arrays just took: a lane's piece p of order n is
+    // the flat entry pieceStart[order] + p of that lane, which is the indexing
+    // the handle's own piece-start pointer gives a consumer. The host hands the
+    // degrees in the order-major layout the batch kernels read, so this is the
+    // one place the two layouts meet.
+    static int flatA[kEffLaneCount * kRelaxedPieces];
+    static int flatB[kEffLaneCount * 33];
+    const int* const lanePieceStart[kEffLaneCount] = {detail::kPieceStart.data(),
+                                                      detail::kPieceStart.data(),
+                                                      detail::f32::kPieceStart.data(),
+                                                      detail::kPieceStart.data(),
+                                                      detail::f32::kPieceStart.data(),
+                                                      detail::kPieceStart.data()};
+
+    for (int lane = 0; lane < kEffLaneCount; ++lane)
+    {
+        const int* const pieceStart = lanePieceStart[lane];
+
+        for (int order = 0; order <= detail::kMaxOrder; ++order)
+        {
+            for (int p = pieceStart[order]; p < pieceStart[order + 1]; ++p)
+            {
+                flatA[lane * kRelaxedPieces + p] =
+                    degA[(lane * 33 + order) * kMaxPieces + (p - pieceStart[order])];
+            }
+
+            flatB[lane * 33 + order] = degB[lane * 33 + order];
+        }
+    }
+
+    if (cudaMemcpyToSymbol(dDegEff, flatA, sizeof(flatA)) != cudaSuccess)
+    {
+        return 2;
+    }
+
+    if (cudaMemcpyToSymbol(dBDegEff, flatB, sizeof(flatB)) != cudaSuccess)
+    {
+        return 2;
+    }
+
+    // The rung goes last, after a sync: an entry that reads a rung it can serve
+    // must not be able to observe the tables of the rung before it.
+    const cudaError_t tableSync = cudaStreamSynchronize(static_cast<cudaStream_t>(0));
+
+    if (tableSync != cudaSuccess)
+    {
+        return static_cast<int>(tableSync);
+    }
+
+    if (cudaMemcpyToSymbol(dRelaxedM, &m, sizeof(m)) != cudaSuccess)
     {
         return 2;
     }
@@ -1372,7 +1247,14 @@ extern "C" int BoysCudaLaunchAllNF64Eff(
 
 extern "C" int BoysCudaLaunchSingleF32Eff(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    BoysSingleF32KernelEff<2>
+    BoysSingleF32KernelEff<2, false>
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchSingleF32EffFast(
+    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    BoysSingleF32KernelEff<2, true>
         <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
     return static_cast<int>(cudaGetLastError());
 }

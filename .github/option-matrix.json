@@ -1,0 +1,249 @@
+{
+  "format": "boys.option-matrix/1",
+  "axes": [
+    {
+      "key": "device",
+      "kind": "build",
+      "source": "the x86_64 legs of .github/workflows/ci.yml",
+      "members": [
+        "linux-gcc",
+        "linux-clang",
+        "windows-msvc"
+      ]
+    },
+    {
+      "key": "route",
+      "kind": "build",
+      "source": "backend.hpp: MulAddRoute",
+      "members": [
+        "fused",
+        "separate"
+      ]
+    },
+    {
+      "key": "precision",
+      "kind": "carried",
+      "source": "the arithmetic backends' names",
+      "members": [
+        "fp32",
+        "fp64"
+      ]
+    },
+    {
+      "key": "family",
+      "kind": "carried",
+      "source": "backend.hpp: FitRoute",
+      "members": [
+        "chebyshev",
+        "rational-minimax"
+      ]
+    },
+    {
+      "key": "evaluation",
+      "kind": "carried",
+      "source": "backend.hpp: EvalScheme",
+      "members": [
+        "split-clenshaw",
+        "horner"
+      ]
+    },
+    {
+      "key": "granularity",
+      "kind": "carried",
+      "source": "boys.hpp: EvalLane",
+      "members": [
+        "region-a",
+        "region-b",
+        "extended-band"
+      ]
+    }
+  ],
+  "configurations": [
+    {
+      "id": "linux-gcc-fused",
+      "name": "linux-gcc fused",
+      "runner": "ubuntu-latest",
+      "toolchain": "gcc",
+      "generator": "",
+      "build_jobs": "-j 4",
+      "expect_avx2": 1,
+      "cmake_args": "-DBOYS_EXPECT_AVX2=1 -DBOYS_MULADD_SEPARATE=OFF -DCMAKE_CXX_COMPILER=g++",
+      "selects": {
+        "device": "linux-gcc",
+        "route": "fused",
+        "precision": [
+          "fp32",
+          "fp64"
+        ],
+        "family": [
+          "chebyshev",
+          "rational-minimax"
+        ],
+        "evaluation": [
+          "split-clenshaw",
+          "horner"
+        ],
+        "granularity": [
+          "region-a",
+          "region-b",
+          "extended-band"
+        ]
+      }
+    },
+    {
+      "id": "linux-gcc-separate",
+      "name": "linux-gcc separate",
+      "runner": "ubuntu-latest",
+      "toolchain": "gcc",
+      "generator": "",
+      "build_jobs": "-j 4",
+      "expect_avx2": 1,
+      "cmake_args": "-DBOYS_EXPECT_AVX2=1 -DBOYS_MULADD_SEPARATE=ON -DCMAKE_CXX_COMPILER=g++ -DCMAKE_CXX_FLAGS=-ffp-contract=off",
+      "selects": {
+        "device": "linux-gcc",
+        "route": "separate",
+        "precision": [
+          "fp32",
+          "fp64"
+        ],
+        "family": [
+          "chebyshev",
+          "rational-minimax"
+        ],
+        "evaluation": [
+          "split-clenshaw",
+          "horner"
+        ],
+        "granularity": [
+          "region-a",
+          "region-b",
+          "extended-band"
+        ]
+      }
+    },
+    {
+      "id": "linux-clang-fused",
+      "name": "linux-clang fused",
+      "runner": "ubuntu-latest",
+      "toolchain": "clang",
+      "generator": "",
+      "build_jobs": "-j 4",
+      "expect_avx2": 1,
+      "cmake_args": "-DBOYS_EXPECT_AVX2=1 -DBOYS_MULADD_SEPARATE=OFF -DCMAKE_CXX_COMPILER=clang++",
+      "selects": {
+        "device": "linux-clang",
+        "route": "fused",
+        "precision": [
+          "fp32",
+          "fp64"
+        ],
+        "family": [
+          "chebyshev",
+          "rational-minimax"
+        ],
+        "evaluation": [
+          "split-clenshaw",
+          "horner"
+        ],
+        "granularity": [
+          "region-a",
+          "region-b",
+          "extended-band"
+        ]
+      }
+    },
+    {
+      "id": "linux-clang-separate",
+      "name": "linux-clang separate",
+      "runner": "ubuntu-latest",
+      "toolchain": "clang",
+      "generator": "",
+      "build_jobs": "-j 4",
+      "expect_avx2": 1,
+      "cmake_args": "-DBOYS_EXPECT_AVX2=1 -DBOYS_MULADD_SEPARATE=ON -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_FLAGS=-ffp-contract=off",
+      "selects": {
+        "device": "linux-clang",
+        "route": "separate",
+        "precision": [
+          "fp32",
+          "fp64"
+        ],
+        "family": [
+          "chebyshev",
+          "rational-minimax"
+        ],
+        "evaluation": [
+          "split-clenshaw",
+          "horner"
+        ],
+        "granularity": [
+          "region-a",
+          "region-b",
+          "extended-band"
+        ]
+      }
+    },
+    {
+      "id": "windows-msvc-fused",
+      "name": "windows-msvc fused",
+      "runner": "windows-latest",
+      "toolchain": "msvc",
+      "generator": "-G Ninja",
+      "build_jobs": "",
+      "expect_avx2": 1,
+      "cmake_args": "-DBOYS_EXPECT_AVX2=1 -DBOYS_MULADD_SEPARATE=OFF",
+      "selects": {
+        "device": "windows-msvc",
+        "route": "fused",
+        "precision": [
+          "fp32",
+          "fp64"
+        ],
+        "family": [
+          "chebyshev",
+          "rational-minimax"
+        ],
+        "evaluation": [
+          "split-clenshaw",
+          "horner"
+        ],
+        "granularity": [
+          "region-a",
+          "region-b",
+          "extended-band"
+        ]
+      }
+    },
+    {
+      "id": "windows-msvc-separate",
+      "name": "windows-msvc separate",
+      "runner": "windows-latest",
+      "toolchain": "msvc",
+      "generator": "-G Ninja",
+      "build_jobs": "",
+      "expect_avx2": 1,
+      "cmake_args": "-DBOYS_EXPECT_AVX2=1 -DBOYS_MULADD_SEPARATE=ON",
+      "selects": {
+        "device": "windows-msvc",
+        "route": "separate",
+        "precision": [
+          "fp32",
+          "fp64"
+        ],
+        "family": [
+          "chebyshev",
+          "rational-minimax"
+        ],
+        "evaluation": [
+          "split-clenshaw",
+          "horner"
+        ],
+        "granularity": [
+          "region-a",
+          "region-b",
+          "extended-band"
+        ]
+      }
+    }
+  ]
+}

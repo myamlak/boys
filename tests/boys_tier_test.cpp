@@ -1,5 +1,7 @@
 // The run-time accuracy tier's contract tests: AccuracyTier, QueryTier,
-// TierCoverage, AccuracyRegion, AccuracyComponent and BoysAllOrdersAtTier.
+// TierCoverage, AccuracyRegion, AccuracyComponent and BoysAllOrdersAtTier -
+// and, in section 5, the same surface's fit routes: FitRoute, FitRouteInfo,
+// BoysFitRoutes() and BoysAllOrdersWithRoute.
 //
 // The tier is a selector: it names one of the multipliers this kernel already
 // instantiates and routes a call to that instantiation at run time. Four
@@ -59,9 +61,11 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <limits>
+#include <span>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -90,6 +94,7 @@ using boys::AccuracyRegion;
 using boys::AccuracyTier;
 using boys::BoysAllOrders;
 using boys::BoysAllOrdersAtTier;
+using boys::BoysAllOrdersWithRoute;
 using boys::QueryTier;
 using boys::TierCoverage;
 using boys::detail::BoysAllOrdersImpl;
@@ -147,7 +152,7 @@ template <double M> void LibraryPath(int nmax, double x, double* out) noexcept {
 
 // The same code compiled in this translation unit, for the cross-TU check.
 template <double M> void LocalPath(int nmax, double x, double* out) noexcept {
-    BoysAllOrdersImpl<M>(nmax, x, out);
+    BoysAllOrdersImpl<M, boys::EvalPolicy<>>(nmax, x, out);
 }
 
 using PathFn = void (*)(int, double, double*) noexcept;
@@ -1423,6 +1428,856 @@ TEST(Tier, BoundCoveredCellsAreCountedAndNamedRatherThanPassed) {
                 << "correct implementation from one that returns zero";
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// 5. The certified fit routes: FitRoute, FitRouteInfo, BoysFitRoutes() and
+//    BoysAllOrdersWithRoute()
+// ---------------------------------------------------------------------------
+// A route is a way of serving a region rather than a rung of one design, so the
+// selector's contract is read off the report rather than transcribed: the tests
+// below take every interval, bound and served-domain boundary from
+// BoysFitRoutes() and assert the entry against it. Transcribing them here would
+// let the report drift from the code and stay green.
+//
+// What is asserted:
+//  * the report enumerates the routes, one row per route and region, with the
+//    figures a consumer reads - and no two rows describe the same pair twice;
+//  * every row delivers its own bound over the domain its selector serves,
+//    measured against the reference grid, with the bound-covered cells counted
+//    so a row that passes vacuously is visible;
+//  * naming a route changes nothing outside the domain its row states it serves
+//    - in particular nothing below the boundary a row names above its own left
+//    edge, which is the documented fallback for a fit that reaches further than
+//    its selector takes over;
+//  * the default route is the default entry bit for bit, and a value the
+//    enumeration does not name is the default route, so no caller is handed a
+//    fit they did not ask for.
+
+// The domain a row's selector serves: the fit may reach further left than this.
+double ServedFrom(const boys::FitRouteInfo& row) {
+    return std::max(row.lo, row.servesFrom);
+}
+
+TEST(Route, TheReportEnumeratesEveryRouteOverEveryRegionItServes) {
+    const std::span<const boys::FitRouteInfo> routes = boys::BoysFitRoutes();
+
+    ASSERT_FALSE(routes.empty()) << "no route is enumerated: a consumer cannot ask what exists";
+
+    for (const boys::FitRouteInfo& row : routes)
+    {
+        EXPECT_NE(row.name, nullptr);
+        EXPECT_GT(row.stored, 0) << row.name;
+        EXPECT_LT(row.lo, row.hi) << row.name;
+        EXPECT_GT(row.bound, 0.0) << row.name;
+        EXPECT_LE(row.delivered, row.bound)
+            << row.name << " region " << RegionName(row.region)
+            << ": the row reports a delivered figure above the bar it is certified against";
+        EXPECT_GE(row.servesFrom, row.lo)
+            << row.name << " region " << RegionName(row.region)
+            << ": a row's served domain cannot begin before its own fit does";
+        EXPECT_LT(row.servesFrom, row.hi) << row.name << " region " << RegionName(row.region);
+    }
+
+    // One row per route and region, and each region that has a fit has both
+    // routes: a consumer comparing two routes over one region needs both rows
+    // to exist. Region C has no stored fit - the asymptotic branch is a closed
+    // form with no coefficients to choose between - so it has no rows.
+    const std::array<AccuracyRegion, 2> fitted{{AccuracyRegion::kA, AccuracyRegion::kB}};
+
+    for (AccuracyRegion region : fitted)
+    {
+        std::size_t chebyshev = 0;
+        std::size_t rational = 0;
+
+        for (const boys::FitRouteInfo& row : routes)
+        {
+            if (row.region != region)
+            {
+                continue;
+            }
+
+            if (row.route == boys::FitRoute::kChebyshev)
+            {
+                ++chebyshev;
+            }
+
+            if (row.route == boys::FitRoute::kRationalMinimax)
+            {
+                ++rational;
+            }
+        }
+
+        EXPECT_EQ(chebyshev, 1u) << "region " << RegionName(region);
+        EXPECT_EQ(rational, 1u) << "region " << RegionName(region);
+    }
+
+    for (const boys::FitRouteInfo& row : routes)
+    {
+        EXPECT_NE(row.region, AccuracyRegion::kC)
+            << row.name << ": region C has no stored fit for a route to serve";
+    }
+
+    // The region-A rational row states a served domain that begins above its own
+    // fit's left edge, and no other row does. That row is the reason
+    // FitRouteInfo::servesFrom exists: below that argument the lane reads every
+    // order from its own fit and documents a tighter figure than the rational
+    // fits hold, so the row claims the narrower domain rather than the interval
+    // its table covers. The argument it names is the lowest of the per-order
+    // boundaries its selector hands orders over at, which is the extended band's
+    // left edge.
+    std::size_t narrowed = 0;
+
+    for (const boys::FitRouteInfo& row : routes)
+    {
+        if (row.servesFrom > row.lo)
+        {
+            ++narrowed;
+
+            EXPECT_EQ(row.region, AccuracyRegion::kA) << row.name;
+            EXPECT_EQ(row.route, boys::FitRoute::kRationalMinimax) << row.name;
+            EXPECT_DOUBLE_EQ(row.lo, 0.0) << row.name;
+            EXPECT_DOUBLE_EQ(row.servesFrom, boys::detail::kExtendedBX0)
+                << "the boundary the region-A rational row names is not the extended band's edge";
+        }
+    }
+
+    EXPECT_EQ(narrowed, 1u) << "the report should narrow exactly one row's served domain";
+}
+
+TEST(Route, EveryRowDeliversItsOwnBoundAtEveryReferenceArgumentItServes) {
+    const Grid& grid = Reference();
+
+    if (grid.xs.empty())
+    {
+        GTEST_SKIP() << "no reference grid";
+    }
+
+    const std::span<const boys::FitRouteInfo> routes = boys::BoysFitRoutes();
+    std::vector<double> out(static_cast<std::size_t>(boys::kMaxBoysOrder) + 1);
+
+    std::printf("\n%-20s %-7s %10s %10s %10s %14s\n",
+                "route",
+                "region",
+                "cells",
+                "met",
+                "bound-cov",
+                "worst/bound");
+    std::printf("%-20s %-7s %10s %10s %10s %14s\n", "", "", "", "", "", "(at n, x)");
+
+    for (const boys::FitRouteInfo& row : routes)
+    {
+        Sweep sweep;
+
+        for (std::size_t i = 0; i < grid.xs.size(); ++i)
+        {
+            const double x = grid.xs[i];
+
+            if (!(x >= ServedFrom(row) && x < row.hi))
+            {
+                continue;
+            }
+
+            BoysAllOrdersWithRoute(row.route, boys::kMaxBoysOrder, x, out.data());
+
+            for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+            {
+                const double ref = grid.values[static_cast<std::size_t>(n)][i];
+
+                if (std::isnan(ref))
+                {
+                    continue;
+                }
+
+                sweep.Note(std::fabs(out[static_cast<std::size_t>(n)] - ref), n, x, ref, row.bound);
+            }
+        }
+
+        std::printf("%-20s %-7s %10zu %10zu %10zu %14.3g (n=%d, x=%.6g)\n",
+                    row.name,
+                    RegionName(row.region),
+                    sweep.cells,
+                    sweep.met,
+                    sweep.bound_covered,
+                    sweep.worst / row.bound,
+                    sweep.worst_n,
+                    sweep.worst_x);
+
+        ASSERT_GT(sweep.cells, 0u)
+            << row.name << " region " << RegionName(row.region)
+            << ": no grid argument lies in the domain this row serves, so nothing was measured";
+        EXPECT_EQ(sweep.met, sweep.cells)
+            << row.name << " region " << RegionName(row.region) << ": worst " << sweep.worst
+            << " against " << row.bound << " at n = " << sweep.worst_n << ", x = " << sweep.worst_x;
+        EXPECT_LT(sweep.bound_covered, sweep.cells)
+            << row.name << " region " << RegionName(row.region)
+            << ": every cell is bound-covered, so returning zero would pass this row too";
+    }
+}
+
+TEST(Route, NamingARouteChangesNothingOutsideTheDomainItsRowServes) {
+    // The confinement contract, read off the report: outside the intervals its
+    // rows state, naming a route hands the caller the default entry's values bit
+    // for bit. Below the boundary the region-A rational row names, that is what
+    // keeps the tighter bound the lane documents there.
+    const Grid& grid = Reference();
+
+    if (grid.xs.empty())
+    {
+        GTEST_SKIP() << "no reference grid";
+    }
+
+    const std::span<const boys::FitRouteInfo> routes = boys::BoysFitRoutes();
+    std::vector<double> plain(static_cast<std::size_t>(boys::kMaxBoysOrder) + 1);
+    std::vector<double> got(static_cast<std::size_t>(boys::kMaxBoysOrder) + 1);
+
+    std::size_t outside = 0;
+    std::size_t inside = 0;
+    std::size_t belowBoundary = 0;
+
+    for (double x : grid.xs)
+    {
+        boys::BoysAllOrders(boys::kMaxBoysOrder, x, plain.data());
+        BoysAllOrdersWithRoute(
+            boys::FitRoute::kRationalMinimax, boys::kMaxBoysOrder, x, got.data());
+
+        bool served = false;
+
+        for (const boys::FitRouteInfo& row : routes)
+        {
+            if (x >= ServedFrom(row) && x < row.hi)
+            {
+                served = true;
+            }
+        }
+
+        const bool equal = BitwiseEqual(plain.data(), got.data(), boys::kMaxBoysOrder);
+
+        if (!served)
+        {
+            ++outside;
+            EXPECT_TRUE(equal) << "naming the rational route changed the values at x = " << x
+                               << ", which no row of BoysFitRoutes reports it serves";
+        } else
+        {
+            ++inside;
+        }
+
+        // The narrow statement, measured on its own so a failure names which one
+        // of the two moved: below the region-A rational row's boundary the
+        // entry's values are the default's.
+        for (const boys::FitRouteInfo& row : routes)
+        {
+            if (row.servesFrom <= row.lo || x >= row.servesFrom || x < row.lo)
+            {
+                continue;
+            }
+
+            ++belowBoundary;
+            EXPECT_TRUE(equal) << "naming the " << row.name
+                               << " route changed the values at x = " << x
+                               << ", below the boundary " << row.servesFrom << " its row names";
+        }
+    }
+
+    EXPECT_GT(outside, 0u) << "no grid argument lies outside every route's served domain";
+    EXPECT_GT(inside, 0u) << "no grid argument lies inside a route's served domain";
+    EXPECT_GT(belowBoundary, 0u)
+        << "the narrowed row's served-domain boundary was never exercised from below";
+}
+
+TEST(Route, AnOrderInsideTheServedDomainKeepsTheDefaultValueUntilItsOwnBoundary) {
+    // The region-A rational row serves per order, so the boundary it states is
+    // the lowest of a set. Above that boundary an order whose own region-A range
+    // has not ended yet is still read from its own fit by the lane, and the
+    // entry hands back the default's value for it rather than the route's - the
+    // property that keeps the lane's tighter per-order figure intact right up to
+    // the argument where the lane itself stops reading the order from its fit.
+    const Grid& grid = Reference();
+
+    if (grid.xs.empty())
+    {
+        GTEST_SKIP() << "no reference grid";
+    }
+
+    std::vector<double> plain(static_cast<std::size_t>(boys::kMaxBoysOrder) + 1);
+    std::vector<double> got(static_cast<std::size_t>(boys::kMaxBoysOrder) + 1);
+
+    std::size_t handed = 0;
+    std::size_t held = 0;
+
+    for (double x : grid.xs)
+    {
+        if (x < boys::detail::kRatARouteLo || x >= boys::detail::kRatARouteHi)
+        {
+            continue;
+        }
+
+        boys::BoysAllOrders(boys::kMaxBoysOrder, x, plain.data());
+        BoysAllOrdersWithRoute(
+            boys::FitRoute::kRationalMinimax, boys::kMaxBoysOrder, x, got.data());
+
+        for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+        {
+            const auto j = static_cast<std::size_t>(n);
+
+            if (x >= boys::detail::kTierThresholds[j])
+            {
+                ++handed;
+                continue;
+            }
+
+            ++held;
+            EXPECT_TRUE(got[j] == plain[j])
+                << "at x = " << x << ", order " << n
+                << " is still inside its own region-A range, and the entry changed it";
+        }
+    }
+
+    EXPECT_GT(handed, 0u) << "no grid argument handed any order to the route's own fit";
+    EXPECT_GT(held, 0u) << "no grid argument reached an order before its own region-A end";
+}
+
+TEST(Route, TheDefaultRouteAndAnUnnamedRouteAreTheDefaultEntry) {
+    const Grid& grid = Reference();
+
+    if (grid.xs.empty())
+    {
+        GTEST_SKIP() << "no reference grid";
+    }
+
+    // The default route is today's certified code, so it must be bit-identical
+    // to the default entry rather than merely close: a route selector that
+    // perturbed the default path would move every lane's measured figure.
+    const std::array<boys::FitRoute, 3> fallbacks{{
+        boys::FitRoute::kChebyshev,
+        static_cast<boys::FitRoute>(99),
+        static_cast<boys::FitRoute>(-1),
+    }};
+    std::vector<double> plain(static_cast<std::size_t>(boys::kMaxBoysOrder) + 1);
+    std::vector<double> got(static_cast<std::size_t>(boys::kMaxBoysOrder) + 1);
+
+    for (double x : grid.xs)
+    {
+        boys::BoysAllOrders(boys::kMaxBoysOrder, x, plain.data());
+
+        for (boys::FitRoute route : fallbacks)
+        {
+            std::fill(got.begin(), got.end(), std::nan(""));
+            BoysAllOrdersWithRoute(route, boys::kMaxBoysOrder, x, got.data());
+
+            for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+            {
+                ASSERT_FALSE(std::isnan(got[static_cast<std::size_t>(n)]))
+                    << "route " << static_cast<int>(route) << " left out[" << n
+                    << "] unwritten at x = " << x;
+            }
+
+            EXPECT_TRUE(BitwiseEqual(plain.data(), got.data(), boys::kMaxBoysOrder))
+                << "route " << static_cast<int>(route) << " at x = " << x
+                << " is not the default entry's values";
+        }
+    }
+}
+
+TEST(Route, EveryOrderIsWrittenWhateverNmaxAndRouteAreAsked) {
+    // The entry's shape contract: nmax + 1 values, every one of them written.
+    // Above the extended band's left edge the batch entry reads each order from
+    // that order's own fit, so its values carry no nmax: an nmax smaller than
+    // the order asked about must not truncate or change anything, and the route
+    // selector only picks fits, so it keeps that property. Below that edge the
+    // batch entry seeds one downward recursion at nmax (the documented
+    // fallback), so there the values do depend on nmax by design and only the
+    // shape is asserted.
+    const std::span<const boys::FitRouteInfo> routes = boys::BoysFitRoutes();
+    std::vector<double> batch(static_cast<std::size_t>(boys::kMaxBoysOrder) + 1);
+    std::vector<double> single(static_cast<std::size_t>(boys::kMaxBoysOrder) + 1);
+
+    const std::array<double, 8> xs{{
+        0.25,
+        1.5,
+        3.0,
+        6.5,
+        9.5,
+        11.5,
+        15.0,
+        40.0,
+    }};
+
+    for (boys::FitRoute route : {boys::FitRoute::kChebyshev, boys::FitRoute::kRationalMinimax})
+    {
+        for (double x : xs)
+        {
+            std::fill(batch.begin(), batch.end(), std::nan(""));
+            BoysAllOrdersWithRoute(route, boys::kMaxBoysOrder, x, batch.data());
+
+            for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+            {
+                EXPECT_FALSE(std::isnan(batch[static_cast<std::size_t>(n)]))
+                    << "route " << static_cast<int>(route) << " at x = " << x << ": out[" << n
+                    << "] was left unwritten";
+            }
+
+            const bool per_order = x >= boys::detail::kExtendedBX0;
+
+            for (int nmax = 0; nmax <= boys::kMaxBoysOrder; ++nmax)
+            {
+                std::fill(single.begin(), single.end(), std::nan(""));
+                BoysAllOrdersWithRoute(route, nmax, x, single.data());
+
+                for (int n = 0; n <= nmax; ++n)
+                {
+                    EXPECT_FALSE(std::isnan(single[static_cast<std::size_t>(n)]))
+                        << "route " << static_cast<int>(route) << " at x = " << x
+                        << ", nmax = " << nmax << ": out[" << n << "] was left unwritten";
+
+                    if (!per_order)
+                    {
+                        continue;
+                    }
+
+                    EXPECT_EQ(std::bit_cast<std::uint64_t>(single[static_cast<std::size_t>(n)]),
+                              std::bit_cast<std::uint64_t>(batch[static_cast<std::size_t>(n)]))
+                        << "route " << static_cast<int>(route) << " at x = " << x
+                        << ", nmax = " << nmax << ": out[" << n << "] depends on nmax";
+                }
+            }
+        }
+    }
+
+    // The routes the loop above covers are the ones the report names: a route
+    // added to the library without a row here would be exercised by nothing.
+    for (const boys::FitRouteInfo& row : routes)
+    {
+        EXPECT_TRUE(row.route == boys::FitRoute::kChebyshev ||
+                    row.route == boys::FitRoute::kRationalMinimax)
+            << row.name << ": a route this test does not sweep";
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The rational route's relaxed rung
+// ---------------------------------------------------------------------------
+// The rung and the route are two selectors of two different things, and this
+// section is where their product is measured: the pair criterion's own bound
+// (which is the derivation, and is a claim about a bound rather than about any
+// value a table happens to hold), the run-time entry's mapping onto the
+// compile-time instantiation, the rung's declared bound on the reference grid,
+// and the route's carriage - that naming the pair is answered with the route's
+// fits rather than with the default entry's.
+//
+// What is NOT pinned here is which cut the criterion certifies. That is the
+// criterion's output and not its contract: a coefficient table that moved would
+// move it, and a test that pinned it would fail on a change that is correct.
+// ThePairCriterionBoundsEveryCutOfEveryRationalPiece is the contract - the
+// bound holds whatever the cut is - and it is measured on every cut of every
+// piece, with the cuts the criterion refuses counted beside the ones it admits.
+
+// The mapped argument's own grid for the piece-level bound sweep: dense enough
+// that a bound missed between points would have to be missed narrowly.
+constexpr int kPairSweep = 20001;
+
+// The rational route's rung compiled at a multiplier and a scheme: the path the
+// run-time entry has to reach, compiled here for the comparison.
+template <double M, boys::EvalScheme S>
+void RationalRungPath(int nmax, double x, double* out) noexcept {
+    BoysAllOrders<M, boys::EvalPolicy<boys::FitRoute::kRationalMinimax, S>>(nmax, x, out);
+}
+
+// Indexed by rung, in kRungs order (the reference rung first).
+constexpr std::array<PathFn, 7> kRationalSplitPaths{{
+    &RationalRungPath<boys::kBoysFullAccuracyMultiplier, boys::EvalScheme::kSplitClenshaw>,
+    &RationalRungPath<64.0, boys::EvalScheme::kSplitClenshaw>,
+    &RationalRungPath<256.0, boys::EvalScheme::kSplitClenshaw>,
+    &RationalRungPath<1024.0, boys::EvalScheme::kSplitClenshaw>,
+    &RationalRungPath<4096.0, boys::EvalScheme::kSplitClenshaw>,
+    &RationalRungPath<16384.0, boys::EvalScheme::kSplitClenshaw>,
+    &RationalRungPath<65536.0, boys::EvalScheme::kSplitClenshaw>,
+}};
+
+constexpr std::array<PathFn, 7> kRationalHornerPaths{{
+    &RationalRungPath<boys::kBoysFullAccuracyMultiplier, boys::EvalScheme::kHorner>,
+    &RationalRungPath<64.0, boys::EvalScheme::kHorner>,
+    &RationalRungPath<256.0, boys::EvalScheme::kHorner>,
+    &RationalRungPath<1024.0, boys::EvalScheme::kHorner>,
+    &RationalRungPath<4096.0, boys::EvalScheme::kHorner>,
+    &RationalRungPath<16384.0, boys::EvalScheme::kHorner>,
+    &RationalRungPath<65536.0, boys::EvalScheme::kHorner>,
+}};
+
+TEST(ThePairCriterion, BoundsEveryCutOfEveryRationalPiece) {
+    std::size_t cuts = 0;
+    std::size_t inadmissible = 0;
+    double tightest = 0.0;
+    int tightest_piece = -1;
+    int tightest_cut = -1;
+
+    for (std::size_t piece = 0; piece < boys::detail::kPieces.size(); ++piece) {
+        const std::size_t offset = static_cast<std::size_t>(boys::detail::kRatAOffset[piece]);
+        const int numDeg = boys::detail::kRatANumDeg[piece];
+        const int denDeg = boys::detail::kRatADenDeg[piece];
+        const int full = numDeg > denDeg ? numDeg : denDeg;
+
+        for (int cut = 0; cut <= full; ++cut) {
+            if (cut == 3 || (cut > 2 && cut % 2 != 0)) {
+                continue;
+            }
+
+            bool admissible = false;
+            const std::size_t denOffset =
+                offset + static_cast<std::size_t>(numDeg) + 1;
+            const double tail = boys::detail::RationalPairTail(boys::detail::kRatACoeffs,
+                                                               offset,
+                                                               boys::detail::kRatACoeffs,
+                                                               denOffset,
+                                                               numDeg,
+                                                               denDeg,
+                                                               cut,
+                                                               admissible);
+
+            if (!admissible) {
+                ++inadmissible;
+                continue;
+            }
+
+            double worst = 0.0;
+
+            for (int i = 0; i < kPairSweep; ++i) {
+                const double t = -1.0 + 2.0 * i / (kPairSweep - 1);
+                const double stored = boys::detail::RationalPieceAtCut(piece, numDeg, denDeg, t);
+                const double cutPair = boys::detail::RationalPieceAtCut(piece,
+                                                                       cut < numDeg ? cut : numDeg,
+                                                                       cut < denDeg ? cut : denDeg,
+                                                                       t);
+                worst = std::max(worst, std::fabs(stored - cutPair));
+            }
+
+            ++cuts;
+
+            // The bound is the criterion's whole claim: a cut it admits is a cut
+            // whose move the budget is asserted to carry.
+            EXPECT_LE(worst, tail)
+                << "piece " << piece << " (F" << piece / 2 << ") cut " << cut << ": measured "
+                << worst << " against the criterion's " << tail;
+
+            const double ratio = tail > 0.0 ? worst / tail : 0.0;
+
+            if (ratio > tightest) {
+                tightest = ratio;
+                tightest_piece = static_cast<int>(piece);
+                tightest_cut = cut;
+            }
+        }
+    }
+
+    // A criterion every one of whose cuts is inadmissible measures nothing: its
+    // fallback would be reached by every scan and the scan itself untested.
+    EXPECT_GT(cuts, 0u) << "no cut of any rational piece is admissible";
+    EXPECT_GT(inadmissible, 0u) << "no cut was refused, so the denominator's floor never bit";
+    EXPECT_LT(tightest, 1.0) << "the tightest cut is the bound itself, which would say the "
+                                "measure is not a bound at all";
+
+    std::printf("\nthe pair criterion: %zu admissible cut(s), %zu refused by the denominator's "
+                "floor; tightest measured/bound %.4g at piece %d, cut %d\n",
+                cuts,
+                inadmissible,
+                tightest,
+                tightest_piece,
+                tightest_cut);
+}
+
+TEST(Rung, TheRationalRungIsBitIdenticalToItsCompileTimeInstantiation) {
+    const std::array<AccuracyTier, 7> tiers{AccuracyTier::kReference,
+                                            AccuracyTier::kRelaxed64,
+                                            AccuracyTier::kRelaxed256,
+                                            AccuracyTier::kRelaxed1024,
+                                            AccuracyTier::kRelaxed4096,
+                                            AccuracyTier::kRelaxed16384,
+                                            AccuracyTier::kRelaxed65536};
+
+    const std::array<double, 12> xs{1e-12, 0.3,    1.0,  1.0855252345349333,
+                                    2.5,   6.0,    11.0, 11.899848152108484,
+                                    14.0,  20.0,   28.9, 40.0};
+
+    for (std::size_t r = 0; r < tiers.size(); ++r) {
+        for (const boys::EvalScheme scheme :
+             {boys::EvalScheme::kSplitClenshaw, boys::EvalScheme::kHorner}) {
+            const PathFn path = scheme == boys::EvalScheme::kHorner ? kRationalHornerPaths[r]
+                                                                    : kRationalSplitPaths[r];
+
+            for (const double x : xs) {
+                std::array<double, 33> routed{};
+                std::array<double, 33> direct{};
+
+                BoysAllOrdersAtTier(tiers[r], boys::FitRoute::kRationalMinimax, scheme, 32, x,
+                                    routed.data());
+                path(32, x, direct.data());
+
+                for (int n = 0; n <= 32; ++n) {
+                    EXPECT_EQ(std::bit_cast<std::uint64_t>(routed[static_cast<std::size_t>(n)]),
+                              std::bit_cast<std::uint64_t>(direct[static_cast<std::size_t>(n)]))
+                        << "rung " << r << ", scheme " << static_cast<int>(scheme)
+                        << ", x = " << x << ": out[" << n << "] is not the instantiation's value";
+                }
+            }
+        }
+    }
+}
+
+TEST(Rung, EveryRationalRungHoldsItsDeclaredBoundOnTheReferenceGrid) {
+    const Grid& grid = Reference();
+
+    if (grid.xs.empty()) {
+        GTEST_SKIP() << "no reference grid";
+    }
+
+    std::vector<double> out(static_cast<std::size_t>(boys::kMaxBoysOrder) + 1);
+
+    std::printf("\n%-14s %-16s %10s %10s %10s %14s\n",
+                "rung",
+                "scheme",
+                "cells",
+                "met",
+                "bound-cov",
+                "worst/bound");
+
+    for (int t = static_cast<int>(AccuracyTier::kReference);
+         t <= static_cast<int>(AccuracyTier::kRelaxed65536);
+         ++t) {
+        const AccuracyTier tier = static_cast<AccuracyTier>(t);
+        const double m = AccuracyMultiplier(tier);
+        const double bound = m * kDeclaredBatchBase;
+
+        for (const boys::EvalScheme scheme :
+             {boys::EvalScheme::kSplitClenshaw, boys::EvalScheme::kHorner}) {
+            Sweep sweep;
+
+            for (std::size_t i = 0; i < grid.xs.size(); ++i) {
+                BoysAllOrdersAtTier(tier, boys::FitRoute::kRationalMinimax, scheme,
+                                    boys::kMaxBoysOrder, grid.xs[i], out.data());
+
+                for (int n = 0; n <= boys::kMaxBoysOrder; ++n) {
+                    const double ref = grid.values[static_cast<std::size_t>(n)][i];
+
+                    if (std::isnan(ref)) {
+                        continue;
+                    }
+
+                    sweep.Note(std::fabs(out[static_cast<std::size_t>(n)] - ref),
+                               n,
+                               grid.xs[i],
+                               ref,
+                               bound);
+                }
+            }
+
+            std::printf("%-14g %-16s %10zu %10zu %10zu %14.3g (n=%d, x=%.6g)\n",
+                        m,
+                        boys::EvalSchemeName(scheme),
+                        sweep.cells,
+                        sweep.met,
+                        sweep.bound_covered,
+                        sweep.worst / bound,
+                        sweep.worst_n,
+                        sweep.worst_x);
+
+            ASSERT_GT(sweep.cells, 0u) << "the reference grid measured nothing at m = " << m;
+            EXPECT_EQ(sweep.met, sweep.cells)
+                << "m = " << m << " at " << boys::EvalSchemeName(scheme) << ": worst "
+                << sweep.worst << " against " << bound << " at n = " << sweep.worst_n
+                << ", x = " << sweep.worst_x;
+            EXPECT_LT(sweep.bound_covered, sweep.cells)
+                << "m = " << m << ": every cell is bound-covered, so returning zero would pass";
+        }
+    }
+}
+
+TEST(Rung, TheRationalRungIsTheRoutesOwnAnswerAndNotTheDefaultEntries) {
+    // Naming the route at a rung has to change the answer, or the route was not
+    // carried: the default entry's rung is the Chebyshev route's, and the two
+    // routes' fits are different numbers over the interval the rational row
+    // serves. Measured and counted rather than asserted, because a route that
+    // agreed everywhere would be a selection that does nothing.
+    std::size_t cells = 0;
+    std::size_t differ = 0;
+
+    for (int t = static_cast<int>(AccuracyTier::kRelaxed64);
+         t <= static_cast<int>(AccuracyTier::kRelaxed65536);
+         ++t) {
+        const AccuracyTier tier = static_cast<AccuracyTier>(t);
+
+        for (double x = 1.09; x < kX0; x += 0.05) {
+            std::array<double, 33> rational{};
+            std::array<double, 33> shipped{};
+
+            BoysAllOrdersAtTier(tier, boys::FitRoute::kRationalMinimax,
+                                boys::EvalScheme::kSplitClenshaw, 32, x, rational.data());
+            BoysAllOrdersAtTier(tier, 32, x, shipped.data());
+
+            for (int n = 0; n <= 32; ++n) {
+                ++cells;
+                differ += rational[static_cast<std::size_t>(n)] !=
+                          shipped[static_cast<std::size_t>(n)];
+            }
+        }
+    }
+
+    EXPECT_GT(differ, 0u) << "the rational rung answers the default route's values everywhere: "
+                             "the route is not carried";
+    std::printf("\nthe rational rung differs from the default entry's rung in %zu of %zu cell(s)\n",
+                differ,
+                cells);
+}
+
+// ---------------------------------------------------------------------------
+// 3. The same tier on the single-order shape
+// ---------------------------------------------------------------------------
+// An engine that reads one order at a time cannot reach a rung through an entry
+// that computes every order, so the single-order shape has its own run-time
+// entry. What is held here is that it selects, not that it exists: the value the
+// run-time entry returns is the compile-time lane's at the multiplier the tier
+// names, bit for bit, because a switch that reached the wrong body would still
+// deliver something inside every bound in this file.
+
+namespace {
+
+using SingleFn = double (*)(int, double) noexcept;
+
+template <double M> double LibrarySingle(int n, double x) noexcept {
+    return boys::BoysSingle<M>(n, x);
+}
+
+template <double M> double LibrarySingleRational(int n, double x) noexcept {
+    return boys::BoysSingle<M, boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(n, x);
+}
+
+constexpr std::array<SingleFn, 7> kLibrarySingles{{
+    &LibrarySingle<boys::kBoysFullAccuracyMultiplier>,
+    &LibrarySingle<64.0>,
+    &LibrarySingle<256.0>,
+    &LibrarySingle<1024.0>,
+    &LibrarySingle<4096.0>,
+    &LibrarySingle<16384.0>,
+    &LibrarySingle<65536.0>,
+}};
+
+constexpr std::array<SingleFn, 7> kLibraryRationalSingles{{
+    &LibrarySingleRational<boys::kBoysFullAccuracyMultiplier>,
+    &LibrarySingleRational<64.0>,
+    &LibrarySingleRational<256.0>,
+    &LibrarySingleRational<1024.0>,
+    &LibrarySingleRational<4096.0>,
+    &LibrarySingleRational<16384.0>,
+    &LibrarySingleRational<65536.0>,
+}};
+
+constexpr std::array<double, 9> kSingleArgs{{
+    0.0, 1e-8, 0.001, 0.5, 1.0855252345349333, 3.0, 11.899848152108484, 20.0, 200.0,
+}};
+
+} // namespace
+
+TEST(Tier, TheSingleOrderRungIsTheCompileTimeLaneAtItsMultiplier) {
+    std::size_t cells = 0;
+    std::size_t mismatch = 0;
+
+    for (std::size_t r = 0; r < kRungs.size(); ++r)
+    {
+        for (const double x : kSingleArgs)
+        {
+            for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+            {
+                ++cells;
+                const double got = boys::BoysSingleAtTier(kRungs[r].tier, n, x);
+                const double want = kLibrarySingles[r](n, x);
+
+                if (std::memcmp(&got, &want, sizeof(double)) != 0)
+                {
+                    ++mismatch;
+                }
+            }
+        }
+    }
+
+    EXPECT_GT(cells, 0u);
+    EXPECT_EQ(mismatch, 0u)
+        << "BoysSingleAtTier is not the compile-time lane at the multiplier its tier names";
+}
+
+TEST(Tier, TheSingleOrderRungCarriesTheRouteAtRunTime) {
+    std::size_t cells = 0;
+    std::size_t mismatch = 0;
+    std::size_t differ = 0;
+
+    for (std::size_t r = 0; r < kRungs.size(); ++r)
+    {
+        for (const double x : kSingleArgs)
+        {
+            for (int n = 0; n <= boys::kMaxBoysOrder; n += 4)
+            {
+                ++cells;
+                const double got = boys::BoysSingleAtTier(
+                    kRungs[r].tier, boys::FitRoute::kRationalMinimax, boys::EvalScheme::kSplitClenshaw, n, x);
+                const double want = kLibraryRationalSingles[r](n, x);
+
+                if (std::memcmp(&got, &want, sizeof(double)) != 0)
+                {
+                    ++mismatch;
+                }
+
+                const double shipped = kLibrarySingles[r](n, x);
+
+                if (std::memcmp(&want, &shipped, sizeof(double)) != 0)
+                {
+                    ++differ;
+                }            }
+        }
+    }
+
+    EXPECT_GT(cells, 0u);
+    EXPECT_EQ(mismatch, 0u) << "the run-time route does not select the route's own fits";
+    EXPECT_GT(differ, 0u)
+        << "the rational route is not reachable at run time on the single-order shape: it "
+           "answers the default route's values everywhere";
+}
+
+TEST(Tier, TheSingleOrderEntryAgreesWithTheBatchEntryAtTheSameRung) {
+    // The two shapes are different calls and are not required to be equal - the
+    // batch entry seeds at the top order and recurses down where this one reads
+    // its own fit - so what is held is only that both stay inside the contract
+    // at the same rung, which is the claim a caller reading one order cares
+    // about.
+    std::size_t over = 0;
+    std::size_t cells = 0;
+
+    for (std::size_t r = 0; r < kRungs.size(); ++r)
+    {
+        for (const double x : kSingleArgs)
+        {
+            std::array<double, 33> batch{};
+            boys::BoysAllOrdersAtTier(kRungs[r].tier, boys::kMaxBoysOrder, x, batch.data());
+            const double bound = kRungs[r].multiplier * DeclaredReachable(kRungs[r].tier, AccuracyRegion::kA);
+
+            if (x >= boys::detail::kX0)
+            {
+                continue;
+            }
+
+            for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+            {
+                ++cells;
+
+                if (std::abs(boys::BoysSingleAtTier(kRungs[r].tier, n, x) - batch[static_cast<std::size_t>(n)]) >
+                    bound)
+                {
+                    ++over;
+                }
+            }
+        }
+    }
+
+    EXPECT_GT(cells, 0u);
+    EXPECT_EQ(over, 0u) << "the two shapes have parted by more than the rung's own bound";
 }
 
 } // namespace

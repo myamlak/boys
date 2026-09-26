@@ -47,6 +47,39 @@ bool ValidX(double x) {
     return x >= 0.0; // rejects negatives and NaN
 }
 
+// The per-argument top order is validated for the whole batch before any output
+// is written, so a batch this entry rejects leaves the caller's buffer as it
+// found it. Validation is the C surface's own job: the C++ entry is a total
+// function whose precondition it cannot check, and the C entry is what a caller
+// without a contract to read checks itself against.
+int RunBatchDoubleAtOrders(const int* n, int count, const double* x, double* out) {
+    if (count < 0)
+    {
+        return BOYS_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (count == 0)
+    {
+        return BOYS_SUCCESS;
+    }
+
+    if (n == nullptr || x == nullptr || out == nullptr)
+    {
+        return BOYS_ERROR_INVALID_ARGUMENT;
+    }
+
+    for (int i = 0; i < count; ++i)
+    {
+        if (!ValidOrder(n[i]) || !ValidX(x[i]))
+        {
+            return BOYS_ERROR_INVALID_ARGUMENT;
+        }
+    }
+
+    boys::BoysAllNAtOrders(n, x, out, static_cast<std::size_t>(count));
+    return BOYS_SUCCESS;
+}
+
 int RunBatchDouble(int nmax, int count, const double* x, double* out) {
     if (!ValidOrder(nmax) || count < 0)
     {
@@ -173,6 +206,10 @@ int BoysDoubleBatch(int nmax, int count, const double* x, double* out) {
     return RunBatchDouble(nmax, count, x, out);
 }
 
+int BoysDoubleBatchAtOrders(const int* n, int count, const double* x, double* out) {
+    return RunBatchDoubleAtOrders(n, count, x, out);
+}
+
 int BoysFloatBatch(int nmax, int count, const float* x, float* out) {
     if (!ValidOrder(nmax) || count < 0)
     {
@@ -189,23 +226,15 @@ int BoysFloatBatch(int nmax, int count, const float* x, float* out) {
         return BOYS_ERROR_INVALID_ARGUMENT;
     }
 
-    float row[boys::kMaxBoysOrder + 1];
-
     for (int i = 0; i < count; ++i)
     {
         if (!ValidX(x[i]))
         {
             return BOYS_ERROR_INVALID_ARGUMENT;
         }
-
-        boys::BoysAllOrdersF32(nmax, x[i], row);
-
-        for (int k = 0; k <= nmax; ++k)
-        {
-            out[k * count + i] = row[k];
-        }
     }
 
+    boys::BoysAllNF32(nmax, x, out, static_cast<std::size_t>(count));
     return BOYS_SUCCESS;
 }
 

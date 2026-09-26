@@ -21,6 +21,10 @@ const double kSampleXs[] = {
     0.0, 1e-12, 1e-6, 0.5, 1.25, 7.0, kX0, kX0 + 1.0, 15.0, 23.0, kX1, 30.0, 60.0, 100.0, 1e6};
 constexpr int kSampleOrders[] = {0, 1, 2, 3, 7, 16, 31, 32};
 
+// A value no Boys entry returns: F_n(x) is positive and at most 1 for every
+// supported order and argument, so a negative marker says "not written".
+constexpr double kUnwritten = -1.0;
+
 double RefSingle(int n, double x) {
     double value = 0.0;
     EXPECT_EQ(BoysDouble(n, x, &value), BOYS_SUCCESS);
@@ -131,6 +135,11 @@ TEST(BoysCTest, FloatBatchMatchesCppPerElement) {
     ASSERT_EQ(BoysFloatBatch(nmax, static_cast<int>(xs.size()), xs.data(), out.data()),
               BOYS_SUCCESS);
 
+    // The C entry routes to the library's float all-N batch, so the two agree
+    // bit for bit as well as per element.
+    std::vector<float> allN(out.size());
+    boys::BoysAllNF32(nmax, xs.data(), allN.data(), xs.size());
+
     for (std::size_t i = 0; i < xs.size(); ++i)
     {
         std::vector<float> row(nmax + 1);
@@ -141,8 +150,92 @@ TEST(BoysCTest, FloatBatchMatchesCppPerElement) {
             EXPECT_FLOAT_EQ(out[static_cast<std::size_t>(k) * xs.size() + i],
                             row[static_cast<std::size_t>(k)])
                 << "i=" << i << " k=" << k << " x=" << xs[i];
+            EXPECT_FLOAT_EQ(out[static_cast<std::size_t>(k) * xs.size() + i],
+                            allN[static_cast<std::size_t>(k) * xs.size() + i])
+                << "i=" << i << " k=" << k << " x=" << xs[i];
         }
     }
+}
+
+TEST(BoysCTest, DoubleBatchAtOrdersMatchesCppPerElement) {
+    // Layout: out[k * count + i] = F_k(x[i]) for k = 0..n[i], the top order
+    // taken per argument. Exercises x spanning all three regions and x = 0,
+    // with top orders at both ends of the range.
+    const std::vector<double> xs = {0.0, 1e-9, 0.3, kX0 - 0.5, kX0, 14.5, kX1, kX1 + 5.0, 1e4};
+    const std::vector<int> tops = {0, 3, 32, 8, 16, 1, 32, 5, 12};
+    const int nmax = 32;
+    const std::size_t count = xs.size();
+    const std::size_t cells = count * (nmax + 1);
+
+    std::vector<double> viaC(cells, kUnwritten);
+    ASSERT_EQ(BoysDoubleBatchAtOrders(tops.data(), static_cast<int>(count), xs.data(), viaC.data()),
+              BOYS_SUCCESS);
+
+    std::vector<double> viaCpp(cells, kUnwritten);
+    boys::BoysAllNAtOrders(tops.data(), xs.data(), viaCpp.data(), count);
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        std::vector<double> row(nmax + 1);
+        boys::BoysAllOrders(nmax, xs[i], row.data());
+
+        for (int k = 0; k <= nmax; ++k)
+        {
+            const std::size_t index = static_cast<std::size_t>(k) * count + i;
+
+            // Documented: a cell above the argument's own top order is left as
+            // the caller left it, by both surfaces.
+            if (k > tops[i])
+            {
+                EXPECT_EQ(viaC[index], kUnwritten) << "i=" << i << " k=" << k;
+                EXPECT_EQ(viaCpp[index], kUnwritten) << "i=" << i << " k=" << k;
+                continue;
+            }
+
+            EXPECT_DOUBLE_EQ(viaC[index], row[static_cast<std::size_t>(k)])
+                << "i=" << i << " k=" << k << " x=" << xs[i];
+            EXPECT_DOUBLE_EQ(viaC[index], viaCpp[index]) << "i=" << i << " k=" << k;
+        }
+    }
+}
+
+TEST(BoysCTest, DoubleBatchAtOrdersRejectsTheWholeBatchBeforeWriting) {
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const std::vector<double> xs = {0.5, 0.5, 0.5};
+    const std::size_t cells = xs.size() * (boys::kMaxBoysOrder + 1);
+
+    // A rejected batch leaves the caller's buffer as it found it, whatever the
+    // position of the offending element.
+    const auto rejects = [&](const std::vector<int>& tops, const std::vector<double>& args) {
+        std::vector<double> out(cells, kUnwritten);
+        EXPECT_EQ(BoysDoubleBatchAtOrders(
+                      tops.data(), static_cast<int>(args.size()), args.data(), out.data()),
+                  BOYS_ERROR_INVALID_ARGUMENT);
+
+        for (const double v : out)
+        {
+            EXPECT_EQ(v, kUnwritten);
+        }
+    };
+
+    rejects({1, boys::kMaxBoysOrder + 1, 1}, xs);
+    rejects({1, -1, 1}, xs);
+    rejects({1, 1, 1}, {0.5, -0.5, 0.5});
+    rejects({1, 1, 1}, {0.5, nan, 0.5});
+
+    std::vector<double> out(cells, kUnwritten);
+    EXPECT_EQ(BoysDoubleBatchAtOrders(nullptr, 3, xs.data(), out.data()),
+              BOYS_ERROR_INVALID_ARGUMENT);
+    EXPECT_EQ(BoysDoubleBatchAtOrders(nullptr, -1, nullptr, nullptr), BOYS_ERROR_INVALID_ARGUMENT);
+    EXPECT_EQ(BoysDoubleBatchAtOrders(nullptr, 3, nullptr, out.data()),
+              BOYS_ERROR_INVALID_ARGUMENT);
+    EXPECT_EQ(BoysDoubleBatchAtOrders(nullptr, 3, xs.data(), nullptr), BOYS_ERROR_INVALID_ARGUMENT);
+
+    // Documented: count may be 0, and then nothing is written.
+    std::vector<double> untouched(2, kUnwritten);
+    EXPECT_EQ(BoysDoubleBatchAtOrders(nullptr, 0, nullptr, untouched.data()), BOYS_SUCCESS);
+    EXPECT_EQ(untouched[0], kUnwritten);
+    EXPECT_EQ(untouched[1], kUnwritten);
 }
 
 TEST(BoysCTest, RejectsInvalidArguments) {

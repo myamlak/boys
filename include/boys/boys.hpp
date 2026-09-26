@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
+#include <span>
 
 #if BoysFp16
 #include "boys/f16.hpp"
@@ -10,6 +12,7 @@
 #include "boys/accuracy.hpp"
 #include "boys/backend.hpp"
 #include "boys/boys_transform.hpp"
+#include "boys/version.hpp"
 
 /// \defgroup boys Boys-function kernel
 ///
@@ -112,23 +115,25 @@
 /// lane is region C only.
 ///
 /// i.e. |F̂_n(x) − F_n(x)| ≤ m·B_region per lane and region, with B_region the
-/// asserted per-region bounds above (measured). **m = 1 is bit-identical
-/// to the certified lanes**:
-/// the default instantiations select the full-accuracy bodies verbatim — no
-/// branch, indirection, or runtime dispatch anywhere on the m = 1 path, and
-/// all existing call sites compile unchanged. Relaxation (m > 1) truncates
-/// the Chebyshev seed fits to the certified effective degree d'(m) = min{d' :
-/// Δ(d')·A ≤ (m−1)·B_region}, Δ(d') = Σ_{k>d'}|c_k| the
-/// dropped-coefficient tail and A the path's seed-error amplification — a-priori bounded, never
-/// tuned; the delivered error ≤ m·B_region follows from the m = 1
-/// asserted bound plus the tail bound. The contract and the work are
-/// **monotone in m** (d' is non-increasing in m); pointwise error is
-/// explicitly NOT guaranteed monotone — a larger m may occasionally change a
-/// pointwise error, but never beyond the m·B_region envelope. Region C has
-/// no relaxable resource; its contract holds with slack at every m.
-/// Instantiations with kAccuracyMultiplier < 1.0 are compile-time errors.
-/// The CUDA lane's relaxed path holds one degree table per process (filled
-/// once per m, the InitializeTables thread-safety contract). The fp16/bf16
+/// asserted per-region bounds above (measured). **m = 1 costs nothing extra and
+/// matches the certified lanes bit for bit** — the default instantiations are
+/// the full-accuracy bodies, and every existing call site compiles unchanged.
+/// **Larger m trades a looser bound for less work**: the rung is a separate
+/// instantiation of the same entry, cut to a degree the criterion certifies for
+/// that multiplier, and the full degree is always admissible, so every rung is
+/// served at every scheme. The contract and the work are **monotone in m**;
+/// pointwise error is explicitly NOT guaranteed monotone — a larger m may
+/// occasionally change a pointwise error, but never beyond the m·B_region
+/// envelope. Region C has no relaxable resource; its contract holds with slack
+/// at every m. Instantiations with kAccuracyMultiplier < 1.0 are compile-time
+/// errors.
+///
+/// **How a rung is derived** — the degree criterion, the dropped-coefficient
+/// tail it is spent on, the per-path seed-error amplification it is certified
+/// against, and why that tail is the one the scheme's own summation reads — is
+/// stated beside the machinery that applies it, in boys_effective_degrees.hpp.
+/// The CUDA lane's relaxed path holds one degree table per process (filled once
+/// per m, the InitializeTables thread-safety contract). The fp16/bf16
 /// m·1e-7 + ½ULP base above is the suite-asserted bound — strictly stronger
 /// than the float lanes' documented 1.5e-7 + ½ULP: the suite tolerance's
 /// 1e-7 base is the fp16 lanes' asserted base, not the float budget.
@@ -242,6 +247,385 @@ constexpr double AccuracyMultiplier(AccuracyTier tier) noexcept {
     return kBoysFullAccuracyMultiplier;
 }
 
+/// The stored fit an evaluated value came from.
+///
+/// A lane is not a region: the extended band and the per-order fits both serve
+/// region A, and they are different data with different measured bounds. Naming
+/// the lane is what lets a caller ask what one piece of the kernel promises
+/// rather than what a region does.
+///
+/// \ingroup boys
+enum class EvalLane : std::uint8_t {
+    kRegionA = 0, ///< the per-order piecewise fits below kX0
+    kRegionB, ///< the region-B seed F_0, on [kX0, kX1)
+    kExtendedBand, ///< the extended-band seed F_0, on [kExtendedBX0, kX0)
+};
+
+/// What one evaluation scheme delivers on one stored fit.
+///
+/// The two delivered figures are measurements, not derivations: each is the
+/// largest error the scheme was found to make over that fit's own interval,
+/// swept against the reference, in the multiply-add route named. Neither is a
+/// bound read off the fit's residual, and neither is inferred from the other
+/// route's figure. Region C is evaluated by its asymptotic form and has no
+/// stored fit, so it has no row here and is the same arithmetic under either
+/// scheme.
+///
+/// \ingroup boys
+struct EvalFitInfo {
+    EvalScheme scheme = EvalScheme::kSplitClenshaw; ///< the scheme
+    EvalLane lane = EvalLane::kRegionA; ///< the stored fit it sums
+    AccuracyRegion region = AccuracyRegion::kA; ///< the region that fit serves
+    int deg = 0; ///< the degree of the fit (the largest, where a lane is piecewise)
+    int stored = 0; ///< coefficients stored per fit
+    double fused = 0.0; ///< measured delivered bound, fused multiply-add route
+    double separate = 0.0; ///< measured delivered bound, separate multiply-add route
+};
+
+/// What one evaluation scheme is, and what it promises.
+///
+/// A scheme is not a lane: the same scheme may be offered on some stored fits
+/// and not others, so the promise is the worst of the fits it is offered on and
+/// the arithmetic it was measured in is carried beside it rather than assumed.
+///
+/// \ingroup boys
+struct EvalSchemeInfo {
+    EvalScheme scheme = EvalScheme::kSplitClenshaw; ///< the scheme
+    const char* name = ""; ///< the name a report prints it under
+    int lanes = 0; ///< stored fits this scheme is offered on
+    int deg = 0; ///< the largest degree it is offered at
+    int stored = 0; ///< the largest coefficient count it stores
+    double delivered = 0.0; ///< the worst measured bound over those fits, in the route in force
+    backend::MulAddRoute route = backend::MulAddRoute::kFused; ///< the arithmetic \c delivered was measured in
+};
+
+/// The name a report prints a scheme under.
+///
+/// \param scheme the scheme
+/// \returns a string literal naming it
+///
+/// \ingroup boys
+const char* EvalSchemeName(EvalScheme scheme) noexcept;
+
+/// The evaluation schemes this build carries, as a report prints them.
+///
+/// Which scheme can be named on an entry is the entries' own business; this
+/// answers what exists and what each promises without a caller reading the
+/// kernel.
+///
+/// \returns one row per scheme, in enumerator order
+///
+/// \ingroup boys
+std::span<const EvalSchemeInfo> BoysEvalSchemes() noexcept;
+
+/// The per-fit detail behind BoysEvalSchemes: one row per (scheme, stored fit).
+///
+/// \returns the rows, in scheme order then lane order
+///
+/// \ingroup boys
+std::span<const EvalFitInfo> BoysEvalSchemeFits() noexcept;
+
+/// The bound the named scheme was measured to deliver on the named stored fit,
+/// in whatever multiply-add route this build is in force.
+///
+/// The route is reported rather than assumed, and it is a property of the build
+/// rather than of the pair: the same call answers differently under the two
+/// routes, so a caller that records this number should record the arithmetic
+/// beside it (BoysBackends carries the same fact per lane).
+///
+/// \param scheme the scheme
+/// \param lane   the stored fit
+/// \returns the measured bound, or 0.0 for a pair this build does not carry
+///
+/// \ingroup boys
+double BoysEvalSchemeDelivered(EvalScheme scheme, EvalLane lane) noexcept;
+
+/// What one packing axis vectorises over, and what it promises.
+///
+/// The axis is a property of a call shape rather than of a kernel: a packed
+/// lane keeps four doubles in a register and the call has to supply four of
+/// something. The rows below are the two somethings this library packs, with
+/// the interval each one's packed lane itself evaluates and the bar its values
+/// are certified against. Outside that interval an entry carrying the axis runs
+/// the certified scalar lanes, which is a defined answer inside the entry's own
+/// bound rather than a value the packed lane produced.
+///
+/// \ingroup boys
+struct PackAxisInfo {
+    PackAxis axis = PackAxis::kArguments; ///< the selector value this row describes
+    const char* name = ""; ///< the name a report prints it under
+    int width = 0; ///< doubles one packed vector holds on this axis
+    double lo = 0.0; ///< left edge of the interval the packed lane evaluates, inclusive
+    double hi = 0.0; ///< right edge, exclusive
+    double bound = 0.0; ///< the bar the packed lane's per-value error is certified against
+};
+
+/// The packing axes this build carries, as a report prints them.
+///
+/// Which axis an entry accepts is the entries' own business and is refused
+/// where it is named; this answers what exists and what each member's packed
+/// lane promises without a caller reading a kernel.
+///
+/// \returns one row per axis, in enumerator order
+///
+/// \ingroup boys
+std::span<const PackAxisInfo> BoysPackAxes() noexcept;
+
+/// One partition of the fitted regions, and what this build promises about it.
+///
+/// The partition is how narrowly the fitted domain is cut into pieces, and it is
+/// a property of the stored tables rather than of a call shape: a row states
+/// what the partition's tables hold — pieces, degree and coefficients per fitted
+/// region — and which rungs and packing axes the partition has kernels for. A
+/// combination the row does not cover is refused where it is named rather than
+/// answered from another partition's tables, and the row is where those refusals
+/// can be counted from instead of being discovered one compile at a time.
+///
+/// Both rows are the double lane's tables. The single-precision lanes hold one
+/// coefficient set each, so they take no partition and naming one is refused
+/// where it is named.
+///
+/// \c delivered is the worst figure the partition's certification measured over
+/// its pieces, and \c bound is the figure its tables are certified against — for
+/// the shipped partition the bar its fits are cut at, for the narrow one the
+/// per-piece round-up its certification publishes. The two are stated apart for
+/// the same reason the contract table's measured column and published column
+/// are: a figure a sweep found is not the figure a caller may rely on. Both are
+/// figures for the stored fits, measured where a fit is read directly.
+///
+/// \c lo and \c hi are the interval those fits cover, read off the pieces above:
+/// \c bound holds on \c [lo, hi) and says nothing about any argument outside it.
+/// Naming a partition replaces the fitted tables of that interval and leaves the
+/// rest of the domain to what the entry does without them, so this is not the
+/// figure for an entry's error: the entry that reads a partition carries its own
+/// documented accuracy, and where the values of two partitions are compared the
+/// difference is bounded by the two fits' figures together, one of them the
+/// other partition's. Above \c hi the same asymptotic arithmetic runs under
+/// either partition, so a figure covering the whole line is the entry's and
+/// never this one.
+///
+/// \ingroup boys
+struct FitGranularityInfo {
+    FitGranularity granularity = FitGranularity::kShipped; ///< the selector value this row describes
+    const char* name = ""; ///< the name a report prints it under
+    unsigned routes = 0; ///< bit (1u << route) set per fit route the partition's tables hold
+    int rungs = 0; ///< accuracy rungs the partition's tables are certified at, reference included
+    unsigned axes = 0; ///< bit (1u << axis) set per packing axis the partition has a kernel for
+    int regionAPieces = 0; ///< pieces region A's per-order tables are cut into
+    int regionADeg = 0; ///< highest degree an evaluation of a region-A piece reads
+    int regionAStored = 0; ///< coefficients region A's tables store
+    int regionBPieces = 0; ///< pieces region B's seed is cut into
+    int regionBDeg = 0; ///< highest degree an evaluation of a region-B piece reads
+    int regionBStored = 0; ///< coefficients region B's tables store
+    double delivered = 0.0; ///< worst error the partition's fits were measured to deliver
+    double bound = 0.0; ///< the figure the partition's tables are certified against
+    double lo = 0.0; ///< lowest argument the partition's own tables serve
+    double hi = 0.0; ///< one past the highest argument the partition's own tables serve
+};
+
+/// Whether the named partition carries the named fit route's tables.
+///
+/// A partition and a route are separate choices: a partition's tables are cut
+/// for whichever routes it holds, and a route with no table in it is a
+/// combination a build either carries or refuses. This answers the row's own
+/// coverage without a caller reading a kernel.
+///
+/// \param partition a row of BoysFitGranularities
+/// \param route     the fit route
+/// \returns         true when the partition's tables carry that route
+///
+/// \ingroup boys
+constexpr bool FitGranularityHasRoute(const FitGranularityInfo& partition,
+                                      FitRoute route) noexcept {
+    return (partition.routes & (1u << static_cast<unsigned>(route))) != 0u;
+}
+
+/// Whether the named partition has a kernel for the named packing axis.
+///
+/// The axis is a property of a call shape and the partition of the tables, so
+/// the pair is a combination a build either carries or refuses. This answers the
+/// row's own coverage without a caller reading a kernel.
+///
+/// \param partition a row of BoysFitGranularities
+/// \param axis      the packing axis
+/// \returns         true when the partition has a kernel for that axis
+///
+/// \ingroup boys
+constexpr bool FitGranularityHasAxis(const FitGranularityInfo& partition, PackAxis axis) noexcept {
+    return (partition.axes & (1u << static_cast<unsigned>(axis))) != 0u;
+}
+
+/// The partitions of the fitted regions this build ships, as a report prints
+/// them.
+///
+/// Which partition an entry accepts is the entries' own business and is refused
+/// where it is named; this answers what exists, what each partition's tables
+/// hold, and which of the other axes - the packing axes and the fit routes - it
+/// is offered on.
+///
+/// \returns one row per partition, in enumerator order
+///
+/// \ingroup boys
+std::span<const FitGranularityInfo> BoysFitGranularities() noexcept;
+
+/// The precision lane a call runs in.
+///
+/// A lane is a precision and an arithmetic, not a region and not a route: the
+/// same combination of the other axes exists in every lane this build carries,
+/// and the figure it delivers differs by lane because the fits and the
+/// arithmetic do. \c kFp16 is the fp16 and bfloat16 entries, which round a
+/// 32-bit engine's result to the format at the boundary and are compiled behind
+/// this build's fp16 seam; \c kFp32Device is the device lane, whose entries a
+/// host without a CUDA device cannot run - both are named here because a caller
+/// choosing a combination has to be able to name the combination it chose, and
+/// \c BoysLaneContracts says where each lane's figure comes from.
+///
+/// \ingroup boys
+enum class Precision : std::uint8_t {
+    kFp64 = 0, ///< double precision, the certified lane every other is measured against
+    kFp32, ///< single precision, the host's fp32 engine
+    kFp16, ///< half precision: the fp16 and bfloat16 entries, whose figure carries a term of the format
+    kFp32Device, ///< single precision as the device lane runs it
+};
+
+/// One precision lane's contract, as a report states it.
+///
+/// \c bound is the base figure the lane documents for one value at the
+/// reference accuracy multiplier, over the whole of x >= 0: a caller multiplies
+/// it by a rung's multiplier to get the base a rung promises, and it is the
+/// guarantee rather than a measurement. \c additive is a term the lane documents
+/// beside it - zero where the lane has none - so that the figure a lane
+/// promises at a rung is \c bound times the multiplier plus \c additive, which
+/// is what \c BoysAccuracyGuaranteed answers with. \c source states the terms
+/// the base figure does not carry, because a row whose bound is not a flat
+/// constant over the whole of its domain has to say so rather than let a reader
+/// take the number for the whole claim: the half-precision rows carry half of
+/// the last representable digit of the returned value beside the base, and that
+/// term is a property of the value the caller receives, not of the call.
+///
+/// Every figure here is the one the README's contract table publishes for the
+/// lane, and the four are stated together so that the table, the accuracy gate
+/// and the accessor above them are one number rather than four transcriptions
+/// of one.
+///
+/// \ingroup boys
+struct LaneContractInfo {
+    Precision precision = Precision::kFp64; ///< the lane this row describes
+    const char* name = ""; ///< the name a report prints it under
+    double bound = 0.0; ///< the documented base figure per value at the reference multiplier
+    double additive = 0.0; ///< a term the lane adds beside the base, 0.0 where it has none
+    const char* source = ""; ///< the figures beside the base, empty where the base is the whole claim
+};
+
+/// The precision lanes this build carries, each with the figure it documents.
+///
+/// \returns one row per lane, in enumerator order
+///
+/// \ingroup boys
+std::span<const LaneContractInfo> BoysLaneContracts() noexcept;
+
+/// Which of a combination's two accuracy figures a reading is.
+///
+/// The two are different numbers and neither substitutes for the other: a
+/// caller deciding whether a calculation is safe needs the guarantee, and a
+/// caller ranking two combinations against each other needs what each was
+/// measured to deliver.
+///
+/// \ingroup boys
+enum class AccuracyReading : std::uint8_t {
+    kGuaranteed = 0, ///< an upper bound the lane documents: what a caller may rely on
+    kDelivered, ///< the figure the combination was measured to deliver: what ranks options
+};
+
+/// The accuracy one combination of this library's option space provides.
+///
+/// \c value is the figure, as an absolute error per value of F_n. It is a
+/// number only where \c available is true; where the library does not carry the
+/// combination there is no figure to read and \c value is 0.0 with \c reason
+/// set, so a caller cannot mistake a refusal for an accuracy.
+///
+/// \ingroup boys
+struct AccuracyFigure {
+    double value = 0.0; ///< the figure, or 0.0 where none is available
+    bool available = false; ///< whether this revision carries the combination
+    AccuracyReading reading = AccuracyReading::kGuaranteed; ///< which of the two figures this is
+    const char* source = ""; ///< the table the figure was read from
+    const char* reason = ""; ///< why no figure is available, empty where one is
+};
+
+/// The accuracy a combination is guaranteed: an upper bound the lane documents
+/// for it, at the rung named.
+///
+/// This answers the safety question - may a caller rely on this combination
+/// being at least this accurate - and it is the figure the lane's contract
+/// table publishes, times the rung's multiplier, plus the lane's own additive
+/// term where it documents one. A combination the library does not carry has no
+/// figure and says so.
+///
+/// The bound is the lane's and not the axes': a way to read any of the five
+/// axes that narrowed it would be a bound this build does not certify, and the
+/// per-axis figures are the ones each axis's own row publishes. What the axes
+/// change is the *delivered* figure - see \c BoysAccuracyDelivered - and that is
+/// the one to rank two combinations by.
+///
+/// \param precision   the lane
+/// \param route       the fit route
+/// \param scheme      the evaluation scheme
+/// \param axis        the packing axis
+/// \param granularity the interval partition
+/// \param tier        the accuracy rung
+/// \returns the figure, and whether this revision carries the combination
+///
+/// \ingroup boys
+AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
+                                      FitRoute route,
+                                      EvalScheme scheme,
+                                      PackAxis axis,
+                                      FitGranularity granularity,
+                                      AccuracyTier tier) noexcept;
+
+/// The accuracy a combination was measured to deliver, which is the figure that
+/// ranks two combinations against each other.
+///
+/// What this is, precisely, because a caller ranking two options on it needs to
+/// know: it is the worst figure over the rows the combination names - the fit
+/// route's row, the partition's row and the scheme's row, each of which
+/// publishes what it was measured to deliver - and those are the figures of the
+/// *fits* the combination names. A call adds its own recurrences over those
+/// fits, so this is a floor on the error a whole call delivers and not the
+/// whole call's figure: it is the number to compare two combinations by, and it
+/// is not a number to quote as what a call achieves. What a call achieves is
+/// what the accuracy gate measures, over a committed reference grid, and the
+/// gate's report is where that figure lives for every combination.
+///
+/// This is a swept maximum and not a bound, and the two are stated apart for
+/// the reason the contract table's measured column and published column are.
+/// It is available at the reference multiplier, because a delivered figure is a
+/// measurement and the rows carry one at the multiplier they were measured at.
+/// At a relaxed rung no row carries a measured figure, so the answer is that
+/// there is none rather than a number scaled from the rung.
+///
+/// It is absent for the half-precision lanes, whose error is dominated by the
+/// format's own quantum at the returned value: no row of this library measured
+/// a half-typed return, and the guaranteed figure above is the one to use.
+///
+/// \param precision   the lane
+/// \param route       the fit route
+/// \param scheme      the evaluation scheme
+/// \param axis        the packing axis
+/// \param granularity the interval partition
+/// \param tier        the accuracy rung
+/// \returns the figure, and whether this revision carries the combination and
+///          measured it
+///
+/// \ingroup boys
+AccuracyFigure BoysAccuracyDelivered(Precision precision,
+                                     FitRoute route,
+                                     EvalScheme scheme,
+                                     PackAxis axis,
+                                     FitGranularity granularity,
+                                     AccuracyTier tier) noexcept;
+
 /// What a tier delivers in one region, and what limits it when a tighter
 /// error than that is asked for.
 ///
@@ -286,6 +670,119 @@ TierCoverage QueryTier(AccuracyTier tier, AccuracyRegion region, double toleranc
 /// \ingroup boys
 TierCoverage QueryTier(AccuracyTier tier, double x, double tolerance) noexcept;
 
+/// One certified fit route as a report states it.
+///
+/// The figures are the route's own rather than a lane's: a route supplies the
+/// fits of one region, and what a caller receives from a lane entry is those
+/// fits carried through the region's recurrence. \c stored is what the
+/// evaluation reads; \c delivered is the worst error a sweep measured over
+/// \c [lo, hi), in the arithmetic the kernel evaluates the fit in and against
+/// the high-precision reference the fits themselves are validated against; and
+/// \c bound is the bar the route is certified against, at or above
+/// \c delivered. A delivered figure is a swept maximum and not a bound — the
+/// two are stated apart for the reason the contract table's measured column and
+/// published column are.
+///
+/// A route that serves more than one region has one row per region, so two rows
+/// can carry the same \c route and differ in \c region, \c lo, \c hi, \c stored,
+/// \c delivered and \c bound.
+///
+/// \c lo..hi is the domain of the route's fit, and \c servesFrom is the lowest
+/// argument from which naming the route changes the values a caller receives.
+/// The two are the same for every route whose selector takes over at its fit's
+/// left edge, and they are stated apart because they can differ: a route whose
+/// fit covers more than the selector hands it says so here, rather than
+/// claiming a domain it does not serve. Region A's rational route is the case
+/// that rule exists for, and its boundary is the lowest of a set rather than a
+/// single one: each order is handed to the route from that order's own
+/// argument, so a caller above \c servesFrom but below an order's own boundary
+/// still receives the default route's value for that order.
+///
+/// \ingroup boys
+struct FitRouteInfo {
+    FitRoute route; ///< the selector value this row describes
+    const char* name; ///< the name a report prints for the route
+    AccuracyComponent component; ///< the component the route's fit supplies
+    AccuracyRegion region; ///< the region it supplies it for
+    double lo; ///< the fit's left edge, inclusive (region B's kX0)
+    double hi; ///< the fit's right edge, exclusive (region B's kX1)
+    double servesFrom; ///< the argument from which naming the route changes values
+    int stored; ///< the route's stored coefficients over \c [lo, hi)
+    double delivered; ///< the swept worst |F̂ − F| over \c [lo, hi)
+    double bound; ///< the bar \c delivered is certified against
+};
+
+/// The certified fit routes this build carries, one row per route and region, so
+/// a caller can ask what options exist, what each promises and over what
+/// interval without reading this header's tables.
+///
+/// Every route in the fixed order below is served by this build: the routes are
+/// table-driven and a build that carries the tables carries all of them, so a
+/// row is never a promise this revision cannot keep.
+///
+/// \returns the routes, in a fixed order: \c kChebyshev over region A, then
+///          \c kRationalMinimax over region A, then the same two over region B.
+///
+/// \ingroup boys
+std::span<const FitRouteInfo> BoysFitRoutes() noexcept;
+
+/// F_0(x)..F_nmax(x) in double precision at a run-time-selected fit route — the
+/// batch entry's contract (the \c "double batch" row of the table in the file
+/// preamble: |F̂ − F| ≤ 5.5e-14 per value in every region), with the named
+/// route's fits serving the intervals they cover.
+///
+/// The route selects fits and changes nothing else. Outside the intervals a
+/// route reports in BoysFitRoutes this entry runs the default route's own code
+/// and returns the default entry's values bit for bit, so a caller who names a
+/// route and a caller who does not are handed the same numbers wherever the
+/// route does not reach. Inside them the named route's fits produce the values,
+/// at the same bound, over the arguments the report's row says its selector
+/// takes them over - and a route served per order takes over per order, so a
+/// caller below an order's own boundary receives the default's value for it.
+///
+/// The multiplier is the reference one: this entry selects a fit, not a rung.
+/// A caller that wants a relaxed budget wants \c BoysAllOrdersAtTier, whose
+/// tiers are defined against the default route.
+///
+/// A route this build does not serve evaluates at the default route, the same
+/// fallback BoysFitRoutes' table and the enumeration's contract describe.
+///
+/// \param route the fit route, a property of this call only
+/// \param nmax  highest order, 0..kMaxBoysOrder
+/// \param x     argument, >= 0
+/// \param out   receives nmax + 1 values, out[k] = F_k(x); every value is
+///              written whatever route is named
+///
+/// \ingroup boys
+void BoysAllOrdersWithRoute(FitRoute route, int nmax, double x, double* out) noexcept;
+
+/// The same entry with the evaluation scheme named as well as the route: the
+/// two axes of the compile-time selection, at run time.
+///
+/// The route and the scheme are the two fields of the policy the templated
+/// entries carry (\c EvalPolicy), and they select different things: the route
+/// names the fits that serve the regions, and the scheme names the summation
+/// the Chebyshev family's coefficients are read in. A route whose own fit has
+/// one stored form - the rational minimax family's monomial numerator and
+/// denominator - evaluates that fit the same way under either scheme, and the
+/// scheme reaches the parts of the call that route's fits do not serve. So
+/// naming a scheme changes the values only outside the served intervals a
+/// route's rows report, where the route has already handed the argument back to
+/// the shipped family, and inside them the route's own fits answer at the bar
+/// its row states. A scheme outside the enumeration is the reference scheme's
+/// body, the same fallback \c BoysAllOrdersAtTier takes for a scheme it does
+/// not carry.
+///
+/// \param route   the fit route
+/// \param scheme  the evaluation scheme
+/// \param nmax    highest order, 0..kMaxBoysOrder
+/// \param x       argument, >= 0
+/// \param out     receives nmax + 1 values, out[k] = F_k(x)
+///
+/// \ingroup boys
+void BoysAllOrdersWithRoute(
+    FitRoute route, EvalScheme scheme, int nmax, double x, double* out) noexcept;
+
 /// F_0(x)..F_nmax(x) in double precision at a run-time-selected tier; the
 /// batch entry's contract — the \c "double batch" row of the table in the
 /// file preamble: |F̂ − F| ≤ m·5.5e-14 per value in every region, with
@@ -316,6 +813,130 @@ TierCoverage QueryTier(AccuracyTier tier, double x, double tolerance) noexcept;
 /// \ingroup boys
 void BoysAllOrdersAtTier(AccuracyTier tier, int nmax, double x, double* out) noexcept;
 
+/// The same batch entry with the evaluation scheme named as well as the tier.
+///
+/// The two selectors are different kinds of thing: a tier is a run-time value
+/// and a scheme is a compile-time one, so this overload carries the tier and
+/// names the scheme for the rung it dispatches to. A scheme this build does
+/// not carry is the reference scheme's body, the same fallback a tier this
+/// build does not serve takes.
+///
+/// \param tier   the tier
+/// \param scheme the evaluation scheme
+/// \param nmax   highest order, 0..kMaxBoysOrder
+/// \param x      argument, >= 0
+/// \param out    receives nmax + 1 values, out[k] = F_k(x)
+///
+/// \ingroup boys
+void BoysAllOrdersAtTier(
+    AccuracyTier tier, EvalScheme scheme, int nmax, double x, double* out) noexcept;
+
+/// The same batch entry with the fit route named as well as the tier and the
+/// scheme: every axis of the compile-time selection, at run time.
+///
+/// The rung and the route are two selectors of two different things, and until
+/// this overload there was no way to name both: a rung truncates the route's
+/// own fits to the degrees its criterion certifies, and the criterion reads the
+/// table the route evaluates. So a caller that wants the rational route at a
+/// relaxed budget wants this entry, and a caller that names only a tier gets
+/// the default route's rung, which is what \c BoysAllOrdersAtTier has always
+/// answered.
+///
+/// The rung is a property of the route rather than of the multiplier: the
+/// Chebyshev family's rung is a cut of its stored coefficients, and the
+/// rational family's is a cut of its stored numerator and denominator pair. The
+/// two cuts are derived by the same criterion and neither is a value the other
+/// route's table can express, so the pair is a combination this library serves
+/// rather than one of its axes alone.
+///
+/// \param tier   the tier
+/// \param route  the fit route
+/// \param scheme the evaluation scheme
+/// \param nmax   highest order, 0..kMaxBoysOrder
+/// \param x      argument, >= 0
+/// \param out    receives nmax + 1 values, out[k] = F_k(x)
+///
+/// \ingroup boys
+void BoysAllOrdersAtTier(
+    AccuracyTier tier, FitRoute route, EvalScheme scheme, int nmax, double x, double* out) noexcept;
+
+/// The same entry with the reference scheme named for the route; see the
+/// scheme-carrying overload above.
+///
+/// \param tier  the tier
+/// \param route the fit route
+/// \param nmax  highest order, 0..kMaxBoysOrder
+/// \param x     argument, >= 0
+/// \param out   receives nmax + 1 values, out[k] = F_k(x)
+///
+/// \ingroup boys
+void BoysAllOrdersAtTier(
+    AccuracyTier tier, FitRoute route, int nmax, double x, double* out) noexcept;
+
+/// F_n(x) in double precision at a run-time-selected tier, and optionally a
+/// run-time-selected route and scheme; the single-order entry's contract — the
+/// \c "double single" rows of the table in the file preamble, |F̂ − F| ≤
+/// m·B_region per region with m = AccuracyMultiplier(tier).
+///
+/// The batch entry's rung is a run-time choice already; this is the same choice
+/// on the single-order shape, and it exists because the shape is a different
+/// call: an integral engine that reads one order at a time cannot reach the
+/// rung through an entry that computes every order. The route and the scheme
+/// are named here for the same reason they are named on the batch entry — a
+/// rung is a cut of the named route's own fits, so a caller who wants the
+/// rational route's rung has to be able to say both.
+///
+/// One branch selects the rung, then the rung's own body runs, exactly as in
+/// the templated entry: the values are those of \c BoysSingle<m, Policy> at the
+/// multiplier the tier names, bit for bit, and the reference tier is the
+/// template default. A tier or a route this build does not serve is the
+/// fallback the rest of the surface takes for it, so a caller who records the
+/// multiplier \c AccuracyMultiplier reported beside these values is recording
+/// the accuracy they were computed at.
+///
+/// \param tier   the tier
+/// \param route  the fit route; the default route by default
+/// \param scheme the evaluation scheme; the reference scheme by default
+/// \param n      order, 0..kMaxBoysOrder
+/// \param x      argument, >= 0
+/// \returns      F_n(x)
+///
+/// \ingroup boys
+double BoysSingleAtTier(AccuracyTier tier, FitRoute route, EvalScheme scheme, int n,
+                        double x) noexcept;
+
+/// The same entry with the reference scheme named for the route; see the
+/// scheme-carrying overload above.
+///
+/// \param tier  the tier
+/// \param route the fit route
+/// \param n     order, 0..kMaxBoysOrder
+/// \param x     argument, >= 0
+/// \returns     F_n(x)
+///
+/// \ingroup boys
+double BoysSingleAtTier(AccuracyTier tier, FitRoute route, int n, double x) noexcept;
+
+/// The same entry with the default route and a named scheme.
+///
+/// \param tier   the tier
+/// \param scheme the evaluation scheme
+/// \param n      order, 0..kMaxBoysOrder
+/// \param x      argument, >= 0
+/// \returns      F_n(x)
+///
+/// \ingroup boys
+double BoysSingleAtTier(AccuracyTier tier, EvalScheme scheme, int n, double x) noexcept;
+
+/// F_n(x) at a run-time-selected tier, on the default route and scheme.
+///
+/// \param tier the tier
+/// \param n    order, 0..kMaxBoysOrder
+/// \param x    argument, >= 0
+/// \returns    F_n(x)
+///
+/// \ingroup boys
+double BoysSingleAtTier(AccuracyTier tier, int n, double x) noexcept;
 
 /// F_n(x) in double precision, |F̂ − F| ≤ m·B_region per region (contract
 /// table in the file preamble; m = kAccuracyMultiplier).
@@ -323,13 +944,29 @@ void BoysAllOrdersAtTier(AccuracyTier tier, int nmax, double x, double* out) noe
 /// \tparam kAccuracyMultiplier the accuracy multiplier m >= 1.0; 1.0 = full
 ///         static accuracy, bit-identical to the certified lane; relaxes the
 ///         per-region bound to m·B_region (compile-time degree truncation,
-///         monotone in m)
+///         monotone in m). The rung is a cut of the named route's own fits: the
+///         Chebyshev route's stored coefficients are cut to the degree table of
+///         boys_effective_degrees.hpp, certified against the table the policy's
+///         scheme sums, and the rational route's stored numerator and
+///         denominator pair is cut by the same criterion, which reads a pair's
+///         dropped orders as the two terms a quotient's perturbation has rather
+///         than as one coefficient sum. Both routes are carried, at either
+///         scheme; the entries of this lane that reach their values through
+///         the shipped fits' own path rather than through the policy are the
+///         ones that refuse the rational route, and they say so where the call
+///         is named
+/// \tparam Policy the evaluation policy (\c EvalPolicy): the fit route, the
+///         scheme its coefficients are summed in, and a single-precision
+///         engine's budget, selected together. The default is the Chebyshev
+///         route summed by the split Clenshaw recurrence, so a call site that
+///         names neither axis compiles the certified route's code path
 /// \param n     order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0
 /// \returns     F_n(x)
 ///
 /// \ingroup boys
-template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
+          EvalPolicyLike Policy = DefaultPolicyFp64>
 double BoysSingle(int n, double x) noexcept;
 
 /// F_0(x)..F_nmax(x) in double precision, |F̂ − F| ≤ m·B_region per value.
@@ -339,12 +976,14 @@ double BoysSingle(int n, double x) noexcept;
 /// cheaper than nmax + 1 single evaluations.
 ///
 /// \tparam kAccuracyMultiplier see BoysSingle
+/// \tparam Policy see BoysSingle
 /// \param nmax  highest order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0
 /// \param out   receives nmax + 1 values, out[k] = F_k(x)
 ///
 /// \ingroup boys
-template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
+          EvalPolicyLike Policy = DefaultPolicyFp64>
 void BoysAllOrders(int nmax, double x, double* out) noexcept;
 
 /// F_n(x_i) for an array of arguments at one fixed order n, double
@@ -354,13 +993,19 @@ void BoysAllOrders(int nmax, double x, double* out) noexcept;
 /// The fixed-n vector entry is the batch shape of integral-engine inner
 /// loops that group shell pairs by angular momentum: each element needs
 /// exactly one order, so no unused cross-order recursion is paid. Each
-/// output element is bit-identical to BoysSingle<kAccuracyMultiplier> at
-/// the same (n, x) - the m = 1 path runs the certified scalar single-lane
-/// region bodies verbatim (the bit-identity pin), the relaxed path the
-/// same bodies at the single-lane effective degrees. Arguments need no
-/// pre-partitioning: the region dispatch is per element, the portable
-/// shape. The vector tier is reached through the batch entries (BoysAllN),
-/// which group the arguments once for the whole call.
+/// output element returns BoysSingle<kAccuracyMultiplier>'s value at the
+/// same (n, x) and carries the single lane's per-region bound with it: the
+/// m = 1 path runs the certified scalar single-lane region bodies
+/// verbatim, the relaxed path the same bodies at the single-lane effective
+/// degrees. The two agree bit for bit on a build that does not contract a
+/// bare product-plus-add, which is what x86-64 without -mfma and MSVC
+/// everywhere deliver. A build that does contract one decides per call site
+/// whether to fuse that form, so an element can differ from the single
+/// entry's in the last place and still be inside the bound; what does not
+/// move is the bound. Arguments need no pre-partitioning: the region
+/// dispatch is per element, the portable shape. The vector tier is reached
+/// through the batch entries (BoysAllN), which group the arguments once for
+/// the whole call.
 ///
 /// Layout: out[i * stride] = F_n(x[i]), i = 0..count-1; stride is measured
 /// in doubles and defaults to 1 (contiguous). The output span must hold
@@ -369,6 +1014,22 @@ void BoysAllOrders(int nmax, double x, double* out) noexcept;
 /// alignof(double), and the two arrays must not overlap.
 ///
 /// \tparam kAccuracyMultiplier see BoysSingle
+/// \tparam Policy see BoysSingle. The fixed-order entry carries the fit route:
+///         a call naming a route other than the shipped one is answered by the
+///         per-argument single entry, once per argument, which is the body this
+///         entry's own m = 1 path already mirrors region for region - so on that
+///         route the entry runs the single entry's own body rather than a second
+///         copy of it. The shaped path below stays the shipped route's, which is
+///         the path the entry's own paragraph above is about
+///
+///         The packing axis is not an axis of this shape, and that is the
+///         entry's signature rather than a body nobody built. A packed lane
+///         keeps four doubles in a register, and this entry produces ONE order
+///         at every argument of the array: there are not four orders here to
+///         fill a lane with, and the wide dimension the call does have - count
+///         - is a different axis, served by the vector tier the batch entries
+///         reach. Naming PackAxis::kOrders is therefore rejected at the call
+///         site, which is what the assertion says
 /// \param n      order, 0..kMaxBoysOrder - the batch's single fixed order
 /// \param x      array of count arguments, each >= 0
 /// \param out    receives F_n(x[i]) at out[i * stride]
@@ -376,7 +1037,8 @@ void BoysAllOrders(int nmax, double x, double* out) noexcept;
 /// \param stride output stride in doubles, >= 1 (default 1 = contiguous)
 ///
 /// \ingroup boys
-template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
+          EvalPolicyLike Policy = DefaultPolicyFp64>
 void BoysFixedN(
     int n, const double* x, double* out, std::size_t count, std::size_t stride = 1) noexcept;
 
@@ -450,6 +1112,26 @@ constexpr std::size_t BoysAllNWorkspaceSize(std::size_t count) noexcept
 /// grouped-path speed-up.
 ///
 /// \tparam kAccuracyMultiplier see BoysSingle
+/// \tparam Policy see BoysSingle. The many-argument entry carries the fit route
+///         as well as the packing axis, and by the same shape: the route is a
+///         property of the fit a value is read from, so a call naming the
+///         rational route takes the entry's per-argument path, whose body is
+///         the all-orders entry's own and takes its fit from the policy. What
+///         the partitioned shape does not carry is the route and not the
+///         value - both shapes answer inside this entry's own bound, and the
+///         per-argument path is the one that reads each order from its own fit
+///         where the partitioned shape reaches most orders by a recursion
+///
+///         The packing axis is carried here too, and the orders axis is the
+///         shape this entry's layout already has: out[k * count + i] is F_k of
+///         one argument, so the entry's per-argument path is its body, and the
+///         packed lane that fills a register with four orders of that argument
+///         is the all-orders entry's. Naming the axis trades the region
+///         grouping for it - the grouping exists to feed a lane that packs four
+///         arguments, which an orders-axis call has no use for - so a call
+///         naming it takes the per-argument path and that axis's own lane. The
+///         axis carries every rung the tier enumeration declares and either
+///         route, at m·B_region as this entry does
 /// \param nmax      highest order, 0..kMaxBoysOrder
 /// \param x         array of count arguments, each >= 0
 /// \param out       receives count * (nmax + 1) doubles, out[k * count + i] = F_k(x[i])
@@ -462,7 +1144,8 @@ constexpr std::size_t BoysAllNWorkspaceSize(std::size_t count) noexcept
 ///      and must not overlap
 ///
 /// \ingroup boys
-template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
+          EvalPolicyLike Policy = DefaultPolicyFp64>
 void BoysAllN(int nmax,
               const double* x,
               double* out,
@@ -473,6 +1156,26 @@ void BoysAllN(int nmax,
 /// order — the sort is skipped rather than paid for.
 ///
 /// \tparam kAccuracyMultiplier see BoysSingle
+/// \tparam Policy see BoysSingle. The many-argument entry carries the fit route
+///         as well as the packing axis, and by the same shape: the route is a
+///         property of the fit a value is read from, so a call naming the
+///         rational route takes the entry's per-argument path, whose body is
+///         the all-orders entry's own and takes its fit from the policy. What
+///         the partitioned shape does not carry is the route and not the
+///         value - both shapes answer inside this entry's own bound, and the
+///         per-argument path is the one that reads each order from its own fit
+///         where the partitioned shape reaches most orders by a recursion
+///
+///         The packing axis is carried here too, and the orders axis is the
+///         shape this entry's layout already has: out[k * count + i] is F_k of
+///         one argument, so the entry's per-argument path is its body, and the
+///         packed lane that fills a register with four orders of that argument
+///         is the all-orders entry's. Naming the axis trades the region
+///         grouping for it - the grouping exists to feed a lane that packs four
+///         arguments, which an orders-axis call has no use for - so a call
+///         naming it takes the per-argument path and that axis's own lane. The
+///         axis carries every rung the tier enumeration declares and either
+///         route, at m·B_region as this entry does
 /// \param nmax   highest order, 0..kMaxBoysOrder
 /// \param x      array of count arguments, non-decreasing, each >= 0
 /// \param out    receives count * (nmax + 1) doubles, out[k * count + i] = F_k(x[i])
@@ -487,9 +1190,94 @@ void BoysAllN(int nmax,
 ///      and this entry has no other error channel.
 ///
 /// \ingroup boys
-template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
+          EvalPolicyLike Policy = DefaultPolicyFp64>
 void BoysAllN(
     int nmax, const double* x, double* out, std::size_t count, BoysSortedArgs) noexcept;
+
+/// F_0(x_i)..F_n[i](x_i) for an array of arguments, double precision — every
+/// order up to each argument's OWN top order, the tops arriving as an array.
+///
+/// This is the shape a shell-quartet consumer actually has. A quartet carries
+/// its own highest order, so a batch of quartets is a batch of differing tops,
+/// and BoysAllN — one common nmax for the whole batch — makes such a caller
+/// choose between padding every quartet up to the batch's largest top order,
+/// paying for the orders nobody asked for, and calling the library once per
+/// quartet. This entry takes the tops as an array, so the caller does neither.
+/// It is the CPU spelling of the device lane's per-element-order batch
+/// (BoysCuda::AllOrdersF64), which is what lets one kernel be written against
+/// both lanes.
+///
+/// Layout: order-major planes as BoysAllN — out[k * count + i] = F_k(x[i]) —
+/// with each column stopping at its own order. Every cell of argument i's
+/// column at or below n[i] is written, and **every cell above it is left
+/// untouched**: out[k * count + i] for k > n[i] keeps whatever the caller put
+/// there, so a caller may pre-fill those cells with the value its own
+/// contraction wants to multiply by (a zero, or an earlier group's result) and
+/// know it survives the call. Writing only the orders that were asked for is
+/// the entry's point rather than a saving inside the recursion: a plane above
+/// an argument's own top order has no reader.
+///
+/// The output holds count * (nmax + 1) doubles, nmax being the largest of the
+/// n[i]. That is the caller's own array, so the caller sizes the buffer from
+/// what it already has, and no padding of either the arguments or the output is
+/// involved.
+///
+/// Accuracy: every returned value satisfies the double batch lane's documented
+/// per-region bound, |F̂ − F| ≤ m·5.5e-14 (the contract table in the file
+/// preamble). Each column is the per-argument all-orders body run at that
+/// argument's own top order: out[k * count + i] is the value, bit for bit, that
+/// BoysAllOrders(n[i], x[i], out) returns at out[k].
+///
+/// Threading: single-threaded and pure, like every entry in this library — see
+/// the threading paragraph in the file preamble. A caller that wants the work
+/// spread over threads divides its argument array and calls this entry from its
+/// own threads; distinct batches share nothing.
+///
+/// \tparam kAccuracyMultiplier see BoysSingle
+/// \tparam Policy see BoysSingle. This entry runs the per-argument all-orders
+///         body, so it takes the same policies that entry takes
+/// \param n     array of count top orders, each 0..kMaxBoysOrder
+/// \param x     array of count arguments, each >= 0
+/// \param out   receives the planes: out[k * count + i] = F_k(x[i]) for
+///              k = 0..n[i], every cell above n[i] untouched
+/// \param count number of arguments; may be 0 (no writes)
+///
+/// \pre x must hold count values and n count orders; out must hold
+///      count * (1 + max_i n[i]) doubles when count > 0; x and out must not
+///      overlap
+///
+/// \ingroup boys
+template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
+          EvalPolicyLike Policy = DefaultPolicyFp64>
+void BoysAllNAtOrders(const int* n, const double* x, double* out, std::size_t count) noexcept;
+
+/// Whether the packed region-A lane serves a call whose policy names this
+/// scheme.
+///
+/// The many-argument entries hand their low-order region-A runs to the packed
+/// AVX2 lane where the build has one. That lane holds the shipped Chebyshev
+/// coefficients and the split Clenshaw recurrence, so it serves the shipped
+/// scheme and no other: a call naming another scheme is answered on the scalar
+/// body, at the same bound and with the same values the per-argument entry
+/// returns. What is not offered is the lane, not the value - and a lane is a
+/// performance property, so nothing in the returned values can show which one
+/// ran.
+///
+/// This is where a caller asks which it got, rather than inferring it from a
+/// measurement of their own. It is the packed lane's scope and not the
+/// entry's: the scheme is served on every entry that takes a policy, and the
+/// packed lane is an implementation of region A that serves one of them.
+///
+/// \param scheme the evaluation scheme a call names
+///
+/// \returns true if the packed region-A lane serves that scheme
+///
+/// \ingroup boys
+constexpr bool BoysPackedLaneServes(EvalScheme scheme) noexcept
+{
+    return scheme == kDefaultEvalScheme;
+}
 
 /// F_n(x) in single precision, |F̂ − F| ≤ m·1.5e-7.
 ///
@@ -497,24 +1285,159 @@ void BoysAllN(
 /// This is the recommended lane for GPU integral evaluation.
 ///
 /// \tparam kAccuracyMultiplier see BoysSingle
+/// \tparam Policy see BoysSingle. The lane reads the policy's fit route and its
+///         evaluation scheme at every multiplier: the route selects which family
+///         supplies the lane's own fits - the shipped Chebyshev table or the
+///         rational minimax one - and the scheme selects which of the Chebyshev
+///         family's two parallel tables, the Chebyshev form or the monomial form
+///         of the same fits, is summed. At a multiplier past the reference one
+///         the route and the scheme also name which of those tables the rung's
+///         truncation is cut from, so the degrees are the ones that policy's own
+///         table supports: the Chebyshev and monomial tables are cut from
+///         themselves by their own coefficient tails, and the rational route's
+///         pieces by the tail of the pair it stores, numerator and denominator
+///         together. The budget is a different axis: it picks the region budget
+///         the cut targets, which is what tells the float lane's 1.5e-7 apart
+///         from the half lanes' 1e-7, and it changes the degrees the cut lands on
+///         without changing the route or the scheme. The packing axis is not an
+///         axis of this shape and is refused where it is named: this entry
+///         answers one order at one argument, so the value is a single float and
+///         neither axis has a lane to fill
 /// \param n     order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0
 /// \returns     F_n(x)
 ///
 /// \ingroup boys
-template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
+          EvalPolicyLike Policy = DefaultPolicyFp32>
 float BoysSingleF32(int n, float x) noexcept;
 
 /// F_0(x)..F_nmax(x) in single precision, |F̂ − F| ≤ m·1.5e-7 per value.
 ///
 /// \tparam kAccuracyMultiplier see BoysSingle
+/// \tparam Policy see BoysSingleF32: the route and the scheme select the fits at
+///         every multiplier - the route for this lane's region-B seed and for
+///         the double lane's fit that seeds region A, the scheme for which of
+///         the route's tables each of those reads - and the budget selects the
+///         region budget the degree cut targets. Region A's seed is the double
+///         lane's fit at the policy's pair, so its degrees are that lane's rung
+///         table; region B's is this lane's own. The packing axis is refused
+///         where it is named, and this is the one shape in the float lane where
+///         the axis is not empty: nmax + 1 orders of one argument is exactly what
+///         a packed lane would hold, and the axis is refused here because this
+///         lane has no packed body to answer it with rather than because the call
+///         has nothing to pack
 /// \param nmax  highest order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0
 /// \param out   receives nmax + 1 values, out[k] = F_k(x)
 ///
 /// \ingroup boys
-template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
+          EvalPolicyLike Policy = DefaultPolicyFp32>
 void BoysAllOrdersF32(int nmax, float x, float* out) noexcept;
+
+/// F_0(x_i)..F_nmax(x_i) for an array of arguments, single precision — the
+/// float lane's entry of the shape BoysAllN has in the double lane.
+///
+/// Layout and totality as BoysAllN: out[k * count + i] = F_k(x[i]), order-major
+/// planes, the output holding count * (nmax + 1) floats. The same shape exists on
+/// the device (BoysCuda::AllNF32), and before this entry it existed on the CPU
+/// only as a loop a caller wrote for itself — which is what the C surface's
+/// BoysFloatBatch was — so a consumer porting a batch between the lanes had a
+/// call on one side and its own loop on the other.
+///
+/// What it is not is a grouping entry. The packed region-A lane the double batch
+/// hands its low-order runs to is an AVX2 kernel over doubles; the float lane has
+/// no packed region kernel of its own, so there is no run for this entry to
+/// group and it evaluates the per-argument all-orders body at each argument. The
+/// entry is the shape, and no speed is claimed for it over the same loop written
+/// at the call site.
+///
+/// Accuracy: |F̂ − F| ≤ m·1.5e-7 per value, the float lane's bound, which is the
+/// same in every region (the contract table in the file preamble) — the bound
+/// BoysAllOrdersF32 meets, and each column is that entry's value at the same
+/// (nmax, x[i]) bit for bit.
+///
+/// Threading: single-threaded and pure, like every entry in this library — see
+/// the threading paragraph in the file preamble. A caller that wants the work
+/// spread over threads divides its argument array and calls this entry from its
+/// own threads; distinct batches share nothing.
+///
+/// \tparam kAccuracyMultiplier see BoysSingle
+/// \tparam Policy see BoysSingleF32: the route and the scheme select the fits at
+///         every multiplier - the route for this lane's own region-B seed, the
+///         scheme for which of the route's tables it is read from - and the
+///         budget selects the region budget the degree cut targets. The packing
+///         axis is refused where it is named: this entry answers each argument
+///         through the all-orders entry, whose own paragraph says why the float
+///         lane cannot serve the orders axis
+/// \param nmax  highest order, 0..kMaxBoysOrder
+/// \param x     array of count arguments, each >= 0
+/// \param out   receives count * (nmax + 1) floats, out[k * count + i] = F_k(x[i])
+/// \param count number of arguments; may be 0 (no writes)
+///
+/// \pre x must hold count values, out count * (nmax + 1), and the two must not
+///      overlap
+///
+/// \ingroup boys
+template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
+          EvalPolicyLike Policy = DefaultPolicyFp32>
+void BoysAllNF32(int nmax, const float* x, float* out, std::size_t count) noexcept;
+
+/// F_n(x) in single precision at a run-time-selected fit route — the
+/// single-precision single entry's contract (|F̂ − F| ≤ 1.5e-7), with the
+/// named route's fits serving the intervals they cover.
+///
+/// This is \c BoysSingleF32 with one thing changed: which fit supplies the
+/// lane's region-A seed and its region-B seed. The route is a property of the
+/// float lane's own tables, so it is offered on the entry that reads them, at
+/// run time and without a scheme. A caller who templates on a policy names the
+/// same route there, and \c BoysAllOrdersF32 reads it for the double lane's
+/// fit that seeds its region-A recursion.
+///
+/// The route selects fits and changes nothing else. Region C holds no
+/// coefficient under either route, and an argument there is the default
+/// entry's value bit for bit. Outside the intervals the route reports in
+/// \c BoysFitRoutesF32 the same holds, so a caller who names a route and a
+/// caller who does not are handed the same numbers wherever the route does
+/// not reach.
+///
+/// The two routes are alternatives and not rungs: the rational route holds
+/// half the stored coefficients over region A and delivers more error than
+/// the Chebyshev route at the same bar, so which of the two is cheaper is a
+/// property of the caller's machine rather than of the tables. Both are
+/// certified against the lane's own bound.
+///
+/// The multiplier is the reference one: this entry selects a fit, not a rung.
+/// The rung and the route are independent — the templated entries read the
+/// route at every multiplier — and a caller who wants both names the route in
+/// the policy it templates on.
+///
+/// A route this build does not serve evaluates at the default route, the same
+/// fallback the \c FitRoute enumeration's contract describes.
+///
+/// \param route the fit route, a property of this call only
+/// \param n     order, 0..kMaxBoysOrder
+/// \param x     argument, >= 0
+/// \returns     F_n(x)
+///
+/// \ingroup boys
+float BoysSingleF32WithRoute(FitRoute route, int n, float x) noexcept;
+
+/// The certified fit routes this build carries for the single-precision lane,
+/// one row per route and region, so a caller can ask what options exist, what
+/// each promises and over what interval without reading this header's tables.
+///
+/// The rows are the float lane's own and not the double lane's: that lane's
+/// region-A table is its own and its route covers the whole of region A,
+/// where the double lane's rational route takes over from a boundary above
+/// zero. Every route in the fixed order below is served by this build.
+///
+/// \returns the routes, in a fixed order: \c kChebyshev over region A, then
+///          \c kRationalMinimax over region A, then the same two over region B.
+///
+/// \ingroup boys
+std::span<const FitRouteInfo> BoysFitRoutesF32() noexcept;
 
 /// True if the CPU executes AVX2 with FMA; the SIMD entry points below require it.
 ///
@@ -545,6 +1468,12 @@ bool BoysAvx2Available() noexcept;
 /// ceiling: in f16 the return there is a subnormal number, then exactly zero,
 /// with the bound met by the format's floor rather than by the lane — see the
 /// contract table in the file preamble.
+///
+/// The lane runs \c DefaultPolicyFp16 — the shipped route and scheme at the
+/// fp16 engine budget — and its entries take no policy argument, because the
+/// budget is the whole of what this lane's default adds to the float lane's:
+/// the policy is named so that a document can cite what the call runs and a
+/// test can hold it to the name, not so that a call site selects it.
 ///
 /// \tparam kAccuracyMultiplier see BoysSingle (forwards to the F32 engine)
 /// \param n     order, 0..kMaxBoysOrder
@@ -665,10 +1594,11 @@ void BoysAllNF16Native(int nmax, const F16* x, F16* out, std::size_t count) noex
 
 /// \cond
 // Hidden from the API reference: each of these is an instantiation of the
-// entries declared above at the default multiplier, not an entry of its own.
-// They are what the default call sites link against instead of compiling the
-// kernel again in their own translation unit; a caller that names any other
-// multiplier compiles the rung it asks for from the definition below.
+// entries declared above at the default multiplier and the default policy, not
+// an entry of its own. They are what the default call sites link against
+// instead of compiling the kernel again in their own translation unit; a
+// caller that names another multiplier, or another policy, compiles the rung
+// or the route it asks for from the definition below.
 extern template double BoysSingle<kBoysFullAccuracyMultiplier>(int n, double x) noexcept;
 extern template void BoysAllOrders<kBoysFullAccuracyMultiplier>(
     int nmax, double x, double* out) noexcept;
@@ -678,9 +1608,14 @@ extern template void BoysAllN<kBoysFullAccuracyMultiplier>(
     int nmax, const double* x, double* out, std::size_t count, std::size_t* workspace) noexcept;
 extern template void BoysAllN<kBoysFullAccuracyMultiplier>(
     int nmax, const double* x, double* out, std::size_t count, BoysSortedArgs) noexcept;
-extern template float BoysSingleF32<kBoysFullAccuracyMultiplier>(int n, float x) noexcept;
-extern template void BoysAllOrdersF32<kBoysFullAccuracyMultiplier>(
+extern template void BoysAllNAtOrders<kBoysFullAccuracyMultiplier>(
+    const int* n, const double* x, double* out, std::size_t count) noexcept;
+extern template float BoysSingleF32<kBoysFullAccuracyMultiplier, EvalPolicy<>>(
+    int n, float x) noexcept;
+extern template void BoysAllOrdersF32<kBoysFullAccuracyMultiplier, EvalPolicy<>>(
     int nmax, float x, float* out) noexcept;
+extern template void BoysAllNF32<kBoysFullAccuracyMultiplier, EvalPolicy<>>(
+    int nmax, const float* x, float* out, std::size_t count) noexcept;
 
 #if BoysFp16
 extern template F16 BoysSingleF16<kBoysFullAccuracyMultiplier>(int n, F16 x) noexcept;
@@ -700,3 +1635,8 @@ extern template void BoysAllOrdersBf16<kBoysFullAccuracyMultiplier>(
 // rather than at the top of this file because its definitions name the
 // declarations above.
 #include "boys/boys_impl.hpp"
+
+// The option probe closes the surface: it measures the entries above on the
+// machine it is called on. Included last, because it is written against every
+// declaration in this file.
+#include "boys/boys_probe.hpp"

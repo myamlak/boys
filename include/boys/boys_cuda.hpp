@@ -1,6 +1,8 @@
 #pragma once
 
 #include "boys/boys.hpp"
+#include "boys/boys_cuda_options.hpp"
+#include "boys/boys_device_tables.hpp"
 
 #include <cstddef>
 
@@ -32,38 +34,88 @@ enum class BoysStatus {
     kDeviceError, ///< a CUDA operation failed
 };
 
+// ---------------------------------------------------------------------------
+// The device option space.
+//
+// One row per option of the surface below, with what a chooser needs to place
+// it, in boys_cuda_options.hpp. The rows are declared there and not here
+// because they are one table with two readers: this header's entries are one,
+// and the device translation units that implement the entries of
+// boys_cuda_device.hpp are the other — those are compiled by nvcc, which cannot
+// take this header (it pulls in the whole library through boys.hpp). The
+// enumerators, the row struct and BoysDeviceOptions() are therefore in the
+// small header, and it is included here so that a caller who reads this surface
+// has the space in the same include.
+// ---------------------------------------------------------------------------
+
 /// Device-side Boys evaluation over arrays of (n, x) inputs.
 ///
 /// The coefficient tables are uploaded on first use by any entry point
 /// (idempotent per device; switching devices re-uploads automatically).
-/// The relaxed-multiplier degree tables are uploaded once per (device, m)
-/// on the first call at that m — InitializeTables and the entries are
-/// safe to call from multiple host threads.
+/// InitializeTables and the entries are safe to call from multiple host
+/// threads.
 ///
-/// Accuracy is a compile-time property of the call: the entry's
+/// Accuracy is a compile-time property of a batch call: the entry's
 /// kAccuracyMultiplier selects the certified degree table its instantiation
 /// is built with, which is why the first call at a new m uploads that
-/// instantiation's tables. The lane has no per-call accuracy parameter, and
-/// the multiplier is monotonically relaxing exactly as the CPU lanes
-/// document it.
+/// instantiation's tables. The multiplier is monotonically relaxing exactly as
+/// the CPU lanes document it, and the rungs this lane instantiates are
+/// 1, 2, 10, 100, 1e4 and 1e8 — a finer set than the CPU tier lane's at the low
+/// end and coarser at the top.
 ///
-/// That is the one place the device surface is narrower than the CPU's. The
-/// CPU's double lane takes an accuracy tier as a per-call argument
-/// (BoysAllOrdersAtTier — one argument, all orders) over the rungs m = 1, 64,
-/// 256, 1024, 4096, 16384, 65536, and answers "what would this tier deliver
-/// here" before the call (QueryTier, AccuracyMultiplier, TierCoverage, which
-/// names the region component that would limit it). The device has no such
-/// parameter: a call is fixed at the m its instantiation was built with
-/// (1, 2, 10, 100, 1e4, 1e8 — a finer set than the CPU's at the low end,
-/// coarser at the top), the entry cannot be handed a tier at run time, and
-/// nothing here reports what an m delivers: that is m * B_region from the
-/// contract table, which the caller computes. A caller carrying a CPU tier
-/// gets the nearest device behaviour by naming, at the call site, the largest
-/// instantiated m whose bound does not exceed the tier's own.
+/// The device-callable entries (boys_cuda_device.hpp) are at once the wider
+/// surface and the narrower one. Wider, because each takes the multiplier as a
+/// run-time argument and reads the rung the caller names, so one compiled entry
+/// serves every rung. Narrower, because what those rungs are is the one handle's
+/// tables, and one relaxed rung of them is resident at a time: filling a handle
+/// at a relaxed rung replaces the resident one, and an entry asked for a rung
+/// that is not resident returns BoysDeviceStatus::kMultiplierNotResident and
+/// writes nothing — a value the caller branches on, not a silent choice of
+/// whichever rung happens to be resident. A call at
+/// kBoysFullAccuracyMultiplier reads tables that are always uploaded, so it is
+/// served whatever rung is resident and does not depend on that choice.
+///
+/// What neither surface has is the CPU double lane's per-call tier machinery:
+/// BoysAllOrdersAtTier (one tier, all orders), QueryTier, AccuracyMultiplier and
+/// TierCoverage, the last of which names the region component that would limit a
+/// tier. No device entry reports what an m delivers, because m is the input and
+/// not a selection from a table: the answer is m * B_region from the contract,
+/// which the caller computes. A caller carrying a CPU tier gets the nearest
+/// device behaviour by choosing, at the call site, the largest instantiated m
+/// whose bound does not exceed the tier's own.
+///
+/// **The device lane does not honour the multiply-add route, and this is a
+/// stated limitation rather than an untested property.** The host's routes are
+/// selected at build time (`BOYS_MULADD_SEPARATE`) and reported by
+/// `BoysBackends()`, whose `route` field is what the corresponding arithmetic
+/// was *measured* to deliver. The device kernels are not on that report and do
+/// not read the selection: they name the fused intrinsic (`__fma_rn`)
+/// directly, so the device arithmetic is fused whatever the host build
+/// selected, and a caller who asked for the separate route gets a second
+/// rounding on the host and a single one on the device. Nothing in a returned
+/// value shows it and no entry reports it — a caller has to read the kernel or
+/// know this paragraph.
+///
+/// This is a work item and not an impossibility. The fused intrinsic is what
+/// makes it unfixable today; a kernel written as a bare product-plus-add leaves
+/// the choice to the device compiler's own contraction setting, which is the
+/// same mechanism the host build uses to deliver the two routes, and the device
+/// lane would then honour the route the same way the scalar backends do. Until
+/// that lands, treat the device lane as fused unconditionally: it is the fused
+/// route's arithmetic, and the fused route's bounds are the ones its values
+/// hold, whatever the host build selected.
 ///
 /// The three shapes per precision family: Single* (one order per argument),
 /// AllOrders* (all orders per argument, top order per element), AllN* (all
 /// orders at every argument, one common top order).
+///
+/// One entry carries a second axis. The f32 single entry's region-B
+/// exponential is a certified choice of arithmetic — two options, two measured
+/// bounds (boys::RegionBExp in boys_device_tables.hpp) — where every other axis
+/// of this surface is a choice of shape or of accuracy multiplier. The
+/// device-callable single entry of the same precision takes the same option, as
+/// a template argument, so the two lanes' f32 single entries carry one choice
+/// between them and not one each.
 ///
 /// All entries are asynchronous: the kernel is queued on the caller's
 /// stream and the call returns once the launch is accepted (errors are
@@ -86,14 +138,64 @@ public:
     /// \returns kDeviceError when a device operation fails.
     static BoysStatus InitializeTables();
 
+    /// Fills the handle the device-callable entries read
+    /// (boys_cuda_device.hpp) for the current device, uploading the tables if
+    /// they are not uploaded yet — idempotent, on the same terms as
+    /// InitializeTables. An entry reads this handle at the rung this call
+    /// named.
+    ///
+    /// The handle's full-accuracy tables are uploaded by the call whatever
+    /// multiplier it names, and they are the whole of what a call at
+    /// kBoysFullAccuracyMultiplier needs: it has no relaxed table to make
+    /// resident and leaves whatever rung already is, so a caller may fill one
+    /// handle at a relaxed rung and then run both rungs through it.
+    ///
+    /// One relaxed rung is resident at a time, process-wide per device. Filling
+    /// a handle at a relaxed rung replaces the resident one, and every entry
+    /// then asked for the rung it replaced returns
+    /// BoysDeviceStatus::kMultiplierNotResident rather than reading tables that
+    /// now hold another rung. A caller that wants a relaxed rung makes it
+    /// resident here before the kernel that reads it is launched.
+    ///
+    /// \tparam kAccuracyMultiplier the rung to make resident, one of the
+    ///   multipliers this lane instantiates (1, 2, 10, 100, 1e4, 1e8), matched
+    ///   against the entries' own multiplier argument exactly.
+    /// \param out the handle to fill; untouched when the call fails
+    ///
+    /// \pre \c out is a valid pointer to one BoysDeviceTables.
+    ///
+    /// \returns kSuccess after filling \c out with the current device's table
+    /// addresses and, for a relaxed rung, after that rung's degree tables are
+    /// resident; kDeviceError when the upload or an address query fails.
+    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+    static BoysStatus DeviceTables(BoysDeviceTables* out);
+
     /// F_n(x[i]) in single precision — the recommended GPU lane on
     /// consumer hardware (double precision runs there at a fraction of
     /// single-precision throughput).
     ///
+    /// Two bounds, one per region-B exponential (RegionBExp), each derived from
+    /// the condition number of that region's recurrence and confirmed by the
+    /// device gate's sweep:
+    ///
+    ///  - \c RegionBExp::kAccurate, \c kDefaultRegionBExp and the default:
+    ///    |F̂ − F| ≤ m * 1.5e-7, the f32 lane's documented bound, in every
+    ///    region. Measured at m = 1: 1.29e-7 at its worst, 0.86 of the bound.
+    ///  - \c RegionBExp::kFast: |F̂ − F| ≤ m * 1.5e-7 + 8e-8 — the lane's bound
+    ///    plus the corrected seed's own contribution, which the recurrence's
+    ///    amplification caps at 8e-8. Measured at m = 1: 1.44e-7 at its worst,
+    ///    0.63 of that bound; the contribution itself is 5.0e-8, and the option
+    ///    returns the function's sign at every cell the gate audits.
+    ///
     /// \tparam kAccuracyMultiplier the accuracy multiplier: m = 1 is the
     ///   bit-identical full-accuracy path; m > 1 relaxes the asserted bound
-    ///   to m * 1.5e-7 (region B/C) via compile-time Chebyshev degree
-    ///   truncation. Monotone in m.
+    ///   to m * 1.5e-7 via compile-time Chebyshev degree truncation. Monotone
+    ///   in m.
+    /// \tparam kExp which region-B exponential the call runs; the default is
+    ///   \c kDefaultRegionBExp, the lane's documented default
+    ///   (\c RegionBExp::kAccurate). Both are certified at every multiplier
+    ///   this lane instantiates, each against its own bound above; nothing here
+    ///   substitutes one for the other.
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
     /// \param out    device array receiving F_n(x[i])
@@ -101,7 +203,8 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     ///
     /// \returns kDeviceError when the launch fails.
-    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
+              RegionBExp kExp = kDefaultRegionBExp>
     static BoysStatus SingleF32(
         const int* n, const double* x, float* out, std::size_t count, void* stream);
 
@@ -189,8 +292,9 @@ public:
     /// This is the entry the CPU's run-time tier entry is shaped like
     /// (BoysAllOrdersAtTier is one argument, all orders, double), and it takes
     /// no tier: the multiplier is the template argument below, fixed where the
-    /// call site names it. The class contract states the whole of that
-    /// asymmetry.
+    /// call site names it, and the entry cannot be handed one at run time. The
+    /// device-callable entry of the same shape (BoysDeviceAllOrdersF64) can, and
+    /// the class contract states what that costs it.
     ///
     /// \tparam kAccuracyMultiplier as SingleF64; the batch relaxation covers
     ///   the whole output family via the order-0 region-B entry.

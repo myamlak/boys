@@ -13,12 +13,14 @@
 //    it;
 //
 //  * every documented public choice is exercised: the seven accuracy tiers,
-//    both QueryTier overloads, the three product modes of the region-A
-//    transform over both bands, the sorted-argument and workspace forms of the
-//    many-argument entry, the fp16/bf16 I/O lanes, the native packed half lane,
-//    and the lane templates at multipliers the library does not pre-instantiate
-//    - the case that is a link error when a definition lives in a .cpp file
-//    rather than in the header its declaration ships in;
+//    both QueryTier overloads, the two fit routes of the double lane, the three
+//    product modes of the region-A transform over both bands, the
+//    sorted-argument and workspace forms of the many-argument entry, its
+//    per-element-order form in both precisions, the fp16/bf16 I/O lanes, the
+//    native packed half lane, and the lane templates at
+//    multipliers the library does not pre-instantiate - the case that is a link
+//    error when a definition lives in a .cpp file rather than in the header its
+//    declaration ships in;
 //
 //  * every returned value is judged against the bound its entry documents,
 //    with the committed 45-digit reference grid as the reference for the
@@ -26,7 +28,22 @@
 //    and the entry (the fp32 and fp16 lanes round their argument, the native
 //    half lane returns 2^15 F_k), the comparison is made against the certified
 //    double lane at the same converted argument, and the rule's name states the
-//    bound that composition carries.
+//    bound that composition carries;
+//
+//  * the claims that hold on one arithmetic and not on another are compiled
+//    against the answer this build's configure measured rather than against the
+//    host's architecture, which does not decide the question: MSVC on aarch64
+//    does not contract a bare product-plus-add and gcc on the same architecture
+//    does, while on x86-64 no compiler measured contracts one without -mfma.
+//    Two entries that evaluate the same recurrence from the same source are not
+//    thereby guaranteed the same bits, because whether that bare form is one
+//    rounding or two is a licence the compiler holds per call site. The two
+//    entries' values agree at every cell swept here on every host measured, and
+//    that is asserted wherever the run happens. The strided shape's offsets are
+//    exact by construction only where the bare form is two roundings, so there
+//    the bound is asserted on every build and the exact offset on the builds
+//    whose configure measured that. Both counts are printed either way, so an
+//    abstention is a visible figure rather than a silent one.
 //
 // The output is one line per rule - cells judged, the worst measured error as a
 // fraction of the bound, and where that cell is - so a green run states what it
@@ -37,13 +54,16 @@
 //       ctest --test-dir <build> -R boys-consumer-umbrella
 
 #include <algorithm>
+#include <array>
 #include <boys/boys.hpp>
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <deque>
 #include <fstream>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -59,6 +79,13 @@
                                                             __has_include("boys_half_native.cpp")
 #error                                                                                             \
     "this consumer check is compiled with src/ on its include path; it no longer proves that a consumer can build against the public headers alone"
+#endif
+
+// The build's own version, so the check can assert that the header a caller
+// reads agrees with the project() call rather than the two being two answers.
+// A build that drops the definition would otherwise skip the check silently.
+#ifndef BoysExpectedVersion
+#error "this consumer check needs BoysExpectedVersion (the project version of the build it runs in); the boys-consumer-umbrella target carries it"
 #endif
 
 namespace {
@@ -81,6 +108,13 @@ struct Rule {
 struct Report {
     std::size_t assertions = 0;
     std::size_t failed = 0;
+
+    /// The bit-for-bit comparisons this run made of an entry's exact form, and
+    /// how many held. Printed on every build; a count below the other is how a
+    /// host that parts company with the exact form is named by a figure rather
+    /// than by a silent pass.
+    std::size_t exactCompared = 0;
+    std::size_t exactHeld = 0;
 };
 
 /// A deque, not a vector: the checks hold a reference to a rule while they
@@ -135,6 +169,12 @@ void Require(Report& report, bool ok, const char* what) {
         ++report.failed;
         std::printf("  FAILED %s\n", what);
     }
+}
+
+/// Count one bit-for-bit comparison of an entry's exact form.
+void Compare(Report& report, bool holds) {
+    ++report.exactCompared;
+    report.exactHeld += holds ? 1 : 0;
 }
 
 /// A rule registered up front, so the verdict lists every rule the check
@@ -316,8 +356,21 @@ double Bf16IoBound(double returned, double m) {
 
 /// The region-A product's bound per mode: the fit term at m, plus the two split
 /// modes' 32-bit accumulator floor, which no multiplier moves.
-double ProductBound(boys::ProductMode mode, double m) {
-    return mode == boys::ProductMode::kFp64 ? m * 1e-15 : m * 1e-15 + 2.5e-7;
+double ProductBound(Report& report, boys::ProductMode mode, double m) {
+    // Read out of the library's own report rather than restated here: the
+    // bounds are what BoysProductModes answers, so a mode added to the
+    // enumeration arrives in this sweep with its own bound instead of the
+    // 2.5e-7 the split modes carry.
+    for (const boys::ProductModeInfo& row : boys::BoysProductModes())
+    {
+        if (row.mode == mode)
+        {
+            return m * row.fitTerm + row.floor;
+        }
+    }
+
+    Require(report, false, "every mode the sweep names has a BoysProductModes row");
+    return 0.0;
 }
 
 /// One ULP of a normal half value: 2^(e - 10) for a value 1.f * 2^e.
@@ -440,6 +493,38 @@ void AllNSorted(double m, int nmax, const double* x, double* out, std::size_t co
     } else
     {
         boys::BoysAllN<100.0>(nmax, x, out, count, boys::BoysSortedArgs{});
+    }
+}
+
+void AllNAtOrders(double m, const int* n, const double* x, double* out, std::size_t count) {
+    if (m == 1.0)
+    {
+        boys::BoysAllNAtOrders<1.0>(n, x, out, count);
+    } else if (m == 3.0)
+    {
+        boys::BoysAllNAtOrders<3.0>(n, x, out, count);
+    } else if (m == 8.0)
+    {
+        boys::BoysAllNAtOrders<8.0>(n, x, out, count);
+    } else
+    {
+        boys::BoysAllNAtOrders<100.0>(n, x, out, count);
+    }
+}
+
+void AllNF32(double m, int nmax, const float* x, float* out, std::size_t count) {
+    if (m == 1.0)
+    {
+        boys::BoysAllNF32<1.0>(nmax, x, out, count);
+    } else if (m == 3.0)
+    {
+        boys::BoysAllNF32<3.0>(nmax, x, out, count);
+    } else if (m == 8.0)
+    {
+        boys::BoysAllNF32<8.0>(nmax, x, out, count);
+    } else
+    {
+        boys::BoysAllNF32<100.0>(nmax, x, out, count);
     }
 }
 
@@ -570,12 +655,30 @@ void RegionAProduct(boys::ProductMode mode,
     } else if (mode == boys::ProductMode::kTf32x3)
     {
         boys::BoysRegionAProduct<boys::ProductMode::kTf32x3, 100.0>(band, nmax, x, out, count);
-    } else if (m == 8.0)
+    } else if (mode == boys::ProductMode::kBf16x6 && m == 8.0)
     {
         boys::BoysRegionAProduct<boys::ProductMode::kBf16x6, 8.0>(band, nmax, x, out, count);
-    } else
+    } else if (mode == boys::ProductMode::kBf16x6)
     {
         boys::BoysRegionAProduct<boys::ProductMode::kBf16x6, 100.0>(band, nmax, x, out, count);
+    } else if (mode == boys::ProductMode::kTf32 && m == 8.0)
+    {
+        boys::BoysRegionAProduct<boys::ProductMode::kTf32, 8.0>(band, nmax, x, out, count);
+    } else if (mode == boys::ProductMode::kTf32)
+    {
+        boys::BoysRegionAProduct<boys::ProductMode::kTf32, 100.0>(band, nmax, x, out, count);
+    } else if (mode == boys::ProductMode::kBf16 && m == 8.0)
+    {
+        boys::BoysRegionAProduct<boys::ProductMode::kBf16, 8.0>(band, nmax, x, out, count);
+    } else if (mode == boys::ProductMode::kBf16)
+    {
+        boys::BoysRegionAProduct<boys::ProductMode::kBf16, 100.0>(band, nmax, x, out, count);
+    } else if (m == 8.0)
+    {
+        boys::BoysRegionAProduct<boys::ProductMode::kFp16, 8.0>(band, nmax, x, out, count);
+    } else
+    {
+        boys::BoysRegionAProduct<boys::ProductMode::kFp16, 100.0>(band, nmax, x, out, count);
     }
 }
 
@@ -595,6 +698,47 @@ void CheckConstants(Report& report) {
     Require(report,
             boys::kHalfNativeScaleExponent == 15,
             "kHalfNativeScaleExponent is the documented 2^15 scale");
+
+    // The version a caller reads is the version the build was configured at.
+    // The build carries that value (BoysExpectedVersion, from the project()
+    // call), so a release that bumps one and not the other fails here rather
+    // than shipping two answers to "which version is this?".
+    // Parsed by hand rather than with sscanf: MSVC deprecates sscanf and this
+    // tree builds with warnings as errors, so a portable parser is cheaper than
+    // a suppression. The format is the project() call's, three dot-separated
+    // decimal components and nothing else.
+    int major = 0;
+    int minor = 0;
+    int patch = 0;
+    {
+        int* parts[] = {&major, &minor, &patch};
+        const char* p = BoysExpectedVersion;
+
+        for (int i = 0; i < 3 && *p != '\0'; ++i)
+        {
+            while (*p == '.')
+            {
+                ++p;
+            }
+
+            while (*p >= '0' && *p <= '9')
+            {
+                *parts[i] = *parts[i] * 10 + (*p - '0');
+                ++p;
+            }
+        }
+    }
+    Require(report,
+            boys::kVersionMajor == major && boys::kVersionMinor == minor &&
+                boys::kVersionPatch == patch,
+            "the version constants are the version the build was configured at");
+    char spelled[64];
+    std::snprintf(spelled, sizeof(spelled), "%d.%d.%d", major, minor, patch);
+    Require(report,
+            std::string(boys::VersionString()) == spelled,
+            "VersionString() spells the same version as the constants");
+    Covered("boys::VersionString");
+    Covered("boys::kVersionMajor");
     Covered("boys::kMaxBoysOrder");
     Covered("boys::kBoysFullAccuracyMultiplier");
     Covered("boys::RegionABand");
@@ -612,6 +756,19 @@ void CheckConstants(Report& report) {
     Require(report, !first, "BoysAvx2Available() reports false on a non-x86_64 target");
 #endif
     Covered("boys::BoysAvx2Available");
+
+    // The library publishes whether this build contracts a bare
+    // product-plus-add, measured once when the build was configured, and the
+    // lane claims below are compiled against that answer. It is a statement
+    // about one translation unit's arithmetic, so it is checked here in the
+    // unit that makes those claims: a build whose flags reached this file but
+    // not the measurement would otherwise assert the other arithmetic's claim
+    // and be green for it.
+#if defined(BOYS_SCALAR_CONTRACTS)
+    Require(report,
+            boys::backend::ScalarFp64::Contracts() == (BOYS_SCALAR_CONTRACTS != 0),
+            "the configure-time contraction measurement is this translation unit's");
+#endif
 }
 
 struct TierSpec {
@@ -786,6 +943,87 @@ void CheckTiers(Report& report) {
                 "an out-of-range tier evaluates as the reference tier, bit for bit");
     }
     Covered("boys::BoysAllOrdersAtTier");
+
+    // Documented: the tier and the route are two selectors of two different
+    // things, so the entry that names both answers the rung of the route it was
+    // given rather than the default route's rung. Judged against the boundary
+    // the route's own row reports: over an interval the rational route serves,
+    // naming it has to change the values, and the scheme-carrying and
+    // reference-scheme overloads have to agree with each other and with a
+    // direct call at the rung's own multiplier.
+    {
+        const auto& rows = boys::BoysFitRoutes();
+        double rationalFrom = 0.0;
+        double rationalHi = 0.0;
+
+        for (const boys::FitRouteInfo& row : rows)
+        {
+            if (row.route == boys::FitRoute::kRationalMinimax &&
+                row.region == boys::AccuracyRegion::kA)
+            {
+                rationalFrom = row.servesFrom;
+                rationalHi = row.hi;
+            }
+        }
+
+        const double x = 0.5 * (rationalFrom + rationalHi);
+
+        boys::BoysAllOrdersAtTier(boys::AccuracyTier::kRelaxed64,
+                                  boys::FitRoute::kRationalMinimax,
+                                  boys::kMaxBoysOrder,
+                                  x,
+                                  relaxed);
+        boys::BoysAllOrdersAtTier(boys::AccuracyTier::kRelaxed64, boys::kMaxBoysOrder, x, out);
+
+        std::size_t differs = 0;
+
+        for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+        {
+            Require(report,
+                    relaxed[n] != kUnwritten,
+                    "the route-carrying tier entry writes every order");
+            differs += relaxed[n] != out[n];
+        }
+
+        Require(report,
+                differs > 0,
+                "the route-carrying tier entry answers the route it was given, not the default");
+
+        boys::BoysAllOrdersAtTier(boys::AccuracyTier::kRelaxed64,
+                                  boys::FitRoute::kRationalMinimax,
+                                  boys::EvalScheme::kSplitClenshaw,
+                                  boys::kMaxBoysOrder,
+                                  x,
+                                  out);
+
+        for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+        {
+            Require(report,
+                    relaxed[n] == out[n],
+                    "the two- and three-selector tier overloads agree, bit for bit");
+        }
+
+        // The reference rung of the route is the uncut route's own entry: the
+        // tier that names no rung and the entry that names no rung are the same
+        // call, and the route table's figure is that call's.
+        boys::BoysAllOrdersAtTier(boys::AccuracyTier::kReference,
+                                  boys::FitRoute::kRationalMinimax,
+                                  boys::kMaxBoysOrder,
+                                  x,
+                                  relaxed);
+        boys::BoysAllOrdersWithRoute(
+            boys::FitRoute::kRationalMinimax, boys::kMaxBoysOrder, x, out);
+
+        for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+        {
+            Require(report,
+                    relaxed[n] == out[n],
+                    "the reference rung of the rational route is the uncut route, bit for bit");
+        }
+    }
+
+    Covered("boys::BoysAllOrdersAtTier (tier, route, scheme)");
+    Covered("boys::BoysAllOrdersAtTier (tier, route)");
 }
 
 /// BoysSingle, BoysAllOrders and BoysFixedN over the whole grid, at the default
@@ -821,10 +1059,21 @@ void CheckDoubleLanes(Report& report, const std::vector<Cell>& cells) {
                 }
             }
 
-            // Documented: each output element of the fixed-order entry is
-            // bit-identical to BoysSingle at the same multiplier, order and
-            // argument, and carries the single lane's per-region bound.
-            std::size_t differing = 0;
+            // Documented: each output element of the fixed-order entry carries
+            // the single lane's per-region bound at the same multiplier, order
+            // and argument, and is that entry's value bit for bit.
+            //
+            // Same recurrence, same source - which is why the values agree - but
+            // the same source is not the same bits: whether a bare
+            // product-plus-add in it is one rounding or two is a licence the
+            // compiler holds per call site. The equality is asserted here on
+            // every build, because it has held at every cell this check has swept
+            // on every host measured; the bound is asserted beside it so a host
+            // where the equality stops holding is still judged on what the lane
+            // promises there.
+            const std::size_t comparedBefore = report.exactCompared;
+            const std::size_t heldBefore = report.exactHeld;
+            std::size_t outsideBound = 0;
 
             for (const Cell& cell : cells)
             {
@@ -837,30 +1086,56 @@ void CheckDoubleLanes(Report& report, const std::vector<Cell>& cells) {
                 FixedN(m, cell.n, &x, &plain, 1, 1);
                 Judge(fixed, plain, cell.value, SingleBound(cell.x, m), cell.n, cell.x);
 
-                if (plain != Single(m, cell.n, x))
+                const double singleValue = Single(m, cell.n, x);
+
+                if (std::abs(plain - singleValue) > SingleBound(cell.x, m))
                 {
-                    ++differing;
+                    ++outsideBound;
                 }
+
+                Compare(report, plain == singleValue);
             }
 
-            Require(
-                report, differing == 0, "BoysFixedN returns what BoysSingle returns, bit for bit");
+            Require(report,
+                    outsideBound == 0,
+                    "BoysFixedN returns what BoysSingle returns inside the single lane's bound");
+            Require(report,
+                    report.exactHeld - heldBefore == report.exactCompared - comparedBefore,
+                    "BoysFixedN returns what BoysSingle returns, bit for bit");
 
             // Documented: out[i * stride] = F_n(x[i]), so the same value lands
             // at offset 0 of a stride-1 call and offset 0 and 3 of a stride-3
-            // one, and the slots between them are the caller's, untouched.
+            // one, and the slots between them are the caller's, untouched. The
+            // value itself is the single lane's by the paragraph above, so the
+            // two claims below are split the same way: the bound on every build,
+            // the exact offset on the builds whose bare product-plus-add is two
+            // roundings. This shape is the one place the difference has been
+            // measured: a call with two arguments and a gap is not the same
+            // generated code as a call with one, and on a contracting build the
+            // compiler fused the recurrence at one of the two and not at the
+            // other, which moves the value by one unit in the last place.
             const double two[2] = {x, x * 0.5 + 0.25};
             const double one = Single(m, 3, x);
+            const double other = Single(m, 3, two[1]);
             double strided[7];
             std::fill(std::begin(strided), std::end(strided), kUnwritten);
             FixedN(m, 3, two, strided, 2, 3);
-            Require(report, strided[0] == one, "a stride of 3 writes the first value at offset 0");
+            Require(report,
+                    std::abs(strided[0] - one) <= SingleBound(x, m),
+                    "a stride of 3 writes the first value inside the single lane's bound");
             Require(report,
                     strided[1] == kUnwritten && strided[2] == kUnwritten,
                     "a stride of 3 leaves the padding between values untouched");
             Require(report,
-                    strided[3] == Single(m, 3, two[1]),
-                    "a stride of 3 writes the second value at offset 3");
+                    std::abs(strided[3] - other) <= SingleBound(two[1], m),
+                    "a stride of 3 writes the second value inside the single lane's bound");
+            Compare(report, strided[0] == one);
+            Compare(report, strided[3] == other);
+#if defined(BOYS_SCALAR_CONTRACTS) && BOYS_SCALAR_CONTRACTS == 0
+            Require(report, strided[0] == one, "a stride of 3 writes the first value at offset 0");
+            Require(
+                report, strided[3] == other, "a stride of 3 writes the second value at offset 3");
+#endif
 
             // Documented: count may be 0, and then nothing is written.
             double untouched[2] = {kUnwritten, kUnwritten};
@@ -874,6 +1149,451 @@ void CheckDoubleLanes(Report& report, const std::vector<Cell>& cells) {
         Covered("boys::BoysAllOrders<m>");
         Covered("boys::BoysFixedN<m>");
     }
+}
+
+/// The run-time fit routes. A consumer reaches the choice through the public
+/// report alone: which routes exist, the interval each fit covers, the argument
+/// each selector takes over at and the bar each is certified against all come
+/// from BoysFitRoutes(), so every row here is judged against the figures that
+/// row states rather than against numbers this file carries.
+void CheckFitRoutes(Report& report, const std::vector<Cell>& cells) {
+    const std::span<const boys::FitRouteInfo> routes = boys::BoysFitRoutes();
+    const std::vector<double> args = DistinctArgs(cells);
+
+    Require(report, !routes.empty(), "BoysFitRoutes reports the routes this build carries");
+
+    bool chebyshev = false;
+    bool rational = false;
+    bool regionA = false;
+    bool regionB = false;
+
+    for (const boys::FitRouteInfo& row : routes)
+    {
+        Require(report, row.name != nullptr && row.name[0] != '\0', "a route row names its route");
+        Require(report, row.lo < row.hi, "a route row states a non-empty interval");
+        Require(report,
+                row.servesFrom >= row.lo && row.servesFrom < row.hi,
+                "a route row's served domain is inside the interval its fit covers");
+        Require(report, row.stored > 0, "a route row states the coefficients its fit stores");
+        Require(report,
+                row.delivered <= row.bound,
+                "a route row's bar covers the error it reports delivering");
+
+        chebyshev = chebyshev || row.route == boys::FitRoute::kChebyshev;
+        rational = rational || row.route == boys::FitRoute::kRationalMinimax;
+        regionA = regionA || row.region == boys::AccuracyRegion::kA;
+        regionB = regionB || row.region == boys::AccuracyRegion::kB;
+
+        const std::string name =
+            std::string("BoysAllOrdersWithRoute(") + row.name +
+            (row.region == boys::AccuracyRegion::kA ? ", region A)" : ", region B)");
+        Rule& rule = NewRule(name);
+        std::size_t changed = 0;
+
+        for (const double x : args)
+        {
+            // Inside the domain the row serves, and nowhere else: a row that
+            // hands its fit over per order states the argument from which it
+            // does, so this is the domain the row's own figures are a promise
+            // over.
+            if (x < row.servesFrom || x >= row.hi)
+            {
+                continue;
+            }
+
+            double plain[boys::kMaxBoysOrder + 1] = {};
+            double out[boys::kMaxBoysOrder + 1] = {};
+            AllOrders(1.0, boys::kMaxBoysOrder, x, plain);
+            boys::BoysAllOrdersWithRoute(row.route, boys::kMaxBoysOrder, x, out);
+
+            for (const Cell& cell : cells)
+            {
+                if (cell.x != x)
+                {
+                    continue;
+                }
+
+                Judge(rule, out[cell.n], cell.value, row.bound, cell.n, cell.x);
+
+                if (out[cell.n] != plain[cell.n])
+                {
+                    ++changed;
+                }
+            }
+        }
+
+        // A route a caller cannot reach a difference through is not an option,
+        // whatever its row reports. The default route is the other half of the
+        // same statement: naming it is the default entry, so it changes nothing
+        // anywhere, and a consumer reads that as the route being the shipped
+        // fits rather than as a route that does nothing.
+        char message[160];
+
+        if (row.route == boys::FitRoute::kRationalMinimax)
+        {
+            std::snprintf(message,
+                          sizeof(message),
+                          "naming the rational route changes values inside %s's domain",
+                          name.c_str());
+            Require(report, changed > 0, message);
+        } else
+        {
+            std::snprintf(message,
+                          sizeof(message),
+                          "naming the default route over %s is the default entry, bit for bit",
+                          name.c_str());
+            Require(report, changed == 0, message);
+        }
+    }
+
+    Require(report,
+            chebyshev && rational,
+            "the report carries both the default and the rational route");
+    Require(report, regionA && regionB, "the report covers region A and region B");
+
+    // Documented: outside the intervals its rows report, naming a route runs the
+    // default entry's own code, so a caller who names one and a caller who does
+    // not receive the same numbers bit for bit.
+    std::size_t outside = 0;
+    std::size_t changedOutside = 0;
+
+    for (const double x : args)
+    {
+        bool served = false;
+
+        for (const boys::FitRouteInfo& row : routes)
+        {
+            served = served || (x >= row.servesFrom && x < row.hi);
+        }
+
+        if (served)
+        {
+            continue;
+        }
+
+        ++outside;
+        double plain[boys::kMaxBoysOrder + 1] = {};
+        double out[boys::kMaxBoysOrder + 1] = {};
+        AllOrders(1.0, boys::kMaxBoysOrder, x, plain);
+        boys::BoysAllOrdersWithRoute(boys::FitRoute::kRationalMinimax, boys::kMaxBoysOrder, x, out);
+
+        for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+        {
+            if (out[n] != plain[n])
+            {
+                ++changedOutside;
+            }
+        }
+    }
+
+    Require(report, outside > 0, "the grid reaches arguments outside every route's served domain");
+    Require(report,
+            changedOutside == 0,
+            "outside a route's served domain the entry is the default entry, bit for bit");
+
+    // Documented: a value outside the enumerators is not a route, and every
+    // entry on this surface treats it as the default rather than guessing.
+    std::size_t changedUnknown = 0;
+
+    for (const double x : args)
+    {
+        double plain[boys::kMaxBoysOrder + 1] = {};
+        double out[boys::kMaxBoysOrder + 1] = {};
+        AllOrders(1.0, boys::kMaxBoysOrder, x, plain);
+        boys::BoysAllOrdersWithRoute(static_cast<boys::FitRoute>(99), boys::kMaxBoysOrder, x, out);
+
+        for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+        {
+            if (out[n] != plain[n])
+            {
+                ++changedUnknown;
+            }
+        }
+    }
+
+    Require(report,
+            changedUnknown == 0,
+            "a route value outside the enumeration evaluates at the default, bit for bit");
+
+    // The two axes compose at run time as they do at compile time: the entry
+    // names both, and a caller holds one fixed to see the other move. If one
+    // axis did not reach the call, one of the three counts below would be zero -
+    // which is what makes this a check of the pair rather than of two options
+    // printed beside each other.
+    std::size_t routeAtClenshaw = 0;
+    std::size_t routeAtHorner = 0;
+    std::size_t schemeOnRational = 0;
+
+    for (const double x : args)
+    {
+        std::array<double, 33> rationalClenshaw = {};
+        std::array<double, 33> rationalHorner = {};
+        std::array<double, 33> chebyshevClenshaw = {};
+        std::array<double, 33> chebyshevHorner = {};
+        boys::BoysAllOrdersWithRoute(boys::FitRoute::kRationalMinimax,
+                                     boys::EvalScheme::kSplitClenshaw,
+                                     boys::kMaxBoysOrder,
+                                     x,
+                                     rationalClenshaw.data());
+        boys::BoysAllOrdersWithRoute(boys::FitRoute::kRationalMinimax,
+                                     boys::EvalScheme::kHorner,
+                                     boys::kMaxBoysOrder,
+                                     x,
+                                     rationalHorner.data());
+        boys::BoysAllOrdersWithRoute(boys::FitRoute::kChebyshev,
+                                     boys::EvalScheme::kSplitClenshaw,
+                                     boys::kMaxBoysOrder,
+                                     x,
+                                     chebyshevClenshaw.data());
+        boys::BoysAllOrdersWithRoute(boys::FitRoute::kChebyshev,
+                                     boys::EvalScheme::kHorner,
+                                     boys::kMaxBoysOrder,
+                                     x,
+                                     chebyshevHorner.data());
+
+        for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+        {
+            const std::size_t j = static_cast<std::size_t>(n);
+
+            if (rationalClenshaw[j] != chebyshevClenshaw[j])
+            {
+                ++routeAtClenshaw;
+            }
+
+            if (rationalHorner[j] != chebyshevHorner[j])
+            {
+                ++routeAtHorner;
+            }
+
+            if (rationalClenshaw[j] != rationalHorner[j])
+            {
+                ++schemeOnRational;
+            }
+        }
+    }
+
+    Require(report,
+            routeAtClenshaw > 0,
+            "naming the rational route changes values with the scheme held at the default");
+    Require(report,
+            routeAtHorner > 0,
+            "naming the rational route changes values with the Horner scheme held");
+    Require(report,
+            schemeOnRational > 0,
+            "naming a scheme on the rational route reaches the parts its own fits do not serve");
+
+    Covered("boys::FitRoute");
+    Covered("boys::FitRouteInfo");
+    Covered("boys::BoysFitRoutes");
+    Covered("boys::BoysAllOrdersWithRoute");
+}
+
+/// The float lane's fit routes, reached the same way: every figure this file
+/// judges a row by comes from BoysFitRoutesF32's own row rather than from a
+/// number carried here, so the report and the entry cannot agree with each
+/// other and both be wrong.
+void CheckFitRoutesF32(Report& report, const std::vector<Cell>& cells) {
+    const std::span<const boys::FitRouteInfo> routes = boys::BoysFitRoutesF32();
+    const std::vector<double> args = DistinctArgs(cells);
+
+    Require(report, !routes.empty(), "BoysFitRoutesF32 reports the routes this build carries");
+
+    bool chebyshev = false;
+    bool rational = false;
+
+    for (const boys::FitRouteInfo& row : routes)
+    {
+        Require(report, row.name != nullptr && row.name[0] != '\0', "a float route row names its route");
+        Require(report, row.lo < row.hi, "a float route row states a non-empty interval");
+        Require(report,
+                row.servesFrom >= row.lo && row.servesFrom < row.hi,
+                "a float route row's served domain is inside the interval its fit covers");
+        Require(report, row.stored > 0, "a float route row states the coefficients its fit stores");
+        Require(report,
+                row.delivered <= row.bound,
+                "a float route row's bar covers the error it reports delivering");
+
+        chebyshev = chebyshev || row.route == boys::FitRoute::kChebyshev;
+        rational = rational || row.route == boys::FitRoute::kRationalMinimax;
+
+        const std::string name =
+            std::string("BoysSingleF32WithRoute(") + row.name +
+            (row.region == boys::AccuracyRegion::kA ? ", region A)" : ", region B)");
+        NewRule(name);
+        std::size_t changed = 0;
+        std::size_t unknownDiff = 0;
+
+        for (const double x : args)
+        {
+            if (x < row.servesFrom || x >= row.hi)
+            {
+                continue;
+            }
+
+            const float xf = static_cast<float>(x);
+
+            for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+            {
+                const float plain = boys::BoysSingleF32(n, xf);
+                const float selected = boys::BoysSingleF32WithRoute(row.route, n, xf);
+                const float unknown =
+                    boys::BoysSingleF32WithRoute(static_cast<boys::FitRoute>(99), n, xf);
+
+                Require(report,
+                        std::isfinite(selected),
+                        "a float route row's entry returns a finite value over the domain it "
+                        "serves");
+
+                if (selected != plain)
+                {
+                    ++changed;
+                }
+
+                if (unknown != plain)
+                {
+                    ++unknownDiff;
+                }
+            }
+        }
+
+        // The default route is the default entry by construction, so only a
+        // row that names a different fit is required to change a value.
+        Require(report,
+                row.route == boys::FitRoute::kChebyshev || changed > 0,
+                "naming a float route other than the default changes values inside the domain "
+                "its own row serves");
+        Require(report,
+                unknownDiff == 0,
+                "an unnamed route value is the default entry, bit for bit, on the float lane");
+    }
+
+    Require(report, chebyshev, "BoysFitRoutesF32 carries the default route");
+    Require(report, rational, "BoysFitRoutesF32 carries the rational route");
+
+    Covered("boys::BoysSingleF32WithRoute");
+    Covered("boys::BoysFitRoutesF32");
+}
+
+/// The float lane's policy path, which a consumer reaches as a template argument
+/// on the entries themselves rather than through the run-time selector. Three
+/// readings make that path an option rather than a name: a policy naming the
+/// shipped pair is the entry naming no policy, bit for bit; naming the other
+/// scheme changes values the shipped scheme answers with; and each route's policy
+/// answers exactly what that route's run-time selector answers, which is one body
+/// reached two ways rather than two wirings that happen to agree.
+void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
+    using Shipped = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw>;
+    using Horner = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>;
+    using Rational = boys::EvalPolicy<boys::FitRoute::kRationalMinimax>;
+
+    static_assert(Shipped{}.kRoute == boys::kDefaultFitRoute &&
+                      Shipped{}.kScheme == boys::kDefaultEvalScheme,
+                  "the pair this check calls the shipped one is the library's own default pair");
+
+    std::size_t sameAsDefault = 0;
+    std::size_t sameAsSelector[2] = {0, 0};
+    std::size_t changedByScheme = 0;
+    std::size_t changedByRoute = 0;
+    bool allFinite = true;
+
+    for (const Cell& cell : cells)
+    {
+        const float xf = static_cast<float>(cell.x);
+        const float byDefault = boys::BoysSingleF32(cell.n, xf);
+        const float shipped =
+            boys::BoysSingleF32<boys::kBoysFullAccuracyMultiplier, Shipped>(cell.n, xf);
+        const float horner =
+            boys::BoysSingleF32<boys::kBoysFullAccuracyMultiplier, Horner>(cell.n, xf);
+        const float rational =
+            boys::BoysSingleF32<boys::kBoysFullAccuracyMultiplier, Rational>(cell.n, xf);
+        const float bySelector[2] = {
+            boys::BoysSingleF32WithRoute(boys::FitRoute::kChebyshev, cell.n, xf),
+            boys::BoysSingleF32WithRoute(boys::FitRoute::kRationalMinimax, cell.n, xf)};
+
+        sameAsDefault += (shipped == byDefault) ? 1 : 0;
+        sameAsSelector[0] += (shipped == bySelector[0]) ? 1 : 0;
+        sameAsSelector[1] += (rational == bySelector[1]) ? 1 : 0;
+        changedByScheme += (horner != shipped) ? 1 : 0;
+        changedByRoute += (rational != shipped) ? 1 : 0;
+        allFinite = allFinite && std::isfinite(horner) && std::isfinite(rational);
+    }
+
+    Require(report,
+            allFinite,
+            "a float policy this build stores answers a finite value at every cell of the "
+            "reference grid");
+    Require(report,
+            cells.size() > 0 && sameAsDefault == cells.size(),
+            "naming the shipped route and scheme is the entry naming no policy, bit for bit, at "
+            "every cell of the reference grid");
+    Require(report,
+            sameAsSelector[0] == cells.size() && sameAsSelector[1] == cells.size(),
+            "each route's policy answers what that route's run-time selector answers, bit for "
+            "bit, so the two ways in read one body");
+    Require(report,
+            changedByScheme > 0,
+            "naming the Horner scheme on the float lane changes values the shipped scheme "
+            "answers with");
+    Require(report,
+            changedByRoute > 0,
+            "naming the rational route on the float lane changes values the shipped route "
+            "answers with somewhere on the reference grid");
+
+    // The same pair on the all-orders shape. Its seeds are not the single
+    // entry's - region A's is the double lane's fit at the policy's route and
+    // scheme, region B's is this lane's - so the two entries answer the same fit
+    // by different roads and the reading here is reachability, not identity: the
+    // pair reaches this entry too, and it is the shipped pair by default.
+    std::size_t batchSameAsDefault = 0;
+    std::size_t batchChangedByScheme = 0;
+    std::size_t batchChangedByRoute = 0;
+    std::size_t batchArgs = 0;
+    bool batchFinite = true;
+
+    for (const double x : DistinctArgs(cells))
+    {
+        const float xf = static_cast<float>(x);
+        std::array<float, boys::kMaxBoysOrder + 1> plain = {};
+        std::array<float, boys::kMaxBoysOrder + 1> named = {};
+        std::array<float, boys::kMaxBoysOrder + 1> horner = {};
+        std::array<float, boys::kMaxBoysOrder + 1> rational = {};
+
+        boys::BoysAllOrdersF32(boys::kMaxBoysOrder, xf, plain.data());
+        boys::BoysAllOrdersF32<boys::kBoysFullAccuracyMultiplier, Shipped>(
+            boys::kMaxBoysOrder, xf, named.data());
+        boys::BoysAllOrdersF32<boys::kBoysFullAccuracyMultiplier, Horner>(
+            boys::kMaxBoysOrder, xf, horner.data());
+        boys::BoysAllOrdersF32<boys::kBoysFullAccuracyMultiplier, Rational>(
+            boys::kMaxBoysOrder, xf, rational.data());
+
+        ++batchArgs;
+        batchSameAsDefault +=
+            std::memcmp(plain.data(), named.data(), sizeof(plain)) == 0 ? 1 : 0;
+        batchChangedByScheme +=
+            std::memcmp(plain.data(), horner.data(), sizeof(plain)) == 0 ? 0 : 1;
+        batchChangedByRoute +=
+            std::memcmp(plain.data(), rational.data(), sizeof(plain)) == 0 ? 0 : 1;
+
+        for (std::size_t k = 0; k < plain.size(); ++k)
+        {
+            batchFinite = batchFinite && std::isfinite(horner[k]) && std::isfinite(rational[k]);
+        }
+    }
+
+    Require(report,
+            batchFinite,
+            "a policy this build stores answers a finite value at every order of the batch entry");
+    Require(report,
+            batchArgs > 0 && batchSameAsDefault == batchArgs,
+            "naming the shipped pair on the batch entry is the call naming no policy, bit for "
+            "bit, at every argument of the reference grid");
+    Require(report,
+            batchChangedByScheme > 0 && batchChangedByRoute > 0,
+            "the batch entry reads the pair a caller names: another route or scheme changes the "
+            "values it answers with");
+
+    Covered("boys::BoysSingleF32");
+    Covered("boys::BoysAllOrdersF32");
 }
 
 /// The many-argument entry in all four of its documented shapes: the
@@ -949,6 +1669,163 @@ void CheckManyArgumentLanes(Report& report, const std::vector<Cell>& cells) {
         Covered("boys::BoysAllN<m>");
         Covered("boys::BoysAllN<m> (BoysSortedArgs)");
         Covered("boys::BoysSortedArgs");
+    }
+}
+
+/// The lanes whose per-element order is not the batch's: the double order-array
+/// batch, where each argument carries its own top order, and the float all-N
+/// batch, whose shape is the double one in single precision.
+void CheckPerElementOrderLanes(Report& report, const std::vector<Cell>& cells) {
+    const std::vector<double> args = DistinctArgs(cells);
+    const std::size_t count = args.size();
+    const int nmax = boys::kMaxBoysOrder;
+    const std::size_t plane = static_cast<std::size_t>(nmax) + 1;
+    std::vector<int> raggeds(count);
+    std::vector<int> commons(count, nmax);
+    std::vector<double> planes(count * plane);
+    std::vector<double> row(plane);
+    std::vector<float> argsF(count);
+    std::vector<float> planesF(count * plane);
+    std::vector<float> rowF(plane);
+
+    // A ragged top order per argument, so the entry runs where the planes above
+    // an argument's own top order are the caller's to keep, and with arguments
+    // at the highest order as well, so a ragged batch still carries full columns.
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        raggeds[i] = static_cast<int>(i % plane);
+    }
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        argsF[i] = static_cast<float>(args[i]);
+    }
+
+    for (const double m : {1.0, 8.0})
+    {
+        Rule& ragged = NewRule(
+            RuleName("BoysAllNAtOrders<m = %> (ragged top order per argument)", MultiplierName(m)));
+        Rule& common = NewRule(
+            RuleName("BoysAllNAtOrders<m = %> (one top order for the batch)", MultiplierName(m)));
+
+        std::fill(planes.begin(), planes.end(), kUnwritten);
+        AllNAtOrders(m, raggeds.data(), args.data(), planes.data(), count);
+
+        std::size_t missing = 0;
+        std::size_t above = 0;
+        std::size_t kept = 0;
+        std::size_t differs = 0;
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            // Documented: the column stops at the argument's own top order and
+            // is, bit for bit, the per-argument all-orders entry's value at that
+            // argument and that top order.
+            AllOrders(m, raggeds[i], args[i], row.data());
+
+            for (int n = 0; n <= nmax; ++n)
+            {
+                const std::size_t index = static_cast<std::size_t>(n) * count + i;
+
+                if (n > raggeds[i])
+                {
+                    ++above;
+                    kept += planes[index] == kUnwritten ? 1 : 0;
+                    continue;
+                }
+
+                const Cell* cell = Find(cells, n, args[i]);
+
+                if (cell == nullptr)
+                {
+                    ++missing;
+                    continue;
+                }
+
+                Judge(ragged, planes[index], cell->value, BatchBound(m), n, args[i]);
+                differs += planes[index] == row[static_cast<std::size_t>(n)] ? 0 : 1;
+            }
+        }
+
+        Require(report, missing == 0, "the grid carries every cell this rule looks up");
+        Require(report,
+                above > 0 && kept == above,
+                "BoysAllNAtOrders leaves the cells above each argument's top order untouched");
+        Require(report,
+                differs == 0,
+                "BoysAllNAtOrders returns the per-argument entry's values bit for bit");
+
+        // One top order for the whole batch is the shape BoysAllN has, and the
+        // order-array entry answers it at the same documented bound.
+        std::fill(planes.begin(), planes.end(), kUnwritten);
+        AllNAtOrders(m, commons.data(), args.data(), planes.data(), count);
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            for (int n = 0; n <= nmax; ++n)
+            {
+                const Cell* cell = Find(cells, n, args[i]);
+
+                if (cell != nullptr)
+                {
+                    Judge(common,
+                          planes[static_cast<std::size_t>(n) * count + i],
+                          cell->value,
+                          BatchBound(m),
+                          n,
+                          args[i]);
+                }
+            }
+        }
+
+        // Documented: count may be 0, and then nothing is written.
+        double untouched[2] = {kUnwritten, kUnwritten};
+        AllNAtOrders(m, raggeds.data(), args.data(), untouched, 0);
+        Require(report,
+                untouched[0] == kUnwritten && untouched[1] == kUnwritten,
+                "BoysAllNAtOrders writes nothing for count = 0");
+
+        Covered("boys::BoysAllNAtOrders<m>");
+    }
+
+    for (const double m : {1.0, 8.0})
+    {
+        Rule& rule =
+            NewRule(RuleName("BoysAllNF32<m = %> (the float all-N batch)", MultiplierName(m)));
+        const double bound = m * 1.5e-7 + kOracleBound;
+
+        std::fill(planesF.begin(), planesF.end(), static_cast<float>(kUnwritten));
+        AllNF32(m, nmax, argsF.data(), planesF.data(), count);
+
+        std::size_t differs = 0;
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            // The float lane rounds its argument to float before evaluating, so
+            // the reference is the certified double entry at that rounded
+            // argument, in the same shape.
+            boys::BoysAllOrders<1.0>(nmax, static_cast<double>(argsF[i]), row.data());
+            AllOrdersF32(m, nmax, argsF[i], rowF.data());
+
+            for (int n = 0; n <= nmax; ++n)
+            {
+                const std::size_t index = static_cast<std::size_t>(n) * count + i;
+
+                Judge(rule, static_cast<double>(planesF[index]), row[n], bound, n, args[i]);
+                differs += planesF[index] == rowF[static_cast<std::size_t>(n)] ? 0 : 1;
+            }
+        }
+
+        Require(report, differs == 0, "BoysAllNF32 returns BoysAllOrdersF32's values bit for bit");
+
+        // Documented: count may be 0, and then nothing is written.
+        float untouched[2] = {-1.0f, -1.0f};
+        AllNF32(m, nmax, argsF.data(), untouched, 0);
+        Require(report,
+                untouched[0] == -1.0f && untouched[1] == -1.0f,
+                "BoysAllNF32 writes nothing for count = 0");
+
+        Covered("boys::BoysAllNF32<m>");
     }
 }
 
@@ -1220,7 +2097,61 @@ void CheckProductModes(Report& report, const std::vector<Cell>& cells) {
 
     const ModeSpec kModes[] = {{boys::ProductMode::kFp64, "kFp64"},
                                {boys::ProductMode::kTf32x3, "kTf32x3"},
-                               {boys::ProductMode::kBf16x6, "kBf16x6"}};
+                               {boys::ProductMode::kBf16x6, "kBf16x6"},
+                               {boys::ProductMode::kTf32, "kTf32"},
+                               {boys::ProductMode::kBf16, "kBf16"},
+                               {boys::ProductMode::kFp16, "kFp16"}};
+
+    // Every enumerator has exactly one report row, and every row is an
+    // enumerator: a mode a caller can name but cannot ask about is the gap
+    // this check exists for, and so is a row for a mode that is not in the
+    // enumeration.
+    {
+        const std::span<const boys::ProductModeInfo> rows = boys::BoysProductModes();
+        Require(report,
+                rows.size() == std::size(kModes),
+                "BoysProductModes has one row per ProductMode enumerator");
+
+        for (const ModeSpec& mode : kModes)
+        {
+            std::size_t seen = 0;
+
+            for (const boys::ProductModeInfo& row : rows)
+            {
+                seen += row.mode == mode.mode ? 1u : 0u;
+            }
+
+            Require(report, seen == 1, "BoysProductModes has exactly one row per mode");
+        }
+
+        Covered("boys::ProductModeInfo");
+        Covered("boys::ModeCertification");
+        Covered("boys::BoysProductModes");
+
+        // The report is the only place a caller learns which rows a card is
+        // held to, so the class has to be reported rather than implied: the
+        // fp64 mode is the one whose arithmetic is an ordinary double sum.
+        int certified = 0;
+
+        for (const boys::ProductModeInfo& row : rows)
+        {
+            Require(report,
+                    row.model != nullptr && row.model[0] != '\0',
+                    "every mode row names what its bound is a claim about");
+
+            if (row.certification == boys::ModeCertification::kCertified)
+            {
+                ++certified;
+                Require(report,
+                        row.mode == boys::ProductMode::kFp64,
+                        "only the fp64 mode is certified, and it is");
+            }
+        }
+
+        Require(report,
+                certified == 1,
+                "exactly one product mode is certified by a measurement of hardware");
+    }
     const std::vector<double> all = DistinctArgs(cells);
 
     for (const ModeSpec& mode : kModes)
@@ -1260,7 +2191,7 @@ void CheckProductModes(Report& report, const std::vector<Cell>& cells) {
                         Judge(rule,
                               out[static_cast<std::size_t>(n) * args.size() + i],
                               cell->value,
-                              ProductBound(mode.mode, 8.0),
+                              ProductBound(report, mode.mode, 8.0),
                               n,
                               args[i]);
                     }
@@ -1314,7 +2245,7 @@ void CheckProductModes(Report& report, const std::vector<Cell>& cells) {
                 Judge(defaultRule,
                       out[static_cast<std::size_t>(n) * low.size() + i],
                       cell->value,
-                      ProductBound(boys::ProductMode::kFp64, 1.0),
+                      ProductBound(report, boys::ProductMode::kFp64, 1.0),
                       n,
                       low[i]);
             }
@@ -1393,6 +2324,311 @@ void CheckHalf2Surface(Report& report) {
     Covered("boys::NextUp");
 }
 
+/// The evaluation schemes a consumer can ask about and ask for. What a
+/// consumer reads here is the whole of the option: which arithmetic is in
+/// force, what each scheme promises on each stored fit, and that the entries
+/// answer under the scheme that was named - which is the part a reading of the
+/// enumeration alone cannot show.
+void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
+    const std::span<const boys::EvalSchemeInfo> schemes = boys::BoysEvalSchemes();
+    const std::span<const boys::EvalFitInfo> fits = boys::BoysEvalSchemeFits();
+
+    Require(report, !schemes.empty(), "BoysEvalSchemes reports at least one scheme");
+    Require(report, !fits.empty(), "BoysEvalSchemeFits reports at least one stored fit");
+
+    // The route the bounds are stated in, taken from the table a consumer reads
+    // for the arithmetic rather than from a compile-time guess.
+    boys::backend::MulAddRoute route = boys::backend::MulAddRoute::kFused;
+    bool routeFound = false;
+
+    for (const boys::backend::BackendInfo& info : boys::backend::BoysBackends())
+    {
+        if (std::strcmp(info.name, "scalar-fp64") == 0)
+        {
+            route = info.route;
+            routeFound = true;
+        }
+    }
+
+    Require(report,
+            routeFound,
+            "BoysBackends names the scalar-fp64 arithmetic the scheme bounds are in");
+
+    for (const boys::EvalSchemeInfo& info : schemes)
+    {
+        Require(report, info.name != nullptr && *info.name != '\0', "a scheme row carries a name");
+        Require(report,
+                std::strcmp(boys::EvalSchemeName(info.scheme), info.name) == 0,
+                "EvalSchemeName agrees with the name the row carries");
+        Require(report, info.lanes > 0, "a scheme row serves at least one stored fit");
+        Require(report, info.deg > 0 && info.stored > info.deg,
+                "a scheme row carries a degree and the stored count that degree needs");
+        Require(report, info.delivered > 0.0, "a scheme row promises a positive bound");
+        Require(report,
+                info.route == route,
+                "a scheme row's bound is stated in the arithmetic this build runs");
+
+        bool anyFit = false;
+
+        for (const boys::EvalFitInfo& fit : fits)
+        {
+            if (fit.scheme != info.scheme)
+            {
+                continue;
+            }
+
+            anyFit = true;
+            const double bound = boys::BoysEvalSchemeDelivered(fit.scheme, fit.lane);
+            Require(report, bound > 0.0, "every stored fit has a positive bound");
+            Require(report, bound <= info.delivered, "the aggregate is the worst fit's bound");
+            Require(report,
+                    bound == (route == boys::backend::MulAddRoute::kSeparate ? fit.separate
+                                                                            : fit.fused),
+                    "the bound is the one the route in force carries");
+        }
+
+        Require(report, anyFit, "every scheme row has its fits");
+    }
+
+    // A pair no scheme carries answers zero rather than a guess.
+    Require(report,
+            boys::BoysEvalSchemeDelivered(static_cast<boys::EvalScheme>(99),
+                                          boys::EvalLane::kRegionA) == 0.0,
+            "a scheme this build does not carry delivers no bound");
+
+    const auto schemeBound = [&](boys::EvalScheme scheme) {
+        double worst = 0.0;
+
+        for (const boys::EvalFitInfo& fit : fits)
+        {
+            if (fit.scheme == scheme)
+            {
+                worst = std::max(worst, boys::BoysEvalSchemeDelivered(fit.scheme, fit.lane));
+            }
+        }
+
+        return worst;
+    };
+
+    const double worstSchemeBound = schemeBound(boys::EvalScheme::kHorner);
+    Require(report, worstSchemeBound > 0.0, "the Horner scheme publishes a bound");
+
+    // The two axes compose into one selection: a policy names the fit route and
+    // the scheme together, and every templated entry takes that policy. The
+    // default policy is the certified pair, so a call site that names neither
+    // axis is the call this library has always answered.
+    using DefaultPolicy = boys::EvalPolicy<>;
+    using ClenshawPolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                           boys::EvalScheme::kSplitClenshaw>;
+    using HornerPolicy =
+        boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>;
+
+    // The policy's fields read back what it was named with, so a consumer can
+    // ask a policy which pair it carries rather than reading its type.
+    constexpr DefaultPolicy kDefaultPolicy{};
+    static_assert(kDefaultPolicy.kRoute == boys::FitRoute::kChebyshev &&
+                      kDefaultPolicy.kScheme == boys::EvalScheme::kSplitClenshaw &&
+                      kDefaultPolicy.kBudget == boys::BoysBudget::kFloat,
+                  "the default policy is the Chebyshev route by the split Clenshaw recurrence "
+                  "at the float lane's budget");
+    static_assert(HornerPolicy{}.kScheme == boys::EvalScheme::kHorner,
+                  "a policy carries the scheme it was named with");
+
+    // The two schemes sum one polynomial, so the entries that name them differ
+    // by no more than their own bounds and the Horner entry is inside the
+    // certified entry's error plus twice that. A scheme that reached the wrong
+    // fit, or no fit, would be wrong by orders of magnitude rather than by a
+    // bound, which is what this separates.
+    for (const Cell& cell : cells)
+    {
+        const double byDefault =
+            boys::BoysSingle<boys::kBoysFullAccuracyMultiplier>(cell.n, cell.x);
+        const double byName =
+            boys::BoysSingle<boys::kBoysFullAccuracyMultiplier, ClenshawPolicy>(cell.n, cell.x);
+        Require(report, byDefault == byName, "a call naming no policy is the certified route");
+
+        std::array<double, 33> un = {};
+        std::array<double, 33> named = {};
+        boys::BoysAllOrders<boys::kBoysFullAccuracyMultiplier>(cell.n, cell.x, un.data());
+        boys::BoysAllOrders<boys::kBoysFullAccuracyMultiplier, ClenshawPolicy>(
+            cell.n, cell.x, named.data());
+        Require(report,
+                std::memcmp(un.data(), named.data(), sizeof(un)) == 0,
+                "a batch call naming no policy is the certified route, bit for bit");
+
+        // The other scheme is reachable from both entries, and they agree with
+        // each other: the batch entry is not a second, differently-wired way in.
+        const double horner =
+            boys::BoysSingle<boys::kBoysFullAccuracyMultiplier, HornerPolicy>(cell.n, cell.x);
+        Require(report, std::isfinite(horner), "the Horner scheme answers a finite value");
+
+        std::array<double, 33> hornerOut = {};
+        boys::BoysAllOrders<boys::kBoysFullAccuracyMultiplier, HornerPolicy>(
+            cell.n, cell.x, hornerOut.data());
+        Require(report,
+                hornerOut[static_cast<std::size_t>(cell.n)] == horner,
+                "the batch entry answers the Horner scheme the same value as the single entry");
+
+        Require(report,
+                std::abs(horner - cell.value) <=
+                    std::abs(byDefault - cell.value) + 2.0 * worstSchemeBound,
+                "the Horner entry is inside the certified entry's error plus the "
+                "two schemes' own bounds");
+    }
+
+    Covered("boys::EvalScheme");
+    Covered("boys::kDefaultEvalScheme");
+    Covered("boys::EvalSchemeName");
+    Covered("boys::EvalSchemeInfo");
+    Covered("boys::EvalFitInfo");
+    Covered("boys::EvalLane");
+    Covered("boys::BoysEvalSchemes");
+    Covered("boys::BoysEvalSchemeFits");
+    Covered("boys::BoysEvalSchemeDelivered");
+    Covered("boys::EvalPolicy");
+    Covered("boys::FitRoute");
+    Covered("boys::kDefaultFitRoute");
+}
+
+// The interval-granularity axis, reached the way a consumer reaches it: by
+// naming the partition on the policy and calling the entries.
+//
+// The member is a second partition of the fitted domain - region A's pieces and
+// region B's seed - so the things a consumer has to be able to read from it are
+// that naming it changes the values over the fitted domain at both of the
+// regions the two tables are cut in, so that the member is a partition and not
+// the shipped tables under another name; that it changes nothing at or above the
+// fitted domain's end, the axis being a selection between two stored tables and
+// not a second arithmetic path; that naming the shipped member is the default
+// call bit for bit, so the default is a member of the axis rather than a third
+// reading beside it; and that every value it returns is inside the lane's
+// published bound, so the member does not widen the contract a caller already
+// relies on.
+//
+// The counts the partition costs - the coefficients one evaluation reads and
+// the coefficients the table stores - are the generated header's own
+// static_assert and the gate's narrow rows; what is asserted here is that the
+// policy carries the partition it was named with, so a call site that names one
+// is not silently handed the other.
+void CheckGranularityLane(Report& report, const std::vector<Cell>& cells) {
+    using NarrowPolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                          boys::EvalScheme::kSplitClenshaw,
+                                          boys::BoysBudget::kFloat,
+                                          boys::kDefaultPackAxis,
+                                          boys::FitGranularity::kNarrow>;
+    using ShippedPolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                           boys::EvalScheme::kSplitClenshaw,
+                                           boys::BoysBudget::kFloat,
+                                           boys::kDefaultPackAxis,
+                                           boys::FitGranularity::kShipped>;
+
+    static_assert(NarrowPolicy{}.kGranularity == boys::FitGranularity::kNarrow &&
+                      ShippedPolicy{}.kGranularity == boys::FitGranularity::kShipped,
+                  "a policy carries the partition it was named with");
+    static_assert(!std::is_same_v<NarrowPolicy::Fit, ShippedPolicy::Fit>,
+                  "the two partitions are different fits: neither is the other under a second "
+                  "name");
+
+    Require(report,
+            std::strcmp(boys::GranularityName(boys::FitGranularity::kShipped),
+                        boys::GranularityName(boys::FitGranularity::kNarrow)) != 0,
+            "the two partitions are reported under different names rather than one blank");
+
+    Rule& rule = NewRule("granularity: the narrow partition through the entries");
+
+    // x1, where the fitted domain ends and the asymptotic path takes over, as
+    // the umbrella header publishes it - region B runs x0 <= x < x1 and region C
+    // is x >= x1. The public surface names no constant for it, so it is
+    // transcribed the way the lane bounds at the head of this file are.
+    constexpr double kFittedDomainEnd = 28.98933773882074;
+
+    std::size_t inA = 0;
+    std::size_t changedInA = 0;
+    std::size_t inB = 0;
+    std::size_t changedInB = 0;
+    std::size_t aboveDomain = 0;
+    std::size_t changedAboveDomain = 0;
+    std::size_t shippedDiffering = 0;
+
+    for (const Cell& cell : cells)
+    {
+        const double byDefault = boys::BoysSingle<boys::kBoysFullAccuracyMultiplier>(cell.n, cell.x);
+        const double narrow =
+            boys::BoysSingle<boys::kBoysFullAccuracyMultiplier, NarrowPolicy>(cell.n, cell.x);
+        const double named =
+            boys::BoysSingle<boys::kBoysFullAccuracyMultiplier, ShippedPolicy>(cell.n, cell.x);
+
+        if (cell.x < boys::kRegionAEnd)
+        {
+            ++inA;
+
+            if (narrow != byDefault)
+            {
+                ++changedInA;
+            }
+        } else if (cell.x < kFittedDomainEnd)
+        {
+            ++inB;
+
+            if (narrow != byDefault)
+            {
+                ++changedInB;
+            }
+        } else
+        {
+            ++aboveDomain;
+
+            if (narrow != byDefault)
+            {
+                ++changedAboveDomain;
+            }
+        }
+
+        if (named != byDefault)
+        {
+            ++shippedDiffering;
+        }
+
+        Judge(rule, narrow, cell.value, SingleBound(cell.x, 1.0), cell.n, cell.x);
+    }
+
+    // Each rule says which cells it measured rather than passing on an empty
+    // sweep: a grid that carries no argument of a region would otherwise leave
+    // the reading vacuous.
+    Require(report,
+            inA > 0 && changedInA > 0,
+            "naming the narrow partition changes region A's values: the member cuts region A's "
+            "pieces as well as region B's seed, and the change is visible through the entry");
+    Require(report,
+            inB > 0 && changedInB > 0,
+            "naming the narrow partition changes region B's values: the member is a partition "
+            "and not the shipped seed under another name");
+    Require(report,
+            aboveDomain > 0 && changedAboveDomain == 0,
+            "naming the narrow partition changes nothing at or above the fitted domain's end: "
+            "above it the entry reads the asymptotic path, which no partition of the stored "
+            "fits is part of");
+    Require(report,
+            shippedDiffering == 0,
+            "naming the shipped partition is the default call bit for bit, so the default is "
+            "that member and not a third reading beside the two");
+
+    std::printf("  %-56s %7zu cells  %zu of %zu in region A changed, %zu of %zu in region B, "
+                "%zu of %zu above the fitted domain\n",
+                rule.name.c_str(),
+                rule.cells,
+                changedInA,
+                inA,
+                changedInB,
+                inB,
+                changedAboveDomain,
+                aboveDomain);
+
+    Covered("boys::FitGranularity");
+    Covered("boys::kDefaultFitGranularity");
+    Covered("boys::GranularityName");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1408,8 +2644,14 @@ int main(int argc, char** argv) {
     Report report;
     CheckConstants(report);
     CheckTiers(report);
+    CheckEvalSchemes(report, cells);
+    CheckGranularityLane(report, cells);
     CheckDoubleLanes(report, cells);
+    CheckFitRoutes(report, cells);
+    CheckFitRoutesF32(report, cells);
+    CheckFloatPolicies(report, cells);
     CheckManyArgumentLanes(report, cells);
+    CheckPerElementOrderLanes(report, cells);
     CheckTierLane(cells);
     CheckFloatLane(cells);
     CheckHalfIo(cells);
@@ -1423,6 +2665,12 @@ int main(int argc, char** argv) {
                 report.assertions,
                 report.failed,
                 gCovered.size());
+    // The two entries that share a recurrence, compared bit for bit and counted
+    // rather than only asserted, so a host that parts company with the exact
+    // form on a build this run did not assert it for is named here by a figure.
+    std::printf("  fixed-order against single-lane, bit for bit: %zu compared, %zu agreed\n",
+                report.exactCompared,
+                report.exactHeld);
 
     return report.failed == 0 ? 0 : 1;
 }

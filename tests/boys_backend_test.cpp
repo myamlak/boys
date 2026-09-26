@@ -29,6 +29,8 @@ namespace {
 using boys::backend::ArithmeticBackend;
 using boys::backend::BackendInfo;
 using boys::backend::BoysBackends;
+using boys::backend::MulAddRoute;
+using boys::backend::MulAddRouteName;
 using boys::backend::Scalar;
 using boys::backend::ScalarFp32;
 using boys::backend::ScalarFp64;
@@ -61,6 +63,11 @@ Probe<T> MakeProbe() {
 // The operands are volatile so the expression is evaluated rather than folded
 // away; the multiply-add itself may still be contracted, which is the
 // question, and the addend makes the two answers differ.
+//
+// The fused value is spelled out with the standard function rather than taken
+// from the backend, because the backend's own multiply-add is what is under
+// test: it follows the build's route, so asking it here would have the
+// measurement confirm itself.
 template <typename T>
 bool BareIsFused() {
     const Probe<T> p = MakeProbe<T>();
@@ -68,7 +75,7 @@ bool BareIsFused() {
     volatile const T vb = p.b;
     volatile const T vc = p.c;
     const T bare = va * vb + vc;
-    return bare == Scalar<T>::MulAdd(p.a, p.b, p.c);
+    return bare == std::fma(va, vb, vc);
 }
 
 TEST(BackendTest, ScalarWidthAndValueType) {
@@ -90,20 +97,68 @@ TEST(BackendTest, ScalarTransportRoundTrips) {
     EXPECT_EQ(out, 6.5);
 }
 
-// The two multiply-adds are different operations, and this pair of operands
-// shows it: the fused form keeps the bit the product's rounding drops.
-TEST(BackendTest, MulAddIsFusedAndMulSubIsNot) {
+// MulAdd is the selected route's arithmetic, and this pair of operands tells
+// the two routes apart: the fused step keeps the bit the product's rounding
+// drops and the separate step loses it. MulSub is outside the route and is the
+// two-rounding value on every build.
+TEST(BackendTest, MulAddIsTheSelectedRouteAndMulSubIsNot) {
     const Probe<double> p = MakeProbe<double>();
 
-    const double fused = ScalarFp64::MulAdd(p.a, p.b, p.c);
-    const double twoRoundings = ScalarFp64::MulSub(p.a, p.b, p.c);
+    const double mulAdd = ScalarFp64::MulAdd(p.a, p.b, p.c);
+    const double mulSub = ScalarFp64::MulSub(p.a, p.b, p.c);
 
-    EXPECT_EQ(fused, std::fma(p.a, p.b, p.c));
+    // The two readings of the sum, spelled out: one rounding through the
+    // standard function, and the product rounded before the sum rounds.
+    const double fused = std::fma(p.a, p.b, p.c);
+    const double separate = ScalarFp64::Add(ScalarFp64::Mul(p.a, p.b), p.c);
+
+    // The operands differ between the two readings, so which one MulAdd
+    // returned says which arithmetic it ran.
+    EXPECT_NE(fused, separate);
     EXPECT_EQ(fused, p.lost);
-    EXPECT_NE(fused, twoRoundings);
-    // The two-rounding form is the product rounded and then the difference
-    // rounded, each a single rounded operation of its own.
-    EXPECT_EQ(twoRoundings, ScalarFp64::Sub(ScalarFp64::Mul(p.a, p.b), p.c));
+
+    // MulAdd is the route in force, which is the one the report states.
+    const std::span<const BackendInfo> backends = BoysBackends();
+    ASSERT_GE(backends.size(), 1u);
+    EXPECT_EQ(mulAdd, backends[0].route == MulAddRoute::kFused ? fused : separate);
+
+    // MulSub is outside the route: the product rounds, then the difference
+    // rounds, on every build.
+    EXPECT_EQ(mulSub, ScalarFp64::Sub(ScalarFp64::Mul(p.a, p.b), p.c));
+    EXPECT_NE(mulSub, mulAdd);
+}
+
+// The route the report states is the arithmetic the lane delivers, for each
+// scalar precision: the reported route agrees with the one measured in this
+// translation unit, and a route reported as separate is one whose fused step is
+// really two roundings here. This is the check that a caller reading the table
+// can attribute a value to the arithmetic that produced it.
+TEST(BackendTest, ReportedMulAddRouteMatchesTheArithmetic) {
+    const std::span<const BackendInfo> backends = BoysBackends();
+    ASSERT_GE(backends.size(), 2u);
+
+    EXPECT_EQ(backends[0].route, boys::backend::detail::RouteInForce<double>());
+    EXPECT_EQ(backends[1].route, boys::backend::detail::RouteInForce<float>());
+
+    // A route in force is the selection unless the build contracts the bare
+    // form, so a reported separate route is only ever printed beside a
+    // contraction measurement that says the two roundings happen.
+    for (const BackendInfo& info : backends) {
+        if (info.route == MulAddRoute::kSeparate) {
+            EXPECT_FALSE(info.contracts) << info.name;
+        }
+    }
+}
+
+// The route is a name a report can print, and every route in the table has
+// one that is not the placeholder.
+TEST(BackendTest, MulAddRouteNamesArePrintable) {
+    EXPECT_STREQ(MulAddRouteName(MulAddRoute::kFused), "fused");
+    EXPECT_STREQ(MulAddRouteName(MulAddRoute::kSeparate), "separate");
+
+    for (const BackendInfo& info : BoysBackends()) {
+        EXPECT_STRNE(MulAddRouteName(info.route), "unknown") << info.name;
+    }
 }
 
 // MulSub is the two-rounding reading on every build: it agrees with the
@@ -188,3 +243,36 @@ TEST(BackendTest, ThePackedPairAppearsExactlyWithTheVectorTier) {
 }
 
 } // namespace
+
+// ---------------------------------------------------------------------------
+// The selection axes on the policy
+// ---------------------------------------------------------------------------
+// Every axis the entries select is one field of EvalPolicy, and every field has
+// its own default. What the entries do with an axis is their own business; what
+// is pinned here is that the defaults are the shipped ones, so a call site that
+// names no axis compiles the code it always did, and that the axes report
+// themselves by name.
+static_assert(boys::EvalPolicy<>{}.kRoute == boys::FitRoute::kChebyshev,
+              "the default fit route moved");
+static_assert(boys::EvalPolicy<>{}.kScheme == boys::EvalScheme::kSplitClenshaw,
+              "the default evaluation scheme moved");
+static_assert(boys::EvalPolicy<>{}.kBudget == boys::BoysBudget::kFloat,
+              "the default engine budget moved");
+static_assert(boys::EvalPolicy<>{}.kGranularity == boys::FitGranularity::kShipped,
+              "the default partition moved: a call site that names none must compile the "
+              "committed tables");
+
+// Naming the narrow partition is answered from its own tables; the combinations
+// that have no narrow table are refused where they are named rather than
+// answered from the shipped one. Those refusals are static_asserts inside
+// RouteFit, the relaxed rungs' RequireShippedPartition and the single-precision
+// lanes, and a refusal cannot be exercised by a test that has to compile: what
+// is pinned here is the default, and the refusals are stated in the headers and
+// in the contract document. The member itself is measured in the accuracy gate
+// and reached through the public entries in the consumer umbrella.
+TEST(BackendTest, ThePartitionNamesRoundTrip) {
+    EXPECT_STREQ(boys::GranularityName(boys::FitGranularity::kShipped), "shipped");
+    EXPECT_STREQ(boys::GranularityName(boys::FitGranularity::kNarrow), "narrow");
+    EXPECT_STRNE(boys::GranularityName(boys::FitGranularity::kShipped),
+                 boys::GranularityName(boys::FitGranularity::kNarrow));
+}

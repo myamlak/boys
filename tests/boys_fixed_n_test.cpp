@@ -30,6 +30,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <random>
@@ -385,6 +386,87 @@ TEST(BoysFixedNTest, AlignmentContractHoldsFromNaturalUp) {
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// The fit route on this entry
+// ---------------------------------------------------------------------------
+// A call naming a route other than the shipped one is answered by the
+// per-argument single entry, once per argument. That is the body this entry's
+// own m = 1 path already mirrors region for region, so the bit-identity the
+// suite asserts between this entry and BoysSingle is, on the route, exact by
+// construction rather than by inspection - and the route's values differ from
+// the shipped ones over the intervals its rows cover, which is what makes the
+// carriage a measurement and not a sentence about the surface.
+
+namespace {
+
+template <boys::FitRoute kRoute>
+using RoutePolicy = boys::EvalPolicy<kRoute>;
+
+} // namespace
+
+TEST(BoysFixedNTest, TheRationalRouteIsCarriedAndIsBoysSingle) {
+    const std::vector<double> args = {0.0,  0.25, 1.0,  1.08553, 3.0,   kX0 - 1e-6, kX0,
+                                      12.5, 20.0, kX1,  28.99,   60.0,  200.0};
+    std::size_t differingFromSingle = 0;
+    std::size_t differingFromShipped = 0;
+
+    for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+    {
+        std::vector<double> got(args.size());
+
+        for (std::size_t i = 0; i < args.size(); ++i)
+        {
+            BoysFixedN<1.0, RoutePolicy<boys::FitRoute::kRationalMinimax>>(
+                n, &args[i], &got[i], 1);
+        }
+
+        for (std::size_t i = 0; i < args.size(); ++i)
+        {
+            const double rational =
+                BoysSingle<1.0, RoutePolicy<boys::FitRoute::kRationalMinimax>>(n, args[i]);
+            const double shipped = BoysSingle<1.0, RoutePolicy<boys::FitRoute::kChebyshev>>(n, args[i]);
+
+            if (std::memcmp(&got[i], &rational, sizeof(double)) != 0)
+            {
+                ++differingFromSingle;
+            }
+
+            if (std::memcmp(&rational, &shipped, sizeof(double)) != 0)
+            {
+                ++differingFromShipped;
+            }
+        }
+    }
+
+    EXPECT_EQ(differingFromSingle, 0u)
+        << "the fixed-order entry's route carriage is not the per-argument single entry";
+    EXPECT_GT(differingFromShipped, 0u)
+        << "the rational route returns the shipped values: the carriage is not reachable";
+}
+
+TEST(BoysFixedNTest, TheDefaultRouteIsUnchangedByTheRouteAxis) {
+    const std::vector<double> args = {0.0, 0.25, 1.0, 3.0, kX0 - 1e-6, kX0, 12.5, 20.0, kX1, 60.0};
+    std::vector<double> got(args.size());
+    std::size_t differing = 0;
+
+    for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+    {
+        BoysFixedN<1.0, RoutePolicy<boys::FitRoute::kChebyshev>>(n, args.data(), got.data(), args.size());
+
+        for (std::size_t i = 0; i < args.size(); ++i)
+        {
+            const double plain = BoysSingle(n, args[i]);
+
+            if (std::memcmp(&got[i], &plain, sizeof(double)) != 0)
+            {
+                ++differing;
+            }
+        }
+    }
+
+    EXPECT_EQ(differing, 0u) << "naming the default route moved a value";
 }
 
 } // namespace

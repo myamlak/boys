@@ -35,8 +35,13 @@ template void BoysAllN<kBoysFullAccuracyMultiplier>(
     int nmax, const double* x, double* out, std::size_t count, std::size_t* workspace) noexcept;
 template void BoysAllN<kBoysFullAccuracyMultiplier>(
     int nmax, const double* x, double* out, std::size_t count, BoysSortedArgs) noexcept;
-template float BoysSingleF32<kBoysFullAccuracyMultiplier>(int n, float x) noexcept;
-template void BoysAllOrdersF32<kBoysFullAccuracyMultiplier>(int nmax, float x, float* out) noexcept;
+template void BoysAllNAtOrders<kBoysFullAccuracyMultiplier>(
+    const int* n, const double* x, double* out, std::size_t count) noexcept;
+template float BoysSingleF32<kBoysFullAccuracyMultiplier, EvalPolicy<>>(int n, float x) noexcept;
+template void BoysAllOrdersF32<kBoysFullAccuracyMultiplier, EvalPolicy<>>(
+    int nmax, float x, float* out) noexcept;
+template void BoysAllNF32<kBoysFullAccuracyMultiplier, EvalPolicy<>>(
+    int nmax, const float* x, float* out, std::size_t count) noexcept;
 
 #if BoysFp16
 template F16 BoysSingleF16<kBoysFullAccuracyMultiplier>(int n, F16 x) noexcept;
@@ -88,29 +93,35 @@ TierCoverage QueryTier(AccuracyTier tier, double x, double tolerance) noexcept {
     return QueryTier(tier, region, tolerance);
 }
 
-void BoysAllOrdersAtTier(AccuracyTier tier, int nmax, double x, double* out) noexcept {
+namespace {
+
+// The tier dispatch, once per evaluation policy: the policy is a compile-time
+// choice and a tier is a run-time one, so the policy is the template parameter
+// and the tier stays the switch.
+template <EvalPolicyLike Policy>
+void AllOrdersAtTier(AccuracyTier tier, int nmax, double x, double* out) noexcept {
     switch (tier)
     {
     case AccuracyTier::kReference:
-        BoysAllOrders<kBoysFullAccuracyMultiplier>(nmax, x, out);
+        BoysAllOrders<kBoysFullAccuracyMultiplier, Policy>(nmax, x, out);
         return;
     case AccuracyTier::kRelaxed64:
-        BoysAllOrders<64.0>(nmax, x, out);
+        BoysAllOrders<64.0, Policy>(nmax, x, out);
         return;
     case AccuracyTier::kRelaxed256:
-        BoysAllOrders<256.0>(nmax, x, out);
+        BoysAllOrders<256.0, Policy>(nmax, x, out);
         return;
     case AccuracyTier::kRelaxed1024:
-        BoysAllOrders<1024.0>(nmax, x, out);
+        BoysAllOrders<1024.0, Policy>(nmax, x, out);
         return;
     case AccuracyTier::kRelaxed4096:
-        BoysAllOrders<4096.0>(nmax, x, out);
+        BoysAllOrders<4096.0, Policy>(nmax, x, out);
         return;
     case AccuracyTier::kRelaxed16384:
-        BoysAllOrders<16384.0>(nmax, x, out);
+        BoysAllOrders<16384.0, Policy>(nmax, x, out);
         return;
     case AccuracyTier::kRelaxed65536:
-        BoysAllOrders<65536.0>(nmax, x, out);
+        BoysAllOrders<65536.0, Policy>(nmax, x, out);
         return;
 
     default:
@@ -124,7 +135,901 @@ void BoysAllOrdersAtTier(AccuracyTier tier, int nmax, double x, double* out) noe
     // that is never coarser than any tier this build can name, and
     // AccuracyMultiplier reports the same choice, so the accuracy a caller
     // records beside these values is the accuracy they were computed at.
+    BoysAllOrders<kBoysFullAccuracyMultiplier, Policy>(nmax, x, out);
+}
+
+} // namespace
+
+void BoysAllOrdersAtTier(AccuracyTier tier, int nmax, double x, double* out) noexcept {
+    AllOrdersAtTier<EvalPolicy<>>(tier, nmax, x, out);
+}
+
+namespace {
+
+// The single-order tier dispatch, the same shape as the batch one above: the
+// policy is the compile-time choice and the tier stays the switch. It exists
+// because the shape is a different call - an engine that reads one order at a
+// time cannot reach a rung through an entry that computes every order - and not
+// because the rung means anything different here.
+template <EvalPolicyLike Policy>
+double SingleAtTier(AccuracyTier tier, int n, double x) noexcept {
+    switch (tier)
+    {
+    case AccuracyTier::kReference:
+        return BoysSingle<kBoysFullAccuracyMultiplier, Policy>(n, x);
+    case AccuracyTier::kRelaxed64:
+        return BoysSingle<64.0, Policy>(n, x);
+    case AccuracyTier::kRelaxed256:
+        return BoysSingle<256.0, Policy>(n, x);
+    case AccuracyTier::kRelaxed1024:
+        return BoysSingle<1024.0, Policy>(n, x);
+    case AccuracyTier::kRelaxed4096:
+        return BoysSingle<4096.0, Policy>(n, x);
+    case AccuracyTier::kRelaxed16384:
+        return BoysSingle<16384.0, Policy>(n, x);
+    case AccuracyTier::kRelaxed65536:
+        return BoysSingle<65536.0, Policy>(n, x);
+
+    default:
+        break;
+    }
+
+    // A tier this build does not serve: the reference multiplier, the same
+    // fallback the batch entry takes and for the same reason - it is the one
+    // rung that is never coarser than any tier this build can name, and
+    // AccuracyMultiplier reports it, so the number a caller records beside this
+    // value is the accuracy it was computed at.
+    return BoysSingle<kBoysFullAccuracyMultiplier, Policy>(n, x);
+}
+
+} // namespace
+
+double BoysSingleAtTier(AccuracyTier tier, int n, double x) noexcept {
+    return SingleAtTier<EvalPolicy<>>(tier, n, x);
+}
+
+double BoysSingleAtTier(AccuracyTier tier, EvalScheme scheme, int n, double x) noexcept {
+    if (scheme == EvalScheme::kHorner)
+    {
+        return SingleAtTier<EvalPolicy<kDefaultFitRoute, EvalScheme::kHorner>>(tier, n, x);
+    }
+
+    return SingleAtTier<EvalPolicy<>>(tier, n, x);
+}
+
+double BoysSingleAtTier(AccuracyTier tier, FitRoute route, int n, double x) noexcept {
+    return BoysSingleAtTier(tier, route, kDefaultEvalScheme, n, x);
+}
+
+double BoysSingleAtTier(
+    AccuracyTier tier, FitRoute route, EvalScheme scheme, int n, double x) noexcept {
+    if (route == FitRoute::kRationalMinimax)
+    {
+        if (scheme == EvalScheme::kHorner)
+        {
+            return SingleAtTier<EvalPolicy<FitRoute::kRationalMinimax, EvalScheme::kHorner>>(
+                tier, n, x);
+        }
+
+        return SingleAtTier<EvalPolicy<FitRoute::kRationalMinimax, kDefaultEvalScheme>>(tier, n, x);
+    }
+
+    return BoysSingleAtTier(tier, scheme, n, x);
+}
+
+void BoysAllOrdersAtTier(
+    AccuracyTier tier, EvalScheme scheme, int nmax, double x, double* out) noexcept {
+    if (scheme == EvalScheme::kHorner)
+    {
+        AllOrdersAtTier<EvalPolicy<kDefaultFitRoute, EvalScheme::kHorner>>(tier, nmax, x, out);
+        return;
+    }
+
+    AllOrdersAtTier<EvalPolicy<>>(tier, nmax, x, out);
+}
+
+void BoysAllOrdersAtTier(
+    AccuracyTier tier, FitRoute route, int nmax, double x, double* out) noexcept {
+    BoysAllOrdersAtTier(tier, route, kDefaultEvalScheme, nmax, x, out);
+}
+
+void BoysAllOrdersAtTier(AccuracyTier tier,
+                         FitRoute route,
+                         EvalScheme scheme,
+                         int nmax,
+                         double x,
+                         double* out) noexcept {
+    // The same shape as BoysAllOrdersWithRoute, one axis wider: the route and
+    // the scheme are compile-time choices and the tier is a run-time one, so the
+    // pair is the template argument and the tier stays the switch inside. Both
+    // selectors are answered as named - the rung's own body for the rung, the
+    // named route's fits for the route - so a caller who names the pair is not
+    // handed one of them under the other's name.
+    if (route == FitRoute::kRationalMinimax)
+    {
+        if (scheme == EvalScheme::kHorner)
+        {
+            AllOrdersAtTier<EvalPolicy<FitRoute::kRationalMinimax, EvalScheme::kHorner>>(
+                tier, nmax, x, out);
+            return;
+        }
+
+        AllOrdersAtTier<EvalPolicy<FitRoute::kRationalMinimax, kDefaultEvalScheme>>(
+            tier, nmax, x, out);
+        return;
+    }
+
+    BoysAllOrdersAtTier(tier, scheme, nmax, x, out);
+}
+
+std::span<const FitRouteInfo> BoysFitRoutes() noexcept {
+    // The rows are the generated header's own measured figures rather than
+    // numbers repeated here, so a table and the fits it describes cannot drift
+    // apart: a regeneration that moved a delivered error moves the row.
+    //
+    // The region-A rows state the domain of the region's per-order tables -
+    // every order's own piece, from zero to kX0 - because that is what the two
+    // routes' tables cover and what makes the two rows a comparison.
+    // kRatARouteLo is where the rational route's selector takes over: below it
+    // the shipped lane is documented at 1e-15 and the rational fits hold the
+    // wider bar, so the rational row states that boundary rather than claiming
+    // the interval from zero that its selector does not serve.
+    static const std::span<const FitRouteInfo> kRoutes = [] {
+        static const FitRouteInfo kRows[] = {
+            {FitRoute::kChebyshev,
+             "chebyshev",
+             AccuracyComponent::kRegionASeed,
+             AccuracyRegion::kA,
+             0.0,
+             detail::kX0,
+             0.0,
+             detail::kRegionAFitChebStored,
+             detail::kRegionAFitChebDelivered,
+             detail::kRegionAFitBar},
+            {FitRoute::kRationalMinimax,
+             "rational-minimax",
+             AccuracyComponent::kRegionASeed,
+             AccuracyRegion::kA,
+             0.0,
+             detail::kX0,
+             detail::kRatARouteLo,
+             detail::kRegionAFitRatStored,
+             detail::kRegionAFitRatDelivered,
+             detail::kRegionAFitBar},
+            {FitRoute::kChebyshev,
+             "chebyshev",
+             AccuracyComponent::kRegionBFit,
+             AccuracyRegion::kB,
+             detail::kX0,
+             detail::kX1,
+             detail::kX0,
+             detail::kRegionBFitChebStored,
+             detail::kRegionBFitChebDelivered,
+             detail::kRegionBFitBar},
+            {FitRoute::kRationalMinimax,
+             "rational-minimax",
+             AccuracyComponent::kRegionBFit,
+             AccuracyRegion::kB,
+             detail::kX0,
+             detail::kX1,
+             detail::kX0,
+             detail::kRegionBFitRatStored,
+             detail::kRegionBFitRatDelivered,
+             detail::kRegionBFitBar},
+        };
+        return std::span<const FitRouteInfo>(kRows);
+    }();
+
+    return kRoutes;
+}
+
+void BoysAllOrdersWithRoute(FitRoute route, int nmax, double x, double* out) noexcept {
+    BoysAllOrdersWithRoute(route, kDefaultEvalScheme, nmax, x, out);
+}
+
+void BoysAllOrdersWithRoute(
+    FitRoute route, EvalScheme scheme, int nmax, double x, double* out) noexcept {
+    // One body, instantiated once per (route, scheme) pair through the same
+    // entry a compile-time caller uses: the zero argument's closed form, the
+    // region split, the recurrences, the per-order rule and the domains are the
+    // body's, and the policy names only the fits and the summation they are read
+    // in. So naming a route cannot reach a fit the caller did not name, and
+    // every argument the named route's rows do not cover is answered by the
+    // body's own shipped-family branches - which read no route fit at all, so
+    // those values are the default entry's bit for bit, not merely close to
+    // them. Every route this build does not serve, a value outside the
+    // enumeration included, is the default entry outright.
+    //
+    // The two axes select different things, so neither is folded into the
+    // other: the route names the fits, and the scheme names the summation the
+    // shipped family's coefficients are read in - the parts of the call the
+    // named route's own fits do not serve. Both are answered as named.
+    if (route == FitRoute::kRationalMinimax)
+    {
+        if (scheme == EvalScheme::kHorner)
+        {
+            BoysAllOrders<kBoysFullAccuracyMultiplier,
+                          EvalPolicy<FitRoute::kRationalMinimax, EvalScheme::kHorner>>(
+                nmax, x, out);
+            return;
+        }
+
+        BoysAllOrders<kBoysFullAccuracyMultiplier,
+                      EvalPolicy<FitRoute::kRationalMinimax, kDefaultEvalScheme>>(nmax, x, out);
+        return;
+    }
+
+    if (scheme == EvalScheme::kHorner)
+    {
+        BoysAllOrders<kBoysFullAccuracyMultiplier,
+                      EvalPolicy<kDefaultFitRoute, EvalScheme::kHorner>>(nmax, x, out);
+        return;
+    }
+
     BoysAllOrders<kBoysFullAccuracyMultiplier>(nmax, x, out);
+}
+
+// The evaluation-scheme report. Both tables are built once from the generated
+// rows; the route in force is a build fact, so which of a row's two figures a
+// query answers with is decided here rather than left to the caller.
+constexpr double DeliveredIn(const EvalFitInfo& fit, backend::MulAddRoute route) noexcept {
+    return route == backend::MulAddRoute::kSeparate ? fit.separate : fit.fused;
+}
+
+std::span<const FitRouteInfo> BoysFitRoutesF32() noexcept {
+    // The float lane's rows, from the same generated header the double lane's
+    // rows read, so a regeneration that moved a delivered error moves these
+    // too. The lane's own tables are what the two region-A routes evaluate -
+    // its shipped per-order fits and the rational cover - and its route
+    // covers the whole of region A, so the rows state no servesFrom boundary
+    // above zero: naming either route changes a value at every argument of
+    // the interval.
+    static const std::span<const FitRouteInfo> kRoutes = [] {
+        static const FitRouteInfo kRows[] = {
+            {FitRoute::kChebyshev,
+             "chebyshev",
+             AccuracyComponent::kRegionASeed,
+             AccuracyRegion::kA,
+             0.0,
+             detail::kX0,
+             0.0,
+             detail::f32::kRegionAFitChebStored,
+             detail::f32::kRegionAFitChebDelivered,
+             detail::f32::kRegionAFitBar},
+            {FitRoute::kRationalMinimax,
+             "rational-minimax",
+             AccuracyComponent::kRegionASeed,
+             AccuracyRegion::kA,
+             0.0,
+             detail::kX0,
+             0.0,
+             detail::f32::kRegionAFitRatStored,
+             detail::f32::kRegionAFitRatDelivered,
+             detail::f32::kRegionAFitBar},
+            {FitRoute::kChebyshev,
+             "chebyshev",
+             AccuracyComponent::kRegionBFit,
+             AccuracyRegion::kB,
+             detail::kX0,
+             detail::kX1,
+             detail::kX0,
+             detail::f32::kRegionBFitChebStored,
+             detail::f32::kRegionBFitChebDelivered,
+             detail::f32::kRegionBFitBar},
+            {FitRoute::kRationalMinimax,
+             "rational-minimax",
+             AccuracyComponent::kRegionBFit,
+             AccuracyRegion::kB,
+             detail::kX0,
+             detail::kX1,
+             detail::kX0,
+             detail::f32::kRegionBFitRatStored,
+             detail::f32::kRegionBFitRatDelivered,
+             detail::f32::kRegionBFitBar},
+        };
+        return std::span<const FitRouteInfo>(kRows);
+    }();
+
+    return kRoutes;
+}
+
+float BoysSingleF32WithRoute(FitRoute route, int n, float x) noexcept {
+    // One body instantiated per route, as the double lane's selector is: the
+    // closed form at zero, the region split, the two recurrences and the
+    // domains are the body's, and the route names only its two fits. So
+    // naming a route cannot reach a fit the caller did not name, and region C
+    // - which reads no coefficient at all - is answered by the body's own
+    // branch, which is the default entry's code for those arguments.
+    if (route == FitRoute::kRationalMinimax)
+    {
+        return detail::SingleOrderF32Body<detail::RationalFit32<>>(n, x);
+    }
+
+    return BoysSingleF32<kBoysFullAccuracyMultiplier>(n, x);
+}
+
+std::span<const EvalFitInfo> BoysEvalSchemeFits() noexcept {
+    static const std::array<EvalFitInfo, std::size(detail::kSchemeRows)> rows = [] {
+        std::array<EvalFitInfo, std::size(detail::kSchemeRows)> built{};
+
+        for (std::size_t i = 0; i < built.size(); ++i)
+        {
+            const detail::SchemeRow& row = detail::kSchemeRows[i];
+            EvalFitInfo& info = built[i];
+            info.scheme = static_cast<EvalScheme>(row.scheme);
+            info.lane = static_cast<EvalLane>(row.lane);
+            info.region = static_cast<AccuracyRegion>(row.region);
+            info.deg = row.deg;
+            info.stored = row.stored;
+            info.fused = row.fused;
+            info.separate = row.separate;
+        }
+
+        return built;
+    }();
+
+    return rows;
+}
+
+std::span<const EvalSchemeInfo> BoysEvalSchemes() noexcept {
+    constexpr std::size_t kSchemeCount =
+        static_cast<std::size_t>(EvalScheme::kHorner) + 1;
+    static const std::array<EvalSchemeInfo, kSchemeCount> rows = [] {
+        std::array<EvalSchemeInfo, kSchemeCount> built{};
+        const backend::MulAddRoute route = backend::detail::RouteInForce<double>();
+
+        for (std::size_t s = 0; s < built.size(); ++s)
+        {
+            EvalSchemeInfo& info = built[s];
+            info.scheme = static_cast<EvalScheme>(s);
+            info.name = EvalSchemeName(info.scheme);
+            info.route = route;
+
+            for (const EvalFitInfo& fit : BoysEvalSchemeFits())
+            {
+                if (fit.scheme != info.scheme)
+                {
+                    continue;
+                }
+
+                ++info.lanes;
+                info.deg = std::max(info.deg, fit.deg);
+                info.stored = std::max(info.stored, fit.stored);
+                info.delivered = std::max(info.delivered, DeliveredIn(fit, route));
+            }
+        }
+
+        return built;
+    }();
+
+    return rows;
+}
+
+double BoysEvalSchemeDelivered(EvalScheme scheme, EvalLane lane) noexcept {
+    const backend::MulAddRoute route = backend::detail::RouteInForce<double>();
+
+    for (const EvalFitInfo& fit : BoysEvalSchemeFits())
+    {
+        if (fit.scheme == scheme && fit.lane == lane)
+        {
+            return DeliveredIn(fit, route);
+        }
+    }
+
+    return 0.0;
+}
+
+const char* EvalSchemeName(EvalScheme scheme) noexcept {
+    switch (scheme)
+    {
+    case EvalScheme::kSplitClenshaw:
+        return "split-clenshaw";
+    case EvalScheme::kHorner:
+        return "horner";
+    }
+
+    return "unknown";
+}
+
+const char* PackAxisName(PackAxis axis) noexcept {
+    switch (axis)
+    {
+    case PackAxis::kArguments:
+        return "arguments";
+    case PackAxis::kOrders:
+        return "orders";
+    }
+
+    return "unknown";
+}
+
+const char* GranularityName(FitGranularity granularity) noexcept {
+    switch (granularity)
+    {
+    case FitGranularity::kShipped:
+        return "shipped";
+    case FitGranularity::kNarrow:
+        return "narrow";
+    }
+
+    return "unknown";
+}
+
+std::span<const PackAxisInfo> BoysPackAxes() noexcept {
+    // Both members evaluate the region-A per-order fits of the double lane, so
+    // both are certified against that region's bar. The packed lanes cover
+    // region A and nothing else: past it the entries that carry an axis run the
+    // certified scalar lanes, and the row's interval says where the packed
+    // answer ends rather than implying it continues.
+    static const std::array<PackAxisInfo, 2> rows = {{
+        {PackAxis::kArguments, PackAxisName(PackAxis::kArguments), 4, 0.0, detail::kX0, 1e-15},
+        {PackAxis::kOrders, PackAxisName(PackAxis::kOrders), 4, 0.0, detail::kX0, 1e-15},
+    }};
+
+    return rows;
+}
+
+std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
+    // The rows are the tables' own counts and the certification's own figures,
+    // so a regeneration that moved a piece, a degree or a delivered error moves
+    // the row rather than leaving a number here to drift from it.
+    //
+    // What a row does not cover is as much a part of it as what it does. Both
+    // entries below carry the double lane's tables; the single-precision lanes
+    // hold one coefficient set each and take no partition. The shipped row
+    // carries every rung this build can name - the count is the tier
+    // enumeration's own - both packing axes, because the across-orders lane is
+    // instantiated for every scheme, rung and route over the shipped region-A
+    // pieces, and both fit routes, because the shipped partitions carry a table
+    // for each and the seeds are the routes' own. The narrow row carries every
+    // rung this build can name and both packing axes, because each of the two
+    // reads a cut of this partition's own pieces - a relaxed rung truncates the
+    // partition's stored fits against a degree table derived over them, and the
+    // across-orders lane gathers each of the orders it holds its own piece and
+    // coefficients - and the chebyshev route alone, because only that route was
+    // cut on this partition, so the rational route has no narrow table to
+    // evaluate. That one is unbuilt work rather than an unavailable option, and
+    // saying so here is what lets a caller count it without reading the kernels.
+    static const std::array<FitGranularityInfo, 2> rows = [] {
+        static constexpr unsigned kBothAxes = (1u << static_cast<unsigned>(PackAxis::kArguments)) |
+                                              (1u << static_cast<unsigned>(PackAxis::kOrders));
+        static constexpr unsigned kChebBit = 1u << static_cast<unsigned>(FitRoute::kChebyshev);
+        static constexpr unsigned kRatBit =
+            1u << static_cast<unsigned>(FitRoute::kRationalMinimax);
+
+        // A route's own figures over a region, read from the route table rather
+        // than restated: these are the numbers the route rows publish, so a
+        // regeneration moves both readings together.
+        const auto routeStored = [](FitRoute route, AccuracyRegion region) {
+            int stored = 0;
+
+            for (const FitRouteInfo& row : BoysFitRoutes())
+            {
+                if (row.route == route && row.region == region)
+                {
+                    stored = row.stored;
+                }
+            }
+
+            return stored;
+        };
+
+        // The worst a partition delivers and the bar it is certified against,
+        // taken over the routes it holds and the regions they cover: a caller
+        // who does not name a route may read any of them.
+        const auto routeWorst = [](const auto& field) {
+            double worst = 0.0;
+
+            for (const FitRouteInfo& row : BoysFitRoutes())
+            {
+                worst = std::max(worst, field(row));
+            }
+
+            return worst;
+        };
+
+        int shippedADeg = 0;
+
+        for (const detail::OrderPiece& piece : detail::kPieces)
+        {
+            shippedADeg = std::max(shippedADeg, piece.deg);
+        }
+
+        // The rational route is cut on the same pieces, so its degrees are read
+        // over the same rows: numerator and denominator both bound what one
+        // evaluation of a piece costs.
+        for (const int deg : detail::kRatANumDeg)
+        {
+            shippedADeg = std::max(shippedADeg, deg);
+        }
+
+        for (const int deg : detail::kRatADenDeg)
+        {
+            shippedADeg = std::max(shippedADeg, deg);
+        }
+
+        int narrowADeg = 0;
+        int narrowAStored = 0;
+
+        for (const detail::OrderPiece& piece : detail::kNarrowAPieces)
+        {
+            narrowADeg = std::max(narrowADeg, piece.deg);
+            narrowAStored += piece.deg + 1;
+        }
+
+        // The interval a partition's own tables serve, read from the fitted
+        // routes' own domains: region A's per-order tables from zero to kX0 and
+        // region B's seed from kX0 to kX1, under either partition, so the two
+        // edges are the lowest left edge and the highest right edge the fitted
+        // rows state. It is the domain the partition's figure holds on and no
+        // wider one: above the top edge the entry runs region C's asymptotic
+        // form, which no partition replaces and whose figure is the certified
+        // lane's, so a caller reading the figure against a wider range would be
+        // matching a promise about the fitted tables to an error that is not
+        // theirs.
+        double fittedLo = std::numeric_limits<double>::infinity();
+        double fittedHi = 0.0;
+
+        for (const FitRouteInfo& row : BoysFitRoutes())
+        {
+            fittedLo = std::min(fittedLo, row.lo);
+            fittedHi = std::max(fittedHi, row.hi);
+        }
+
+        // No fitted row at all leaves no interval to report, and one made up here
+        // would be a claim about tables that are not there.
+        if (!(fittedLo <= fittedHi))
+        {
+            fittedLo = 0.0;
+            fittedHi = 0.0;
+        }
+
+        std::array<FitGranularityInfo, 2> built{};
+
+        built[0].granularity = FitGranularity::kShipped;
+        built[0].name = GranularityName(FitGranularity::kShipped);
+        built[0].routes = kChebBit | kRatBit;
+        built[0].rungs = static_cast<int>(AccuracyTier::kRelaxed65536) + 1;
+        built[0].axes = kBothAxes;
+        built[0].regionAPieces = static_cast<int>(std::size(detail::kPieces));
+        built[0].regionADeg = shippedADeg;
+        built[0].regionAStored = routeStored(FitRoute::kChebyshev, AccuracyRegion::kA) +
+                                 routeStored(FitRoute::kRationalMinimax, AccuracyRegion::kA);
+        built[0].regionBPieces = 1;
+        built[0].regionBDeg = std::max({detail::kBDeg, detail::kRatBnumDeg, detail::kRatBdenDeg});
+        built[0].regionBStored = routeStored(FitRoute::kChebyshev, AccuracyRegion::kB) +
+                                 routeStored(FitRoute::kRationalMinimax, AccuracyRegion::kB);
+        built[0].delivered =
+            routeWorst([](const FitRouteInfo& row) { return row.delivered; });
+        built[0].bound = routeWorst([](const FitRouteInfo& row) { return row.bound; });
+        built[0].lo = fittedLo;
+        built[0].hi = fittedHi;
+
+        built[1].granularity = FitGranularity::kNarrow;
+        built[1].name = GranularityName(FitGranularity::kNarrow);
+        built[1].routes = kChebBit;
+        built[1].rungs = static_cast<int>(AccuracyTier::kRelaxed65536) + 1;
+        built[1].axes = kBothAxes;
+        built[1].regionAPieces = static_cast<int>(std::size(detail::kNarrowAPieces));
+        built[1].regionADeg = narrowADeg;
+        built[1].regionAStored = narrowAStored;
+        built[1].regionBPieces = detail::kNarrowBPieces;
+        built[1].regionBDeg = detail::kNarrowBDeg;
+        built[1].regionBStored = static_cast<int>(std::size(detail::kNarrowBcoeffs));
+        // The narrow certification publishes a per-piece round-up of what each
+        // piece delivers rather than a bar the pieces were cut at, and that
+        // round-up is the figure a caller may rely on: it bounds a sweep and not
+        // only the one that measured it.
+        built[1].delivered = std::max(detail::kNarrowRows[0].fused, detail::kNarrowRows[0].separate);
+        built[1].bound = built[1].delivered;
+        built[1].lo = fittedLo;
+        built[1].hi = fittedHi;
+
+        return built;
+    }();
+
+    return rows;
+}
+
+std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
+    // The three figures the README's contract table publishes, stated here once
+    // so that the table, the accuracy gate and BoysAccuracyGuaranteed read one
+    // number rather than three transcriptions of one. Each is the figure the
+    // lane documents for one value over the whole of x >= 0 at the reference
+    // multiplier; the half-precision lane's f32 entries add a term of their own
+    // under their region-B exponential option, which is why the row carries it.
+    static const std::array<LaneContractInfo, 4> rows = {{
+        {Precision::kFp64, "fp64", 5.5e-14, 0.0, "throughout, every region"},
+        {Precision::kFp32, "fp32", 1.5e-7, 0.0, "throughout, every region"},
+        {Precision::kFp16, "fp16", 1e-7, 0.0,
+         "plus half of the last representable digit of the returned value, and claimed only where "
+         "the value exceeds the sum"},
+        {Precision::kFp32Device, "fp32-device", 1.5e-7, 8e-8,
+         "plus 8e-8 under the fast region-B exponential, which is the corrected seed's own "
+         "contribution"},
+    }};
+
+    return rows;
+}
+
+namespace {
+
+// Whether this revision carries a combination, and why not where it does not.
+struct Carriage {
+    bool carried = false;
+    const char* reason = "";
+};
+
+// The single-precision lanes' carriage, read off the entries those lanes build.
+// Both packing axes are served on the shipped partition: the arguments axis by
+// the per-order bodies, the orders axis by the packed lane that steps one
+// order's coefficients to the next order's. The narrow partition is stored for
+// this lane and is read at the reference multiplier on both axes; a rung of it
+// is not, because a rung reads the shipped pieces' stored coefficients and the
+// narrow pieces' own degree table is a derivation this lane has not done. The
+// packed lane's rung bodies are instantiated for the shipped route and scheme,
+// so another family's rung on that axis is a body to build.
+Carriage CarriesSingle(FitRoute route,
+                       EvalScheme scheme,
+                       PackAxis axis,
+                       FitGranularity granularity,
+                       AccuracyTier tier) noexcept {
+    const bool reference = tier == AccuracyTier::kReference;
+
+    if (granularity != kDefaultFitGranularity)
+    {
+        if (!reference)
+        {
+            return {false,
+                    "a rung of this lane reads the shipped pieces' stored coefficients at the "
+                    "degrees the rung certifies, and the narrow pieces' own effective-degree "
+                    "table is a derivation this lane has not done: the narrow rungs are a table "
+                    "to derive rather than a shape the call cannot have"};
+        }
+
+        return {true, ""};
+    }
+
+    if (axis != kDefaultPackAxis && !reference &&
+        !(route == kDefaultFitRoute && scheme == kDefaultEvalScheme))
+    {
+        return {false,
+                "the packed lane's rung bodies are instantiated for the shipped route and "
+                "scheme, and a rung of another family's fit on this axis is a body to build "
+                "rather than a shape the call cannot have: the scalar path carries that family's "
+                "rungs on the arguments axis"};
+    }
+
+    return {true, ""};
+}
+
+// The device lane's rule. Its entries are the shipped single-precision fits,
+// one coefficient set per region, and its accuracy multiplier is a template
+// argument at the call site against a certified degree table the lane holds per
+// rung - so every rung is served where the host lane serves the shipped pair
+// alone. What the lane does not take is a partition, a packing axis or another
+// fit family, and each of the three is work on this lane rather than a shape it
+// cannot have: the narrow pieces' table, the packed orders kernel, and the
+// degree tables of another family are all the host lane's.
+Carriage CarriesDevice(FitRoute route,
+                       EvalScheme scheme,
+                       PackAxis axis,
+                       FitGranularity granularity) noexcept {
+    if (granularity != kDefaultFitGranularity)
+    {
+        return {false,
+                "the device lane's entries read one coefficient set per region, and the narrow "
+                "pieces' table is the host lane's: a narrow policy on this lane is a table this "
+                "lane has not generated"};
+    }
+
+    if (axis != kDefaultPackAxis)
+    {
+        return {false,
+                "the device lane's kernels are one order per lane over an array of arguments, so "
+                "the orders axis on this lane is a kernel to write rather than a shape the call "
+                "cannot have"};
+    }
+
+    if (route != kDefaultFitRoute || scheme != kDefaultEvalScheme)
+    {
+        return {false,
+                "the device lane's entries evaluate the shipped fit: its degree tables are "
+                "certified for that family at each rung, and a route or a scheme of another "
+                "family has no table on this lane"};
+    }
+
+    return {true, ""};
+}
+
+} // namespace
+
+AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
+                                      FitRoute route,
+                                      EvalScheme scheme,
+                                      PackAxis axis,
+                                      FitGranularity granularity,
+                                      AccuracyTier tier) noexcept
+{
+    const std::span<const LaneContractInfo> lanes = BoysLaneContracts();
+    const std::size_t index = static_cast<std::size_t>(precision);
+    AccuracyFigure figure;
+
+    figure.reading = AccuracyReading::kGuaranteed;
+    figure.source = "BoysLaneContracts()";
+
+    if (index >= lanes.size())
+    {
+        figure.reason = "no lane of this library has that precision";
+
+        return figure;
+    }
+
+    const LaneContractInfo& lane = lanes[index];
+    const Carriage carriage = [&] {
+        switch (precision)
+        {
+        case Precision::kFp32Device:
+            return CarriesDevice(route, scheme, axis, granularity);
+        case Precision::kFp32:
+        case Precision::kFp16:
+            return CarriesSingle(route, scheme, axis, granularity, tier);
+        case Precision::kFp64:
+            break;
+        }
+
+        const std::span<const FitGranularityInfo> partitions = BoysFitGranularities();
+        const std::size_t p = static_cast<std::size_t>(granularity);
+        Carriage c;
+
+        if (p >= partitions.size())
+        {
+            c.reason = "no partition of this library has that granularity";
+
+            return c;
+        }
+
+        const FitGranularityInfo& row = partitions[p];
+
+        if (static_cast<int>(tier) >= row.rungs)
+        {
+            c.reason =
+                "a relaxed rung reads a stored row at a per-order effective degree, and only the "
+                "shipped row carries such a degree table: the multiplier selects a rung of the "
+                "shipped partition only";
+        } else if (!FitGranularityHasRoute(row, route))
+        {
+            c.reason =
+                "the partition's tables do not hold this fit route: the rational minimax route "
+                "carries one numerator/denominator pair over the whole of region B, and a "
+                "partition cut per order has no table for it";
+        } else if (!FitGranularityHasAxis(row, axis))
+        {
+            c.reason =
+                "the partition has no kernel for this packing axis: the across-orders packed lane "
+                "steps one order's coefficients to the next order's at a fixed stride, which the "
+                "shipped region-A table has and a partition cut per order does not";
+        } else
+        {
+            c.carried = true;
+        }
+
+        return c;
+    }();
+
+    if (!carriage.carried)
+    {
+        figure.reason = carriage.reason;
+
+        return figure;
+    }
+
+    figure.available = true;
+    figure.value = AccuracyMultiplier(tier) * lane.bound + lane.additive;
+    figure.source = lane.source;
+
+    return figure;
+}
+
+AccuracyFigure BoysAccuracyDelivered(Precision precision,
+                                     FitRoute route,
+                                     EvalScheme scheme,
+                                     PackAxis axis,
+                                     FitGranularity granularity,
+                                     AccuracyTier tier) noexcept
+{
+    // The guarantee's carriage answer is the coverage answer here too: a
+    // combination this build refuses has no delivered figure for the same
+    // reason it has no bound.
+    AccuracyFigure figure = BoysAccuracyGuaranteed(precision, route, scheme, axis, granularity, tier);
+
+    figure.reading = AccuracyReading::kDelivered;
+    figure.value = 0.0;
+
+    if (!figure.available)
+    {
+        return figure;
+    }
+
+    if (precision == Precision::kFp16)
+    {
+        figure.available = false;
+        figure.reason =
+            "the half-precision lanes' error is dominated by the format's own quantum half a "
+            "representable digit of the returned value, which is a property of the value and not "
+            "of the call: no row of this library measured a half-typed return, so there is no "
+            "delivered figure to read and the guaranteed figure above is the one to use. Where "
+            "the value falls at or below the format's floor no accuracy is claimed at all, and a "
+            "suite that reports this lane counts those arguments rather than passing them";
+        figure.source = "";
+
+        return figure;
+    }
+
+    if (tier != AccuracyTier::kReference)
+    {
+        figure.available = false;
+        figure.reason =
+            "a delivered figure is a measurement and the rows carry one at the multiplier they "
+            "were measured at, which is the reference one: no row publishes what a relaxed rung "
+            "delivers, so there is no number to read here. The accuracy gate measures the rungs "
+            "and its report is where those figures are";
+        figure.source = "";
+
+        return figure;
+    }
+
+    // The worst figure over the rows the combination names. A composition is at
+    // least as bad as its worst part, so the maximum is the composition's own
+    // delivered figure and not a claim about any single row.
+    double worst = 0.0;
+    const char* source = "BoysFitRoutesF32()";
+
+    // The half and single lanes' own route table; the double lane's, which the
+    // device lane's single-precision entries read their region-A fits from.
+    const std::span<const FitRouteInfo> routes =
+        (precision == Precision::kFp32 || precision == Precision::kFp16) ? BoysFitRoutesF32()
+                                                                         : BoysFitRoutes();
+
+    if (precision != Precision::kFp32 && precision != Precision::kFp16)
+    {
+        source = "BoysFitRoutes()";
+    }
+
+    for (const FitRouteInfo& row : routes)
+    {
+        if (row.route == route)
+        {
+            worst = std::max(worst, row.delivered);
+        }
+    }
+
+    if (precision == Precision::kFp64)
+    {
+        source = "BoysFitRoutes(), BoysFitGranularities() and BoysEvalSchemes()";
+
+        const std::size_t p = static_cast<std::size_t>(granularity);
+
+        if (p < BoysFitGranularities().size())
+        {
+            worst = std::max(worst, BoysFitGranularities()[p].delivered);
+        }
+    }
+
+    for (const EvalSchemeInfo& row : BoysEvalSchemes())
+    {
+        if (row.scheme == scheme)
+        {
+            worst = std::max(worst, row.delivered);
+        }
+    }
+
+    figure.available = true;
+    figure.value = worst;
+    figure.source = source;
+    figure.reason = "";
+
+    return figure;
 }
 
 } // namespace boys
@@ -143,8 +1048,10 @@ std::span<const BackendInfo> BoysBackends() noexcept {
     static const std::span<const BackendInfo> kBackends = [] {
         static BackendInfo info[4];
         std::size_t n = 0;
-        info[n++] = BackendInfo{ScalarFp64::kName, ScalarFp64::Contracts()};
-        info[n++] = BackendInfo{ScalarFp32::kName, ScalarFp32::Contracts()};
+        info[n++] = BackendInfo{ScalarFp64::kName, ScalarFp64::Contracts(),
+                                detail::RouteInForce<double>()};
+        info[n++] = BackendInfo{ScalarFp32::kName, ScalarFp32::Contracts(),
+                                detail::RouteInForce<float>()};
         n += detail::AppendPackedBackends(info + n);
         return std::span<const BackendInfo>(info, n);
     }();

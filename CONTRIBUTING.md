@@ -23,13 +23,20 @@ reproducibility evidence behind the documented accuracy contract.
 
    A change that needs a budget relaxed is a change to the contract. Open an issue for the
    maintainer first, and do not put it in a pull request.
-2. **No internal references, ever.** Comments, commit messages and docs must not reference internal
-   decision numbers, internal document paths, stage or track names, or any private repository. The
-   only sanctioned citations are published ones: the entries of `CITATION.bib`.
+2. **Write for a reader who has only this repository.** A citation a reader cannot follow is worse
+   than no citation, because it implies a reference that is missing. Where you would have pointed at
+   something they cannot open, name the measurement, the reasoning or the result instead. The
+   citations that are always safe are the published ones: the entries of `CITATION.bib`.
 3. **Regeneration is local-only.** The committed tables and reference grid are the source of truth
    for the build and for CI. The generator verifies them byte-for-byte through `--check`. Never
    commit regenerated tables without running `--check`, and never wire regeneration into CI.
 4. **Small, reviewable changes.** One logical change per pull request.
+5. **Every figure has one home.** The README states each lane's bound and the command that measures
+   it; the per-lane detail — the fit routes and their stored counts, the packing axis and its
+   measured counts, the multiply-add route's own bounds — lives in `docs/lane-contract.md`, and the
+   README summarises it and links to it. A table copied into both is a table that will disagree with
+   itself, so a figure belongs where a reader who wants to check it would look, and everywhere else
+   gets the summary and the link.
 
 ## Build and test
 
@@ -45,6 +52,19 @@ ctest --test-dir build --output-on-failure
 
 Optional: `-DBUILD_BENCHMARKS=ON` for the benchmark drivers, which are default ON locally, and
 `-DBUILD_CUDA=ON` for the CUDA lane, which needs the CUDA toolkit and is local-only.
+
+The accuracy gate, which re-measures every documented bound against the committed reference grid and
+prints the comparison lane by lane and region by region:
+
+```bash
+cmake --build build --target boys-accuracy-gate
+./build/Release/boys-accuracy-gate --strict      # the config directory is your generator's
+```
+
+It exits non-zero, naming each claim it could not confirm, if any figure in the documents is not
+verified at the revision you are on — so it is the command to run before changing a bound, a
+threshold, or a fitted table. `ctest` runs it as one of its tests, but a passing `ctest` prints only
+how long the test took: the figures are in this binary's own output.
 
 Regeneration check, which is local and never CI:
 
@@ -71,8 +91,8 @@ before merge.
   `std::span`. Raw arrays only where an ABI mandates them.
 - **Errors:** no exceptions. The CPU lanes are total functions with documented preconditions. The
   CUDA lane reports through the `BoysError` enum. New fallible surfaces follow the same pattern.
-- **Comments:** brief, self-contained and why-focused. Ground rule 2 limits what may be cited; the
-  reasoning itself always stays.
+- **Comments:** brief, self-contained and why-focused. The reasoning always stays; only the pointer
+  to somewhere the reader cannot go is dropped.
 
 ## Tests
 
@@ -85,8 +105,7 @@ before merge.
 
 ## What never goes in
 
-- Anything referencing the private source repository: internal paths, decision numbers, stage or
-  track names, or person-specific internal notes.
+- Anything a reader of this repository cannot open, per ground rule 2.
 - Vendored code beyond the in-tree GoogleTest and Google Benchmark trees and the generated tables.
 - Generated-table or reference-grid edits without `--check` evidence.
 - Licence-unattributed third-party code or data.
@@ -108,6 +127,11 @@ licences are listed in THIRD_PARTY_NOTICES.md.
   domain and budget.
 - **PATCH** — no intended public-API or numerical-result change. If a change can alter any returned
   bit for any supported input, it is at least minor.
+
+The version is written down once, in the top-level `project(boys VERSION ...)`, and it reaches a
+caller through `boys/version.hpp`. The release tag and that `project()` call name the same version —
+the consumer check compiles against the project value and asserts the header agrees — so a release
+bumps the one place, and a tag that disagrees with it is a mistake rather than a second answer.
 
 The public numerical contract is that for every supported n, x, lane and region the returned value
 satisfies |F̂_n(x) − F_n(x)| ≤ m·B_region at the documented m. Public function signatures and
