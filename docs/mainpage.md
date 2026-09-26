@@ -69,19 +69,28 @@ It enumerates the options from the library rather than from a list — each opti
 resolved against \ref boys::backend::BoysBackends, and the relaxed rungs are the ones \ref
 boys::QueryTier reports as served — and measures each over the library's own call shape: one
 argument set, every argument's own highest order, one seed and then upward recursion to that order.
-Each option comes back with its cost per argument, the spread of that cost over the passes it was
-measured in, the machine load each pass was taken under, and the accuracy it delivered against the
-certified fp64 lane. Every pass carries repeated runs of a fixed-work integer canary, and the pass is
-admitted only if those runs agree within \ref boys::ProbeOptions::canarySpreadThreshold — a steady load
-slows every option alike and leaves their order alone, an unsteady one is what corrupts a comparison,
-and the canary's own spread measures that unsteadiness directly. A pass it cannot vouch for is
-discarded rather than averaged in, and the reported figure is the minimum of the admitted passes.
+Each option comes back with its cost per argument, the spread of that cost over the paired rounds it
+was measured in, the machine load those rounds were taken under, and the accuracy it delivered
+against the certified fp64 lane. The comparison is paired: every option is called once in every round
+of every pass, and the comparison between two options is the ratio of their times within one round,
+so a clock drift common to the round cancels in it instead of being read as a difference between the
+options. Each pass carries runs of a fixed-work integer canary beside its rounds. It is a diagnostic
+that gates nothing — a fixed work read by wall clock measures the clock as much as the load, so a
+decaying clock widens it on an idle machine — and what the ordering is made in is the spread of the
+paired ratios, which the report measures. The reported figure is the lower quartile of the rounds,
+with its spread printed beside it, and not the minimum the probe used to report.
 
-When two options are closer than the resolution the run measured — the larger of the canary's widest
-admitted spread and the leading option's own spread across its admitted passes, both measured rather
-than assumed — the report says `CANNOT DETERMINE` and names what it could not separate instead of
-ordering noise. The result is about the machine it was measured on, and the report says so in its own
-output.
+When two options are closer than that spread — a pair whose within-round ratio band straddles one —
+the report says `CANNOT DETERMINE`, names each option it could not place behind the leader with the
+band that pair fell in, and prints the run's resolution, rather than ordering noise. A refusal leaves
+a consumer a default: the report names the option a static reading of the library's own tables picks
+— the degree its partition evaluates and the coefficients it stores, counted rather than timed — in
+its own section, labelled as a heuristic and never printed beside a measured figure. The clock is
+checked rather than assumed, because options need not draw it alike — a wider vector register runs
+at a lower frequency — so the confidence line reports how far the widest-moving pair's ratio
+travelled between the run's first and second half beside the resolution that figure is read
+against, and whether every option the comparison put against another ran one arithmetic route. The
+result is about the machine it was measured on, and the report says so in its own output.
 
 ## Architecture
 

@@ -28,10 +28,10 @@
 /// options by the wrong thing.
 ///
 /// **What it reports per option**: the cost per argument, the spread of that
-/// cost over the passes it was measured in, the machine load each pass was
-/// taken under, the axes the option instantiates, and the accuracy the option
-/// actually delivered — so a consumer can see whether a faster option was faster
-/// at the same accuracy or merely at a lower one.
+/// cost over the rounds it was measured in, its ratio to the reference lane, the
+/// machine load the rounds were taken under, the axes the option instantiates,
+/// and the accuracy the option actually delivered — so a consumer can see whether
+/// a faster option was faster at the same accuracy or merely at a lower one.
 ///
 /// **The whole option space, enumerated from the library.** The library lets a
 /// caller choose a fit route, an evaluation scheme, a partition of the fitted
@@ -55,42 +55,65 @@
 /// that precision, and the report says so where it prints the ranking. A caller
 /// who needs a particular accuracy reads the bound column.
 ///
+/// **The comparison is paired, and made inside a round.** Every option is called
+/// once in every round, and the comparison between two options is the ratio of
+/// their times *within the same round*, never a ratio of two figures taken from
+/// different rounds. That is what makes the answer survive a machine whose clock
+/// is not constant: a laptop's opportunistic boost decays and its thermal state
+/// drifts, so the wall-clock time of fixed work grows through a run with no
+/// other process involved, and two options timed in different rounds are then
+/// being compared across two different clocks. Inside one round both options ran
+/// under the same clock, so a drift that is common to the round cancels in the
+/// ratio. The order the options are visited in is shuffled per round with the
+/// workload's own seed, so a position in the round cannot become a systematic
+/// advantage either, and every figure below is an aggregate of those paired
+/// ratios rather than of absolute times taken across the run.
+///
 /// **It refuses to order noise, and it says how close it could look.** The
-/// reported cost of an option is the minimum of its clean passes, and its spread
-/// is the ratio of the slowest clean pass to the fastest. The probe's resolution
-/// is what the run actually observed: the widest disagreement between the
-/// canary's own runs inside an admitted pass, or the leading option's spread
-/// across its clean passes, whichever is the larger. A rival closer to the
-/// leader than that resolution cannot be placed against it, and the probe then
-/// declines to name a winner, prints the resolution, and says which options it
-/// could not separate. The same refusal happens when no pass could be admitted
-/// at all, when fewer than two were — a spread needs two passes to exist, and a
-/// single pass reports a precision the run never measured — and when nothing was
+/// reported cost of an option is the lower quartile of its per-round costs, and
+/// its spread is the ratio of the upper quartile to that. For each rival of a
+/// class's leader the probe forms the pair's own within-round ratio, and the
+/// rival is ordered only when the middle half of those rounds puts it behind the
+/// leader — when the pair's own band clears one. A rival whose band straddles
+/// one cannot be placed, and the probe then declines to name a winner, prints
+/// the run's resolution, and says which options it could not separate and in how
+/// many of the rounds each was the slower of the two. The same refusal happens
+/// when too few rounds were run for a band to exist, and when nothing was
 /// measured in the class. A wrong recommendation is worse than none, so the
-/// refusal path is the one this entry is most careful about.
+/// refusal path is the one this entry is most careful about, and a refusal now
+/// leaves a consumer a default: see the fallback below.
 ///
-/// **The instrument, and what admits a pass.** Every pass carries runs of a
-/// fixed-work integer spin — the canary — bracketing the timed region and taken
-/// between its rounds. The spin holds no floating-point state, so the arithmetic
-/// question this probe is about cannot change the instrument's own cost. A pass
-/// is admitted when the spin's own runs across it agree within
-/// ProbeOptions::canarySpreadThreshold; that is the admission rule because it
-/// measures the machine's timing noise directly. A steady load slows every
-/// option by the same factor and leaves their order alone — a ratio is what is
-/// being compared — while an unsteady one is what corrupts a comparison, and the
-/// spread between the spin's runs is that unsteadiness.
+/// **The instrument is a diagnostic and gates nothing.** Every pass carries runs
+/// of a fixed-work integer spin — the canary — bracketing the timed region and
+/// taken between its rounds. The spin holds no floating-point state, so the
+/// arithmetic question this probe is about cannot change the instrument's own
+/// cost. Its readings are reported beside each pass, and a pass whose spin
+/// disagreed with itself by more than ProbeOptions::canarySpreadAlarm is marked
+/// as one that ran on a wandering machine — **and is still used**. It has to be:
+/// a fixed-work spin measured by wall clock measures the clock as much as the
+/// load, so a decaying clock widens the spin's own spread on a machine that is
+/// doing nothing else, and a rule that discards on that spread discards the
+/// measurement rather than the machine. What decides what can be ordered is the
+/// spread of the paired ratios, measured in the units the comparison is made in.
 ///
-/// The load readings printed beside each pass are context, not the gate: a
-/// background average over the quiet window before the timed region, a point
-/// reading either side of it, and the level the spin held while the timed rounds
-/// ran. A reading is the percentage by which the spin took longer than the
-/// fastest run of that same work ever seen on this machine, so it says how busy
-/// the machine looked rather than how well it could be measured. It is not the
-/// machine's total processor utilization — the standard library cannot reach
-/// another process's processor time, which is what a system-wide counter would
-/// need — it is the load a single-threaded, CPU-bound caller actually suffered.
-/// A pass the canary cannot vouch for is reported as disturbed and **excluded
-/// rather than averaged in**.
+/// The load readings printed beside each pass are context too: a background
+/// average over the quiet window before the timed region, a point reading either
+/// side of it, and the level the spin held while the timed rounds ran. A reading
+/// is the percentage by which the spin took longer than the fastest run of that
+/// same work ever seen on this machine, so it says how busy the machine looked
+/// rather than how well it could be measured. It is not the machine's total
+/// processor utilization — the standard library cannot reach another process's
+/// processor time, which is what a system-wide counter would need — it is the
+/// load a single-threaded, CPU-bound caller actually suffered.
+///
+/// **When the measurement cannot separate the options, a heuristic stands in,
+/// labelled as one.** A consumer who gets a refusal still needs a default, so a
+/// refusal also names the option a static reading of the library's own tables
+/// picks: the degree the option's partition stores per piece and the coefficients
+/// it stores, counted rather than timed. It is reported in its own section,
+/// marked as a heuristic, and never printed beside a measured figure as though it
+/// were one — the two answers are different kinds of thing and the report keeps
+/// them apart.
 ///
 /// **The accuracy column.** Each option's values are compared against the
 /// certified per-order fp64 lane — `BoysSingle` at the reference multiplier —
@@ -180,13 +203,14 @@ struct ProbeOptions {
     /// report alone.
     std::uint64_t seed = 47;
 
-    /// Timed passes. A disturbed pass is discarded, so this is an upper bound
-    /// on the number of passes the reported figures rest on.
+    /// Timed passes. Every pass is used: no pass is discarded, so the paired
+    /// rounds the figures rest on are this number times \c rounds.
     int passes = 5;
 
-    /// Timed rounds per pass. Every option is called once per round, so a pass
-    /// is one interleaved sequence of one call per option per round; the
-    /// option's figure for that pass is its minimum over the rounds.
+    /// Timed rounds per pass. Every option is called once per round, in an order
+    /// shuffled per round, and the comparison between two options is made from
+    /// their ratio inside one round. The pooled rounds are \c passes * \c rounds,
+    /// and a quartile band needs at least four of them.
     int rounds = 5;
 
     /// Length of the quiet window the background load average is taken over,
@@ -194,16 +218,20 @@ struct ProbeOptions {
     double backgroundWindowSeconds = 1.0;
 
     /// Length of the calibration window the spin's quiet floor is taken over,
-    /// in seconds.
+    /// in seconds. The floor is the denominator of the load readings, which are
+    /// context; a run whose window never settled still measures, and says that
+    /// its load columns have nothing to be relative to.
     double calibrationSeconds = 0.5;
 
     /// Spread percentage of the canary's own runs across a pass above which the
-    /// pass is discarded. This is the admission rule: it is a property of the
-    /// instrument's own readings, so a pass is judged on whether fixed work
-    /// could be repeated rather than on how busy the machine looked. What the
-    /// probe then orders is decided by the measured resolution, not by this
-    /// number, so a lenient bar here costs no honesty.
-    double canarySpreadThreshold = 5.0;
+    /// report marks the pass as one that ran on a wandering machine. **A
+    /// diagnostic, and the only thing it decides is a flag.** It admits nothing
+    /// and excludes nothing: the canary is a fixed-work spin read by wall clock,
+    /// so a machine whose clock decays widens this number with no other process
+    /// involved, and a run that discarded on it would discard the measurement
+    /// rather than the machine. What decides what the run can order is the
+    /// spread of the paired within-round ratios, which the report measures.
+    double canarySpreadAlarm = 5.0;
 
     /// The options to measure, named as the report prints them. Empty measures
     /// every option this build offers, which is what a caller who has not
@@ -221,8 +249,7 @@ struct ProbeOptions {
     std::vector<std::string> only;
 };
 
-/// One timed pass and the canary readings that decide whether its figures may be
-/// reported.
+/// One timed pass and the canary readings taken beside it.
 ///
 /// \ingroup boys
 struct OptionProbePass {
@@ -240,17 +267,29 @@ struct OptionProbePass {
     double afterLoad = 0.0;
 
     /// Load percentage of the median canary run taken inside the pass, which is
-    /// the load the pass's own figures were taken under.
+    /// the load the pass's rounds were taken under.
     double inPassLoad = 0.0;
 
     /// Spread percentage of the canary's runs across the pass: the slowest run
-    /// over the fastest, less one, in percent. This is what admits or discards
-    /// the pass.
+    /// over the fastest, less one, in percent. **Context, not a gate**: the spin
+    /// is fixed work read by wall clock, so this number moves with the clock as
+    /// well as with the load.
     double canarySpread = 0.0;
 
-    /// Whether the canary's runs disagreed by more than the bar. A disturbed
-    /// pass is reported here and excluded from every figure below.
-    bool disturbed = false;
+    /// Whether the canary's runs disagreed by more than
+    /// ProbeOptions::canarySpreadAlarm. The pass is reported with the flag and
+    /// excluded by nothing.
+    bool canaryWide = false;
+
+    /// Widest relative width of a within-round paired ratio this pass measured:
+    /// the upper quartile of an option's ratio to the reference over the slower
+    /// of the pass's rounds, divided by the lower quartile of the same ratio,
+    /// less one, in percent, taken at its widest over the options. This is the
+    /// spread the ordering is made in — a ratio inside one round, where a drift
+    /// common to the round cancels — so it is the paired analogue of the canary
+    /// column above, and it is reported beside it rather than gating anything
+    /// itself. Zero when the pass held too few rounds for a band to exist.
+    double pairedSpread = 0.0;
 };
 
 /// The precision an option computes in: the class this probe ranks it in.
@@ -319,30 +358,57 @@ struct OptionProbeMeasurement {
     /// this build.
     bool contracts = false;
 
-    /// Whether at least one pass of this option was clean, so the cost and
+    /// Whether the option produced a figure on a pass that ran, so the cost and
     /// spread below rest on a measurement. False means the option produced no
     /// figure on this run, and the accuracy below is still the measured one.
     bool measured = false;
 
-    /// Cost per argument in the fastest clean pass, nanoseconds.
+    /// Cost per argument in nanoseconds at the lower quartile of the paired
+    /// rounds: the figure a caller with a long workload meets on a machine whose
+    /// clock is not at its peak, and not the best single observation. It is the
+    /// reference lane's own lower-quartile cost scaled by this option's ratio
+    /// below, so the column is consistent with the ratios it is built from.
     double nsPerArgument = 0.0;
 
-    /// Cost per argument in the slowest clean pass, nanoseconds.
+    /// Cost per argument at the upper quartile of the same rounds.
     double nsPerArgumentMax = 0.0;
 
-    /// Slowest clean pass divided by the fastest: 1.00 is a perfectly repeatable
-    /// measurement and a large value is a result, not a nuisance.
+    /// The fastest single round this option was ever seen in, nanoseconds per
+    /// argument. **A peak-clock figure**, kept as one column because it bounds
+    /// what the option can do, and never the reported cost: under a decaying
+    /// clock the fastest observation comes from the earliest rounds at the
+    /// highest clock, which is not what a caller with a long workload meets.
+    double nsPerArgumentPeak = 0.0;
+
+    /// Upper quartile over lower quartile: 1.00 is a perfectly repeatable
+    /// measurement and a large value is a result, not a nuisance. Both ends are
+    /// within-round ratios' worth of cost, so this spread does not carry a clock
+    /// drift common to a round.
     double spread = 0.0;
 
-    /// Clean passes this figure rests on.
-    int cleanPasses = 0;
+    /// This option's cost as a fraction of the reference lane's, at the lower
+    /// quartile of the per-round ratios between them. One exactly for the
+    /// reference lane itself.
+    double ratioToReference = 1.0;
 
-    /// Passes discarded for this option.
-    int disturbedPasses = 0;
+    /// The same ratio at the lower and the upper quartile of its rounds: the
+    /// band the middle half of the run put it in.
+    double ratioLo = 0.0;
+    double ratioHi = 0.0;
 
-    /// Load percentage the canary held inside the pass that produced the fastest
-    /// figure above, which is the load the reported number was taken under.
-    double loadAtMinimum = 0.0;
+    /// How far this option's ratio to the reference moved between the run's
+    /// first and second half of rounds: the second half's median ratio over the
+    /// first half's, less one. Zero for the reference lane by construction, and
+    /// non-zero for another option only when the option's cost relative to the
+    /// lane changed as the run went on — which is what a clock whose decay falls
+    /// differently on the two would look like. **A warning, not a correction**:
+    /// a large value here says the ordering this option takes part in is not
+    /// clock-independent on this run.
+    double ratioDrift = 0.0;
+
+    /// Rounds the figures above rest on. Every round of the run is pooled, so
+    /// this is the same for every option that produced a figure.
+    int rounds = 0;
 
     /// Largest absolute difference between this option's values and the
     /// certified per-order fp64 lane's value for the same order at the same
@@ -420,8 +486,9 @@ struct OptionProbeClass {
     /// The leader's cost per argument, nanoseconds.
     double leaderNsPerArgument = 0.0;
 
-    /// Whether the leader is clear of every other option in the class by more
-    /// than this run's resolution, so an order exists.
+    /// Whether every other option of the class was the slower of the two against
+    /// the leader in the middle half of the paired rounds, so an order exists
+    /// inside this class. False for a class whose run was too short for a band.
     bool ordered = false;
 
     /// What the class's ordering rests on, or why it was not made.
@@ -473,12 +540,13 @@ struct OptionProbeCell {
 ///
 /// \ingroup boys
 enum class OptionProbeVerdict : int {
-    /// One option leads its precision class and every other option in that class
-    /// is further behind it than the resolution this run measured.
+    /// One option leads its precision class and every rival of it in that class
+    /// was measured with its own within-round ratio band clear of the leader's.
     kRecommend = 0,
-    /// The probe declined: no clean pass, fewer than two, nothing measured in
-    /// the class, or a rival inside the resolution, so the two cannot be ordered
-    /// against each other. See the report's reason.
+    /// The probe declined: too few rounds for a band, nothing measured in the
+    /// class, or a rival whose band straddles the leader's, so the two cannot be
+    /// ordered against each other. See the report's reason, and the fallback it
+    /// leaves.
     kCannotDetermine,
 };
 
@@ -511,9 +579,10 @@ struct OptionProbeReport {
     /// probe says so rather than measuring on it.
     double canaryCalibrationSpread = 0.0;
 
-    /// Whether a floor was established at all. A false here is the whole
-    /// measurement being unusable: the canary's readings have nothing to be
-    /// relative to, and no pass can be judged, so none is run.
+    /// Whether a floor was established at all: the denominator the load
+    /// percentages above are relative to. A false here leaves the load columns
+    /// with nothing to be relative to, and the report says so; the comparison is
+    /// not made in them, so the run still measures and still concludes.
     bool calibrated = false;
 
     /// The arithmetic backends this build carries, read from the library. The
@@ -573,24 +642,55 @@ struct OptionProbeReport {
     /// One entry per pass run, in order.
     std::vector<OptionProbePass> passes;
 
-    /// Passes the canary vouched for.
-    int cleanPasses = 0;
+    /// Passes whose canary stayed within ProbeOptions::canarySpreadAlarm.
+    int passesWithinAlarm = 0;
 
-    /// Passes discarded for the canary's own disagreement.
-    int disturbedPasses = 0;
+    /// Passes whose canary wandered further than that. **Reported, and used
+    /// anyway**: the flag says the machine's fixed work was not repeating, which
+    /// a decaying clock produces by itself. Both of these add up to the passes
+    /// run, and every pass contributed to every figure above. Both are zero when
+    /// \c calibrated is false: nothing was read, so no pass is placed on either
+    /// side of an alarm that was never established.
+    int passesAboveAlarm = 0;
 
-    /// Spread percentage of the canary's runs across the widest admitted pass:
-    /// the instrument's own measured uncertainty on this run.
+    /// Paired rounds the figures rest on: the rounds of every pass, pooled. A
+    /// quartile band needs four of them, and the probe refuses rather than
+    /// reporting a band it could not form.
+    int pairedRounds = 0;
+
+    /// The option every ratio is formed against: the library's default
+    /// double-precision entry when the run measured it, else the first measured
+    /// option of that precision, else the first measured option.
+    std::string referenceOption;
+
+    /// Its own cost per argument, nanoseconds, at the lower quartile of its
+    /// rounds. Every cost column above is this figure scaled by an option's
+    /// ratio to it, so the reference is the anchor the absolute numbers hang
+    /// from and the ratios are what the ordering is made of. The anchor carries
+    /// the clock the reference itself ran under; the ratios do not carry a drift
+    /// common to a round, which is the point of pairing them.
+    double referenceNsPerArgument = 0.0;
+
+    /// Spread percentage of the canary's runs across the widest pass this run
+    /// took. **Context, not the gate**: it is what the machine's fixed work did,
+    /// and it moves with the clock as well as with the load.
     double canarySpread = 0.0;
 
-    /// What this run can order, as a fraction of a cost: a rival closer to the
-    /// leader than this is inside the noise. It is the larger of the canary's
-    /// widest admitted spread and the leader's own spread across its clean
-    /// passes, both measured here, so it moves with the machine instead of being
-    /// a bar chosen in advance — an unsteady run orders only large differences,
-    /// a steady one orders small ones. Zero when the run could order nothing at
-    /// all, which is also when the verdict is the refusal: fewer than two passes
-    /// were admitted, or the accuracy class produced no figure.
+    /// Median of the canary's in-pass load readings over the passes, which is
+    /// the load the run's rounds were mostly taken under. One number rather than
+    /// a column per option, because every option was called in every round: the
+    /// pooled rounds put every option under the same sequence of loads, and a
+    /// load that is common to a round is what a paired ratio cancels.
+    double loadMedian = 0.0;
+
+    /// What this run can order, as a fraction of a cost, measured in the paired
+    /// ratios: the widest relative width of a within-round ratio band anything in
+    /// the certified double lane's precision showed on this run — an option's own
+    /// band against the reference lane, or a rival's band against the class's
+    /// leader. It is a statement of how coarse the class's own measurement got,
+    /// printed beside the figures; the ordering itself is made pair by pair from
+    /// each pair's own band, so this number bars nothing and is zero only when
+    /// the class produced no measured option.
     double resolution = 0.0;
 
     /// The loudest bound the reference option is documented at, read from the
@@ -623,13 +723,43 @@ struct OptionProbeReport {
     std::string reason;
 
     /// The options the probe will not order against the recommendation, with
-    /// their figures and how far behind the leader they are. Empty when the
+    /// their figures, the band their within-round ratio to the leader fell in,
+    /// and in how many rounds each was the slower of the two. Empty when the
     /// recommendation is clear of the field.
     std::vector<std::string> inseparable;
 
     /// One line naming how far the recommendation can be trusted, built from
-    /// the same numbers the verdict is.
+    /// the same numbers the verdict is, and carrying the run's clock check
+    /// whatever the verdict: how far the ratio of the widest-moving pair of
+    /// options travelled between the first and second half of the run, beside
+    /// the resolution that figure is read against, with a warning when it went
+    /// past it. The check is made rather than assumed because options can draw
+    /// the clock differently — a wider vector register is a lower frequency —
+    /// so the line also says whether every option this comparison put against
+    /// another ran the same arithmetic route, which is what decides whether two
+    /// register widths were ever compared. A run that ordered nothing still
+    /// carries it, so a reader can tell a clock that wandered from options that
+    /// were too close to separate.
     std::string confidence = "not measured";
+
+    /// The option a static reading of the library's own tables picks, when the
+    /// measurement could not order the field — empty when the probe named a
+    /// measured winner, so a reader never has to work out which kind of answer
+    /// they are looking at. **A heuristic and not a measurement**: it is chosen
+    /// by counting what the option's partition stores and the degree it
+    /// evaluates, never by timing, and the report says so where it prints it.
+    std::string heuristicOption;
+
+    /// Why that option, in the library's own numbers: the degrees and stored
+    /// coefficients the fallback was chosen from, and what the rule cannot
+    /// compare. Empty exactly when \c heuristicOption is.
+    std::string heuristicBasis;
+
+    /// Whether a run that could not order the field still left the caller a
+    /// default to take. True when the fallback above is named or the verdict is
+    /// a recommendation; a false here means neither a measurement nor a static
+    /// reading could answer, and the report says which.
+    bool hasDefault = false;
 };
 
 /// Measures every evaluation option this build offers on this machine.
@@ -646,12 +776,15 @@ struct OptionProbeReport {
 /// library's own and the coverage section can account for every cell of it,
 /// served or refused.
 ///
-/// Then it runs the pass protocol in ProbeOptions: each pass carries runs of the
-/// fixed-work canary, a pass whose canary runs disagree by more than
-/// ProbeOptions::canarySpreadThreshold is discarded, and the report carries the
-/// minimum of the passes that were admitted with their spread beside it, the
-/// resolution those passes support, and the load readings taken along the way as
-/// context.
+/// Then it runs the pass protocol in ProbeOptions: every pass carries runs of the
+/// fixed-work canary beside its rounds, each round calls every option once in an
+/// order shuffled per round, and the report carries each option's lower-quartile
+/// cost with its spread beside it, its ratio to the reference lane with the band
+/// that ratio fell in, the drift of that ratio between the run's halves, the
+/// resolution the paired ratios support, and the canary and load readings taken
+/// along the way as context. No pass is discarded on the canary's word: a fixed
+/// work read by wall clock measures the clock as much as the load, so the canary
+/// is reported and never gates.
 ///
 /// The entry allocates (the workload, the samples and the report) and is not a
 /// hot path; it is meant to be called once, from a program the consumer builds

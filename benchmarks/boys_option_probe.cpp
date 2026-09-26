@@ -80,7 +80,10 @@ void Usage() {
                "  --cal=SECONDS      load calibration window (default 0.5)\n"
                "  --canary-spread=P  spread percentage of the canary's own runs\n"
                "                     across a pass above which the pass is\n"
-               "                     discarded (default 5.0)\n"
+               "                     flagged as one that ran on a wandering\n"
+               "                     machine. A diagnostic: it discards nothing\n"
+               "                     and is reported beside every pass\n"
+               "                     (default 5.0)\n"
                "  --only=A,B         measure only these options, by name, repeatable\n"
                "                     and comma-separated (default: every option this\n"
                "                     build offers). A name that is no option of this\n"
@@ -129,7 +132,7 @@ int main(int argc, char** argv) {
             options.calibrationSeconds = std::strtod(arg.c_str() + 6, nullptr);
         } else if (arg.rfind("--canary-spread=", 0) == 0)
         {
-            options.canarySpreadThreshold = std::strtod(arg.c_str() + 16, nullptr);
+            options.canarySpreadAlarm = std::strtod(arg.c_str() + 16, nullptr);
         } else if (arg.rfind("--only=", 0) == 0)
         {
             AppendNames(arg.c_str() + 7, options.only);
