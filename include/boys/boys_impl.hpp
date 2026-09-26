@@ -683,6 +683,118 @@ struct RationalFitAtRung {
     };
 };
 
+// One narrow rational piece at a cut pair. The piece, its interval and the
+// mapped argument are the narrow partition's own; only the pair is the rung's.
+// The denominator's coefficients sit above the *stored* numerator, so the
+// position of q_j is the piece's full numerator degree's, not the cut's - the
+// reading the uncut narrow pair and the shipped cut pair both take.
+inline double RationalPieceNarrowAtCut(std::size_t index,
+                                       int numDeg,
+                                       int denDeg,
+                                       double t) noexcept {
+    const double* c = detail::kNarrowRatACoeffs.data() + detail::kNarrowRatAOffset[index];
+    const int storedNumDeg = detail::kNarrowRatANumDeg[index];
+    double num = c[numDeg];
+
+    for (int j = numDeg - 1; j >= 0; --j)
+    {
+        num = backend::ScalarFp64::MulAdd(num, t, c[j]);
+    }
+
+    if (denDeg == 0)
+    {
+        return num;
+    }
+
+    double den = c[storedNumDeg + denDeg];
+
+    for (int j = denDeg - 1; j >= 1; --j)
+    {
+        den = backend::ScalarFp64::MulAdd(den, t, c[storedNumDeg + j]);
+    }
+
+    return num / backend::ScalarFp64::MulAdd(den, t, 1.0);
+}
+
+// The narrow region-B seed at a cut pair, over the narrow piece the argument
+// falls in; same reading as RationalFitNarrow's seed.
+inline double RationalSeedNarrowAtCut(std::size_t index,
+                                      int numDeg,
+                                      int denDeg,
+                                      double t) noexcept {
+    const double* c = detail::kNarrowRatBCoeffs.data() + detail::kNarrowRatBOffset[index];
+    const int storedNumDeg = detail::kNarrowRatBNumDeg[index];
+    double num = c[numDeg];
+
+    for (int j = numDeg - 1; j >= 0; --j)
+    {
+        num = backend::ScalarFp64::MulAdd(num, t, c[j]);
+    }
+
+    if (denDeg == 0)
+    {
+        return num;
+    }
+
+    double den = c[storedNumDeg + denDeg];
+
+    for (int j = denDeg - 1; j >= 1; --j)
+    {
+        den = backend::ScalarFp64::MulAdd(den, t, c[storedNumDeg + j]);
+    }
+
+    return num / backend::ScalarFp64::MulAdd(den, t, 1.0);
+}
+
+// The rational route on the narrow partition at a relaxed rung. It is
+// RationalFitAtRung's shape over the other partition, and the partition is the
+// whole of the difference: the pieces, the piece lookup and the region-B piece
+// edges are the narrow ones the uncut narrow route reads, and the pairs are the
+// narrow tables' own cut rather than the shipped tables' cut read over narrower
+// intervals. So a rung named together with the narrow partition answers from the
+// narrow pairs.
+template <double kAccuracyMultiplier>
+struct RationalFitNarrowAtRung {
+    static constexpr detail::NarrowRationalRegionAPairs kPairsA =
+        detail::RationalRegionANarrowDegrees<kAccuracyMultiplier>();
+    static constexpr detail::NarrowRationalRegionBPairs kPairsB =
+        detail::RationalRegionBNarrowDegrees<kAccuracyMultiplier>();
+
+    using Partition = NarrowRegionAPartition;
+
+    static constexpr double kRegionAFitsFrom = detail::kRatARouteLo;
+
+    static double EvalPiece(std::size_t index, double t) noexcept {
+        return RationalPieceNarrowAtCut(index, kPairsA.num[index], kPairsA.den[index], t);
+    }
+
+    static double RegionBSeed(double x) noexcept {
+        const std::size_t index = static_cast<std::size_t>(NarrowBPieceOf(x));
+        const double a = detail::kNarrowBEdges[index];
+        const double b = detail::kNarrowBEdges[index + 1];
+        const double t = 2.0 * (x - a) / (b - a) - 1.0;
+        return RationalSeedNarrowAtCut(index, kPairsB.num[index], kPairsB.den[index], t);
+    }
+
+    struct BandSource {
+        explicit BandSource(double) noexcept {}
+
+        double Next(int l, double x) noexcept
+        {
+            return RegionAValue<RationalFitNarrowAtRung>(l, x);
+        }
+    };
+};
+
+// The rational route's fit at a rung over the partition a policy names. The two
+// rung fits differ only in which partition's stored pairs they cut, so the
+// partition and the rung stay one choice here rather than a crossing.
+template <double kAccuracyMultiplier, FitGranularity kGranularity>
+using RationalRouteFitAtRung =
+    std::conditional_t<kGranularity == kDefaultFitGranularity,
+                       RationalFitAtRung<kAccuracyMultiplier>,
+                       RationalFitNarrowAtRung<kAccuracyMultiplier>>;
+
 // Region-A seed F_order(x) of the Chebyshev route at a scheme, for the lanes
 // and the reports that read one fit rather than a whole route.
 template <EvalScheme kScheme = kDefaultEvalScheme>
@@ -1778,23 +1890,12 @@ double BoysSingleImpl(int n, double x) noexcept {
         // the arguments the route's fits do not cover keep the shipped lane's
         // answer exactly as they do at m = 1.
         //
-        // The pairs are the shipped partition's, whatever partition the policy
-        // names: this lane's rung table for the route is the criterion applied
-        // to the shipped cover and seed, and the width-2.44 pieces' own relaxed
-        // pairs are a second derivation it does not carry. So a policy naming
-        // the narrow partition here would answer from the shipped pairs under
-        // the narrow partition's name, and this assertion refuses it rather
-        // than letting that substitution stand.
-        static_assert(Policy::kGranularity == kDefaultFitGranularity,
-                      "a relaxed rung of the rational route reads the shipped partition's own "
-                      "pairs, which are the ones its degree table is derived from, and the "
-                      "narrow pieces' relaxed pairs are a table this lane does not carry: "
-                      "naming the narrow partition past the reference multiplier would answer "
-                      "from the shipped pairs under the narrow partition's name. This "
-                      "assertion refuses it instead, and what it refuses is a table to derive "
-                      "rather than a combination that cannot be formed: read the narrow "
-                      "partition at the reference multiplier, or the shipped one at this rung");
-        return SingleOrder<Policy, RationalFitAtRung<kAccuracyMultiplier>>(n, x);
+        // Each partition carries its own pairs and its own cover, and the rung's
+        // criterion cuts the pair the policy's partition stores: a rung named
+        // with the narrow partition reads the narrow pieces at the narrow pairs
+        // rather than the shipped pairs under the narrow partition's name.
+        return SingleOrder<Policy,
+                           RationalRouteFitAtRung<kAccuracyMultiplier, Policy::kGranularity>>(n, x);
     } else
     {
         RequireShippedRoute<Policy>();
@@ -1892,19 +1993,10 @@ void BoysAllOrdersImpl(int nmax, double x, double* out) noexcept {
         // read for, and the batch recursion's gain is what the route's pieces
         // were never fitted through.
         //
-        // The pairs are the shipped partition's, as they are on the single-order
-        // entry above, so the same substitution is refused here for the same
-        // reason.
-        static_assert(Policy::kGranularity == kDefaultFitGranularity,
-                      "a relaxed rung of the rational route reads the shipped partition's own "
-                      "pairs, which are the ones its degree table is derived from, and the "
-                      "narrow pieces' relaxed pairs are a table this lane does not carry: "
-                      "naming the narrow partition past the reference multiplier would answer "
-                      "from the shipped pairs under the narrow partition's name. This "
-                      "assertion refuses it instead, and what it refuses is a table to derive "
-                      "rather than a combination that cannot be formed: read the narrow "
-                      "partition at the reference multiplier, or the shipped one at this rung");
-        AllOrdersBody<Policy, RationalFitAtRung<kAccuracyMultiplier>>(nmax, x, out);
+        // Each partition carries its own pairs, as it does on the single-order
+        // entry above, so the rung cuts the pair the policy's partition stores.
+        AllOrdersBody<Policy, RationalRouteFitAtRung<kAccuracyMultiplier, Policy::kGranularity>>(
+            nmax, x, out);
     } else
     {
         static_assert(Policy::kRoute == kDefaultFitRoute,
