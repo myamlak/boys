@@ -606,3 +606,193 @@ constexpr void RationalPairCut(const NumArray& num,
 
 template <double kAccuracyMultiplier, BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
 constexpr auto RegionADegrees() noexcept {
+    if constexpr (RoleUsesDoubleTables(kRole))
+    {
+        constexpr const auto& coeffs = TailTable<kBasis>(kCoeffs, kMonoCoeffs);
+        std::array<int, std::size(kPieces)> degrees{};
+
+        for (int order = 0; order <= kMaxOrder; ++order)
+        {
+            for (int p = kPieceStart[order]; p < kPieceStart[order + 1]; ++p)
+            {
+                const OrderPiece& piece = kPieces[static_cast<std::size_t>(p)];
+                const double amplification =
+                    RoleUsesBatchAmplification(kRole) ? RegionAAmplification(order, piece.b) : 1.0;
+                degrees[static_cast<std::size_t>(p)] =
+                    EffectiveDegree(coeffs,
+                                    static_cast<std::size_t>(piece.offset),
+                                    piece.deg,
+                                    kAccuracyMultiplier,
+                                    amplification,
+                                    RegionABudget(kRole));
+            }
+        }
+
+        return degrees;
+    } else
+    {
+        // The single-precision roles' own table, in whichever of its two
+        // stored forms the rung's scheme sums: the lane holds a Chebyshev
+        // table and a monomial one over the same pieces, so a Horner rung on
+        // it is cut from the monomial table exactly as the double lane's is.
+        constexpr const auto& coeffs = TailTable<kBasis>(f32::kCoeffs, f32::kMonoCoeffs);
+        std::array<int, std::size(f32::kPieces)> degrees{};
+
+        for (int order = 0; order <= kMaxOrder; ++order)
+        {
+            for (int p = f32::kPieceStart[order]; p < f32::kPieceStart[order + 1]; ++p)
+            {
+                const f32::OrderPiece& piece = f32::kPieces[static_cast<std::size_t>(p)];
+                const double amplification =
+                    RoleUsesBatchAmplification(kRole) ? RegionAAmplification(order, piece.b) : 1.0;
+                degrees[static_cast<std::size_t>(p)] =
+                    EffectiveDegree(coeffs,
+                                    static_cast<std::size_t>(piece.offset),
+                                    piece.deg,
+                                    kAccuracyMultiplier,
+                                    amplification,
+                                    RegionABudget(kRole));
+            }
+        }
+
+        return degrees;
+    }
+}
+
+template <double kAccuracyMultiplier, BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
+constexpr auto RegionBDegrees() noexcept {
+    if constexpr (kRole == BoysRole::kDoubleSingle || kRole == BoysRole::kDoubleBatch)
+    {
+        constexpr const auto& coeffs = TailTable<kBasis>(kBcoeffs, kMonoBcoeffs);
+        std::array<int, kMaxOrder + 1> degrees{};
+
+        for (int order = 0; order <= kMaxOrder; ++order)
+        {
+            degrees[static_cast<std::size_t>(order)] = EffectiveDegree(coeffs,
+                                                                       0,
+                                                                       kBDeg,
+                                                                       kAccuracyMultiplier,
+                                                                       RegionBAmplification(order),
+                                                                       RegionBBudget(kRole));
+        }
+
+        return degrees;
+    } else
+    {
+        // The single-precision lane's own seed, in the form its scheme sums;
+        // one row, as the double lane's is, so the scan is the same one.
+        constexpr const auto& coeffs = TailTable<kBasis>(f32::kBcoeffs, f32::kMonoBcoeffs);
+        std::array<int, kMaxOrder + 1> degrees{};
+
+        for (int order = 0; order <= kMaxOrder; ++order)
+        {
+            degrees[static_cast<std::size_t>(order)] = EffectiveDegree(coeffs,
+                                                                       0,
+                                                                       f32::kBDeg,
+                                                                       kAccuracyMultiplier,
+                                                                       RegionBAmplification(order),
+                                                                       RegionBBudget(kRole));
+        }
+
+        return degrees;
+    }
+}
+
+// The rational pair tables at a rung: per region-A piece and per region-B
+// order, the numerator and the denominator degree the pair criterion certifies.
+// Two flat int arrays rather than one of pairs, for the same reason the
+// polynomial tables are flat.
+//
+// The amplification each region's cut pays is the path's own, and the rational
+// route's path is not the shipped one:
+//
+//  - Region A reads one piece per order. The lane contract's finding that a
+//    piece fitted for the values alone does not survive the batch downward
+//    recursion's gain is why the route is read this way, and it is what makes
+//    A = 1 here rather than the batch role's w(b): the cut's error reaches the
+//    value the piece was read for with nothing in between, where the shipped
+//    route's seed reaches F_0 through the recursion and is amplified by it.
+//  - Region B reads its seed at order 0 and carries it up, so its cut pays the
+//    shipped table's own A_B(n) = prod_{j<n}(j+1/2) / kX0^n.
+//
+// The budget is the batch role's region budget at both: the tier the rung is
+// named by documents m * 5.5e-14 in every region, so the m = 1 base the
+// criterion spends is that bound's own base.
+struct RationalRegionAPairs {
+    std::array<int, std::size(kPieces)> num{};
+    std::array<int, std::size(kPieces)> den{};
+};
+
+struct RationalRegionBPairs {
+    std::array<int, kMaxOrder + 1> num{};
+    std::array<int, kMaxOrder + 1> den{};
+};
+
+template <double kAccuracyMultiplier>
+constexpr RationalRegionAPairs RationalRegionADegrees() noexcept {
+    constexpr double kBudget = RegionABudget(BoysRole::kDoubleBatch);
+    RationalRegionAPairs pairs{};
+
+    for (int p = 0; p < static_cast<int>(std::size(kPieces)); ++p)
+    {
+        const std::size_t index = static_cast<std::size_t>(p);
+        const int numDeg = kRatANumDeg[index];
+        const int denDeg = kRatADenDeg[index];
+
+        RationalPairCut(kRatACoeffs,
+                        static_cast<std::size_t>(kRatAOffset[index]),
+                        kRatACoeffs,
+                        static_cast<std::size_t>(kRatAOffset[index] + numDeg + 1),
+                        numDeg,
+                        denDeg,
+                        kAccuracyMultiplier,
+                        1.0,
+                        kBudget,
+                        pairs.num[index],
+                        pairs.den[index]);
+    }
+
+    return pairs;
+}
+
+template <double kAccuracyMultiplier>
+constexpr RationalRegionBPairs RationalRegionBDegrees() noexcept {
+    constexpr double kBudget = RegionBBudget(BoysRole::kDoubleBatch);
+    RationalRegionBPairs pairs{};
+
+    // One seed for the region rather than one fit per order, so the cut is the
+    // same pair at every order: the table is the seed's pair repeated, and it is
+    // kept per order so a reader reads it the way the polynomial table reads.
+    // The seed's own cut is judged at order 0's amplification - A_B(0) = 1, the
+    // smallest the region pays - because the pair is one evaluation: every
+    // order's output carries the same cut, and the amplification is a property
+    // of the order it is read for, not of the seed.
+    int numDeg = 0;
+    int denDeg = 0;
+
+    RationalPairCut(kRatBnum,
+                    0,
+                    kRatBden,
+                    0,
+                    kRatBnumDeg,
+                    kRatBdenDeg,
+                    kAccuracyMultiplier,
+                    RegionBAmplification(0),
+                    kBudget,
+                    numDeg,
+                    denDeg);
+
+    for (int order = 0; order <= kMaxOrder; ++order)
+    {
+        pairs.num[static_cast<std::size_t>(order)] = numDeg;
+        pairs.den[static_cast<std::size_t>(order)] = denDeg;
+    }
+
+    return pairs;
+}
+#endif // !defined(__CUDACC__)
+
+} // namespace detail
+} // namespace boys
+
+/// \endcond
