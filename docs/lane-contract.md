@@ -1036,6 +1036,135 @@ orders axis cannot be formed on it at all — that is the entry's signature and 
 built. Each limit names the combination and what is not certified about it; none falls back silently
 to another axis.
 
+### The same axis on the single-precision engines: eight orders to a register
+
+The double lane's width is set by its arithmetic path — `avx2-fp64`, four doubles to a `__m256` — and
+the single-precision path `avx2-fp32` holds eight floats in the same register, so the float lane's
+orders axis is **eight wide**. The width is not the interesting difference. The tables are.
+
+**One premise the double lane rests on is false here.** Every one of the double lane's region-A fits
+is cut at the same boundaries to the same degree, so one argument selects one piece index, one mapped
+argument and one coefficient stride for the whole vector. The float table gives each order its own
+cover: order 0 is cut into two pieces and order 14 into three, and a break is not shared between
+orders. A fixed argument therefore selects a *different* piece in each of the eight lanes, and the
+offset from one lane's coefficients to the next is not a stride at all. The float lane's vector
+carries the per-lane geometry instead — one mapped argument and one coefficient base per lane — and
+for the same reason it needs no uniform-piece premise to test before it runs.
+
+**What the eight lanes do share is the degree**, because the split Clenshaw's even/odd structure
+belongs to the degree and not to a coefficient. The group runs at its lanes' largest degree, and a
+lane whose own fit is cut shorter reads zeros above its own cut. That is not an approximation of the
+lane's polynomial; it *is* the lane's polynomial, and down the recurrence it is the lane's own
+arithmetic: the extra top step has an exact zero for both of its terms, so it hands the lane the
+state its own-degree summation would have started from. The claim is therefore the strong one — the
+packed value is the per-order value — and it is asserted as bit-identity rather than as a tolerance,
+on the same reasoning the double lane's is.
+
+**The direction of the difference between the two lanes is the multiply-add route.** The packed lane
+names its own instruction (`vfmadd`) and is contraction-free whatever the build says, so it performs
+one rounding where a scalar build with `BOYS_MULADD_SEPARATE=ON` performs two. On the default fused
+build the two are the same arithmetic and the values are the same bits — **0 of 999,240** swept values
+differ (five policies at the reference multiplier, three rungs, every `nmax` from 0 to 32 and five
+arguments past the lane's own interval) — so on that build the agreement is asserted without a
+tolerance. On the two-rounding build they part, and a difference between two lanes is then
+not a statement about either one's accuracy, so both are measured against the double lane, whose own
+error is a double lane's and is a reference at this scale:
+
+| policy at m = 1, two-rounding build | packed, from the double lane | per-order, from the double lane | packed versus per-order | bar |
+| --- | --- | --- | --- | --- |
+| chebyshev, split Clenshaw | 1.297e-07 | 1.297e-07 | 1.192e-07 | 1.5e-07 |
+| chebyshev, Horner | 9.029e-08 | 9.029e-08 | 1.192e-07 | 1.5e-07 |
+| rational minimax, split Clenshaw | **1.309e-07** | **1.727e-07** | 1.788e-07 | 1.5e-07 |
+| rational minimax, Horner | 1.309e-07 | 1.727e-07 | 1.788e-07 | 1.5e-07 |
+
+Read the middle three columns together. **On the Chebyshev route the two lanes are one number and it
+is inside the bar. On the rational route they are not one number, and the lane that is outside the bar
+is the per-order one**: 1.727e-07 against the 1.5e-07 that route is certified against, where the
+packed lane reads 1.309e-07 and is inside it. The pair difference of 1.788e-07 is the two-rounding
+scalar lane's excess and not the packed lane's, which is why the lane's test measures against the
+double lane on that build rather than against its sibling: a sibling that is itself over the bar
+cannot be the reference a bar is read against. This is the same defect class as the gate's
+pre-existing red row on the same build — `float.route.delivered float.policy.single`, 1.56625e-07
+against 1.5e-07 at `n = 16, x = 0.0781091`, byte-identical before and after this axis exists — which
+is a property of the region-A rational fit under two-rounding arithmetic and not of this lane.
+
+On the fused build, which is the default, the packed lane's own error is 1.297e-07 on the Chebyshev
+route and 1.309e-07 on the rational one, both inside the bar, and the per-order lane's is the same
+number because the two lanes are one arithmetic there. The gate's float book carries a row for this
+axis at m = 1, measured against the committed mpmath reference grid at the lane's own bar: **56,694
+cells**, delivered **1.06e-07** against **1.5e-07**, a ratio of **0.705**, with the worst cell at
+`n = 0, x = 0.072854` — the same figure on both multiply-add routes. The per-order entry's row over
+the same cells delivers 1.08e-07, so the axis moves which lane evaluates and not the figure the entry
+meets.
+
+**Outside region A the axis is not what is running.** Past `x = 11.8998` the entry answers from the
+certified scalar single lane at the policy the caller named, one order at a time, which is the same
+thing the per-order entry answers with — the axis names which lane runs inside its own interval and
+nothing beyond it. That fallback is compiled into the library's translation unit while a caller's
+per-order reference is compiled into the caller's, and the two agreeing bit for bit is a property of
+the arithmetic they compile and not of the dispatch. It did not hold, and the axis's own contract
+test is what showed it: the region-B recurrence in the single-order float body was written as a bare
+product and difference, which a compiler contracts where it is allowed to and not where it is not, so
+the entry's own loop and the identical call beside it — two inlined copies of one entry in one unit —
+could return adjacent values. Measured over region B, the entry's fallback and the per-order lane
+parted by at most **4.04e-09** at the worst (`x = 12.8164, n = 32`, from 6.4190026e-08 against
+6.8225951e-08), which is 2.7% of the lane's bar; in the contract sweep, where the only region-B
+argument is the first one, 15 of the 33 orders at `x = 11.8998` differed and no other argument did.
+Region C, which reads no coefficient and names no multiply-add, differed in nothing, and order 0 at
+every given argument differed in nothing either — it is the region-B seed and takes no recurrence
+step. The step is now spelled
+as the backend's two-rounding multiply-subtract, which rounds the product and then the difference on
+every build, so every unit that computes this recurrence computes the same number. No figure the
+library publishes moves: the gate's output is byte-identical before and after the change, and so is
+every row of its float book. The same bare spelling survives in the float lane's *batch* recurrences,
+which no entry this axis reaches — it is left where it is rather than moved under a figure that is
+already published.
+
+**What the packed lane costs, and against what.** Measured on one machine (Intel Core i7-9850H, Linux
+perf under WSL2, `instructions:u` and `uops_retired.retire_slots:u`), 2,048,000 calls of
+`BoysAllOrdersF32(32, x, out)` over 1,024 log-uniform arguments in [1e-3, kX0) at 2,000 repetitions,
+67,584,000 output values, one variant per run:
+
+| route | instructions | retired slots | slots per call | slots per value |
+| --- | --- | --- | --- | --- |
+| shipped `BoysAllOrdersF32` (a seed and a recursion) | **1,774,847,463** | **1,859,001,682** | 907.7 | 27.51 |
+| the per-order loop this axis replaces | 17,004,791,935 | 18,024,497,457 | 8,801.0 | 266.71 |
+| orders axis, gathered fetch | 5,521,695,364 | 6,856,442,627 | 3,347.9 | 101.45 |
+| orders axis, composed fetch | 8,562,138,514 | 8,982,817,264 | 4,386.1 | 132.90 |
+| orders axis, the entry the policy reaches | 5,548,334,305 | 6,897,521,696 | 3,367.9 | 102.06 |
+
+**The axis packs, and it is not the fastest thing on this lane.** Against the per-order loop it
+replaces, the entry retires **3.06** times fewer instructions and **2.61** times fewer slots: eight
+orders are summed in one register where eight fits were summed one at a time. Against the float lane's
+own default entry it retires **3.13** times *more* instructions and **3.71** times more slots, because
+that entry is one seed fit and a downward recurrence across all 33 orders — it pays for one fit where
+this lane pays for eight groups of them. A caller naming this axis is choosing the per-order lane's
+shape rather than the cheapest shape this lane has, and the axis is served because it was named.
+
+**Which fetch the entry takes, and why it is not the double lane's answer.** Both counters put the
+gathered fetch ahead of the composed one here — **5,521,695,364** against **8,562,138,514**
+instructions and **6,856,442,627** against **8,982,817,264** slots — which is the reverse of the
+double lane, where the gather is a microcode assist and loses on slots. Eight floats fill one gather
+where four doubles filled a microcoded one. The two fetches are one lane value for value, which the
+lane's own test asserts bit for bit over every scheme and the whole sweep, so this is a choice of
+instruction and nothing else, and the entry takes the one this lane's own counters prefer.
+
+**Where the entries are.** The float lane's two fetches are `BoysAllOrdersF32Simd` and
+`BoysAllOrdersF32SimdComposed`, and the policy a consumer names reaches the first through
+`BoysAllOrdersF32`. A relaxed multiplier reaches the lane through the same effective-degree table the
+double lane uses at the degree the float fits are stored; it is answered on the shipped route and
+scheme alone, because a degree table is certified against one stored table of one fit family. The
+float lane carries the computation budget as a fourth parameter of that entry — `BoysBudget::kFloat`
+and `BoysBudget::kFp16` are certified against different bars, 1.5e-7 and 1e-7, so a lane that
+answered an fp16 policy with the kFloat degrees would deliver the looser figure under the tighter
+name.
+
+**Re-measurement.** As for the double lane, every figure above is a property of one build's code and
+one machine's microarchitecture, and the counters are re-read with
+`benchmarks/boys_across_orders_benchmark.cpp` (`--variant=orders-f32-…`), whose header carries the
+command. The entry's own row is `--variant=orders-f32-orders-axis`, which calls the public
+`BoysAllOrdersF32` on the orders policy and so measures the fetch the entry actually selects.
+
 ## Large arguments, and the boundaries at x = 11.8998 and x = 28.9893
 
 For x at or above 28.98933773882074 the library uses a single closed-form asymptotic result. **No

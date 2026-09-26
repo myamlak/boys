@@ -1218,9 +1218,19 @@ float SingleOrderF32Body(int n, float x) noexcept {
     {
         const float expx = 0.5f * std::exp(-x);
 
+        // The recurrence step is written as the backend's two-rounding
+        // multiply-subtract rather than as a bare product and difference. A
+        // bare one contracts where the compiler contracts and not where it
+        // does not, which would make this value a property of the calling
+        // translation unit's flags - and worse, of the optimizer's choice
+        // between two inlined copies of this call in one unit, so that two
+        // call sites of the same entry could return adjacent values. The
+        // spelled form rounds the product and then the difference on every
+        // build, so every unit that computes this recurrence computes the same
+        // number.
         for (int l = 0; l < n; ++l)
         {
-            f = ((static_cast<float>(l) + 0.5f) * f - expx) / x;
+            f = backend::ScalarFp32::MulSub(static_cast<float>(l) + 0.5f, f, expx) / x;
         }
 
         return f;
@@ -1537,6 +1547,14 @@ template <EvalScheme kScheme,
           FitRoute kRoute,
           FitGranularity kGranularity>
 void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept;
+
+// The single-precision lane's entry on the same axis (defined in
+// boys_orders_simd.cpp), declared here for the same reason and one more: this
+// lane's degree table is certified against a region budget as well as against a
+// table, so the computation budget is a choice it carries and the double lane's
+// entry does not.
+template <EvalScheme kScheme, double kAccuracyMultiplier, FitRoute kRoute, BoysBudget kBudget>
+void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept;
 
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 void BoysAllOrdersImpl(int nmax, double x, double* out) noexcept {
@@ -1887,7 +1905,35 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
     assert(x >= 0.0f);
     assert(out != nullptr);
 
-    if constexpr (kAccuracyMultiplier == 1.0)
+    if constexpr (Policy::kPack == PackAxis::kOrders)
+    {
+        // The across-orders packed lane: eight orders of one argument in one
+        // vector register, which is the shape BoysAllOrdersF32(nmax, x, out)
+        // has and the axis the caller named. It carries the same tables and the
+        // same arithmetic as this engine - a lane's value is the per-order
+        // value, and the lane's own suite asserts it - so the axis changes
+        // which lane runs and not which fit is read.
+        //
+        // The rung restriction is the one every other float entry states: a
+        // degree table is certified against one stored table of one fit family
+        // and against one region budget, so past the reference multiplier this
+        // lane serves the shipped route and scheme at the budget it was given.
+        if constexpr (kAccuracyMultiplier != 1.0)
+        {
+            static_assert(Policy::kRoute == kDefaultFitRoute &&
+                              Policy::kScheme == kDefaultEvalScheme,
+                          "the relaxed rungs cut the float lane's fits by a table of effective "
+                          "degrees, and a degree table is certified against one stored table of "
+                          "one fit family: past the reference multiplier this engine serves the "
+                          "shipped route and scheme alone, and every route and scheme is served "
+                          "at it");
+        }
+
+        BoysAllOrdersF32Packed<Policy::kScheme,
+                               kAccuracyMultiplier,
+                               Policy::kRoute,
+                               Policy::kBudget>(nmax, x, out);
+    } else if constexpr (kAccuracyMultiplier == 1.0)
     {
         if (x == 0.0f)
         {
@@ -2302,6 +2348,47 @@ extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
                                          FitGranularity::kNarrow>(int nmax,
                                                                   double x,
                                                                   double* out) noexcept;
+// The single-precision lane's shapes on the same axis: two schemes and two
+// computation budgets at the reference multiplier with either route, and the
+// six relaxed rungs of the shipped route and scheme alone. Declared here for
+// the reason above - so that a call site reaches the definition the library
+// already holds rather than instantiating a second copy of the body.
+#define BOYS_F32_ORDERS_PACKED_REFERENCE(kScheme, kBudget)                                         \
+    extern template void BoysAllOrdersF32Packed<kScheme, 1.0, FitRoute::kChebyshev, kBudget>(      \
+        int nmax, float x, float* out) noexcept;                                                   \
+    extern template void                                                                            \
+    BoysAllOrdersF32Packed<kScheme, 1.0, FitRoute::kRationalMinimax, kBudget>(                     \
+        int nmax, float x, float* out) noexcept;
+
+#define BOYS_F32_ORDERS_PACKED_RUNGS(kBudget)                                                      \
+    extern template void                                                                            \
+    BoysAllOrdersF32Packed<kDefaultEvalScheme, 64.0, FitRoute::kChebyshev, kBudget>(               \
+        int nmax, float x, float* out) noexcept;                                                   \
+    extern template void                                                                            \
+    BoysAllOrdersF32Packed<kDefaultEvalScheme, 256.0, FitRoute::kChebyshev, kBudget>(              \
+        int nmax, float x, float* out) noexcept;                                                   \
+    extern template void                                                                            \
+    BoysAllOrdersF32Packed<kDefaultEvalScheme, 1024.0, FitRoute::kChebyshev, kBudget>(             \
+        int nmax, float x, float* out) noexcept;                                                   \
+    extern template void                                                                            \
+    BoysAllOrdersF32Packed<kDefaultEvalScheme, 4096.0, FitRoute::kChebyshev, kBudget>(             \
+        int nmax, float x, float* out) noexcept;                                                   \
+    extern template void                                                                            \
+    BoysAllOrdersF32Packed<kDefaultEvalScheme, 16384.0, FitRoute::kChebyshev, kBudget>(            \
+        int nmax, float x, float* out) noexcept;                                                   \
+    extern template void                                                                            \
+    BoysAllOrdersF32Packed<kDefaultEvalScheme, 65536.0, FitRoute::kChebyshev, kBudget>(            \
+        int nmax, float x, float* out) noexcept;
+
+BOYS_F32_ORDERS_PACKED_REFERENCE(kDefaultEvalScheme, BoysBudget::kFloat)
+BOYS_F32_ORDERS_PACKED_REFERENCE(kDefaultEvalScheme, BoysBudget::kFp16)
+BOYS_F32_ORDERS_PACKED_REFERENCE(EvalScheme::kHorner, BoysBudget::kFloat)
+BOYS_F32_ORDERS_PACKED_REFERENCE(EvalScheme::kHorner, BoysBudget::kFp16)
+BOYS_F32_ORDERS_PACKED_RUNGS(BoysBudget::kFloat)
+BOYS_F32_ORDERS_PACKED_RUNGS(BoysBudget::kFp16)
+
+#undef BOYS_F32_ORDERS_PACKED_REFERENCE
+#undef BOYS_F32_ORDERS_PACKED_RUNGS
 
 // ---------------------------------------------------------------------------
 // The all-orders batch over an argument array (BoysAllN)

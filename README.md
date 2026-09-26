@@ -355,12 +355,25 @@ One call cannot form the axis, and it is refused where the call is named rather 
 orders, and this call has one, so there are not four to fill a lane with — that is the entry's
 signature and not a body nobody built.
 
-**The single-precision entries refuse the axis too, for the opposite reason.**
-`BoysAllOrdersF32(nmax, x, out)` has nmax + 1 orders of one argument, which is exactly what a packed
-lane would hold, so the axis names real work on that shape; what the lane lacks is a packed body to
-answer it with — the AVX2 tier is double and half only — so an orders-axis policy there would be
-read and then ignored, and the entry refuses it at the call site instead. That refusal is counted as
-outstanding work in the gate's record rather than as a boundary of the call.
+The single-precision engines carry the same axis at **eight** orders to a register, because that is
+what the float lane's own arithmetic path is: `avx2-fp32` holds eight floats where `avx2-fp64` holds
+four doubles. The lane's tables are the ones that differ, and they are what sets the width rather
+than the register: the float table gives each order its own cover, so one argument selects a
+different piece in each of the eight lanes and the eight coefficient bases are fetched per lane
+rather than stepped at a stride. The eight lanes share the degree the group is summed at, and a lane
+whose own fit is cut shorter reads zeros above its own cut — which is that lane's own polynomial, and
+down the sum it is that lane's own arithmetic, so the packed value is the per-order value and not a
+value near it. Measured over region A and every order at the reference multiplier, the packed lane
+and the per-order lane differ in **0 of 999240 values**; the gate carries a row for this axis beside
+the per-order one, judged against the committed reference grid at the float lane's own 1.5e-7, and
+its worst cell reads **1.06e-07**, a ratio of 0.705 to the bar.
+
+**On this lane the axis is not the cheaper way to get the values.** It retires 3.06 times fewer
+instructions and 2.61 times fewer retired slots than the per-order loop it replaces, which is what
+filling the register buys — and 3.13 times *more* of both than the float lane's default entry, which
+serves all 33 orders from one seed fit and a downward recurrence. A caller naming this axis is
+choosing the per-order lane's shape, and the axis is served because it was named; the figures and the
+command that reproduces them are in [docs/lane-contract.md](docs/lane-contract.md#the-same-axis-on-the-single-precision-engines-eight-orders-to-a-register).
 
 Every other combination the axis names is built and measured. A relaxed multiplier is answered by the
 same effective-degree cut this library's other rungs are truncated by, applied at the degree the lane
