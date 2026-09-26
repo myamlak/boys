@@ -975,9 +975,9 @@ slots, in three runs agreeing to within 232 instructions and 0.02% of slots, whe
 9,510,675,358) and the shipped entry's row reproduces (6,326,030,697 instructions, the published
 figure to seven digits, and 6,729,655,927 slots, within a percent). The **1.42** and **2.02** ratios
 drawn from the composed figure therefore belong to the revision they were measured at, and the
-composed row is due a re-derivation at the current tables — the row is left as measured rather than
-quietly restated, because the two variants the lane in this section shares its counters with are the
-ones that reproduce.
+composed row is due a re-derivation at the current tables. The row is left as measured rather than
+quietly restated: it is not the figure this change moves, and restating it here would hide the
+distance a reader measuring the same variant would find.
 
 **The re-measurement obligation.** A second packed path is re-measured whenever another axis moves,
 because every figure above is a property of one build's code and one machine's microarchitecture — a
