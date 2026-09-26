@@ -621,10 +621,53 @@ __global__ void BoysAllNF64KernelEff(int nmax, const double* x, double* out, siz
 }
 
 // ---------------------------------------------------------------------------
-// the shape the lane gained: the narrow partition
+// the two shapes the lane gained: the orders axis, and the narrow partition
 // ---------------------------------------------------------------------------
-// Two kernels and not one, because the shape has a full-accuracy form and a
-// rung's form, exactly as the all-orders kernel above does.
+// Six kernels and not two, because each shape has a full-accuracy form and a
+// rung's form, exactly as the all-orders kernel above does. The orders axis is
+// a body choice and the partition is a lane choice, so the two compose: the
+// last pair is the narrow partition read with the orders axis, and it is the
+// combination a caller asking for both gets rather than a third arithmetic.
+//
+// The orders axis is a choice inside region A only: past kX0 these kernels run
+// the certified all-orders body, whose row is the lane's own bound over the
+// whole range, so the axis adds a claim in region A and takes none away
+// outside it.
+template <typename Lane>
+__device__ __forceinline__ void DeviceOrdersBody(
+    const Lane& lane, int order, double xx, double* out, size_t count, size_t i) {
+    detail::DeviceOrdersF64(lane, order, xx, [&](int l, double v) { out[l * count + i] = v; });
+}
+
+__global__ void BoysAllOrdersF64OrdersKernel(const int* n,
+                                             const double* __restrict__ x,
+                                             double* __restrict__ out,
+                                             size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DeviceOrdersBody(Lane64Full{}, n[i], x[i], out, count, i);
+}
+
+template <int kLane>
+__global__ void BoysAllOrdersF64OrdersKernelEff(const int* n,
+                                                const double* __restrict__ x,
+                                                double* __restrict__ out,
+                                                size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DeviceOrdersBody(Lane64EffBatch<kLane>{}, n[i], x[i], out, count, i);
+}
+
 __global__ void BoysAllOrdersF64NarrowKernel(const int* n,
                                              const double* __restrict__ x,
                                              double* __restrict__ out,
@@ -655,6 +698,34 @@ __global__ void BoysAllOrdersF64NarrowKernelEff(const int* n,
     detail::DeviceAllOrdersF64(Lane64Narrow<true>{}, n[i], x[i], [&](int l, double v) {
         out[l * count + i] = v;
     });
+}
+
+__global__ void BoysAllOrdersF64NarrowOrdersKernel(const int* n,
+                                                   const double* __restrict__ x,
+                                                   double* __restrict__ out,
+                                                   size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DeviceOrdersBody(Lane64Narrow<false>{}, n[i], x[i], out, count, i);
+}
+
+__global__ void BoysAllOrdersF64NarrowOrdersKernelEff(const int* n,
+                                                      const double* __restrict__ x,
+                                                      double* __restrict__ out,
+                                                      size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DeviceOrdersBody(Lane64Narrow<true>{}, n[i], x[i], out, count, i);
 }
 
 template <int kLane, bool kFastExp>
@@ -1436,6 +1507,20 @@ extern "C" int BoysCudaLaunchAllNF64Eff(
     return static_cast<int>(cudaGetLastError());
 }
 
+extern "C" int BoysCudaLaunchAllOrdersF64Orders(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    BoysAllOrdersF64OrdersKernel
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF64OrdersEff(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    BoysAllOrdersF64OrdersKernelEff<1>
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
 extern "C" int BoysCudaLaunchAllOrdersF64Narrow(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
     BoysAllOrdersF64NarrowKernel
@@ -1446,6 +1531,20 @@ extern "C" int BoysCudaLaunchAllOrdersF64Narrow(
 extern "C" int BoysCudaLaunchAllOrdersF64NarrowEff(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
     BoysAllOrdersF64NarrowKernelEff
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF64NarrowOrders(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    BoysAllOrdersF64NarrowOrdersKernel
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF64NarrowOrdersEff(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    BoysAllOrdersF64NarrowOrdersKernelEff
         <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
     return static_cast<int>(cudaGetLastError());
 }

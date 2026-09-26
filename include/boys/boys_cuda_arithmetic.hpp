@@ -414,6 +414,54 @@ __device__ __forceinline__ void DeviceAllOrdersF32(
     }
 }
 
+// ---------------------------------------------------------------------------
+// every order at one argument, each from its own fit
+// ---------------------------------------------------------------------------
+
+// The same ladder as the body above with region A read the other way: every
+// order's own piece is located and its own fit summed, so no value here came
+// down a recurrence from a higher order's fit. The two agree to the fit's own
+// accuracy and differ in where the rounding happens, which is the whole of
+// what the choice between them buys.
+//
+// The axis covers region A and nothing else — past kX0 the body is the
+// certified one above, which is also where the region-A fit it replaces ends.
+// Outside region A the two bodies are one body, so a row that carries this
+// axis names its interval as region A rather than claiming the rest.
+template <typename Lane, typename Store>
+__device__ __forceinline__ void DeviceOrdersF64(
+    const Lane& lane, int order, double xx, Store store) {
+    if (xx < kX0)
+    {
+        for (int l = 0; l <= order; ++l)
+        {
+            store(l, DeviceSeed(lane, l, xx));
+        }
+
+        return;
+    }
+
+    DeviceAllOrdersF64(lane, order, xx, store);
+}
+
+// The float lane's and the fp16 lane's, over the double region-A seed lane the
+// body above takes for the same reason.
+template <typename SeedLane, typename Lane, typename Store>
+__device__ __forceinline__ void DeviceOrdersF32(
+    const SeedLane& seedLane, const Lane& lane, int order, float xx, Store store) {
+    if (xx < static_cast<float>(kX0))
+    {
+        for (int l = 0; l <= order; ++l)
+        {
+            store(l, static_cast<float>(DeviceSeed(seedLane, l, static_cast<double>(xx))));
+        }
+
+        return;
+    }
+
+    DeviceAllOrdersF32(seedLane, lane, order, xx, store);
+}
+
 } // namespace boys::detail
 
 /// \endcond

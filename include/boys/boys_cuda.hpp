@@ -329,6 +329,32 @@ public:
     static BoysStatus AllOrdersF64Narrow(
         const int* n, const double* x, double* out, std::size_t count, void* stream);
 
+    /// F_0(x[i])..F_n(x[i]) as AllOrdersF64, with region A read as one fit per
+    /// order: every order's own piece is located and its own fit summed, where
+    /// the shipped entry seeds the top order's fit and brings the lower orders
+    /// back down a recurrence. Shape, layout, arguments and the multiplier are
+    /// AllOrdersF64's, and the values agree to the fit's own accuracy.
+    ///
+    /// The choice covers region A and nothing else: past kX0 this entry runs
+    /// the certified all-orders body, which is the interval its claim names.
+    /// The CPU lane's packing axis is the same choice (BoysPackAxes), and its
+    /// orders member's interval is region A for the same reason.
+    ///
+    /// \returns kDeviceError when the launch fails.
+    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+    static BoysStatus AllOrdersF64Orders(
+        const int* n, const double* x, double* out, std::size_t count, void* stream);
+
+    /// F_0(x[i])..F_n(x[i]) with both of the choices above in force: the
+    /// narrow partition's pieces, read one fit per order inside region A and
+    /// its piecewise region-B seed outside it, with the certified all-orders
+    /// body past kX0.
+    ///
+    /// \returns kDeviceError when the launch fails.
+    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+    static BoysStatus AllOrdersF64NarrowOrders(
+        const int* n, const double* x, double* out, std::size_t count, void* stream);
+
     /// F_0(x[i])..F_nmax(x[i]) at one common nmax, double precision — the
     /// uniform-order batch: many arguments, all nmax + 1 orders each, the
     /// layout AllNF32 documents and the bound the CPU lane's BoysAllN

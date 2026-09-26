@@ -752,8 +752,8 @@ void CompareDeviceWithHost(const Reference& ref,
     }
 }
 
-// The row, measured against the reference and against the host lane at the
-// rung the call is made at.
+// The three rows, each measured against the reference and against the host
+// lane at the rung the call is made at.
 //
 // Two host comparisons and not one. The lane's shipped batch entry is the one
 // host entry every rung carries, so it is what a relaxed device row is read
@@ -761,7 +761,9 @@ void CompareDeviceWithHost(const Reference& ref,
 // call site and instantiates its own rungs, and the host lane's fits are
 // instantiated at the accuracy tiers, so the two lists meet at m = 1 alone.
 // There, and only there, the row is additionally shown against the host's
-// combination of the same name.
+// combination of the same name - the same route, scheme, partition and packing
+// axis - which is the counterpart that says the two lanes agree about the
+// option and not merely about the function.
 //
 // The cross-lane claims carry their rung in every book, the first included,
 // because the device-option coverage below reads a claim as belonging to an
@@ -769,34 +771,99 @@ void CompareDeviceWithHost(const Reference& ref,
 // cross-lane claim is not the row itself.
 template <double kMultiplier>
 void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung) {
-    const char* const kOption = DeviceRow(boys::DeviceEntry::kAllOrdersF64Narrow).name;
-    const std::string narrow = Label(kOption, rung);
+    const std::string narrow = Label(DeviceRow(boys::DeviceEntry::kAllOrdersF64Narrow).name, rung);
+    const std::string orders = Label(DeviceRow(boys::DeviceEntry::kAllOrdersF64Orders).name, rung);
+    const std::string both =
+        Label(DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowOrders).name, rung);
     const std::string rungWord = std::string(" m=") + (rung == nullptr ? "1" : rung);
     const double bound = kMultiplier * kBoundDoubleBatch;
     const double pairBound = 2.0 * bound;
 
     const int narrowRow = AddClaim(narrow.c_str(), "A..C", bound);
-    const int narrowShipped =
-        AddClaim((kOption + rungWord + " vs fp64 host").c_str(), "A..C", pairBound);
+    const int ordersRow = AddClaim(orders.c_str(), "A..C", bound);
+    const int bothRow = AddClaim(both.c_str(), "A..C", bound);
+    const int narrowShipped = AddClaim(
+        (DeviceRow(boys::DeviceEntry::kAllOrdersF64Narrow).name + rungWord + " vs fp64 host")
+            .c_str(),
+        "A..C",
+        pairBound);
+    const int ordersShipped = AddClaim(
+        (DeviceRow(boys::DeviceEntry::kAllOrdersF64Orders).name + rungWord + " vs fp64 host")
+            .c_str(),
+        "A..C",
+        pairBound);
+    const int bothShipped = AddClaim(
+        (DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowOrders).name + rungWord
+         + " vs fp64 host")
+            .c_str(),
+        "A..C",
+        pairBound);
 
     using NarrowPolicy = boys::EvalPolicy<boys::kDefaultFitRoute,
                                           boys::kDefaultEvalScheme,
                                           boys::BoysBudget::kFloat,
                                           boys::PackAxis::kArguments,
                                           boys::FitGranularity::kNarrow>;
+    using OrdersPolicy = boys::EvalPolicy<boys::kDefaultFitRoute,
+                                          boys::kDefaultEvalScheme,
+                                          boys::BoysBudget::kFloat,
+                                          boys::PackAxis::kOrders,
+                                          boys::FitGranularity::kShipped>;
+    using NarrowOrdersPolicy = boys::EvalPolicy<boys::kDefaultFitRoute,
+                                                boys::kDefaultEvalScheme,
+                                                boys::BoysBudget::kFloat,
+                                                boys::PackAxis::kOrders,
+                                                boys::FitGranularity::kNarrow>;
 
     const std::vector<double> narrowOut = LaunchDeviceChoice<kMultiplier>(
-        ref, grid, narrow.c_str(), &boys::BoysCuda::AllOrdersF64Narrow<kMultiplier>, narrowRow);
+        ref,
+        grid,
+        narrow.c_str(),
+        &boys::BoysCuda::AllOrdersF64Narrow<kMultiplier>,
+        narrowRow);
+    const std::vector<double> ordersOut = LaunchDeviceChoice<kMultiplier>(
+        ref,
+        grid,
+        orders.c_str(),
+        &boys::BoysCuda::AllOrdersF64Orders<kMultiplier>,
+        ordersRow);
+    const std::vector<double> bothOut = LaunchDeviceChoice<kMultiplier>(
+        ref,
+        grid,
+        both.c_str(),
+        &boys::BoysCuda::AllOrdersF64NarrowOrders<kMultiplier>,
+        bothRow);
 
     CompareDeviceWithHost<kMultiplier, boys::DefaultPolicyFp64>(
         ref, grid, narrowOut, narrowShipped);
+    CompareDeviceWithHost<kMultiplier, boys::DefaultPolicyFp64>(
+        ref, grid, ordersOut, ordersShipped);
+    CompareDeviceWithHost<kMultiplier, boys::DefaultPolicyFp64>(ref, grid, bothOut, bothShipped);
 
     if constexpr (kMultiplier == boys::kBoysFullAccuracyMultiplier)
     {
-        const int narrowHost =
-            AddClaim((kOption + rungWord + " vs fp64 host narrow").c_str(), "A..C", pairBound);
+        const int narrowHost = AddClaim(
+            (DeviceRow(boys::DeviceEntry::kAllOrdersF64Narrow).name + rungWord
+             + " vs fp64 host narrow")
+                .c_str(),
+            "A..C",
+            pairBound);
+        const int ordersHost = AddClaim(
+            (DeviceRow(boys::DeviceEntry::kAllOrdersF64Orders).name + rungWord
+             + " vs fp64 host orders")
+                .c_str(),
+            "A..C",
+            pairBound);
+        const int bothHost = AddClaim(
+            (DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowOrders).name + rungWord
+             + " vs fp64 host narrow orders")
+                .c_str(),
+            "A..C",
+            pairBound);
 
         CompareDeviceWithHost<kMultiplier, NarrowPolicy>(ref, grid, narrowOut, narrowHost);
+        CompareDeviceWithHost<kMultiplier, OrdersPolicy>(ref, grid, ordersOut, ordersHost);
+        CompareDeviceWithHost<kMultiplier, NarrowOrdersPolicy>(ref, grid, bothOut, bothHost);
     }
 }
 

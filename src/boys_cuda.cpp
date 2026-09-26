@@ -33,9 +33,17 @@ int BoysCudaLaunchSingleF64(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64Orders(
+    const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64OrdersEff(
+    const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64Narrow(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64NarrowEff(
+    const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64NarrowOrders(
+    const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64NarrowOrdersEff(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllNF64(int nmax, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchSingleF32Eff(
@@ -460,6 +468,30 @@ BoysStatus BoysCuda::AllOrdersF64(
 }
 
 template <double kAccuracyMultiplier>
+BoysStatus BoysCuda::AllOrdersF64Orders(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    if constexpr (kAccuracyMultiplier == 1.0)
+    {
+        return RunLaunch(BoysCudaLaunchAllOrdersF64Orders, n, x, out, count, stream);
+    } else
+    {
+        const auto status = EnsureEffTables<kAccuracyMultiplier>();
+
+        if (status != BoysStatus::kSuccess)
+        {
+            return status;
+        }
+
+        return RunLaunch(BoysCudaLaunchAllOrdersF64OrdersEff, n, x, out, count, stream);
+    }
+}
+
+template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF64Narrow(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
@@ -483,6 +515,30 @@ BoysStatus BoysCuda::AllOrdersF64Narrow(
         }
 
         return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowEff, n, x, out, count, stream);
+    }
+}
+
+template <double kAccuracyMultiplier>
+BoysStatus BoysCuda::AllOrdersF64NarrowOrders(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    if constexpr (kAccuracyMultiplier == 1.0)
+    {
+        return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrders, n, x, out, count, stream);
+    } else
+    {
+        const auto status = EnsureEffTables<kAccuracyMultiplier>();
+
+        if (status != BoysStatus::kSuccess)
+        {
+            return status;
+        }
+
+        return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrdersEff, n, x, out, count, stream);
     }
 }
 
@@ -618,6 +674,10 @@ template BoysStatus BoysCuda::AllOrdersF64<1.0>(
     const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF64Narrow<1.0>(
     const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Orders<1.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrders<1.0>(
+    const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllNF64<1.0>(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
 template BoysStatus BoysCuda::SingleF16<1.0>(const int*, const F16*, F16*, std::size_t, void*);
@@ -635,6 +695,10 @@ template BoysStatus BoysCuda::SingleF64<2.0>(
 template BoysStatus BoysCuda::AllOrdersF64<2.0>(
     const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF64Narrow<2.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Orders<2.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrders<2.0>(
     const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllNF64<2.0>(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
@@ -655,6 +719,10 @@ template BoysStatus BoysCuda::AllOrdersF64<10.0>(
     const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF64Narrow<10.0>(
     const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Orders<10.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrders<10.0>(
+    const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllNF64<10.0>(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
 template BoysStatus BoysCuda::SingleF16<10.0>(const int*, const F16*, F16*, std::size_t, void*);
@@ -674,6 +742,10 @@ template BoysStatus BoysCuda::AllOrdersF64<100.0>(
     const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF64Narrow<100.0>(
     const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Orders<100.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrders<100.0>(
+    const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllNF64<100.0>(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
 template BoysStatus BoysCuda::SingleF16<100.0>(const int*, const F16*, F16*, std::size_t, void*);
@@ -692,6 +764,10 @@ template BoysStatus BoysCuda::AllOrdersF64<1e4>(
     const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF64Narrow<1e4>(
     const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Orders<1e4>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrders<1e4>(
+    const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllNF64<1e4>(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
 template BoysStatus BoysCuda::SingleF16<1e4>(const int*, const F16*, F16*, std::size_t, void*);
@@ -709,6 +785,10 @@ template BoysStatus BoysCuda::SingleF64<1e8>(
 template BoysStatus BoysCuda::AllOrdersF64<1e8>(
     const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF64Narrow<1e8>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Orders<1e8>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrders<1e8>(
     const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllNF64<1e8>(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
@@ -803,6 +883,15 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
      DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kPartition, RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64,
      kFormF64, true, nullptr},
+    {DeviceEntry::kAllOrdersF64Orders, "all-orders-fp64-orders", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kPacking, RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64,
+     kFormF64, true, nullptr},
+    {DeviceEntry::kAllOrdersF64NarrowOrders, "all-orders-fp64-narrow-orders",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kPacking, RegionBExp::kAccurate,
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
+
     {DeviceEntry::kAllNF64, "all-n-fp64", DeviceOptionGroup::kLaunched,
      DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllN, DeviceOptionQuestion::kAllN,
      DeviceOptionAxis::kNone, RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64,

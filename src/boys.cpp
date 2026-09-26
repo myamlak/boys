@@ -805,24 +805,18 @@ Carriage CarriesSingle(FitRoute route,
 
 // The device lane's rule. Its accuracy multiplier is a template argument at the
 // call site against a certified degree table the lane holds per rung, so every
-// rung is served, and both of the lane's partitions are served: the shipped cut
-// of the double lane's fits (BoysCuda::AllOrdersF64 and its siblings) and the
+// rung is served. Both of the lane's partitions are served: the shipped cut of
+// the double lane's fits (BoysCuda::AllOrdersF64 and its siblings) and the
 // narrow one, whose pieces, piecewise region-B seed and per-rung effective
-// degrees the lane holds in its own tables (BoysCuda::AllOrdersF64Narrow). What
-// the lane does not yet have is the packing axis: its kernels are one order per
-// lane over an array of arguments, and the body that reads region A one fit per
-// order is a kernel this lane has not built. Nor a route or a scheme of another
-// family: its degree tables are certified for the shipped fit, and the rational
-// family's pairs and the monomial basis's coefficients are the host lane's.
-Carriage CarriesDevice(FitRoute route, EvalScheme scheme, PackAxis axis) noexcept {
-    if (axis != kDefaultPackAxis)
-    {
-        return {false,
-                "the device lane's kernels are one order per lane over an array of arguments, so "
-                "the orders axis on this lane is a kernel to write rather than a shape the call "
-                "cannot have"};
-    }
-
+// degrees the lane holds in its own tables (BoysCuda::AllOrdersF64Narrow).
+// Both of its packing axes are served too: one ladder per argument from the top
+// order's fit, and one fit per order inside region A
+// (BoysCuda::AllOrdersF64Orders, and the two together in
+// BoysCuda::AllOrdersF64NarrowOrders). What the lane does not take is a route
+// or a scheme of another family: its degree tables are certified for the
+// shipped fit, and the rational family's pairs and the monomial basis's
+// coefficients are the host lane's tables.
+Carriage CarriesDevice(FitRoute route, EvalScheme scheme) noexcept {
     if (route != kDefaultFitRoute || scheme != kDefaultEvalScheme)
     {
         return {false,
@@ -862,7 +856,7 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
         switch (precision)
         {
         case Precision::kFp32Device:
-            return CarriesDevice(route, scheme, axis);
+            return CarriesDevice(route, scheme);
         case Precision::kFp32:
         case Precision::kFp16:
             return CarriesSingle(route, scheme, axis, granularity, tier);
