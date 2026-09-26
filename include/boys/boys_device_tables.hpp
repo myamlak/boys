@@ -91,6 +91,31 @@ enum class RegionBExp : int {
     kFast,
 };
 
+/// The region-B exponential the device lane's f32 entries evaluate when the
+/// call site names none, which is the option whose bound is the lane's own:
+/// \c RegionBExp::kAccurate, the library routine the f32 batch bodies have
+/// always run.
+///
+/// It is named for the same reason the CPU surface's defaults are: so that the
+/// selection in force is a thing a caller can point at, a document can cite and
+/// a test can compare against, rather than the zero value of a template
+/// parameter. A caller who names no exponential gets this name; naming it
+/// explicitly is the same instantiation and no second arithmetic.
+///
+/// The other axis of the device lane's default is its accuracy multiplier,
+/// which is \c kBoysFullAccuracyMultiplier, the same name the CPU entries
+/// default to. The two are the whole of what "the device lane's default"
+/// selects: the device surface takes no fit route, no scheme, no budget, no
+/// packing axis and no partition, so a caller choosing a device precision and
+/// naming neither of these is choosing everything the lane has to choose.
+///
+/// Neither default was chosen against a measurement — see the per-precision
+/// defaults in docs/lane-contract.md for what that means and what changes when
+/// one is set from a timing.
+///
+/// \ingroup boys
+inline constexpr RegionBExp kDefaultRegionBExp = RegionBExp::kAccurate;
+
 /// The six degree tables an entry can read.
 ///
 /// Relaxation is a property of a lane and not of a precision: two lanes of one

@@ -2675,10 +2675,8 @@ void BoysAllNF32(int nmax, const float* x, float* out, std::size_t count) noexce
 template <double kAccuracyMultiplier> F16 BoysSingleF16(int n, F16 x) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(x >= static_cast<F16>(0.0f));
-    return static_cast<F16>(
-        detail::BoysSingleF32Impl<kAccuracyMultiplier,
-                              EvalPolicy<kDefaultFitRoute, kDefaultEvalScheme, BoysBudget::kFp16>>(
-            n, static_cast<float>(x)));
+    return static_cast<F16>(detail::BoysSingleF32Impl<kAccuracyMultiplier, DefaultPolicyFp16>(
+        n, static_cast<float>(x)));
 }
 
 template <double kAccuracyMultiplier> void BoysAllOrdersF16(int nmax, F16 x, F16* out) noexcept {
@@ -2687,8 +2685,7 @@ template <double kAccuracyMultiplier> void BoysAllOrdersF16(int nmax, F16 x, F16
     assert(out != nullptr);
 
     float scratch[kMaxBoysOrder + 1];
-    detail::BoysAllOrdersF32Impl<kAccuracyMultiplier,
-                           EvalPolicy<kDefaultFitRoute, kDefaultEvalScheme, BoysBudget::kFp16>>(
+    detail::BoysAllOrdersF32Impl<kAccuracyMultiplier, DefaultPolicyFp16>(
         nmax, static_cast<float>(x), scratch);
 
     for (int l = 0; l <= nmax; ++l)
@@ -2700,10 +2697,8 @@ template <double kAccuracyMultiplier> void BoysAllOrdersF16(int nmax, F16 x, F16
 template <double kAccuracyMultiplier> Bf16 BoysSingleBf16(int n, Bf16 x) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(x >= static_cast<Bf16>(0.0f));
-    return static_cast<Bf16>(
-        detail::BoysSingleF32Impl<kAccuracyMultiplier,
-                              EvalPolicy<kDefaultFitRoute, kDefaultEvalScheme, BoysBudget::kFp16>>(
-            n, static_cast<float>(x)));
+    return static_cast<Bf16>(detail::BoysSingleF32Impl<kAccuracyMultiplier, DefaultPolicyBf16>(
+        n, static_cast<float>(x)));
 }
 
 template <double kAccuracyMultiplier> void BoysAllOrdersBf16(int nmax, Bf16 x, Bf16* out) noexcept {
@@ -2712,8 +2707,7 @@ template <double kAccuracyMultiplier> void BoysAllOrdersBf16(int nmax, Bf16 x, B
     assert(out != nullptr);
 
     float scratch[kMaxBoysOrder + 1];
-    detail::BoysAllOrdersF32Impl<kAccuracyMultiplier,
-                           EvalPolicy<kDefaultFitRoute, kDefaultEvalScheme, BoysBudget::kFp16>>(
+    detail::BoysAllOrdersF32Impl<kAccuracyMultiplier, DefaultPolicyBf16>(
         nmax, static_cast<float>(x), scratch);
 
     for (int l = 0; l <= nmax; ++l)

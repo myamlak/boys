@@ -503,6 +503,61 @@ concept EvalPolicyLike = requires {
     { P::kGranularity } -> std::convertible_to<FitGranularity>;
 };
 
+/// The evaluation policy a caller gets by naming no axis, one name per
+/// precision: the shortcut for a consumer who has chosen a precision and does
+/// not want to choose anything else.
+///
+/// Each name is what the entries of that precision run when the call site
+/// names no policy, so a caller may write \c BoysSingle<1.0, DefaultPolicyFp64>
+/// and get the call a caller who named nothing gets — the same instantiation,
+/// not a second one that happens to agree, and the entries' own template
+/// defaults are these names. The four differ in one field and in one only:
+///
+///  - the **double** lanes read no budget, so \c DefaultPolicyFp64 selects the
+///    shipped route, the shipped scheme, the shipped partition and the
+///    arguments-packing axis, and the budget its policy carries is inert;
+///  - the **float** lane reads the budget at a relaxed multiplier, and its own
+///    is \c BoysBudget::kFloat;
+///  - the **half** lanes (\c fp16 and \c bf16) are the same engine under the
+///    tighter \c BoysBudget::kFp16 budget, which is the axis that makes their
+///    bound 1e-7 rather than the float lane's 1.5e-7 — this is the one place
+///    the four names differ in more than their spelling, and it is why a
+///    single default for every precision would be the float lane's budget
+///    imposed on the half lanes;
+///  - \c DefaultPolicyFp16 and \c DefaultPolicyBf16 denote one and the same
+///    policy type, because fp16 and bf16 are one lane at one budget; they are
+///    named twice so that a document can cite the default for the format its
+///    reader is using, and a reader comparing the two names is comparing a
+///    lane, not a choice.
+///
+/// **These are the shipped settings and not a measurement.** No default here
+/// was chosen against a timing: which option is fastest is a property of the
+/// host, its flags and its card, and this library answers that question with
+/// the option probe a consumer runs where they deploy rather than with a
+/// recommendation. The names exist so that the shipping default is a thing a
+/// caller can point at, cite and change in one line, and setting one of them
+/// from a measurement is that line alone. What each name selects is stated
+/// lane by lane in docs/lane-contract.md.
+///
+/// \ingroup boys
+using DefaultPolicyFp64 = EvalPolicy<>;
+
+/// The float lane's default policy. See \c DefaultPolicyFp64.
+///
+/// \ingroup boys
+using DefaultPolicyFp32 = EvalPolicy<>;
+
+/// The fp16 lane's default policy. See \c DefaultPolicyFp64.
+///
+/// \ingroup boys
+using DefaultPolicyFp16 = EvalPolicy<kDefaultFitRoute, kDefaultEvalScheme, BoysBudget::kFp16>;
+
+/// The bf16 lane's default policy: the fp16 lane's, because the two formats are
+/// one lane at one budget. See \c DefaultPolicyFp64.
+///
+/// \ingroup boys
+using DefaultPolicyBf16 = DefaultPolicyFp16;
+
 namespace backend {
 
 /// Which multiply-add a lane's kernels are built from.
