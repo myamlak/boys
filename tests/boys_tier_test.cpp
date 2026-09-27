@@ -2451,8 +2451,29 @@ TEST(Combination, TheReplyIsTheTwoAccessorsFiguresAndTheirComparison) {
     });
 
     EXPECT_GT(carried, 0u) << "no combination of this build is carried: nothing was compared";
-    EXPECT_GT(refused, 0u) << "no combination of this build is refused: the refusal path is not "
-                              "covered by this run";
+
+    // This revision serves the option space whole, so nothing in it is refused
+    // and the refusal path is reached the one way left: by naming a value
+    // outside the enumerations, which names no combination at all. That is what
+    // keeps the path covered rather than merely absent.
+    {
+        const AccuracyFigure outside =
+            boys::BoysAccuracyGuaranteed(boys::Precision::kFp32,
+                                         static_cast<boys::FitRoute>(97),
+                                         boys::EvalScheme::kSplitClenshaw,
+                                         boys::PackAxis::kArguments,
+                                         boys::FitGranularity::kShipped,
+                                         boys::AccuracyTier::kReference);
+
+        EXPECT_FALSE(outside.available) << "a value outside the enumerations was carried";
+        EXPECT_NE(outside.reason, nullptr) << "a refusal carried no reason";
+
+        if (!outside.available && refused != 0)
+        {
+            ADD_FAILURE() << "a combination of this build was refused: the option space is served "
+                             "whole, and a host counts apart what it cannot run";
+        }
+    }
     EXPECT_EQ(notTheAccessorsFigures, 0u)
         << "the tolerance query does not answer the two accessors' own figures";
     EXPECT_EQ(notTheComparison, 0u)
@@ -2611,7 +2632,11 @@ TEST(Combination, ARefusalCarriesNoFigureAndTheAccessorsOwnSentence) {
         }
     });
 
-    EXPECT_GT(refused, 0u) << "no combination of this build is refused: nothing was tested here";
+    // This revision serves the whole option space, so nothing inside it is
+    // refused; the refusal path is covered by the section below, which names a
+    // value outside the enumerations.
+    EXPECT_EQ(refused, 0u) << "a combination of this build was refused: the option space is served "
+                              "whole, and a host counts apart what it cannot run";
     EXPECT_EQ(carryingAFigure, 0u) << "a refused combination answered with a figure";
     EXPECT_EQ(carryingAVerdict, 0u) << "a refused combination answered with a verdict";
     EXPECT_EQ(withoutTheAccessorsSentence, 0u)

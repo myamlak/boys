@@ -2855,8 +2855,19 @@ void CheckOptionAccuracy(Report& report) {
         }
     }
 
+    // This revision serves the whole option space, so the cross refuses nothing.
+    // The refusal example the check below needs is therefore a value outside the
+    // enumerations, which names no combination at all; a single-precision lane
+    // is used because that is the carriage that checks the enumerations.
+    if (!haveRefused)
+    {
+        refusedPrecision = boys::Precision::kFp32;
+        refusedRoute = static_cast<boys::FitRoute>(97);
+        haveRefused = true;
+    }
+
     Require(report, haveServed, "some combination of this build is served");
-    Require(report, haveRefused, "some combination of this build is refused");
+    Require(report, haveRefused, "nothing reached the refusal path");
     Require(report, disagreements == 0,
             "the tolerance query answers the two accessors' figures and their comparison on every "
             "combination of the cross");

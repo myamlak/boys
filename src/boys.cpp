@@ -814,18 +814,32 @@ Carriage CarriesSingle(FitRoute route,
                        PackAxis axis,
                        FitGranularity granularity,
                        AccuracyTier tier) noexcept {
-    // Every rung is served on both axes and both partitions. The narrow
-    // partition's across-orders packed lane was refused here until its cut was
-    // read against the table the scheme sums: taking the Chebyshev cut while the
-    // Horner scheme summed the monomial table delivered outside the bound on
-    // 1964 of 56694 cells at m = 64. With the basis carried through, the same
-    // combination is a rung of the family the caller named on either partition,
-    // so there is no cell left for this rule to refuse.
-    (void)route;
-    (void)scheme;
-    (void)axis;
-    (void)granularity;
-    (void)tier;
+    // Every combination this library names is served on both axes and both
+    // partitions, at every rung. The narrow partition's across-orders packed
+    // lane was refused here until its cut was read against the table the scheme
+    // sums: taking the Chebyshev cut while the Horner scheme summed the monomial
+    // table delivered outside the bound on 1964 of 56694 cells at m = 64. With
+    // the basis carried through, the same combination is a rung of the family
+    // the caller named on either partition, so there is no cell left for this
+    // rule to refuse.
+    //
+    // What it still refuses is a value outside the enumerations, which names no
+    // combination at all rather than one this revision does not carry.
+    const std::size_t r = static_cast<std::size_t>(route);
+    const std::size_t s = static_cast<std::size_t>(scheme);
+    const std::size_t a = static_cast<std::size_t>(axis);
+    const std::size_t g = static_cast<std::size_t>(granularity);
+    const std::size_t t = static_cast<std::size_t>(tier);
+
+    if (r >= BoysFitRoutes().size() || s >= BoysEvalSchemes().size() ||
+        a >= BoysPackAxes().size() || g >= BoysFitGranularities().size() ||
+        t > static_cast<std::size_t>(AccuracyTier::kRelaxed65536))
+    {
+        return {false,
+                "the value named is outside the enumeration this library serves, so it names no "
+                "combination: name a route, a scheme, a packing axis, a partition and a rung from "
+                "the enumerations this revision publishes"};
+    }
 
     return {true, ""};
 }
