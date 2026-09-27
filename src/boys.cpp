@@ -778,9 +778,12 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
     static const std::array<LaneContractInfo, 4> rows = {{
         {Precision::kFp64, "fp64", 5.5e-14, 0.0, "throughout, every region"},
         {Precision::kFp32, "fp32", 1.5e-7, 0.0, "throughout, every region"},
-        {Precision::kFp16, "fp16", 1e-7, 0.0,
-         "plus half of the last representable digit of the returned value, and claimed only where "
-         "the value exceeds the sum"},
+        {Precision::kFp16, "fp16", 1.5e-7, 0.0,
+         "the single-precision lane's own figure, plus half of the last representable digit of the "
+         "returned value and claimed only where the value exceeds the sum. The half lane computes "
+         "in that arithmetic and stores what it returns, so it cannot be more accurate than the "
+         "lane whose arithmetic it runs: a bar below that figure is one no conforming host can "
+         "keep, and a host whose rounding differs delivers the fit's own error through it"},
         {Precision::kFp32Device, "fp32-device", 1.5e-7, 8e-8,
          "plus 8e-8 under the fast region-B exponential, which is the corrected seed's own "
          "contribution"},

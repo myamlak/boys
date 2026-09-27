@@ -1262,7 +1262,7 @@ the bound is here.
 |---|---|---|---|
 | double | 5.5e-14 | — | `Precision::kFp64` |
 | float | 1.5e-7 | — | `Precision::kFp32` |
-| half, fp16 and bfloat16 | 1e-7 | plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum | `Precision::kFp16` |
+| half, fp16 and bfloat16 | 1.5e-7 | plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum | `Precision::kFp16` |
 | float on a device | 1.5e-7 | plus 8e-8 under the fast region-B exponential | `Precision::kFp32Device` |
 
 A combination at multiplier `m` carries **`m · base + additive`** — the same arithmetic the README's
@@ -1336,7 +1336,7 @@ One combination per lane, from this run:
 |---|---|---|---|---|---|
 | fp64, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 5.5e-14 | 4.45751e-14 | 5.5e-14 | 5e-14 | bound: throughout, every region. delivered: `BoysFitRoutes()`, `BoysFitGranularities()` and `BoysEvalSchemes()` |
 | fp32, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 1.5e-07 | 1.23617e-07 | 1.5e-07 | 1.08354e-07 | bound: throughout, every region. delivered: `BoysFitRoutesF32()` |
-| fp16, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 1e-07 | no figure | 1e-07 | 1.08354e-07 | bound: plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum. delivered: no row of this library measured a half-typed return |
+| fp16, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 1.5e-07 | no figure | 1.5e-07 | 1.08354e-07 | bound: plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum. delivered: no row of this library measured a half-typed return |
 | fp32-device, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 2.3e-07 | 1.42109e-14 | 2.3e-07 | not measured — this host cannot run the lane | bound: the lane's documented figure, plus 8e-8 under the fast region-B exponential. delivered: `BoysFitRoutes()` |
 | fp64, rational-minimax, split-clenshaw, narrow, arguments, m = 1 | 5.5e-14 | 2.21663e-14 | 5.5e-14 | 5e-14 | bound: throughout, every region. delivered: the narrow pieces' own row |
 
@@ -1354,7 +1354,7 @@ records that its grid is the coarser of the two and reads under on a fit that eq
 today. The accessor computes its figure inside the library from a `BoysLaneContracts()` row; the
 gate computes the figure it judges the row against from that same row by its own arithmetic, and
 fails the run when the two differ in any digit. They are two paths over one source, so a change to a
-lane's figure moves both or the run goes red. The fp16 row guaranteed 1e-07 and measured at
+lane's figure moves both or the run goes red. The fp16 row guaranteed 1.5e-07 and measured at
 1.08354e-07 is the ceiling's half-ULP term at work: the base figure is what the accessor returns,
 and the term of the format is added by the row's own criterion — the gate counts the cells where the
 returned value falls at or below the floor rather than passing them as covered.

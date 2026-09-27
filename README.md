@@ -88,7 +88,7 @@ over part of the range than over the rest. Every figure below holds for **all** 
 | double single | ≤ m·5.5e-14 everywhere; ≤ m·3e-14 below x = 11.899848152108484; ≤ m·1e-15 below about x = 1.0855 |
 | double batch, whether the top order is the batch's or each argument's | ≤ m·5.5e-14 |
 | float single / batch | ≤ m·1.5e-7 |
-| fp16 / bf16 | ≤ m·1e-7 + ½ ULP |
+| fp16 / bf16 | ≤ m·1.5e-7 + ½ ULP |
 | native half, x ≥ 28.984375 | ≤ 8 ULP of the returned value |
 | CUDA fp64 | same m·budgets as the CPU double lanes |
 | CUDA fp32, `RegionBExp::kAccurate` (the default) | same m·budgets as the CPU float lanes |
