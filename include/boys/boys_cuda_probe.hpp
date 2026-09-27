@@ -59,20 +59,90 @@
 /// subtraction removes the launch, the indexing and the traffic together. The
 /// report names, per row, which of the two methods produced its figure.
 ///
-/// **It refuses to order noise, and it says how close it could look.** Every
-/// timed region carries repetitions of a fixed-work integer kernel — the canary
-/// — taken between the rounds, and its own spread across a pass is what admits
-/// or discards that pass. A disturbed pass is reported and excluded rather than
-/// averaged in. An entry's figure is the minimum of its clean passes and its
-/// spread is the ratio of the slowest clean pass to the fastest. The run's
-/// resolution is what it actually observed: the larger of the canary's widest
-/// admitted spread and the leading entry's own spread across its clean passes.
-/// A rival closer to the leader than that resolution cannot be placed against
-/// it, and the probe declines to name a winner, states the resolution and says
-/// which entries it could not separate. The same refusal happens when no pass
-/// could be admitted, when fewer than two were — a spread needs two passes to
-/// exist — and when nothing was measured at all. A wrong ranking is worse than
-/// none, so the refusal path is the one this entry is most careful about.
+/// **The comparison is paired, and made inside a round.** Every entry is timed
+/// once in every round of a pass, in an order shuffled per round from the
+/// workload's own seed, and the comparison between two entries is the ratio of
+/// their per-round figures *within the same round*, never a ratio of two figures
+/// taken from different rounds. That is what makes the answer survive a card
+/// whose clocks move: a graphics clock drops as the die warms and a memory clock
+/// steps under load, so the device time of fixed work drifts through a run with
+/// no other process involved, and two entries timed in different rounds would
+/// then be compared across two different clocks. Inside one round both entries
+/// ran under the same clock — the timed regions of a round are adjacent, and
+/// each opens and closes its own event pair — so a drift common to the round
+/// cancels in the ratio. Every figure below is an aggregate of those paired
+/// ratios rather than of absolute times taken across the run.
+///
+/// **It reports a quartile, and not the minimum it used to report.** An entry's
+/// cost is the lower quartile of its per-round costs, formed as the reference
+/// entry's own lower-quartile figure scaled by the entry's lower-quartile ratio
+/// to it, with that ratio's upper quartile printed beside it as the spread. The
+/// minimum of a run is its earliest and best-clocked observation, which on a
+/// card whose clock decays with the die's temperature is a state a caller's
+/// workload does not stay in, and a mean would let one disturbed round move a
+/// figure a consumer builds on; a quartile is what the bulk of a long workload
+/// meets and it still drops the round a background process stole. A peak-clock
+/// column is kept beside it — the fastest single round the entry was seen in —
+/// because it bounds what the entry can do, and it is never the reported cost.
+///
+/// **It refuses to order noise, and it says how close it could look.** For each
+/// rival of a shape's fastest entry the probe forms the pair's own within-round
+/// ratio, and the rival is ordered only when the middle half of those rounds
+/// puts it behind — when the pair's own band clears one. A rival whose band
+/// straddles one cannot be placed, and one whose band lies ahead of the leader
+/// contradicts the statistic the leader was chosen by; either way the probe
+/// declines to name a winner, prints the run's resolution and names each
+/// unplaced rival with its band and the number of rounds it was the slower of
+/// the two in. The same refusal happens when fewer than four rounds were pooled,
+/// because a quartile band needs four to exist, and when nothing measured at
+/// all. A wrong ranking is worse than none, so the refusal path is the one this
+/// entry is most careful about, and a refusal leaves a consumer a default: see
+/// the fallback below.
+///
+/// **The canary is a diagnostic and gates nothing.** Every pass carries runs of
+/// a fixed-work integer kernel — the canary — taken between its rounds, holding
+/// no floating-point state, so the arithmetic this probe ranks cannot change the
+/// instrument's own cost. Its readings are reported beside each pass, and a pass
+/// whose canary runs disagreed with itself by more than
+/// DeviceProbeOptions::canarySpreadAlarm is marked as one that ran on a card
+/// whose clocks moved — **and is still used**. It has to be: a fixed work read
+/// by a device clock measures the clock as much as the load, so a decaying clock
+/// widens the canary's own spread on a card doing nothing else, and a rule that
+/// discarded on that spread would discard the measurement rather than the card.
+/// What decides what can be ordered is the spread of the paired within-round
+/// ratios, which the report measures.
+///
+/// **The ordering is checked against the card's clocks, not assumed free of
+/// them.** Each rival's ratio to its shape's fastest entry is followed between
+/// the run's first and second half of rounds, and the report warns where a pair
+/// moved by more than the run can order: such a pair is not equally exposed to
+/// the card's clocks, and its ordering is a property of this run's clocks as
+/// well as of the two entries. Where no pair moved by more than that, the report
+/// says so instead.
+///
+/// **When the measurement cannot separate the entries, a heuristic stands in,
+/// labelled as one.** A consumer who gets a refusal still needs a default, so a
+/// refusal also names the entry a static reading of the library's own option
+/// book picks: the entry of that shape the book puts first once the rows at a
+/// looser bound are set aside, counting whether the library launches anything
+/// for the call and which member of its axis the row takes — facts the tables
+/// state and this probe never times. It is reported in its own section, marked
+/// as a heuristic, and never printed beside a measured figure as though it were
+/// one — the two answers are different kinds of thing and the report keeps them
+/// apart.
+///
+/// **What genuinely differs from the host probe is kept and named.** An
+/// in-kernel row is a subtraction of two adjacent regions of the *same* round,
+/// so the pair that produces it is already paired on the clock and survives a
+/// drift; the report names the route that produced each row because the two
+/// methods are not comparable to each other. The repetition-count control stays
+/// a control: an entry timed at two very different numbers of launches per
+/// region has had any cost that repeats with the launch rather than with the
+/// call divided by a different number of launches at each count, and the control
+/// reports whether the two agreed within the resolution the run measured — the
+/// same within-round band the ordering is made in. It is not weakened by the
+/// change: a control whose two counts cannot be compared still fails, and the
+/// row it failed on is set aside rather than ranked.
 ///
 /// **Entries are ordered only within one precision and one question shape.** A
 /// class is one precision — \c fp64, \c fp32 or \c fp16 — because precision is
@@ -159,9 +229,11 @@ enum class DeviceProbeVerdict : int {
     /// One entry leads and every other entry of that shape in that precision is
     /// further behind it than the resolution this run measured.
     kRecommend = 0,
-    /// The probe declined: no clean pass, fewer than two, nothing measured in
-    /// the shape, one entry alone in it, or a rival inside the resolution, so
-    /// the two cannot be ordered against each other. See the ranking's reason.
+    /// The probe declined: fewer paired rounds than a quartile band needs, nothing
+    /// measured in the shape, nothing that resolved above its own instrument, one
+    /// entry alone in it, or a rival whose within-round band against the fastest
+    /// entry does not clear one, so the two cannot be ordered against each other.
+    /// See the ranking's reason.
     kCannotDetermine,
 };
 
@@ -207,21 +279,21 @@ struct DeviceProbeOptions {
     /// report alone.
     std::uint64_t seed = 47;
 
-    /// Timed passes. A disturbed pass is discarded, so this is an upper bound
-    /// on the number of passes the reported figures rest on. It defaults above
-    /// the two a resolution needs, because a machine carrying other work will
-    /// lose some of them, and a run that admits only one reports nothing.
+    /// Timed passes. Every pass is used: no pass is discarded, so the paired
+    /// rounds the figures rest on are this number times \c rounds, and the
+    /// figures pool all of them.
     int passes = 5;
 
-    /// Timed rounds per pass. Every entry is timed once per round, so a pass is
-    /// one interleaved sequence of one timed region per entry per round; the
-    /// entry's figure for that pass is its minimum over the rounds.
+    /// Timed rounds per pass. Every entry is timed once in every round, so a
+    /// pass is one interleaved sequence of one timed region per entry per round
+    /// and the comparison between two entries is the ratio of their figures
+    /// inside one round. The pooled rounds are \c passes * \c rounds, and a
+    /// quartile band needs at least four of them.
     ///
-    /// Two is the smallest useful value and a reasonable one: the two halves of a
-    /// subtraction swap places between the rounds, so each half is timed going
-    /// first in one of them, and the pass's short window is itself worth having on
-    /// a machine whose timing wanders — admission is decided by how well fixed
-    /// work repeated inside the pass, so a longer pass is a longer exposure.
+    /// Two is the smallest useful value and a reasonable one: the two halves of
+    /// a subtraction swap places between the rounds, so each half is timed going
+    /// first in one of them, and a pass's short window keeps the rounds inside
+    /// it close together on a clock that drifts across a run.
     int rounds = 2;
 
     /// Launches inside one timed region. This is the number the launch cost is
@@ -242,12 +314,14 @@ struct DeviceProbeOptions {
     int controlRepetitionsHigh = 256;
 
     /// Spread percentage of the canary's own runs across a pass above which the
-    /// pass is discarded. This is the admission rule: it is a property of the
-    /// instrument's own readings, so a pass is judged on whether fixed work
-    /// could be repeated rather than on how busy the card looked. What the probe
-    /// then orders is decided by the measured resolution, not by this number, so
-    /// a lenient bar here costs no honesty.
-    double canarySpreadThreshold = 5.0;
+    /// report marks the pass as one that ran on a card whose clocks moved.
+    /// **A diagnostic, and the only thing it decides is a flag.** It admits
+    /// nothing and excludes nothing: the canary is a fixed-work kernel read by a
+    /// device clock, so a card whose clock decays widens this number with no
+    /// other process involved, and a run that discarded on it would discard the
+    /// measurement rather than the card. What decides what the run can order is
+    /// the spread of the paired within-round ratios, which the report measures.
+    double canarySpreadAlarm = 5.0;
 
     /// The entries to measure, named as the report prints them. Empty measures
     /// every entry this build offers, which is what a caller who has not chosen
@@ -315,8 +389,7 @@ struct DeviceProbeDevice {
     std::string architectures;
 };
 
-/// One timed pass and the canary readings that decide whether its figures may be
-/// reported.
+/// One timed pass and the canary readings taken beside it.
 ///
 /// \ingroup boys
 struct DeviceProbePass {
@@ -324,18 +397,42 @@ struct DeviceProbePass {
     /// them not counted.
     double seconds = 0.0;
 
+    /// Whether the canary was timed in this pass at all. False means no reading
+    /// was taken — the two figures below and the flag are then not readings, they
+    /// are zero because nothing was read, and this pass is counted in neither
+    /// DeviceProbeReport::passesWithinAlarm nor
+    /// DeviceProbeReport::passesAboveAlarm. **A canary that did not run is not a
+    /// canary that stayed quiet**, so read this before reading any of them: a
+    /// spread of zero is a still clock only where a reading was taken.
+    bool canaryMeasured = false;
+
     /// Median canary timing inside the pass, milliseconds. How far this sits
-    /// above the calibration floor is what the pass saw of the card.
+    /// above the calibration floor is what the pass saw of the card. Zero when
+    /// DeviceProbePass::canaryMeasured is false, and not a reading then.
     double canaryMedianMs = 0.0;
 
     /// Spread percentage of the canary's runs across the pass: the slowest run
-    /// over the fastest, less one, in percent. This is what admits or discards
-    /// the pass.
+    /// over the fastest, less one, in percent. **Context, not a gate**: the
+    /// canary is fixed work read by a device clock, so this number moves with
+    /// the clocks as well as with the load. Zero when
+    /// DeviceProbePass::canaryMeasured is false, and not a reading then.
     double canarySpread = 0.0;
 
-    /// Whether the canary's runs disagreed by more than the bar. A disturbed
-    /// pass is reported here and excluded from every figure below.
-    bool disturbed = false;
+    /// Whether the canary's runs disagreed by more than
+    /// DeviceProbeOptions::canarySpreadAlarm. The pass is reported with the flag
+    /// and excluded by nothing. False when the canary did not run: the flag is
+    /// raised by a reading that disagreed, never by the absence of one.
+    bool canaryWide = false;
+
+    /// Widest relative width of a within-round paired ratio this pass measured:
+    /// the upper quartile of an entry's ratio to the reference over the lower
+    /// quartile of the same ratio, less one, in percent, taken at its widest over
+    /// the entries. This is the spread the ordering is made in — a ratio inside
+    /// one round, where a drift common to the round cancels — so it is the paired
+    /// analogue of the canary column above, and it is reported beside it rather
+    /// than gating anything itself. Zero when the pass held too few rounds for a
+    /// band to exist.
+    double pairedSpread = 0.0;
 };
 
 /// One entry, as this card measured it.
@@ -371,44 +468,94 @@ struct DeviceProbeMeasurement {
     /// option at the same accuracy.
     double documentedBound = 0.0;
 
-    /// Whether at least one pass of this entry was clean, so the cost and spread
-    /// below rest on a measurement. False means the entry produced no figure on
-    /// this run.
+    /// Whether at least one round of this entry produced a figure, so the cost
+    /// and the band below rest on a measurement. False means the entry produced
+    /// no figure on this run: no round of it could be timed.
     bool measured = false;
 
     /// Whether the subtraction that produced this row resolved a cost above its
     /// own baseline. False for an in-kernel row whose two halves came out equal
-    /// within the clock: at this workload the entry's arithmetic is not
-    /// distinguishable from the same caller kernel with the call removed, so the
-    /// row is a statement about that kernel and about the card's timing rather
-    /// than about the entry. Such a row carries no ordering: a zero here is the
-    /// instrument's resolution, not a free entry. Always true for a launched row,
-    /// which is not a subtraction.
+    /// within the clock at every round: at this workload the entry's arithmetic
+    /// is not distinguishable from the same caller kernel with the call removed,
+    /// so the row is a statement about that kernel and about the card's timing
+    /// rather than about the entry. Such a row carries no ordering: a zero here
+    /// is the instrument's resolution, not a free entry. Always true for a
+    /// launched row, which is not a subtraction.
     bool subtractionResolved = false;
 
-    /// Cost per argument in the fastest clean pass, nanoseconds.
+    /// Cost per argument at the lower quartile of the paired rounds, nanoseconds
+    /// per argument: the reference entry's own lower-quartile figure scaled by
+    /// \c ratioToReference, so every cost column is anchored to one entry's own
+    /// measurement and the ratios are what the ordering is made of. It is a
+    /// quartile and not the minimum this probe used to report — see the header
+    /// preamble for why.
     double nsPerArgument = 0.0;
 
-    /// Cost per argument in the slowest clean pass, nanoseconds.
+    /// The same cost at the upper quartile of those rounds, so the two ends of
+    /// the band come from the same distribution.
     double nsPerArgumentMax = 0.0;
 
+    /// The fastest single round this entry was ever seen in, nanoseconds per
+    /// argument, over the rounds that produced a figure. **A raw figure under no
+    /// anchor**, kept as one column because it is the entry's own floor — no
+    /// round of it came out below this — and never the reported cost. It is not
+    /// comparable with the anchored columns beside it: those are the reference
+    /// entry's own figure scaled by this entry's ratio to it, so a reference
+    /// whose rounds are heavy-tailed puts the anchored cost below this entry's
+    /// own fastest round, and neither bounds the other in general. It is also not
+    /// what a caller meets: on a card whose clock decays the fastest round is the
+    /// earliest and best-clocked one, which is the figure the minimum-based
+    /// statistic this probe used to report was made of.
+    ///
+    /// A round whose cell is zero is left out of it, because such a cell has no
+    /// cost in it: for a subtracted row that is the floor a difference which did
+    /// not clear its own baseline was held at, and taking it as the peak would
+    /// print the instrument's floor as the entry's best round. Zero here means no
+    /// round of the entry produced a figure, and the table prints a dash for it.
+    double nsPerArgumentPeak = 0.0;
+
     /// For a row taken by subtraction, the per-argument figure of the half the
-    /// entry was subtracted against: the same caller-shaped kernel with the call
-    /// removed and the traffic kept. Zero for a launched row, which is not a
+    /// entry was subtracted against, at the lower quartile of the same rounds
+    /// that produced the figure above: the same caller-shaped kernel with the
+    /// call removed and the traffic kept. Zero for a launched row, which is not a
     /// subtraction. It is here so that the subtraction is a number a reader can
-    /// check rather than a method the report asserts — the entry's own figure is
-    /// the difference between the region that held it and this.
+    /// check rather than a method the report asserts. Both halves are taken
+    /// inside one round, so the difference that produced \c nsPerArgument was
+    /// formed round by round and these two columns are not two quartiles of one
+    /// round's readings: they are the two ends of the pair, each aggregated over
+    /// the run.
     double nsPerArgumentBaseline = 0.0;
 
-    /// Slowest clean pass divided by the fastest: 1.00 is a perfectly repeatable
-    /// measurement and a large value is a result, not a nuisance.
+    /// Upper quartile over lower quartile of this row's within-round ratio to the
+    /// reference: 1.00 is a perfectly repeatable measurement and a large value is
+    /// a result, not a nuisance. Both ends are ratios of two entries timed
+    /// together, so this spread does not carry a clock drift common to a round.
     double spread = 0.0;
 
-    /// Clean passes this figure rests on.
-    int cleanPasses = 0;
+    /// This entry's cost as a fraction of the reference entry's, at the lower
+    /// quartile of the per-round ratios between them. One exactly for the
+    /// reference entry itself.
+    double ratioToReference = 1.0;
 
-    /// Passes discarded for this entry.
-    int disturbedPasses = 0;
+    /// The same ratio at the lower and the upper quartile of its rounds: the band
+    /// the middle half of the run put it in.
+    double ratioLo = 0.0;
+    double ratioHi = 0.0;
+
+    /// How far this entry's ratio to the reference moved between the run's first
+    /// and second half of rounds: the second half's median ratio over the first
+    /// half's, less one. Zero for the reference entry by construction, and
+    /// non-zero for another entry only when its cost relative to the reference
+    /// changed as the run went on — which is what a clock whose decay falls
+    /// differently on the two would look like. **A warning, not a correction**:
+    /// a large value here says the comparisons this entry takes part in are not
+    /// clock-independent on this run.
+    double ratioDrift = 0.0;
+
+    /// Paired rounds the figures above rest on: the rounds of every pass, pooled.
+    /// Every round of the run is pooled, so this is the same for every entry that
+    /// produced a figure, and a quartile band needs at least four of them.
+    int rounds = 0;
 
     /// Sum of every value the entry returned, read back once outside the timer,
     /// so a caller can see that the timed work ran and ran on the intended
@@ -459,21 +606,22 @@ struct DeviceProbeRanking {
 
     /// What this run can order in this shape, as a fraction of a cost: two rows
     /// closer together than this are inside the noise and the probe declines to
-    /// order them. It is the larger of the canary's widest admitted spread and
-    /// the leader's own spread across its clean passes, both measured here, so it
-    /// moves with the card instead of being a bar chosen in advance. Zero when
-    /// the run could order nothing at all.
-    ///
-    /// It describes the leader. Each rival is judged against a threshold built
-    /// from that rival's spread as well, since a rival whose own passes wandered
-    /// is a rival this run cannot place however steady the leader was; the
-    /// strings in \c inseparable carry the threshold each was judged against.
+    /// order them. It is the widest within-round ratio band the shape showed on
+    /// this run — the widest of every rival's band against the shape's fastest
+    /// row and of that row's own band against the reference — so it moves with
+    /// the card and with this run instead of being a bar chosen in advance. It is
+    /// literally the number the refusal prints, and the number the repetition
+    /// control's two counts are judged against. Zero when the shape measured
+    /// nothing it could compare.
     double resolution = 0.0;
 
     /// Whether the probe named a winner in this shape.
     DeviceProbeVerdict verdict = DeviceProbeVerdict::kCannotDetermine;
 
     /// The entry the probe recommends in this shape, empty when it declined.
+    /// **Non-empty only when every rival was placed**: a shape with one rival
+    /// whose band straddles one is a shape with no leader, however far ahead its
+    /// fastest row measured.
     std::string recommended;
 
     /// The fastest entry measured in this shape, empty when no entry was.
@@ -500,6 +648,24 @@ struct DeviceProbeRanking {
     /// One line naming how far the recommendation can be trusted, built from
     /// the same numbers the verdict is.
     std::string confidence = "not measured";
+
+    /// Paired rounds this shape's verdict rests on: the rounds every pass of the
+    /// run pooled together, the same number for every shape. Fewer than four is
+    /// a refusal that names the count, because a lower-quartile band over fewer
+    /// than four rounds is the round and not a distribution.
+    int rounds = 0;
+
+    /// The entry the fallback below is about, empty when the shape has a
+    /// measurement or when the library's own device entry book names no row for
+    /// it. Filled only on a refusal.
+    std::string heuristicEntry;
+
+    /// The basis of \c heuristicEntry, in the report's own words, beginning
+    /// \c "counted, not timed" : what the library's own device entry book states
+    /// about the row — the regions its route runs, whether it is in-kernel or
+    /// launched, its repetition counts — with no clock involved. Empty when
+    /// \c heuristicEntry is empty.
+    std::string heuristicBasis;
 };
 
 /// One class: a precision, and the rankings of its question shapes.
@@ -583,12 +749,19 @@ struct DeviceProbeRepetitionControl {
     /// of zero and must not be read as one.
     double difference = 0.0;
 
-    /// Whether the two counts agreed within the resolution the run measured —
-    /// the larger of the canary's widest admitted spread and this row's own
-    /// spread across its clean passes. False means either that a fixed cost per
-    /// call survived into the figures at the repetition count they were taken at,
-    /// or that one count left nothing to compare; the note says which, and the
+    /// Whether the two counts agreed within the resolution this run measured:
+    /// the widest within-round ratio band the shape showed, the same number that
+    /// shape's refusal prints. False means either that a fixed cost per call
+    /// survived into the figures at the repetition count they were taken at, or
+    /// that one count left nothing to compare; the note says which, and the
     /// report sets the row aside rather than shipping it.
+    ///
+    /// **This check does not soften as the measurement does.** Its estimator is
+    /// the run's paired one, so its two figures are formed the same way the row's
+    /// cost is, but a run that cannot resolve makes this control fail rather than
+    /// pass: an instrument that cannot tell two counts apart has not shown that
+    /// the fixed cost is absent, and calling that an agreement would be this
+    /// check passing on no evidence.
     bool agrees = false;
 
     /// The resolution the two counts were judged against, as a fraction. Carried
@@ -652,22 +825,56 @@ struct DeviceProbeReport {
     /// Arguments in the workload, and the highest order any of them carries.
     std::size_t workloadCount = 0;
 
-    /// One entry per pass run, in order.
+    /// One entry per pass run, in order. Every pass is used: the pass table is a
+    /// record of the whole run, and a pass the canary ran wide in is flagged
+    /// there rather than dropped from the figures.
     std::vector<DeviceProbePass> passes;
 
-    /// Passes the canary vouched for.
-    int cleanPasses = 0;
+    /// Passes whose canary spread stayed within the alarm, passes whose canary
+    /// spread did not, and passes in which no canary reading was taken at all.
+    /// **Counters of a diagnostic and not of an admission rule**: no pass is
+    /// excluded from any figure by which of them it landed in.
+    ///
+    /// The three are the pass table and account for all of it —
+    /// \c passesWithinAlarm + \c passesAboveAlarm + \c passesWithoutCanary equals
+    /// DeviceProbeReport::passes.size() — and the first two are the passes a
+    /// spread was measured in, so a pass with no reading is placed in neither.
+    int passesWithinAlarm = 0;
+    int passesAboveAlarm = 0;
+    int passesWithoutCanary = 0;
 
-    /// Passes discarded for the canary's own disagreement.
-    int disturbedPasses = 0;
+    /// Paired rounds every figure in the report rests on: the rounds of every
+    /// pass, pooled. This is the number the minimum of four is about, and the
+    /// number a refusal names when the run is short of it.
+    int pairedRounds = 0;
 
-    /// Spread percentage of the canary's runs across the widest admitted pass:
-    /// the instrument's own measured uncertainty on this run.
+    /// Spread percentage of the canary's runs across the widest pass that took a
+    /// reading: the instrument's own measured uncertainty on this run, reported
+    /// beside the figures as context. It bounds nothing and excludes nothing, and
+    /// it is zero only where no pass took a reading — a case the text says in
+    /// words rather than printing the zero as a spread.
     double canarySpread = 0.0;
 
     /// Wall milliseconds of the fastest canary run seen while calibrating: the
     /// floor the canary's own spread is measured against.
     double canaryFloorMs = 0.0;
+
+    /// The entry every cost column of the report is anchored to: the option
+    /// book's first fp64 row, resolved before any round is timed. Each measured
+    /// entry's cost is this entry's own lower-quartile figure scaled by that
+    /// entry's lower-quartile ratio to it, so the column is one measurement and
+    /// a set of ratios rather than a set of independent times.
+    std::string referenceEntry;
+
+    /// The reference entry's own cost per argument at the lower quartile of its
+    /// rounds, nanoseconds: the scale the ratios below are applied to. Zero when
+    /// the reference entry produced no figure.
+    double referenceNsPerArgument = 0.0;
+
+    /// Whether any shape of the run left a default behind. False means every
+    /// shape ordered its entries on its own measurements; true means at least one
+    /// shape refused and stood a static fallback in the refused shape's section.
+    bool hasDefault = false;
 
     /// One class per precision this run's option table carries, in the report's
     /// own order, each holding one ranking per question shape.
@@ -690,20 +897,24 @@ struct DeviceProbeReport {
 /// device's tables, allocates the workload's buffers once and fills them, and
 /// then runs the pass protocol in DeviceProbeOptions: every entry is timed by
 /// device events over DeviceProbeOptions::repetitions back-to-back launches into
-/// the resident buffers, in each of several rounds, inside each of several
-/// passes, with runs of the fixed-work canary taken between the rounds. A pass
-/// whose canary runs disagree by more than
-/// DeviceProbeOptions::canarySpreadThreshold is discarded. The report carries,
-/// per entry, the minimum of the passes that were admitted with their spread
+/// the resident buffers, once in each round, inside each of several passes, with
+/// runs of the fixed-work canary taken between the rounds. **Every round of every
+/// pass is pooled and every pass is used**; the canary's spread flags a pass and
+/// excludes none. Each entry's cost is the reference entry's own lower-quartile
+/// figure scaled by that entry's lower-quartile ratio to it, and every comparison
+/// the report makes is between two entries' ratios taken in the same round. The
+/// report carries, per entry, that figure with its ratio band and its drift
 /// beside it, one class per precision holding one ranking per question shape,
-/// each with the resolution those passes support, and the repetition-count
-/// controls described on
-/// DeviceProbeRepetitionControl — one per route, since the two routes are two
-/// methods and a check of one says nothing about the other.
+/// each with the widest within-round band the shape showed as its resolution, a
+/// static fallback in every shape that refused, and the repetition-count controls
+/// described on DeviceProbeRepetitionControl — one per route, since the two
+/// routes are two methods and a check of one says nothing about the other.
 ///
 /// The device-callable entries are measured by the with-and-without subtraction
 /// rather than by launching this library's kernel; DeviceProbeMeasurement::route
-/// says which method produced each row.
+/// says which method produced each row. Both halves of that subtraction are taken
+/// inside one round, so the difference is a within-round pair and survives a
+/// clock that drifts over the run.
 ///
 /// The entry allocates, uploads, launches and synchronises, and is not a hot
 /// path: it is meant to be called once, from a program the consumer builds and
@@ -733,8 +944,11 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options = {});
 /// The report as the text a consumer reads, device statement and all.
 ///
 /// The wording is the report's own: it is plain text, it names the card, it
-/// states the protocol, and it says what was discarded and why. It is written
-/// for a reader who has nothing but this output.
+/// states the protocol, and it says which passes the canary ran wide in and what
+/// a refusal could not place. A shape that refused carries its static fallback in
+/// its own section, under the heading
+/// \c "static fallback — a heuristic, not a measurement" , never beside a
+/// measured figure. It is written for a reader who has nothing but this output.
 ///
 /// \param report a report, from RunDeviceOptionProbe
 ///

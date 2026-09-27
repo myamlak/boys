@@ -671,6 +671,30 @@ launched figure's own cost per call: on a platform whose host submission is expe
 small to carry its own launch is a workload whose ranking is of the launcher. Raising
 `boys::DeviceProbeOptions::count` is what answers that.
 
+The ordering is paired, the way the host probe's is. Every entry is launched once in every round,
+and two entries are compared by the ratio of their times *within one round*, so a card whose clock
+moves through a run — a boost that decays as the part heats — cancels in that ratio instead of being
+read as a difference between the two entries. The figure a row carries is the lower quartile of its
+rounds with its spread printed beside it, not the minimum, which is biased toward peak performance;
+the peak is kept in a column of its own, labelled as the entry's fastest single round, so the two
+can be read apart. Every pass launches a fixed-work kernel that does no Boys arithmetic beside its
+rounds and reports that kernel's own spread; it is a diagnostic that gates nothing, because fixed
+work read by the same clock the entries ran on measures the clock as much as the card, and a rule
+that discarded a pass on it would discard the measurement rather than the machine. What a shape's
+ordering is made in is the spread of the paired ratios. When a shape cannot place its entries —
+because two of them are closer than that spread, because only one of the shape resolved, or because
+none did — it prints `CANNOT DETERMINE`, names every entry it could not place behind the leader with
+the band each pair fell in, and recommends nothing — and a refusal still leaves a default: the entry
+a static reading of the library's own tables picks, in its own section, labelled as a heuristic and
+not as a measurement.
+
+The device probe checks the clock rather than assuming it. Two entries need not carry this card's
+clock alike — a unit the part runs at a lower rate, a kernel long enough to heat it — so the
+confidence line says how far the widest-moving pair's ratio travelled between the run's first and
+second half beside the resolution that figure is read against, and warns when a pair moved further
+than the run can order, because the conclusion is then a property of that run's clock as well as of
+the entries.
+
 `boys::DeviceProbeStatus` is how a bad device is reported — an ordinal that does not exist is a
 status and not a crash, and the call does not throw for it.
 
