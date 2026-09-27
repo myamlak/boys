@@ -588,13 +588,13 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
     // across-orders lane gathers each of the orders it holds its own piece and
     // coefficients - and both fit routes, because this partition was cut for the
     // rational route as well: it stores one numerator/denominator pair over each
-    // of its pieces, region A's and region B's alike. The two facts those fields
-    // cannot state are stated where the call is refused: a relaxed rung of the
-    // rational route reads the shipped pairs' degree table, which is a derivation
-    // over these pairs this library has not done, and that route's across-orders
-    // packed lane is instantiated over the shipped pairs alone. Both are unbuilt
-    // work rather than unavailable options, and both are refused where they are
-    // named so that a caller can count them without reading the kernels.
+    // of its pieces, region A's and region B's alike. The one fact those fields
+    // cannot state is stated where the call is refused: past the reference
+    // multiplier the float engine's across-orders lane over the narrow partition
+    // runs the shipped route and scheme alone, which is a body to write rather
+    // than a shape the call cannot have. That is unbuilt work rather than an
+    // unavailable option, and refusing it where it is named is what lets a
+    // caller count it without reading the kernels.
     static const std::array<FitGranularityInfo, 2> rows = [] {
         static constexpr unsigned kBothAxes = (1u << static_cast<unsigned>(PackAxis::kArguments)) |
                                               (1u << static_cast<unsigned>(PackAxis::kOrders));
@@ -662,6 +662,31 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
             narrowAStored += piece.deg + 1;
         }
 
+        // The narrow partition carries the rational route as well, cut on the
+        // same pieces: numerator and denominator both bound what one evaluation
+        // of a piece costs, exactly as they do on the shipped partition above.
+        for (const int deg : detail::kNarrowRatANumDeg)
+        {
+            narrowADeg = std::max(narrowADeg, deg);
+        }
+
+        for (const int deg : detail::kNarrowRatADenDeg)
+        {
+            narrowADeg = std::max(narrowADeg, deg);
+        }
+
+        int narrowBDeg = detail::kNarrowBDeg;
+
+        for (const int deg : detail::kNarrowRatBNumDeg)
+        {
+            narrowBDeg = std::max(narrowBDeg, deg);
+        }
+
+        for (const int deg : detail::kNarrowRatBDenDeg)
+        {
+            narrowBDeg = std::max(narrowBDeg, deg);
+        }
+
         // The interval a partition's own tables serve, read from the fitted
         // routes' own domains: region A's per-order tables from zero to kX0 and
         // region B's seed from kX0 to kX1, under either partition, so the two
@@ -717,15 +742,22 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
         built[1].axes = kBothAxes;
         built[1].regionAPieces = static_cast<int>(std::size(detail::kNarrowAPieces));
         built[1].regionADeg = narrowADeg;
-        built[1].regionAStored = narrowAStored;
+        built[1].regionAStored = narrowAStored + detail::kNarrowRatAStored;
         built[1].regionBPieces = detail::kNarrowBPieces;
-        built[1].regionBDeg = detail::kNarrowBDeg;
-        built[1].regionBStored = static_cast<int>(std::size(detail::kNarrowBcoeffs));
+        built[1].regionBDeg = narrowBDeg;
+        built[1].regionBStored =
+            static_cast<int>(std::size(detail::kNarrowBcoeffs)) + detail::kNarrowRatBStored;
         // The narrow certification publishes a per-piece round-up of what each
         // piece delivers rather than a bar the pieces were cut at, and that
         // round-up is the figure a caller may rely on: it bounds a sweep and not
-        // only the one that measured it.
-        built[1].delivered = std::max(detail::kNarrowRows[0].fused, detail::kNarrowRows[0].separate);
+        // only the one that measured it. Both routes the row holds are read into
+        // it, for the reason routeWorst gives above.
+        built[1].delivered = std::max({detail::kNarrowRows[0].fused,
+                                       detail::kNarrowRows[0].separate,
+                                       detail::kNarrowRatADeliveredFused,
+                                       detail::kNarrowRatADeliveredSeparate,
+                                       detail::kNarrowRatBDeliveredFused,
+                                       detail::kNarrowRatBDeliveredSeparate});
         built[1].bound = built[1].delivered;
         built[1].lo = fittedLo;
         built[1].hi = fittedHi;
@@ -765,34 +797,44 @@ struct Carriage {
     const char* reason = "";
 };
 
-// The single-precision lanes' carriage, read off the entries those lanes build.
-// Both packing axes are served on the shipped partition: the arguments axis by
-// the per-order bodies, the orders axis by the packed lane that steps one
-// order's coefficients to the next order's. The narrow partition is stored for
-// this lane and is read at the reference multiplier on both axes; a rung of it
-// is not, because a rung reads the shipped pieces' stored coefficients and the
-// narrow pieces' own degree table is a derivation this lane has not done.
-Carriage CarriesSingle(FitGranularity granularity, AccuracyTier tier) noexcept {
-    if (granularity != kDefaultFitGranularity && tier != AccuracyTier::kReference)
+// The single-precision lanes' rule. Both lanes are the float engine under one
+// budget or the other, so one rule covers them: the route, the scheme, the
+// partition and the packing axis are all named at the reference multiplier.
+// Past it the shipped partition serves every family on both axes - the packed
+// orders lane's rung cuts each order at the scheme's own effective degrees and
+// its rational arm reads the route's own pair cut, which is what that
+// partition's degree tables are certified for. The narrow partition's rung
+// bodies exist for the shipped family on the orders axis alone, so another
+// family's rung there is a body to write rather than a shape the call cannot
+// have: the arguments axis carries it already, where each order's own piece of
+// the narrow table is read at the degrees the rung derives.
+Carriage CarriesSingle(FitRoute route,
+                       EvalScheme scheme,
+                       PackAxis axis,
+                       FitGranularity granularity,
+                       AccuracyTier tier) noexcept {
+    if (tier != AccuracyTier::kReference && axis == PackAxis::kOrders &&
+        granularity != kDefaultFitGranularity &&
+        !(route == kDefaultFitRoute && scheme == kDefaultEvalScheme))
     {
         return {false,
-                "a rung of this lane reads the shipped pieces' stored coefficients at the "
-                "degrees the rung certifies, and the narrow pieces' own effective-degree "
-                "table is a derivation this lane has not done: the narrow rungs are a table "
-                "to derive rather than a shape the call cannot have"};
+                "past the reference multiplier the narrow partition's across-orders packed lane "
+                "runs the shipped route and scheme alone: a rung of another family's fit there "
+                "is a body to write rather than a shape the call cannot have - the shipped "
+                "partition carries it already, and so does the arguments axis, where the rung's "
+                "own degree table and pair cut are read"};
     }
 
     return {true, ""};
 }
 
-// The device lane's rule. Its entries are the shipped single-precision fits,
-// one coefficient set per region, and its accuracy multiplier is a template
-// argument at the call site against a certified degree table the lane holds per
-// rung - so every rung is served where the host lane serves the shipped pair
-// alone. What the lane does not take is a partition, a packing axis or another
-// fit family, and each of the three is work on this lane rather than a shape it
-// cannot have: the narrow pieces' table, the packed orders kernel, and the
-// degree tables of another family are all the host lane's.
+// The device lane's rule, which is its own and not the host lane's: its entries
+// are the shipped single-precision fits, one coefficient set per region and one
+// packing axis, and its accuracy multiplier is a template argument at the call
+// site against a degree table the lane holds per rung - so every rung is served
+// where the host lane serves the shipped pair alone. What it does not take is a
+// partition, a packing axis or another fit family, and none of the three is the
+// host lane's answer to give.
 Carriage CarriesDevice(FitRoute route,
                        EvalScheme scheme,
                        PackAxis axis,
@@ -800,17 +842,16 @@ Carriage CarriesDevice(FitRoute route,
     if (granularity != kDefaultFitGranularity)
     {
         return {false,
-                "the device lane's entries read one coefficient set per region, and the narrow "
-                "pieces' table is the host lane's: a narrow policy on this lane is a table this "
-                "lane has not generated"};
+                "the device lane's tables are one partition of region A and one region-B seed "
+                "per entry: a partition is a host lane's choice and has no table or body on this "
+                "lane's kernels"};
     }
 
     if (axis != kDefaultPackAxis)
     {
         return {false,
-                "the device lane's kernels are one order per lane over an array of arguments, so "
-                "the orders axis on this lane is a kernel to write rather than a shape the call "
-                "cannot have"};
+                "the device lane packs one axis: its kernels evaluate one argument's orders per "
+                "call, and the across-orders lane is the host's"};
     }
 
     if (route != kDefaultFitRoute || scheme != kDefaultEvalScheme)
@@ -855,7 +896,7 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
             return CarriesDevice(route, scheme, axis, granularity);
         case Precision::kFp32:
         case Precision::kFp16:
-            return CarriesSingle(granularity, tier);
+            return CarriesSingle(route, scheme, axis, granularity, tier);
         case Precision::kFp64:
             break;
         }
@@ -872,8 +913,6 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
         }
 
         const FitGranularityInfo& row = partitions[p];
-        const bool narrowRational =
-            granularity != kDefaultFitGranularity && route == FitRoute::kRationalMinimax;
 
         if (static_cast<int>(tier) >= row.rungs)
         {
@@ -887,20 +926,6 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
                 "the partition's tables do not hold this fit route: the rational minimax route "
                 "carries one numerator/denominator pair over the whole of region B, and a "
                 "partition cut per order has no table for it";
-        } else if (narrowRational && axis == PackAxis::kOrders)
-        {
-            c.reason =
-                "the rational route's across-orders packed lane is instantiated over the shipped "
-                "region-A pairs, whose coefficients it steps at a fixed stride: a packed kernel "
-                "over this partition's own pairs is a body to write rather than a shape the call "
-                "cannot have";
-        } else if (narrowRational && tier != AccuracyTier::kReference)
-        {
-            c.reason =
-                "a relaxed rung of the rational route reads the shipped pairs' effective-degree "
-                "table, and deriving that table over this partition's own pairs is work this "
-                "library has not done: the rung is a table to derive rather than a shape the call "
-                "cannot have, and the pair is carried at the reference multiplier";
         } else if (!FitGranularityHasAxis(row, axis))
         {
             c.reason =

@@ -683,6 +683,118 @@ struct RationalFitAtRung {
     };
 };
 
+// One narrow rational piece at a cut pair. The piece, its interval and the
+// mapped argument are the narrow partition's own; only the pair is the rung's.
+// The denominator's coefficients sit above the *stored* numerator, so the
+// position of q_j is the piece's full numerator degree's, not the cut's - the
+// reading the uncut narrow pair and the shipped cut pair both take.
+inline double RationalPieceNarrowAtCut(std::size_t index,
+                                       int numDeg,
+                                       int denDeg,
+                                       double t) noexcept {
+    const double* c = detail::kNarrowRatACoeffs.data() + detail::kNarrowRatAOffset[index];
+    const int storedNumDeg = detail::kNarrowRatANumDeg[index];
+    double num = c[numDeg];
+
+    for (int j = numDeg - 1; j >= 0; --j)
+    {
+        num = backend::ScalarFp64::MulAdd(num, t, c[j]);
+    }
+
+    if (denDeg == 0)
+    {
+        return num;
+    }
+
+    double den = c[storedNumDeg + denDeg];
+
+    for (int j = denDeg - 1; j >= 1; --j)
+    {
+        den = backend::ScalarFp64::MulAdd(den, t, c[storedNumDeg + j]);
+    }
+
+    return num / backend::ScalarFp64::MulAdd(den, t, 1.0);
+}
+
+// The narrow region-B seed at a cut pair, over the narrow piece the argument
+// falls in; same reading as RationalFitNarrow's seed.
+inline double RationalSeedNarrowAtCut(std::size_t index,
+                                      int numDeg,
+                                      int denDeg,
+                                      double t) noexcept {
+    const double* c = detail::kNarrowRatBCoeffs.data() + detail::kNarrowRatBOffset[index];
+    const int storedNumDeg = detail::kNarrowRatBNumDeg[index];
+    double num = c[numDeg];
+
+    for (int j = numDeg - 1; j >= 0; --j)
+    {
+        num = backend::ScalarFp64::MulAdd(num, t, c[j]);
+    }
+
+    if (denDeg == 0)
+    {
+        return num;
+    }
+
+    double den = c[storedNumDeg + denDeg];
+
+    for (int j = denDeg - 1; j >= 1; --j)
+    {
+        den = backend::ScalarFp64::MulAdd(den, t, c[storedNumDeg + j]);
+    }
+
+    return num / backend::ScalarFp64::MulAdd(den, t, 1.0);
+}
+
+// The rational route on the narrow partition at a relaxed rung. It is
+// RationalFitAtRung's shape over the other partition, and the partition is the
+// whole of the difference: the pieces, the piece lookup and the region-B piece
+// edges are the narrow ones the uncut narrow route reads, and the pairs are the
+// narrow tables' own cut rather than the shipped tables' cut read over narrower
+// intervals. So a rung named together with the narrow partition answers from the
+// narrow pairs.
+template <double kAccuracyMultiplier>
+struct RationalFitNarrowAtRung {
+    static constexpr detail::NarrowRationalRegionAPairs kPairsA =
+        detail::RationalRegionANarrowDegrees<kAccuracyMultiplier>();
+    static constexpr detail::NarrowRationalRegionBPairs kPairsB =
+        detail::RationalRegionBNarrowDegrees<kAccuracyMultiplier>();
+
+    using Partition = NarrowRegionAPartition;
+
+    static constexpr double kRegionAFitsFrom = detail::kRatARouteLo;
+
+    static double EvalPiece(std::size_t index, double t) noexcept {
+        return RationalPieceNarrowAtCut(index, kPairsA.num[index], kPairsA.den[index], t);
+    }
+
+    static double RegionBSeed(double x) noexcept {
+        const std::size_t index = static_cast<std::size_t>(NarrowBPieceOf(x));
+        const double a = detail::kNarrowBEdges[index];
+        const double b = detail::kNarrowBEdges[index + 1];
+        const double t = 2.0 * (x - a) / (b - a) - 1.0;
+        return RationalSeedNarrowAtCut(index, kPairsB.num[index], kPairsB.den[index], t);
+    }
+
+    struct BandSource {
+        explicit BandSource(double) noexcept {}
+
+        double Next(int l, double x) noexcept
+        {
+            return RegionAValue<RationalFitNarrowAtRung>(l, x);
+        }
+    };
+};
+
+// The rational route's fit at a rung over the partition a policy names. The two
+// rung fits differ only in which partition's stored pairs they cut, so the
+// partition and the rung stay one choice here rather than a crossing.
+template <double kAccuracyMultiplier, FitGranularity kGranularity>
+using RationalRouteFitAtRung =
+    std::conditional_t<kGranularity == kDefaultFitGranularity,
+                       RationalFitAtRung<kAccuracyMultiplier>,
+                       RationalFitNarrowAtRung<kAccuracyMultiplier>>;
+
 // Region-A seed F_order(x) of the Chebyshev route at a scheme, for the lanes
 // and the reports that read one fit rather than a whole route.
 template <EvalScheme kScheme = kDefaultEvalScheme>
@@ -1021,6 +1133,42 @@ inline float RegionBSeedF32WithDegrees(float x, int degree) noexcept {
                                                 t);
 }
 
+// The single-precision lane's narrow counterparts of the two above: same mapped
+// argument, same summation, over the pieces the narrow partition holds and at
+// the degree its own table certifies for them. The tables and these helpers
+// move together the way the double lane's do - a cut degree is only meaningful
+// against the partition it was derived from.
+template <EvalScheme kScheme = kDefaultEvalScheme, typename DegreesArray>
+float NarrowChebyshevValueF32WithDegrees(int order, float x, const DegreesArray& degrees) noexcept {
+    const detail::f32::OrderPiece& piece = FindNarrowPieceF32(order, x);
+    const std::ptrdiff_t index = &piece - detail::f32::kNarrowAPiecesF32.data();
+    const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
+    return FitSum<kScheme, backend::ScalarFp32>(
+        detail::f32::kNarrowACoeffsF32.data() + piece.offset,
+        detail::f32::kNarrowAMonoCoeffsF32.data() + piece.offset,
+        degrees[static_cast<std::size_t>(index)],
+        t);
+}
+
+// The narrow seed is one polynomial per piece, so the degree a rung reads is
+// the piece's own at the order the seed is being read for: flat, at the stride
+// the derivation writes it with.
+template <EvalScheme kScheme = kDefaultEvalScheme, typename DegreesArray>
+float NarrowRegionBSeedF32WithDegrees(float x, int order, const DegreesArray& degrees) noexcept {
+    const std::size_t piece = static_cast<std::size_t>(NarrowBPieceF32(x));
+    const std::size_t index = piece * (kMaxOrder + 1) + static_cast<std::size_t>(order);
+    const float a = detail::f32::kNarrowBEdgesF32[piece];
+    const float b = detail::f32::kNarrowBEdgesF32[piece + 1];
+    const float t = 2.0f * (x - a) / (b - a) - 1.0f;
+    const std::size_t offset =
+        piece * static_cast<std::size_t>(detail::f32::kNarrowBDegF32 + 1);
+    return FitSum<kScheme, backend::ScalarFp32>(
+        detail::f32::kNarrowBcoeffsF32.data() + offset,
+        detail::f32::kNarrowBMonoCoeffsF32.data() + offset,
+        degrees[index],
+        t);
+}
+
 // The narrow partition's counterparts of the two above: the same mapped
 // argument and the same summation, over the pieces that partition holds and at
 // the degree its own table certifies for them. A degree table is indexed the
@@ -1216,6 +1364,69 @@ inline float RationalSeedF32AtCut(int numDeg, int denDeg, float t) noexcept {
     return num / backend::ScalarFp32::MulAdd(den, t, 1.0f);
 }
 
+// One narrow rational piece of this lane at a cut pair; the degree pair is the
+// rung's and the piece, its interval and its stored degrees are the narrow
+// partition's own. The denominator's coefficients sit above the *stored*
+// numerator here as they do in the shipped table, so q_j is read at the
+// piece's full numerator degree's offset.
+inline float RationalPieceNarrowF32AtCut(std::size_t index,
+                                         int numDeg,
+                                         int denDeg,
+                                         float t) noexcept {
+    const detail::f32::RatPiece& piece = detail::f32::kNarrowRatAPiecesF32[index];
+    const float* c = detail::f32::kNarrowRatACoeffsF32.data() + piece.offset;
+    float num = c[numDeg];
+
+    for (int j = numDeg - 1; j >= 0; --j)
+    {
+        num = backend::ScalarFp32::MulAdd(num, t, c[j]);
+    }
+
+    if (denDeg == 0)
+    {
+        return num;
+    }
+
+    float den = c[piece.numdeg + denDeg];
+
+    for (int j = denDeg - 1; j >= 1; --j)
+    {
+        den = backend::ScalarFp32::MulAdd(den, t, c[piece.numdeg + j]);
+    }
+
+    return num / backend::ScalarFp32::MulAdd(den, t, 1.0f);
+}
+
+// The narrow region-B seed of this lane at a cut pair, over the narrow piece
+// the argument falls in; same reading as RegionBSeedRationalNarrowF32.
+inline float RationalSeedNarrowF32AtCut(std::size_t index,
+                                        int numDeg,
+                                        int denDeg,
+                                        float t) noexcept {
+    const detail::f32::RatPiece& piece = detail::f32::kNarrowRatBPiecesF32[index];
+    const float* c = detail::f32::kNarrowRatBCoeffsF32.data() + piece.offset;
+    float num = c[numDeg];
+
+    for (int j = numDeg - 1; j >= 0; --j)
+    {
+        num = backend::ScalarFp32::MulAdd(num, t, c[j]);
+    }
+
+    if (denDeg == 0)
+    {
+        return num;
+    }
+
+    float den = c[piece.numdeg + denDeg];
+
+    for (int j = denDeg - 1; j >= 1; --j)
+    {
+        den = backend::ScalarFp32::MulAdd(den, t, c[piece.numdeg + j]);
+    }
+
+    return num / backend::ScalarFp32::MulAdd(den, t, 1.0f);
+}
+
 // Region-A seed of the rational route over the narrow partition: the same
 // numerator over one plus t times the stored denominator, at the narrow
 // pieces' own intervals and mapped arguments, so the two routes over a piece
@@ -1355,28 +1566,76 @@ using FloatRouteFit = std::conditional_t<kRoute == FitRoute::kChebyshev,
 // value of one order and the region-B seed - so the engine above it is one body
 // per route at every multiplier, and the route and the scheme reach it the way
 // they reach it at m = 1.
-template <double kAccuracyMultiplier, BoysRole kRole, EvalScheme kScheme>
+// Which partition's degrees the float lane's Chebyshev rung cuts. Both tables
+// are derived from the coefficients the entry evaluates, and the two are
+// different numbers over different pieces, so the choice is made here once
+// rather than at each read.
+template <double kAccuracyMultiplier, BoysRole kRole, EvalScheme kScheme,
+          FitGranularity kGranularity>
+constexpr auto ChebyshevF32RungDegreesA() noexcept {
+    if constexpr (kGranularity == kDefaultFitGranularity)
+    {
+        return RegionADegrees<kAccuracyMultiplier, kRole, SchemeTailBasis<kScheme>()>();
+    } else
+    {
+        return detail::NarrowRegionADegreesF32<kAccuracyMultiplier, kRole,
+                                               SchemeTailBasis<kScheme>()>();
+    }
+}
+
+template <double kAccuracyMultiplier, BoysRole kRole, EvalScheme kScheme,
+          FitGranularity kGranularity>
+constexpr auto ChebyshevF32RungDegreesB() noexcept {
+    if constexpr (kGranularity == kDefaultFitGranularity)
+    {
+        return RegionBDegrees<kAccuracyMultiplier, kRole, SchemeTailBasis<kScheme>()>();
+    } else
+    {
+        return detail::NarrowRegionBDegreesF32<kAccuracyMultiplier, kRole,
+                                               SchemeTailBasis<kScheme>()>();
+    }
+}
+
+// The partition the policy names is the partition this fit cuts: the degrees
+// are derived from the table the entry actually evaluates, so a rung named
+// together with the narrow partition answers from the narrow table's own
+// degrees rather than from the shipped table's read over narrower pieces.
+template <double kAccuracyMultiplier, BoysRole kRole, EvalScheme kScheme,
+          FitGranularity kGranularity = kDefaultFitGranularity>
 struct ChebyshevFit32AtRung {
-    // The degrees the criterion certifies for this role and this basis. The
-    // basis is the table the summation reads (SchemeTailBasis), which is the
-    // table its tail is summed from: the two stored forms of one fit hold
-    // different numbers, and a degree the Chebyshev tail admits can drop a
-    // monomial tail several orders over budget.
+    // The degrees the criterion certifies for this role, this partition and
+    // this basis. The basis is the table the summation reads (SchemeTailBasis),
+    // which is the table its tail is summed from: the two stored forms of one
+    // fit hold different numbers, and a degree the Chebyshev tail admits can
+    // drop a monomial tail several orders over budget.
     static constexpr auto kDegreesA =
-        RegionADegrees<kAccuracyMultiplier, kRole, SchemeTailBasis<kScheme>()>();
+        ChebyshevF32RungDegreesA<kAccuracyMultiplier, kRole, kScheme, kGranularity>();
     static constexpr auto kDegreesB =
-        RegionBDegrees<kAccuracyMultiplier, kRole, SchemeTailBasis<kScheme>()>();
+        ChebyshevF32RungDegreesB<kAccuracyMultiplier, kRole, kScheme, kGranularity>();
 
     // One piece of one order, at that piece's effective degree.
     static float EvalOrder(int n, float x) noexcept {
-        return ChebyshevValueF32WithDegrees<kScheme>(n, x, kDegreesA);
+        if constexpr (kGranularity == kDefaultFitGranularity)
+        {
+            return ChebyshevValueF32WithDegrees<kScheme>(n, x, kDegreesA);
+        } else
+        {
+            return NarrowChebyshevValueF32WithDegrees<kScheme>(n, x, kDegreesA);
+        }
     }
 
     // The seed's error reaches order n through the upward recursion, whose gain
     // is A_B(n) - the quantity RegionBDegrees certifies the degree at - so the
     // degree is the one the order it is read for was certified for.
     static float RegionBSeed(float x, int order) noexcept {
-        return RegionBSeedF32WithDegrees<kScheme>(x, kDegreesB[static_cast<std::size_t>(order)]);
+        if constexpr (kGranularity == kDefaultFitGranularity)
+        {
+            return RegionBSeedF32WithDegrees<kScheme>(x,
+                                                      kDegreesB[static_cast<std::size_t>(order)]);
+        } else
+        {
+            return NarrowRegionBSeedF32WithDegrees<kScheme>(x, order, kDegreesB);
+        }
     }
 };
 
@@ -1386,38 +1645,87 @@ struct ChebyshevFit32AtRung {
 // route pays A = 1 there, and region B's seed is one pair for the whole region
 // read at order 0; both are what the criterion's region tables derive
 // (RationalRegionAF32Degrees, RationalRegionBF32Degrees).
-template <double kAccuracyMultiplier, BoysRole kRole>
+// Which partition's pairs the float lane's rational rung cuts; same choice and
+// same reason as the Chebyshev rung's two above.
+template <double kAccuracyMultiplier, BoysRole kRole, FitGranularity kGranularity>
+constexpr auto RationalF32RungPairsA() noexcept {
+    if constexpr (kGranularity == kDefaultFitGranularity)
+    {
+        return detail::RationalRegionAF32Degrees<kAccuracyMultiplier, kRole>();
+    } else
+    {
+        return detail::RationalRegionANarrowF32Degrees<kAccuracyMultiplier, kRole>();
+    }
+}
+
+template <double kAccuracyMultiplier, BoysRole kRole, FitGranularity kGranularity>
+constexpr auto RationalF32RungPairsB() noexcept {
+    if constexpr (kGranularity == kDefaultFitGranularity)
+    {
+        return detail::RationalRegionBF32Degrees<kAccuracyMultiplier, kRole>();
+    } else
+    {
+        return detail::RationalRegionBNarrowF32Degrees<kAccuracyMultiplier, kRole>();
+    }
+}
+
+template <double kAccuracyMultiplier, BoysRole kRole,
+          FitGranularity kGranularity = kDefaultFitGranularity>
 struct RationalFit32AtRung {
-    static constexpr detail::RationalRegionAF32Pairs kPairsA =
-        detail::RationalRegionAF32Degrees<kAccuracyMultiplier, kRole>();
-    static constexpr detail::RationalRegionBF32Pairs kPairsB =
-        detail::RationalRegionBF32Degrees<kAccuracyMultiplier, kRole>();
+    static constexpr auto kPairsA =
+        RationalF32RungPairsA<kAccuracyMultiplier, kRole, kGranularity>();
+    static constexpr auto kPairsB =
+        RationalF32RungPairsB<kAccuracyMultiplier, kRole, kGranularity>();
 
     // This route's cover of an order's interval is its own, not the Chebyshev
     // table's breaks, so the piece is looked up in the rational table and the
-    // pair is read at that piece's cut.
+    // pair is read at that piece's cut. The narrow partition is the family's
+    // own cover there, so the lookup follows the pair table it reads.
     static float EvalOrder(int n, float x) noexcept {
-        const detail::f32::RatPiece& piece = FindRatPieceF32(n, x);
-        const std::size_t index =
-            static_cast<std::size_t>(&piece - detail::f32::kRatAPieces.data());
-        const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
-        return RationalPieceF32AtCut(index, kPairsA.num[index], kPairsA.den[index], t);
+        if constexpr (kGranularity == kDefaultFitGranularity)
+        {
+            const detail::f32::RatPiece& piece = FindRatPieceF32(n, x);
+            const std::size_t index =
+                static_cast<std::size_t>(&piece - detail::f32::kRatAPieces.data());
+            const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
+            return RationalPieceF32AtCut(index, kPairsA.num[index], kPairsA.den[index], t);
+        } else
+        {
+            const detail::f32::RatPiece& piece = FindNarrowRatPieceF32(n, x);
+            const std::size_t index =
+                static_cast<std::size_t>(&piece - detail::f32::kNarrowRatAPiecesF32.data());
+            const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
+            return RationalPieceNarrowF32AtCut(index, kPairsA.num[index], kPairsA.den[index], t);
+        }
     }
 
     // One pair for the region rather than one per order, so the order is not
-    // read: every order's output carries the same cut.
+    // read: every order's output carries the same cut. The narrow partition's
+    // seed is cut per piece, so there the piece is looked up first.
     static float RegionBSeed(float x, int /*order*/) noexcept {
-        const float t = 2.0f * (x - static_cast<float>(kX0)) / static_cast<float>(kX1 - kX0) - 1.0f;
-        return RationalSeedF32AtCut(kPairsB.num[0], kPairsB.den[0], t);
+        if constexpr (kGranularity == kDefaultFitGranularity)
+        {
+            const float t =
+                2.0f * (x - static_cast<float>(kX0)) / static_cast<float>(kX1 - kX0) - 1.0f;
+            return RationalSeedF32AtCut(kPairsB.num[0], kPairsB.den[0], t);
+        } else
+        {
+            const detail::f32::RatPiece& piece = FindNarrowRatBPieceF32(x);
+            const std::size_t index =
+                static_cast<std::size_t>(&piece - detail::f32::kNarrowRatBPiecesF32.data());
+            const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
+            return RationalSeedNarrowF32AtCut(index, kPairsB.num[index], kPairsB.den[index], t);
+        }
     }
 };
 
 // The two families at a rung under one name; see FloatRouteFit.
-template <double kAccuracyMultiplier, FitRoute kRoute, EvalScheme kScheme, BoysRole kRole>
+template <double kAccuracyMultiplier, FitRoute kRoute, EvalScheme kScheme, BoysRole kRole,
+          FitGranularity kGranularity = kDefaultFitGranularity>
 using FloatRouteFitAtRung =
     std::conditional_t<kRoute == FitRoute::kChebyshev,
-                       ChebyshevFit32AtRung<kAccuracyMultiplier, kRole, kScheme>,
-                       RationalFit32AtRung<kAccuracyMultiplier, kRole>>;
+                       ChebyshevFit32AtRung<kAccuracyMultiplier, kRole, kScheme, kGranularity>,
+                       RationalFit32AtRung<kAccuracyMultiplier, kRole, kGranularity>>;
 
 // Region-A seed of a float-lane batch, in the double precision the downward
 // recursion needs (see the batch body below). The route's own fit answers where
@@ -1455,28 +1763,53 @@ double FloatBatchRegionASeed(int order, double x) noexcept {
 // evaluated from (RoleUsesDoubleTables), and the cut pair is the double lane's
 // rational pieces at the reading this seed gives them, w(b) at the piece's
 // right end (RationalRegionASeedDegrees).
-template <double kAccuracyMultiplier, FitRoute kRoute, EvalScheme kScheme, BoysRole kRole>
+template <double kAccuracyMultiplier, FitRoute kRoute, EvalScheme kScheme, BoysRole kRole,
+          FitGranularity kGranularity = kDefaultFitGranularity>
 double FloatBatchRegionASeedAtRung(int order, double x) noexcept {
     if constexpr (kRoute == FitRoute::kRationalMinimax)
     {
         // The hand-over point is the route's own constant and the same one
         // under either partition, and this rung body reads the shipped pieces
         // (ShippedRegionAPartition, the double lane's pair table), so it is
-        // named at the shipped partition.
+        // named at the shipped partition. Both partitions name the same
+        // constant, the double lane's own kRegionAFitsFrom.
         if (x >= RationalFit32<FitGranularity::kShipped>::kRegionAFitsFrom)
         {
-            static constexpr detail::RationalRegionAPairs kPairsA =
-                detail::RationalRegionASeedDegrees<kAccuracyMultiplier, kRole>();
-            const std::size_t index = ShippedRegionAPartition::PieceIndex(order, x);
-            const detail::OrderPiece& piece = ShippedRegionAPartition::PieceAt(index);
-            const double t = 2.0 * (x - piece.a) / (piece.b - piece.a) - 1.0;
-            return RationalPieceAtCut(index, kPairsA.num[index], kPairsA.den[index], t);
+            // The seed is evaluated from the double lane's tables whichever
+            // partition the policy names - a 1.5e-7 seed cannot start this
+            // recursion - so the narrow branch reads the narrow partition of
+            // those tables and not this lane's.
+            if constexpr (kGranularity == kDefaultFitGranularity)
+            {
+                static constexpr detail::RationalRegionAPairs kPairsA =
+                    detail::RationalRegionASeedDegrees<kAccuracyMultiplier, kRole>();
+                const std::size_t index = ShippedRegionAPartition::PieceIndex(order, x);
+                const detail::OrderPiece& piece = ShippedRegionAPartition::PieceAt(index);
+                const double t = 2.0 * (x - piece.a) / (piece.b - piece.a) - 1.0;
+                return RationalPieceAtCut(index, kPairsA.num[index], kPairsA.den[index], t);
+            } else
+            {
+                static constexpr detail::NarrowRationalRegionAPairs kPairsA =
+                    detail::RationalRegionANarrowSeedDegrees<kAccuracyMultiplier, kRole>();
+                const std::size_t index = NarrowRegionAPartition::PieceIndex(order, x);
+                const detail::OrderPiece& piece = NarrowRegionAPartition::PieceAt(index);
+                const double t = 2.0 * (x - piece.a) / (piece.b - piece.a) - 1.0;
+                return RationalPieceNarrowAtCut(index, kPairsA.num[index], kPairsA.den[index], t);
+            }
         }
     }
 
-    static constexpr auto kDegreesA =
-        RegionADegrees<kAccuracyMultiplier, kRole, SchemeTailBasis<kScheme>()>();
-    return ChebyshevValueWithDegrees<kScheme>(order, x, kDegreesA);
+    if constexpr (kGranularity == kDefaultFitGranularity)
+    {
+        static constexpr auto kDegreesA =
+            RegionADegrees<kAccuracyMultiplier, kRole, SchemeTailBasis<kScheme>()>();
+        return ChebyshevValueWithDegrees<kScheme>(order, x, kDegreesA);
+    } else
+    {
+        static constexpr auto kDegreesA =
+            detail::NarrowRegionADegrees<kAccuracyMultiplier, kRole, SchemeTailBasis<kScheme>()>();
+        return NarrowRegionAValueWithDegrees<kScheme>(order, x, kDegreesA);
+    }
 }
 
 // The float lane's single-order body over a fit policy: one body, so the
@@ -1782,23 +2115,12 @@ double BoysSingleImpl(int n, double x) noexcept {
         // the arguments the route's fits do not cover keep the shipped lane's
         // answer exactly as they do at m = 1.
         //
-        // The pairs are the shipped partition's, whatever partition the policy
-        // names: this lane's rung table for the route is the criterion applied
-        // to the shipped cover and seed, and the width-2.44 pieces' own relaxed
-        // pairs are a second derivation it does not carry. So a policy naming
-        // the narrow partition here would answer from the shipped pairs under
-        // the narrow partition's name, and this assertion refuses it rather
-        // than letting that substitution stand.
-        static_assert(Policy::kGranularity == kDefaultFitGranularity,
-                      "a relaxed rung of the rational route reads the shipped partition's own "
-                      "pairs, which are the ones its degree table is derived from, and the "
-                      "narrow pieces' relaxed pairs are a table this lane does not carry: "
-                      "naming the narrow partition past the reference multiplier would answer "
-                      "from the shipped pairs under the narrow partition's name. This "
-                      "assertion refuses it instead, and what it refuses is a table to derive "
-                      "rather than a combination that cannot be formed: read the narrow "
-                      "partition at the reference multiplier, or the shipped one at this rung");
-        return SingleOrder<Policy, RationalFitAtRung<kAccuracyMultiplier>>(n, x);
+        // Each partition carries its own pairs and its own cover, and the rung's
+        // criterion cuts the pair the policy's partition stores: a rung named
+        // with the narrow partition reads the narrow pieces at the narrow pairs
+        // rather than the shipped pairs under the narrow partition's name.
+        return SingleOrder<Policy,
+                           RationalRouteFitAtRung<kAccuracyMultiplier, Policy::kGranularity>>(n, x);
     } else
     {
         RequireShippedRoute<Policy>();
@@ -1855,7 +2177,8 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept;
 // lane's degree table is certified against a region budget as well as against a
 // table, so the computation budget is a choice it carries and the double lane's
 // entry does not.
-template <EvalScheme kScheme, double kAccuracyMultiplier, FitRoute kRoute, BoysBudget kBudget>
+template <EvalScheme kScheme, double kAccuracyMultiplier, FitRoute kRoute, BoysBudget kBudget,
+          FitGranularity kGranularity = kDefaultFitGranularity>
 void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept;
 
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
@@ -1896,19 +2219,10 @@ void BoysAllOrdersImpl(int nmax, double x, double* out) noexcept {
         // read for, and the batch recursion's gain is what the route's pieces
         // were never fitted through.
         //
-        // The pairs are the shipped partition's, as they are on the single-order
-        // entry above, so the same substitution is refused here for the same
-        // reason.
-        static_assert(Policy::kGranularity == kDefaultFitGranularity,
-                      "a relaxed rung of the rational route reads the shipped partition's own "
-                      "pairs, which are the ones its degree table is derived from, and the "
-                      "narrow pieces' relaxed pairs are a table this lane does not carry: "
-                      "naming the narrow partition past the reference multiplier would answer "
-                      "from the shipped pairs under the narrow partition's name. This "
-                      "assertion refuses it instead, and what it refuses is a table to derive "
-                      "rather than a combination that cannot be formed: read the narrow "
-                      "partition at the reference multiplier, or the shipped one at this rung");
-        AllOrdersBody<Policy, RationalFitAtRung<kAccuracyMultiplier>>(nmax, x, out);
+        // Each partition carries its own pairs, as it does on the single-order
+        // entry above, so the rung cuts the pair the policy's partition stores.
+        AllOrdersBody<Policy, RationalRouteFitAtRung<kAccuracyMultiplier, Policy::kGranularity>>(
+            nmax, x, out);
     } else
     {
         static_assert(Policy::kRoute == kDefaultFitRoute,
@@ -2173,16 +2487,6 @@ template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 float BoysSingleF32Impl(int n, float x) noexcept {
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
-    static_assert(kAccuracyMultiplier == 1.0 ||
-                      Policy::kGranularity == kDefaultFitGranularity,
-                  "a relaxed rung reads a stored row at a per-order effective degree, and on "
-                  "this lane only the shipped row carries such a degree table: the rung fits "
-                  "below are the shipped table's whatever partition the policy names, so "
-                  "naming the narrow partition past the reference multiplier would answer "
-                  "from the shipped table under the narrow partition's name. This assertion "
-                  "refuses it instead, and what it refuses is a table to derive rather than "
-                  "a combination that cannot be formed: read the narrow partition at the "
-                  "reference multiplier, or the shipped one at this rung");
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(x >= 0.0f);
 
@@ -2194,8 +2498,9 @@ float BoysSingleF32Impl(int n, float x) noexcept {
     {
         constexpr BoysRole kRole =
             (Policy::kBudget == BoysBudget::kFloat) ? BoysRole::kF32Single : BoysRole::kF32Fp16Single;
-        return SingleOrderF32Body<
-            FloatRouteFitAtRung<kAccuracyMultiplier, Policy::kRoute, Policy::kScheme, kRole>>(n, x);
+        return SingleOrderF32Body<FloatRouteFitAtRung<kAccuracyMultiplier, Policy::kRoute,
+                                                      Policy::kScheme, kRole,
+                                                      Policy::kGranularity>>(n, x);
     }
 }
 
@@ -2203,28 +2508,11 @@ template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
-    static_assert(kAccuracyMultiplier == 1.0 ||
-                      Policy::kGranularity == kDefaultFitGranularity,
-                  "a relaxed rung reads a stored row at a per-order effective degree, and on "
-                  "this lane only the shipped row carries such a degree table: the rung paths "
-                  "below read the shipped table out of the lane's own fits whatever partition "
-                  "the policy names, so naming the narrow partition past the reference "
-                  "multiplier would answer from the shipped table under the narrow "
-                  "partition's name. This assertion refuses it instead, and what it refuses "
-                  "is a table to derive rather than a combination that cannot be formed: read "
-                  "the narrow partition at the reference multiplier, or the shipped one at "
-                  "this rung");
     assert(nmax >= 0 && nmax <= kMaxBoysOrder);
     assert(x >= 0.0f);
     assert(out != nullptr);
 
-    // The packed lane below runs on the shipped partition, the only one whose
-    // pieces step order to order at a single stride. A policy naming the narrow
-    // partition takes the scalar per-order path instead: the same values this
-    // lane returns, exact to the bit, without the eight-wide lane - the cost of
-    // the option, not a value it changes.
-    if constexpr (Policy::kPack == PackAxis::kOrders &&
-                  Policy::kGranularity == kDefaultFitGranularity)
+    if constexpr (Policy::kPack == PackAxis::kOrders)
     {
         // The across-orders packed lane: eight orders of one argument in one
         // vector register, which is the shape BoysAllOrdersF32(nmax, x, out)
@@ -2233,17 +2521,35 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
         // value, and the lane's own suite asserts it - so the axis changes
         // which lane runs and not which fit is read.
         //
-        // A rung cuts the lane's fits by a table of effective degrees, and each
-        // family's table is derived from the coefficients that family stores
-        // and read in the basis the scheme sums - the shipped route's pieces
-        // for its own table, the rational route's pairs for theirs - so the
-        // route and the scheme are choices of table here as they are on the
-        // per-order bodies. The budget is the lane's own and picks which bar
-        // the table's role is certified against.
+        // The rung restriction is the one every other float entry states: a
+        // degree table is certified against one stored table of one fit family
+        // and against one region budget. The shipped partition's table is the
+        // one this lane derives for every family it carries, so at a relaxed
+        // multiplier the shipped lane serves all four of its (scheme, route)
+        // pairs as it does at the reference one. The narrow partition's rung
+        // bodies are the shipped family's alone - a rung of another family's fit
+        // there is a body to write rather than a shape the call cannot have, and
+        // the shipped partition carries it already.
+        if constexpr (kAccuracyMultiplier != 1.0 &&
+                      Policy::kGranularity != kDefaultFitGranularity)
+        {
+            static_assert(Policy::kRoute == kDefaultFitRoute &&
+                              Policy::kScheme == kDefaultEvalScheme,
+                          "past the reference multiplier the narrow partition's across-orders "
+                          "packed lane runs the shipped route and scheme alone: a rung of another "
+                          "family's fit there is a body to write rather than a shape the call "
+                          "cannot have - the shipped partition carries it already");
+        }
+
+        // The lane carries the partition the policy names, as every other entry
+        // does: its narrow body reads each order's own piece of the narrow
+        // table, which is the partition the caller asked for, and the fallback
+        // outside the lane's interval is the scalar lane at the same partition.
         BoysAllOrdersF32Packed<Policy::kScheme,
                                kAccuracyMultiplier,
                                Policy::kRoute,
-                               Policy::kBudget>(nmax, x, out);
+                               Policy::kBudget,
+                               Policy::kGranularity>(nmax, x, out);
     } else if constexpr (kAccuracyMultiplier == 1.0)
     {
         if (x == 0.0f)
@@ -2311,8 +2617,8 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
     {
         constexpr BoysRole kRole =
             (Policy::kBudget == BoysBudget::kFloat) ? BoysRole::kF32Batch : BoysRole::kF32Fp16Batch;
-        using Fit =
-            FloatRouteFitAtRung<kAccuracyMultiplier, Policy::kRoute, Policy::kScheme, kRole>;
+        using Fit = FloatRouteFitAtRung<kAccuracyMultiplier, Policy::kRoute, Policy::kScheme, kRole,
+                                        Policy::kGranularity>;
 
         if (x == 0.0f)
         {
@@ -2333,7 +2639,8 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
             // recursion itself stays in float.
             const double seed =
                 FloatBatchRegionASeedAtRung<kAccuracyMultiplier, Policy::kRoute, Policy::kScheme,
-                                            kRole>(nmax, static_cast<double>(x));
+                                            kRole, Policy::kGranularity>(nmax,
+                                                                         static_cast<double>(x));
             out[nmax] = static_cast<float>(seed);
             float f = out[nmax];
             const float expx = 0.5f * std::exp(-x);
@@ -2396,6 +2703,11 @@ void BoysAllNF32Impl(int nmax, const float* x, float* out, std::size_t count) no
     assert(count == 0 || x != nullptr);
     assert(count == 0 || out != nullptr);
 
+    // Both axes are served, and the axis is read: the per-argument body this
+    // loop calls is the all-orders entry, which packs eight orders of one
+    // argument when the policy names the orders axis and fits one argument's
+    // region otherwise. The arguments axis's region partitioning stays at the
+    // caller's loop, as the doc comment above says.
     for (std::size_t i = 0; i < count; ++i)
     {
         assert(x[i] >= 0.0f);
