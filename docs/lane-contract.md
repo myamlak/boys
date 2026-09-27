@@ -1282,10 +1282,12 @@ is never a measurement.
 
 **The delivered figure is a floor on a whole call's error and not the whole call's figure.** The
 rows it maximises over are the *fits'* own figures, and a call adds its recurrences over them, so
-the gate measures a whole call at or above it — strictly above it on 16 rows of this grid's sweep,
-which the gate's accessor book prints beside the 12 rows where the delivered figure sits above the
-whole call's measurement. What a whole call delivers is the gate's measurement, and the gate's
-combination table is where that figure lives for every combination.
+the gate measures a whole call at or above it. It also prints the 16 rows of this grid's sweep where
+the delivered figure sits above the whole call's measurement and does not fail the run on them:
+those two are measurements of the same quantity taken two ways, the fit's own dense sweep and this
+gate's reference grid, and the certified-routes table above records that the grid is the coarser of
+the two and reads under on a fit that equioscillates. What a whole call delivers is the gate's
+measurement, and the gate's combination table is where that figure lives for every combination.
 
 **A combination this revision does not carry returns no number.** Both accessors return
 `available == false`, `value == 0.0` and a `reason` carrying the library's own sentence for the
@@ -1416,16 +1418,17 @@ reason. Those counts are from `boys-consumer-umbrella`, whose accuracy section p
 four requests above are its own; the gate's combination block prints the same comparison for the
 certified rows of each lane.
 
-Run at revision `94ee3ea`, the gate's own lines for the tolerance question are:
+Run at revision `3908a53`, the gate's own lines for the tolerance question are:
 
-    the tolerance query: 183 carried row(s) asked at the figure each row is judged by and
-                  answered inside it, 183 of them asked at half of that figure and answered
-                  outside it, 0 row(s) whose lane publishes no figure to halve, and 265
+    the tolerance query: 448 carried row(s) asked at the figure each row is judged by and
+                  answered inside it, 448 of them asked at half of that figure and answered
+                  outside it, 0 row(s) whose lane publishes no figure to halve, and 0
                   refused row(s) answered with no verdict and no figure. 0 disagreement(s)
                   with the figures the two accessors answer
 
-The 183 rows are the combinations that carry a figure at the rung they are judged at; the 265 are
-the refusals, each answered with the sentence its own lane's accessor gives.
+The 448 rows are every member of the option space, each carrying a figure at the rung it is judged
+at. None is refused: a combination outside the enumerations is the only request that names no
+combination, and it is answered with the accessor's own sentence rather than with a number.
 
 ## The default policy, per precision and per device
 
