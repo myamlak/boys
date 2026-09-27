@@ -37,6 +37,16 @@ option(BUILD_CUDA
     "Build the CUDA lane (needs the CUDA toolkit; a documented local gate — never CI)"
     OFF)
 
+# The comparison benchmark's reference library, off unless named: the include
+# directory (or directories) holding libint2's headers. libint2 is not a
+# dependency of this library — nothing here links it, and its Boys surface is
+# header-only — so this value adds one benchmark target and changes nothing
+# else, and a tree that leaves it empty builds and installs exactly as it does
+# today. The benchmark block below says what is built when it is set, and what
+# a libint2 source tree needs named beyond its own include directory.
+set(BOYS_LIBINT2_INCLUDE_DIR "" CACHE STRING
+    "Include directory holding libint2's headers (libint2/boys.h); separate several with ';'. Empty = the libint2 comparison benchmark is not built")
+
 # Warnings in this tree's own code are build failures. ON by default: a gate
 # that is off until someone opts in is not a gate, and a consumer embedding
 # this tree inherits the same standard. Turning it off keeps the warning
@@ -520,7 +530,7 @@ int main() {
 
     # Every refusal below is measured by compiling the call it names rather than
     # by quoting the assertion that states it. A refusal the library asserts and
-    # cannot show is the same sentence the record forbids: citing our own refusal
+    # cannot show is the same defect as citing a refusal
     # as the reason a bound is not owed. A probe establishes something narrower
     # than the refusal it backs - it says the call does not build, not that it
     # cannot - and each verdict is printed after the probe that produced it,
@@ -751,8 +761,8 @@ int main() {
     # the leg if it disagrees. It is worth more than the rest of the matrix
     # combined, because the SIMD correctness tests soft-skip on that same
     # predicate: a wrong CPUID bit would make every one of them SKIP while CI
-    # reported green with the whole vector tier dead — the failure this tree
-    # already suffered once.
+    # reported green with the whole vector tier dead — the failure this
+    # assertion exists to catch.
     #
     # It is a *target that links boys*, not a hand-compiled snippet, so it
     # inherits the configuration's CRT (MSVC Debug = /MDd), its sanitizer flags
@@ -943,7 +953,7 @@ endif()
 # --- Benchmark drivers -------------------------------------------------------
 if (BUILD_BENCHMARKS)
     # boys_benchmark.cpp is a Google Benchmark driver; boys_unsorted_simd_
-    # benchmark.cpp is a runs-log protocol driver with its own main(). The
+    # benchmark.cpp is a driver of its own with its own main(). The
     # timed runs are local-only by design (machine/clock/commit recorded per
     # run) and never part of CI.
     if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/benchmark/CMakeLists.txt")
@@ -1007,6 +1017,45 @@ if (BUILD_BENCHMARKS)
     else()
         message(STATUS "boys: skipping boys-unsorted-simd-benchmark — its AVX2 "
             "kernels are x86_64-only (this is a local-only target)")
+    endif()
+
+    # The comparison driver: this library's default entry against libint2's
+    # Boys evaluator, on the same streams at full accuracy on both sides (see
+    # the file preamble for what is compared and how the numbers are read).
+    # libint2 is not a dependency of this library — its Boys surface is
+    # header-only, nothing here links it, and its headers are consumed at build
+    # time only (LGPL-3.0-or-later, never vendored) — so the target is created
+    # only where BOYS_LIBINT2_INCLUDE_DIR is set AND carries libint2/boys.h,
+    # and the configuration says in one line what it skipped and why when it is
+    # not. Its include directories are SYSTEM ones: third-party headers are not
+    # this tree's to keep warning-clean under BOYS_WERROR.
+    if (BOYS_LIBINT2_INCLUDE_DIR)
+        set(boysLibint2Found FALSE)
+
+        foreach (boysLibint2Dir IN LISTS BOYS_LIBINT2_INCLUDE_DIR)
+            if (EXISTS "${boysLibint2Dir}/libint2/boys.h")
+                set(boysLibint2Found TRUE)
+            endif()
+        endforeach()
+    else()
+        set(boysLibint2Found FALSE)
+    endif()
+
+    if (boysLibint2Found)
+        add_executable(boys-libint2-benchmark benchmarks/boys_libint2_benchmark.cpp)
+        target_link_libraries(boys-libint2-benchmark PRIVATE boys)
+        target_include_directories(boys-libint2-benchmark SYSTEM PRIVATE
+            ${BOYS_LIBINT2_INCLUDE_DIR})
+        target_compile_features(boys-libint2-benchmark PRIVATE cxx_std_23)
+        boys_strict_warnings(boys-libint2-benchmark)
+    elseif (BOYS_LIBINT2_INCLUDE_DIR)
+        message(STATUS "boys: skipping boys-libint2-benchmark — "
+            "BOYS_LIBINT2_INCLUDE_DIR is \"${BOYS_LIBINT2_INCLUDE_DIR}\", which "
+            "does not carry libint2/boys.h")
+    else()
+        message(STATUS "boys: skipping boys-libint2-benchmark — "
+            "BOYS_LIBINT2_INCLUDE_DIR is unset, and libint2 is not a dependency "
+            "of this library")
     endif()
 
     if (BUILD_CUDA)
