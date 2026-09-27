@@ -2474,6 +2474,15 @@ def narrow_region_b_rational(narrow_b):
 F32_NARROW_DEG = 6
 F32_NARROW_GRID = 240
 
+# Region B's seed reaches a caller only through the upward recurrence - the
+# entry reads the piece's polynomial and steps it up to the order it was asked
+# for - so a narrow region-B piece is placed by the figure that comes out of
+# that recurrence and not by the seed's own residual. That figure is held to
+# half the lane's budget here, the half being the headroom the published figure
+# needs: scheme_bound rounds a sweep up to a power of two, and a row publishing
+# more than the lane's own 1e-7 would be publishing outside it.
+F32_NARROW_B_BUDGET = TOL_FLOAT * mpf("0.5")
+
 
 def f32_route_delivered(cs, ms, n, a, b, npts):
     """[[scheme][route]] worst |F_n - fit|, binary32, coefficients as stored."""
@@ -2494,6 +2503,37 @@ def f32_route_delivered(cs, ms, n, a, b, npts):
                 e = abs(pair[route] - ref)
                 if e > worst[scheme][route]:
                     worst[scheme][route] = e
+    return worst
+
+
+def f32_region_b_carried(cs, ms, a, b, npts, max_order=MAX_ORDER):
+    """[[scheme][route]] worst |F_n - carried| over orders 0..max_order, binary32.
+
+    The seed as the piece stores it, stepped up by the kernel's own region-B
+    recurrence - MulSub rounds the product and then the difference, and the
+    divide rounds - to every order the entry can be asked for, against the same
+    reference the fits are validated against. The seed's own residual is one
+    term of this figure and the recurrence is the rest of it; a piece placed on
+    the residual alone is a piece placed on a number no caller receives.
+    """
+    a32, b32 = r32(a), r32(b)
+    worst = [[0.0, 0.0], [0.0, 0.0]]
+    for i in range(npts + 1):
+        x = r32(a32 + (b32 - a32) * (i / npts))
+        if x >= b32:
+            x = math.nextafter(b32, 0.0)
+        t = f32_map(a32, b32, x)
+        expx = r32(0.5 * math.exp(-float(x)))
+        seeds = ((0, clenshaw_route32(cs, t, True), clenshaw_route32(cs, t, False)),
+                 (1, horner_mono_route32(ms, t, True), horner_mono_route32(ms, t, False)))
+        for scheme, fused_seed, separate_seed in seeds:
+            for route, seed in ((0, fused_seed), (1, separate_seed)):
+                f = seed
+                for n in range(max_order + 1):
+                    e = abs(f - float(boys_ref(n, mpf(x))))
+                    if e > worst[scheme][route]:
+                        worst[scheme][route] = e
+                    f = r32((r32(r32(float(n) + 0.5) * f) - expx) / x)
     return worst
 
 
@@ -2564,43 +2604,72 @@ def narrow_region_b_f32():
     because fit_interval's bisection is the region-A walk's and region B has
     none. The narrow member needs one, so the partition is derived by the same
     law: bisect the interval until the lane's own fit_interval accepts a piece
-    at F32_NARROW_DEG. The pieces are then held to the lane's region-B budget
-    (TOL_FLOAT) in the lane's arithmetic, both routes.
+    at F32_NARROW_DEG. What places a piece here is the fit's own residual and,
+    beside it, the figure the entry delivers: the seed stepped up the
+    recurrence, in the lane's arithmetic, both schemes and both multiply-add
+    routes, held to F32_NARROW_B_BUDGET. A piece whose residual passes and
+    whose carried figure does not is a piece the entry delivers outside its
+    budget, which is a split and not a bound to publish.
     """
     print(f"splitting the float lane's narrow region-B partition (the lane's own "
           f"1e-7 law, degree {F32_NARROW_DEG}) ...")
     pieces = []
-    stack = [(X0, X1, 0)]
+    piece_worsts = []
+    at_resolution = []
+    stack = [((X0), (X1), 0)]
     while stack:
         a, b, depth = stack.pop()
         r = fit_interval(0, a, b, TOL_FLOAT, F32_NARROW_DEG, weighted=False)
-        if r is None:
+        w = None
+        if r is not None:
+            w = f32_region_b_carried(r[1], r[2], a, b, F32_NARROW_GRID)
+        over = r is None or max(max(pair) for pair in w) > F32_NARROW_B_BUDGET
+        # The entry reads a piece by mapping x into it in binary32, so a piece
+        # the mapping cannot resolve is not a piece: below one float step every
+        # x in it maps to the same argument and the carried figure measured
+        # there describes no fit. The walk therefore splits on the float grid
+        # and stops when no float lies strictly inside the piece.
+        a32, b32 = r32(a), r32(b)
+        mid = r32((a32 + b32) / 2.0)
+        if over and mid > a32 and mid < b32:
             if depth > 40:
                 raise RuntimeError(f"float narrow region B: fit never converged on [{a},{b}]")
-            m = (a + b) / 2
-            stack.append((m, b, depth + 1))
-            stack.append((a, m, depth + 1))
+            stack.append(((mid), b, depth + 1))
+            stack.append((a, (mid), depth + 1))
         else:
+            if r is None:
+                raise RuntimeError(f"float narrow region B: no fit at all on [{a},{b}]")
             deg, cd, mono = r
             pieces.append((float(a), float(b), deg, cd, mono))
-    pieces.sort(key=lambda p: p[0])
+            piece_worsts.append(w)
+            if over:
+                at_resolution.append((float(a), float(b),
+                                      max(max(pair) for pair in w)))
+    order = sorted(range(len(pieces)), key=lambda i: pieces[i][0])
+    pieces = [pieces[i] for i in order]
+    piece_worsts = [piece_worsts[i] for i in order]
     worst = [[0.0, 0.0], [0.0, 0.0]]
-    for (a, b, _deg, cs, ms) in pieces:
-        w = f32_route_delivered(cs, ms, 0, a, b, F32_NARROW_GRID)
+    for w in piece_worsts:
         for scheme in (0, 1):
             for route in (0, 1):
                 if w[scheme][route] > worst[scheme][route]:
                     worst[scheme][route] = w[scheme][route]
     stored = len(pieces) * (F32_NARROW_DEG + 1)
-    print(f"  {len(pieces)} pieces, {stored} stored, region-B budget 1e-7:")
-    for (a, b, _deg, cs, _ms) in pieces:
-        print(f"    [{a!r}, {b!r})  width {b - a:.8f}")
+    print(f"  {len(pieces)} pieces, {stored} stored, carried budget "
+          f"{mp.nstr(F32_NARROW_B_BUDGET, 2)}:")
+    for (a, b, _deg, _cs, _ms), w in zip(pieces, piece_worsts):
+        print(f"    [{a!r}, {b!r})  width {b - a:.8f}  carried "
+              f"{max(max(pair) for pair in w):.6e}")
+    for a, b, w in at_resolution:
+        print(f"    [{a!r}, {b!r}) is one float step wide and still delivers {w:.6e}, "
+              f"over the carried budget: the lane's own arithmetic sets the figure there")
     for scheme, name in enumerate(SCHEME_NAMES):
         print(f"  {name:14s} worst {worst[scheme][0]:.6e} / {worst[scheme][1]:.6e} "
               f"(fused / separate)")
     bounds = [[scheme_bound(worst[s][r]) for r in (0, 1)]
               for s in range(NARROW_SCHEMES)]
-    return {"pieces": pieces, "stored": stored, "worst": worst, "bounds": bounds}
+    return {"pieces": pieces, "piece_worsts": piece_worsts, "stored": stored,
+            "worst": worst, "bounds": bounds, "at_resolution": at_resolution}
 
 
 # The float lane's rational route
@@ -2646,6 +2715,16 @@ F32_RAT_DPS = 30
 F32_RAT_REF_DPS = 40
 F32_RAT_BOUND = mpf("1.5e-7")
 F32_RAT_ACCEPT = F32_RAT_BOUND
+# The narrow partition's own aim, as against the acceptance above: the aim
+# decides how far the walk goes, the bar decides what ships. The narrow pieces
+# are aimed at half the lane's tolerance - the margin a relaxed rung's budget
+# spends - and kept on F32_RAT_BOUND, which is the figure the lane is
+# certified against. The aim is the walk's first target and the bar its second:
+# at the two lowest orders the binary32 evaluation cannot round closer than
+# half an ulp of a value within 1e-4 of one - 5.96e-8 - so the pieces for those
+# orders close at no aim below the bar, the walk returns None at the tighter
+# one, and the second ask is the floor rather than a relaxation.
+F32_RAT_NARROW_ACCEPT = TOL_FLOAT / 2
 F32_RAT_GRID = 240
 # The grid a piece's figure is READ on, as against the grid it is FITTED on
 # above. The fit grid is uniform over the piece; the reading is taken over
@@ -2876,8 +2955,16 @@ def f32_rat_try(m, k, indices, ts, ref, ws, iters):
     return (d, p, q, at)
 
 
-def f32_rat_piece(n, a, b, weighted=True):
+def f32_rat_piece(n, a, b, weighted=True, accept=None):
     """The smallest stored pair holding the lane's target on [a, b), or None.
+
+    `accept` is the target the walk aims at, and a caller that names none is
+    asking for the class's own acceptance. The narrow partition names its own
+    and, where nothing closes at it, asks again here at the default: the
+    tightest target a piece can hold is a property of that piece's order and
+    interval, so a walk with a tighter aim returns the pieces that hold it and
+    None for the orders whose binary32 evaluation cannot, and the caller that
+    wants the second group fitted anyway asks the second time.
 
     The count search walks the stored count upward and at each count every
     split of it into numerator and denominator, so the piece returned is the
@@ -2900,6 +2987,7 @@ def f32_rat_piece(n, a, b, weighted=True):
     ws = [seed_weight(n, mpf(x)) if weighted else mpf(1) for x in xs]
     sx = list(range(0, F32_RAT_GRID + 1, F32_RAT_GRID // F32_RAT_SEARCH_GRID))
     full = list(range(F32_RAT_GRID + 1))
+    target = F32_RAT_ACCEPT if accept is None else accept
 
     for total in range(F32_RAT_COUNT_MIN, F32_RAT_COUNT_MAX + 1):
         best = None
@@ -2909,14 +2997,14 @@ def f32_rat_piece(n, a, b, weighted=True):
             if m < 1:
                 continue
             r = f32_rat_try(m, k, sx, ts, ref, ws, F32_RAT_SCAN_ITERS)
-            if r is None or r[0] > F32_RAT_ACCEPT:
+            if r is None or r[0] > target:
                 continue
             cand = f32_rat_try(m, k, full, ts, ref, ws, F32_RAT_POLISH_ITERS)
-            if cand is None or cand[0] > F32_RAT_ACCEPT:
+            if cand is None or cand[0] > target:
                 continue
             _, p, q, _ = cand
             read = f32_rat_dense_read(n, a, b, p, q, weighted)
-            if read[0] > F32_RAT_ACCEPT:
+            if read[0] > target:
                 continue
             if best is None or read[0] < best:
                 best, chosen = read[0], (m, k, p, q) + read
@@ -3381,23 +3469,35 @@ def f32_narrow_rat_piece(n, a, b, weighted, depth=0):
 
     The family search is the shipped one - `f32_rat_piece` walks the stored
     count upward and every split of it into numerator and denominator, and
-    accepts on the lane's own weighted target - and what this adds is the
-    arithmetic that target is read in: the piece is kept only when the kernel's
-    own binary32 evaluation holds the lane's bar too, under both multiply-add
-    routes with the worse taken.
+    accepts on the lane's own weighted target - and two things are added here:
+    the aim the walk is asked for, and the arithmetic the piece is kept on. The
+    walk is asked first for F32_RAT_NARROW_ACCEPT, half the lane's tolerance,
+    which is the margin the packed lane's rung spends; only where nothing
+    closes at it is the same piece asked for again at the lane's own bar.
 
-    The bar and not the search's target, because the target is not reachable
-    there: TOL_FLOAT / 2 is 5e-8 and the binary32 evaluation of F_0 near x = 0
-    cannot round closer than half an ulp of a value within 1e-4 of one, which
-    is 5.96e-8 - measured on this partition, the pieces nearest zero come back
-    at 4.9e-8 and the ones that do not are floor failures no stored count
-    fixes. What the lanes are certified against is kRegionAFitBar, and a piece
-    is kept when the figure the kernel delivers holds it. A piece that does not
-    is bisected, since the fit's own error falls with the interval even where
-    the rounding's does not; the count that costs is then the piece count this
-    returns, which the caller reports.
+    That second ask is not a relaxation of the aim but the floor the order has:
+    the aim is not reachable at the lowest orders, where what stands between
+    the family and a smaller number is binary32's own rounding of F_0 near
+    x = 0 - half an ulp of a value within 1e-4 of one, 5.96e-8 - and no
+    admissible pair removes it. Measured on this partition, the pieces nearest
+    zero come back at 4.9e-8 and the ones that do not are floor failures. Every
+    other order closes at the aim: the piece holding the accuracy gate's worst
+    rational cell - n = 30 over [5.949924, 8.924886) - walks to count 5 at the
+    aim and reads 1.230189e-8 there, against count 4 and 1.470125e-7 when the
+    same piece is asked only at the bar, and it is that reading the gate's own
+    reference grid sees where the bar-level fit sits 1.38e-7 over the half
+    lane's 1e-7.
+
+    Whichever ask returned the piece, it is kept only when the kernel's own
+    binary32 evaluation holds the lane's bar too, under both multiply-add
+    routes with the worse taken, which is what the lanes are certified against.
+    A piece that does not is bisected, since the fit's own error falls with the
+    interval even where the rounding's does not; the count that costs is then
+    the piece count this returns, which the caller reports.
     """
-    piece = f32_rat_piece(n, a, b, weighted=weighted)
+    piece = f32_rat_piece(n, a, b, weighted=weighted, accept=F32_RAT_NARROW_ACCEPT)
+    if piece is None:
+        piece = f32_rat_piece(n, a, b, weighted=weighted)
     if piece is not None:
         routes = f32_rat_route_delivered(piece["p"], piece["q"], n, a, b,
                                          F32_NARROW_GRID, weighted)
@@ -3439,15 +3539,17 @@ def fit_narrow_rational_f32(narrow_a_f32, narrow_b_f32):
     family brings is its own degree pair per piece, read at that piece's own
     interval and mapped argument. The search is the lane's own rational one -
     the weighted residual of the coefficients as stored, walked down to
-    F32_RAT_ACCEPT - and the piece is kept when the figure the entry actually
-    delivers holds the lane's own F32_RAT_BOUND bar, read in binary32 at both
-    multiply-add routes with the worse drawn. The bar rather than the search's
-    target, because the target is unreachable there: see f32_narrow_rat_piece.
-    Where a piece holds neither, it is bisected and the extra pieces are the
-    count the criterion costs; the figure is reported either way.
+    F32_RAT_NARROW_ACCEPT and asked again at the lane's own acceptance where an
+    order's floor stands above the aim - and the piece is kept when the figure
+    the entry actually delivers holds the lane's own F32_RAT_BOUND bar, read in
+    binary32 at both multiply-add routes with the worse drawn. See
+    f32_narrow_rat_piece for which orders the aim closes on and which the floor
+    holds. Where a piece holds neither, it is bisected and the extra pieces are
+    the count the criterion costs; the figure is reported either way.
     """
     print(f"fitting the float lane's rational route over its narrow partition "
-          f"({F32_RAT_DPS} dps, the shipped search's {mp.nstr(F32_RAT_ACCEPT, 2)} target, "
+          f"({F32_RAT_DPS} dps, the narrow partition's own "
+          f"{mp.nstr(F32_RAT_NARROW_ACCEPT, 2)} aim, "
           f"kept at the lane's {mp.nstr(F32_RAT_BOUND, 2)} bar read in binary32 at BOTH "
           f"multiply-add routes) ...")
     jobs = [(n, narrow_a_f32["orders"][n], True) for n in range(MAX_ORDER + 1)]
@@ -3482,7 +3584,7 @@ def fit_narrow_rational_f32(narrow_a_f32, narrow_b_f32):
             "fused": fused, "separate": separate,
             "b_pieces": b_pieces, "b_stored": b_stored,
             "b_fused": b_fused, "b_separate": b_separate,
-            "bound": F32_RAT_BOUND, "accept": F32_RAT_ACCEPT}
+            "bound": F32_RAT_BOUND, "accept": F32_RAT_NARROW_ACCEPT}
 
 
 def narrow_rat_f32_block_lines(f, narrow_rat_f32, narrow_b_f32):
@@ -3497,11 +3599,14 @@ def narrow_rat_f32_block_lines(f, narrow_rat_f32, narrow_b_f32):
             "// mapped argument. The partitions are the narrow Chebyshev ones - a\n"
             "// partition is a cut of the region, not a property of a family - so a\n"
             "// piece the family could not hold the target on is bisected, and the\n"
-            "// piece table carries the result. Every row was accepted on the lane's\n"
-            "// own weighted target read in the lane's own binary32, at BOTH\n"
-            "// multiply-add routes with the worse taken, which is the arithmetic\n"
-            "// the entry runs and not the exact reading its shipped pieces were\n"
-            "// accepted on. The figure below is that worse reading, swept.\n")
+            "// piece table carries the result. Every row was searched at the narrow\n"
+            "// partition's own aim, half the lane's tolerance, and asked again at the\n"
+            "// lane's own target where an order's binary32 floor stands above the aim;\n"
+            "// it ships only where the lane's own weighted target holds, read in the\n"
+            "// lane's own binary32, at BOTH multiply-add routes with the worse taken,\n"
+            "// which is the arithmetic the entry runs and not the exact reading its\n"
+            "// shipped pieces were accepted on. The figure below is that worse\n"
+            "// reading, swept.\n")
     a_pieces = [piece for n in range(MAX_ORDER + 1) for piece in narrow_rat_f32["orders"][n]]
     a_coeffs = []
     a_offsets = []
@@ -3613,8 +3718,11 @@ def narrow_f32_block_lines(f, narrow_a_f32, narrow_b_f32):
             "              \"narrow piece-start table must cover kMaxOrder\");\n")
 
     f.write("\n// The float lane's narrow partition of region B: the same interval\n"
-            "// [kX0, kX1) split by the lane's own fit_interval acceptance at the\n"
-            "// narrow degree, because region B has no walk of its own to inherit.\n"
+            "// [kX0, kX1) cut until the figure the lane's own recurrence carries\n"
+            "// is under half the lane's budget. Region B has no walk of its own\n"
+            "// to inherit, and the seed's error is amplified by the steps that\n"
+            "// follow it, so a piece is placed by the carried figure and not by\n"
+            "// its fit residual alone: the pieces nearest kX0 come out narrowest.\n"
             "// One evaluation reads kNarrowBDegF32 + 1 coefficients from the one piece\n"
             "// the argument falls in, against the shipped seed's kBDeg + 1 from its\n"
             "// single row.\n")
