@@ -797,22 +797,32 @@ struct Carriage {
     const char* reason = "";
 };
 
-// The single-precision lanes' rule. Both lanes are the float engine under one
-// budget or the other, so one rule covers them: the route, the scheme, the
-// partition and the packing axis are all named at the reference multiplier.
-// Past it the shipped partition serves every family on both axes - the packed
-// orders lane's rung cuts each order at the scheme's own effective degrees and
-// its rational arm reads the route's own pair cut, which is what that
-// partition's degree tables are certified for. The narrow partition's rung
-// bodies exist for the shipped family on the orders axis alone, so another
-// family's rung there is a body to write rather than a shape the call cannot
-// have: the arguments axis carries it already, where each order's own piece of
-// the narrow table is read at the degrees the rung derives.
+// The single-precision lanes' carriage, read off the entries those lanes build.
+// Both packing axes are served on the shipped partition: the arguments axis by
+// the per-order bodies, the orders axis by the packed lane that steps one
+// order's coefficients to the next order's. The narrow partition is stored for
+// this lane and is read at the reference multiplier on both axes; a rung of it
+// is a cut of the narrow pieces' own degree table, which this lane derives,
+// and the bodies below read it - so a narrow rung is served on both axes and
+// on every route and scheme, because the packed lane the orders axis names is
+// the shipped partition's and a narrow policy takes the scalar path instead.
+// The packed lane's rung bodies are instantiated for the shipped route and
+// scheme, so another family's rung on the SHIPPED partition's orders axis is a
+// body to build.
 Carriage CarriesSingle(FitRoute route,
                        EvalScheme scheme,
                        PackAxis axis,
                        FitGranularity granularity,
                        AccuracyTier tier) noexcept {
+    // The shipped partition's rung bodies are instantiated for every (route,
+    // scheme) pair, and the arguments axis carries a rung of any family. The
+    // narrow partition's across-orders packed lane is the shipped route and
+    // scheme's alone, and that is measured rather than assumed: serving another
+    // family's rung there was tried and delivers outside the bound on 1964 of
+    // 56694 cells, so it is a body to write rather than a shape the call cannot
+    // have. The arguments axis carries that family's narrow rungs already, where
+    // each order's own piece of the narrow table is read at the degrees the rung
+    // derives.
     if (tier != AccuracyTier::kReference && axis == PackAxis::kOrders &&
         granularity != kDefaultFitGranularity &&
         !(route == kDefaultFitRoute && scheme == kDefaultEvalScheme))

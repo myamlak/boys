@@ -1878,7 +1878,7 @@ void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
         } else
         {
             static constexpr auto kDegreesA =
-                detail::NarrowRegionADegreesF32<kAccuracyMultiplier, kRole>();
+                detail::NarrowRegionADegrees<kAccuracyMultiplier, kRole>();
 
             if constexpr (kRoute == FitRoute::kRationalMinimax)
             {
@@ -1926,26 +1926,54 @@ void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
     template void BoysAllOrdersF32Packed<kScheme, 1.0, FitRoute::kRationalMinimax, kBudget,        \
                                          FitGranularity::kNarrow>(int, float, float*) noexcept;
 
-// The relaxed rungs on the narrow partition: the shipped route and scheme
-// alone, which is the combination the engine admits at a rung, cut against the
-// narrow table.
+// The relaxed rungs on the narrow partition: the same four (scheme, route)
+// pairs the shipped lane serves at a rung, cut against the narrow table. The
+// carriage rule names the partition and the rung rather than the fit family, so
+// a narrow rung is served wherever a shipped one is and this list has the
+// shipped rung list's shape rather than a narrower one. What differs is the
+// table the cut is taken from: each pair reads the narrow partition's own
+// pieces, per order.
+#define BOYS_ORDERS_F32_PACKED_NARROW_RUNG(kScheme, kRoute, kMultiplier, kBudget)                  \
+    template void BoysAllOrdersF32Packed<kScheme, kMultiplier, kRoute, kBudget,                    \
+                                         FitGranularity::kNarrow>(int, float, float*) noexcept;
+
 #define BOYS_ORDERS_F32_PACKED_NARROW_RUNGS(kBudget)                                               \
-    template void BoysAllOrdersF32Packed<kDefaultEvalScheme, 64.0, FitRoute::kChebyshev, kBudget,  \
-                                         FitGranularity::kNarrow>(int, float, float*) noexcept;    \
-    template void BoysAllOrdersF32Packed<kDefaultEvalScheme, 256.0, FitRoute::kChebyshev, kBudget, \
-                                         FitGranularity::kNarrow>(int, float, float*) noexcept;    \
-    template void                                                                                  \
-    BoysAllOrdersF32Packed<kDefaultEvalScheme, 1024.0, FitRoute::kChebyshev, kBudget,              \
-                           FitGranularity::kNarrow>(int, float, float*) noexcept;                  \
-    template void                                                                                  \
-    BoysAllOrdersF32Packed<kDefaultEvalScheme, 4096.0, FitRoute::kChebyshev, kBudget,              \
-                           FitGranularity::kNarrow>(int, float, float*) noexcept;                  \
-    template void                                                                                  \
-    BoysAllOrdersF32Packed<kDefaultEvalScheme, 16384.0, FitRoute::kChebyshev, kBudget,             \
-                           FitGranularity::kNarrow>(int, float, float*) noexcept;                  \
-    template void                                                                                  \
-    BoysAllOrdersF32Packed<kDefaultEvalScheme, 65536.0, FitRoute::kChebyshev, kBudget,             \
-                           FitGranularity::kNarrow>(int, float, float*) noexcept;
+    BOYS_ORDERS_F32_PACKED_NARROW_RUNG(kDefaultEvalScheme, FitRoute::kChebyshev, 64.0, kBudget)    \
+    BOYS_ORDERS_F32_PACKED_NARROW_RUNG(kDefaultEvalScheme, FitRoute::kChebyshev, 256.0, kBudget)   \
+    BOYS_ORDERS_F32_PACKED_NARROW_RUNG(kDefaultEvalScheme, FitRoute::kChebyshev, 1024.0, kBudget)  \
+    BOYS_ORDERS_F32_PACKED_NARROW_RUNG(kDefaultEvalScheme, FitRoute::kChebyshev, 4096.0, kBudget)  \
+    BOYS_ORDERS_F32_PACKED_NARROW_RUNG(kDefaultEvalScheme, FitRoute::kChebyshev, 16384.0, kBudget) \
+    BOYS_ORDERS_F32_PACKED_NARROW_RUNG(kDefaultEvalScheme, FitRoute::kChebyshev, 65536.0, kBudget) \
+    BOYS_ORDERS_F32_PACKED_NARROW_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 64.0, kBudget)   \
+    BOYS_ORDERS_F32_PACKED_NARROW_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 256.0, kBudget)  \
+    BOYS_ORDERS_F32_PACKED_NARROW_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 1024.0, kBudget) \
+    BOYS_ORDERS_F32_PACKED_NARROW_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 4096.0, kBudget) \
+    BOYS_ORDERS_F32_PACKED_NARROW_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 16384.0, kBudget)\
+    BOYS_ORDERS_F32_PACKED_NARROW_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 65536.0, kBudget)\
+    BOYS_ORDERS_F32_PACKED_NARROW_RUNG(kDefaultEvalScheme, FitRoute::kRationalMinimax, 64.0,       \
+                                       kBudget)                                                    \
+    BOYS_ORDERS_F32_PACKED_NARROW_RUNG(kDefaultEvalScheme, FitRoute::kRationalMinimax, 256.0,      \
+                                       kBudget)                                                    \
+    BOYS_ORDERS_F32_PACKED_NARROW_RUNG(kDefaultEvalScheme, FitRoute::kRationalMinimax, 1024.0,     \
+                                       kBudget)                                                    \
+    BOYS_ORDERS_F32_PACKED_NARROW_RUNG(kDefaultEvalScheme, FitRoute::kRationalMinimax, 4096.0,     \
+                                       kBudget)                                                    \
+    BOYS_ORDERS_F32_PACKED_NARROW_RUNG(kDefaultEvalScheme, FitRoute::kRationalMinimax, 16384.0,    \
+                                       kBudget)                                                    \
+    BOYS_ORDERS_F32_PACKED_NARROW_RUNG(kDefaultEvalScheme, FitRoute::kRationalMinimax, 65536.0,    \
+                                       kBudget)                                                    \
+    BOYS_ORDERS_F32_PACKED_NARROW_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 64.0,      \
+                                       kBudget)                                                    \
+    BOYS_ORDERS_F32_PACKED_NARROW_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 256.0,     \
+                                       kBudget)                                                    \
+    BOYS_ORDERS_F32_PACKED_NARROW_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 1024.0,    \
+                                       kBudget)                                                    \
+    BOYS_ORDERS_F32_PACKED_NARROW_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 4096.0,    \
+                                       kBudget)                                                    \
+    BOYS_ORDERS_F32_PACKED_NARROW_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 16384.0,   \
+                                       kBudget)                                                    \
+    BOYS_ORDERS_F32_PACKED_NARROW_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 65536.0,   \
+                                       kBudget)
 
 #define BOYS_ORDERS_F32_PACKED_RUNGS(kBudget)                                                      \
     BOYS_ORDERS_F32_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kChebyshev, 64.0, kBudget)           \
@@ -1988,6 +2016,7 @@ BOYS_ORDERS_F32_PACKED_NARROW_RUNGS(BoysBudget::kFp16)
 
 #undef BOYS_ORDERS_F32_PACKED_REFERENCE
 #undef BOYS_ORDERS_F32_PACKED_NARROW
+#undef BOYS_ORDERS_F32_PACKED_NARROW_RUNG
 #undef BOYS_ORDERS_F32_PACKED_NARROW_RUNGS
 #undef BOYS_ORDERS_F32_PACKED_RUNGS
 #undef BOYS_ORDERS_F32_PACKED_RUNG
