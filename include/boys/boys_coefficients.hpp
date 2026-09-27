@@ -8371,6 +8371,7 @@ inline constexpr int kNarrowRatBPiecesCountF32 = 4;
 inline constexpr int kNarrowRatBStoredF32 = 18;
 inline constexpr double kNarrowRatBDeliveredFusedF32 = 3.29857681169443140e-08;
 inline constexpr double kNarrowRatBDeliveredSeparateF32 = 3.29857681169443140e-08;
+
 } // namespace boys::detail::f32
 
 /// \endcond
