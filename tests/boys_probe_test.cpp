@@ -4,10 +4,13 @@
 // The probe's whole value is in the claims a test can check without owning the
 // machine: that every option it reports is one this build's backend table
 // carries, that the comparison is formed inside a round rather than across
-// rounds, and that a measurement it cannot stand behind ends in a refusal with a
-// reason and a labelled fallback rather than in a name. The costs themselves are
-// this machine's and asserting them here would pin a number that describes one
-// host.
+// rounds, and that a run which measured its class ends in exactly one default
+// with the way it was reached stated — a measured ordering, a vote over
+// re-runs, or a pick among equals the report labels as such — never in a set of
+// candidates and never in a name a table was counted for instead of timed. A
+// class that holds one option is an answer of its own: one entry is not a
+// ranking, and there is no alternative to it. The costs themselves are this
+// machine's and asserting them here would pin a number that describes one host.
 //
 // The protocols below are short on purpose: a probe test that took a minute
 // would be a probe nobody runs. Two of them are the shortest protocols there
@@ -30,6 +33,8 @@ namespace {
 
 using boys::AccuracyRegion;
 using boys::AccuracyTier;
+using boys::OptionPrecision;
+using boys::OptionProbeDefaultHow;
 using boys::OptionProbeMeasurement;
 using boys::OptionProbeReport;
 using boys::OptionProbeVerdict;
@@ -102,28 +107,44 @@ std::string RowLine(const std::string& text, const std::string& name) {
     return {};
 }
 
-// The leader of the double lane's precision class: the fastest option of the
-// precision the certified reference lane is in, and the option every ordering
-// this probe makes is measured from. A faster row of another precision is not
-// this, which is the whole point of the classes.
-const OptionProbeMeasurement* FastestFp64(const OptionProbeReport& report) {
-    const OptionProbeMeasurement* leader = nullptr;
+// The members of the class the probe takes its default from: the certified
+// double lane's precision at the library's own full-accuracy multiplier. The
+// key is precision and rung together — a faster row of another rung, or of
+// another precision, is a different class and not this one.
+std::vector<const OptionProbeMeasurement*> ReferenceMembers(const OptionProbeReport& report) {
+    std::vector<const OptionProbeMeasurement*> members;
 
     for (const OptionProbeMeasurement& measurement : report.measurements) {
         if (measurement.measured && measurement.precision == boys::OptionPrecision::kFp64 &&
-            (leader == nullptr || measurement.nsPerArgument < leader->nsPerArgument)) {
-            leader = &measurement;
+            measurement.tier == AccuracyTier::kReference) {
+            members.push_back(&measurement);
+        }
+    }
+
+    return members;
+}
+
+// The fastest of that class: the option every ordering this probe makes for the
+// default is measured from, and what the run names when its class ordered
+// itself.
+const OptionProbeMeasurement* ReferenceLeader(const OptionProbeReport& report) {
+    const OptionProbeMeasurement* leader = nullptr;
+
+    for (const OptionProbeMeasurement* measurement : ReferenceMembers(report)) {
+        if (leader == nullptr || measurement->nsPerArgument < leader->nsPerArgument) {
+            leader = measurement;
         }
     }
 
     return leader;
 }
 
-// The class a precision was ranked in, empty when the report carries none.
+// The class one precision was ranked in at one rung, empty when the report
+// carries none. Every class of the report is keyed by that pair.
 const boys::OptionProbeClass* ClassOf(const OptionProbeReport& report,
-                                      boys::OptionPrecision precision) {
+                                      boys::OptionPrecision precision, AccuracyTier tier) {
     for (const boys::OptionProbeClass& entry : report.classes) {
-        if (entry.precision == precision) {
+        if (entry.precision == precision && entry.tier == tier) {
             return &entry;
         }
     }
@@ -329,17 +350,29 @@ TEST(ProbeTest, TheNarrowerLanesAreHeldToTheirOwnBound) {
     }
 }
 
-// A relaxed rung is documented looser than the certified lane, so it is never
-// in the accuracy class the probe recommends from. The figures are still
-// reported — that is what lets a reader see a faster option was faster at a
-// lower accuracy rather than at the same one.
+// A relaxed rung is documented looser than the certified lane, and it is a
+// class of its own at that: the class key is one precision AND one rung, so a
+// relaxed row is never a member of the class the default is taken from, however
+// the two figures compare. The figures are still reported — that is what lets a
+// reader see a faster option was faster at a lower accuracy rather than at the
+// same one.
 TEST(ProbeTest, ARelaxedRungIsNeverInTheCertifiedAccuracyClass) {
-    const OptionProbeReport report = boys::RunOptionProbe(OneRound());
+    const OptionProbeReport report = boys::RunOptionProbe(Timed());
+    const boys::OptionProbeClass* reference =
+        ClassOf(report, boys::OptionPrecision::kFp64, AccuracyTier::kReference);
+
+    ASSERT_NE(reference, nullptr) << "the certified lane's reference class is not in the report";
 
     for (const OptionProbeMeasurement& measurement : report.measurements) {
-        if (measurement.name.rfind("tier-", 0) == 0) {
-            EXPECT_GT(measurement.bound, report.referenceBound) << measurement.name;
+        if (measurement.name.rfind("tier-", 0) != 0) {
+            continue;
         }
+
+        EXPECT_GT(measurement.bound, report.referenceBound) << measurement.name;
+        EXPECT_NE(measurement.tier, AccuracyTier::kReference) << measurement.name;
+        EXPECT_EQ(std::find(reference->ranked.begin(), reference->ranked.end(), measurement.name),
+                  reference->ranked.end())
+            << measurement.name << " is ranked in the reference class and was built at another rung";
     }
 }
 
@@ -356,8 +389,13 @@ TEST(ProbeTest, AnUncalibratedInstrumentStillMeasuresAndSaysWhatItLost) {
     EXPECT_FALSE(report.passes.empty()) << "the timed rounds do not depend on the load instrument";
     EXPECT_EQ(report.verdict, OptionProbeVerdict::kCannotDetermine);
     EXPECT_TRUE(report.recommended.empty());
+    EXPECT_EQ(report.defaultHow, OptionProbeDefaultHow::kNone)
+        << "a run that named no default labelled the way it reached one";
+    EXPECT_FALSE(report.hasDefault);
     EXPECT_TRUE(report.fastestAtReferenceAccuracy.empty());
     EXPECT_TRUE(report.inseparable.empty());
+    EXPECT_TRUE(report.refinements.empty())
+        << "a refinement stage ran over a set nothing was measured in";
     EXPECT_TRUE(report.reason.empty() == false);
 
     for (const OptionProbeMeasurement& measurement : report.measurements) {
@@ -420,88 +458,106 @@ TEST(ProbeTest, APassAboveTheCanaryAlarmIsFlaggedAndStillUsed) {
     EXPECT_NE(text.find("gates nothing"), std::string::npos);
 
     // The other end of the same knob changes only the flags: with the alarm out
-    // of reach nothing is flagged, and the run is the same run.
+    // of reach nothing is flagged, and the run is the same run. A pass is placed
+    // on one side of the alarm or the other against the floor the calibration
+    // found, and the second run finds its own floor: on a machine that gave the
+    // first run one and this one none, the passes carry no reading and none is
+    // flagged, which is what the counts say rather than a quiet pass reported as
+    // a measurement.
     const OptionProbeReport quiet = boys::RunOptionProbe(TimedWithAlarm(1e9));
+
+    // The alarm changes the flags and nothing else, so the run behind them is the
+    // same run however the alarm was read.
+    EXPECT_EQ(quiet.pairedRounds, flagged.pairedRounds);
+
+    if (!quiet.calibrated) {
+        EXPECT_EQ(quiet.passesWithinAlarm, 0)
+            << "an instrument with no floor put a pass on the quiet side of an alarm";
+        EXPECT_EQ(quiet.passesAboveAlarm, 0)
+            << "an instrument with no floor put a pass on the wide side of an alarm";
+        GTEST_SKIP() << "the load instrument found no floor for this run, so its passes carry no "
+                        "alarm reading to be flagged against";
+    }
 
     EXPECT_EQ(quiet.passesWithinAlarm, static_cast<int>(quiet.passes.size()));
     EXPECT_EQ(quiet.passesAboveAlarm, 0);
-    EXPECT_EQ(quiet.pairedRounds, flagged.pairedRounds);
 }
 
 // The resolution is measured in the quantities the ordering is made of, and it
 // is not a bar chosen in advance: it is the widest within-round band the
-// certified double lane's precision showed, so no option's own band is wider
-// than it. The figures move with the machine; this relation does not.
+// certified double lane's classes showed — a rival's band against its own
+// class's leader — so it is the coarseness of the very comparisons the report
+// placed or refused to place. A run that formed no band reports zero rather
+// than a width it never measured. The figures move with the machine; this
+// relation does not.
 TEST(ProbeTest, TheResolutionIsTheWidestBandTheClassShowed) {
     const OptionProbeReport report = boys::RunOptionProbe(Timed());
 
-    if (report.pairedRounds < 4) {
-        EXPECT_DOUBLE_EQ(report.resolution, 0.0);
-        EXPECT_TRUE(report.recommended.empty());
+    if (report.pairedRounds < 4 || ReferenceMembers(report).size() < 2) {
+        EXPECT_DOUBLE_EQ(report.resolution, 0.0)
+            << "a width was reported from a run in which no within-round band was formed";
         return;
     }
 
-    double widest = 0.0;
-    std::size_t doubled = 0;
-
-    for (const OptionProbeMeasurement& measurement : report.measurements) {
-        if (measurement.measured && measurement.precision == boys::OptionPrecision::kFp64) {
-            ++doubled;
-            widest = std::max(widest, measurement.spread - 1.0);
-        }
-    }
-
-    if (doubled == 0) {
-        EXPECT_DOUBLE_EQ(report.resolution, 0.0);
-        return;
-    }
-
-    EXPECT_GE(report.resolution, widest)
-        << "a band of the class's own measurement is wider than the class's resolution";
-    EXPECT_GT(report.resolution, 0.0);
+    EXPECT_GT(report.resolution, 0.0)
+        << "the class holds two measured options over four rounds, and yet no band was formed";
 }
 
-// A recommendation and a refusal are complements of the same rule: the class's
-// leader was placed ahead of every other option of that class, or something in
-// it could not be placed and is named. The class is the precision, so a faster
-// row of another precision is never a rival of it.
+// A class the run ordered names its own leader and leaves no rival unplaced;
+// a class the run could not order still ends in one default, and the options it
+// could not place are named beside it, so a reader is never handed a name
+// without the evidence that is missing for it. The class is one precision at
+// one rung, so a faster row of another precision or another rung is never a
+// rival of it.
 TEST(ProbeTest, ARecommendationLeavesNoRivalUnplaced) {
     const OptionProbeReport report = boys::RunOptionProbe(Timed());
-    const OptionProbeMeasurement* leader = FastestFp64(report);
-    const boys::OptionProbeClass* doubles = ClassOf(report, boys::OptionPrecision::kFp64);
+    const OptionProbeMeasurement* leader = ReferenceLeader(report);
+    const boys::OptionProbeClass* doubles =
+        ClassOf(report, OptionPrecision::kFp64, AccuracyTier::kReference);
 
     if (report.verdict == OptionProbeVerdict::kRecommend) {
-        ASSERT_NE(leader, nullptr);
-
-        EXPECT_TRUE(report.inseparable.empty());
-        EXPECT_EQ(report.recommended, leader->name);
+        EXPECT_FALSE(report.recommended.empty());
         EXPECT_TRUE(report.hasDefault);
-        EXPECT_TRUE(report.heuristicOption.empty())
-            << "a measured winner was printed with a heuristic fallback beside it";
 
         ASSERT_NE(doubles, nullptr);
+        ASSERT_NE(leader, nullptr);
         EXPECT_EQ(doubles->leader, leader->name);
-        EXPECT_TRUE(doubles->ordered);
 
-        for (const OptionProbeMeasurement& measurement : report.measurements) {
-            if (measurement.measured && measurement.precision == boys::OptionPrecision::kFp64 &&
-                measurement.name != leader->name) {
-                EXPECT_LT(leader->nsPerArgument, measurement.nsPerArgument) << measurement.name;
+        if (report.defaultHow == OptionProbeDefaultHow::kOrdered) {
+            EXPECT_TRUE(report.inseparable.empty()) << "an ordering left a rival unplaced";
+            EXPECT_EQ(report.recommended, leader->name);
+            EXPECT_TRUE(doubles->ordered);
+
+            for (const OptionProbeMeasurement* member : ReferenceMembers(report)) {
+                if (member->name != leader->name) {
+                    EXPECT_LT(leader->nsPerArgument, member->nsPerArgument) << member->name;
+                }
             }
+
+            return;
         }
 
+        // Reached by the refinement's vote, or by a pick among equals: the name
+        // is one of the class's own options, the pair the class could not place
+        // is reported, and the runs that decided between the candidates are in
+        // the report rather than only their outcome.
+        bool member = false;
+
+        for (const OptionProbeMeasurement* candidate : ReferenceMembers(report)) {
+            member = member || candidate->name == report.recommended;
+        }
+
+        EXPECT_TRUE(member) << report.recommended << " is the default and is not of the class";
+        EXPECT_FALSE(report.inseparable.empty())
+            << "a tie was decided without naming the pair the class could not place";
+        EXPECT_FALSE(report.refinements.empty())
+            << "a tie was decided with no refinement run behind the choice";
         return;
     }
 
     EXPECT_TRUE(report.recommended.empty());
+    EXPECT_EQ(report.defaultHow, OptionProbeDefaultHow::kNone);
     EXPECT_FALSE(report.reason.empty());
-
-    if (leader != nullptr && report.pairedRounds >= 4) {
-        EXPECT_FALSE(report.inseparable.empty())
-            << "the class was measured and the verdict refused, yet nothing is named as unplaced";
-        ASSERT_NE(doubles, nullptr);
-        EXPECT_FALSE(doubles->ordered);
-    }
 }
 
 // The output states the resolution in the reader's own terms and in the units
@@ -517,7 +573,7 @@ TEST(ProbeTest, TheTextStatesTheResolution) {
     EXPECT_NE(text.find("this machine"), std::string::npos);
     EXPECT_NE(text.find("paired ratios"), std::string::npos);
 
-    const bool banded = report.pairedRounds >= 4 && FastestFp64(report) != nullptr;
+    const bool banded = report.pairedRounds >= 4 && ReferenceLeader(report) != nullptr;
 
     if (banded) {
         EXPECT_NE(text.find("widest within-round band"), std::string::npos);
@@ -541,14 +597,10 @@ TEST(ProbeTest, TheClockCheckIsReadFromTheRunsOwnRows) {
     std::string route;
     bool oneRoute = true;
 
-    for (const OptionProbeMeasurement& measurement : report.measurements) {
-        if (!measurement.measured || measurement.precision != boys::OptionPrecision::kFp64) {
-            continue;
-        }
-
+    for (const OptionProbeMeasurement* measurement : ReferenceMembers(report)) {
         if (inClass == 0) {
-            route = measurement.arithmetic;
-        } else if (measurement.arithmetic != route) {
+            route = measurement->arithmetic;
+        } else if (measurement->arithmetic != route) {
             oneRoute = false;
         }
 
@@ -556,12 +608,12 @@ TEST(ProbeTest, TheClockCheckIsReadFromTheRunsOwnRows) {
     }
 
     if (report.pairedRounds < 4 || inClass < 2) {
-        EXPECT_EQ(report.confidence.find("No pair's ratio moved"), std::string::npos)
+        EXPECT_EQ(report.confidence.find("No pair of the class moved"), std::string::npos)
             << report.confidence;
         return;
     }
 
-    const bool heldStill = report.confidence.find("No pair's ratio moved") != std::string::npos;
+    const bool heldStill = report.confidence.find("No pair of the class moved") != std::string::npos;
     const bool warned = report.confidence.find("WARNING: the pair") != std::string::npos;
 
     // Exactly one of the two, and both name the pair and the resolution the
@@ -590,11 +642,11 @@ TEST(ProbeTest, TheClockCheckIsReadFromTheRunsOwnRows) {
     }
 }
 
-// A band is a lower and an upper quartile, and two rounds have neither: the
-// probe refuses rather than reporting a width it did not measure. The refusal
-// names the round count it needs, and it leaves the caller the static fallback —
-// labelled as a heuristic — so a consumer who cannot afford a longer run is not
-// left with nothing.
+// A band is a lower and an upper quartile, and two rounds have neither: no pair
+// of the class is placed, and the report says so rather than printing a width it
+// never measured. The run still ends in one default — the class's own fastest,
+// reached by the refinement runs, which are taken at a longer protocol than the
+// run that could not order — and it says which of the two this is.
 TEST(ProbeTest, AnOrderingNeedsFourPairedRounds) {
     ProbeOptions options = Timed();
     options.passes = 1;
@@ -606,20 +658,47 @@ TEST(ProbeTest, AnOrderingNeedsFourPairedRounds) {
     ASSERT_TRUE(report.measurements.front().measured)
         << "two rounds can form a ratio, just not a quartile band";
 
-    EXPECT_EQ(report.verdict, OptionProbeVerdict::kCannotDetermine);
-    EXPECT_TRUE(report.recommended.empty());
-    EXPECT_TRUE(report.inseparable.empty());
     EXPECT_DOUBLE_EQ(report.resolution, 0.0);
     EXPECT_NE(report.reason.find("quartile"), std::string::npos) << report.reason;
-    EXPECT_EQ(report.confidence.rfind("CANNOT DETERMINE", 0), 0u) << report.confidence;
 
-    ASSERT_FALSE(report.heuristicOption.empty())
-        << "a refusal left the caller without any default at all";
+    const boys::OptionProbeClass* doubles =
+        ClassOf(report, OptionPrecision::kFp64, AccuracyTier::kReference);
+    ASSERT_NE(doubles, nullptr);
+    ASSERT_FALSE(doubles->leader.empty());
+    EXPECT_FALSE(doubles->ordered) << "a class was ordered on too few rounds for a band";
+    EXPECT_NE(doubles->note.find("quartile"), std::string::npos) << doubles->note;
+
+    // One default, and it is a member of that class: the options the class could
+    // not place were re-run alone at a longer protocol and voted on, and the
+    // report carries the runs, their leaders and the vote.
+    EXPECT_EQ(report.verdict, OptionProbeVerdict::kRecommend);
+    EXPECT_FALSE(report.recommended.empty()) << "a measured class was left without a default";
     EXPECT_TRUE(report.hasDefault);
+    EXPECT_NE(report.defaultHow, OptionProbeDefaultHow::kOrdered)
+        << "a two-round run reported a measured ordering";
+    EXPECT_EQ(doubles->how, report.defaultHow);
+
+    ASSERT_FALSE(report.refinements.empty()) << "the tie was decided with no refinement behind it";
+    const boys::OptionProbeRefinement& stage = report.refinements.front();
+
+    EXPECT_EQ(stage.precision, OptionPrecision::kFp64);
+    EXPECT_EQ(stage.winner, report.recommended);
+    EXPECT_EQ(stage.runs, report.options.refinementRuns);
+    EXPECT_EQ(stage.passes, report.options.passes * report.options.refinementFactor)
+        << "the re-run was not at a larger protocol than the run that could not order";
+    EXPECT_EQ(stage.rounds, report.options.rounds * report.options.refinementFactor);
+    EXPECT_EQ(stage.runLeaders.size(), static_cast<std::size_t>(stage.runs));
+    EXPECT_GT(stage.rounds, report.pairedRounds);
+    EXPECT_FALSE(stage.pool.empty());
+    EXPECT_NE(stage.pool.end(), std::find(stage.pool.begin(), stage.pool.end(), stage.winner))
+        << "the refinement named a winner it did not re-measure";
 
     const std::string text = boys::FormatOptionProbe(report);
     EXPECT_NE(text.find("not measurable on this run"), std::string::npos);
     EXPECT_NE(text.find("2 paired round(s)"), std::string::npos);
+    EXPECT_NE(text.find("the refinement stage"), std::string::npos);
+    EXPECT_NE(text.find("leader of each run"), std::string::npos);
+    EXPECT_NE(text.find("default: " + report.recommended), std::string::npos);
 }
 
 // The comparison is paired, and this is what that means in the report: every
@@ -659,76 +738,153 @@ TEST(ProbeTest, ThePairsAreFormedInsideTheRounds) {
     }
 }
 
-// A refusal leaves a default, and the default is never presented as a
-// measurement: it is named in its own labelled section, its basis says in its
-// first words that it was counted rather than timed, and the row it belongs to
-// still reads 'not measured' in the cost table. This run is one pass of one
-// round, so no ratio can be formed at all and nothing about cost is measured.
-TEST(ProbeTest, TheFallbackIsLabelledAndIsNotAMeasurement) {
+// A run that formed no figure at all ends in the refusal and in nothing else:
+// no name is printed, no candidate set is left for the caller to choose from,
+// and no option is offered as a default on the strength of a table rather than a
+// measurement. The report gives the reason instead — the rounds a band needs —
+// so a consumer who cannot afford a longer run is told what the longer run buys
+// rather than handed a name the run never measured. One pass of one round forms
+// no ratio at all.
+TEST(ProbeTest, ARunThatMeasuredNothingLeavesNoDefault) {
     ProbeOptions options = OneRound();
     const OptionProbeReport report = boys::RunOptionProbe(options);
 
     ASSERT_EQ(report.pairedRounds, 1);
     EXPECT_EQ(report.verdict, OptionProbeVerdict::kCannotDetermine);
     EXPECT_TRUE(report.recommended.empty());
+    EXPECT_EQ(report.defaultHow, OptionProbeDefaultHow::kNone);
+    EXPECT_FALSE(report.hasDefault);
+    EXPECT_TRUE(report.inseparable.empty());
+    EXPECT_TRUE(report.refinements.empty()) << "a vote was taken over a set nothing was measured in";
     EXPECT_NE(report.reason.find("no option produced a figure"), std::string::npos) << report.reason;
 
-    ASSERT_FALSE(report.heuristicOption.empty())
-        << "this run's option set holds nothing the static rule can rank";
-    EXPECT_TRUE(report.hasDefault);
-    EXPECT_EQ(report.heuristicBasis.rfind("counted, not timed", 0), 0u) << report.heuristicBasis;
-    EXPECT_EQ(report.heuristicBasis.find("ns/argument"), std::string::npos)
-        << "the heuristic's own basis quotes a cost, which is not what it was chosen from";
-
     const std::string text = boys::FormatOptionProbe(report);
-    EXPECT_NE(text.find("static fallback — a heuristic, not a measurement"), std::string::npos);
-    EXPECT_NE(text.find(report.heuristicOption), std::string::npos);
-    EXPECT_NE(text.find(report.heuristicBasis), std::string::npos);
+    EXPECT_NE(text.find("verdict: CANNOT DETERMINE"), std::string::npos);
+    EXPECT_EQ(text.find("  default: "), std::string::npos)
+        << "a run that measured nothing printed a default";
 
-    const std::string row = RowLine(text, report.heuristicOption);
-    ASSERT_FALSE(row.empty()) << "the fallback's row is not in the printed table";
-    EXPECT_NE(row.find("not measured"), std::string::npos)
-        << "the heuristic's row carries a cost it was never measured at: " << row;
+    // And every row says so: an option that carries no cost is printed as one,
+    // so nothing in the table can be taken for an answer.
+    for (const OptionProbeMeasurement& measurement : report.measurements) {
+        EXPECT_FALSE(measurement.measured) << measurement.name;
+        const std::string row = RowLine(text, measurement.name);
+        ASSERT_FALSE(row.empty()) << measurement.name << " is not in the printed table";
+        EXPECT_NE(row.find("not measured"), std::string::npos) << row;
+    }
 }
 
-// The other kind of refusal — a class that measured, could not be ordered — is
-// the one where the fallback and a cost column can meet, and the report still
-// keeps the two kinds of answer apart: the row carries the figure the option was
-// measured at and the heuristic says in its own section that it was chosen by
-// counting. A reader who takes the fallback's name is told which of the two they
-// are taking.
-TEST(ProbeTest, AMeasuredButUnorderedRunLabelsItsFallbackToo) {
-    const OptionProbeReport report = boys::RunOptionProbe(Timed());
+// Where a class cannot be ordered, the owner's rule is: re-run the options it
+// left tied, alone, at a longer protocol; take the one that led most of those
+// runs; and where no candidate leads most of them, take one of the leaders and
+// say plainly that this is what happened. The protocol here is two rounds, which
+// can form no band at all, so the tie is certain and the vote is what decides —
+// and the run leaders, the counts and the winner are checked against each other.
+TEST(ProbeTest, ATiedClassIsReRunAloneAndVotedOn) {
+    ProbeOptions options = Timed();
+    options.passes = 1;
+    options.rounds = 2;
+    options.refinementRuns = 6;
+    const OptionProbeReport report = boys::RunOptionProbe(options);
 
-    if (report.verdict != OptionProbeVerdict::kCannotDetermine) {
-        GTEST_SKIP() << "this run's class ordered itself, so there is no refusal and no fallback";
+    ASSERT_FALSE(report.refinements.empty()) << "a tied class was decided with no runs behind it";
+
+    const boys::OptionProbeRefinement& stage = report.refinements.front();
+
+    EXPECT_EQ(stage.precision, OptionPrecision::kFp64);
+    EXPECT_TRUE(stage.ran);
+    EXPECT_EQ(stage.runs, 6);
+    EXPECT_EQ(stage.runLeaders.size(), 6u) << "a run of the vote placed no leader";
+    EXPECT_FALSE(stage.winner.empty()) << "the vote ended with no entry to name";
+    EXPECT_EQ(stage.winner, report.recommended)
+        << "the vote named one entry and the report another";
+    EXPECT_GT(stage.rounds, report.pairedRounds)
+        << "the re-run was not at a longer protocol than the run that could not order";
+    EXPECT_GT(stage.passes, report.options.passes);
+
+    // Every leader is one of the options that were re-measured, and the winner
+    // is one of the leaders: the vote counts the runs it ran.
+    for (const std::string& leader : stage.runLeaders) {
+        EXPECT_NE(std::find(stage.pool.begin(), stage.pool.end(), leader), stage.pool.end())
+            << leader << " led a refinement run without having been re-measured";
     }
 
-    ASSERT_FALSE(report.heuristicOption.empty());
-    ASSERT_TRUE(report.hasDefault);
-    EXPECT_EQ(report.reason.find(report.heuristicBasis), std::string::npos)
-        << "the fallback's basis is printed as part of the measured reason";
+    EXPECT_NE(std::find(stage.runLeaders.begin(), stage.runLeaders.end(), stage.winner),
+              stage.runLeaders.end())
+        << stage.winner << " is the vote's winner and led no run at all";
+
+    if (stage.unanimous) {
+        for (const std::string& leader : stage.runLeaders) {
+            EXPECT_EQ(leader, stage.winner) << "a unanimous vote has more than one leader";
+        }
+    }
+
+    EXPECT_FALSE(stage.tally.empty()) << "the vote is reported with no counts";
+    EXPECT_FALSE(stage.note.empty()) << "the vote does not say how it came out";
+
+    // And whatever the vote did, the report says what carried it: the run is
+    // never labelled an ordering it did not measure.
+    EXPECT_NE(report.verdict, OptionProbeVerdict::kCannotDetermine);
+    EXPECT_TRUE(report.hasDefault);
+    EXPECT_NE(report.defaultHow, OptionProbeDefaultHow::kNone);
+    EXPECT_NE(report.defaultHow, OptionProbeDefaultHow::kOrdered)
+        << "a two-round run reported a measured ordering";
+    EXPECT_EQ(report.defaultHow, stage.unanimous
+                                     ? OptionProbeDefaultHow::kRefined
+                                     : (stage.plurality ? OptionProbeDefaultHow::kVote
+                                                        : OptionProbeDefaultHow::kChosenAmongEquals));
 
     const std::string text = boys::FormatOptionProbe(report);
-    ASSERT_NE(text.find("static fallback — a heuristic, not a measurement"), std::string::npos);
-    EXPECT_EQ(text.find(report.heuristicBasis),
-              text.rfind(report.heuristicBasis))
-        << "the heuristic's basis appears more than once, so it is printed beside figures too";
+    EXPECT_NE(text.find("the refinement stage"), std::string::npos);
+    EXPECT_NE(text.find("vote: " + stage.winner), std::string::npos);
+    EXPECT_NE(text.find("default: " + report.recommended), std::string::npos);
+    EXPECT_NE(text.find("reached by:"), std::string::npos);
+}
 
-    const OptionProbeMeasurement* fallback = Find(report, report.heuristicOption);
-    ASSERT_NE(fallback, nullptr);
-    EXPECT_TRUE(fallback->measured);
+// The owner's acceptance rule, stated where it can be checked: a run that
+// measured its class ends with exactly one combination, and the class entry, the
+// name and the reason agree on it. Both protocols that measure are read, since
+// the rule is about the report's shape and not about how well the machine
+// separated the options.
+TEST(ProbeTest, EveryRunThatMeasuredEndsInExactlyOneDefault) {
+    for (const bool shortRun : {false, true}) {
+        ProbeOptions options = Timed();
 
-    const std::string row = RowLine(text, report.heuristicOption);
-    ASSERT_FALSE(row.empty());
-    EXPECT_EQ(row.find("not measured"), std::string::npos) << row;
+        if (shortRun) {
+            options.passes = 1;
+            options.rounds = 2;
+        }
 
-    // A refusal is where the clock check earns its keep: it is the line that
-    // tells a reader whether the class's bands were wide because the clock
-    // wandered or because the options are close, so a refusal carries it too.
-    const bool clocked = report.confidence.find("No pair's ratio moved") != std::string::npos ||
-                         report.confidence.find("WARNING: the pair") != std::string::npos;
-    EXPECT_TRUE(clocked) << report.confidence;
+        const OptionProbeReport report = boys::RunOptionProbe(options);
+
+        EXPECT_EQ(report.verdict, OptionProbeVerdict::kRecommend) << report.reason;
+        EXPECT_FALSE(report.recommended.empty());
+        EXPECT_TRUE(report.hasDefault);
+        EXPECT_NE(report.defaultHow, OptionProbeDefaultHow::kNone);
+        EXPECT_NE(report.reason.find(report.recommended), std::string::npos) << report.reason;
+
+        const boys::OptionProbeClass* doubles =
+            ClassOf(report, OptionPrecision::kFp64, AccuracyTier::kReference);
+        ASSERT_NE(doubles, nullptr);
+        EXPECT_EQ(doubles->how, report.defaultHow)
+            << "the class the default is taken from reports a different way of reaching one";
+        EXPECT_FALSE(doubles->leader.empty());
+
+        // The name is printed with the report and, where it is not the class's
+        // own fastest row, with the class — which says that its entry is not its
+        // leader rather than leaving the two to be told apart by reading.
+        const std::string text = boys::FormatOptionProbe(report);
+        EXPECT_NE(text.find("default: " + report.recommended), std::string::npos);
+
+        if (report.defaultHow == OptionProbeDefaultHow::kOrdered) {
+            EXPECT_EQ(report.recommended, doubles->leader);
+            EXPECT_TRUE(report.inseparable.empty());
+        } else if (report.recommended != doubles->leader) {
+            EXPECT_NE(doubles->note.find("The entry this class names is"), std::string::npos)
+                << "the class prints another entry than its leader without saying so: "
+                << doubles->note;
+            EXPECT_NE(doubles->note.find(report.recommended), std::string::npos) << doubles->note;
+        }
+    }
 }
 
 // Whatever the machine did, the protocol's bookkeeping adds up: every pass was
@@ -794,35 +950,48 @@ TEST(ProbeTest, ThePassBookkeepingAddsUp) {
     }
 }
 
-// The verdict and the names it is built from always agree with each other: a
-// recommendation names the leader of the double lane's precision class, the
-// narrowest reading names the fastest option of that class at the certified
-// bound, and a refusal names nothing.
+// The verdict and the names it is built from always agree with each other: the
+// default is an option of the certified lane's precision at the library's own
+// multiplier — never a faster row of another precision or another rung — and a
+// class the run ordered hands over its own leader while a class it could not
+// order hands over one of the options it left tied, with the pair it could not
+// place named beside the answer. The narrowest reading names the fastest option
+// of that class, and a refusal names nothing.
 TEST(ProbeTest, TheVerdictAndTheNamesAgree) {
     const OptionProbeReport report = boys::RunOptionProbe(Timed());
 
     if (report.verdict == OptionProbeVerdict::kRecommend) {
         EXPECT_FALSE(report.recommended.empty());
-        EXPECT_TRUE(report.inseparable.empty());
+        EXPECT_TRUE(report.hasDefault);
 
-        const OptionProbeMeasurement* leader = Find(report, report.recommended);
-        ASSERT_NE(leader, nullptr);
-        EXPECT_TRUE(leader->measured);
-        EXPECT_GT(leader->nsPerArgument, 0.0);
-        EXPECT_EQ(leader->precision, boys::OptionPrecision::kFp64)
-            << "the recommendation is the leader of the double lane's precision, never of another";
-        EXPECT_EQ(leader, FastestFp64(report));
+        const OptionProbeMeasurement* named = Find(report, report.recommended);
+        ASSERT_NE(named, nullptr);
+        EXPECT_TRUE(named->measured);
+        EXPECT_GT(named->nsPerArgument, 0.0);
+        EXPECT_EQ(named->precision, OptionPrecision::kFp64)
+            << "the recommendation is of the certified lane's precision, never of another";
+        EXPECT_EQ(named->tier, AccuracyTier::kReference)
+            << "the recommendation was built at another multiplier than the library's own";
 
-        // The class's own leader, and the narrowest reading of it: the fastest
-        // row whose own bound is the certified lane's, which is never faster
-        // than the class leader and never held to a looser bound.
+        if (report.defaultHow == OptionProbeDefaultHow::kOrdered) {
+            EXPECT_TRUE(report.inseparable.empty());
+            EXPECT_EQ(named, ReferenceLeader(report));
+        } else {
+            EXPECT_FALSE(report.inseparable.empty())
+                << "the class was not ordered, and nothing is named as unplaced beside the default";
+        }
+
+        // The class's own fastest, and the narrowest reading of it: the fastest
+        // row of the class, which is never held to a looser figure than the lane
+        // whose options it names.
         if (!report.fastestAtReferenceAccuracy.empty()) {
-            const OptionProbeMeasurement* certified =
+            const OptionProbeMeasurement* fastestAtRung =
                 Find(report, report.fastestAtReferenceAccuracy);
-            ASSERT_NE(certified, nullptr);
-            EXPECT_TRUE(certified->measured);
-            EXPECT_LE(certified->bound, report.referenceBound);
-            EXPECT_GE(certified->nsPerArgument, leader->nsPerArgument);
+            ASSERT_NE(fastestAtRung, nullptr);
+            EXPECT_TRUE(fastestAtRung->measured);
+            EXPECT_EQ(fastestAtRung->tier, AccuracyTier::kReference);
+            EXPECT_LE(fastestAtRung->bound, report.referenceBound);
+            EXPECT_GE(fastestAtRung->nsPerArgument, ReferenceLeader(report)->nsPerArgument);
         }
     } else {
         EXPECT_TRUE(report.recommended.empty());
@@ -831,30 +1000,44 @@ TEST(ProbeTest, TheVerdictAndTheNamesAgree) {
     }
 }
 
-// A class is one precision. Nothing inside a class was measured in another
-// precision, the leader of a class is its fastest member, and a class that says
-// it is ordered holds no unplaced member — the rule the verdict is made from,
-// stated once here so a report cannot rank across precisions. A class is built
-// from the rounds the run took, so an uncalibrated instrument still produces
-// them; what a short run cannot produce is a band, and then nothing is ordered.
-TEST(ProbeTest, EveryClassIsOnePrecisionAndRanksOnlyItsOwn) {
+// A class is one precision at one rung, and that pair is the whole key: nothing
+// inside a class was built at another precision or another multiplier, the
+// leader of a class is its fastest member, a class that says it is ordered holds
+// no unplaced member and no member of one entry — one entry is not a ranking —
+// and every figure the run produced is ranked in the class of its own pair and
+// in no other. A class is built from the rounds the run took, so an uncalibrated
+// instrument still produces them; what a short run cannot produce is a band, and
+// then nothing in a class of more than one is ordered.
+TEST(ProbeTest, EveryClassIsOnePrecisionAndOneRungAndRanksOnlyItsOwn) {
     const OptionProbeReport report = boys::RunOptionProbe(Timed());
 
-    EXPECT_EQ(report.classes.size(), 4u) << "one class per precision this library declares";
+    ASSERT_FALSE(report.classes.empty());
+
+    std::set<std::pair<int, int>> keys;
 
     for (const boys::OptionProbeClass& entry : report.classes) {
         EXPECT_FALSE(entry.name.empty()) << "a class with no name is one a reader cannot place";
+        EXPECT_TRUE(
+            keys.insert({static_cast<int>(entry.precision), static_cast<int>(entry.tier)}).second)
+            << entry.name << " shares its precision and its rung with another class";
+
+        std::size_t measured = 0;
+
+        for (const OptionProbeMeasurement& measurement : report.measurements) {
+            if (measurement.measured && measurement.precision == entry.precision &&
+                measurement.tier == entry.tier) {
+                ++measured;
+            }
+        }
+
+        EXPECT_EQ(entry.ranked.size(), measured) << entry.name << " does not rank every member";
 
         if (entry.leader.empty()) {
             EXPECT_TRUE(entry.ranked.empty()) << entry.name;
             EXPECT_FALSE(entry.ordered) << entry.name << " has no leader to be ordered around";
             EXPECT_FALSE(entry.note.empty()) << entry.name;
-
-            for (const OptionProbeMeasurement& measurement : report.measurements) {
-                EXPECT_NE(measurement.precision, entry.precision)
-                    << entry.name << " reports no figure yet " << measurement.name
-                    << " was measured in it";
-            }
+            EXPECT_EQ(measured, 0u) << entry.name << " reports no figure yet options were measured "
+                                                         "in its precision and rung";
             continue;
         }
 
@@ -864,22 +1047,30 @@ TEST(ProbeTest, EveryClassIsOnePrecisionAndRanksOnlyItsOwn) {
         ASSERT_NE(leader, nullptr) << entry.name;
         EXPECT_TRUE(leader->measured) << entry.name << " names a leader that was never measured";
         EXPECT_EQ(leader->precision, entry.precision) << entry.name;
+        EXPECT_EQ(leader->tier, entry.tier) << entry.name << " names a leader of another rung";
         EXPECT_DOUBLE_EQ(entry.leaderNsPerArgument, leader->nsPerArgument) << entry.name;
         EXPECT_EQ(entry.ranked.front(), entry.leader)
             << entry.name << " ranks its leader somewhere behind its own first row";
 
-        std::size_t measured = 0;
-
         for (const OptionProbeMeasurement& measurement : report.measurements) {
-            if (measurement.measured && measurement.precision == entry.precision) {
-                ++measured;
+            if (measurement.measured && measurement.precision == entry.precision &&
+                measurement.tier == entry.tier) {
                 EXPECT_GE(measurement.nsPerArgument, leader->nsPerArgument)
                     << entry.name << " names " << entry.leader << " as its leader with "
                     << measurement.name << " measured faster in it";
             }
         }
 
-        EXPECT_EQ(entry.ranked.size(), measured) << entry.name << " does not rank every member";
+        // One entry is not a ranking: a class of one is not ordered and names
+        // its entry by there being no alternative.
+        if (entry.ranked.size() == 1) {
+            EXPECT_FALSE(entry.ordered) << entry.name << " calls a class of one an ordering";
+            EXPECT_EQ(entry.how, OptionProbeDefaultHow::kOnlyEntry) << entry.name;
+            EXPECT_NE(entry.note.find("not a ranking"), std::string::npos) << entry.note;
+        } else {
+            EXPECT_NE(entry.how, OptionProbeDefaultHow::kOnlyEntry)
+                << entry.name << " names an entry of a class it measured against others";
+        }
 
         // A band over the lower and upper quartiles of the paired ratios needs
         // four rounds; below that a class is measured and not ordered, and the
@@ -894,6 +1085,8 @@ TEST(ProbeTest, EveryClassIsOnePrecisionAndRanksOnlyItsOwn) {
             ASSERT_NE(member, nullptr) << entry.name;
             EXPECT_EQ(member->precision, entry.precision)
                 << name << " is ranked in " << entry.name << " but is another precision";
+            EXPECT_EQ(member->tier, entry.tier)
+                << name << " is ranked in " << entry.name << " but was built at another rung";
 
             if (entry.ordered && name != entry.leader) {
                 EXPECT_GT(member->nsPerArgument, leader->nsPerArgument)
@@ -903,57 +1096,58 @@ TEST(ProbeTest, EveryClassIsOnePrecisionAndRanksOnlyItsOwn) {
         }
     }
 
-    for (std::size_t i = 0; i < report.classes.size(); ++i) {
-        for (std::size_t j = i + 1; j < report.classes.size(); ++j) {
-            EXPECT_NE(report.classes[i].precision, report.classes[j].precision)
-                << "two classes claim one precision, so an option could be ranked in both";
-        }
-    }
-
     // Every figure the run produced is ranked in the class of its own precision
-    // and nowhere else: an option measured in a precision whose class does not
-    // name it would be a figure a reader could not place.
+    // and rung, and in no other class: an option measured under a key the report
+    // does not class would be a figure a reader could not place.
     for (const OptionProbeMeasurement& measurement : report.measurements) {
         if (!measurement.measured) {
             continue;
         }
 
-        const boys::OptionProbeClass* entry = ClassOf(report, measurement.precision);
-        ASSERT_NE(entry, nullptr)
-            << measurement.name << " was measured in a precision the report classes nowhere";
+        const boys::OptionProbeClass* entry =
+            ClassOf(report, measurement.precision, measurement.tier);
+        ASSERT_NE(entry, nullptr) << measurement.name
+                                  << " was measured in a precision and rung the report classes "
+                                     "nowhere";
         EXPECT_NE(std::find(entry->ranked.begin(), entry->ranked.end(), measurement.name),
                   entry->ranked.end())
-            << measurement.name << " is measured in " << entry->name
-            << " and is not ranked in it";
+            << measurement.name << " is measured in " << entry->name << " and is not ranked in it";
 
         for (const boys::OptionProbeClass& other : report.classes) {
-            if (other.precision == measurement.precision) {
+            if (other.precision == measurement.precision && other.tier == measurement.tier) {
                 continue;
             }
 
             EXPECT_EQ(std::find(other.ranked.begin(), other.ranked.end(), measurement.name),
                       other.ranked.end())
-                << measurement.name << " is ranked in another precision's class";
+                << measurement.name << " is ranked in " << other.name << ", another class";
         }
     }
 }
 
-// A class states in the report that it is one precision and that the bounds
-// inside it differ by row, so nobody reads its leader as the fastest option at
-// their own accuracy when it is only the fastest at some accuracy in that
-// precision.
-TEST(ProbeTest, TheReportSaysAClassIsOnePrecision) {
+// The report says in its own words what a class is and what its key is — one
+// precision at one rung, decided by the multiplier an option was built at and
+// never by comparing one lane's documented figure against another's — so a
+// reader who takes the name it prints knows which question the answer belongs
+// to. Every class the run made carries its key in its name, so two of them can
+// never be read as one.
+TEST(ProbeTest, TheReportSaysAClassIsOnePrecisionAndOneRung) {
     const OptionProbeReport report = boys::RunOptionProbe(Timed());
     const std::string text = boys::FormatOptionProbe(report);
 
-    EXPECT_NE(text.find("the precision classes"), std::string::npos);
-    EXPECT_NE(text.find("A class is one precision"), std::string::npos);
-    EXPECT_NE(text.find("the bounds inside it differ by row"), std::string::npos);
-    EXPECT_NE(text.find("and not the fastest at yours"), std::string::npos);
+    EXPECT_NE(text.find("the accuracy classes"), std::string::npos);
+    EXPECT_NE(text.find("one precision at one rung"), std::string::npos);
+    EXPECT_NE(text.find("A class is one precision and one rung of the accuracy axis"),
+              std::string::npos);
+    EXPECT_NE(text.find("never by comparing"), std::string::npos);
+    EXPECT_NE(text.find("Every row of a class was built"), std::string::npos);
     EXPECT_NE(text.find("Nothing here is ordered across classes"), std::string::npos);
+    EXPECT_NE(text.find("not a slower answer to this one"), std::string::npos);
 
     for (const boys::OptionProbeClass& entry : report.classes) {
         EXPECT_NE(text.find(entry.name), std::string::npos) << entry.name;
+        EXPECT_NE(entry.name.find("m="), std::string::npos)
+            << entry.name << " does not carry the rung it was built at";
     }
 }
 
