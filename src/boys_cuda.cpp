@@ -1040,13 +1040,14 @@ BoysStatus BoysCuda::AllNF16(int nmax, const F16* x, F16* out, std::size_t count
 #endif // BoysFp16
 
 // ---------------------------------------------------------------------------
-// Explicit instantiations at the sampled multipliers. The entry definitions
-// live in this TU (the header stays CUDA-runtime-free), so the call sites in
-// other TUs link only the instantiations spelled out here — m = 1.0 first
-// (the full-accuracy pin), then the relaxation sample set. The f32 single
-// entry is instantiated once per calibrated (multiplier, exponential) pair it
-// offers; every other entry has one arithmetic and one instantiation per
-// multiplier.
+// Explicit instantiations at the rungs this lane serves, kDeviceRungs
+// (boys_cuda_options.hpp). The entry definitions live in this TU (the header
+// stays CUDA-runtime-free), so the call sites in other TUs link only the
+// instantiations spelled out here — m = 1.0 first (the full-accuracy pin), then
+// this lane's own relaxation sample set, then the option space's rungs below.
+// The f32 single entry is instantiated once per calibrated (multiplier,
+// exponential) pair it offers; every other entry has one arithmetic and one
+// instantiation per multiplier.
 // ---------------------------------------------------------------------------
 template BoysStatus BoysCuda::SingleF32<1.0>(const int*, const double*, float*, std::size_t, void*);
 template BoysStatus BoysCuda::SingleF32<1.0, RegionBExp::kFast>(
@@ -1279,15 +1280,281 @@ template BoysStatus BoysCuda::AllOrdersF16<1e8>(const int*, const F16*, F16*, st
 template BoysStatus BoysCuda::AllNF16<1e8>(int, const F16*, F16*, std::size_t, void*);
 #endif
 
-// The handle for each rung the lane instantiates. m = 1 is the default
-// argument's own instantiation and is the one every existing caller reaches;
-// the rest are the rungs a device entry can be asked for, and each makes its
-// own rung resident.
+// ---------------------------------------------------------------------------
+// The option space's rungs on this lane. The options the accuracy contract is
+// published over are the CPU tier lane's seven multipliers (AccuracyTier), and
+// this lane carried none of them but m = 1: its own set is finer at the low end
+// and coarser at the top, so the two met at the default and at nothing else. A
+// caller who named a tier here was refused by every entry of this lane while the
+// library's accuracy accessors answered for the combination as though it were
+// carried. The blocks below are that set served. Each of the six is instantiated
+// exactly as the lane's own are — the same entries, the same degree tables cut
+// at that multiplier — so the set the API answers for and the set the kernels are
+// compiled at are one set, kDeviceRungs (boys_cuda_options.hpp), twelve
+// multipliers wide.
+// ---------------------------------------------------------------------------
+
+template BoysStatus BoysCuda::SingleF32<64.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::SingleF32<64.0, RegionBExp::kFast>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32<64.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF32<64.0>(int, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::SingleF64<64.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64<64.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Narrow<64.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Orders<64.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrders<64.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Mono<64.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64OrdersMono<64.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowMono<64.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono<64.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Rat<64.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64OrdersRat<64.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowRat<64.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat<64.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF64<64.0>(int, const double*, double*, std::size_t, void*);
+#if BoysFp16
+template BoysStatus BoysCuda::SingleF16<64.0>(const int*, const F16*, F16*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF16<64.0>(const int*, const F16*, F16*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF16<64.0>(int, const F16*, F16*, std::size_t, void*);
+#endif
+
+template BoysStatus BoysCuda::SingleF32<256.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::SingleF32<256.0, RegionBExp::kFast>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32<256.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF32<256.0>(int, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::SingleF64<256.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64<256.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Narrow<256.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Orders<256.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrders<256.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Mono<256.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64OrdersMono<256.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowMono<256.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono<256.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Rat<256.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64OrdersRat<256.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowRat<256.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat<256.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF64<256.0>(int, const double*, double*, std::size_t, void*);
+#if BoysFp16
+template BoysStatus BoysCuda::SingleF16<256.0>(const int*, const F16*, F16*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF16<256.0>(const int*, const F16*, F16*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF16<256.0>(int, const F16*, F16*, std::size_t, void*);
+#endif
+
+template BoysStatus BoysCuda::SingleF32<1024.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::SingleF32<1024.0, RegionBExp::kFast>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32<1024.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF32<1024.0>(int, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::SingleF64<1024.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64<1024.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Narrow<1024.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Orders<1024.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrders<1024.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Mono<1024.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64OrdersMono<1024.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowMono<1024.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono<1024.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Rat<1024.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64OrdersRat<1024.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowRat<1024.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat<1024.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF64<1024.0>(int, const double*, double*, std::size_t, void*);
+#if BoysFp16
+template BoysStatus BoysCuda::SingleF16<1024.0>(const int*, const F16*, F16*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF16<1024.0>(
+    const int*, const F16*, F16*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF16<1024.0>(int, const F16*, F16*, std::size_t, void*);
+#endif
+
+template BoysStatus BoysCuda::SingleF32<4096.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::SingleF32<4096.0, RegionBExp::kFast>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32<4096.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF32<4096.0>(int, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::SingleF64<4096.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64<4096.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Narrow<4096.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Orders<4096.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrders<4096.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Mono<4096.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64OrdersMono<4096.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowMono<4096.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono<4096.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Rat<4096.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64OrdersRat<4096.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowRat<4096.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat<4096.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF64<4096.0>(int, const double*, double*, std::size_t, void*);
+#if BoysFp16
+template BoysStatus BoysCuda::SingleF16<4096.0>(const int*, const F16*, F16*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF16<4096.0>(
+    const int*, const F16*, F16*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF16<4096.0>(int, const F16*, F16*, std::size_t, void*);
+#endif
+
+template BoysStatus BoysCuda::SingleF32<16384.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::SingleF32<16384.0, RegionBExp::kFast>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32<16384.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF32<16384.0>(int, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::SingleF64<16384.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64<16384.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Narrow<16384.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Orders<16384.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrders<16384.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Mono<16384.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64OrdersMono<16384.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowMono<16384.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono<16384.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Rat<16384.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64OrdersRat<16384.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowRat<16384.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat<16384.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF64<16384.0>(int, const double*, double*, std::size_t, void*);
+#if BoysFp16
+template BoysStatus BoysCuda::SingleF16<16384.0>(const int*, const F16*, F16*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF16<16384.0>(
+    const int*, const F16*, F16*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF16<16384.0>(int, const F16*, F16*, std::size_t, void*);
+#endif
+
+template BoysStatus BoysCuda::SingleF32<65536.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::SingleF32<65536.0, RegionBExp::kFast>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32<65536.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF32<65536.0>(int, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::SingleF64<65536.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64<65536.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Narrow<65536.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Orders<65536.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrders<65536.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Mono<65536.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64OrdersMono<65536.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowMono<65536.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono<65536.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Rat<65536.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64OrdersRat<65536.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowRat<65536.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat<65536.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF64<65536.0>(int, const double*, double*, std::size_t, void*);
+#if BoysFp16
+template BoysStatus BoysCuda::SingleF16<65536.0>(const int*, const F16*, F16*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF16<65536.0>(
+    const int*, const F16*, F16*, std::size_t, void*);
+template BoysStatus BoysCuda::AllNF16<65536.0>(int, const F16*, F16*, std::size_t, void*);
+#endif
+
+// The handle for each rung the lane serves, kDeviceRungs (boys_cuda_options.hpp)
+// — one instantiation per rung, the same list the entries above are compiled at,
+// because the rung a handle is filled at is the rung its entries then read. m = 1
+// is the default argument's own instantiation and is the one every existing
+// caller reaches; the rest are the rungs a device entry can be asked for, and
+// each makes its own rung resident.
 template BoysStatus BoysCuda::DeviceTables<kBoysFullAccuracyMultiplier>(BoysDeviceTables*);
 template BoysStatus BoysCuda::DeviceTables<2.0>(BoysDeviceTables*);
 template BoysStatus BoysCuda::DeviceTables<10.0>(BoysDeviceTables*);
+template BoysStatus BoysCuda::DeviceTables<64.0>(BoysDeviceTables*);
 template BoysStatus BoysCuda::DeviceTables<100.0>(BoysDeviceTables*);
+template BoysStatus BoysCuda::DeviceTables<256.0>(BoysDeviceTables*);
+template BoysStatus BoysCuda::DeviceTables<1024.0>(BoysDeviceTables*);
+template BoysStatus BoysCuda::DeviceTables<4096.0>(BoysDeviceTables*);
 template BoysStatus BoysCuda::DeviceTables<1e4>(BoysDeviceTables*);
+template BoysStatus BoysCuda::DeviceTables<16384.0>(BoysDeviceTables*);
+template BoysStatus BoysCuda::DeviceTables<65536.0>(BoysDeviceTables*);
 template BoysStatus BoysCuda::DeviceTables<1e8>(BoysDeviceTables*);
 
 // ---------------------------------------------------------------------------

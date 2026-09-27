@@ -1,5 +1,6 @@
 #include "boys/boys.hpp"
 
+#include "boys/boys_cuda_options.hpp"
 #include "boys/boys_impl.hpp"
 
 #include "boys_backend_registry.hpp"
@@ -818,13 +819,12 @@ Carriage CarriesSingle(FitRoute route,
                        FitGranularity granularity,
                        AccuracyTier tier) noexcept {
     // Every combination this library names is served on both axes and both
-    // partitions, at every rung. The narrow partition's across-orders packed
-    // lane was refused here until its cut was read against the table the scheme
-    // sums: taking the Chebyshev cut while the Horner scheme summed the monomial
-    // table delivered outside the bound on 1964 of 56694 cells at m = 64. With
-    // the basis carried through, the same combination is a rung of the family
-    // the caller named on either partition, so there is no cell left for this
-    // rule to refuse.
+    // partitions, at every rung. A cut has to be read against the table the
+    // scheme actually sums: taking the Chebyshev cut while the Horner scheme
+    // summed the monomial table delivered outside the bound on 1964 of 56694
+    // cells at m = 64. With the basis carried through, the same combination is
+    // a rung of the family the caller named on either partition, so there is no
+    // cell left for this rule to refuse.
     //
     // What it still refuses is a value outside the enumerations, which names no
     // combination at all rather than one this revision does not carry.
@@ -849,8 +849,16 @@ Carriage CarriesSingle(FitRoute route,
 
 // The device lane's rule. Its accuracy multiplier is a template argument at the
 // call site against a certified degree table the lane holds per rung, so every
-// rung is served. Both of the lane's partitions are served: the shipped cut of
-// the double lane's fits (BoysCuda::AllOrdersF64 and its siblings) and the
+// rung the lane instantiates is served — and the rungs it instantiates are the
+// option space's seven, which the CPU tier lane's AccuracyTier names and the
+// accuracy contract is published over, beside the lane's own six. The two sets
+// are one union of twelve multipliers, kDeviceRungs (boys_cuda_options.hpp),
+// and this rule reads that table rather than a list kept here: a value outside
+// it names a multiplier no entry of the lane was compiled for, and reading
+// another rung's cut under its name is the substitution this rule prevents.
+//
+// Both of the lane's partitions are served: the shipped cut of the double
+// lane's fits (BoysCuda::AllOrdersF64 and its siblings) and the
 // narrow one, whose pieces, piecewise region-B seed and per-rung effective
 // degrees the lane holds in its own tables (BoysCuda::AllOrdersF64Narrow).
 // Both of its packing axes are served too: one ladder per argument from the top
@@ -875,9 +883,35 @@ Carriage CarriesSingle(FitRoute route,
 // Horner, so both scheme names select one arithmetic and the lane's two rows
 // per shape measure one kernel. Serving both names is what the surface offers,
 // and each row's own figure says what it delivers.
-Carriage CarriesDevice(FitRoute route, EvalScheme scheme) noexcept {
-    (void)route;
-    (void)scheme;
+Carriage CarriesDevice(FitRoute route,
+                       EvalScheme scheme,
+                       PackAxis axis,
+                       FitGranularity granularity,
+                       AccuracyTier tier) noexcept {
+    const std::size_t r = static_cast<std::size_t>(route);
+    const std::size_t s = static_cast<std::size_t>(scheme);
+    const std::size_t a = static_cast<std::size_t>(axis);
+    const std::size_t g = static_cast<std::size_t>(granularity);
+    const std::size_t t = static_cast<std::size_t>(tier);
+
+    if (r >= BoysFitRoutes().size() || s >= BoysEvalSchemes().size() ||
+        a >= BoysPackAxes().size() || g >= BoysFitGranularities().size() ||
+        t > static_cast<std::size_t>(AccuracyTier::kRelaxed65536))
+    {
+        return {false,
+                "the value named is outside the enumeration this library serves, so it names no "
+                "combination: name a route, a scheme, a packing axis, a partition and a rung from "
+                "the enumerations this revision publishes"};
+    }
+
+    if (!DeviceRungServed(AccuracyMultiplier(tier)))
+    {
+        return {false,
+                "the device lane's degree tables are cut per rung and its entries are compiled at "
+                "each rung it serves, so this multiplier is one no entry of that lane answers at: "
+                "the lane serves the option space's rungs beside its own, and a call naming any "
+                "other would be reading another rung's cut"};
+    }
 
     return {true, ""};
 }
@@ -910,7 +944,7 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
         switch (precision)
         {
         case Precision::kFp32Device:
-            return CarriesDevice(route, scheme);
+            return CarriesDevice(route, scheme, axis, granularity, tier);
         case Precision::kFp32:
         case Precision::kFp16:
             return CarriesSingle(route, scheme, axis, granularity, tier);

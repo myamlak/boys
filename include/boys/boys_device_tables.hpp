@@ -24,8 +24,8 @@ namespace boys {
 /// a fallback for the other. What makes the choice worth stating is the
 /// recurrence that consumes the value. Its condition number — the ratio of the
 /// dominant solution of the homogeneous recurrence to the wanted one, which is
-/// what Gautschi's treatment of three-term recurrences is about (see
-/// CITATION.bib) — is 7.6e4 at the region-B boundary, n = 32, and falls as the
+/// what Gautschi's treatment of three-term recurrences is about
+/// ([Gautschi1967]) — is 7.6e4 at the region-B boundary, n = 32, and falls as the
 /// argument grows. A seed error whose *relative* size grows with the argument
 /// therefore fails a bound over a band of region B at the highest order while
 /// holding it everywhere else, and the instrument that predicts that is that

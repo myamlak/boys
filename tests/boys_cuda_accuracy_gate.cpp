@@ -207,11 +207,20 @@ const double kFastExpContribution =
 // states: two books, one number, and a disagreement stops the gate.
 const double kBoundHalfRow = DeviceRow(boys::DeviceEntry::kDeviceSingleF16).bound;
 
-// The rungs the lane instantiates, in the order the rows print: the multiplier
-// and the name a row's label carries for it. m = 1 is the unlabelled row, which
-// a lane's plain name already means. The batch entries take one of these as a
-// template argument and the device-callable entries as a run-time argument, and
-// both read the degree tables cut for it.
+// The rungs the lane instantiates, ascending, in the order the rows print: the
+// multiplier and the name a row's label carries for it. m = 1 is the unlabelled
+// row, which a lane's plain name already means. The batch entries take one of
+// these as a template argument and the device-callable entries as a run-time
+// argument, and both read the degree tables cut for it.
+//
+// The list is kDeviceRungs (boys_cuda_options.hpp), spelled out here because a
+// sweep names its rung at the call site and a template argument cannot be read
+// out of a table. It holds every rung that lane serves: the option space's
+// 64, 256, 1024, 4096, 16384 and 65536, whose option rows this lane's entries
+// are claimed for, beside the lane's own finer-at-the-low-end sample set. A rung
+// the lane serves and this list does not hold would be a row of the library no
+// bound is measured at, which is the drift the coverage check at the end of this
+// file exists to catch.
 struct Rung {
     double multiplier;
     const char* name;
@@ -220,9 +229,51 @@ struct Rung {
 constexpr Rung kRungs[] = {{1.0, nullptr},
                            {2.0, "2"},
                            {10.0, "10"},
+                           {64.0, "64"},
                            {100.0, "100"},
+                           {256.0, "256"},
+                           {1024.0, "1024"},
+                           {4096.0, "4096"},
                            {1e4, "1e4"},
+                           {16384.0, "16384"},
+                           {65536.0, "65536"},
                            {1e8, "1e8"}};
+
+// The last rung of that list, which is the one the run's sweeps leave resident:
+// it is the highest multiplier the lane serves, and the sweeps run in the order
+// above.
+constexpr int kLastRung = static_cast<int>(sizeof(kRungs) / sizeof(kRungs[0])) - 1;
+
+// Whether the list above is the lane's own rung set, element by element and in
+// order. A sweep names its rung at the call site and a template argument cannot
+// be read out of a table, so the list has to be spelled out; this is what keeps
+// the spelling and kDeviceRungs (boys_cuda_options.hpp) from parting. A rung
+// added to the lane and not to the list would be a row of the library no bound
+// is measured at, and one added to the list and not to the lane would not link.
+constexpr bool RungsAreTheLanesSet() noexcept {
+    constexpr std::size_t kListed = sizeof(kRungs) / sizeof(kRungs[0]);
+
+    if (kListed != boys::kDeviceRungs.size())
+    {
+        return false;
+    }
+
+    for (std::size_t i = 0; i < kListed; ++i)
+    {
+        if (kRungs[i].multiplier != boys::kDeviceRungs[i])
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static_assert(RungsAreTheLanesSet(),
+              "the rungs this gate sweeps must be kDeviceRungs (boys_cuda_options.hpp), in its "
+              "order: that table is what the library's accuracy accessors answer the device lane "
+              "out of, and this file's sweeps are what measure the bound of every entry at every "
+              "rung it holds");
 
 // The smallest positive normal float: below it a returned value is the
 // format's floor rather than arithmetic, which is what the relative-error side
@@ -820,19 +871,6 @@ void CompareDeviceWithHost(const Reference& ref,
     }
 }
 
-// A device row this gate could not read against the host lane at the policy the
-// row names, with the library's own reason. The row keeps the two claims it was
-// measured under - the committed reference, and the host lane at the default
-// policy - so what is absent is the reading that shows the two lanes answer the
-// same question, and only that. The reason is quoted from
-// BoysAccuracyGuaranteed rather than written here: a combination the host lane
-// refuses says so in its own words, and a reason restated in the gate would be
-// a second answer to a question the library already answers.
-std::vector<std::string>& HostCounterpartGaps() {
-    static std::vector<std::string> gaps;
-    return gaps;
-}
-
 // The seven rows, each measured against the reference and against the host lane
 // at the rung the call is made at.
 //
@@ -1153,31 +1191,27 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
         CompareDeviceWithHost<kMultiplier, NarrowRatPolicy>(
             ref, grid, narrowRatHornerOut, narrowRatHornerHost);
 
-        // The narrow partition under the rational route on the orders axis is a
-        // shape the host lane does not carry: its packed entry refuses the pair
-        // by an assertion of its own, because the rational route's narrow fit is
-        // a pair per piece and the lane's narrow body is a four-order one built
-        // over a polynomial's coefficients. The refusal is the library's and is
-        // quoted from the contract below rather than repeated here. The two rows
-        // keep the claim they were measured under above - the committed
-        // reference - so what the pair loses is the cross-lane reading and not
-        // its own figure.
-        for (const boys::DeviceEntry entry :
-             {boys::DeviceEntry::kAllOrdersF64NarrowOrdersRat,
-              boys::DeviceEntry::kAllOrdersF64NarrowOrdersRatHorner})
-        {
-            const boys::AccuracyFigure counterpart = boys::BoysAccuracyGuaranteed(
-                boys::Precision::kFp64,
-                NarrowOrdersRatPolicy::kRoute,
-                NarrowOrdersRatPolicy::kScheme,
-                NarrowOrdersRatPolicy::kPack,
-                NarrowOrdersRatPolicy::kGranularity,
-                boys::AccuracyTier::kReference);
-
-            HostCounterpartGaps().push_back(std::string(DeviceRow(entry).name) + rungWord
-                                            + " has no fp64 host counterpart at its own policy: "
-                                            + counterpart.reason);
-        }
+        // The narrow partition under the rational route on the orders axis, the
+        // last of the route's four shapes. It is a combination the host lane
+        // carries: its packed entry takes the route and the partition as
+        // template arguments, and boys_orders_simd.cpp instantiates that pair
+        // for both schemes at every rung (BOYS_ORDERS_NARROW_RATIONAL_
+        // INSTANTIATIONS). This gate read a gap here once - a shape it believed
+        // the host lane refused and therefore did not measure - and the block
+        // that reported it quoted BoysAccuracyGuaranteed's reason, which was
+        // empty because the accessor answers carried. An accessor that answers
+        // and a report that says nothing is not a gap: it is one of the two
+        // being wrong, and here it was the block. The rows are read against the
+        // host lane at their own policy like every other shape of the route.
+        const int bothRatHost = routeHostClaim(
+            DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowOrdersRat).name, "narrow orders rat");
+        const int bothRatHornerHost = routeHostClaim(
+            DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowOrdersRatHorner).name,
+            "narrow orders rat");
+        CompareDeviceWithHost<kMultiplier, NarrowOrdersRatPolicy>(
+            ref, grid, bothRatOut, bothRatHost);
+        CompareDeviceWithHost<kMultiplier, NarrowOrdersRatPolicy>(
+            ref, grid, bothRatHornerOut, bothRatHornerHost);
     }
 }
 
@@ -3768,7 +3802,7 @@ void RunProbe(const Reference& ref,
 // gate's row list and the chooser's are one list. This says so out loud,
 // because the failure it guards against is silent: an option added to the
 // surface and certified by nothing, or a claim left behind for a row the
-// library no longer reports.
+// library's report does not carry.
 //
 // It also checks the one figure the report and the shared reference book both
 // state, so the fp16 cells' bound cannot come out of one book in the claims and
@@ -3976,9 +4010,15 @@ int main(int argc, char** argv) {
 
     SweepRelaxed<2.0>(ref, grid, sorted, kRungs[1].name);
     SweepRelaxed<10.0>(ref, grid, sorted, kRungs[2].name);
-    SweepRelaxed<100.0>(ref, grid, sorted, kRungs[3].name);
-    SweepRelaxed<1e4>(ref, grid, sorted, kRungs[4].name);
-    SweepRelaxed<1e8>(ref, grid, sorted, kRungs[5].name);
+    SweepRelaxed<64.0>(ref, grid, sorted, kRungs[3].name);
+    SweepRelaxed<100.0>(ref, grid, sorted, kRungs[4].name);
+    SweepRelaxed<256.0>(ref, grid, sorted, kRungs[5].name);
+    SweepRelaxed<1024.0>(ref, grid, sorted, kRungs[6].name);
+    SweepRelaxed<4096.0>(ref, grid, sorted, kRungs[7].name);
+    SweepRelaxed<1e4>(ref, grid, sorted, kRungs[8].name);
+    SweepRelaxed<16384.0>(ref, grid, sorted, kRungs[9].name);
+    SweepRelaxed<65536.0>(ref, grid, sorted, kRungs[10].name);
+    SweepRelaxed<1e8>(ref, grid, sorted, kRungs[kLastRung].name);
 
     // The device-callable entries: one set of rows per rung, one handle per
     // rung, and the same consumer kernels every time. Every documented device
@@ -3992,15 +4032,22 @@ int main(int argc, char** argv) {
     SweepRung<1.0>(ref, grid, sorted, digits, kRungs[0].name);
     SweepRung<2.0>(ref, grid, sorted, digits, kRungs[1].name);
     SweepRung<10.0>(ref, grid, sorted, digits, kRungs[2].name);
-    SweepRung<100.0>(ref, grid, sorted, digits, kRungs[3].name);
-    SweepRung<1e4>(ref, grid, sorted, digits, kRungs[4].name);
-    SweepRung<1e8>(ref, grid, sorted, digits, kRungs[5].name);
+    SweepRung<64.0>(ref, grid, sorted, digits, kRungs[3].name);
+    SweepRung<100.0>(ref, grid, sorted, digits, kRungs[4].name);
+    SweepRung<256.0>(ref, grid, sorted, digits, kRungs[5].name);
+    SweepRung<1024.0>(ref, grid, sorted, digits, kRungs[6].name);
+    SweepRung<4096.0>(ref, grid, sorted, digits, kRungs[7].name);
+    SweepRung<1e4>(ref, grid, sorted, digits, kRungs[8].name);
+    SweepRung<16384.0>(ref, grid, sorted, digits, kRungs[9].name);
+    SweepRung<65536.0>(ref, grid, sorted, digits, kRungs[10].name);
+    SweepRung<1e8>(ref, grid, sorted, digits, kRungs[kLastRung].name);
     // A rung that was resident earlier in the run and is not any more: the last
-    // upload left 1e8 resident, so m = 2 is a rung whose degree tables have been
-    // replaced. It is refused rather than run against the tables that replaced
-    // them. Every shape is then run once more at m = 1, which is still served -
-    // the full-accuracy tables are the handle's own and no upload retires them -
-    // so the refusal is one rung of the surface and not the surface closing.
+    // upload left the highest rung resident, so m = 2 is a rung whose degree
+    // tables have been replaced. It is refused rather than run against the
+    // tables that replaced them. Every shape is then run once more at m = 1,
+    // which is still served - the full-accuracy tables are the handle's own and
+    // no upload retires them - so the refusal is one rung of the surface and not
+    // the surface closing.
     CheckRungCalls(tables,
                    2.0,
                    BoysDeviceDemoStatusMultiplierNotResident(),
@@ -4109,7 +4156,7 @@ int main(int argc, char** argv) {
                     "  capacity refusals were exercised the same way, while m = %g was resident.\n",
                     RetiredRungProbes(),
                     kRungs[1].name,
-                    kRungs[5].name,
+                    kRungs[kLastRung].name,
                     ServedRungProbes(),
                     kRungs[0].multiplier);
     }
@@ -4243,24 +4290,12 @@ int main(int argc, char** argv) {
                     live);
     }
 
-    // The rows the host lane has no counterpart for at the policy the row names.
-    // They are in the books above with their own bound and their own cells, so
-    // this is not a hole in the measurement; it is the one reading the pair
-    // could not be given, and it is printed rather than passed over because a
-    // comparison quietly left out reads exactly like one that agreed.
-    if (!HostCounterpartGaps().empty())
-    {
-        std::printf("\n  device rows the host lane has no counterpart for at the policy the row\n"
-                    "  names, at this revision. The row itself is measured as any other is; what\n"
-                    "  is missing is the second reading, the one at its own route, partition and\n"
-                    "  packing axis. The reason is the host lane's own, from\n"
-                    "  BoysAccuracyGuaranteed:\n");
-
-        for (const std::string& gap : HostCounterpartGaps())
-        {
-            std::printf("  %s\n", gap.c_str());
-        }
-    }
+    // Every device row is read against the host lane at the policy its own row
+    // names, and there is no list of rows that could not be: a row this gate
+    // cannot read across the lanes is a row whose own claim or the library's
+    // carriage is wrong, and both are defects rather than a section to print.
+    // The one shape this file once reported as such was a gap that did not
+    // exist - the host lane carries it, and the reading is taken above.
 
     const std::size_t uncovered = ReportDeviceOptionCoverage();
 
@@ -4277,7 +4312,7 @@ int main(int argc, char** argv) {
         std::printf("\n  RESULT: FAIL - %zu device option(s) of the library's report that this "
                     "gate does not account for (exit status 1): an option added to the surface "
                     "is certified by nothing until a claim names it, and a claim whose row the "
-                    "library no longer reports is a row this gate is still judging.\n",
+                    "library's report does not carry is a row this gate is still judging.\n",
                     uncovered);
         return 1;
     }

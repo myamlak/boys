@@ -8,10 +8,16 @@
  * through the pointer arguments.
  *
  * The multiplier entries dispatch on m by exact double equality over the
- * sampled set {1.0, 2.0, 10.0, 100.0, 1e4, 1e8}; m = 1.0 is the certified
- * full-accuracy lane, larger m relax the asserted error bound to m * B via
- * compile-time Chebyshev degree truncation. Any other m is rejected with
- * BOYS_ERROR_UNSUPPORTED_MULTIPLIER.
+ * library's accuracy-rung vocabulary: the twelve rungs this library names,
+ * 1, 2, 10, 64, 100, 256, 1024, 4096, 1e4, 16384, 65536 and 1e8. The set is the
+ * library's rather than this surface's own — the C++ accuracy-tier enumeration
+ * and the device lane's rung table name the same twelve, so a caller reading any
+ * of the three reads one vocabulary — and it is the rungs every run-time surface
+ * of the library is named at. The C++ template entries take any m at or above 1;
+ * here a value outside these twelve is rejected with
+ * BOYS_ERROR_UNSUPPORTED_MULTIPLIER rather than approximated. m = 1 is the
+ * certified full-accuracy lane, larger m relax the asserted error bound to m * B
+ * via compile-time Chebyshev degree truncation.
  *
  * \ingroup boys
  */
@@ -29,7 +35,8 @@ extern "C" {
 #define BOYS_SUCCESS 0
 /** Invalid-argument return code (out-of-range order, negative/NaN x, NULL pointer). */
 #define BOYS_ERROR_INVALID_ARGUMENT 1
-/** Return code when m is not one of the sampled multiplier set. */
+/** Return code when m is not one of the library's accuracy rungs (see
+ * BoysDoubleWithMultiplier for the set). */
 #define BOYS_ERROR_UNSUPPORTED_MULTIPLIER 2
 
 /** Highest Boys order supported by the kernel (F_0..F_BOYS_MAX_ORDER). */
@@ -57,27 +64,30 @@ int BoysFloat(int n, float x, float* out);
 
 /** F_n(x) in double precision at the relaxed accuracy multiplier m.
  *
- * \param m   accuracy multiplier; exact equality over the sampled set
- *            {1.0, 2.0, 10.0, 100.0, 1e4, 1e8}
+ * \param m   accuracy multiplier; exact equality over the library's rung
+ *            vocabulary {1, 2, 10, 64, 100, 256, 1024, 4096, 1e4, 16384,
+ *            65536, 1e8}, of which m = 1 is the certified full-accuracy rung
+ *            and the rest relax the asserted error bound to m * B
  * \param n   order, 0..BOYS_MAX_ORDER
  * \param x   argument, >= 0
  * \param out receives the value
  * \returns BOYS_SUCCESS, or BOYS_ERROR_INVALID_ARGUMENT when n is outside
  * [0, BOYS_MAX_ORDER], x is negative or NaN, or out is NULL;
- * BOYS_ERROR_UNSUPPORTED_MULTIPLIER when m is not in the sampled set.
+ * BOYS_ERROR_UNSUPPORTED_MULTIPLIER when m is not in that vocabulary.
  */
 int BoysDoubleWithMultiplier(double m, int n, double x, double* out);
 
 /** F_n(x) in single precision at the relaxed accuracy multiplier m.
  *
- * \param m   accuracy multiplier; exact equality over the sampled set
- *            {1.0, 2.0, 10.0, 100.0, 1e4, 1e8}
+ * \param m   accuracy multiplier; the rung vocabulary of
+ *            BoysDoubleWithMultiplier, at the single-precision lane's own
+ *            asserted bounds
  * \param n   order, 0..BOYS_MAX_ORDER
  * \param x   argument, >= 0
  * \param out receives the value
  * \returns BOYS_SUCCESS, or BOYS_ERROR_INVALID_ARGUMENT when n is outside
  * [0, BOYS_MAX_ORDER], x is negative or NaN, or out is NULL;
- * BOYS_ERROR_UNSUPPORTED_MULTIPLIER when m is not in the sampled set.
+ * BOYS_ERROR_UNSUPPORTED_MULTIPLIER when m is not in that vocabulary.
  */
 int BoysFloatWithMultiplier(double m, int n, float x, float* out);
 

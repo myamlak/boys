@@ -274,14 +274,14 @@ typename B::Packed FitSum(const typename B::Value* cheb,
 // tables): each order's entry is the certified boundary of the smallest
 // kmax row that covers it (the rows 4/8/16/32), so
 // BoysAllOrders(n,x)[n] == BoysSingle(n,x) == BoysAllOrders(m>=n,x)[n] exactly.
-// The band is the m = 1 lane's: the m > 1 branch keeps today's
+// The band is the m = 1 lane's: the m > 1 branch keeps the
 // region-A dispatch in the band (the per-order amplification of the
-// band's upward recursion needs its own derivation - named future work,
-// not ported here), and the float lane's dispatch is untouched (its
+// band's upward recursion needs its own derivation, which that branch does
+// not carry), and the float lane's dispatch is untouched (its
 // double-seeded region-A branch already serves the band at the float
 // budget).
 
-// The extended-band seed (the per-range seed design): F_0(x) on
+// The extended-band seed: F_0(x) on
 // [kExtendedBX0, kX0) via the same split Clenshaw evaluation as the
 // region-B seed. It serves the upward recursion below kX0 in the m = 1
 // double lanes only, dispatched per (n, x) at the certified per-order
@@ -2484,9 +2484,9 @@ void BoysFixedNImpl(
     }
 }
 
-// The float lanes' scope (the per-range seed design is fp64-only v1): the
+// The float lanes' scope (the extended-band seed is a double lane): the
 // float dispatch is untouched, still keyed to kX0/kX1, so the carved band
-// [kExtendedBX0, kX0) stays EXACTLY today's float path - the per-order
+// [kExtendedBX0, kX0) stays EXACTLY the float path - the per-order
 // region-A fits, double-seeded in the batch form (ChebyshevValue's double
 // evaluation), serving the band at the float budget. The certified table
 // is the double recursion's; the float band is measured, not certified.
@@ -2974,6 +2974,99 @@ extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
 extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
                                          65536.0,
                                          FitRoute::kChebyshev,
+                                         FitGranularity::kNarrow>(int nmax,
+                                                                  double x,
+                                                                  double* out) noexcept;
+// The same partition on the other route, which the lane holds as well: the
+// packed entry reads the route's pairs over the narrow cover - the two
+// routes' regions do not coincide, so a rung of the pair is a combination of
+// its own rather than a reading of the shipped bodies - and
+// boys_orders_simd.cpp instantiates it at both schemes and every rung. The
+// declarations below are what says so here: without them this block's record
+// of what the lane holds stops one combination short of the lane, and a
+// reader who trusts it concludes that a shape the library serves is a shape
+// it refuses.
+extern template void BoysAllOrdersPacked<kDefaultEvalScheme,
+                                         1.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kNarrow>(int nmax,
+                                                                  double x,
+                                                                  double* out) noexcept;
+extern template void BoysAllOrdersPacked<kDefaultEvalScheme,
+                                         64.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kNarrow>(int nmax,
+                                                                  double x,
+                                                                  double* out) noexcept;
+extern template void BoysAllOrdersPacked<kDefaultEvalScheme,
+                                         256.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kNarrow>(int nmax,
+                                                                  double x,
+                                                                  double* out) noexcept;
+extern template void BoysAllOrdersPacked<kDefaultEvalScheme,
+                                         1024.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kNarrow>(int nmax,
+                                                                  double x,
+                                                                  double* out) noexcept;
+extern template void BoysAllOrdersPacked<kDefaultEvalScheme,
+                                         4096.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kNarrow>(int nmax,
+                                                                  double x,
+                                                                  double* out) noexcept;
+extern template void BoysAllOrdersPacked<kDefaultEvalScheme,
+                                         16384.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kNarrow>(int nmax,
+                                                                  double x,
+                                                                  double* out) noexcept;
+extern template void BoysAllOrdersPacked<kDefaultEvalScheme,
+                                         65536.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kNarrow>(int nmax,
+                                                                  double x,
+                                                                  double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
+                                         1.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kNarrow>(int nmax,
+                                                                  double x,
+                                                                  double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
+                                         64.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kNarrow>(int nmax,
+                                                                  double x,
+                                                                  double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
+                                         256.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kNarrow>(int nmax,
+                                                                  double x,
+                                                                  double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
+                                         1024.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kNarrow>(int nmax,
+                                                                  double x,
+                                                                  double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
+                                         4096.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kNarrow>(int nmax,
+                                                                  double x,
+                                                                  double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
+                                         16384.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kNarrow>(int nmax,
+                                                                  double x,
+                                                                  double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
+                                         65536.0,
+                                         FitRoute::kRationalMinimax,
                                          FitGranularity::kNarrow>(int nmax,
                                                                   double x,
                                                                   double* out) noexcept;

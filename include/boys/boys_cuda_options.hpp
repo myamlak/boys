@@ -17,6 +17,7 @@
 #include "boys/accuracy.hpp"
 #include "boys/boys_device_tables.hpp"
 
+#include <array>
 #include <cstddef>
 #include <span>
 
@@ -151,6 +152,65 @@ enum class DeviceOptionAxis : int {
     kScheme, ///< which basis the entry sums its stored fits in; its member is \c scheme
     kRoute, ///< which family of fit the entry's pieces are; its member is \c route
 };
+
+// ---------------------------------------------------------------------------
+// The accuracy axis: the rungs this lane serves.
+// ---------------------------------------------------------------------------
+
+/// The accuracy multipliers the CUDA lane serves, ascending: the values of m a
+/// call of this lane may name.
+///
+/// The lane's relaxed degree tables are cut per multiplier, so a rung is a
+/// value of the accuracy axis and the lane's set of them is what its entries
+/// answer at. It is the union of two sets: the option space's rungs — the seven
+/// multipliers the CPU tier lane's AccuracyTier names, which the accuracy
+/// contract is published over and which the CPU lanes serve at run time — and
+/// the lane's own six, the finer-at-the-low-end sample set the device
+/// arithmetic was measured at. The two overlap at m = 1 alone, the default and
+/// every lane's full-accuracy rung.
+///
+/// The table is the one the library reads. The accessors that answer for the
+/// device lane consult it to decide whether a combination is carried, and the
+/// entries of the lane are instantiated at each of its values, so the set the
+/// API answers for and the set the kernels are compiled at are one set. A rung
+/// added to either belongs here in the same change.
+///
+/// A caller reaches every one of them. The batch entries take the rung as a
+/// template argument and are instantiated at each of these values; the
+/// device-callable entries take it as a run-time argument and read it against
+/// the resident rung, which is one of these at a time (BoysCuda::DeviceTables).
+///
+/// \ingroup boys
+inline constexpr std::array<double, 12> kDeviceRungs = {
+    kBoysFullAccuracyMultiplier, 2.0,    10.0,   64.0,   100.0, 256.0,
+    1024.0,                      4096.0, 1e4,    16384.0, 65536.0, 1e8,
+};
+
+/// Whether the CUDA lane serves a multiplier: whether it is one of
+/// \c kDeviceRungs.
+///
+/// The comparison is exact and the rungs are all exactly representable, which
+/// is the same match every entry of that lane makes between the multiplier a
+/// call names and the one its degree tables were cut for. A value that is not a
+/// rung is not served by any entry: the lane answers no arithmetic at it, so a
+/// caller is told so rather than handed another rung's tables.
+///
+/// \param multiplier the accuracy multiplier m a call names
+///
+/// \returns whether the lane serves it
+///
+/// \ingroup boys
+constexpr bool DeviceRungServed(double multiplier) noexcept {
+    for (const double rung : kDeviceRungs)
+    {
+        if (rung == multiplier)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 /// One row of the device option space: an option this surface offers, with
 /// what a chooser needs to place it.

@@ -115,8 +115,10 @@
 /// instantiated with, and a value below 1.0 is refused like any other rung that
 /// is not resident (the library's compile-time entries make it a compile-time
 /// error; here it is a status). So a caller names a rung the way the library
-/// does — 1, 2, 10, 100, 1e4 or 1e8 — and reads the status instead of assuming
-/// the rung is still the resident one.
+/// does — one of the twelve of kDeviceRungs (boys_cuda_options.hpp): the option
+/// space's 1, 64, 256, 1024, 4096, 16384 and 65536, beside this lane's own 1, 2,
+/// 10, 100, 1e4 and 1e8 — and reads the status instead of assuming the rung is
+/// still the resident one.
 ///
 /// **The bound.** Every entry holds the lane's documented bound for its
 /// precision at the rung it was asked for — the same bound the corresponding

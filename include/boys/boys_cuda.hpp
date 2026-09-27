@@ -59,9 +59,15 @@ enum class BoysStatus {
 /// kAccuracyMultiplier selects the certified degree table its instantiation
 /// is built with, which is why the first call at a new m uploads that
 /// instantiation's tables. The multiplier is monotonically relaxing exactly as
-/// the CPU lanes document it, and the rungs this lane instantiates are
-/// 1, 2, 10, 100, 1e4 and 1e8 — a finer set than the CPU tier lane's at the low
-/// end and coarser at the top.
+/// the CPU lanes document it, and the rungs this lane instantiates are the
+/// option space's seven — 1, 64, 256, 1024, 4096, 16384 and 65536, the
+/// multipliers the CPU tier lane's AccuracyTier names — beside the lane's own
+/// six, 1, 2, 10, 100, 1e4 and 1e8: the finer set at the low end and the coarser
+/// one at the top that this lane carried before it carried the option space's.
+/// The two sets meet at m = 1 alone, and their union is the twelve multipliers
+/// of kDeviceRungs (boys_cuda_options.hpp). The rung a caller names is therefore
+/// a rung the lane serves, and a caller carrying a tier names it here instead of
+/// approximating it by the nearest member of another set.
 ///
 /// The device-callable entries (boys_cuda_device.hpp) are at once the wider
 /// surface and the narrower one. Wider, because each takes the multiplier as a
@@ -75,14 +81,30 @@ enum class BoysStatus {
 /// kBoysFullAccuracyMultiplier reads tables that are always uploaded, so it is
 /// served whatever rung is resident and does not depend on that choice.
 ///
+/// **What the rung set's growth to twelve does to that rule, and why the rule
+/// is not lifted with it.** The rule is a property of the storage and not of how
+/// many rungs there are: what a larger set changes is which multipliers can be
+/// made resident — twelve values of m where six could be — and not what
+/// residency is or what a switch costs. One rung is resident because one rung is
+/// one cut of every table the lane holds, and the batch kernels read their own
+/// cut from the constant bank, where the six lanes' degree tables are 2574 ints:
+/// twelve rungs of them would be 121 KB against the 64 KB it has. So a caller
+/// moving along the ladder pays a fill on each switch — the price the lane's own
+/// six rungs have always carried, now payable at twelve values of m instead of
+/// six — and what a filled handle holds is unchanged by any of it: the addresses
+/// of the resident rung's degree tables, the address of the scalar naming it,
+/// and the full-accuracy tables, which no fill retires.
+///
 /// What neither surface has is the CPU double lane's per-call tier machinery:
 /// BoysAllOrdersAtTier (one tier, all orders), QueryTier, AccuracyMultiplier and
 /// TierCoverage, the last of which names the region component that would limit a
 /// tier. No device entry reports what an m delivers, because m is the input and
 /// not a selection from a table: the answer is m * B_region from the contract,
-/// which the caller computes. A caller carrying a CPU tier gets the nearest
-/// device behaviour by choosing, at the call site, the largest instantiated m
-/// whose bound does not exceed the tier's own.
+/// which the caller computes. What a caller carrying a CPU tier does not have to
+/// do is approximate it: every tier's multiplier is one of the rungs this lane
+/// serves, so AccuracyMultiplier(tier) is what the entry takes — the template
+/// argument of a batch call, and the run-time argument of a device-callable one,
+/// which is served once BoysCuda::DeviceTables has made that rung resident.
 ///
 /// **The device lane does not honour the multiply-add route, and this is a
 /// stated limitation rather than an untested property.** The host's routes are
@@ -157,8 +179,9 @@ public:
     /// now hold another rung. A caller that wants a relaxed rung makes it
     /// resident here before the kernel that reads it is launched.
     ///
-    /// \tparam kAccuracyMultiplier the rung to make resident, one of the
-    ///   multipliers this lane instantiates (1, 2, 10, 100, 1e4, 1e8), matched
+    /// \tparam kAccuracyMultiplier the rung to make resident, one of
+    ///   kDeviceRungs: the option space's rungs (1, 64, 256, 1024, 4096, 16384,
+    ///   65536) beside this lane's own (1, 2, 10, 100, 1e4, 1e8), matched
     ///   against the entries' own multiplier argument exactly.
     /// \param out the handle to fill; untouched when the call fails
     ///
