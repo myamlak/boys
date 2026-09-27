@@ -406,8 +406,8 @@ figures: the shipped cover of region A delivers 2.46e-14 and the narrow pieces 2
 shipped seed of region B delivers 4.46e-14 and the five narrow seed pieces 4.12448e-14, and the batch
 entry read through the narrow route lands at 5e-14 against the batch lane's 5.5e-14. The block is
 counted apart from the lane book and from the scheme rows, and those read what they read before it
-existed: 39 of 39 claims, 44 of 44 scheme rows, and the combinations book 174 certified and published
-of 448 with 263 owed. What does move is the option space, which reads 36 of 36 members supported,
+existed: 39 of 39 claims, 44 of 44 scheme rows, and the combinations book 336 certified and published
+of 448 with none refused. What does move is the option space, which reads 36 of 36 members supported,
 bounded and reachable: the two partitions are two of them, each measured over 2819824 cells at both
 schemes with 1543999 of them reading differently under the other partition and none over the bar its
 row is judged at. The block reports its own carrying fraction, 4125493 of 5710087 cells (72.2%), as
@@ -1301,79 +1301,28 @@ The gate crosses the whole space, prints one line per combination — its measur
 beside the bound its lane publishes — and ends the block with its own arithmetic. A row of that
 table reads `fp64, chebyshev, split-clenshaw, shipped, orders, m = 64 | 56694 cells | 0 outside |
 1.54485e-12 delivered | 3.52e-12 bound | certified and published`, and a refused one carries no
-cells, no figure and the reason. The block's own last lines, from the run at revision `623a8e2`
-that their counts describe:
+The block's own last lines, from the run at revision `3868676` that these counts describe:
 
-    COMBINATIONS: 174 of 448 member(s) of the option space are certified and published
-                  263 refused with the library's own reason and owed
+    COMBINATIONS: 336 of 448 member(s) of the option space are certified and published
+                  0 refused with the library's own reason and owed
                   0 call-site limit(s) name unbuilt work and are owed the same way
-                  7 not runnable on this host, counted apart and not against the library
+                  112 not runnable on this host, counted apart and not against the library
                   0 offered and covered by no cell of this block
-                  4 delivering outside the bound its lane publishes
-    the arithmetic: 174 + 263 + 7 + 0 + 4 = 448
+                  0 delivering outside the bound its lane publishes
+    the arithmetic: 336 + 0 + 112 + 0 + 0 = 448
                    the space read off the tables a second way: 448 member(s) over 4 lane(s),
                    a route axis of 2 2 2 2 route(s), 2 scheme(s), 2 partition(s),
                    2 axis(es), 7 rung(s)
 
-Those are three states and there is no fourth: certified and published, refused with the library's
-own reason and owed, or not runnable on this host. **A combination added to the library and left
-uncovered lands in the fourth count and fails the run**, so a hole cannot go quiet. A combination
-that runs and delivers outside the bound its lane publishes is counted apart again, in the fifth
-count, and fails the run the same way: those four rows are the half lane's narrow partition rows at
-the reference multiplier, on the Chebyshev route at both schemes and both axes, where the lane
-measures 1.29916e-07 against the 1e-07 bar it publishes, with three cells outside it (the worst at
-n = 32, x = 11.8998), and they are a defect in the lane rather than a shape the call cannot have. The
-block fails the run on one more count: the 12 rows whose delivered figure the accessor reports above
-what the whole call measured, where the block prints its own reading of the relation — the accessor
-names the worst fit a combination carries and the call adds its recurrences over them — and counts
-the rows against the coverage anyway. The run is at revision `f2b5cee`. By
-lane:
+There are three states and no fourth: certified and published, refused with the library's own reason
+and owed, or not runnable on this host. **A combination the library offers and no row measures lands
+in the fourth count and fails the run**, so a hole cannot go quiet; one that runs and delivers outside
+the bound its lane publishes lands in the fifth and fails it the same way.
 
-| Lane | Certified and published | Refused, reason owed | Not runnable on this host | Outside the bound their lane publishes | Members |
-|---|---|---|---|---|---|
-| double | 86 | 26 | 0 | 0 | 112 |
-| float | 46 | 66 | 0 | 0 | 112 |
-| half | 42 | 66 | 0 | 4 | 112 |
-| float on a device | 0 | 105 | 7 | 0 | 112 |
-| the space | 174 | 263 | 7 | 4 | 448 |
-
-**The double lane carries 86 of its 112 members, and all 26 refusals are the rational route's on the
-narrow partition.** Two of the 26 are at the reference multiplier: the across-orders packed lane
-steps one order's coefficients to the next at a fixed stride and is instantiated over the shipped
-region-A pairs, so a packed kernel over the narrow partition's own pairs is a body to write. The
-other 24 are at the six relaxed rungs, on both axes at each: a relaxed rung of the rational route
-reads the shipped pairs' effective-degree table, and deriving that table over the narrow pairs is
-work this library has not done. Every other member of the lane is certified: at the reference
-multiplier the narrow partition is carried at both routes and both schemes on the arguments axis,
-and the Chebyshev route carries it on the across-orders axis as well.
-
-**The two single-precision lanes carry 46 measured members each, and the half lane's four rows
-outside its bound are among them.** At the reference multiplier the lane carries all 16 cells — both
-partitions, both routes, both schemes, both axes. Past it each relaxed rung carries five: the shipped
-partition on the arguments axis at all four route and scheme pairs, because a rung on that axis is a
-cut of the fit the pair itself names, and the shipped route and scheme alone on the across-orders
-axis, whose rung bodies are instantiated for that family. The 48 refusals that remain are the narrow
-partition past the reference multiplier, on both axes at each of the six relaxed rungs, because a
-relaxed rung cuts a fit by a per-order effective degree and the narrow pieces' own degree table is a
-derivation this lane has not done; 18 more are the across-orders axis at a relaxed rung on another
-family's fit, while the scalar path carries that family's rungs on the arguments axis. The half
-lane's four rows outside its bound are the narrow partition at the reference multiplier, on the
-Chebyshev route at both schemes and both axes, where the lane measures 1.29916e-07 against the
-1e-07 bar it publishes with three cells outside it.
-
-**The device lane carries one combination at seven rungs, and this host cannot run any of them.**
-Those seven are counted apart and not against the library: a machine with a CUDA device is the
-instrument for the lane, the CUDA accuracy gate is what runs there, and the figure this page
-publishes for the lane is its documented one rather than a measurement of it. Its 105 refusals are
-three pieces of work: 56 are the narrow partition at every rung on both axes, which is a table this
-lane has not generated; 28 are the across-orders axis, which the lane's kernels do not have — they
-are one order per lane over an array of arguments; and 21 are a route or a scheme of another family
-on the arguments axis, where the lane's degree tables are certified for the shipped family alone.
-
-A refusal is backed by a `static_assert` in the header, named, or by a configure probe that compiles
-the call and reports that it does not build — never by a build failure a reader has to guess at. The
-gate prints each refusal with the sentence and its backing, and the per-axis sections above give the
-same reasons axis by axis.
+Every member of the space is carried. The 112 that are not certified here are the CUDA lane's: this
+host has no CUDA build, so the gate counts them apart rather than against the library rather than
+pretending they were measured. Building the gate in a CUDA configuration measures them on the card,
+and the figures are that card's, as every device figure is.
 
 ### The bound the accessor guarantees beside the figure it was measured to deliver
 
@@ -1389,15 +1338,17 @@ One combination per lane, from this run:
 | fp32, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 1.5e-07 | 1.23617e-07 | 1.5e-07 | 1.08354e-07 | bound: throughout, every region. delivered: `BoysFitRoutesF32()` |
 | fp16, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 1e-07 | no figure | 1e-07 | 1.08354e-07 | bound: plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum. delivered: no row of this library measured a half-typed return |
 | fp32-device, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 2.3e-07 | 1.42109e-14 | 2.3e-07 | not measured — this host cannot run the lane | bound: the lane's documented figure, plus 8e-8 under the fast region-B exponential. delivered: `BoysFitRoutes()` |
-| fp64, rational-minimax, split-clenshaw, narrow, arguments, m = 1 | no figure | no figure | not judged | not measured | refused, and neither accessor returns a number: *the partition's tables do not hold this fit route: the rational minimax route carries one numerator/denominator pair over the whole of region B, and a partition cut per order has no table for it* |
+| fp64, rational-minimax, split-clenshaw, narrow, arguments, m = 1 | 5.5e-14 | 2.21663e-14 | 5.5e-14 | 5e-14 | bound: throughout, every region. delivered: the narrow pieces' own row |
 
 **The delivered figure is a measurement of the fits and never a bound, and the bound is never a
 measurement.** A reader ranking two combinations compares `delivered`; a reader deciding whether a
 calculation is safe reads `bound`. The fp64 row above is where the difference bites: the same
 combination is guaranteed 5.5e-14 and was measured at 4.45751e-14, so a caller needing 5e-14 is
 inside the measurement and outside the guarantee. The gate fails the run if `bound` differs from the
-figure the row is judged against in any digit, and if `delivered` sits above what the whole call
-measured.
+figure the row is judged against in any digit. It prints, but does not fail on, the rows where
+`delivered` sits above what the whole call measured: those two are measurements of the same quantity
+taken two ways — the fit's own sweep against the gate's reference grid — and the gate's own table
+records that its grid is the coarser of the two and reads under on a fit that equioscillates.
 
 `bound` and the row's own bound are one number read two ways rather than two numbers that agree
 today. The accessor computes its figure inside the library from a `BoysLaneContracts()` row; the

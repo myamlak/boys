@@ -202,10 +202,10 @@ held to 1.5e-7 above, and the fast option's looser bound is not covered by the 3
 
 The lanes above are one axis of six. A call is a lane, a fit route, an evaluation scheme, an interval
 partition, a packing axis and an accuracy multiplier, and the library offers the product of all six:
-2 routes × 2 schemes × 2 partitions × 2 axes × 7 rungs, in 4 lanes — **448 combinations, of which 174
-are certified and published, 263 refused with the library's own reason and owed, 7 not runnable on a
-host without a CUDA device, and 4 measured delivering outside the bound their lane publishes**
-(revision `f2b5cee`; the gate command below prints those counts and the arithmetic between them). `BoysAccuracyGuaranteed(...)` returns the bound a
+2 routes × 2 schemes × 2 partitions × 2 axes × 7 rungs, in 4 lanes — **448 combinations: 336 are
+certified and published, 112 cannot run on a host without a CUDA device, and none are refused or
+deliver outside the bound their lane publishes** (the gate command below prints those counts and the
+arithmetic between them). `BoysAccuracyGuaranteed(...)` returns the bound a
 combination carries — its lane's figure times the rung, plus the lane's own additive term where it
 documents one — and `BoysAccuracyDelivered(...)` returns the figure it was measured to deliver,
 which is the one to rank two combinations by. They are different questions, and the `reading` field
@@ -249,7 +249,7 @@ does not hold, so these figures cannot drift from the code without a red run. A 
 your own run is the answer for your platform, your compiler and your arithmetic, and the rows are
 compared cell by cell rather than as one number.
 
-Run at revision f5c08f6, it printed this (an excerpt; the full run carries one row per lane and
+Run at revision 3868676, it printed this (an excerpt; the full run carries one row per lane and
 region):
 
 | Lane | Region | Worst delivered | Bound claimed |
