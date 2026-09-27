@@ -5805,16 +5805,19 @@ int main(int argc, char** argv) {
             // reading order is what keeps a sweep and its row together: the
             // order the sweeps run in and the order the rows are published in
             // are two different orders, and only the table knows the second.
-            const auto claimSlot = [&](std::size_t entry, std::size_t region) {
+            const auto claimSlot = [&](std::size_t partIdx,
+                                       std::size_t schemeIdx,
+                                       std::size_t entry,
+                                       std::size_t region) {
                 const std::size_t at =
-                    openedSlot(kRung, kRouteIdx, kPartIdx, kSchemeIdx, entry, region);
+                    openedSlot(kRung, kRouteIdx, partIdx, schemeIdx, entry, region);
                 return static_cast<std::size_t>(openedSlots[at]);
             };
 
-            const std::size_t ordersRegionA = claimSlot(0, 0);
-            const std::size_t ordersGrid = claimSlot(0, 1);
-            const std::size_t planeRegionA = claimSlot(1, 0);
-            const std::size_t planeGrid = claimSlot(1, 1);
+            const std::size_t ordersRegionA = claimSlot(kPartIdx, kSchemeIdx, 0, 0);
+            const std::size_t ordersGrid = claimSlot(kPartIdx, kSchemeIdx, 0, 1);
+            const std::size_t planeRegionA = claimSlot(kPartIdx, kSchemeIdx, 1, 0);
+            const std::size_t planeGrid = claimSlot(kPartIdx, kSchemeIdx, 1, 1);
             std::vector<double> planes(count * (static_cast<std::size_t>(nmax) + 1));
 
             boys::BoysAllN<kMultiplier, Policy>(nmax, ref.x.data(), planes.data(), count);
@@ -10146,7 +10149,9 @@ int main(int argc, char** argv) {
 
             for (std::size_t i = 0; i < count; ++i)
             {
-                boys::BoysAllOrdersF32<1.0, Policy>(nmax, ref.xf[i], out.data());
+                const float xf = static_cast<float>(ref.xf[i]);
+
+                boys::BoysAllOrdersF32<1.0, Policy>(nmax, xf, out.data());
 
                 for (int n = 0; n <= nmax; ++n)
                 {
@@ -10154,7 +10159,7 @@ int main(int argc, char** argv) {
                     const double ulp = a.ceiling > 0.0 ? halfUlp(got) : 0.0;
 
                     a.add(n,
-                          static_cast<double>(ref.xf[i]),
+                          static_cast<double>(xf),
                           got,
                           ref.vf[ref.Index(n, i)],
                           ulp);
@@ -10198,7 +10203,9 @@ int main(int argc, char** argv) {
 
                     for (std::size_t i = 0; i < count; ++i)
                     {
-                        boys::BoysAllOrdersF32<kM, Policy>(nmax, ref.xf[i], out.data());
+                        const float xf = static_cast<float>(ref.xf[i]);
+
+                        boys::BoysAllOrdersF32<kM, Policy>(nmax, xf, out.data());
 
                         for (int n = 0; n <= nmax; ++n)
                         {
@@ -10207,7 +10214,7 @@ int main(int argc, char** argv) {
                             const double ulp = a.ceiling > 0.0 ? halfUlp(got) : 0.0;
 
                             a.add(n,
-                                  static_cast<double>(ref.xf[i]),
+                                  static_cast<double>(xf),
                                   got,
                                   ref.vf[ref.Index(n, i)],
                                   ulp);
