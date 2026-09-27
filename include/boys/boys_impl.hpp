@@ -2001,6 +2001,7 @@ double SingleOrder(int n, double x) noexcept {
     static_assert(FitPolicy<Fit>,
                   "the fit a policy names must satisfy the contract the bodies are written "
                   "against (backend.hpp, FitPolicy)");
+    assert(n >= 0 && n <= kMaxBoysOrder);
 
     if (x == 0.0)
     {
@@ -2014,7 +2015,12 @@ double SingleOrder(int n, double x) noexcept {
             typename Fit::BandSource source(x);
             double f = 0.0;
 
-            for (int l = 0; l <= n; ++l)
+            // The order is at most kMaxBoysOrder, and bounding the walk by it
+            // as well as by n is what lets a compiler see the induction
+            // terminate: on an order outside the contract the walk is defined
+            // rather than an overflow waiting to happen, and for every order
+            // inside it the two bounds agree.
+            for (int l = 0; l <= n && l <= kMaxBoysOrder; ++l)
             {
                 f = source.Next(l, x);
             }
