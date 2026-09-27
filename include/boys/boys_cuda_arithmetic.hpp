@@ -16,15 +16,24 @@
 ///   T            B(int order, int piece)           piece upper edge
 ///   const T*     Coeffs(int order, int piece)      the piece's coefficients
 ///   int          Deg(int order, int piece)         the piece's degree
-///   const T*     BSeedCoeffs()                     region-B seed coefficients
-///   int          BSeedDeg(int order)               region-B seed degree
+///   T            BSeed(T x, int order)             region-B seed at an argument
+///
+/// A lane that stores the monomial form of its fits carries a `kMonomial`
+/// member as well, and the piece summation reads it: the same pieces at the
+/// same degrees, summed by Horner in the monomial basis rather than by the
+/// split Clenshaw in the Chebyshev one. It is optional because a lane's stored
+/// form is a property of the tables it was handed and not of the body reading
+/// them, and a lane without the member reads the Chebyshev pool.
 ///
 /// T is double for the double lane's seeds and float for the float lane's.
-/// BSeedDeg takes the order because the relaxed batches read their region-B
-/// degree from the order-0 entry — the F_0 seed's error reaches every output
-/// with gain at most 1 + 1.846e-17 — while the single lanes read it per order;
-/// a lane object is what decides which, and the arithmetic below is the same
-/// either way.
+/// BSeed is the whole of region B's seed, taken at the argument rather than as
+/// one polynomial over the region: the shipped partition's seed is one fit
+/// over [kX0, kX1] and a second partition's is a piecewise one, so a lane
+/// supplies the seed and not the coefficients of a fixed shape. It takes the
+/// order because the relaxed batches read their region-B degree from the
+/// order-0 entry — the F_0 seed's error reaches every output with gain at most
+/// 1 + 1.846e-17 — while the single lanes read it per order; a lane object is
+/// what decides which, and the arithmetic below is the same either way.
 ///
 /// The region structure is the library's: region A (x below kX0) is the
 /// piecewise Chebyshev fit of F_n itself, region B (up to kX1) is the upward
@@ -38,6 +47,7 @@
 #include <cuda_runtime.h>
 
 #include <cstddef>
+#include <type_traits>
 
 namespace boys::detail {
 
@@ -150,6 +160,47 @@ __device__ __forceinline__ float DeviceClenshawSplit32(const float* c, int deg, 
     return __fmaf_rn(t, odd, even);
 }
 
+// The monomial scheme's summation: the same fit in the other basis, stored at
+// the same offsets and degrees as the Chebyshev one and summed by Horner in
+// ascending order. One multiply-add per coefficient, against the split
+// Clenshaw's two, so the scheme is a cost choice at equal degree — the two
+// tables carry the same fit and the delivered accuracy of each is its own
+// certified row.
+__device__ __forceinline__ double DeviceHornerMono(const double* c, int deg, double t) {
+    double acc = c[deg];
+
+    for (int j = deg - 1; j >= 0; --j)
+    {
+        acc = __fma_rn(acc, t, c[j]);
+    }
+
+    return acc;
+}
+
+// Which basis a lane's coefficients are stored in. A lane that reads the
+// monomial pool carries a kMonomial member and one that reads the Chebyshev
+// pool does not, so the scheme axis is this trait and the summation below it,
+// and every body above stays one body per (precision, shape).
+template <typename Lane, typename = void>
+struct LaneMonomial : std::false_type {};
+
+template <typename Lane>
+struct LaneMonomial<Lane, std::void_t<decltype(Lane::kMonomial)>> : std::true_type {};
+
+template <typename Lane>
+__device__ __forceinline__ double DevicePieceSum(const Lane& lane,
+                                                 const double* c,
+                                                 int deg,
+                                                 double t) {
+    if constexpr (LaneMonomial<Lane>::value)
+    {
+        return DeviceHornerMono(c, deg, t);
+    } else
+    {
+        return DeviceClenshawSplit(c, deg, t);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // seeds
 // ---------------------------------------------------------------------------
@@ -175,7 +226,7 @@ __device__ __forceinline__ double DeviceSeed(const Lane& lane, int order, double
 
     const double* c = lane.Coeffs(order, p);
     const double t = 2.0 * (x - lane.A(order, p)) / (lane.B(order, p) - lane.A(order, p)) - 1.0;
-    return DeviceClenshawSplit(c, lane.Deg(order, p), t);
+    return DevicePieceSum(lane, c, lane.Deg(order, p), t);
 }
 
 template <typename Lane>
@@ -196,20 +247,6 @@ __device__ __forceinline__ float DeviceSeed32(const Lane& lane, int order, float
     const float t =
         2.0f * (x - lane.A(order, p)) / (lane.B(order, p) - lane.A(order, p)) - 1.0f;
     return DeviceClenshawSplit32(c, lane.Deg(order, p), t);
-}
-
-// The region-B seed: one fit of F_0 over the whole of region B, with the
-// degree the caller's lane names for this order.
-template <typename Lane>
-__device__ __forceinline__ double DeviceSeedB(const Lane& lane, double x, int order) {
-    const double t = 2.0 * (x - kX0) / (kX1 - kX0) - 1.0;
-    return DeviceClenshawSplit(lane.BSeedCoeffs(), lane.BSeedDeg(order), t);
-}
-
-template <typename Lane>
-__device__ __forceinline__ float DeviceSeedB32(const Lane& lane, float x, int order) {
-    const float t = 2.0f * (x - static_cast<float>(kX0)) / static_cast<float>(kX1 - kX0) - 1.0f;
-    return DeviceClenshawSplit32(lane.BSeedCoeffs(), lane.BSeedDeg(order), t);
 }
 
 // ---------------------------------------------------------------------------
@@ -264,7 +301,7 @@ __device__ __forceinline__ double DeviceSingleF64(const Lane& lane, int order, d
         return DeviceSeed(lane, order, xx);
     }
 
-    double f = DeviceSeedB(lane, xx, order);
+    double f = lane.BSeed(xx, order);
 
     if (xx < kX1)
     {
@@ -300,7 +337,7 @@ __device__ __forceinline__ float DeviceSingleF32(const Lane& lane, int order, fl
 
     if (xx < static_cast<float>(kX1))
     {
-        float f = DeviceSeedB32(lane, xx, order);
+        float f = lane.BSeed(xx, order);
         const float expx = DeviceRegionBExp<kFastExp>(xx);
 
         for (int l = 0; l < order; ++l)
@@ -348,7 +385,7 @@ __device__ __forceinline__ void DeviceAllOrdersF64(
         return;
     }
 
-    double f = DeviceSeedB(lane, xx, order);
+    double f = lane.BSeed(xx, order);
     store(0, f);
 
     if (xx < kX1)
@@ -399,7 +436,7 @@ __device__ __forceinline__ void DeviceAllOrdersF32(
         return;
     }
 
-    float f = DeviceSeedB32(lane, xx, order);
+    float f = lane.BSeed(xx, order);
     store(0, f);
 
     if (xx < static_cast<float>(kX1))
@@ -424,6 +461,54 @@ __device__ __forceinline__ void DeviceAllOrdersF32(
         f = (l - 0.5f) * f / xx;
         store(l, f);
     }
+}
+
+// ---------------------------------------------------------------------------
+// every order at one argument, each from its own fit
+// ---------------------------------------------------------------------------
+
+// The same ladder as the body above with region A read the other way: every
+// order's own piece is located and its own fit summed, so no value here came
+// down a recurrence from a higher order's fit. The two agree to the fit's own
+// accuracy and differ in where the rounding happens, which is the whole of
+// what the choice between them buys.
+//
+// The axis covers region A and nothing else — past kX0 the body is the
+// certified one above, which is also where the region-A fit it replaces ends.
+// Outside region A the two bodies are one body, so a row that carries this
+// axis names its interval as region A rather than claiming the rest.
+template <typename Lane, typename Store>
+__device__ __forceinline__ void DeviceOrdersF64(
+    const Lane& lane, int order, double xx, Store store) {
+    if (xx < kX0)
+    {
+        for (int l = 0; l <= order; ++l)
+        {
+            store(l, DeviceSeed(lane, l, xx));
+        }
+
+        return;
+    }
+
+    DeviceAllOrdersF64(lane, order, xx, store);
+}
+
+// The float lane's and the fp16 lane's, over the double region-A seed lane the
+// body above takes for the same reason.
+template <typename SeedLane, typename Lane, typename Store>
+__device__ __forceinline__ void DeviceOrdersF32(
+    const SeedLane& seedLane, const Lane& lane, int order, float xx, Store store) {
+    if (xx < static_cast<float>(kX0))
+    {
+        for (int l = 0; l <= order; ++l)
+        {
+            store(l, static_cast<float>(DeviceSeed(seedLane, l, static_cast<double>(xx))));
+        }
+
+        return;
+    }
+
+    DeviceAllOrdersF32(seedLane, lane, order, xx, store);
 }
 
 } // namespace boys::detail

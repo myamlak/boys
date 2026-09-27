@@ -729,6 +729,299 @@ void SweepDouble(const Reference& ref,
     }
 }
 
+// ---------------------------------------------------------------------------
+// The rows the lane gained when its narrow partition and its orders axis
+// stopped being refusals.
+// ---------------------------------------------------------------------------
+
+// One of those rows, launched once over the whole grid, measured against the
+// independent reference as every other row of this gate is. The returns are
+// handed back so the same launch can be measured against the host lane as
+// well, which is one launch and not three.
+template <double kMultiplier>
+std::vector<double> LaunchDeviceChoice(const Reference& ref,
+                                       const Grid& grid,
+                                       const char* what,
+                                       boys::BoysStatus (*launch)(const int*,
+                                                                  const double*,
+                                                                  double*,
+                                                                  std::size_t,
+                                                                  void*),
+                                       int slotReference) {
+    const std::size_t count = ref.count;
+    const std::size_t cells = grid.cells;
+    const double bound = kMultiplier * kBoundDoubleBatch;
+
+    DevBuf<int> dN(count);
+    DevBuf<double> dX(count);
+    DevBuf<double> dOut(cells);
+    const std::vector<int> tops(count, boys::kMaxBoysOrder);
+    dN.Upload(tops);
+    dX.Upload(grid.x);
+    CheckLaunch(launch(dN.get(), dX.get(), dOut.get(), count, nullptr), what);
+    std::vector<double> out(cells);
+    dOut.Download(out);
+    Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+
+    for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+    {
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const std::size_t e = ref.Index(n, i);
+            Measure(slotReference,
+                    n,
+                    ref.x[i],
+                    out[e],
+                    ref.v[e],
+                    ref.decade[e],
+                    bound,
+                    Unrepresentable(out[e], -1022));
+        }
+    }
+
+    return out;
+}
+
+// The other half of the claim: the two lanes are one question answered twice
+// rather than two rows that agree with a third party. The host lane is handed
+// the same arguments at the same multiplier and its returns are the reference
+// the device row's are read against, so what is measured is the distance
+// between the two lanes. The host entry is the CPU spelling of this lane's
+// batch (boys.hpp says so), so the two calls are one question with two answers.
+//
+// The distance is held to the sum of the two rows' bounds and not to one of
+// them. A row's bound says it is that far from the true value; two rows each
+// that far from the true value can be twice that far from each other, so the
+// sum is what a comparison between two bounded rows can assert, and one row's
+// bound is not. The sum is a statement about the pair, and it neither loosens
+// nor tightens either row's own figure: those stay at the single bound, and are
+// measured against the 45-digit reference above.
+template <double kMultiplier, typename HostPolicy>
+void CompareDeviceWithHost(const Reference& ref,
+                           const Grid& grid,
+                           const std::vector<double>& out,
+                           int slotHost) {
+    const std::size_t count = ref.count;
+    const std::size_t cells = grid.cells;
+    const double bound = 2.0 * kMultiplier * kBoundDoubleBatch;
+    const std::vector<int> tops(count, boys::kMaxBoysOrder);
+
+    std::vector<double> host(cells, 0.0);
+    boys::BoysAllNAtOrders<kMultiplier, HostPolicy>(
+        tops.data(), grid.x.data(), host.data(), count);
+
+    for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
+    {
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const std::size_t e = ref.Index(n, i);
+            Measure(slotHost, n, ref.x[i], out[e], host[e], ref.decade[e], bound, false);
+        }
+    }
+}
+
+// The seven rows, each measured against the reference and against the host lane
+// at the rung the call is made at.
+//
+// Two host comparisons and not one. The lane's shipped batch entry is the one
+// host entry every rung carries, so it is what a relaxed device row is read
+// against: the device lane takes the multiplier as a template argument at the
+// call site and instantiates its own rungs, and the host lane's fits are
+// instantiated at the accuracy tiers, so the two lists meet at m = 1 alone.
+// There, and only there, the row is additionally shown against the host's
+// combination of the same name - the same route, scheme, partition and packing
+// axis - which is the counterpart that says the two lanes agree about the
+// option and not merely about the function.
+//
+// The cross-lane claims carry their rung in every book, the first included,
+// because the device-option coverage below reads a claim as belonging to an
+// option when it is that option's name or that name followed by a rung, and a
+// cross-lane claim is not the row itself.
+//
+// The entry and the launcher are named together and once, in MeasureDeviceRow:
+// the row's claim takes its name from the report's own row for that entry, and
+// the launcher is that entry's kernel at this rung, so a claim cannot name a
+// row the library does not report or an entry no kernel serves.
+template <double kMultiplier>
+std::vector<double> MeasureDeviceRow(const Reference& ref,
+                                     const Grid& grid,
+                                     boys::DeviceEntry entry,
+                                     const char* rung,
+                                     const std::string& rungWord,
+                                     boys::BoysStatus (*launch)(const int*,
+                                                                const double*,
+                                                                double*,
+                                                                std::size_t,
+                                                                void*)) {
+    const std::string name = Label(DeviceRow(entry).name, rung);
+    const double bound = kMultiplier * kBoundDoubleBatch;
+    const int row = AddClaim(name.c_str(), "A..C", bound);
+    const int shipped = AddClaim(
+        (std::string(DeviceRow(entry).name) + rungWord + " vs fp64 host").c_str(),
+        "A..C",
+        2.0 * bound);
+
+    const std::vector<double> out =
+        LaunchDeviceChoice<kMultiplier>(ref, grid, name.c_str(), launch, row);
+
+    CompareDeviceWithHost<kMultiplier, boys::DefaultPolicyFp64>(ref, grid, out, shipped);
+
+    return out;
+}
+
+template <double kMultiplier>
+void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung) {
+    const std::string rungWord = std::string(" m=") + (rung == nullptr ? "1" : rung);
+    const double pairBound = 2.0 * kMultiplier * kBoundDoubleBatch;
+
+    using NarrowPolicy = boys::EvalPolicy<boys::kDefaultFitRoute,
+                                          boys::kDefaultEvalScheme,
+                                          boys::BoysBudget::kFloat,
+                                          boys::PackAxis::kArguments,
+                                          boys::FitGranularity::kNarrow>;
+    using OrdersPolicy = boys::EvalPolicy<boys::kDefaultFitRoute,
+                                          boys::kDefaultEvalScheme,
+                                          boys::BoysBudget::kFloat,
+                                          boys::PackAxis::kOrders,
+                                          boys::FitGranularity::kShipped>;
+    using NarrowOrdersPolicy = boys::EvalPolicy<boys::kDefaultFitRoute,
+                                                boys::kDefaultEvalScheme,
+                                                boys::BoysBudget::kFloat,
+                                                boys::PackAxis::kOrders,
+                                                boys::FitGranularity::kNarrow>;
+
+    // The same partition and packing axes over the monomial basis: the scheme
+    // axis names which of the lane's two stored forms a body sums, so a row of
+    // it is read against the host entry that sums the other one.
+    using MonoPolicy = boys::EvalPolicy<boys::kDefaultFitRoute,
+                                        boys::EvalScheme::kHorner,
+                                        boys::BoysBudget::kFloat,
+                                        boys::PackAxis::kArguments,
+                                        boys::FitGranularity::kShipped>;
+    using OrdersMonoPolicy = boys::EvalPolicy<boys::kDefaultFitRoute,
+                                              boys::EvalScheme::kHorner,
+                                              boys::BoysBudget::kFloat,
+                                              boys::PackAxis::kOrders,
+                                              boys::FitGranularity::kShipped>;
+    using NarrowMonoPolicy = boys::EvalPolicy<boys::kDefaultFitRoute,
+                                              boys::EvalScheme::kHorner,
+                                              boys::BoysBudget::kFloat,
+                                              boys::PackAxis::kArguments,
+                                              boys::FitGranularity::kNarrow>;
+    using NarrowOrdersMonoPolicy = boys::EvalPolicy<boys::kDefaultFitRoute,
+                                                    boys::EvalScheme::kHorner,
+                                                    boys::BoysBudget::kFloat,
+                                                    boys::PackAxis::kOrders,
+                                                    boys::FitGranularity::kNarrow>;
+
+    const std::vector<double> narrowOut = MeasureDeviceRow<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF64Narrow,
+        rung,
+        rungWord,
+        &boys::BoysCuda::AllOrdersF64Narrow<kMultiplier>);
+    const std::vector<double> ordersOut = MeasureDeviceRow<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF64Orders,
+        rung,
+        rungWord,
+        &boys::BoysCuda::AllOrdersF64Orders<kMultiplier>);
+    const std::vector<double> bothOut = MeasureDeviceRow<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF64NarrowOrders,
+        rung,
+        rungWord,
+        &boys::BoysCuda::AllOrdersF64NarrowOrders<kMultiplier>);
+    const std::vector<double> monoOut = MeasureDeviceRow<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF64Mono,
+        rung,
+        rungWord,
+        &boys::BoysCuda::AllOrdersF64Mono<kMultiplier>);
+    const std::vector<double> ordersMonoOut = MeasureDeviceRow<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF64OrdersMono,
+        rung,
+        rungWord,
+        &boys::BoysCuda::AllOrdersF64OrdersMono<kMultiplier>);
+    const std::vector<double> narrowMonoOut = MeasureDeviceRow<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF64NarrowMono,
+        rung,
+        rungWord,
+        &boys::BoysCuda::AllOrdersF64NarrowMono<kMultiplier>);
+    const std::vector<double> bothMonoOut = MeasureDeviceRow<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF64NarrowOrdersMono,
+        rung,
+        rungWord,
+        &boys::BoysCuda::AllOrdersF64NarrowOrdersMono<kMultiplier>);
+
+    if constexpr (kMultiplier == boys::kBoysFullAccuracyMultiplier)
+    {
+        const int narrowHost = AddClaim(
+            (std::string(DeviceRow(boys::DeviceEntry::kAllOrdersF64Narrow).name) + rungWord
+             + " vs fp64 host narrow")
+                .c_str(),
+            "A..C",
+            pairBound);
+        const int ordersHost = AddClaim(
+            (std::string(DeviceRow(boys::DeviceEntry::kAllOrdersF64Orders).name) + rungWord
+             + " vs fp64 host orders")
+                .c_str(),
+            "A..C",
+            pairBound);
+        const int bothHost = AddClaim(
+            (std::string(DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowOrders).name) + rungWord
+             + " vs fp64 host narrow orders")
+                .c_str(),
+            "A..C",
+            pairBound);
+        const int monoHost = AddClaim(
+            (std::string(DeviceRow(boys::DeviceEntry::kAllOrdersF64Mono).name) + rungWord
+             + " vs fp64 host mono")
+                .c_str(),
+            "A..C",
+            pairBound);
+        const int ordersMonoHost = AddClaim(
+            (std::string(DeviceRow(boys::DeviceEntry::kAllOrdersF64OrdersMono).name) + rungWord
+             + " vs fp64 host orders mono")
+                .c_str(),
+            "A..C",
+            pairBound);
+        const int narrowMonoHost = AddClaim(
+            (std::string(DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowMono).name) + rungWord
+             + " vs fp64 host narrow mono")
+                .c_str(),
+            "A..C",
+            pairBound);
+        const int bothMonoHost = AddClaim(
+            (std::string(DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowOrdersMono).name)
+             + rungWord + " vs fp64 host narrow orders mono")
+                .c_str(),
+            "A..C",
+            pairBound);
+
+        CompareDeviceWithHost<kMultiplier, NarrowPolicy>(ref, grid, narrowOut, narrowHost);
+        CompareDeviceWithHost<kMultiplier, OrdersPolicy>(ref, grid, ordersOut, ordersHost);
+        CompareDeviceWithHost<kMultiplier, NarrowOrdersPolicy>(ref, grid, bothOut, bothHost);
+        CompareDeviceWithHost<kMultiplier, MonoPolicy>(ref, grid, monoOut, monoHost);
+        CompareDeviceWithHost<kMultiplier, OrdersMonoPolicy>(
+            ref, grid, ordersMonoOut, ordersMonoHost);
+        CompareDeviceWithHost<kMultiplier, NarrowMonoPolicy>(
+            ref, grid, narrowMonoOut, narrowMonoHost);
+        CompareDeviceWithHost<kMultiplier, NarrowOrdersMonoPolicy>(
+            ref, grid, bothMonoOut, bothMonoHost);
+    }
+}
+
 template <double kMultiplier>
 void SweepFloat(const Reference& ref,
                 const Grid& grid,
@@ -1101,6 +1394,7 @@ void SweepRelaxed(const Reference& ref,
                             floatAllNSlot,
                             floatSingleFast);
     SweepHalf<kMultiplier>(ref, grid, sorted, halfSingleSlot, halfOrderSlot, halfAllNSlot);
+    SweepDeviceChoices<kMultiplier>(ref, grid, rung);
 }
 
 // ---------------------------------------------------------------------------
@@ -3519,6 +3813,7 @@ int main(int argc, char** argv) {
                     slotFloatAllN,
                     DeviceRow(boys::DeviceEntry::kSingleF32Fast, boys::RegionBExp::kFast).name);
     SweepHalf<1.0>(ref, grid, sorted, slotHalfSingle, slotHalfOrders, slotHalfAllN);
+    SweepDeviceChoices<1.0>(ref, grid, kRungs[0].name);
 
     SweepRelaxed<2.0>(ref, grid, sorted, kRungs[1].name);
     SweepRelaxed<10.0>(ref, grid, sorted, kRungs[2].name);

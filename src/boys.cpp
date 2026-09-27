@@ -828,38 +828,30 @@ Carriage CarriesSingle(FitRoute route,
     return {true, ""};
 }
 
-// The device lane's rule, which is its own and not the host lane's: its entries
-// are the shipped single-precision fits, one coefficient set per region and one
-// packing axis, and its accuracy multiplier is a template argument at the call
-// site against a degree table the lane holds per rung - so every rung is served
-// where the host lane serves the shipped pair alone. What it does not take is a
-// partition, a packing axis or another fit family, and none of the three is the
-// host lane's answer to give.
-Carriage CarriesDevice(FitRoute route,
-                       EvalScheme scheme,
-                       PackAxis axis,
-                       FitGranularity granularity) noexcept {
-    if (granularity != kDefaultFitGranularity)
-    {
-        return {false,
-                "the device lane's tables are one partition of region A and one region-B seed "
-                "per entry: a partition is a host lane's choice and has no table or body on this "
-                "lane's kernels"};
-    }
+// The device lane's rule. Its accuracy multiplier is a template argument at the
+// call site against a certified degree table the lane holds per rung, so every
+// rung is served. Both of the lane's partitions are served: the shipped cut of
+// the double lane's fits (BoysCuda::AllOrdersF64 and its siblings) and the
+// narrow one, whose pieces, piecewise region-B seed and per-rung effective
+// degrees the lane holds in its own tables (BoysCuda::AllOrdersF64Narrow).
+// Both of its packing axes are served too: one ladder per argument from the top
+// order's fit, and one fit per order inside region A
+// (BoysCuda::AllOrdersF64Orders, and the two together in
+// BoysCuda::AllOrdersF64NarrowOrders). Both of its schemes are served as well:
+// the double lane stores the Chebyshev fits in their monomial form too, one
+// coefficient per Chebyshev coefficient at the same pieces and degrees, and the
+// lane uploads both pools (BoysCuda::AllOrdersF64Mono and its three siblings),
+// so the scheme axis names which table the same body reads.
+Carriage CarriesDevice(FitRoute route, EvalScheme scheme) noexcept {
+    (void)scheme;
 
-    if (axis != kDefaultPackAxis)
+    if (route != kDefaultFitRoute)
     {
         return {false,
-                "the device lane packs one axis: its kernels evaluate one argument's orders per "
-                "call, and the across-orders lane is the host's"};
-    }
-
-    if (route != kDefaultFitRoute || scheme != kDefaultEvalScheme)
-    {
-        return {false,
-                "the device lane's entries evaluate the shipped fit: its degree tables are "
-                "certified for that family at each rung, and a route or a scheme of another "
-                "family has no table on this lane"};
+                "the device lane's entries evaluate the shipped fit, in either of the two bases "
+                "it is stored in, and the rational route's piece pairs and region-B seed are a "
+                "coefficient table this lane has not uploaded: the route's own entries are a "
+                "table to build rather than a shape the call cannot have"};
     }
 
     return {true, ""};
@@ -893,7 +885,7 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
         switch (precision)
         {
         case Precision::kFp32Device:
-            return CarriesDevice(route, scheme, axis, granularity);
+            return CarriesDevice(route, scheme);
         case Precision::kFp32:
         case Precision::kFp16:
             return CarriesSingle(route, scheme, axis, granularity, tier);

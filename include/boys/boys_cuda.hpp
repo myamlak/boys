@@ -309,6 +309,101 @@ public:
     static BoysStatus AllOrdersF64(
         const int* n, const double* x, double* out, std::size_t count, void* stream);
 
+    /// F_0(x[i])..F_n(x[i]) as AllOrdersF64, with the library's second
+    /// partition of the double lane's fits: region A's pieces are cut per
+    /// order instead of two to an order, and region B's seed is 5 pieces at
+    /// degree 10 instead of one polynomial over the interval. Shape, layout,
+    /// arguments and the multiplier are AllOrdersF64's.
+    ///
+    /// The narrow partition is the double lane's (its effective degrees are
+    /// derived for the roles that evaluate those fits, see
+    /// boys_effective_degrees.hpp), so this is a double entry and there is no
+    /// float or fp16 twin of it.
+    ///
+    /// A call at the full-accuracy multiplier reads the degrees the partition
+    /// was stored at and uploads nothing, so it does not disturb a relaxed rung
+    /// another call made resident.
+    ///
+    /// \returns kDeviceError when the launch fails.
+    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+    static BoysStatus AllOrdersF64Narrow(
+        const int* n, const double* x, double* out, std::size_t count, void* stream);
+
+    /// F_0(x[i])..F_n(x[i]) as AllOrdersF64, with region A read as one fit per
+    /// order: every order's own piece is located and its own fit summed, where
+    /// the shipped entry seeds the top order's fit and brings the lower orders
+    /// back down a recurrence. Shape, layout, arguments and the multiplier are
+    /// AllOrdersF64's, and the values agree to the fit's own accuracy.
+    ///
+    /// The choice covers region A and nothing else: past kX0 this entry runs
+    /// the certified all-orders body, which is the interval its claim names.
+    /// The CPU lane's packing axis is the same choice (BoysPackAxes), and its
+    /// orders member's interval is region A for the same reason.
+    ///
+    /// \returns kDeviceError when the launch fails.
+    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+    static BoysStatus AllOrdersF64Orders(
+        const int* n, const double* x, double* out, std::size_t count, void* stream);
+
+    /// F_0(x[i])..F_n(x[i]) with both of the choices above in force: the
+    /// narrow partition's pieces, read one fit per order inside region A and
+    /// its piecewise region-B seed outside it, with the certified all-orders
+    /// body past kX0.
+    ///
+    /// \returns kDeviceError when the launch fails.
+    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+    static BoysStatus AllOrdersF64NarrowOrders(
+        const int* n, const double* x, double* out, std::size_t count, void* stream);
+
+    /// F_0(x[i])..F_n(x[i]) as AllOrdersF64 with the other evaluation scheme:
+    /// every piece is summed in the monomial basis by Horner in ascending
+    /// order, where the shipped entry sums the Chebyshev basis by a split
+    /// Clenshaw. Shape, layout, arguments and the multiplier are AllOrdersF64's.
+    ///
+    /// The scheme is a choice of basis and not of fit: the two tables carry the
+    /// same fit over the same pieces at the same degree, and each scheme's
+    /// delivered accuracy on it is its own certified row (kSchemeRows,
+    /// boys_coefficients.hpp). What the choice buys and costs is counted rather
+    /// than asserted: one multiply-add per coefficient against the split
+    /// Clenshaw's two, at the same stored table size and the same degree, so
+    /// this entry is the cheaper summation of the two on hardware where the two
+    /// issue alike, and the two are ranked by the option probe.
+    ///
+    /// \returns kDeviceError when the launch fails.
+    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+    static BoysStatus AllOrdersF64Mono(
+        const int* n, const double* x, double* out, std::size_t count, void* stream);
+
+    /// The monomial scheme's orders-axis member: F_0(x[i])..F_n(x[i]) with
+    /// region A read as one fit per order, each summed in the basis
+    /// AllOrdersF64Mono names. The two choices compose — the axis is a body
+    /// choice inside region A, and the scheme is the basis that body sums — so
+    /// this is the same relation to AllOrdersF64Mono that AllOrdersF64Orders
+    /// has to AllOrdersF64.
+    ///
+    /// \returns kDeviceError when the launch fails.
+    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+    static BoysStatus AllOrdersF64OrdersMono(
+        const int* n, const double* x, double* out, std::size_t count, void* stream);
+
+    /// The monomial scheme over the narrow partition: F_0(x[i])..F_n(x[i]) from
+    /// the narrow pieces, their piecewise region-B seed and their per-rung
+    /// effective degrees, summed in the basis AllOrdersF64Mono names.
+    ///
+    /// \returns kDeviceError when the launch fails.
+    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+    static BoysStatus AllOrdersF64NarrowMono(
+        const int* n, const double* x, double* out, std::size_t count, void* stream);
+
+    /// Both of the choices above in force at once: the narrow partition read
+    /// one fit per order inside region A, summed in the monomial basis, with
+    /// the certified all-orders body past kX0.
+    ///
+    /// \returns kDeviceError when the launch fails.
+    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+    static BoysStatus AllOrdersF64NarrowOrdersMono(
+        const int* n, const double* x, double* out, std::size_t count, void* stream);
+
     /// F_0(x[i])..F_nmax(x[i]) at one common nmax, double precision — the
     /// uniform-order batch: many arguments, all nmax + 1 orders each, the
     /// layout AllNF32 documents and the bound the CPU lane's BoysAllN

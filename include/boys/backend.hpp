@@ -63,6 +63,8 @@
 ///
 /// \ingroup boys
 
+#include "boys/accuracy.hpp"
+
 #include <cmath>
 #include <concepts>
 #include <cstddef>
@@ -72,83 +74,6 @@
 #include <type_traits>
 
 namespace boys {
-
-/// Which certified fit serves a region, where the library carries more than
-/// one for it.
-///
-/// Region A and region B each carry two tables of fitted coefficients, placed
-/// against the same bar over the same interval, and this names which one a call
-/// evaluates: region B's is one lowest-order seed per route that the higher
-/// orders are reached from, and region A's is a fit of every order over each of
-/// the region's two bands. They are alternatives rather than rungs of one
-/// design: the Chebyshev tables are the default and the route every lane has
-/// always been certified with, and naming the rational one changes the fits
-/// that serve the intervals it covers and nothing else.
-///
-/// What each route promises, over what interval, and from which argument naming
-/// it changes anything, is BoysFitRoutes' report rather than this enumeration's:
-/// those are properties of the fit and of the selector, and a route whose fit
-/// reaches further than its selector takes over says so there instead of being
-/// stretched to claim a domain it does not serve. Region A's rational route is
-/// the case that rule exists for.
-///
-/// A value outside the enumerators - cast in from outside the enum, or named by
-/// a newer header - is not a route, and every entry on this surface treats it
-/// as \c kChebyshev: the default is the route every build carries, so a caller
-/// is never handed a fit they did not ask for.
-///
-/// \ingroup boys
-enum class FitRoute : int {
-    /// The Chebyshev fits: the default, and the route the certified lanes are
-    /// defined by.
-    kChebyshev = 0,
-    /// The rational minimax fits of region A's pieces and of region B's seed.
-    kRationalMinimax,
-};
-
-/// The route the entries evaluate when the caller names none.
-inline constexpr FitRoute kDefaultFitRoute = FitRoute::kChebyshev;
-
-/// Which summation a stored fit is evaluated by.
-///
-/// A fit is a polynomial whatever scheme sums it: the Chebyshev coefficients
-/// and the monomial coefficients of one fit describe the same function, at the
-/// same degree, to within the rounding of the two tables. The schemes differ
-/// in the arithmetic they round in and in the work they do, not in what they
-/// approximate, so both are offered and neither replaces the other.
-///
-/// The scheme reaches the double scalar lane (per-order region-A fits, the
-/// extended-band seed and the region-B seed). Region C is evaluated by its
-/// asymptotic form and has no stored fit to sum, so it is the same arithmetic
-/// under either scheme; the half-precision lanes and the packed region-A lane
-/// are the split Clenshaw route's and are not offered under the other scheme.
-///
-/// The scheme is one axis of the evaluation and the fit route (FitRoute) is
-/// another, and the two are named together by an EvalPolicy. They select
-/// different things: the route names the fits that serve the regions, and the
-/// scheme names the summation a fit's coefficients are read in. A fit whose
-/// coefficients have two stored forms is summed by either scheme; a fit whose
-/// coefficients have one - the rational family's monomial numerator and
-/// denominator - is read in that form whichever scheme is named, and the scheme
-/// still reaches the parts of a call the named route's fits do not serve, which
-/// are the shipped family's.
-///
-/// \ingroup boys
-enum class EvalScheme : std::uint8_t {
-    /// The even/odd split Clenshaw recurrence on the Chebyshev form: the
-    /// certified route, and the default.
-    kSplitClenshaw = 0,
-
-    /// Horner's rule on the monomial form of the same fit.
-    kHorner = 1,
-};
-
-/// The scheme the entries evaluate in when the caller names none.
-///
-/// The certified route: naming the other one is how a caller asks for it, so a
-/// call site that names no scheme is compiled exactly as it was before one
-/// existed.
-inline constexpr EvalScheme kDefaultEvalScheme = EvalScheme::kSplitClenshaw;
 
 /// Which axis a packed lane vectorises over.
 ///
