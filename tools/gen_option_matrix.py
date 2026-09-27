@@ -48,6 +48,7 @@ import re
 import sys
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
+ACCURACY_HPP = REPO / "include" / "boys" / "accuracy.hpp"
 BACKEND_HPP = REPO / "include" / "boys" / "backend.hpp"
 BOYS_HPP = REPO / "include" / "boys" / "boys.hpp"
 SIMD_BACKEND_HPP = REPO / "src" / "boys_backend_simd.hpp"
@@ -116,9 +117,9 @@ AXES = (
     {"key": "precision", "kind": "carried",
      "source": "the arithmetic backends' names"},
     {"key": "family", "kind": "carried",
-     "source": "backend.hpp: FitRoute"},
+     "source": "accuracy.hpp: FitRoute"},
     {"key": "evaluation", "kind": "carried",
-     "source": "backend.hpp: EvalScheme"},
+     "source": "accuracy.hpp: EvalScheme"},
     {"key": "granularity", "kind": "carried",
      "source": "boys.hpp: EvalLane"},
 )
@@ -268,8 +269,8 @@ def axis_members():
         "device": host_members(),
         "route": [kebab(m) for m in enum_members(BACKEND_HPP, "MulAddRoute")],
         "precision": widths,
-        "family": [kebab(m) for m in enum_members(BACKEND_HPP, "FitRoute")],
-        "evaluation": [kebab(m) for m in enum_members(BACKEND_HPP, "EvalScheme")],
+        "family": [kebab(m) for m in enum_members(ACCURACY_HPP, "FitRoute")],
+        "evaluation": [kebab(m) for m in enum_members(ACCURACY_HPP, "EvalScheme")],
         "granularity": [kebab(m) for m in enum_members(BOYS_HPP, "EvalLane")],
         # The ISAs the backends name are the device's members on the library's
         # own terms; CI realises them as the host's runner, so they are carried

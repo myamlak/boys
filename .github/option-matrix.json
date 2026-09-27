@@ -32,7 +32,7 @@
     {
       "key": "family",
       "kind": "carried",
-      "source": "backend.hpp: FitRoute",
+      "source": "accuracy.hpp: FitRoute",
       "members": [
         "chebyshev",
         "rational-minimax"
@@ -41,7 +41,7 @@
     {
       "key": "evaluation",
       "kind": "carried",
-      "source": "backend.hpp: EvalScheme",
+      "source": "accuracy.hpp: EvalScheme",
       "members": [
         "split-clenshaw",
         "horner"
