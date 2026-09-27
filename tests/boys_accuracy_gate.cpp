@@ -10543,52 +10543,6 @@ int main(int argc, char** argv) {
         }(std::make_index_sequence<7>{});
     };
 
-    // The single and half lanes, the reference rung: the route, the scheme, the
-    // partition and the axis are all free here.
-    const auto combSingleReference =
-        [&]<boys::BoysBudget kBudget, boys::FitRoute kRoute, boys::EvalScheme kScheme,
-            boys::PackAxis kAxis, boys::FitGranularity kGran>(int lane) {
-            using Policy = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran>;
-            CombAccum a;
-            std::array<float, 33> out{};
-
-            a.bound = combLaneRows[static_cast<std::size_t>(lane)].bound;
-            a.ceiling = static_cast<double>(lane == combHalfLane) * a.bound;
-
-            for (std::size_t i = 0; i < count; ++i)
-            {
-                boys::BoysAllOrdersF32<1.0, Policy>(nmax,
-                                                    static_cast<float>(ref.xf[i]),
-                                                    out.data());
-
-                for (int n = 0; n <= nmax; ++n)
-                {
-                    const double got = static_cast<double>(out[static_cast<std::size_t>(n)]);
-                    const double ulp = a.ceiling > 0.0 ? halfUlp(got) : 0.0;
-
-                    a.add(n,
-                          static_cast<double>(ref.xf[i]),
-                          got,
-                          ref.vf[ref.Index(n, i)],
-                          ulp);
-                }
-            }
-
-            combMeasured.push_back({lane,
-                                    0,
-                                    static_cast<int>(kRoute),
-                                    static_cast<int>(kScheme),
-                                    static_cast<int>(kGran),
-                                    static_cast<int>(kAxis),
-                                    a.cells,
-                                    a.below,
-                                    a.over,
-                                    a.worst,
-                                    a.bound,
-                                    a.worstN,
-                                    a.worstX});
-        };
-
     // The single and half lanes, every rung of one (budget, route, scheme,
     // partition, axis): the reference rung against the lane's own figure, and
     // each rung past it against that rung's multiplier times it. The rung is the
@@ -10757,7 +10711,7 @@ int main(int argc, char** argv) {
     combSingleLane.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kChebyshev,
                                        boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
                                        boys::FitGranularity::kShipped>(kLaneSingle);
-    combSingleReference.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kChebyshev,
+    combSingleLane.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kChebyshev,
                                             boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
                                             boys::FitGranularity::kNarrow>(kLaneSingle);
     combSingleLane.template operator()<boys::BoysBudget::kFloat,
@@ -10765,7 +10719,7 @@ int main(int argc, char** argv) {
                                        boys::EvalScheme::kSplitClenshaw,
                                        boys::PackAxis::kOrders,
                                        boys::FitGranularity::kShipped>(kLaneSingle);
-    combSingleReference.template operator()<boys::BoysBudget::kFloat,
+    combSingleLane.template operator()<boys::BoysBudget::kFloat,
                                             boys::FitRoute::kRationalMinimax,
                                             boys::EvalScheme::kSplitClenshaw,
                                             boys::PackAxis::kOrders,
@@ -10774,7 +10728,7 @@ int main(int argc, char** argv) {
                                        boys::FitRoute::kRationalMinimax,
                                        boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
                                        boys::FitGranularity::kShipped>(kLaneSingle);
-    combSingleReference.template operator()<boys::BoysBudget::kFloat,
+    combSingleLane.template operator()<boys::BoysBudget::kFloat,
                                             boys::FitRoute::kRationalMinimax,
                                             boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
                                             boys::FitGranularity::kNarrow>(kLaneSingle);
@@ -10815,15 +10769,15 @@ int main(int argc, char** argv) {
     combSingleLane.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kChebyshev,
                                        boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
                                        boys::FitGranularity::kShipped>(combHalfLane);
-    combSingleReference.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kChebyshev,
-                                            boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
-                                            boys::FitGranularity::kNarrow>(combHalfLane);
+    combSingleLane.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kChebyshev,
+                                       boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
+                                       boys::FitGranularity::kNarrow>(combHalfLane);
     combSingleLane.template operator()<boys::BoysBudget::kFp16,
                                        boys::FitRoute::kRationalMinimax,
                                        boys::EvalScheme::kSplitClenshaw,
                                        boys::PackAxis::kOrders,
                                        boys::FitGranularity::kShipped>(combHalfLane);
-    combSingleReference.template operator()<boys::BoysBudget::kFp16,
+    combSingleLane.template operator()<boys::BoysBudget::kFp16,
                                             boys::FitRoute::kRationalMinimax,
                                             boys::EvalScheme::kSplitClenshaw,
                                             boys::PackAxis::kOrders,
@@ -10832,7 +10786,7 @@ int main(int argc, char** argv) {
                                        boys::FitRoute::kRationalMinimax,
                                        boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
                                        boys::FitGranularity::kShipped>(combHalfLane);
-    combSingleReference.template operator()<boys::BoysBudget::kFp16,
+    combSingleLane.template operator()<boys::BoysBudget::kFp16,
                                             boys::FitRoute::kRationalMinimax,
                                             boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
                                             boys::FitGranularity::kNarrow>(combHalfLane);
