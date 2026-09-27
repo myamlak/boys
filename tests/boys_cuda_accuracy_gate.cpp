@@ -846,6 +846,32 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
                                                     boys::PackAxis::kOrders,
                                                     boys::FitGranularity::kNarrow>;
 
+    // The fit route's rows, in the same four shapes. The route's two scheme
+    // names select one arithmetic, so the four policies below are the shapes'
+    // four and not eight: a row of the route is read against the host lane at
+    // the route, the shape's partition and the shape's packing axis, and its
+    // own scheme is named on the row.
+    using RatPolicy = boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+                                       boys::kDefaultEvalScheme,
+                                       boys::BoysBudget::kFloat,
+                                       boys::PackAxis::kArguments,
+                                       boys::FitGranularity::kShipped>;
+    using OrdersRatPolicy = boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+                                             boys::kDefaultEvalScheme,
+                                             boys::BoysBudget::kFloat,
+                                             boys::PackAxis::kOrders,
+                                             boys::FitGranularity::kShipped>;
+    using NarrowRatPolicy = boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+                                             boys::kDefaultEvalScheme,
+                                             boys::BoysBudget::kFloat,
+                                             boys::PackAxis::kArguments,
+                                             boys::FitGranularity::kNarrow>;
+    using NarrowOrdersRatPolicy = boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+                                                   boys::kDefaultEvalScheme,
+                                                   boys::BoysBudget::kFloat,
+                                                   boys::PackAxis::kOrders,
+                                                   boys::FitGranularity::kNarrow>;
+
     const std::vector<double> narrowOut = MeasureDeviceRow<kMultiplier>(
         ref,
         grid,
@@ -895,6 +921,66 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
         rung,
         rungWord,
         &boys::BoysCuda::AllOrdersF64NarrowOrdersMono<kMultiplier>);
+    // The fit route's rows. The two scheme names of a shape run one kernel, so
+    // both rows of a pair are measured and each carries its own figure; a pair
+    // whose figures differ would be a report that named two arithmetics where
+    // the lane has one.
+    const std::vector<double> ratOut = MeasureDeviceRow<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF64Rat,
+        rung,
+        rungWord,
+        &boys::BoysCuda::AllOrdersF64Rat<kMultiplier>);
+    const std::vector<double> ratHornerOut = MeasureDeviceRow<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF64RatHorner,
+        rung,
+        rungWord,
+        &boys::BoysCuda::AllOrdersF64Rat<kMultiplier>);
+    const std::vector<double> ordersRatOut = MeasureDeviceRow<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF64OrdersRat,
+        rung,
+        rungWord,
+        &boys::BoysCuda::AllOrdersF64OrdersRat<kMultiplier>);
+    const std::vector<double> ordersRatHornerOut = MeasureDeviceRow<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF64OrdersRatHorner,
+        rung,
+        rungWord,
+        &boys::BoysCuda::AllOrdersF64OrdersRat<kMultiplier>);
+    const std::vector<double> narrowRatOut = MeasureDeviceRow<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF64NarrowRat,
+        rung,
+        rungWord,
+        &boys::BoysCuda::AllOrdersF64NarrowRat<kMultiplier>);
+    const std::vector<double> narrowRatHornerOut = MeasureDeviceRow<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF64NarrowRatHorner,
+        rung,
+        rungWord,
+        &boys::BoysCuda::AllOrdersF64NarrowRat<kMultiplier>);
+    const std::vector<double> bothRatOut = MeasureDeviceRow<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF64NarrowOrdersRat,
+        rung,
+        rungWord,
+        &boys::BoysCuda::AllOrdersF64NarrowOrdersRat<kMultiplier>);
+    const std::vector<double> bothRatHornerOut = MeasureDeviceRow<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF64NarrowOrdersRatHorner,
+        rung,
+        rungWord,
+        &boys::BoysCuda::AllOrdersF64NarrowOrdersRat<kMultiplier>);
 
     if constexpr (kMultiplier == boys::kBoysFullAccuracyMultiplier)
     {
@@ -951,6 +1037,50 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
             ref, grid, narrowMonoOut, narrowMonoHost);
         CompareDeviceWithHost<kMultiplier, NarrowOrdersMonoPolicy>(
             ref, grid, bothMonoOut, bothMonoHost);
+
+        // The fit route's rows, each shape's two scheme names measured against
+        // the host lane at the route and at that shape's partition and packing
+        // axis. Both names of a shape run one kernel, so the two distances are
+        // two measurements of one arithmetic; they are recorded per row rather
+        // than once for the pair, because a row's claim is the row's own.
+        const auto routeHostClaim = [&](const char* rowName, const char* shape) {
+            return AddClaim((std::string(rowName) + rungWord + " vs fp64 host " + shape).c_str(),
+                            "A..C",
+                            pairBound);
+        };
+
+        const int ratHost = routeHostClaim(
+            DeviceRow(boys::DeviceEntry::kAllOrdersF64Rat).name, "rat");
+        const int ratHornerHost = routeHostClaim(
+            DeviceRow(boys::DeviceEntry::kAllOrdersF64RatHorner).name, "rat");
+        const int ordersRatHost = routeHostClaim(
+            DeviceRow(boys::DeviceEntry::kAllOrdersF64OrdersRat).name, "orders rat");
+        const int ordersRatHornerHost = routeHostClaim(
+            DeviceRow(boys::DeviceEntry::kAllOrdersF64OrdersRatHorner).name, "orders rat");
+        const int narrowRatHost = routeHostClaim(
+            DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowRat).name, "narrow rat");
+        const int narrowRatHornerHost = routeHostClaim(
+            DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowRatHorner).name, "narrow rat");
+        const int bothRatHost = routeHostClaim(
+            DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowOrdersRat).name, "narrow orders rat");
+        const int bothRatHornerHost = routeHostClaim(
+            DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowOrdersRatHorner).name,
+            "narrow orders rat");
+
+        CompareDeviceWithHost<kMultiplier, RatPolicy>(ref, grid, ratOut, ratHost);
+        CompareDeviceWithHost<kMultiplier, RatPolicy>(ref, grid, ratHornerOut, ratHornerHost);
+        CompareDeviceWithHost<kMultiplier, OrdersRatPolicy>(
+            ref, grid, ordersRatOut, ordersRatHost);
+        CompareDeviceWithHost<kMultiplier, OrdersRatPolicy>(
+            ref, grid, ordersRatHornerOut, ordersRatHornerHost);
+        CompareDeviceWithHost<kMultiplier, NarrowRatPolicy>(
+            ref, grid, narrowRatOut, narrowRatHost);
+        CompareDeviceWithHost<kMultiplier, NarrowRatPolicy>(
+            ref, grid, narrowRatHornerOut, narrowRatHornerHost);
+        CompareDeviceWithHost<kMultiplier, NarrowOrdersRatPolicy>(
+            ref, grid, bothRatOut, bothRatHost);
+        CompareDeviceWithHost<kMultiplier, NarrowOrdersRatPolicy>(
+            ref, grid, bothRatHornerOut, bothRatHornerHost);
     }
 }
 

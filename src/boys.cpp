@@ -817,17 +817,23 @@ Carriage CarriesSingle(FitRoute route,
 // coefficient per Chebyshev coefficient at the same pieces and degrees, and the
 // lane uploads both pools (BoysCuda::AllOrdersF64Mono and its three siblings),
 // so the scheme axis names which table the same body reads.
+//
+// Both of its routes are served. The rational route's piece pairs and region-B
+// seed are uploaded as the tables the Chebyshev route's pieces are — the same
+// intervals, the same counts, the same partition — and the bodies evaluate a
+// piece as a numerator/denominator pair, so this lane offers the combination
+// rather than naming it as work outstanding. The route's cut is certified per
+// reading as well as per piece: the arguments shape seeds at its top order's
+// piece and pays that piece's w(b), the orders shape reads each order's own
+// piece at A = 1, and each shape's rung reads its own table.
+//
+// The scheme axis is inert on that route: the pair is stored once, summed by
+// Horner, so both scheme names select one arithmetic and the lane's two rows
+// per shape measure one kernel. Serving both names is what the surface offers,
+// and each row's own figure says what it delivers.
 Carriage CarriesDevice(FitRoute route, EvalScheme scheme) noexcept {
+    (void)route;
     (void)scheme;
-
-    if (route != kDefaultFitRoute)
-    {
-        return {false,
-                "the device lane's entries evaluate the shipped fit, in either of the two bases "
-                "it is stored in, and the rational route's piece pairs and region-B seed are a "
-                "coefficient table this lane has not uploaded: the route's own entries are a "
-                "table to build rather than a shape the call cannot have"};
-    }
 
     return {true, ""};
 }

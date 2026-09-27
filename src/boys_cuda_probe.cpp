@@ -273,6 +273,9 @@ std::string AxisName(const DeviceOptionInfo& option) {
         case DeviceOptionAxis::kScheme:
             return std::string("scheme:")
                    + (option.scheme == EvalScheme::kHorner ? "horner" : "split-clenshaw");
+        case DeviceOptionAxis::kRoute:
+            return std::string("route:")
+                   + (option.route == FitRoute::kRationalMinimax ? "rational" : "chebyshev");
         default:
             // An axis named by a newer header: the row is still printed, under
             // the enumerator it was written with rather than under a member of

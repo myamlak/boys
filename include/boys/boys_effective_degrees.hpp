@@ -797,6 +797,128 @@ constexpr RationalRegionBPairs RationalRegionBDegrees() noexcept {
 }
 
 // ---------------------------------------------------------------------------
+// The rational pair at the narrow partition
+// ---------------------------------------------------------------------------
+// The narrow partition's own pairs, cut by the criterion above. The pieces, the
+// intervals and the coverage are NarrowRegionAPartition's — the partition is not
+// the family's and this member brings the pairs to it — so the derivation is the
+// shipped one's at the other table: same layout, same criterion, different
+// stored numbers, and a degree certified for one table's fit is not a degree
+// certified for the other's.
+//
+// Region A's two readings are the shipped route's two, for the same reason: a
+// per-order reading pays A = 1, because the cut reaches the value the piece was
+// read for with nothing in between, and a batch seed pays the piece's own w(b),
+// because the seed is carried down the recursion from the piece's right end.
+// Region B's seed is one pair per narrow piece, read at order 0 and carried up
+// the upward recursion, whose gain A_B(n) <= A_B(0) = 1 over this region, so the
+// cut is judged at order 0 as the shipped route's is.
+struct RationalNarrowRegionAPairs {
+    std::array<int, std::size(kNarrowAPieces)> num{};
+    std::array<int, std::size(kNarrowAPieces)> den{};
+};
+
+struct RationalNarrowRegionBPairs {
+    std::array<int, kNarrowBPieces> num{};
+    std::array<int, kNarrowBPieces> den{};
+};
+
+// The per-order reading: one pair per narrow piece, at A = 1.
+template <double kAccuracyMultiplier>
+constexpr RationalNarrowRegionAPairs RationalNarrowRegionADegrees() noexcept {
+    constexpr double kBudget = RegionABudget(BoysRole::kDoubleBatch);
+    RationalNarrowRegionAPairs pairs{};
+
+    for (int p = 0; p < static_cast<int>(std::size(kNarrowAPieces)); ++p)
+    {
+        const std::size_t index = static_cast<std::size_t>(p);
+        const int numDeg = kNarrowRatANumDeg[index];
+        const int denDeg = kNarrowRatADenDeg[index];
+
+        RationalPairCut(kNarrowRatACoeffs,
+                        static_cast<std::size_t>(kNarrowRatAOffset[index]),
+                        kNarrowRatACoeffs,
+                        static_cast<std::size_t>(kNarrowRatAOffset[index] + numDeg + 1),
+                        numDeg,
+                        denDeg,
+                        kAccuracyMultiplier,
+                        1.0,
+                        kBudget,
+                        pairs.num[index],
+                        pairs.den[index]);
+    }
+
+    return pairs;
+}
+
+// The batch seed's reading of the same table; see RationalRegionASeedDegrees
+// for why the amplification is the piece's own w(b) here and 1 above.
+template <double kAccuracyMultiplier, BoysRole kRole>
+constexpr RationalNarrowRegionAPairs RationalNarrowRegionASeedDegrees() noexcept {
+    static_assert(RoleUsesBatchAmplification(kRole),
+                  "this reading of the narrow rational pair is the batch recursion's - the cut "
+                  "is judged at the piece's own w(b) because the seed is carried down by it - so "
+                  "it belongs to a batch role; a role whose region-A seed is the order's own "
+                  "value pays A = 1 and reads RationalNarrowRegionADegrees instead");
+
+    constexpr double kBudget = RegionABudget(kRole);
+    RationalNarrowRegionAPairs pairs{};
+
+    for (int order = 0; order <= kMaxOrder; ++order)
+    {
+        for (int p = kNarrowAPieceStart[order]; p < kNarrowAPieceStart[order + 1]; ++p)
+        {
+            const std::size_t index = static_cast<std::size_t>(p);
+            const OrderPiece& piece = kNarrowAPieces[index];
+            const int numDeg = kNarrowRatANumDeg[index];
+            const int denDeg = kNarrowRatADenDeg[index];
+
+            RationalPairCut(kNarrowRatACoeffs,
+                            static_cast<std::size_t>(kNarrowRatAOffset[index]),
+                            kNarrowRatACoeffs,
+                            static_cast<std::size_t>(kNarrowRatAOffset[index] + numDeg + 1),
+                            numDeg,
+                            denDeg,
+                            kAccuracyMultiplier,
+                            RegionAAmplification(order, piece.b),
+                            kBudget,
+                            pairs.num[index],
+                            pairs.den[index]);
+        }
+    }
+
+    return pairs;
+}
+
+// The narrow region-B seed's pairs, one per piece, at order 0's amplification.
+template <double kAccuracyMultiplier>
+constexpr RationalNarrowRegionBPairs RationalNarrowRegionBDegrees() noexcept {
+    constexpr double kBudget = RegionBBudget(BoysRole::kDoubleBatch);
+    RationalNarrowRegionBPairs pairs{};
+
+    for (int piece = 0; piece < kNarrowBPieces; ++piece)
+    {
+        const std::size_t index = static_cast<std::size_t>(piece);
+        const int numDeg = kNarrowRatBNumDeg[index];
+        const int denDeg = kNarrowRatBDenDeg[index];
+
+        RationalPairCut(kNarrowRatBCoeffs,
+                        static_cast<std::size_t>(kNarrowRatBOffset[index]),
+                        kNarrowRatBCoeffs,
+                        static_cast<std::size_t>(kNarrowRatBOffset[index] + numDeg + 1),
+                        numDeg,
+                        denDeg,
+                        kAccuracyMultiplier,
+                        RegionBAmplification(0),
+                        kBudget,
+                        pairs.num[index],
+                        pairs.den[index]);
+    }
+
+    return pairs;
+}
+
+// ---------------------------------------------------------------------------
 // The rational pair at a batch seed's reading
 // ---------------------------------------------------------------------------
 // The cut above is the one a per-order reading of the route pays: the piece's
