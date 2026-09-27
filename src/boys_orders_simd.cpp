@@ -1877,8 +1877,13 @@ void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
             }
         } else
         {
+            // The basis is the table this scheme's summation reads, exactly as
+            // the shipped partition's cut above takes it: the two stored forms
+            // of one fit hold different numbers, so a degree the Chebyshev tail
+            // admits can drop a monomial tail several orders over budget.
             static constexpr auto kDegreesA =
-                detail::NarrowRegionADegrees<kAccuracyMultiplier, kRole>();
+                detail::NarrowRegionADegrees<kAccuracyMultiplier, kRole,
+                                             SchemeTailBasis<kScheme>()>();
 
             if constexpr (kRoute == FitRoute::kRationalMinimax)
             {

@@ -814,26 +814,18 @@ Carriage CarriesSingle(FitRoute route,
                        PackAxis axis,
                        FitGranularity granularity,
                        AccuracyTier tier) noexcept {
-    // The shipped partition's rung bodies are instantiated for every (route,
-    // scheme) pair, and the arguments axis carries a rung of any family. The
-    // narrow partition's across-orders packed lane is the shipped route and
-    // scheme's alone, and that is measured rather than assumed: serving another
-    // family's rung there was tried and delivers outside the bound on 1964 of
-    // 56694 cells, so it is a body to write rather than a shape the call cannot
-    // have. The arguments axis carries that family's narrow rungs already, where
-    // each order's own piece of the narrow table is read at the degrees the rung
-    // derives.
-    if (tier != AccuracyTier::kReference && axis == PackAxis::kOrders &&
-        granularity != kDefaultFitGranularity &&
-        !(route == kDefaultFitRoute && scheme == kDefaultEvalScheme))
-    {
-        return {false,
-                "past the reference multiplier the narrow partition's across-orders packed lane "
-                "runs the shipped route and scheme alone: a rung of another family's fit there "
-                "is a body to write rather than a shape the call cannot have - the shipped "
-                "partition carries it already, and so does the arguments axis, where the rung's "
-                "own degree table and pair cut are read"};
-    }
+    // Every rung is served on both axes and both partitions. The narrow
+    // partition's across-orders packed lane was refused here until its cut was
+    // read against the table the scheme sums: taking the Chebyshev cut while the
+    // Horner scheme summed the monomial table delivered outside the bound on
+    // 1964 of 56694 cells at m = 64. With the basis carried through, the same
+    // combination is a rung of the family the caller named on either partition,
+    // so there is no cell left for this rule to refuse.
+    (void)route;
+    (void)scheme;
+    (void)axis;
+    (void)granularity;
+    (void)tier;
 
     return {true, ""};
 }
