@@ -45,15 +45,48 @@
 /// a coverage section that accounts for the whole product — an unstated
 /// omission would read as an option that does not exist.
 ///
-/// **The classes are precisions, and a bound is a column.** fp64, fp32, fp16 and
-/// bf16 are separate classes and options are ordered only inside one of them:
-/// the precision is the choice the caller has already made from the accuracy
-/// their calculation needs, and halving the precision is not a faster answer to
-/// the same question. Bounds inside a class differ by row — a relaxed rung, the
-/// across-orders lane and the narrow partition are all documented at their own
-/// figures — so a class's leader is the fastest option at *some* accuracy in
-/// that precision, and the report says so where it prints the ranking. A caller
-/// who needs a particular accuracy reads the bound column.
+/// **The classes are one precision at one rung of the accuracy axis.** fp64,
+/// fp32, fp16 and bf16 are separate precisions and options are ordered only
+/// inside one of them: the precision is the choice the caller has already made
+/// from the accuracy their calculation needs, and halving the precision is not a
+/// faster answer to the same question. Inside a precision the classes are the
+/// rungs — the multiplier an option was built at, as the library's own tables
+/// report it — because the rung is the accuracy question an option was answering
+/// and it is not a column to read past a ranking. Membership is decided by that
+/// rung and never by comparing one row's documented figure against another's: a
+/// figure belongs to one lane, and reading one lane's figure across lanes is how
+/// a class ends up empty by construction. Every row of a class was built at the
+/// same multiplier, so a class's leader is the fastest option *at that rung* and
+/// the only thing the class trades is speed. A class that mixed the rungs would
+/// put a row that gave up accuracy against a row that did not, and its leader
+/// would be the fastest option at some accuracy, which is not a ranking of
+/// anything. A row of the class that documents another figure — the same rung
+/// reached with a looser bound — is a member and is reported by name rather than
+/// ranked as an equal silently.
+///
+/// **The default comes from the reference class.** The default this report names
+/// is chosen inside one class: the certified double lane's precision at the
+/// reference multiplier, whose every row documents the certified bound. Choosing
+/// there is choosing among equals — the pool trades nothing but speed — which is
+/// the one thing a default is allowed to trade. A relaxed rung is never the
+/// default however fast it measures, because the speed it shows is bought with
+/// accuracy.
+///
+/// **How the default is reached, and what happens when the pool ties.** When the
+/// reference class's own rounds place every rival behind its leader, that leader
+/// is the default and the report says it is a measured ordering. When they do
+/// not, the probe does not fall back to a figure counted from the library's
+/// tables: it re-runs the tied options alone, at a larger protocol, several times,
+/// and takes the option that led most often. The vote is printed — how many runs,
+/// what each run led with, how many each candidate won — so a reader can tell a
+/// majority winner from a tie broken by choice. A vote with a clear plurality
+/// names that option; a vote that is split with no plurality names one of the
+/// tied options and says plainly that it is a tie among equals broken by choice
+/// rather than by a measurement. A class that holds one option needs none of
+/// that: it holds nothing to order the entry against, so that entry is the
+/// default by there being no alternative, and the report says so rather than
+/// calling it a winner. Either way a run that measured the pool ends with
+/// exactly one default, and says which of these ways it got there.
 ///
 /// **The comparison is paired, and made inside a round.** Every option is called
 /// once in every round, and the comparison between two options is the ratio of
@@ -75,13 +108,10 @@
 /// class's leader the probe forms the pair's own within-round ratio, and the
 /// rival is ordered only when the middle half of those rounds puts it behind the
 /// leader — when the pair's own band clears one. A rival whose band straddles
-/// one cannot be placed, and the probe then declines to name a winner, prints
-/// the run's resolution, and says which options it could not separate and in how
-/// many of the rounds each was the slower of the two. The same refusal happens
-/// when too few rounds were run for a band to exist, and when nothing was
-/// measured in the class. A wrong recommendation is worse than none, so the
-/// refusal path is the one this entry is most careful about, and a refusal now
-/// leaves a consumer a default: see the fallback below.
+/// one cannot be placed, and the probe prints the run's resolution and says
+/// which options it could not separate and in how many of the rounds each was
+/// the slower of the two. The same happens when too few rounds were run for a
+/// band to exist.
 ///
 /// **The instrument is a diagnostic and gates nothing.** Every pass carries runs
 /// of a fixed-work integer spin — the canary — bracketing the timed region and
@@ -106,14 +136,12 @@
 /// processor time, which is what a system-wide counter would need — it is the
 /// load a single-threaded, CPU-bound caller actually suffered.
 ///
-/// **When the measurement cannot separate the options, a heuristic stands in,
-/// labelled as one.** A consumer who gets a refusal still needs a default, so a
-/// refusal also names the option a static reading of the library's own tables
-/// picks: the degree the option's partition stores per piece and the coefficients
-/// it stores, counted rather than timed. It is reported in its own section,
-/// marked as a heuristic, and never printed beside a measured figure as though it
-/// were one — the two answers are different kinds of thing and the report keeps
-/// them apart.
+/// **When a pair cannot be separated, the report says so rather than ordering
+/// noise.** A pair whose within-round ratio band straddles one was not ordered:
+/// the probe names it, with its band and its round counts, and no figure in the
+/// report rests on it. What the report still names is a default, because a
+/// consumer needs one, and it is a measured option rather than a figure counted
+/// from a table: see the reference class and the vote above.
 ///
 /// **The accuracy column.** Each option's values are compared against the
 /// certified per-order fp64 lane — `BoysSingle` at the reference multiplier —
@@ -229,6 +257,21 @@ struct ProbeOptions {
     /// rather than the machine. What decides what the run can order is the
     /// spread of the paired within-round ratios, which the report measures.
     double canarySpreadAlarm = 5.0;
+
+    /// Runs of the refinement protocol: how many times the probe measures a
+    /// reference class whose own rounds did not separate, before it reads the
+    /// vote. Where the runs disagree about the leader, the option that led most
+    /// of them is the default — a majority over runs rather than one run's
+    /// reading — and where the vote is split with no plurality the report takes
+    /// one of the tied options and says that it did.
+    int refinementRuns = 5;
+
+    /// How much longer each refinement run is than the pass protocol above: the
+    /// refinement re-measures only the tied options, so it can spend more per
+    /// option than the run that left them tied. Its passes are \c passes times
+    /// this, its rounds \c rounds times this, and the report prints the protocol
+    /// every run was taken under.
+    int refinementFactor = 5;
 
     /// The options to measure, named as the report prints them. Empty measures
     /// every option this build offers, which is what a caller who has not
@@ -346,6 +389,12 @@ struct OptionProbeMeasurement {
     FitGranularity granularity = kDefaultFitGranularity; ///< the partition it reads
     PackAxis pack = PackAxis::kArguments; ///< the packing axis its entry carries
 
+    /// The accuracy rung it evaluates at, which with the precision is the class
+    /// it is ranked in: two options of one precision at different rungs document
+    /// different bounds and are not alternatives to each other, so the class the
+    /// report orders is this pair and not the precision alone.
+    AccuracyTier tier = AccuracyTier::kReference;
+
     /// The arithmetic the option ran in, named by the library's own backend
     /// table (see backend::BoysBackends), so the number is attributable to the
     /// arithmetic that produced it.
@@ -456,25 +505,88 @@ struct OptionProbeMeasurement {
     double checkedSum = 0.0;
 };
 
-/// One precision's ranking: that precision's options, fastest measured first.
+/// How the entry a class or a report names was reached.
 ///
-/// A class is one precision and nothing else. The bounds inside it are not
-/// equal and are not meant to be: each row carries its own, so the leader is
-/// the fastest option at some accuracy in this precision. A caller who needs a
-/// particular accuracy reads the bound column and takes the fastest row whose
-/// bound is theirs; the probe does not make that choice for them by mixing
-/// precisions or by hiding a looser bound.
+/// The distinction this exists for is the one a reader needs in order to weigh
+/// the answer: a measured ordering is evidence, a vote over repeated runs is
+/// weaker evidence, and a choice among options the measurement could not separate
+/// is not evidence at all. Every one of them names one option, and the report
+/// says which one it is rather than presenting them alike.
+///
+/// \ingroup boys
+enum class OptionProbeDefaultHow : int {
+    /// Nothing named: no option of the class was measured.
+    kNone = 0,
+    /// The class's own rounds placed every rival behind its leader, so the entry
+    /// is a measured ordering of equals.
+    kOrdered,
+    /// The class holds one option. There is nothing in it to order the entry
+    /// against, so it is named by there being no alternative — which is an
+    /// answer, not a refusal, and not a ranking either.
+    kOnlyEntry,
+    /// The class's rounds left the leader tied with others, the tied options were
+    /// re-run alone at a larger protocol, and one of them was the fastest in
+    /// every one of those runs — a majority with no dissent.
+    kRefined,
+    /// The refinement runs disagreed or did not separate, and the option that led
+    /// most of them is the entry: a majority over runs, with the vote printed.
+    kVote,
+    /// The vote was split with no plurality, or no refinement run placed a leader
+    /// at all, so the entry is one of the tied options taken by choice. It is
+    /// named as that and not as a ranking.
+    kChosenAmongEquals,
+};
+
+/// The name of one of those, as one token a script or a report can print beside
+/// a default: "ordered", "only-entry", "refined", "vote",
+/// "chosen-among-equals" or "none".
+///
+/// It exists so that a consumer who prints a default prints how it was reached
+/// with it, rather than leaving a reader to guess whether the entry named was
+/// measured or taken by choice.
+///
+/// \param how the state to name
+///
+/// \returns the name, which is never empty
+///
+/// \ingroup boys
+std::string OptionProbeDefaultHowName(OptionProbeDefaultHow how);
+
+/// One class's ranking: the options of one precision at one accuracy rung,
+/// fastest measured first.
+///
+/// A class is one precision **and** one rung of the accuracy axis — the
+/// multiplier the option was built at, m = 1, 64, 256 and so on — and it is the
+/// only set the probe orders inside. Both restrictions are the same restriction:
+/// two options are only alternatives if they answer the same question, and an
+/// option of another precision or of another rung answers a different one. The
+/// key is the rung an option was built at, never a comparison of documented
+/// figures: a figure belongs to one lane, and reading it against another lane's
+/// is how a class ends up empty by construction. Every row of a class documents
+/// the same rung, so nothing inside it is a trade of accuracy for speed — the
+/// leader is the fastest option *at that accuracy*, and a caller who needs a
+/// different accuracy reads a different class or a different rung.
 ///
 /// \ingroup boys
 struct OptionProbeClass {
     /// The precision this class is.
     OptionPrecision precision = OptionPrecision::kFp64;
 
-    /// The name a report prints it under.
+    /// The accuracy rung this class is.
+    AccuracyTier tier = AccuracyTier::kReference;
+
+    /// The name a report prints it under: the precision, the rung and the bound
+    /// every row of it documents.
     std::string name;
 
-    /// This precision's measured options, fastest first, with their bounds
-    /// beside them. Empty when nothing of this precision was measured.
+    /// The bound every row of this class documents, read from the library.
+    double bound = 0.0;
+
+    /// This class's measured options, fastest first: the first of them is the row
+    /// whose cost per argument, the figure the report prints for it, is the
+    /// smallest of the class's, so this order is read off that column and not off
+    /// another statistic. Empty when nothing of this precision and rung was
+    /// measured.
     std::vector<std::string> ranked;
 
     /// The fastest of them, empty when the class is empty.
@@ -483,10 +595,33 @@ struct OptionProbeClass {
     /// The leader's cost per argument, nanoseconds.
     double leaderNsPerArgument = 0.0;
 
+    /// The options this class's rounds could not place behind the leader: their
+    /// within-round ratio to it did not clear one in the middle half of the
+    /// rounds, so the class has no ordering among them and the leader is only
+    /// the fastest by the run's own statistic. Empty when the class is ordered.
+    std::vector<std::string> unplaced;
+
     /// Whether every other option of the class was the slower of the two against
     /// the leader in the middle half of the paired rounds, so an order exists
-    /// inside this class. False for a class whose run was too short for a band.
+    /// inside this class. False for a class whose run was too short for a band,
+    /// whose pairs straddled one, or which holds a single option: one entry is
+    /// not a ranking.
     bool ordered = false;
+
+    /// How the entry this class names — its leader — was reached: the class's own
+    /// ordering, the vote over a refinement stage, a choice among options the
+    /// measurement could not separate, or, for a class of one, the fact that
+    /// there was no alternative to name. \c kNone for a class that produced no
+    /// measured option.
+    OptionProbeDefaultHow how = OptionProbeDefaultHow::kNone;
+
+    /// Members documenting a figure other than the leader's, each named with its
+    /// own: a class is keyed on the rung and the precision, not on a bound, so a
+    /// row of the same precision and rung that documents a looser figure is in
+    /// the class and is reported here rather than being ranked as an equal
+    /// silently. Empty when every member of the class documents the leader's own
+    /// figure, which is the ordinary case.
+    std::vector<std::string> differingBounds;
 
     /// What the class's ordering rests on, or why it was not made.
     std::string note;
@@ -537,14 +672,76 @@ struct OptionProbeCell {
 ///
 /// \ingroup boys
 enum class OptionProbeVerdict : int {
-    /// One option leads its precision class and every rival of it in that class
-    /// was measured with its own within-round ratio band clear of the leader's.
+    /// The probe named a default: one option of the certified double lane's
+    /// precision at the reference rung, with every rival of its class placed
+    /// behind it by the class's own rounds or, where they were not, with the
+    /// default reached by the vote over the refinement runs. The report's
+    /// \c defaultHow says which of those it was, and a reader who needs a
+    /// measurement rather than a choice reads the confidence line beside it.
     kRecommend = 0,
-    /// The probe declined: too few rounds for a band, nothing measured in the
-    /// class, or a rival whose band straddles the leader's, so the two cannot be
-    /// ordered against each other. See the report's reason, and the fallback it
-    /// leaves.
+    /// The probe declined, which it does for exactly one reason: no option of the
+    /// certified double lane's precision at the reference rung was measured at
+    /// all, so there is no pool to name a default from — nothing was measured, or
+    /// the run was narrowed to a set that holds no such option. A refusal always
+    /// says which. Every run that measured the pool ends with a default, whether
+    /// or not it could order it.
     kCannotDetermine,
+};
+
+/// The refinement stage: the tied options re-measured at a larger protocol, and
+/// the vote over those runs.
+///
+/// This is what the report does instead of naming an entry from a figure counted
+/// off the library's tables. It runs only when a class's own rounds left its
+/// leader tied with a rival and the class holds more than one option: the tied
+/// options alone are measured, each run is a fresh protocol, and the option that
+/// led most of the runs is the entry. Where the runs disagree the vote is printed
+/// in full, so a reader can see how much of a majority the entry really had.
+///
+/// \ingroup boys
+struct OptionProbeRefinement {
+    /// The precision whose reference class was refined.
+    OptionPrecision precision = OptionPrecision::kFp64;
+
+    /// Whether the stage ran at all: false when the class was ordered by the main
+    /// run, when it holds a single option, and when there was no class to refine.
+    bool ran = false;
+
+    /// Runs taken, the passes each ran, and the rounds each ran. Zero when the
+    /// stage did not run.
+    int runs = 0;
+    int passes = 0;
+    int rounds = 0;
+
+    /// The options re-measured: the class's leader and every option of it the
+    /// main run could not place behind the leader.
+    std::vector<std::string> pool;
+
+    /// What each run led with, in the order the runs were taken, empty when a run
+    /// placed no leader.
+    std::vector<std::string> runLeaders;
+
+    /// The tally over those runs: one line per candidate that led at least one
+    /// run, in the order the runs first led with it, naming how many of the runs
+    /// it won.
+    std::vector<std::string> tally;
+
+    /// The option the vote named. Never empty once the stage ran: a vote with no
+    /// plurality still names one of the tied options, and \c note says that is
+    /// what happened.
+    std::string winner;
+
+    /// Whether every run led with \c winner: a majority with no dissent.
+    bool unanimous = false;
+
+    /// Whether \c winner led strictly more runs than any other candidate. True
+    /// whenever \c unanimous is true; false is a split vote whose winner was
+    /// taken by choice.
+    bool plurality = false;
+
+    /// What the stage concluded, including whether the vote had a plurality and
+    /// what was done when it did not.
+    std::string note;
 };
 
 /// Everything the probe measured and concluded.
@@ -594,8 +791,10 @@ struct OptionProbeReport {
     /// One entry per option measured, in the order the report prints them.
     std::vector<OptionProbeMeasurement> measurements;
 
-    /// One entry per precision measured, in the classes' own order. The ranking
-    /// inside a class is that precision's own and never crosses into another.
+    /// One entry per class measured, in the classes' own order: the reference
+    /// rung of each precision first, then the looser rungs of it. The ranking
+    /// inside a class is that class's own and never crosses into another — not
+    /// into another precision, and not into another accuracy.
     std::vector<OptionProbeClass> classes;
 
     /// Every cell of the option space, served ones and refused ones alike. The
@@ -696,18 +895,36 @@ struct OptionProbeReport {
     /// precision class they are in.
     double referenceBound = 0.0;
 
-    /// Whether the probe named a winner.
+    /// Whether the probe named a winner. A false here means no option of the
+    /// certified double lane's precision at the reference rung was measured, so
+    /// there was no pool to choose a default from; every other run ends with
+    /// \c kRecommend and one option named, whether or not the pool could be
+    /// ordered.
     OptionProbeVerdict verdict = OptionProbeVerdict::kCannotDetermine;
 
-    /// The option the probe recommends: the leader of the certified double
-    /// lane's precision class, empty when it declined or when that class
-    /// produced no figure.
+    /// **The default combination, and there is exactly one of it whenever the
+    /// pool was measured at all.** It is always an option of the certified double
+    /// lane's precision at the reference rung — the class whose members were all
+    /// built at the library's own full-accuracy multiplier, so choosing among
+    /// them trades nothing but speed — and \c defaultHow says how it was reached:
+    /// the class's own ordering, the vote over the refinement runs, or a choice
+    /// among options the measurement could not separate. Empty exactly when
+    /// \c verdict is \c kCannotDetermine.
     std::string recommended;
 
-    /// The fastest option measured in the double lane's precision whose own
-    /// bound is at or below the certified lane's, empty when no such option was
-    /// measured. This is the fastest row a caller at the certified accuracy can
-    /// take, and it is the narrowest reading of the fp64 class's ranking.
+    /// How \c recommended was reached. \c kOrdered is a measured ordering,
+    /// \c kRefined and \c kVote are the vote over the refinement runs, and
+    /// \c kChosenAmongEquals is a tie broken by choice, which the report names as
+    /// such rather than presenting it as a ranking. \c kOnlyEntry appears when the
+    /// caller narrowed the run to a class of one: there is nothing to order that
+    /// entry against, so it is named by there being no alternative — an answer,
+    /// and not a ranking either.
+    OptionProbeDefaultHow defaultHow = OptionProbeDefaultHow::kNone;
+
+    /// The fastest option of the certified lane's reference class by the main
+    /// run's own rounds alone, empty when no option of that class was measured.
+    /// It is what the default is built from: a default reached by the vote may
+    /// differ from it, and the reason line says so where it does.
     std::string fastestAtReferenceAccuracy;
 
     /// The fastest option measured, whatever its precision, empty when no option
@@ -739,23 +956,15 @@ struct OptionProbeReport {
     /// were too close to separate.
     std::string confidence = "not measured";
 
-    /// The option a static reading of the library's own tables picks, when the
-    /// measurement could not order the field — empty when the probe named a
-    /// measured winner, so a reader never has to work out which kind of answer
-    /// they are looking at. **A heuristic and not a measurement**: it is chosen
-    /// by counting what the option's partition stores and the degree it
-    /// evaluates, never by timing, and the report says so where it prints it.
-    std::string heuristicOption;
+    /// The refinement stages this run took: one entry per precision whose
+    /// reference class the main run left tied, its tied options re-measured at a
+    /// larger protocol and voted on. Empty when every reference class was ordered
+    /// by the main run or held a single option, which are the cases where nothing
+    /// needed refining.
+    std::vector<OptionProbeRefinement> refinements;
 
-    /// Why that option, in the library's own numbers: the degrees and stored
-    /// coefficients the fallback was chosen from, and what the rule cannot
-    /// compare. Empty exactly when \c heuristicOption is.
-    std::string heuristicBasis;
-
-    /// Whether a run that could not order the field still left the caller a
-    /// default to take. True when the fallback above is named or the verdict is
-    /// a recommendation; a false here means neither a measurement nor a static
-    /// reading could answer, and the report says which.
+    /// Whether the report ends with a default for the caller to take: true
+    /// exactly when \c recommended names an option.
     bool hasDefault = false;
 };
 
@@ -792,8 +1001,10 @@ struct OptionProbeReport {
 /// \param options the workload and the pass protocol; the defaults are the ones
 ///                the preamble describes
 ///
-/// \returns the report, whose verdict is \c kCannotDetermine whenever the
-///          measurement did not support naming an option
+/// \returns the report, which names one default combination whenever the
+///          certified lane's reference class was measured at all — by its own
+///          ordering, by the vote over the refinement runs, or as a declared
+///          choice among options that could not be separated
 ///
 /// \ingroup boys
 OptionProbeReport RunOptionProbe(const ProbeOptions& options = {});
