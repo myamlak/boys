@@ -1,13 +1,13 @@
 # Calibration corpus for tools/check_doc_arithmetic.py
 
-Not a document of this library and not part of the published set. It exists so
-that each check `--selftest` pins still has a site to fire on, and so the
-calibration survives the repair of the defects it was built from.
+A test fixture for tools/check_doc_arithmetic.py, not a document of the
+library. It exists so that each check `--selftest` pins still has a site to
+fire on.
 
-Every section below reproduces the shape of one defect that was found in the
-published documents and then fixed. The sentences are left wrong on purpose.
-They are deliberately not corrected here, because a calibration corpus that is
-right is a corpus that calibrates nothing.
+Every section below writes a sentence of the shape the check is built to catch.
+The sentences are left wrong on purpose, and are deliberately not corrected
+here: a calibration corpus that is right is a corpus that calibrates nothing.
+The prose the check runs on in this tree carries none of these shapes.
 
 ## A fraction, two values, one system size
 

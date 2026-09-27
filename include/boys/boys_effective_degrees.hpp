@@ -194,11 +194,11 @@ constexpr double RegionBAmplification(int order) noexcept {
     return numerator / denominator;
 }
 
-// The extended band (the per-range seed design below kX0) is the m = 1
+// The extended band (below kX0) is the m = 1
 // lane's: its per-order amplification for the m > 1 machinery needs its
 // own derivation (the band's effective edge varies per order, unlike the
-// fixed kX0 worst case region B's RegionBAmplification assumes) - named
-// future work; the m > 1 branch keeps the region-A treatment in the band.
+// fixed kX0 worst case region B's RegionBAmplification assumes), which the
+// m > 1 branch does not carry; it keeps the region-A treatment in the band.
 
 /// The k-th stored coefficient. The read goes through the table's data pointer:
 /// std::array's subscript is a checked one, and the check is a constant

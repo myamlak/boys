@@ -101,19 +101,19 @@ sum. The rational route's rung is derived by the same criterion over its own sto
 denominator pair, and at the six multipliers this library names it certifies the stored pair
 unchanged — so naming a rung there loosens the bound and changes nothing about the work. What the
 criterion certifies, and the figure that makes the outcome checkable, are in
-[docs/lane-contract.md](docs/lane-contract.md). The C surface takes a sampled set instead, listed in
-its own header, and so do the CUDA lane's device-callable entries, because the rung a call names
-has to be the one `BoysCuda::DeviceTables` was instantiated with: the relaxed degree tables are
-resident for one rung at a time, and a call naming any other rung returns
+[docs/lane-contract.md](docs/lane-contract.md). The C surface and the CUDA lane's device-callable
+entries dispatch over one rung vocabulary of twelve: the seven above beside the lane's own 2, 10,
+100, 1e4 and 1e8. The C surface's set is listed in its own header. A device call's rung has to be
+the one `BoysCuda::DeviceTables` was instantiated with: the relaxed degree tables are resident for
+one rung at a time, and a call naming any other rung returns
 `BoysDeviceStatus::kMultiplierNotResident` and writes nothing. m = 1 needs no such table and is
 always served.
 
 **Choosing nothing.** A caller that has picked a precision and no axis writes one name: each precision
 has a named default, and so does the device lane. [docs/lane-contract.md](docs/lane-contract.md#the-default-policy-per-precision-and-per-device)
 states what each selects, the bound it carries, and the command that prints the name and the in-force
-default as numbers. They are the shipped settings and not a measurement: the option space is still
-being completed, and the per-precision defaults will be set from the runs that follow it, which have
-not been taken.
+default as numbers. They are the shipped settings and not a measurement: no default here was chosen
+against a timing, and the option probe below is what ranks the options, on the machine it is run on.
 
 The rows above are bounds, and a bound is not the figure a lane delivers. Two lanes are delivered at
 a different figure depending on one property of the build — whether the compiler fuses a bare
@@ -249,7 +249,7 @@ does not hold, so these figures cannot drift from the code without a red run. A 
 your own run is the answer for your platform, your compiler and your arithmetic, and the rows are
 compared cell by cell rather than as one number.
 
-Run at revision 3868676, it printed this (an excerpt; the full run carries one row per lane and
+Run on the committed tree, it printed this (an excerpt; the full run carries one row per lane and
 region):
 
 | Lane | Region | Worst delivered | Bound claimed |
@@ -519,9 +519,9 @@ one of these figures against a wider range would be matching the fitted tables' 
 that is not theirs.
 
 **Where a combination has no narrow table or kernel it is refused where it is named**, with the
-reason, rather than answered from the shipped table. Two refusals this paragraph used to carry are
-now tables instead: the rational minimax route has a narrow fit over both regions, and the
-single-precision lanes serve narrow tables on both their routes. What remains has a narrower reason
+reason, rather than answered from the shipped table. The rational minimax route has a narrow fit
+over both regions, and the single-precision lanes serve narrow tables on both their routes. What
+remains has a narrower reason
 than a missing route or a missing lane, and each is a static assertion naming the table or the kernel
 it would need: the rational route over the narrow partition on the across-orders packing axis, whose
 lane steps one order's coefficients to the next at a fixed stride; the narrow partition on the
@@ -537,15 +537,15 @@ order's own piece.
 
 The proved bound is what the partition is derived from, and it needs no sampling: for this function
 `|F_n(z)| ≤ F_n(Re z)` holds exactly, so the max modulus on a Bernstein ellipse is at most its value
-at the ellipse's leftmost point, and Trefethen's interpolant bound gives the truncation. Its
-computation reproduces the figures this tree's generator carries from an earlier instrument
-(6.4676e-16 and 3.14e-18, to five significant figures), and `docs/lane-contract.md` states the
-derivation, the full trade curve and a quoted "19 → 7" measurement **that does not survive the
-check**: at width 17.09/7 the target needs degree 10, not degree 6.
+at the ellipse's leftmost point, and Trefethen's interpolant bound ([Trefethen2019]) gives the
+truncation. Its computation reproduces, to five significant figures, the two figures the generator's
+own constant table carries (6.4676e-16 and 3.14e-18), and `docs/lane-contract.md` states the
+derivation and the full trade curve, including why a degree-6 piece of the width a sevenfold split
+gives misses a 1e-14 target: at that width the target needs degree 10, not degree 6.
 
 ## Version
 
-This tree is **version 2.0.0**. That number is written down once, in `CMakeLists.txt`'s
+This tree is **version 3.0.0**. That number is written down once, in `CMakeLists.txt`'s
 `project(boys VERSION ...)`, and the test suite fails if anything else disagrees with it. A caller
 reads it at run time through `boys::VersionString()`, or as the constants `boys::kVersionMajor`,
 `boys::kVersionMinor` and `boys::kVersionPatch`, in `boys/version.hpp` (included by
@@ -614,15 +614,30 @@ that would discard the measurement rather than the machine. What the ordering is
 spread of the paired ratios, which the report measures. The reported figure is the lower quartile of
 the rounds with its spread printed beside it, not the minimum.
 
-When two options are closer than that spread — a pair whose within-round ratio band straddles one —
-the probe prints `CANNOT DETERMINE` and names every option it could not place behind the leader,
-with the band each pair fell in, rather than ordering noise. A refusal still leaves you a default:
-the report names the option a static reading of the library's own tables picks, in its own section,
-labelled as a heuristic and not as a measurement. It also checks the clock rather than assuming it:
-options can draw the clock differently, since a wider vector register runs at a lower frequency, so
-the confidence line says how far the widest-moving pair's ratio travelled between the run's first
-and second half beside the resolution that figure is read against — warning when it went further —
-and whether every option the comparison put against another ran one arithmetic route.
+Options are ranked in classes, and a class is one precision at one accuracy rung — the multiplier an
+option was built at, which the library's own tables report. Every row of a class was built at the
+same multiplier, so nothing inside one traded accuracy for speed, and the default is taken from the
+certified double lane's precision at the library's own full-accuracy multiplier alone: a faster row
+of a relaxed rung, or of another precision, is a different class and never a default candidate.
+
+When a class cannot be ordered — a pair whose within-round ratio band straddles one, or too few
+rounds for a band to exist — the run still ends with one combination, and it says how it reached it.
+The options the class left tied are re-run alone at a longer protocol (more passes over more rounds,
+set by `--refine-runs` and `--refine-factor`), and the one that led the most of those runs is the
+default. A unanimous re-run, a majority over split runs, and a pick among options that divided the
+runs evenly are three different answers, and the report says which one it is making. A class that
+holds one option names that option: one entry is not a ranking, and there is no alternative to it. A
+run in which no option produced a figure at all reports `CANNOT DETERMINE` and the number of paired
+rounds a band needs, rather than a name it never measured — and it offers no fallback read from a
+table, because a name chosen that way would be a name this run cannot stand behind. What the refusal
+does give you is the evidence: every option the class could not place behind its leader is printed
+with the band that pair fell in and in how many rounds each was the slower of the two.
+
+It also checks the clock rather than assuming it: options can draw the clock differently, since a
+wider vector register runs at a lower frequency, so the confidence line says how far the
+widest-moving pair's ratio travelled between the run's first and second half beside the resolution
+that figure is read against — warning when it went further — and whether every option the comparison
+put against another ran one arithmetic route.
 `boys::RunOptionProbe` is the entry and `boys::ProbeOptions` moves the workload to your basis; the
 text it prints says the result is about the machine it ran on.
 
@@ -661,15 +676,29 @@ reaches through `boys_cuda.hpp` are timed as the library's own kernel; the devic
 the caller's kernel with the call in it, less the same kernel with the call removed and the traffic
 kept — and the report names which method produced each row.
 
-Two checks say what the timer is and is not measuring, and both are reported rather than assumed. One
-entry is timed at two very different numbers of launches per region. A cost that repeats with the
-launch rather than with the call is divided by a different number at each count, so it would move the
-figure; a row whose figure moves further than that run can place the row is set aside and the class
-falls to the next entry rather than shipping it. And a kernel launched the same way that does no Boys
-arithmetic at all gives the floor per launch, which the report states as a fraction of the fastest
-launched figure's own cost per call: on a platform whose host submission is expensive, a workload too
-small to carry its own launch is a workload whose ranking is of the launcher. Raising
-`boys::DeviceProbeOptions::count` is what answers that.
+Cost that is paid once per launch and not once per call would sit in a figure read at a single
+argument count as a constant divided by that count, so every row is read at two counts in the same
+round — `--count`, and `--count` times `--pair-factor`, four times apart by default — and its figure
+is the count-independent cost the two readings extrapolate to, `(r·f₂ − f₁) / (r − 1)` for readings
+`f₁` and `f₂` a factor `r` apart, which assumes the launch term falls as 1/count. Both raw readings
+are printed beside the figure, so the correction can be checked instead of taken, and a launched row
+whose two readings left no positive launch term to remove has no figure at all rather than one this
+run cannot stand behind: raising both counts is what answers that. Separately, a kernel launched the
+same way that does no Boys arithmetic at all gives the floor per launch, which the report states as a
+fraction of the fastest launched figure's own cost per call — the diagnostic that says when a
+workload is too small to carry its own launch, so that the ranking is of the launcher rather than of
+the arithmetic. It is a diagnostic and not a correction: an entry's kernel starts more work than an
+empty one and its own launch costs more than the floor does, so subtracting the floor would take out
+part of the term it is meant to remove.
+
+Such a figure is checked against the protocol that produced it as well. The rows a shape's answer leans
+on are re-timed at a much smaller and a much larger number of launches inside the region —
+`controlRepetitionsLow` and `controlRepetitionsHigh`, four and sixty-four by default — and each is
+reduced at both counts to the count-independent figure the table ships, which is the quantity the check
+is on rather than a reading beside it. Those two figures are compared against the resolution this run
+measured: a figure that moves between them by more than that is a cost paid per region rather than per
+call, and the row is set aside instead of named. The report prints the two figures, their signed
+difference and the band the difference fell in, so a row's removal can be checked as well as counted.
 
 The ordering is paired, the way the host probe's is. Every entry is launched once in every round,
 and two entries are compared by the ratio of their times *within one round*, so a card whose clock
@@ -681,12 +710,19 @@ can be read apart. Every pass launches a fixed-work kernel that does no Boys ari
 rounds and reports that kernel's own spread; it is a diagnostic that gates nothing, because fixed
 work read by the same clock the entries ran on measures the clock as much as the card, and a rule
 that discarded a pass on it would discard the measurement rather than the machine. What a shape's
-ordering is made in is the spread of the paired ratios. When a shape cannot place its entries —
-because two of them are closer than that spread, because only one of the shape resolved, or because
-none did — it prints `CANNOT DETERMINE`, names every entry it could not place behind the leader with
-the band each pair fell in, and recommends nothing — and a refusal still leaves a default: the entry
-a static reading of the library's own tables picks, in its own section, labelled as a heuristic and
-not as a measurement.
+ordering is made in is the spread of the paired ratios. A shape whose own rounds cannot separate two
+entries still ends with exactly one of them: the entries it could not place behind the leader are
+re-run alone at a longer protocol, set by `--refine-runs` and `--refine-factor`, and the one that led
+the most of those runs is the shape's entry. A unanimous re-run, a majority over split runs, and a
+pick among entries that divided the runs evenly are three answers of different strength, and the
+report says which one it is making. A shape whose rows the run's own checks set aside — a subtraction
+that resolved nothing, a figure the repetition control could not hold — is not left without an answer:
+the rows it did produce a figure for go to that same stage, and the shape ends with one of them, named
+with the way it was reached rather than as an ordering this shape's own rounds established. A shape
+holding one entry names that entry, since there is no alternative to name and one entry is not a
+ranking; a shape that produced no figure at all is the one case that reports `CANNOT DETERMINE` and
+names no entry, and the reason says which count or which row was missing. Where a shape was not ordered outright, every entry it could not place behind the leader is
+printed with the band that pair fell in and in how many rounds each was the slower of the two.
 
 The device probe checks the clock rather than assuming it. Two entries need not carry this card's
 clock alike — a unit the part runs at a lower rate, a kernel long enough to heat it — so the

@@ -1,4 +1,4 @@
-// The GPU throughput rows of the project's recorded benchmark set,
+// The GPU throughput rows,
 // on the same uniform (n, x) workload as the CPU benchmark. Lanes:
 //   cheb-f64   - BoysCuda::SingleF64 (the certified double lane)
 //   cheb-f32   - BoysCuda::SingleF32 (the recommended GPU lane)
@@ -10,14 +10,14 @@
 //                the pure device-side cost on the same event protocol)
 //
 // Custom main(): --self-check runs the verifier against the CPU references
-// and exits; the default mode runs the runs-log protocol (warmup + 3
-// passes, min/median/max, median = the recorded cell).
+// and exits; the default mode runs the measurement protocol (warmup + 3
+// passes, min/median/max, median = the cell the run reports).
 //
 // Self-check budgets (the lanes are compared against the CPU references):
 //   cheb-f64      |out - BoysSingle|    <= 5.5e-14   (the GPU double row)
 //   cheb-f32      |out - BoysSingleF32| <= 3.5e-7    (the GPU float row)
 //   erf-f64       <= 1e-13 for x >= 10.0 (asserted device-lane domain;
-//                    the recorded k_max = 32 boundary is 9.70 on the CPU,
+//                    the k_max = 32 boundary is 9.70 on the CPU,
 //                    the device lane's turning-point rounding is ~2.3e-13 at
 //                    x = 9.73, so the gate takes headroom; off-domain errors
 //                    are recorded as the scheme's honest cost)
@@ -25,7 +25,8 @@
 //                    degree-5 Taylor truncation ~1e-15)
 //   fp16-single   GPU vs the shipped CPU fp16 lane, <= 3.5e-7 + 1 full ULP
 //                    (the GPU-vs-CPU comparison contract; the absolute
-//                    contract is pinned CPU-side by the accuracy record)
+//                    contract is the CPU lane's own, m * 1e-7 + half a ULP
+//                    against the exact value)
 #include "boys/boys.hpp"
 #include "boys/boys_cuda.hpp"
 #include "boys_cuda_benchmark_kernels.hpp"
@@ -269,7 +270,7 @@ Timing TimeLane(const char* name,
     Timing timing{passes.front(), passes[1], passes.back()};
     // count/median is items per millisecond = 1e3 items/s; the /1e3 below is
     // what makes the printed value the unit its field names (Mvals/s), at the
-    // three decimals the runs log's rows carry.
+    // three decimals this driver's rows carry.
     std::printf("kernel: %s | workload: uniform-n32-x40 | count: %zu | passes: %d | "
                 "min_ms: %.3f | median_ms: %.3f | max_ms: %.3f | median_Mvals_per_s: %.3f\n",
                 name,
@@ -457,7 +458,7 @@ int SelfCheck(const std::vector<Item>& items,
     // ULP of the CPU value — the GPU-vs-CPU comparison of the accompanying
     // test suite (the full-ULP term absorbs the fp16 rounding-boundary flips
     // between the two float engines). The absolute contract (m * 1e-7 + 1/2
-    // ULP vs the exact value) is pinned CPU-side by the accuracy record.
+    // ULP vs the exact value) is the CPU lane's own, asserted by its tests.
 #if BoysFp16
     {
         const auto status = boys::BoysCuda::SingleF16(dN, dF16In, dF16Out, kInputCount, nullptr);

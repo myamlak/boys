@@ -6,9 +6,9 @@ bound that has a verdict is a bound nobody has to re-derive. A *derived*
 statement has no such check. "sixty times more accurate than the numbers used
 to store it", "a margin of thousandths of a per cent", "five to eight orders
 of magnitude past the 5.5e-14 bound" are arithmetic on numbers the same
-sentence prints, and nothing in the repository recomputes them. Readers found
-the errors in the calibration corpus below by doing exactly that arithmetic,
-by hand.
+sentence prints, and nothing in the repository recomputes them. A reader
+checking one of them has to do exactly that arithmetic by hand, and the
+calibration corpus below is the set of shapes where that has gone wrong.
 
 This script does it mechanically, and it is deliberately noisy: a tool that
 flags a candidate for a human to judge is worth more than one that silently
@@ -1308,12 +1308,11 @@ def summarise(findings, stream):
 # --------------------------------------------------------------------------
 
 # (document, a literal that identifies the site, the verdict, the check).
-# Every case is pinned to the calibration corpus rather than to a published
-# document, because the published documents no longer carry a single one of
-# these defects: each was repaired, and pinning a check to prose that has been
-# made correct would leave it calibrated against nothing. The corpus reproduces
-# the shape of each defect instead, so the check that caught it still reports
-# the same verdict on an input that is still wrong.
+# Every case is pinned to the calibration corpus rather than to the published
+# prose, because the prose this check runs on carries none of these shapes: a
+# check pinned to a sentence that is already correct would be calibrated
+# against nothing. The corpus writes each shape deliberately, so the check
+# still reports the same verdict on an input that is still wrong.
 CALIBRATION = (
     (CALIBRATION_DOC, "sixty times more accurate", "not derivable", "relation"),
     (CALIBRATION_DOC, "7.7 times as much", "mismatch", "relation"),

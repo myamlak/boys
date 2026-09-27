@@ -6,8 +6,8 @@ Two independent routes, cross-validated against each other:
 
   * ``F_quad``   - the integral, by mpmath's adaptive quadrature. This is the
                    definition, and nothing in this tree computes it.
-  * ``F_series`` - the convergent series (Boys 1950; the form used as the
-                   stable series in VikhamarSandberg 2025):
+  * ``F_series`` - the convergent series ([Boys1950]; the form used as the
+                   stable series in [VikhamarSandberg2026]):
 
                        exp(-x)   _inf_      x^l
                  F_n = ------- * >     ------------

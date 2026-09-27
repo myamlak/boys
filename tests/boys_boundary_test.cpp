@@ -1,9 +1,9 @@
-// Recursion-boundaries harness (the boundary record):
+// Recursion-boundaries harness:
 // measures where the erf-seeded upward recursion leaves the
-// 5e-14 absolute window of the V&S eq. 26 series reference, per kmax in
-// {4, 8, 16, 32}, and pins the four recorded cells within
-// kMeasuredTolerance (the recorded cells adopted the
-// first-failure-at-0.0001 record - see the reconciliation note on
+// 5e-14 absolute window of the [VikhamarSandberg2026] eq. 26 series reference,
+// per kmax in {4, 8, 16, 32}, and pins the four cells within
+// kMeasuredTolerance (the cells are first failing samples of the
+// 0.0001 descending sweep - see the note on
 // kThresholdRows). Both halves of the recursion are implemented here: no
 // std::erf exists in the library's sources (region B seeds from the
 // Chebyshev fit), so the harness carries the erf seed itself and mirrors
@@ -23,26 +23,25 @@
 namespace {
 
 // The boundary threshold: the recursion stays within this absolute window of
-// the reference for all n <= kmax (the record's 5e-14, shared with the
-// accuracy cells).
+// the reference for all n <= kmax (5e-14, the figure the accuracy contract is
+// stated at).
 constexpr double kBoundaryThreshold = 5e-14;
 
 // The measurement resolution. The pin is the largest failing sample of a
 // descending sweep at this step, so the step is part of the cell, not an
 // implementation detail: a different step is a different measurement. 1e-4 is
-// the record's own resolution - the cells ARE its first failing
-// samples - so the measurement and the record stay like for like. The step is
-// absolute, not scaled by the cell, matching how the record was made. Cost of
+// the resolution the cells below were taken at - each cell IS a first failing
+// sample - so the measurement and the pin stay like for like. The step is
+// absolute, not scaled by the cell. Cost of
 // the sweep at this step: ~1.3 s at kmax = 32 (the swath from the sweep start
 // down to the first failure), ~0.8 s at kmax = 4.
 constexpr double kMeasurementResolution = 1e-4;
 
 // Asserted agreement of the measured cell with the pin recorded below (the
-// recording machine's first failing sample of the 1e-4 descending sweep, see
-// kThresholdRows; the boundary record's cells carry the same record as
-// x0Recorded). Both sides of the comparison are the same KIND of value now - a
+// first failing sample of the 1e-4 descending sweep on MSVC, see
+// kThresholdRows). Both sides of the comparison are the same kind of value - a
 // first failing sample at the same stated resolution - so the band absorbs
-// the ulp-level seed/libm spread only, and no longer a resolution difference.
+// the ulp-level seed/libm spread only, and no resolution difference.
 //
 // The band is unchanged at 20% and is NOT widened to cover scatter. What it
 // must cover is the measurement's own scatter, MEASURED over 12 lattice
@@ -67,7 +66,7 @@ constexpr long double kSeriesTailFloor = 1e-26L;
 
 // Inline-series vs committed-grid agreement (relative; see the cross-check
 // test): ~3.7x the measured worst on MSVC's 64-bit long double
-// (1.340e-15 at (n=6, x=40) - measured on this machine against the grid
+// (1.340e-15 at (n=6, x=40) - measured against the grid
 // regenerated at 45 digits). The grid this replaced measured 3.200e-15 at
 // (n=31, x=38.3119): that was the GRID's own argument rounding (F_n was
 // evaluated at the full-precision argument while the reader parses the x
@@ -92,7 +91,7 @@ double ErfSeedF0(double x) {
     return 0.5 * std::sqrt(std::numbers::pi / x) * std::erf(std::sqrt(x));
 }
 
-// F_n(x) via the provably stable series (V&S eq. 26): all terms positive,
+// F_n(x) via the provably stable series ([VikhamarSandberg2026] eq. 26): all terms positive,
 // F_n(x) = 0.5 e^-x sum_l x^l / prod_{j=0..l} (n + j + 0.5). The same series
 // the committed reference grid is generated from (gen_boys_coefficients.py
 // boys_ref), evaluated here in long double (see the static_assert above).
@@ -170,12 +169,11 @@ bool PassesThreshold(int kmax, double x) {
 // sweep start at kMeasurementResolution. The value is an EXISTENCE WITNESS -
 // the criterion provably fails there, so it is a rigorous lower bound on the
 // top of the failure set - bracketed above by the sampled point one step
-// higher, which passes. It is a resolution-limited record by construction, and
+// higher, which passes. It is resolution-limited by construction, and
 // the resolution travels with the pin (ThresholdRow::resolution).
 //
-// The two-phase sweep this replaced (0.01 down to the first failure, then
-// 0.001 below it) was ILL-CONDITIONED, not merely coarse: its value was a
-// lattice draw, not a property of the function, because it reported the first
+// The two-phase sweep is ILL-CONDITIONED, not merely coarse: its value is a
+// lattice draw, not a property of the function, because it reports the first
 // point of a CONTIGUOUS PASS RUN at a coarse step. The failure set is a sparse
 // mixture, so a pass run ends wherever the lattice happens to cross a failure
 // band, and a coarser lattice stops earlier. MEASURED on one fixed machine
@@ -202,7 +200,7 @@ bool PassesThreshold(int kmax, double x) {
 // / 0.5% of the cell for kmax = 4/8/16/32, with deviations from the recorded
 // cells of -12.3%..-6.2% / -7.2%..-3.4% / -0.5%..+1.7% / -0.4%..+0.1%. Worst
 // deviation over all 48 draws: -12.3%, inside the band with ~8 points of
-// margin (the retired draw reds this same machine's kmax = 4 at -31.7%).
+// margin (the two-phase draw reds this same machine's kmax = 4 at -31.7%).
 struct FailureTop {
     bool startPasses = false; // the sweep start is inside the 5e-14 window
     bool found = false; // a failing sample exists above the sweep floor
@@ -228,7 +226,7 @@ FailureTop MeasureFailureTop(int kmax) {
 
     // Descend at the measured resolution and stop at the FIRST failing sample.
     // Starting from the sweep start (not from a coarse first failure) is what
-    // keeps the result independent of the recorded cell: the search window is
+    // keeps the result independent of the pinned cell: the search window is
     // never chosen from the value it checks.
     for (int i = 0;; ++i)
     {
@@ -251,57 +249,47 @@ FailureTop MeasureFailureTop(int kmax) {
 }
 
 // Boundary rows: per kmax, x0Measured (the asserted pin - the
-// recording machine's first failing sample of the 0.0001 descending sweep,
-// within kMeasuredTolerance), x0Recorded (the recorded cell - the same record),
-// and the published formula (V&S eq. 25/13, arXiv:2512.10059 - literature
+// first failing sample of the 0.0001 descending sweep, within
+// kMeasuredTolerance), x0Recorded (the same measurement), and the published
+// formula ([VikhamarSandberg2026] eq. 25/13 - literature
 // input, hardcoded, not measured). Margins = formula / x0 are computed
 // ratios in the test, not asserted independently.
 //
-// RECONCILIATION RECORD - THREE GENERATIONS (the record-and-investigate
-// protocol: "if a machine deviates beyond it, record and investigate before
-// editing the record"): (1) the ORIGINAL cells (0.244/0.754/3.82/9.70)
-// were
-// measurements of the design-study harness's coarse x*1.02 geometric grid
-// (first passing grid point), reproduced
-// bit-for-bit by simulating that exact grid (0.244/0.754/2.069/3.823/5.910/
-// 9.697). The recursion error is NOT monotone over the transition (the
-// "empirically monotone" premise is false): the amplified seed
-// rounding error oscillates through the 5e-14 line hundreds of times, so
-// the coarse grid skipped over failure bands and its cells are grid
-// artifacts. (2) The fine two-phase sweep (0.01 then 0.001
-// steps) then measured 0.393/1.484/4.150/9.866 on this machine's pinned
-// builds (fresh builds draw 0.401/1.435 for kmax = 4/8), and the writing
-// pass adopted those cells - but the 0.0001-resolution post-check refuted
-// them too: failing 1e-4 samples sit above the
-// cells (+17.7%/+10.3%/+2.1%/+1.9% for kmax = 4/8/16/32), with 402-3351
-// pass/fail alternations per band, so the 0.001 cells are themselves lattice
-// artifacts of the two-phase sweep. (3) CURRENT: the record presents the cells
-// as first-failure-at-resolution values
+// THREE MEASUREMENTS OF THE SAME QUANTITY, and why the pin is the third.
+// (1) A coarse x*1.02 geometric grid (first passing grid point) gave 0.244 /
+// 0.754 / 3.82 / 9.70. The recursion error is NOT monotone over the transition
+// (the amplified seed rounding error oscillates through the 5e-14 line
+// hundreds of times), so the coarse grid skipped over failure bands and its
+// cells are grid artifacts.
+// (2) A fine two-phase sweep (0.01 then 0.001 steps) measured 0.393 / 1.484 /
+// 4.150 / 9.866 on MSVC (fresh builds draw 0.401 / 1.435 for kmax = 4 / 8).
+// It reports the first point of a contiguous PASS RUN at a coarse step, so a
+// pass run ends wherever the lattice happens to cross a failure band:
+// failing 1e-4 samples sit above those cells
+// (+17.7%/+10.3%/+2.1%/+1.9% for kmax = 4/8/16/32), with 402-3351
+// pass/fail alternations per band.
+// (3) THIS PIN: the cells are first-failure-at-resolution values
 // - the first failing samples of the 0.0001 descending sweep (0.4625/1.6373/
-// 4.2367/10.0492 - the x0Recorded column below, which the record adopted), with
+// 4.2367/10.0492 - the x0Recorded column below), with
 // the passing sample one 1e-4 step above each (0.4626/1.6374/
-// 4.2368/10.0493); the record is explicitly resolution-limited, not a
-// stability threshold. The recording machine's 1e-5 scans over the
+// 4.2368/10.0493). They are explicitly resolution-limited, not a
+// stability threshold. 1e-5 scans over the
 // envelope-top neighborhoods extend the largest failing samples to
-// ~0.4625/1.64959/4.29768/10.05917 (the extended record). The pins
-// below guard these cells with the same ±20% band: this machine's own
-// two-phase measurement is a coarser (0.001) lattice draw of the same
-// oscillating envelope, and the band absorbs both the libm roundings and
-// the resolution difference while still failing on a broken seed/step/
-// reference.
+// ~0.4625/1.64959/4.29768/10.05917.
 //
-// (4) CURRENT MEASUREMENT (this change): generations (1)-(3) all measured a
-// LATTICE DRAW - the first point of a contiguous PASS RUN at a chosen step -
-// and a draw is not reproducible across machines. The gate now measures the
-// FAILURE TOP instead: the largest failing sample of a 1e-4 descending sweep
-// from the sweep start (see MeasureFailureTop). MEASURED on one fixed machine,
-// holding libm and function still and moving only the lattice: the retired
-// two-phase draw spread 27.0% at kmax = 4 (0.3157..0.4010) and 13.6% at
-// kmax = 8, while the failure top spreads 4.4% and 1.2%. The retired draw is
-// what reddened glibc-aarch64 (0.361 = 21.9%) - and that value sits inside the
-// retired measurement's own 27% spread on x86_64, so it was never evidence
-// about aarch64. The recorded cells are unchanged: they were always first
-// failing samples at 1e-4, which is exactly what is now measured.
+// WHY THE FAILURE TOP, AND NOT THE PASS-RUN DRAW. A draw is not reproducible
+// across machines. MEASURED on one fixed machine,
+// holding libm and function still and moving only the lattice: the
+// two-phase draw spreads 27.0% at kmax = 4 (0.3157..0.4010) and 13.6% at
+// kmax = 8, while the failure top spreads 4.4% and 1.2%. The draw is what
+// reddened the linux-arm64 leg (0.361 = 21.9%), and 0.361 sits inside the
+// draw's own 27% spread measured on x86_64, so it was never evidence about
+// aarch64. The pins
+// below guard the failure-top cells with the same ±20% band: the
+// two-phase measurement is a coarser (0.001) lattice draw of the same
+// oscillating envelope, reproduced beside them, and the band absorbs both the
+// libm roundings and the resolution difference while still failing on a broken
+// seed/step/reference.
 struct ThresholdRow {
     int kmax;
     double x0Measured;
@@ -373,22 +361,23 @@ TEST(BoysBoundaryTest, ErfSeededUpwardRecursionThresholds) {
 
         // The sweep start must lie inside the window and the sweep must find a
         // failing sample above the floor: either failure means the measurement
-        // found no boundary where the record has one.
+        // found no boundary where the pin has one.
         ASSERT_TRUE(top.startPasses)
             << "kmax=" << row.kmax << ": no pass at the sweep start x = 12.0";
         ASSERT_TRUE(top.found) << "kmax=" << row.kmax
                                << ": no failing sample above the sweep floor (x = 0.001)";
 
         // The measured cell is the failure top at row.resolution - a first
-        // failing sample, the same kind of record as the pin - so this is a
+        // failing sample, the same kind of measurement as the pin - so this is a
         // like-for-like comparison and the band covers the seed/libm spread.
         const double relativeDeviation = std::abs(top.x - row.x0Measured) / row.x0Measured;
         EXPECT_LE(relativeDeviation, kMeasuredTolerance)
             << "kmax=" << row.kmax << ": measured failure top x0 = " << top.x << " at resolution "
             << row.resolution << " vs pinned " << row.x0Measured;
         const double recordedDeviation = std::abs(top.x - row.x0Recorded) / row.x0Recorded;
-        std::printf("BoysBoundary kmax=%2d: failure top x0 = %.6f at resolution %.0e, paper %.4f, "
-                    "formula %.2f (V&S eq. 25/13), margin %.1fx, deviation vs paper %.2e\n",
+        std::printf("BoysBoundary kmax=%2d: failure top x0 = %.6f at resolution %.0e, pinned %.4f, "
+                    "formula %.2f ([VikhamarSandberg2026] eq. 25/13), margin %.1fx, deviation "
+                    "vs pinned %.2e\n",
                     row.kmax,
                     top.x,
                     row.resolution,
@@ -401,7 +390,7 @@ TEST(BoysBoundaryTest, ErfSeededUpwardRecursionThresholds) {
 
 TEST(BoysBoundaryTest, InlineReferenceMatchesCommittedGrid) {
     // Self-test of the inline series: both it and the CSV evaluate the same
-    // V&S eq. 26 series (the CSV at 30 mpmath digits, rounded to double), so
+    // [VikhamarSandberg2026] eq. 26 series (the CSV at 30 mpmath digits, rounded to double), so
     // their agreement is bounded by the two roundings. The "agree to
     // ~1e-17" assumed the 80-bit long-double premise; with MSVC's 64-bit
     // long double the inline error is ~1e-16 relative, so the asserted

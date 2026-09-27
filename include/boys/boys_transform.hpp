@@ -402,7 +402,8 @@ struct ProductPolicy {
 using Fp64Policy = ProductPolicy<53, 53, 1, double>;
 
 /// An fp32 operand carried as two tf32 parts, three products, fp32 accumulate:
-/// the 3xTF32 emulation of an fp32 product on a tf32 tensor core.
+/// the 3xTF32 emulation of an fp32 product on a tf32 tensor core
+/// ([OotomoYokota2022]).
 using Tf32x3Policy = ProductPolicy<11, 24, 2, float>;
 
 /// An fp32 operand carried as three bf16 parts, six products, fp32 accumulate:

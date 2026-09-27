@@ -52,7 +52,7 @@
                                               __has_include("boys_c.cpp") ||                       \
                                                             __has_include("boys_half_native.cpp")
 #error                                                                                             \
-    "this consumer check is compiled with src/ on its include path; it no longer proves that a consumer can build against the public headers alone"
+    "this consumer check is compiled with src/ on its include path; it does not prove that a consumer can build against the public headers alone"
 #endif
 
 namespace {

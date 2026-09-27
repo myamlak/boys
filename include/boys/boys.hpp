@@ -27,9 +27,9 @@
 /// F_n(x) = the integral of t^(2n) e^(-x t^2) over t in [0, 1], n >= 0, x >= 0
 ///
 /// Every one- and two-electron integral over Gaussian primitives reduces to
-/// evaluations of this family (Boys 1950, Proc. R. Soc. A 200, 542); the
-/// standard upward/downward recursion between orders is from Shavitt
-/// (1963, Methods in Computational Physics 2, 1).
+/// evaluations of this family ([Boys1950]); the standard upward and downward
+/// recursions between orders, and the large-argument asymptotic form region C
+/// uses, are from Shavitt ([Shavitt1963]).
 ///
 /// Design (measured, not assumed):
 ///  - region A  [0, x0): per-order piecewise Chebyshev fits evaluated by a
@@ -1073,8 +1073,9 @@ double BoysSingle(int n, double x) noexcept;
 
 /// F_0(x)..F_nmax(x) in double precision, |F̂ − F| ≤ m·B_region per value.
 ///
-/// The batch is the pattern real integral engines use (McMurchie-Davidson /
-/// Obara-Saika recursions consume all orders at once) and is considerably
+/// The batch is the pattern real integral engines use (the McMurchie-Davidson
+/// [McMurchie1978] and Obara-Saika [ObaraSaika1986] recursions consume all
+/// orders at once) and is considerably
 /// cheaper than nmax + 1 single evaluations.
 ///
 /// \tparam kAccuracyMultiplier see BoysSingle

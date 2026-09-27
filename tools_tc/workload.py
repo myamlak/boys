@@ -5,11 +5,12 @@ Counted, not estimated. Two measured inputs:
   * the library's dispatch, counted from the shipped source (share.py): the
     fused-op cost of a ladder and how much of it is the Chebyshev transform,
     as a function of (nmax, x);
-  * the workload: qcx's benchmarks/boys_argument_probe.cpp at C24H50/def2-SVP
-    (586 basis functions, 965,035,861 Boys calls), which reports the calls per
-    order L and per DISPATCH PATH - zero, A-table, A-recur, A-mixed, B, C -
-    using this library's own region boundaries, plus an x histogram. The
-    per-size ladder comes from benchmarks/boys_argument_scaling_probe.cpp.
+  * the workload: a Boys-call count on a C24H50/def2-SVP system
+    (586 basis functions, 965,035,861 Boys calls), classified per order L and
+    per DISPATCH PATH - zero, A-table, A-recur, A-mixed, B, C - by this
+    library's own region boundaries, plus an x histogram. The counts and the
+    per-size ladder below are that measurement, pinned here; it is taken
+    outside this tree and is not regenerated here.
 
 The dispatch path is what makes this exact: an A-table call is x below
 kTierThresholds[0] (one transform carries the ladder, M = 1 by construction),
@@ -30,8 +31,8 @@ import parse_tables as P   # noqa: E402
 
 X0 = 11.899848152108484
 X1 = 28.989337738820740
-# C24H50 / def2-SVP: Boys calls by order L and dispatch path (the probe's own
-# classification, which is the library's own).
+# C24H50 / def2-SVP: Boys calls by order L and dispatch path, classified by
+# the library's own region boundaries.
 PATH = {  # L: (zero, A-table, A-recur, A-mixed, B, C)
     0: (35737, 2807485, 14408932, 0, 12273800, 172316704),
     1: (10961, 4501659, 25102322, 0, 22788936, 281308986),
@@ -76,7 +77,7 @@ def main():
             + b * ops(rb) + c * ops(rc) + z * 1.0
         rows.append((L, at, ar, rd["transform"] / ops(rd), ru["mmax"], ru["transform"] / ops(ru)))
     print(f"C24H50/def2-SVP, {total_calls} Boys calls "
-          f"(qcx's boys_argument_probe, engine-cross-checked)")
+          f"(measured, and cross-checked against the shipped engine)")
     print(f"{'L':>2s} {'A-table calls':>14s} {'share/tf':>9s} {'A-recur calls':>14s} "
           f"{'M below 2.0153':>15s} {'share/tf':>9s}")
     for (L, at, ar, s_at, m, s_ar) in rows:

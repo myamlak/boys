@@ -65,7 +65,7 @@ side for that reason.
 | `contract.py` | What a mode delivers *after* the recursion it feeds, reproducing each shipped dispatch path with the mode's transform in place of the shipped one. |
 | `scheme.py` | The shipped split Clenshaw against the GEMM-shaped dot product at the same precision, so the mode's precision and the evaluation scheme can be told apart. |
 | `share.py` | The Chebyshev transform's share of a ladder's fused-op cost, counted from the shipped dispatch. |
-| `workload.py` | That share weighted by a measured Boys-call workload. The call counts and the ladder are copied in from qcx's `boys_argument_probe` and `boys_argument_scaling_probe`; they are not regenerated here. |
+| `workload.py` | That share weighted by a measured Boys-call workload. The call counts and the ladder are pinned into the file from that measurement, which is taken outside this tree; they are not regenerated here. |
 | `compare.py` | The published bounds against the measurement — the entry point. |
 | `dump_values.cpp` | Cross-check driver: the shipped library's region-A values, both lanes, on an argument list from a file. |
 
@@ -77,7 +77,7 @@ side for that reason.
 | `shipped_values.txt` | The same dump at a coarser argument set and orders 8, 16 and 32. |
 | `xgrid.txt` | The argument list `shipped_grid.txt` was taken on. |
 | `res_double.json`, `res_float.json` | `measure.py`'s raw output, keyed `mode\|band\|order` → the worst absolute and relative error and the argument each was found at. |
-| `measure.log`, `measure2.log` | `measure.py`'s printed table, before and after the mode set was extended. |
+| `measure.log`, `measure2.log` | `measure.py`'s printed table, for the two mode sets it has been run over. |
 | `ref_cache.json` | The 50-digit references, cached across runs. Not committed. |
 
 ## Building the cross-check driver

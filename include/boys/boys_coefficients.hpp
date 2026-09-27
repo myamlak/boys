@@ -4116,8 +4116,7 @@ inline constexpr auto kNarrowRows = std::to_array<NarrowRow>({
 // rational pieces were accepted at, read in the kernel's own arithmetic
 // at BOTH multiply-add routes with the worse taken (see the generator).
 // A bound taken at one route is not a bound on the other's evaluation,
-// which is the shape of defect a float table of this library's was
-// withdrawn for; these rows are the reading of both.
+// so these rows are the reading of both.
 inline constexpr auto kNarrowRatACoeffs = std::to_array<double>({
     8.67948601674870424e-01,  5.96342081873433016e-02,  6.36024400137373720e-03,
     1.05230759504554958e-04,  1.92849524045229943e-06,  2.01830036772703170e-01,
@@ -5099,12 +5098,12 @@ inline constexpr int kNarrowRatBStored = 35;
 inline constexpr double kNarrowRatBDeliveredFused = 4.09566203649086073e-14;
 inline constexpr double kNarrowRatBDeliveredSeparate = 4.09566203649086073e-14;
 
-// The extended band (the per-range seed design): an F0 fit on
+// The extended band: an F0 fit on
 // [kExtendedBX0, kX0) evaluated by the same split Clenshaw; the
 // upward recursion from it is certified per kmax tier - an order n
 // takes the extended seed exactly when x >= kTierThresholds[n], the
-// per-order dispatch thresholds (the certified values of the
-// interval instrument, rounded up to the next double).
+// per-order dispatch thresholds (the values the generator certifies,
+// rounded up to the next double).
 inline constexpr double kExtendedBX0 = 1.08552523453493330e+00;
 inline constexpr auto kExtendedBcoeffs = std::to_array<double>({
     4.12114508161470272e-01,  -2.08513328473299508e-01, 7.23146663434936776e-02,

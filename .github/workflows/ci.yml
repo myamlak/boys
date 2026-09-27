@@ -59,10 +59,11 @@ concurrency:
 # added by regenerating that file. See the option-matrix job for what a
 # configuration is and what each one is judged on.
 #
-# THE ARM64 LEGS. They were added RED on purpose and they earned their keep on
-# the first run: src/boys_simd.cpp included <immintrin.h> unconditionally and
-# CMakeLists applied -mavx2;-mfma;-mf16c (or /arch:AVX2) with no architecture
-# guard anywhere in the tree, which is the finding those legs exist to expose.
+# THE ARM64 LEGS. They are what exposes an x86-only assumption, and the tree
+# carries the guard their absence asks for: without it src/boys_simd.cpp
+# included <immintrin.h> unconditionally and CMakeLists applied
+# -mavx2;-mfma;-mf16c (or /arch:AVX2) with no architecture
+# guard anywhere in the tree.
 # The tree now carries the guard (CMakeLists' BOYS_ARCH_X86_64 probe feeds
 # BOYS_SIMD_X86 in the SIMD TU), so the arm64 legs build and run the FULL suite
 # rather than being marked continue-on-error — never that, and never a deleted
@@ -113,9 +114,9 @@ concurrency:
 # Action and tool versions are pinned: checkout v7.0.1, msvc-dev-cmd v1.13.0,
 # mpmath 1.4.1 (requirements-boys.txt — the committed bytes only reproduce
 # against it), clang-format 18.1.3 (the byte-identity gate's formatter: the
-# generator used to format the header with whatever clang-format it found on
-# PATH and to skip silently when it found none, which is how the macos leg
-# drifted — see tools/gen_boys_coefficients.py), Doxygen 1.18.0 (the same
+# generator must format the header with this exact formatter and must fail
+# rather than skip when it finds none, or a leg's committed bytes drift from
+# what it regenerates — see tools/gen_boys_coefficients.py), Doxygen 1.18.0 (the same
 # release on every leg that can run it; the macOS assets are the mac-arm/
 # mac-intel zips, verified to carry the same flat doxygen-1.18.0/doxygen layout
 # as the Linux tarball).
@@ -132,19 +133,19 @@ concurrency:
 # rest of the matrix combined, because the SIMD correctness tests gate
 # themselves with a soft GTEST_SKIP on that same predicate
 # (tests/boys_test.cpp): a wrong CPUID bit therefore makes every SIMD test SKIP
-# while CI reports green with the whole vector tier dead — the exact failure
-# this repository already suffered once. A hard assertion turns that silent
+# while CI reports green with the whole vector tier dead, which is the failure
+# this assertion exists to catch. A hard assertion turns that silent
 # skip into a red build. It observes the capability PREDICATE, not which path a
 # given call took; that residual gap is named in the probe's own header, not
 # papered over.
 #
 # It is ONE tracked source (tests/boys_avx2_probe.cpp) built as a CMake target
 # and run by ctest, with the per-leg expectation passed as
-# -DBOYS_EXPECT_AVX2=<0|1> at configure time. It used to be a heredoc pasted
-# into five jobs and compiled by hand next to the library, which is why it
-# failed on two legs for two reasons that had nothing to do with AVX2: the
-# hand-compiled probe missed MSVC Debug's /MDd (the leg died on a CRT mismatch)
-# and the sanitizer leg's -fsanitize flags (it died on undefined __asan_init).
+# -DBOYS_EXPECT_AVX2=<0|1> at configure time. A heredoc pasted
+# into five jobs and compiled by hand next to the library cannot inherit the
+# configuration and fails for reasons that have nothing to do with AVX2: a
+# hand-compiled probe misses MSVC Debug's /MDd (the leg dies on a CRT mismatch)
+# and the sanitizer leg's -fsanitize flags (it dies on undefined __asan_init).
 # A target that LINKS boys inherits the configuration's CRT, sanitizers and
 # architecture, so there is no second flag set left to keep in step. The probe
 # is built only when the option is supplied, so developer builds are unaffected.
@@ -460,8 +461,8 @@ jobs:
         run: ctest --test-dir build -V -R 'boys-accuracy-gate|boys-consumer-'
   # -------------------------------------------------------------------------
   # ubuntu-24.04-arm, GCC. NEON vs AVX2: this catches x86-only assumptions.
-  # It was red on the first run — the finding it exists to produce — and now
-  # builds and runs the full suite with the AVX2 tier absent by construction.
+  # The AVX2 tier is absent by construction, and the leg still
+  # builds and runs the full suite.
   # -------------------------------------------------------------------------
   linux-arm64:
     name: linux-arm64 gcc Release
@@ -493,13 +494,11 @@ jobs:
   # -------------------------------------------------------------------------
   # windows-11-arm, MSVC arm64.
   #
-  # The first run of this leg was RED FOR THE WRONG REASON and the fix is the
-  # interesting part: ilammy/msvc-dev-cmd defaults to host=x64, so the leg was
-  # building an x64 binary and running it under Windows' x64 emulation on the
-  # ARM64 runner. It reported BoysAvx2Available() = true, correctly — for an
-  # x64 build. That is a green-looking leg with no arm64 subject at all, so the
-  # arch is now stated explicitly rather than inherited from the action's
-  # default.
+  # The arch must be stated explicitly rather than left to the action's
+  # default: ilammy/msvc-dev-cmd defaults to host=x64, so a leg that inherits
+  # it builds an x64 binary and runs it under Windows' x64 emulation on the
+  # ARM64 runner. It reports BoysAvx2Available() = true, correctly — for an
+  # x64 build — which is a green-looking leg with no arm64 subject at all.
   # -------------------------------------------------------------------------
   windows-arm64:
     name: windows-arm64 msvc Release

@@ -1,26 +1,21 @@
-// The unsorted-SIMD lane — the "AVX2 unsorted" row of the accompanying
-// recorded throughput rows and their 3.2x divergence-penalty claim. The
-// engine-realistic sorted lanes live in the companion sorted benchmark; this
-// file measures the mixed per-vector kernel that evaluates all three region
-// paths (A piecewise Chebyshev, B F0-Chebyshev + upward with a gathered
-// e^{-x} table, C pure asymptotic) and blends per lane — the cost of the
-// unsorted input stream the engine actually faces.
+// The unsorted-SIMD lane: the mixed per-vector kernel that evaluates all
+// three region paths (A piecewise Chebyshev, B F0-Chebyshev + upward with a
+// gathered e^{-x} table, C pure asymptotic) and blends per lane — the cost of
+// the unsorted input stream the engine actually faces, against the
+// region-sorted lanes of the companion sorted benchmark.
 //
-// Ported from the design-study mixed-SIMD implementation (read-only
-// reference) onto the shipped coefficient tables (boys::detail::
-// kPieces / kPieceStart / kCoeffs / kBcoeffs / kBDeg / kX0 / kX1). Two
-// corrections against the reference:
-//   * the e^{-x} gather follows the shipped kernel's ExpTable convention
-//     (rows padded to 8 doubles, grid index pre-shifted by 3 before the
-//     scale-8 gather); the design-study copy skipped the shift and read the
-//     wrong rows, so its unsorted values were garbage — the self-check here
-//     pins the values against BoysSingle.
-//   * the scalar tail uses the certified BoysSingle<double> reference.
+// It runs on the shipped coefficient tables (boys::detail::
+// kPieces / kPieceStart / kCoeffs / kBcoeffs / kBDeg / kX0 / kX1) and follows
+// the shipped kernel's ExpTable convention: rows padded to 8 doubles, grid
+// index pre-shifted by 3 before the scale-8 gather. A copy that skipped that
+// shift reads the wrong rows and returns garbage over the whole array, so
+// --self-check pins the values against BoysSingle rather than assuming it.
+// The scalar tail uses the certified BoysSingle<double> reference.
 //
 // Custom main(): --self-check runs the verifier (max |out - BoysSingle(8,
 // x)| over the benchmark inputs, budget 5.5e-14) and exits; the default
-// mode runs the runs-log protocol (warmup + 3 passes, min/median/max,
-// median = the recorded cell).
+// mode runs the measurement protocol (warmup + 3 passes, min/median/max,
+// median = the cell the run reports).
 #include "boys/boys.hpp"
 #include "boys/boys_coefficients.hpp"
 
@@ -38,14 +33,14 @@
 namespace {
 
 constexpr std::size_t kInputCount = 1u << 22; // 4,194,304 values
-constexpr int kOrder = 8; // the design-study unsorted workload order
+constexpr int kOrder = 8; // the order the whole array is evaluated at
 constexpr int kPasses = 3;
 constexpr double kHalfSqrtPi = 0.886226925452758014;
 
 // e^{-x} on [0, 30]: a degree-4 Taylor table, one row per grid abscissa
 // x_i = i * kStep, rows padded to 8 doubles so the gathers can use the legal
 // scale 8. Mirrors the shipped kernel construction (the ~192 KB gather table
-// the recorded footprint cells cite).
+// the footprint figures in tests/boys_test.cpp cite).
 //
 // A row holds the quartic Taylor polynomial of e^{-x} at x_i, written in the
 // monomial basis of the ABSOLUTE argument x so that Eval4 is a plain Horner
@@ -300,7 +295,7 @@ double MaxAbsError(const double* out, const double* x, std::size_t count, double
 int main(int argc, char** argv) {
     const bool selfCheck = argc > 1 && std::strcmp(argv[1], "--self-check") == 0;
 
-    // The design-study unsorted workload: x uniform in [0, 40], rng(46),
+    // The unsorted workload: x uniform in [0, 40], rng(46),
     // order 8 for the whole array.
     std::mt19937_64 rng(46);
     std::uniform_real_distribution<double> xd(0.0, 40.0);
@@ -328,7 +323,7 @@ int main(int argc, char** argv) {
         return pass ? 0 : 1;
     }
 
-    // Runs-log protocol: warmup + 3 passes, min/median/max.
+    // Measurement protocol: warmup + 3 passes, min/median/max.
     ChebSimdMixed(kOrder, x.data(), out.data(), kInputCount, expTable);
     std::vector<double> passes(kPasses);
 
@@ -344,7 +339,7 @@ int main(int argc, char** argv) {
     const double median = passes[1];
     // count/median is items per millisecond = 1e3 items/s; the /1e3 below is
     // what makes the printed value the unit its field names (Mvals/s), at the
-    // three decimals the runs log's rows carry.
+    // three decimals this driver's rows carry.
     std::printf(
         "kernel: cheb-simd-unsorted-n8 | workload: uniform-x40-n8 | count: %zu | passes: %d | "
         "min_ms: %.3f | median_ms: %.3f | max_ms: %.3f | median_Mvals_per_s: %.3f\n",

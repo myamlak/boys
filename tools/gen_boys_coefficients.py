@@ -25,8 +25,8 @@ Method (the formula sources are keyed to CITATION.bib):
   - Region B [x0, x1): one F0 fit + the upward recursion (Shavitt1963,
     Methods in Computational Physics 2, 1-45, 1963).
   - Extended band [XNEW0, x0): a second F0 fit + the same upward recursion,
-    dispatched per kmax tier (the per-range seed design; the certified
-    per-kmax thresholds kTierThresholds come from the interval instrument).
+    dispatched per kmax tier; the certified per-kmax thresholds kTierThresholds
+    are derived below and emitted into the committed header.
   - Region C [x1, inf): asymptotic, no coefficients.
   - Boundaries: fixed kmax=32 values x0 = 11.899848152108484,
     x1 = 28.989337738820740 (the configuration validated end-to-end against
@@ -35,16 +35,18 @@ Method (the formula sources are keyed to CITATION.bib):
     is VikhamarSandberg2026, Eqs. 25/13.
   - Float lane: same structure, tolerance 1e-7, degree cap 10.
   - Region B carries a second, certified route beside the Chebyshev one: a
-    rational minimax fit, P(t)/Q(t), fitted by the Remez exchange over the
+    rational minimax fit, P(t)/Q(t), fitted by the Remez exchange
+    ([Remez1934]) over the
     same interval and in the same mapped argument, and cross-checked against
-    Lawson's algorithm (with the Sanathanan-Koerner denominator weight). The
+    Lawson's algorithm ([Lawson1964], with the Sanathanan-Koerner denominator
+    weight, [SanathananKoerner1963]). The
     region-B routes' stored counts and delivered errors are measured in the
     kernel's double arithmetic against the same reference the fits are
     validated against, and emitted beside the tables.
 
 The DCT normalization is the standard one: c_0 gets 1/(deg+1), all other
-coefficients - including the top one - get 2/(deg+1). An earlier normalization
-bug (halving c_deg too) made fits diverge - see the design doc. The committed
+coefficients - including the top one - get 2/(deg+1). Halving c_deg as well
+makes the fits diverge. The committed
 header must match this script's output byte for byte for a given tolerance
 configuration.
 """
@@ -123,10 +125,9 @@ MAX_DEG_FLOAT = 10
 # the split Clenshaw reads the odd coefficients up to c[deg-1].
 FIRST_BAND_DEG = 20
 
-# The extended band (the per-range seed design): a second F0 fit serving
+# The extended band: a second F0 fit serving
 # [XNEW0, X0) with the region-B-style upward recursion, dispatched per kmax
-# tier (4/8/16/32). The boundaries are certified by the interval instrument
-# (the interval instrument) under the band's range-uniform
+# tier (4/8/16/32). The boundaries are certified under the band's range-uniform
 # a-priori seed bound delta_0' = 1.0641e-15 (R_hat 1.0116e-15 forward
 # rounding + tau 5.2538e-17 truncation tail, no x-sampling) and hardcoded
 # below as the dispatch constants; the fit tolerance is the same 5e-14
@@ -136,7 +137,7 @@ XNEW0 = mpf("1.0855252345349333")
 EXTENDED_DEG_LADDER = (12, 18, 24, 30, 36, 42, 48, 54, 60, 72, 96)
 
 # The certified per-kmax boundaries of the extended band (kmax 4/8/16/32),
-# as certified by the interval instrument under the band's range-uniform
+# as certified under the band's range-uniform
 # a-priori seed bound R_hat + tau = 1.0641375040661759464e-15 (R_hat the
 # evaluation-rounding sum over the seed's coded roundings, tau the
 # polynomial-definition term). tau is computed rather than typed:
@@ -145,8 +146,8 @@ EXTENDED_DEG_LADDER = (12, 18, 24, 30, 36, 42, 48, 54, 60, 72, 96)
 # 4*M(rho)*rho^-d/(rho-1) minimised over rho (Trefethen2019, ch. 8): the
 # coefficients interpolate at Chebyshev-Gauss nodes, where the aliasing is
 # at most the size of the tail, so the interpolant constant applies rather
-# than the older (1 + Lambda_d) form, which charged the aliasing the
-# worst-case operator norm a decaying tail never attains and was 2.0059x
+# than the (1 + Lambda_d) form, which charges the aliasing the
+# worst-case operator norm a decaying tail never attains and is 2.0059x
 # too loose.
 # The bound covers the SEED's own definition and evaluation error, NOT the
 # error a caller receives: the crossing condition charges the upward
@@ -1129,8 +1130,7 @@ def narrow_rational_block_lines(narrow_rat_a, narrow_rat_b):
         "// rational pieces were accepted at, read in the kernel's own arithmetic",
         "// at BOTH multiply-add routes with the worse taken (see the generator).",
         "// A bound taken at one route is not a bound on the other's evaluation,",
-        "// which is the shape of defect a float table of this library's was",
-        "// withdrawn for; these rows are the reading of both.",
+        "// so these rows are the reading of both.",
     ]
     per_order = narrow_rat_a["orders"]
     a_coeffs = []
@@ -1310,7 +1310,7 @@ def extended_gen_delta(cd, edge, x):
     """The generator-side a-priori seed width of the extended fit at x: the
     delivered double-evaluation error plus the split-Clenshaw
     evaluation-rounding bound R_hat = 1.0116e-15 (the forward-error bound of
-    the seed-bound derivation - the interval instrument certifies the band under
+    the seed-bound derivation - the band is certified under
     the same quantity plus the truncation tail tau, delta_0' = R_hat + tau
     = 1.0641e-15)."""
     err = mpf(abs(clenshaw_double(cd, float(x), float(edge), float(X0)) - float(boys_ref(0, x))))
@@ -1319,7 +1319,7 @@ def extended_gen_delta(cd, edge, x):
 
 def extended_gen_envelope(n, edge, cd, x, gamma):
     """The generator-side closed-form envelope B_n(x) of the extended band
-    (the instrument's section-2 envelope with the per-argument seed width
+    (the closed-form envelope with the per-argument seed width
     extended_gen_delta): A_n(x)*delta(x) + sum_j (A_n/A_{j+1}) r_j(x)."""
     x = mpf(x)
     if n == 0:
@@ -1425,11 +1425,14 @@ def fit_extended_band(b_cheb=None):
 # receives, and the gap between the two is the whole reason this section
 # re-implements the kernel's evaluation below.
 #
-# Two textbook routes are run. The Remez exchange solves the linearized
+# Two textbook routes are run. The Remez exchange ([Remez1934]) solves the
+# linearized
 # equioscillation problem on a reference set and moves the set to the error's
-# extrema; Lawson's algorithm reaches the same linear problem through
+# extrema; Lawson's algorithm ([Lawson1964]) reaches the same linear problem
+# through
 # iteratively reweighted least squares with the Sanathanan-Koerner denominator
-# weight. They share no machinery, so agreement between them is evidence the
+# weight ([SanathananKoerner1963]). They share no machinery, so agreement
+# between them is evidence the
 # error is near the best for that degree pair, and disagreement is not - the
 # exchange result is what ships, and the second is printed beside it.
 #
@@ -2168,8 +2171,7 @@ def fit_region_a_rational(double_orders):
 # not the arithmetic a BOYS_MULADD_SEPARATE build runs: `ScalarFp64::MulAdd` is
 # `std::fma` in one and a bare `a * b + c` in the other, and the second rounds
 # twice. A bound taken at one route is not a bound on the other's evaluation,
-# which is the shape of defect a float table of this library's was withdrawn
-# for. Every acceptance below therefore reads both routes and takes the worse,
+# so every acceptance below reads both routes and takes the worse,
 # and the figure the row publishes is the worse of the two.
 #
 # The bars are the shipped route's own: RAT_A_ACCEPT for region A's pieces and
@@ -4068,12 +4070,12 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
             f.write(line + "\n")
         f.write("\n")
         ext_deg, ext_cs, ext_mono = ext_cheb
-        f.write("// The extended band (the per-range seed design): an F0 fit on\n")
+        f.write("// The extended band: an F0 fit on\n")
         f.write("// [kExtendedBX0, kX0) evaluated by the same split Clenshaw; the\n")
         f.write("// upward recursion from it is certified per kmax tier - an order n\n")
         f.write("// takes the extended seed exactly when x >= kTierThresholds[n], the\n")
-        f.write("// per-order dispatch thresholds (the certified values of the\n")
-        f.write("// interval instrument, rounded up to the next double).\n")
+        f.write("// per-order dispatch thresholds (the values the generator certifies,\n")
+        f.write("// rounded up to the next double).\n")
         f.write(f"inline constexpr double kExtendedBX0 = {fmt(XNEW0)};\n")
         f.write("inline constexpr auto kExtendedBcoeffs = std::to_array<double>({\n")
         for i in range(0, len(ext_cs), 6):
@@ -4225,11 +4227,11 @@ def write_reference(path):
                   mpf("8"), mpf("10"), mpf("13"), mpf("26.67"), mpf("29"), mpf("30"),
                   mpf("31"), mpf("33"), mpf("40"), mpf("50"), mpf("100")]
         # The extended band's design edges (the left edge and the certified
-        # per-kmax boundaries) plus interior points across the band; the
-        # superseded dispatch constants pin the edge of the slice whose
-        # dispatch changed hands, whichever way the boundary moved.
-        # A retired boundary is never dropped from the grid: each generation
-        # of them stays pinned, newest set last.
+        # per-kmax boundaries) plus interior points across the band; every
+        # dispatch boundary this band has been cut at stays on the grid,
+        # whichever way the edge moved, so a change of dispatch constant
+        # cannot move the grid under a row it certifies. The generations are
+        # pinned newest last.
         extras = [XNEW0] + [v for v in TIER_BOUNDARIES_CERTIFIED]
         extras += [mpf("1.5"), mpf("3"), mpf("5"), mpf("7"), mpf("9"), mpf("11")]
         extras += [mpf("1.857502623467682"), mpf("4.7030889427115925"),
@@ -4242,11 +4244,10 @@ def write_reference(path):
         # consumers index rows by exactly that pair (boys_test.cpp fetches the
         # reference for F_k by matching (k, row.x) as doubles), and the mpf
         # spelling of one design point is not the identity of its argument.
-        # The committed grid before this change carried the case in the file:
-        # the log sweep's top point is 10**2 and the extras' is 100, which the
-        # general pow makes 100 + 2^-97 rather than equal to mpf("100"), so
-        # x = 100.0 appeared twice for every order (2739 rows for 82 distinct
-        # arguments).
+        # The dedup key matters here: the log sweep's top point is 10**2 and
+        # the extras' is 100, which the general pow makes 100 + 2^-97 rather
+        # than equal to mpf("100"), so without this x = 100.0 would appear
+        # twice for every order (2739 rows for 82 distinct arguments).
         seen = set()
         arguments = []
         for v in xgrid + extras:

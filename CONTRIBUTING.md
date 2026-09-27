@@ -101,7 +101,7 @@ before merge.
   grid or the tables in the same pull request as a kernel change without the `--check` evidence.
 - Tests must pass on the CI matrix, and locally in Debug and Release.
 - Benchmark changes belong with the benchmark suite under `BUILD_BENCHMARKS`, and must record the
-  machine state per the runs-log convention.
+  machine, the clock and the commit beside each number.
 
 ## What never goes in
 

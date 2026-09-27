@@ -112,7 +112,7 @@ GridColumns BuildColumns(const std::vector<ReferenceRow>& rows) {
     return grid;
 }
 
-// Region bucketing per the accuracy record (x = kX1 rows land
+// Region bucketing (x = kX1 rows land
 // in region C), the shipped kernel's own boundaries. The extended band
 // [kExtendedBX0, kX0) is its own region: the per-range F0 seed + upward
 // recursion serves it per kmax tier with the region-B budget.

@@ -78,14 +78,21 @@ options. Each pass carries runs of a fixed-work integer canary beside its rounds
 that gates nothing — a fixed work read by wall clock measures the clock as much as the load, so a
 decaying clock widens it on an idle machine — and what the ordering is made in is the spread of the
 paired ratios, which the report measures. The reported figure is the lower quartile of the rounds,
-with its spread printed beside it, and not the minimum the probe used to report.
+with its spread printed beside it, and not the minimum.
 
-When two options are closer than that spread — a pair whose within-round ratio band straddles one —
-the report says `CANNOT DETERMINE`, names each option it could not place behind the leader with the
-band that pair fell in, and prints the run's resolution, rather than ordering noise. A refusal leaves
-a consumer a default: the report names the option a static reading of the library's own tables picks
-— the degree its partition evaluates and the coefficients it stores, counted rather than timed — in
-its own section, labelled as a heuristic and never printed beside a measured figure. The clock is
+The classes the report ranks inside are one precision at one accuracy rung — the multiplier an option
+was built at, as the library's own tables report it — and the default is taken from the certified
+double lane's precision at the library's full-accuracy multiplier alone, so a faster row of a relaxed
+rung or of another precision is never a candidate for it. When a class cannot be ordered — a pair
+whose within-round ratio band straddles one, or too few rounds for a band to exist — the run still
+ends with one combination: the options the class left tied are re-run alone at a longer protocol and
+the one that led the most of those runs is the default, with a unanimous result, a majority and a
+pick among options that divided the runs evenly reported as the three different answers they are. A
+class of one names its option, because one entry is not a ranking and there is no alternative to it,
+and a run that measured no figure at all reports `CANNOT DETERMINE` with the rounds a band needs
+rather than a name read from a table. Every option the run could not place behind the leader is
+printed with the band that pair fell in, so the answer and the evidence missing for it are read
+together. The clock is
 checked rather than assumed, because options need not draw it alike — a wider vector register runs
 at a lower frequency — so the confidence line reports how far the widest-moving pair's ratio
 travelled between the run's first and second half beside the resolution that figure is read

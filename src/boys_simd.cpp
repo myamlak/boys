@@ -80,9 +80,8 @@
 #include <cpuid.h>
 #endif
 
-// AVX2 region-sorted lanes. The engine pattern (region-first; the
-// unsorted variant's divergence penalty is reported in the accompanying
-// paper): partition the arguments by region FIRST so every
+// AVX2 region-sorted lanes. The engine pattern (region-first): partition the
+// arguments by region FIRST so every
 // 4-lane vector is homogeneous; the unsorted variant pays a measured 2.3x
 // divergence penalty.
 //

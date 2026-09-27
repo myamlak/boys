@@ -268,14 +268,15 @@ price it charges shows up as narrower pieces at the high orders' right ends rath
 `|F_n(z)| ≤ F_n(Re z)` by the triangle inequality applied to the integral representation, and F_n
 decreases in its real argument, so on the Bernstein ellipse of `[a, b]` at parameter `rho` the
 maximum modulus is at most `F_n(c − (h/2)(rho + 1/rho))` — the ellipse's leftmost point, with
-`c = (a + b)/2` and `h = (b − a)/2`. Trefethen's interpolant bound then gives
+`c = (a + b)/2` and `h = (b − a)/2`. Trefethen's interpolant bound ([Trefethen2019], ch. 8) then
+gives
 
     E(n, a, b, d) = min over rho > 1 of 2 · F_n(c − (h/2)(rho + 1/rho)) · rho^(−d) / (rho − 1),
 
 and **nothing in it samples the function**. The script that generates the tables computes it
 (`tools/gen_boys_coefficients.py --derive-partition`), and the anchor that says the computation is
-right is that it reproduces, to five significant figures, the two figures the script's own comments
-carry from an independent earlier instrument: 6.4676e-16 for F_0 on `[0, 5.94992407605424223]` at
+right is that it reproduces, to five significant figures, the two figures the same script's
+constant table carries: 6.4676e-16 for F_0 on `[0, 5.94992407605424223]` at
 degree 18, and 3.14e-18 at degree 20. Its series also agrees with the fit path's own stable series
 to a worst relative difference of 2.4e-26.
 
@@ -347,18 +348,16 @@ make is 2.171050, and the region reads 2.22045e-16 at both partitions.
 against table size (1339 → 3476) and a piece lookup per call. Nothing about it is a saving, and a
 consumer whose cost is the table should not take it.
 
-**And a figure that does not survive the check.** A measurement quoted for this axis says that
-narrowing the region-B seed from width 17.09 to one seventh of that cuts the requirement from 19
-stored to 7. **That is not what the proved bound says, and it is not what a measurement says
-either.** At width 2.4413557 — seventeen point zero nine divided by seven — a degree-6 fit of F_0
-delivers a worst measured error of 5.15e-11 and its a-priori bound is 8.57e-10, which is four to
-five orders worse than 1e-14. The degree that reaches the target at that width is 10, at 11 stored.
-The figures that do agree are these. At degree 6 the bound is 8.57068e-10 against a measured
-5.14888e-11, a ratio of 16.6; at degree 8 it is 1.39861e-12 against 8.95157e-14, a ratio of 15.6;
-at degree 10 it is 2.01396e-15 against 1.41743e-16, a ratio of 14.2. A consistent factor is what a
-bound that is conservative rather than vacuous looks like. **7 stored is what a width-2.44 piece
-needs at a target near 1e-10, not at 1e-14, and the denominator here is 5.14888e-11 / 8.57068e-10
-— the measured truncation over the bound.**
+**Splitting the seed alone does not meet a 1e-14 target.** The degree has to follow the width, and
+what decides is the proved bound rather than a coefficient count. At width 2.4413557 — the region-B
+seed's own 17.09 divided by seven — a degree-6 fit of F_0 delivers a worst measured error of
+5.15e-11 and its a-priori bound is 8.57e-10, which is four to five orders worse than 1e-14. The
+degree that reaches the target at that width is 10, at 11 stored. The bound is conservative rather
+than vacuous, and consistently so. At degree 6 it is 8.57068e-10 against a measured 5.14888e-11, a
+ratio of 16.6; at degree 8 it is 1.39861e-12 against 8.95157e-14, a ratio of 15.6; at degree 10 it
+is 2.01396e-15 against 1.41743e-16, a ratio of 14.2. **Seven stored is what a width-2.44 piece needs
+at a target near 1e-10, not at 1e-14; the denominator there is 5.14888e-11 / 8.57068e-10 — the
+measured truncation over the bound.**
 
 **The option is exposed, certified, and refused only where a table or a kernel is still owed.**
 `FitGranularity::kNarrow` is a field of `EvalPolicy` and a name the report can print. Its tables are
@@ -1067,18 +1066,17 @@ shipped lane's `fma` mapping and the per-order narrow lane under `2 (x - a) / (b
 narrow axis is held to the reference above instead of to a bit-for-bit row, for the mapping reason
 given with it.
 
-**The composed row, re-measured at this revision.** The composed and gathered rows of the fetch table
-were taken before the second partition's tables and the effective-degree cuts landed, and the
-re-measurement obligation below is this section's own. Measured again over the same calls and the
-same shape: the composed variant now retires **6,570,938,098** instructions and **6,845,085,236**
-slots, in three runs agreeing to within 232 instructions and 0.02% of slots, where the table says
-5,072,522,334 and 4,719,806,211. The gathered row reproduces to within a percent (4,115,182,612 /
-9,510,675,358) and the shipped entry's row reproduces (6,326,030,697 instructions, the published
-figure to seven digits, and 6,729,655,927 slots, within a percent). The **1.42** and **2.02** ratios
-drawn from the composed figure therefore belong to the revision they were measured at, and the
-composed row is due a re-derivation at the current tables. The row is left as measured rather than
-quietly restated: it is not the figure this change moves, and restating it here would hide the
-distance a reader measuring the same variant would find.
+**The composed row, measured again over the same calls.** The two figures disagree, and both are
+reported rather than one: over the same calls and the same shape, the composed variant retires
+**6,570,938,098** instructions and **6,845,085,236** slots, in three runs agreeing to within 232
+instructions and 0.02% of slots, where the table above says 5,072,522,334 and 4,719,806,211. The
+gathered row reproduces to within a percent (4,115,182,612 / 9,510,675,358) and the shipped entry's
+row reproduces (6,326,030,697 instructions, the published figure to seven digits, and 6,729,655,927
+slots, within a percent). A reader re-measuring the composed variant should expect the higher pair:
+the table's row was taken against an earlier generation of the tables and the effective-degree
+cuts, and the **1.42** and **2.02** ratios drawn from it are the ones that move with it. The table
+is left as measured rather than quietly restated, because restating it would hide the distance a
+reader measuring the same variant would find.
 
 **The re-measurement obligation.** A second packed path is re-measured whenever another axis moves,
 because every figure above is a property of one build's code and one machine's microarchitecture — a
@@ -1146,7 +1144,7 @@ scalar lane's excess and not the packed lane's, which is why the lane's test mea
 double lane on that build rather than against its sibling: a sibling that is itself over the bar
 cannot be the reference a bar is read against. This is the same defect class as the gate's
 pre-existing red row on the same build — `float.route.delivered float.policy.single`, 1.56625e-07
-against 1.5e-07 at `n = 16, x = 0.0781091`, byte-identical before and after this axis exists — which
+against 1.5e-07 at `n = 16, x = 0.0781091`, a row the axis does not touch — which
 is a property of the region-A rational fit under two-rounding arithmetic and not of this lane.
 
 On the fused build, which is the default, the packed lane's own error is 1.297e-07 on the Chebyshev
@@ -1163,21 +1161,22 @@ certified scalar single lane at the policy the caller named, one order at a time
 thing the per-order entry answers with — the axis names which lane runs inside its own interval and
 nothing beyond it. That fallback is compiled into the library's translation unit while a caller's
 per-order reference is compiled into the caller's, and the two agreeing bit for bit is a property of
-the arithmetic they compile and not of the dispatch. It did not hold, and the axis's own contract
-test is what showed it: the region-B recurrence in the single-order float body was written as a bare
-product and difference, which a compiler contracts where it is allowed to and not where it is not, so
+the arithmetic they compile and not of the dispatch. That identity has to be carried by the spelling:
+the region-B recurrence in the single-order float body written as a bare
+product and difference is contracted by a compiler where it is allowed to and not where it is not, so
 the entry's own loop and the identical call beside it — two inlined copies of one entry in one unit —
-could return adjacent values. Measured over region B, the entry's fallback and the per-order lane
+can return adjacent values. Measured over region B in that spelling, the entry's fallback and the
+per-order lane
 parted by at most **4.04e-09** at the worst (`x = 12.8164, n = 32`, from 6.4190026e-08 against
 6.8225951e-08), which is 2.7% of the lane's bar; in the contract sweep, where the only region-B
 argument is the first one, 15 of the 33 orders at `x = 11.8998` differed and no other argument did.
 Region C, which reads no coefficient and names no multiply-add, differed in nothing, and order 0 at
 every given argument differed in nothing either — it is the region-B seed and takes no recurrence
-step. The step is now spelled
+step. The step is spelled
 as the backend's two-rounding multiply-subtract, which rounds the product and then the difference on
 every build, so every unit that computes this recurrence computes the same number. No figure the
-library publishes moves: the gate's output is byte-identical before and after the change, and so is
-every row of its float book. The same bare spelling survives in the float lane's *batch* recurrences,
+library publishes moves with the spelling: every row of its float book reads the same. The same bare
+spelling survives in the float lane's *batch* recurrences,
 which no entry this axis reaches — it is left where it is rather than moved under a figure that is
 already published.
 
@@ -1303,7 +1302,8 @@ The gate crosses the whole space, prints one line per combination — its measur
 beside the bound its lane publishes — and ends the block with its own arithmetic. A row of that
 table reads `fp64, chebyshev, split-clenshaw, shipped, orders, m = 64 | 56694 cells | 0 outside |
 1.54485e-12 delivered | 3.52e-12 bound | certified and published`, and a refused one carries no
-The block's own last lines, from the run at revision `3868676` that these counts describe:
+figure at all, only the library's own reason.
+The block's own last lines, from a run of the gate on the committed tree:
 
     COMBINATIONS: 336 of 448 member(s) of the option space are certified and published
                   0 refused with the library's own reason and owed
@@ -1418,7 +1418,7 @@ reason. Those counts are from `boys-consumer-umbrella`, whose accuracy section p
 four requests above are its own; the gate's combination block prints the same comparison for the
 certified rows of each lane.
 
-Run at revision `3908a53`, the gate's own lines for the tolerance question are:
+Run on the committed tree, the gate's own lines for the tolerance question are:
 
     the tolerance query: 448 carried row(s) asked at the figure each row is judged by and
                   answered inside it, 448 of them asked at half of that figure and answered
@@ -1438,12 +1438,11 @@ lanes as a fixed policy, since those entries take no policy argument at all — 
 what each name selects and the bound it carries.
 
 **These are the shipped settings, and not a measurement.** No default on this page was chosen against
-a timing: the option space is still being completed, and the runs that would set a default per
-precision have not been taken. When they are, each name is set from them, and that is one line per
-name — the aliases in `backend.hpp`, and the device lane's two in `accuracy.hpp` and
-`boys_device_tables.hpp`. Until
-then nothing here is a claim about which setting is fastest. *What is not claimed*, at the end of this
-page, is the same statement for every lane.
+a timing: the option space is not yet ranked against one, and the runs that would set a default per
+precision are the probe's, taken where the library is deployed rather than here. Setting one from
+such a run is one line per name — the aliases in `backend.hpp`, and the device lane's two in
+`accuracy.hpp` and `boys_device_tables.hpp`. Until then nothing here is a claim about which setting
+is fastest. *What is not claimed*, at the end of this page, is the same statement for every lane.
 
 | Precision | Name | Fit route | Scheme | Granularity | Packing axis | Engine budget |
 |---|---|---|---|---|---|---|

@@ -56,7 +56,7 @@ def to_format(x, fmt):
 # split d = 1 -> one operand part per matrix (a plain low-precision GEMM);
 # split d > 1 -> each operand is carried as d parts, and every product whose
 # part indices sum to <= d-1 is accumulated (d=2 keeps 3 of the 4 products,
-# which is the standard 3xTF32 emulation of an fp32 GEMM).
+# which is the standard 3xTF32 emulation of an fp32 GEMM, [OotomoYokota2022]).
 MODES = {
     # --- the shipped lanes' own transform arithmetic, as calibration ---
     "fp64":        dict(fmt="fp64", acc="fp64", split=1,
