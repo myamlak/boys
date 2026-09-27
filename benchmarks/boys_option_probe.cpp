@@ -3,13 +3,15 @@
 // one.
 //
 // One process, one run: the probe warms up, calibrates its load instrument,
-// takes the passes, and reports. The exit status is 0 whether or not a winner
-// was named — a refusal is one of this tool's results, not a failure of it —
-// so a script that wants the verdict reads it from the text.
+// takes the passes, refines the options a class left tied, and reports. The
+// exit status is 0 whether or not a default was named — a refusal is one of this
+// tool's results, not a failure of it — so a script that wants the verdict reads
+// it from the text.
 //
 // The knobs move the workload to the caller's own shape (--count, --nmax,
 // --xrange), the protocol to the machine's own patience (--passes, --rounds,
-// --bg, --cal, --canary-spread), and the measured set to the caller's own
+// --bg, --cal, --canary-spread), the refinement to the caller's own patience
+// (--refine-runs, --refine-factor), and the measured set to the caller's own
 // shortlist (--only, repeatable). Every value that was in force is printed in
 // the report, so a figure is never read without the protocol that produced it,
 // and a name that is no option of this library is printed as such rather than
@@ -78,6 +80,13 @@ void Usage() {
                "  --rounds=N         rounds per pass (default 5)\n"
                "  --bg=SECONDS       background load window (default 1.0)\n"
                "  --cal=SECONDS      load calibration window (default 0.5)\n"
+               "  --refine-runs=N    runs the refinement stage takes over the\n"
+               "                     options a class left tied, of which the one\n"
+               "                     that leads most of them is the default\n"
+               "                     (default 5)\n"
+               "  --refine-factor=N  how much longer each refinement run is than\n"
+               "                     one pass protocol: passes and rounds are both\n"
+               "                     multiplied by it (default 5)\n"
                "  --canary-spread=P  spread percentage of the canary's own runs\n"
                "                     across a pass above which the pass is\n"
                "                     flagged as one that ran on a wandering\n"
@@ -130,6 +139,12 @@ int main(int argc, char** argv) {
         } else if (arg.rfind("--cal=", 0) == 0)
         {
             options.calibrationSeconds = std::strtod(arg.c_str() + 6, nullptr);
+        } else if (arg.rfind("--refine-runs=", 0) == 0)
+        {
+            options.refinementRuns = std::atoi(arg.c_str() + 14);
+        } else if (arg.rfind("--refine-factor=", 0) == 0)
+        {
+            options.refinementFactor = std::atoi(arg.c_str() + 16);
         } else if (arg.rfind("--canary-spread=", 0) == 0)
         {
             options.canarySpreadAlarm = std::strtod(arg.c_str() + 16, nullptr);
@@ -157,6 +172,12 @@ int main(int argc, char** argv) {
                 static_cast<unsigned long long>(report.options.seed),
                 report.verdict == boys::OptionProbeVerdict::kRecommend ? "RECOMMEND"
                                                                        : "CANNOT DETERMINE");
+
+    // The default and how it was reached, on one line a script can read: a
+    // majority winner and an arbitrary pick among equals are different answers,
+    // and the caller is told which one this is before reading the report.
+    std::printf("default %s | reached by %s\n", report.recommended.c_str(),
+                boys::OptionProbeDefaultHowName(report.defaultHow).c_str());
 
     const std::string text = boys::FormatOptionProbe(report);
     std::fputs(text.c_str(), stdout);
