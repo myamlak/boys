@@ -33,21 +33,32 @@
 /// call cost: a consumer who uploads a fresh batch per call pays a transfer this
 /// probe deliberately excludes, and the two are different questions.
 ///
-/// **Launch is amortised, and what remains of it is measured rather than
-/// assumed.** A timed region records a CUDA event, launches the entry many times
-/// back to back into the same resident buffers, records a second event and
-/// synchronises; `cudaEventElapsedTime` then reports the device timeline between
-/// the two, and the per-call figure is that elapsed time divided by the
-/// repetition count. The host's submission cost is hidden by queueing the
-/// launches ahead of the device, and what a figure still contains is the part of
-/// a launch that is genuinely device-side — the grid it takes to start a kernel
-/// at all. That part is not assumed to be small: the report carries a control
-/// that measures a kernel doing no arithmetic under the same protocol, and
-/// states the floor per launch and what fraction of the fastest figure it is.
-/// The same control repeats one entry at two very different repetition counts
-/// and reports whether the per-call figures agree — a timer that had absorbed
-/// the queueing would answer differently at the two counts, because the amount
-/// amortised over a call changes by the ratio between them.
+/// **Launch is amortised, and what remains of it is taken out of the figure
+/// from the entry's own readings rather than assumed.** A timed region records a
+/// CUDA event, launches the entry many times back to back into the same resident
+/// buffers, records a second event and synchronises; `cudaEventElapsedTime` then
+/// reports the device timeline between the two, and the per-call figure is that
+/// elapsed time divided by the repetition count. The host's submission cost is
+/// hidden by queueing the launches ahead of the device, and what a region's
+/// figure still contains is the part of a launch that is genuinely device-side —
+/// the grid, the registers and the occupancy ramp it takes to start that entry's
+/// kernel at all. That part is paid once per launch and therefore falls as
+/// 1/count, so every row is read at two argument counts in the same round, four
+/// times apart, and its figure is the count-independent asymptote its own two
+/// readings extrapolate to. Both readings are reported beside the figure, so a
+/// reader sees what was taken out and how much it was, and the report states
+/// that the extrapolation assumes the launch term falls as 1/count.
+///
+/// The report also measures a kernel that does no arithmetic at all, launched the
+/// same way, and states the floor per launch and what fraction of the fastest
+/// figure it is. **It is a diagnostic and not the number that comes out of the
+/// figures**: an entry's kernel starts more work than an empty one and its own
+/// launch costs more than the floor does, so subtracting the floor would take out
+/// part of the term and look like a correction. A control repeats one entry at
+/// two very different repetition counts and reports whether the per-call figures
+/// agree — a timer that had absorbed the queueing would answer differently at the
+/// two counts, because the amount amortised over a call changes by the ratio
+/// between them.
 ///
 /// **The device-callable entries are measured by subtraction, inside a kernel.**
 /// The entries of boys_cuda_device.hpp exist to be called from the middle of
@@ -91,13 +102,18 @@
 /// puts it behind — when the pair's own band clears one. A rival whose band
 /// straddles one cannot be placed, and one whose band lies ahead of the leader
 /// contradicts the statistic the leader was chosen by; either way the probe
-/// declines to name a winner, prints the run's resolution and names each
-/// unplaced rival with its band and the number of rounds it was the slower of
-/// the two in. The same refusal happens when fewer than four rounds were pooled,
-/// because a quartile band needs four to exist, and when nothing measured at
-/// all. A wrong ranking is worse than none, so the refusal path is the one this
-/// entry is most careful about, and a refusal leaves a consumer a default: see
-/// the fallback below.
+/// declines to name a winner on that evidence, prints the run's resolution and
+/// names each unplaced rival with its band and the number of rounds it was the
+/// slower of the two in. A wrong ranking is worse than none, so the refusal path
+/// is the one this entry is most careful about. It is not where a shape ends:
+/// the entries the run could not separate are re-run alone at a longer protocol
+/// and the one that led the most of those runs is recommended, so that a shape
+/// ends with one named entry reached by measurement. That answer stands whether
+/// the entries could not be separated or the run was too short for a band to
+/// exist at all: fewer than four pooled rounds places nothing, and what such a
+/// run read is what it re-runs, with the count it took printed beside the name.
+/// A shape whose entries produced no figure at all is the one shape that ends
+/// without a recommendation, because there is nothing there to re-run.
 ///
 /// **The canary is a diagnostic and gates nothing.** Every pass carries runs of
 /// a fixed-work integer kernel — the canary — taken between its rounds, holding
@@ -120,16 +136,18 @@
 /// well as of the two entries. Where no pair moved by more than that, the report
 /// says so instead.
 ///
-/// **When the measurement cannot separate the entries, a heuristic stands in,
-/// labelled as one.** A consumer who gets a refusal still needs a default, so a
-/// refusal also names the entry a static reading of the library's own option
-/// book picks: the entry of that shape the book puts first once the rows at a
-/// looser bound are set aside, counting whether the library launches anything
-/// for the call and which member of its axis the row takes — facts the tables
-/// state and this probe never times. It is reported in its own section, marked
-/// as a heuristic, and never printed beside a measured figure as though it were
-/// one — the two answers are different kinds of thing and the report keeps them
-/// apart.
+/// **When the measurement cannot separate the entries, they are re-run rather
+/// than guessed at.** The entries a shape's own rounds left tied are measured
+/// again on their own, at a protocol many times longer and repeated several
+/// times, with a fresh shuffle each run; each run names its own fastest entry by
+/// the same within-round rule the main run used, and the vote over those runs
+/// gives the shape its recommendation. A unanimous result, a majority and a
+/// field the runs divided evenly are three different answers and the report
+/// prints which one it has: the first two are named with their counts, and the
+/// third is named as a choice among entries the evidence cannot separate. A
+/// shape holding a single entry names that entry, because one entry is not a
+/// ranking and there is no alternative to it. Nothing here is read off the
+/// library's tables: a name this report carries is a name some clock produced.
 ///
 /// **What genuinely differs from the host probe is kept and named.** An
 /// in-kernel row is a subtraction of two adjacent regions of the *same* round,
@@ -226,16 +244,65 @@ enum class DeviceProbeStatus : int {
 ///
 /// \ingroup boys
 enum class DeviceProbeVerdict : int {
-    /// One entry leads and every other entry of that shape in that precision is
-    /// further behind it than the resolution this run measured.
+    /// One entry leads: either every other entry of that shape in that precision
+    /// is further behind it than the resolution this run measured, or the shape
+    /// holds one entry and there is no alternative to it, or the entries this
+    /// run could not place behind the leader were re-run on their own and one of
+    /// them led those runs.
     kRecommend = 0,
-    /// The probe declined: fewer paired rounds than a quartile band needs, nothing
-    /// measured in the shape, nothing that resolved above its own instrument, one
-    /// entry alone in it, or a rival whose within-round band against the fastest
-    /// entry does not clear one, so the two cannot be ordered against each other.
+    /// The probe declined: nothing measured in the shape, or nothing that
+    /// resolved above its own instrument, so there was no figure of this shape to
+    /// place at all and no tied band to re-run. A run too short for a quartile
+    /// band is not this case: its entries produced figures, it places none of
+    /// them, and it names one the way a shape its own rounds could not order does.
     /// See the ranking's reason.
     kCannotDetermine,
 };
+
+/// How a shape's recommendation was reached.
+///
+/// It exists so that a consumer who prints a recommended entry prints where the
+/// name came from with it, rather than leaving a reader to guess whether the
+/// entry was measured or taken by choice. The distinction is the whole of the
+/// rule: a measured ordering is a figure, a vote over re-runs is a weaker
+/// figure with its count beside it, and a choice among entries the runs divided
+/// evenly is not a measurement at all and is named as what it is.
+///
+/// \ingroup boys
+enum class DeviceProbeDefaultHow : int {
+    /// No recommendation was reached.
+    kNone = 0,
+    /// The shape's own rounds placed every rival behind the leader: a measured
+    /// ordering of entries the same run timed side by side.
+    kOrdered,
+    /// The shape holds one entry, or one entry of it came out of the run with a
+    /// figure. There is nothing it can be ordered against, so it is named by
+    /// there being no alternative — which is an answer, not a refusal, and not a
+    /// ranking either.
+    kOnlyEntry,
+    /// The shape's own rounds left the leader tied with others, those entries
+    /// were re-run alone at a larger protocol, and one of them was the fastest
+    /// in every one of those runs — a majority with no dissent.
+    kRefined,
+    /// The re-runs did not agree unanimously: the entry that led the most of
+    /// them is the recommendation, a majority over runs, with the vote printed.
+    kVote,
+    /// The re-runs divided evenly, or none of them placed a leader at all, so
+    /// the entry is one of the tied entries taken by choice. It is named as
+    /// that and not as a ranking.
+    kChosenAmongEquals,
+};
+
+/// The name of one of those, as one token a script or a report can print beside
+/// a recommendation: "ordered", "only-entry", "refined", "vote",
+/// "chosen-among-equals" or "none".
+///
+/// \param how the state to name
+///
+/// \returns the name, which is never empty
+///
+/// \ingroup boys
+const char* DeviceProbeDefaultHowName(DeviceProbeDefaultHow how);
 
 /// The workload and the pass protocol the device probe runs, with the defaults
 /// a caller who wants a representative answer should leave alone.
@@ -252,18 +319,37 @@ struct DeviceProbeOptions {
     /// probe establishes this device's context before it allocates anything.
     int device = 0;
 
-    /// Arguments per call. It has to be large enough that one call's arithmetic
-    /// costs more device time than launching the kernel does, or the figure is
-    /// the launch rather than the entry; the report's launch control states the
-    /// floor per launch and what fraction of the fastest figure it is, so a run
-    /// whose workload was too small says so instead of quietly ranking the
-    /// launcher.
+    /// Arguments per call, and the first of the two counts every row is read at.
+    /// It has to be large enough that one call's arithmetic costs more device
+    /// time than launching the kernel does, or the figure is the launch rather
+    /// than the entry; the report's launch control states the floor per launch
+    /// and what fraction of the fastest figure it is, so a run whose workload was
+    /// too small says so instead of quietly ranking the launcher.
     ///
     /// The default is a batch a real integral pass would present, and it is also
     /// the smallest at which the subtraction route's figures were repeatable on a
     /// card of this class: below it the caller-shaped kernel's two halves come out
     /// equal within the clock and the subtraction resolves nothing.
     std::size_t count = 1u << 18;
+
+    /// The second count every row is read at, as a multiple of \c count. A row's
+    /// figure is formed from its own readings at both counts, so this is the
+    /// lever that decides how much of the launch term comes out with it.
+    ///
+    /// The two readings are made in the same round and four times apart by
+    /// default, which is what the arithmetic on \c nsPerArgument assumes: with a
+    /// fixed cost L per launch, a reading f at C and f' at r*C leave a figure of
+    /// (r*f' - f)/(r - 1) — the count-independent cost the entry itself
+    /// extrapolates to. Four is large enough that a launch term of a few percent
+    /// of a figure moves it by a storable amount and small enough that the second
+    /// reading stays inside the same regime on the device.
+    ///
+    /// **Both counts must be large enough that the grid saturates the card.** At
+    /// a count where a heavy per-argument kernel's grid is too small, the figure
+    /// carries a second effect that is not the launch at all, and no launch term
+    /// explains a swing of that size; the default pair sits well above that
+    /// regime. See \c DeviceProbeOptions::count for the other end of the rule.
+    int countPairFactor = 4;
 
     /// Highest order any argument carries, 1..kMaxBoysOrder. It is also the
     /// common top order the all-n shape is asked for.
@@ -305,13 +391,25 @@ struct DeviceProbeOptions {
     /// sit either side of this value.
     int repetitions = 16;
 
-    /// Repetition counts the repetition controls use. They are far apart on
-    /// purpose: a figure that had absorbed a fixed cost per call would differ
-    /// between them by roughly the ratio of the two counts.
+    /// Repetition counts the repetition controls use. They have to be far enough
+    /// apart that a figure which had absorbed a cost paid per region would differ
+    /// between them by more than the band the run can order at, and both have to
+    /// sit in the regime the reported figures are taken in: four launches is a far
+    /// shorter run on the device than sixty-four, so a pair reaching much lower
+    /// would be comparing two protocols rather than checking one.
+    ///
+    /// The range is measured rather than chosen. On the card this probe was
+    /// developed against — a Quadro T1000 — the figure the table ships for the
+    /// widest all-orders fp64 entry came to 6.772, 6.772, 6.773 and 6.768
+    /// ns/argument at four, sixteen, sixty-four and two hundred and fifty-six
+    /// launches per region, this probe's own reading at `--passes=3 --rounds=3`.
+    /// The figure holds across that whole range, and the repetition count the rows
+    /// themselves are taken at (\c repetitions, sixteen) sits inside it, between
+    /// this value and its high counterpart.
     int controlRepetitionsLow = 4;
 
     /// The second count of the repetition controls; see controlRepetitionsLow.
-    int controlRepetitionsHigh = 256;
+    int controlRepetitionsHigh = 64;
 
     /// Spread percentage of the canary's own runs across a pass above which the
     /// report marks the pass as one that ran on a card whose clocks moved.
@@ -333,6 +431,20 @@ struct DeviceProbeOptions {
     /// build cannot serve, so a misspelling is told apart from a build fact
     /// rather than read as a card on which nothing is fast.
     std::vector<std::string> only;
+
+    /// Runs the refinement stage takes of a shape whose entries its own rounds
+    /// could not separate, and the factor by which each of those runs is longer
+    /// than the main protocol: a refinement run is \c passes * this passes of
+    /// \c rounds * this rounds, with its own shuffle, over the tied entries
+    /// alone. The stage exists so that a shape ends with one named entry reached
+    /// by measurement rather than by a figure counted off the library's tables,
+    /// and it is spent on the pair or the few entries the answer actually rests
+    /// on. Five runs of a protocol five times the main one is what the probe
+    /// ships; a longer one is a stronger vote and costs proportionally more.
+    int refinementRuns = 5;
+
+    /// The refinement protocol's multiplier; see refinementRuns.
+    int refinementFactor = 5;
 };
 
 /// The device the figures were taken on.
@@ -483,23 +595,63 @@ struct DeviceProbeMeasurement {
     /// launched row, which is not a subtraction.
     bool subtractionResolved = false;
 
+    /// The row's own reading at the run's first count
+    /// (\c DeviceProbeOptions::count), nanoseconds per argument, at the lower
+    /// quartile of the paired rounds and anchored to the reference entry the way
+    /// \c nsPerArgument is. It is the first of the two readings the figure was
+    /// extrapolated from, and it is reported so that the extrapolation can be
+    /// checked rather than believed: this reading still contains the launch term
+    /// the figure does not.
+    double nsPerArgumentAtCount = 0.0;
+
+    /// The row's own reading at the second count (\c DeviceProbeOptions::count
+    /// times \c DeviceProbeOptions::countPairFactor), on the same terms as
+    /// \c nsPerArgumentAtCount and taken in the same rounds. The two together
+    /// are what the figure was formed from.
+    double nsPerArgumentAtPairCount = 0.0;
+
     /// Cost per argument at the lower quartile of the paired rounds, nanoseconds
     /// per argument: the reference entry's own lower-quartile figure scaled by
     /// \c ratioToReference, so every cost column is anchored to one entry's own
     /// measurement and the ratios are what the ordering is made of. It is a
     /// quartile and not the minimum this probe used to report — see the header
     /// preamble for why.
+    ///
+    /// **It is the count-independent cost the row's own two readings extrapolate
+    /// to, on both routes.** Each round reads the entry at the run's count and
+    /// again at the pair count, four times larger, and the round's figure is
+    /// \c nsPerArgumentAtCount less the term that falls as 1/count, which the two
+    /// readings fix from the entry's own arithmetic: a fixed cost L per launch
+    /// gives f = a + L/C and f' = a + L/(r*C), so a = (r*f' - f)/(r - 1). No
+    /// assumption about what an empty kernel costs stands in for the entry's own
+    /// launch. The reading at \c DeviceProbeOptions::count is on the same terms as
+    /// the one at \c count times \c countPairFactor, so the correction is the
+    /// difference between two columns of the report and not a number a reader has
+    /// to take on trust. It assumes the launch term falls as 1/count, and the
+    /// report says so where it prints the columns.
     double nsPerArgument = 0.0;
+
+    /// Whether the row's own two readings left no positive launch term to take
+    /// out in any round of the run: at every round the reading at the pair count
+    /// was not the cheaper of the two, so the asymptote the figure is formed from
+    /// came out at or below zero and the row has no figure at all. Such a row is
+    /// set aside by name wherever a shape lists what it could not place — a
+    /// zero or a negative there would read as a free call, and a positive one
+    /// would be a number the readings do not support. Raising the argument counts
+    /// is what answers it: the launch term has to be a measurable part of both
+    /// readings before it can be taken out of either.
+    bool extrapolationUnresolved = false;
 
     /// The same cost at the upper quartile of those rounds, so the two ends of
     /// the band come from the same distribution.
     double nsPerArgumentMax = 0.0;
 
     /// The fastest single round this entry was ever seen in, nanoseconds per
-    /// argument, over the rounds that produced a figure. **A raw figure under no
-    /// anchor**, kept as one column because it is the entry's own floor — no
-    /// round of it came out below this — and never the reported cost. It is not
-    /// comparable with the anchored columns beside it: those are the reference
+    /// argument, over the rounds that produced a figure. **One round's own
+    /// figure under no anchor**, kept as one column because it is the entry's own
+    /// floor — no round of it came out below this — and never the reported cost.
+    /// It is not comparable with the anchored columns beside it: those are the
+    /// reference
     /// entry's own figure scaled by this entry's ratio to it, so a reference
     /// whose rounds are heavy-tailed puts the anchored cost below this entry's
     /// own fastest round, and neither bounds the other in general. It is also not
@@ -585,6 +737,59 @@ struct DeviceProbeMeasurement {
     std::string repetitionNote;
 };
 
+/// The refinement stage: a shape's tied entries, measured alone at a larger
+/// protocol, repeated, and voted on.
+///
+/// This is what the report does instead of naming an entry from a figure counted
+/// off the library's tables. The entries re-measured are the shape's fastest and
+/// every entry of it the main run could not place behind the fastest; nothing
+/// else in the option space is touched, so the stage's whole cost is spent on
+/// the entries the answer actually rests on.
+///
+/// Each run is a fresh pass over the tied set at a protocol \c passes *
+/// DeviceProbeOptions::refinementFactor passes long and \c rounds * the same
+/// factor rounds long, with its own shuffle, and each run is ordered by the same
+/// within-round ratio rule the main run used — so a run is a smaller measurement
+/// of the same kind and not a different rule. The vote is over the runs, and a
+/// run whose own rounds cannot place a rival contributes its leader alone, which
+/// is what makes the vote a vote and not a re-run of the main statistic.
+///
+/// \ingroup boys
+struct DeviceProbeRefinement {
+    /// Whether the stage ran at all.
+    bool ran = false;
+
+    /// Runs taken, the passes each ran, and the rounds each ran. Zero when the
+    /// stage did not run.
+    int runs = 0;
+    int passes = 0;
+    int rounds = 0;
+
+    /// The entries re-measured: the shape's leader and every entry of it the main
+    /// run could not place behind the leader, by name.
+    std::vector<std::string> pool;
+
+    /// The entry that led each run, in the order the runs were taken. Empty
+    /// string where a run placed no leader.
+    std::vector<std::string> runLeaders;
+
+    /// The entry the stage names, empty when the stage did not run.
+    std::string winner;
+
+    /// One sentence saying what the vote was, in the report's own words.
+    std::string note;
+
+    /// The run's votes, one line per candidate that led at least one run.
+    std::vector<std::string> tally;
+
+    /// Whether every run led with the same entry, and whether the winning entry
+    /// led more runs than any other while one run — not all — led elsewhere or
+    /// nowhere. Both false means the runs divided evenly and the entry was taken
+    /// by choice.
+    bool unanimous = false;
+    bool plurality = false;
+};
+
 /// One question shape inside a class: the entries of one precision that were
 /// asked the same question, and what the run could conclude about ordering them
 /// against each other.
@@ -615,14 +820,22 @@ struct DeviceProbeRanking {
     /// nothing it could compare.
     double resolution = 0.0;
 
-    /// Whether the probe named a winner in this shape.
+    /// Whether the probe named a recommendation in this shape.
     DeviceProbeVerdict verdict = DeviceProbeVerdict::kCannotDetermine;
 
     /// The entry the probe recommends in this shape, empty when it declined.
-    /// **Non-empty only when every rival was placed**: a shape with one rival
-    /// whose band straddles one is a shape with no leader, however far ahead its
-    /// fastest row measured.
+    /// **A shape is never left with a name its own rounds did not place**: where
+    /// a rival's band straddles one, the entries the run could not separate are
+    /// re-run alone at a larger protocol and the entry named is the one that led
+    /// those runs, which \c refinement and \c defaultHow state and the report
+    /// prints beside the name.
     std::string recommended;
+
+    /// How \c recommended was reached. \c kOrdered is the shape's own rounds,
+    /// \c kRefined and \c kVote are the vote over the refinement runs,
+    /// \c kChosenAmongEquals is a tie broken by choice, and \c kOnlyEntry is a
+    /// shape holding one entry, named by there being no alternative.
+    DeviceProbeDefaultHow defaultHow = DeviceProbeDefaultHow::kNone;
 
     /// The fastest entry measured in this shape, empty when no entry was.
     std::string fastestOverall;
@@ -655,17 +868,18 @@ struct DeviceProbeRanking {
     /// than four rounds is the round and not a distribution.
     int rounds = 0;
 
-    /// The entry the fallback below is about, empty when the shape has a
-    /// measurement or when the library's own device entry book names no row for
-    /// it. Filled only on a refusal.
-    std::string heuristicEntry;
+    /// The entries this shape did not place behind one leader, the leader first,
+    /// by name. Filled wherever the shape's answer goes to the refinement stage:
+    /// the entries its own rounds left unplaced — every shape whose \c inseparable
+    /// list is non-empty — and, when the run's own checks left the shape with no
+    /// row it could rank at all, the rows it measured that carry a figure. They
+    /// are the entries that stage re-runs and votes on.
+    std::vector<std::string> tiedEntries;
 
-    /// The basis of \c heuristicEntry, in the report's own words, beginning
-    /// \c "counted, not timed" : what the library's own device entry book states
-    /// about the row — the regions its route runs, whether it is in-kernel or
-    /// launched, its repetition counts — with no clock involved. Empty when
-    /// \c heuristicEntry is empty.
-    std::string heuristicBasis;
+    /// The refinement stage's own record. \c ran is false for a shape the main
+    /// run ordered, for one that holds a single entry, and for one whose rounds
+    /// produced no figure to refine.
+    DeviceProbeRefinement refinement;
 };
 
 /// One class: a precision, and the rankings of its question shapes.
@@ -699,13 +913,19 @@ struct DeviceProbeClass {
 /// The repetition-count control: one entry timed at two very different counts of
 /// launches inside the region, to show what the timer is and is not measuring.
 ///
-/// A timer that had absorbed a fixed cost per call would not survive this. The
-/// figure is the region's elapsed device time divided by the launches in it, so
-/// any cost that does not repeat with the call — the region's own setup, the
-/// first launch's cold instruction cache, a fixed submission charge that lands on
-/// the device timeline once — is divided by a different number at each count and
-/// shows up as a difference between the two figures. An entry whose per-call
-/// figure holds across a wide ratio of counts has had such a cost divided out.
+/// A figure that had absorbed a cost paid per region rather than per call would
+/// not survive this. Each of the two figures is the row's own — a region's device
+/// time divided by the launches in it and by the arguments in it, read at both of
+/// the run's argument counts and reduced to the count-independent cost they
+/// extrapolate to — so a cost the region pays once rather than once per call is
+/// divided by a different number of launches at each count and shows up as a
+/// difference between the two. An entry whose figure holds across a wide ratio of
+/// counts has had such a cost divided out.
+///
+/// **The two figures are the quantity the report ships**, not a reading beside
+/// it: a control that read a row at one argument count while the table carried
+/// the extrapolation of two would set rows aside for a dependence on the argument
+/// count the shipped figure does not have.
 ///
 /// Two of these are taken: one on the launched route, over the fastest launched
 /// row, and one on the subtraction route, over the fastest in-kernel row. They
@@ -723,14 +943,19 @@ struct DeviceProbeRepetitionControl {
     /// The low repetition count the entry was timed at.
     int repetitionsLow = 0;
 
-    /// The low count's figure, nanoseconds per argument. On the in-kernel route
-    /// this is the difference the subtraction produced, not a region's own time.
+    /// The low count's figure, nanoseconds per argument. It is the row's own
+    /// figure formed at that count of launches: that count's readings at both of
+    /// the run's argument counts, reduced to the count-independent cost they
+    /// extrapolate to, which is the quantity the table ships for the row. On the
+    /// in-kernel route each reading is the difference the subtraction produced,
+    /// not a region's own time.
     double nsPerArgumentLow = 0.0;
 
     /// The high repetition count.
     int repetitionsHigh = 0;
 
-    /// The high count's figure, nanoseconds per argument.
+    /// The high count's figure, nanoseconds per argument, on the same terms as
+    /// the low one.
     double nsPerArgumentHigh = 0.0;
 
     /// On the in-kernel route, the low count's baseline: the same caller-shaped
@@ -744,24 +969,25 @@ struct DeviceProbeRepetitionControl {
     double nsPerArgumentBaselineHigh = 0.0;
 
     /// The two figures' disagreement, as a fraction of the faster of them.
-    /// Infinite when one of the two counts produced no figure to compare — the
-    /// subtraction at that count resolved nothing — which is not a disagreement
-    /// of zero and must not be read as one.
+    /// Infinite when one of the two counts produced no figure to compare — a
+    /// launched row whose two readings left no positive launch term, a subtraction
+    /// that resolved nothing — which is not a disagreement of zero and must not be
+    /// read as one.
     double difference = 0.0;
 
     /// Whether the two counts agreed within the resolution this run measured:
     /// the widest within-round ratio band the shape showed, the same number that
-    /// shape's refusal prints. False means either that a fixed cost per call
-    /// survived into the figures at the repetition count they were taken at, or
-    /// that one count left nothing to compare; the note says which, and the
-    /// report sets the row aside rather than shipping it.
+    /// shape's refusal prints. False means either that a cost paid per region
+    /// survived into the figure at the repetition count it was taken at, or that
+    /// one count left nothing to compare; the note says which, and the report sets
+    /// the row aside rather than naming it on that figure.
     ///
-    /// **This check does not soften as the measurement does.** Its estimator is
-    /// the run's paired one, so its two figures are formed the same way the row's
-    /// cost is, but a run that cannot resolve makes this control fail rather than
-    /// pass: an instrument that cannot tell two counts apart has not shown that
-    /// the fixed cost is absent, and calling that an agreement would be this
-    /// check passing on no evidence.
+    /// **This check does not soften as the measurement does.** Its two figures are
+    /// the row's own figures rather than a reading beside them, but a run that
+    /// cannot resolve makes this control fail rather than pass: an instrument that
+    /// cannot tell two counts apart has not shown that the per-region cost is
+    /// absent, and calling that an agreement would be this check passing on no
+    /// evidence.
     bool agrees = false;
 
     /// The resolution the two counts were judged against, as a fraction. Carried
@@ -773,6 +999,20 @@ struct DeviceProbeRepetitionControl {
     /// nothing launched by this library is inside either bracket of a subtraction,
     /// so there is no floor to take. The in-kernel route's floor is its own
     /// baseline, reported above.
+    ///
+    /// **A floor and not an entry's launch cost.** A kernel that does no
+    /// arithmetic needs no registers and no occupancy ramp, so it starts more
+    /// cheaply than any entry's kernel does; this is the cheapest launch the route
+    /// can make, and it is reported as that. It is not the number the figures have
+    /// taken out of them — the entries' own launch terms are, from each entry's
+    /// own two readings — and the fraction of a row's cost printed beside it is a
+    /// lower bound on that row's launch share.
+    ///
+    /// The run times it once, under its own protocol, before any row is put
+    /// through a control, and every control the run records carries that one
+    /// reading rather than dropping it: this is the run's floor, not a reading of
+    /// the control it is reported beside, and a zero here is a floor the run did
+    /// not establish rather than a launch that costs nothing.
     double nsPerLaunchFloor = 0.0;
 
     /// The strongest of the checks above as one sentence, for a reader who reads
@@ -871,9 +1111,9 @@ struct DeviceProbeReport {
     /// the reference entry produced no figure.
     double referenceNsPerArgument = 0.0;
 
-    /// Whether any shape of the run left a default behind. False means every
-    /// shape ordered its entries on its own measurements; true means at least one
-    /// shape refused and stood a static fallback in the refused shape's section.
+    /// Whether the run named a recommended entry in any shape. False means no
+    /// shape of the run reached one: every shape either ordered its entries on
+    /// its own rounds, or held a single entry, or measured no figure at all.
     bool hasDefault = false;
 
     /// One class per precision this run's option table carries, in the report's
@@ -906,9 +1146,24 @@ struct DeviceProbeReport {
 /// report carries, per entry, that figure with its ratio band and its drift
 /// beside it, one class per precision holding one ranking per question shape,
 /// each with the widest within-round band the shape showed as its resolution, a
-/// static fallback in every shape that refused, and the repetition-count controls
-/// described on DeviceProbeRepetitionControl — one per route, since the two
-/// routes are two methods and a check of one says nothing about the other.
+/// recommended entry in every shape whose measurement supported one, and the
+/// repetition-count controls described on DeviceProbeRepetitionControl — one per
+/// route, since the two routes are two methods and a check of one says nothing
+/// about the other.
+///
+/// A shape whose own rounds cannot place a rival behind the fastest entry is not
+/// left there: the entries it could not separate are re-run alone at
+/// DeviceProbeOptions::refinementRuns runs of a protocol
+/// DeviceProbeOptions::refinementFactor times the main one, and the entry that
+/// led the most of those runs is the recommendation, with the vote printed
+/// beside it. A shape holding one entry names that entry, because one entry is
+/// not a ranking and there is no alternative to it. Only a shape none of whose
+/// entries produced a figure at all — nothing that resolved above its own
+/// instrument — ends without a recommendation, and it says which row was missing
+/// rather than naming an entry read off a table. A run too short to form a
+/// within-round band is not such a shape: its entries produce figures, it places
+/// none of them, and it names one all the same, with the count the band needed
+/// printed beside the name.
 ///
 /// The device-callable entries are measured by the with-and-without subtraction
 /// rather than by launching this library's kernel; DeviceProbeMeasurement::route
@@ -935,8 +1190,8 @@ struct DeviceProbeReport {
 ///
 /// \returns the report, whose status is \c kDeviceNotFound or \c kNoDevice when
 ///          the caller named a device this machine does not have, and whose
-///          per-shape verdict is \c kCannotDetermine whenever the measurement
-///          did not support naming an entry
+///          per-shape verdict is \c kCannotDetermine only where the shape
+///          produced no figure to place at all
 ///
 /// \ingroup boys
 DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options = {});
@@ -945,10 +1200,12 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options = {});
 ///
 /// The wording is the report's own: it is plain text, it names the card, it
 /// states the protocol, and it says which passes the canary ran wide in and what
-/// a refusal could not place. A shape that refused carries its static fallback in
-/// its own section, under the heading
-/// \c "static fallback — a heuristic, not a measurement" , never beside a
-/// measured figure. It is written for a reader who has nothing but this output.
+/// a refusal could not place. Every shape that names a recommended entry says
+/// how that name was reached — an ordering on the shape's own rounds, a single
+/// entry with no alternative, a unanimous re-run, a majority vote, or a choice
+/// among entries the runs divided evenly — so a reader never has to guess
+/// whether the name was measured. It is written for a reader who has nothing but
+/// this output.
 ///
 /// \param report a report, from RunDeviceOptionProbe
 ///

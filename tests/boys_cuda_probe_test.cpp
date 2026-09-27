@@ -8,18 +8,24 @@
 // ratio between two entries is formed inside a round and that every pooled round
 // is used, that a wide canary flags a pass without removing it, that a canary no
 // pass ever read is reported as no reading rather than as a still one, that a run
-// too short for a quartile band refuses and says how short it is, that a refusal
-// names what it could not order, recommends nothing, and carries the same clock
-// check a recommendation does, and that the fallback a refusal leaves behind is
-// labelled a heuristic and never presented as a measurement. Plus the parts that
-// were here before and still hold: that a bad device is a status and not a crash,
-// that the device it measured is named in the returned data rather than only in a
-// log, and that a ranking is one question shape of one precision.
+// too short for a quartile band says how short it is and still names one entry per
+// shape that produced a figure — as does a shape its own rounds cannot order, by
+// the refinement stage's vote or by there being no alternative to name — that such
+// a shape carries the same clock check a shape ordered outright does, and that
+// every name the report carries came out of a clock rather than off the
+// library's tables. Plus the parts that were here before and still hold: that a
+// bad device is a status and not a crash, that the device it measured is named
+// in the returned data rather than only in a log, and that a ranking is one
+// question shape of one precision.
 //
 // The protocols below are short on purpose. The canary's alarm is moved to each
 // end so that the flag is exercised from both sides on a real run, and the
 // workload is small because what is being checked is the shape of the result
-// rather than its figures.
+// rather than its figures. One test is not short: the tie test hunts a tie, which
+// means running the refinement stage over everything the shape could not separate,
+// and on the card this was written on it took about 52 minutes where every other
+// test in the file finished in seconds. A run that looks stuck is usually inside
+// it, and nothing is hung while it is.
 
 #include "boys/boys_cuda_probe.hpp"
 
@@ -33,6 +39,7 @@
 namespace {
 
 using boys::DeviceProbeClass;
+using boys::DeviceProbeDefaultHow;
 using boys::DeviceProbeMeasurement;
 using boys::DeviceProbeOptions;
 using boys::DeviceProbePass;
@@ -318,54 +325,97 @@ TEST(DeviceProbe, AFigureIsAWithinRoundRatioOverEveryPooledRound) {
     EXPECT_GT(measured, 0u);
 }
 
-/// A run too short for a quartile band refuses, names the count it took, and
-/// names the count it needs.
+/// A run too short for a quartile band still ends with one entry per shape that
+/// produced a figure, and says the count it took and the count a band needs.
 ///
 /// A band's two ends are two order statistics; below four readings they are the
-/// same reading twice, and a probe that ordered on them would be printing a
-/// resolution it never measured. The refusal is a refusal and not a quiet
-/// downgrade: no shape of such a run may recommend anything.
-TEST(DeviceProbe, AShortRunRefusesAndNamesTheRoundCount) {
+/// same reading twice, so such a run places nothing and can place nothing. What it
+/// may not do is leave a shape that produced a figure without an answer: the name
+/// is the one entry such a shape has, or the entry the refinement stage's own
+/// longer protocol led, and the reason carries the round count so that the name is
+/// never read as a comparison this run did not make.
+TEST(DeviceProbe, AShortRunNamesAnEntryAndSaysTheBandWasNeverFormed) {
     DeviceProbeOptions options = Small();
+    // The counts the two readings are spaced by are the ones the protocol is read
+    // at, and the run is short in rounds rather than in workload: a fixture small
+    // in both is one whose entries may not resolve, and this rule is about rounds.
+    options.count = 1u << 18;
     options.passes = 1;
+    options.repetitions = 8;
+    options.refinementRuns = 2;
+    options.refinementFactor = 2;
     options.canarySpreadAlarm = 1.0e9;
+    // One shape of two rows - one launched and one in-kernel - and two shapes of
+    // one, so the run holds a name reached by the stage and a name reached by there
+    // being no rival at all.
+    options.only = {"single-fp64", "device-single-fp64", "single-fp32", "all-n-fp64"};
 
     const DeviceProbeReport report = boys::RunDeviceOptionProbe(options);
 
     ASSERT_EQ(report.status, DeviceProbeStatus::kSuccess);
     ASSERT_EQ(report.pairedRounds, options.passes * options.rounds);
     ASSERT_LT(report.pairedRounds, 4);
+    ASSERT_FALSE(report.classes.empty());
 
-    std::size_t refusals = 0;
+    std::size_t named = 0;
 
     for (const DeviceProbeClass& clause : report.classes) {
         for (const DeviceProbeRanking& ranking : clause.rankings) {
             EXPECT_EQ(ranking.rounds, report.pairedRounds);
-            EXPECT_NE(ranking.verdict, DeviceProbeVerdict::kRecommend);
-            EXPECT_TRUE(ranking.recommended.empty()) << ranking.question;
 
-            // The refusal names the count it took where the count is what
-            // stopped it. A shape that stopped earlier — nothing measured, or
-            // nothing that resolved above its own baseline — says that instead,
-            // and both are refusals, so the reason is non-empty either way.
-            EXPECT_FALSE(ranking.reason.empty()) << ranking.question;
-            EXPECT_NE(ranking.confidence.find("CANNOT DETERMINE"), std::string::npos)
-                << ranking.confidence;
+            // Nothing can be placed on two readings, and the reason says the count
+            // it took and the count it needs rather than leaving the shortfall to
+            // be inferred from the name below.
+            EXPECT_NE(ranking.reason.find("2 paired round(s)"), std::string::npos)
+                << ranking.reason;
+            EXPECT_NE(ranking.reason.find("need 4"), std::string::npos) << ranking.reason;
 
-            if (ranking.fastestOverall.empty()) {
+            // No shape of this run is reported as an ordering: the band one would
+            // have been read off was never formed, whichever way the name was
+            // reached.
+            EXPECT_NE(ranking.defaultHow, DeviceProbeDefaultHow::kOrdered) << ranking.question;
+
+            std::size_t read = 0;
+            bool namedIsRead = false;
+
+            for (const DeviceProbeMeasurement& measurement : report.measurements) {
+                if (!measurement.measured || !(measurement.nsPerArgument > 0.0) ||
+                    measurement.precision != clause.precision ||
+                    measurement.question != ranking.question) {
+                    continue;
+                }
+
+                ++read;
+                namedIsRead = namedIsRead || measurement.name == ranking.recommended;
+            }
+
+            if (read == 0) {
+                // The one answer a run cannot name an entry from: no entry of this
+                // shape produced a figure at all.
+                EXPECT_EQ(ranking.verdict, DeviceProbeVerdict::kCannotDetermine)
+                    << ranking.question;
+                EXPECT_TRUE(ranking.recommended.empty()) << ranking.question;
+                EXPECT_EQ(ranking.defaultHow, DeviceProbeDefaultHow::kNone) << ranking.question;
                 continue;
             }
 
-            ++refusals;
-
-            // Four rounds is what the protocol needs and what the refusal has to
-            // say it needs, in the same breath as the number it took.
-            EXPECT_NE(ranking.reason.find("2 paired round(s)"), std::string::npos) << ranking.reason;
-            EXPECT_NE(ranking.reason.find("need 4"), std::string::npos) << ranking.reason;
+            // Entries of this shape produced figures, so it ends with exactly one
+            // name - and the name is one of those entries, never a row read off a
+            // table.
+            ++named;
+            EXPECT_EQ(ranking.verdict, DeviceProbeVerdict::kRecommend) << ranking.question;
+            EXPECT_FALSE(ranking.recommended.empty()) << ranking.question;
+            EXPECT_NE(ranking.defaultHow, DeviceProbeDefaultHow::kNone) << ranking.question;
+            EXPECT_TRUE(namedIsRead)
+                << ranking.recommended << " is not an entry this shape read a figure for";
         }
     }
 
-    EXPECT_GT(refusals, 0u);
+    // The premise the rule above is tested under: at these counts the entries
+    // resolve. A run that read nothing is a fixture to look at, not a rule to
+    // relax, and it fails here rather than passing vacuously.
+    EXPECT_GT(named, 0u) << "no shape of this run read a figure at " << options.count
+                         << " arguments, so the naming rule was never reached";
 
     // And the text: a band of two readings is not a resolution, so a run this
     // short prints none. The sentence that would carry one — "entries whose
@@ -380,54 +430,135 @@ TEST(DeviceProbe, AShortRunRefusesAndNamesTheRoundCount) {
         << text;
 }
 
-/// A refusal names what it could not order and recommends nothing.
+/// A shape its own rounds could not order still ends with exactly one entry, and
+/// says how it reached the name.
 ///
-/// A rival whose within-round band against the leader straddles one is a pair
-/// this run did not separate, in either direction, and a probe that named the
-/// leader anyway would be ordering noise. The check is the rule itself, ranking
-/// by ranking: a recommendation is non-empty only where the verdict says so, and
-/// every rival left unplaced is named with its band and with how often it was the
-/// slower of the two — not summarised, not counted.
-TEST(DeviceProbe, ARefusalNamesWhatItCouldNotOrderAndRecommendsNothing) {
+/// A rival whose within-round band against the leader straddles one is a pair this
+/// run did not separate, in either direction, and a probe that named the leader
+/// anyway would be ordering noise. What it does instead is re-run the entries it
+/// could not separate, alone, at a longer protocol, and name the one that led
+/// those runs. The check is the rule itself, ranking by ranking: a shape reached
+/// by its own rounds leaves no rival unplaced, a shape reached any other way
+/// carries the route with the name, and a shape whose entries produced no figure
+/// is the only one that names nothing.
+TEST(DeviceProbe, AShapeItsRoundsCouldNotOrderIsNamedByTheRefinementStage) {
     DeviceProbeOptions options = Small();
     options.canarySpreadAlarm = 1.0e9;
-    // One shape of one entry is a shape that cannot be ordered, so the run below
-    // always holds a refusal to check the rule against.
+    // The named set holds shapes of one entry, which are shapes that cannot be
+    // ordered and are not refusals either, so the run below holds a name reached
+    // without an ordering for this rule to check.
     options.only = {"all-n-fp64", "single-fp64", "device-single-fp64"};
 
     const DeviceProbeReport report = boys::RunDeviceOptionProbe(options);
 
     ASSERT_EQ(report.status, DeviceProbeStatus::kSuccess);
 
-    std::size_t refusals = 0;
-    std::size_t named = 0;
+    std::size_t namedWithoutAnOrdering = 0;
+    std::size_t refused = 0;
+    bool anyMeasured = false;
 
     for (const DeviceProbeClass& clause : report.classes) {
         for (const DeviceProbeRanking& ranking : clause.rankings) {
             EXPECT_FALSE(ranking.asked.empty());
 
-            if (ranking.verdict == DeviceProbeVerdict::kRecommend) {
-                EXPECT_FALSE(ranking.recommended.empty());
-                // A recommendation is only reached past every rival, so no rival
-                // of a recommended shape is left unplaced.
+            std::size_t measuredRows = 0;
+
+            for (const DeviceProbeMeasurement& measurement : report.measurements) {
+                if (measurement.measured && measurement.precision == clause.precision &&
+                    measurement.question == ranking.question) {
+                    ++measuredRows;
+                }
+            }
+
+            anyMeasured = anyMeasured || measuredRows > 0;
+
+            if (measuredRows == 0) {
+                // Nothing was timed, so there is no name to reach: this is the one
+                // answer a run cannot name an entry from.
+                ++refused;
+                EXPECT_EQ(ranking.verdict, DeviceProbeVerdict::kCannotDetermine);
+                EXPECT_TRUE(ranking.recommended.empty()) << ranking.question;
+                EXPECT_EQ(ranking.defaultHow, DeviceProbeDefaultHow::kNone);
+                EXPECT_FALSE(ranking.reason.empty()) << ranking.question;
+                EXPECT_FALSE(ranking.refinement.ran) << "no run was timed to refine";
+                continue;
+            }
+
+            EXPECT_EQ(ranking.verdict, DeviceProbeVerdict::kRecommend);
+            EXPECT_FALSE(ranking.recommended.empty());
+            EXPECT_NE(ranking.defaultHow, DeviceProbeDefaultHow::kNone);
+
+            if (ranking.defaultHow == DeviceProbeDefaultHow::kOrdered) {
+                // An ordering is only reached past every rival, so no rival of a
+                // shape ordered on its own rounds is left unplaced.
                 EXPECT_TRUE(ranking.inseparable.empty()) << ranking.recommended;
                 continue;
             }
 
-            ++refusals;
+            ++namedWithoutAnOrdering;
 
-            EXPECT_TRUE(ranking.recommended.empty()) << ranking.question;
-            EXPECT_FALSE(ranking.reason.empty()) << ranking.question;
-            EXPECT_NE(ranking.confidence.find("CANNOT DETERMINE"), std::string::npos)
-                << ranking.confidence;
+            if (ranking.defaultHow == DeviceProbeDefaultHow::kOnlyEntry) {
+                EXPECT_EQ(measuredRows, 1u)
+                    << "a shape that was ordered against nothing holds one measured row";
+                EXPECT_TRUE(ranking.tiedEntries.empty());
+                continue;
+            }
 
+            // A tie: the stage ran, it voted over the entries the shape's own
+            // rounds could not separate, and the name is the entry it chose. The
+            // vote is reported run by run, so the name can be read back.
+            EXPECT_TRUE(ranking.refinement.ran) << ranking.question;
+            EXPECT_EQ(ranking.refinement.winner, ranking.recommended) << ranking.question;
+            EXPECT_EQ(ranking.refinement.runLeaders.size(),
+                      static_cast<std::size_t>(ranking.refinement.runs));
+            EXPECT_FALSE(ranking.refinement.tally.empty());
+            EXPECT_FALSE(ranking.tiedEntries.empty());
+            EXPECT_NE(std::find(ranking.tiedEntries.begin(), ranking.tiedEntries.end(),
+                                ranking.recommended),
+                      ranking.tiedEntries.end())
+                << ranking.recommended << " was named by the vote but was not in the field";
+        }
+    }
+
+    if (anyMeasured) {
+        EXPECT_GT(namedWithoutAnOrdering, 0u)
+            << "no shape of this run was named without an ordering, so the run reached no name "
+               "by the route this test is about";
+    } else {
+        EXPECT_GT(refused, 0u) << "a run that measured nothing must refuse every shape";
+    }
+}
+
+/// A shape that could not place a rival behind its leader still names every rival
+/// and the band that pair fell in.
+///
+/// A tie is a result, and its evidence is the part a reader has to be able to
+/// judge: each unplaced rival is named with the band its ratio to the leader fell
+/// in and with how often it was the slower of the two — not summarised, not
+/// counted. The check is by name where the card produces a tie and is silent where
+/// it orders every shape outright, because whether two entries come that close is
+/// the card's answer rather than this test's.
+///
+/// This is the file's long pole by a wide margin — about 52 minutes on the card
+/// this was written on, where every other test here takes seconds — because the
+/// tie is hunted rather than waited for: the shape has to reach the refinement
+/// stage and be voted on, and the stage is what costs the time.
+TEST(DeviceProbe, ATieNamesEveryRivalAndTheBandItFellIn) {
+    DeviceProbeOptions options = Small();
+    options.canarySpreadAlarm = 1.0e9;
+    options.count = 65536;
+    options.nmax = 16;
+    options.repetitions = 16;
+    options.passes = 5;
+    options.rounds = 2;
+
+    const DeviceProbeReport report = boys::RunDeviceOptionProbe(options);
+
+    ASSERT_EQ(report.status, DeviceProbeStatus::kSuccess);
+
+    for (const DeviceProbeClass& clause : report.classes) {
+        for (const DeviceProbeRanking& ranking : clause.rankings) {
             for (const std::string& line : ranking.inseparable) {
-                ++named;
-
-                // Each unplaced rival carries its own band and its own
-                // slower-round count: a refusal that did not say how close the
-                // pair came, and how often, would leave a reader with nothing to
-                // judge the refusal by.
                 EXPECT_NE(line.find("fell in"), std::string::npos) << line;
                 EXPECT_NE(line.find("slower of the two in"), std::string::npos) << line;
             }
@@ -436,10 +567,15 @@ TEST(DeviceProbe, ARefusalNamesWhatItCouldNotOrderAndRecommendsNothing) {
                 EXPECT_NE(ranking.reason.find("could not be placed"), std::string::npos)
                     << ranking.reason;
             }
+
+            // A shape whose tie was refined still names the rivals it could not
+            // separate: the refinement answers the shape, and it does not erase
+            // what the shape's own rounds found.
+            if (ranking.refinement.ran) {
+                EXPECT_FALSE(ranking.tiedEntries.empty()) << ranking.question;
+            }
         }
     }
-
-    EXPECT_GT(refusals, 0u);
 }
 
 /// A refusal carries the clock check as well as a recommendation does.
@@ -537,14 +673,17 @@ TEST(DeviceProbe, ARefusalCarriesTheClockCheckToo) {
     }
 }
 
-/// A refusal leaves a consumer a default, and the default is labelled as what it
-/// is: a reading of the library's own device entry book, counted and not timed.
+/// Every name the report carries came out of a clock.
 ///
-/// The section is the report's own words, so it is the text that is checked: the
-/// heading says a heuristic and not a measurement, the basis line begins with
-/// the words that say where the name came from, and no cost is stated in the
-/// section at all — a figure there would be read as one of the run's.
-TEST(DeviceProbe, TheFallbackIsLabelledAndIsNotAMeasurement) {
+/// What a shape the probe could not order used to leave behind was a name read off
+/// the library's own tables, printed in a section of its own and labelled a
+/// heuristic. That route is gone: the entries a shape could not separate are
+/// re-run and voted on, so a name the report carries is always a row this run
+/// timed, and a shape whose rows produced no figure names nothing at all rather
+/// than falling back to the tables. The check is both halves — the words the old
+/// section lived under are absent, and each name the data carries belongs to a
+/// measured row of the shape it is named in.
+TEST(DeviceProbe, EveryNameTheReportCarriesWasTimed) {
     DeviceProbeOptions options = Small();
     options.canarySpreadAlarm = 1.0e9;
     options.only = {"all-n-fp64"};
@@ -555,56 +694,41 @@ TEST(DeviceProbe, TheFallbackIsLabelledAndIsNotAMeasurement) {
 
     const std::string text = boys::FormatDeviceOptionProbe(report);
 
-    const std::string heading = "static fallback — a heuristic, not a measurement";
-    const std::size_t at = text.find(heading);
+    EXPECT_EQ(text.find("static fallback"), std::string::npos) << text;
+    EXPECT_EQ(text.find("heuristic"), std::string::npos) << text;
 
-    ASSERT_NE(at, std::string::npos);
+    std::size_t named = 0;
 
-    // A refusal that carries a name carries the basis it was chosen on, and the
-    // basis says in its own first words that nothing was timed for it.
     for (const DeviceProbeClass& clause : report.classes) {
         for (const DeviceProbeRanking& ranking : clause.rankings) {
-            if (ranking.verdict == DeviceProbeVerdict::kRecommend) {
+            if (ranking.recommended.empty()) {
+                EXPECT_EQ(ranking.verdict, DeviceProbeVerdict::kCannotDetermine);
+                EXPECT_EQ(ranking.defaultHow, DeviceProbeDefaultHow::kNone);
+                EXPECT_FALSE(ranking.reason.empty()) << ranking.question;
                 continue;
             }
 
-            ASSERT_TRUE(ranking.heuristicBasis.empty() || !ranking.heuristicEntry.empty());
+            ++named;
 
-            if (ranking.heuristicEntry.empty()) {
-                continue;
+            bool measured = false;
+
+            for (const DeviceProbeMeasurement& measurement : report.measurements) {
+                if (measurement.name == ranking.recommended && measurement.measured &&
+                    measurement.precision == clause.precision &&
+                    measurement.question == ranking.question) {
+                    measured = true;
+                }
             }
 
-            // The basis must open with the words that say it was counted rather
-            // than timed — the whole length of them, so a basis that only started
-            // with "counted" would not pass.
-            const char* const opening = "counted, not timed";
-            EXPECT_EQ(ranking.heuristicBasis.compare(0, std::strlen(opening), opening), 0)
-                << ranking.heuristicBasis;
-            EXPECT_NE(text.find(ranking.heuristicEntry), std::string::npos);
-            EXPECT_NE(text.find(ranking.heuristicBasis), std::string::npos);
+            EXPECT_TRUE(measured) << ranking.recommended
+                                  << " was named but is not a measured row of its shape";
+            EXPECT_NE(text.find(ranking.recommended), std::string::npos) << ranking.question;
         }
     }
 
-    // The section runs to the next heading of the report, and holds no cost: the
-    // name in it is a property of the tables, and a figure beside it would make
-    // the two read as one answer.
-    std::size_t end = text.find("\n  static fallback", at + heading.size());
-    const std::size_t nextClass = text.find("\nclass ", at + heading.size());
-
-    if (end == std::string::npos || (nextClass != std::string::npos && nextClass < end)) {
-        end = nextClass;
+    if (!report.hasDefault) {
+        EXPECT_EQ(named, 0u);
     }
-
-    const std::string section = text.substr(at, end == std::string::npos ? std::string::npos
-                                                                         : end - at);
-
-    EXPECT_NE(section.find("not a measurement"), std::string::npos);
-    EXPECT_NE(section.find("counted, not timed"), std::string::npos);
-    EXPECT_EQ(section.find("ns/argument"), std::string::npos) << section;
-
-    // The library's own book names a row for this shape, so the section is a
-    // default and not an empty heading.
-    EXPECT_FALSE(report.hasDefault && section.find("default: ") == std::string::npos);
 }
 
 /// The status a run ends in, and whether the report says so in a way a reader
@@ -798,13 +922,14 @@ TEST(DeviceProbe, AVerdictNamesOnlyEntriesItMeasured) {
 
 /// A ranking is a comparison, so it needs two entries to be one. A shape whose
 /// table holds one entry has nothing to order that entry against, and the report
-/// declines rather than naming it: what such an entry is, is the fastest of the
-/// one entry of its shape, and what it is not, is a result against a field.
+/// says so: the entry is named, and named as the shape's only entry rather than as
+/// the winner of a field it never met. One entry is not a ranking, and it is not a
+/// refusal either — there is no alternative the run declined to name.
 ///
 /// The check is on the shape's own rows rather than on a figure, because whether
 /// an entry measures at this workload is the card's business and this run is not
 /// asserting a cost.
-TEST(DeviceProbe, AShapeOfOneNamesNoWinner) {
+TEST(DeviceProbe, AShapeOfOneNamesItsOnlyEntry) {
     DeviceProbeOptions options = Small();
     options.canarySpreadAlarm = 1.0e9;
     options.only = {"all-n-fp64"};
@@ -818,11 +943,16 @@ TEST(DeviceProbe, AShapeOfOneNamesNoWinner) {
     for (const DeviceProbeClass& clause : report.classes) {
         for (const DeviceProbeRanking& ranking : clause.rankings) {
             std::size_t rows = 0;
+            std::size_t measuredRows = 0;
 
             for (const DeviceProbeMeasurement& measurement : report.measurements) {
                 if (measurement.precision == clause.precision &&
                     measurement.question == ranking.question) {
                     ++rows;
+
+                    if (measurement.measured) {
+                        ++measuredRows;
+                    }
                 }
             }
 
@@ -831,10 +961,27 @@ TEST(DeviceProbe, AShapeOfOneNamesNoWinner) {
             }
 
             sawAShapeOfOne = true;
-            EXPECT_NE(ranking.verdict, DeviceProbeVerdict::kRecommend);
-            EXPECT_TRUE(ranking.recommended.empty());
             EXPECT_FALSE(ranking.reason.empty());
             EXPECT_FALSE(ranking.confidence.empty());
+
+            if (measuredRows == 0) {
+                // A shape of one whose entry produced no figure on this run is the
+                // one case with nothing to name, and it says which count is short
+                // rather than naming an entry it did not time.
+                EXPECT_EQ(ranking.verdict, DeviceProbeVerdict::kCannotDetermine);
+                EXPECT_TRUE(ranking.recommended.empty());
+                continue;
+            }
+
+            EXPECT_EQ(ranking.verdict, DeviceProbeVerdict::kRecommend);
+            EXPECT_EQ(ranking.defaultHow, DeviceProbeDefaultHow::kOnlyEntry);
+            EXPECT_FALSE(ranking.recommended.empty());
+            EXPECT_TRUE(ranking.tiedEntries.empty()) << "a shape of one has no rival to tie with";
+            EXPECT_TRUE(ranking.inseparable.empty());
+
+            // The line says what the name rests on, so that a reader does not take
+            // it for the winner of a comparison.
+            EXPECT_NE(ranking.reason.find("no alternative"), std::string::npos) << ranking.reason;
         }
     }
 
