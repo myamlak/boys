@@ -752,6 +752,19 @@ void CompareDeviceWithHost(const Reference& ref,
     }
 }
 
+// A device row this gate could not read against the host lane at the policy the
+// row names, with the library's own reason. The row keeps the two claims it was
+// measured under - the committed reference, and the host lane at the default
+// policy - so what is absent is the reading that shows the two lanes answer the
+// same question, and only that. The reason is quoted from
+// BoysAccuracyGuaranteed rather than written here: a combination the host lane
+// refuses says so in its own words, and a reason restated in the gate would be
+// a second answer to a question the library already answers.
+std::vector<std::string>& HostCounterpartGaps() {
+    static std::vector<std::string> gaps;
+    return gaps;
+}
+
 // The seven rows, each measured against the reference and against the host lane
 // at the rung the call is made at.
 //
@@ -1061,12 +1074,6 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
             DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowRat).name, "narrow rat");
         const int narrowRatHornerHost = routeHostClaim(
             DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowRatHorner).name, "narrow rat");
-        const int bothRatHost = routeHostClaim(
-            DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowOrdersRat).name, "narrow orders rat");
-        const int bothRatHornerHost = routeHostClaim(
-            DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowOrdersRatHorner).name,
-            "narrow orders rat");
-
         CompareDeviceWithHost<kMultiplier, RatPolicy>(ref, grid, ratOut, ratHost);
         CompareDeviceWithHost<kMultiplier, RatPolicy>(ref, grid, ratHornerOut, ratHornerHost);
         CompareDeviceWithHost<kMultiplier, OrdersRatPolicy>(
@@ -1077,10 +1084,32 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
             ref, grid, narrowRatOut, narrowRatHost);
         CompareDeviceWithHost<kMultiplier, NarrowRatPolicy>(
             ref, grid, narrowRatHornerOut, narrowRatHornerHost);
-        CompareDeviceWithHost<kMultiplier, NarrowOrdersRatPolicy>(
-            ref, grid, bothRatOut, bothRatHost);
-        CompareDeviceWithHost<kMultiplier, NarrowOrdersRatPolicy>(
-            ref, grid, bothRatHornerOut, bothRatHornerHost);
+
+        // The narrow partition under the rational route on the orders axis is a
+        // shape the host lane does not carry: its packed entry refuses the pair
+        // by an assertion of its own, because the rational route's narrow fit is
+        // a pair per piece and the lane's narrow body is a four-order one built
+        // over a polynomial's coefficients. The refusal is the library's and is
+        // quoted from the contract below rather than repeated here. The two rows
+        // keep the claim they were measured under above - the committed
+        // reference - so what the pair loses is the cross-lane reading and not
+        // its own figure.
+        for (const boys::DeviceEntry entry :
+             {boys::DeviceEntry::kAllOrdersF64NarrowOrdersRat,
+              boys::DeviceEntry::kAllOrdersF64NarrowOrdersRatHorner})
+        {
+            const boys::AccuracyFigure counterpart = boys::BoysAccuracyGuaranteed(
+                boys::Precision::kFp64,
+                NarrowOrdersRatPolicy::kRoute,
+                NarrowOrdersRatPolicy::kScheme,
+                NarrowOrdersRatPolicy::kPack,
+                NarrowOrdersRatPolicy::kGranularity,
+                boys::AccuracyTier::kReference);
+
+            HostCounterpartGaps().push_back(std::string(DeviceRow(entry).name) + rungWord
+                                            + " has no fp64 host counterpart at its own policy: "
+                                            + counterpart.reason);
+        }
     }
 }
 
@@ -4093,6 +4122,25 @@ int main(int argc, char** argv) {
                     blind,
                     cells - nonDiscriminating,
                     live);
+    }
+
+    // The rows the host lane has no counterpart for at the policy the row names.
+    // They are in the books above with their own bound and their own cells, so
+    // this is not a hole in the measurement; it is the one reading the pair
+    // could not be given, and it is printed rather than passed over because a
+    // comparison quietly left out reads exactly like one that agreed.
+    if (!HostCounterpartGaps().empty())
+    {
+        std::printf("\n  device rows the host lane has no counterpart for at the policy the row\n"
+                    "  names, at this revision. The row itself is measured as any other is; what\n"
+                    "  is missing is the second reading, the one at its own route, partition and\n"
+                    "  packing axis. The reason is the host lane's own, from\n"
+                    "  BoysAccuracyGuaranteed:\n");
+
+        for (const std::string& gap : HostCounterpartGaps())
+        {
+            std::printf("  %s\n", gap.c_str());
+        }
     }
 
     const std::size_t uncovered = ReportDeviceOptionCoverage();
