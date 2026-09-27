@@ -5971,26 +5971,19 @@ int main(int argc, char** argv) {
             // reading order is what keeps a sweep and its row together: the
             // order the sweeps run in and the order the rows are published in
             // are two different orders, and only the table knows the second.
-            //
-            // The scheme and the partition are cast where the nested lambda uses
-            // them rather than named above it: a local read only from inside a
-            // lambda is not a use to MSVC's unused-local reading, which this
-            // file is built under at /W4 /WX, and naming it and capturing it to
-            // say so is what clang's unused-lambda-capture rejects.
-            const auto claimSlot = [&](std::size_t entry, std::size_t region) {
-                const std::size_t at = openedSlot(kRung,
-                                                  kRouteIdx,
-                                                  static_cast<std::size_t>(kPart),
-                                                  static_cast<std::size_t>(kScheme),
-                                                  entry,
-                                                  region);
+            const auto claimSlot = [&](std::size_t partIdx,
+                                       std::size_t schemeIdx,
+                                       std::size_t entry,
+                                       std::size_t region) {
+                const std::size_t at =
+                    openedSlot(kRung, kRouteIdx, partIdx, schemeIdx, entry, region);
                 return static_cast<std::size_t>(openedSlots[at]);
             };
 
-            const std::size_t ordersRegionA = claimSlot(0, 0);
-            const std::size_t ordersGrid = claimSlot(0, 1);
-            const std::size_t planeRegionA = claimSlot(1, 0);
-            const std::size_t planeGrid = claimSlot(1, 1);
+            const std::size_t ordersRegionA = claimSlot(kPartIdx, kSchemeIdx, 0, 0);
+            const std::size_t ordersGrid = claimSlot(kPartIdx, kSchemeIdx, 0, 1);
+            const std::size_t planeRegionA = claimSlot(kPartIdx, kSchemeIdx, 1, 0);
+            const std::size_t planeGrid = claimSlot(kPartIdx, kSchemeIdx, 1, 1);
             std::vector<double> planes(count * (static_cast<std::size_t>(nmax) + 1));
 
             boys::BoysAllN<kMultiplier, Policy>(nmax, ref.x.data(), planes.data(), count);

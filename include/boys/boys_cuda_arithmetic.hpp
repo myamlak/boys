@@ -25,6 +25,14 @@
 /// form is a property of the tables it was handed and not of the body reading
 /// them, and a lane without the member reads the Chebyshev pool.
 ///
+/// A lane whose pieces are rational pairs carries a `kRational` member and
+/// answers the piece read with four members in place of one: `NumDeg` and
+/// `DenDeg` for the pair's two degrees, `Coeffs` for the numerator's block and
+/// `DenCoeffs` for the denominator's, and the summation is the two Horner sums
+/// and the division above. The route is a family and not a basis, so this is
+/// beside the scheme's member rather than under it: a pair has one stored form
+/// and either scheme sums it.
+///
 /// T is double for the double lane's seeds and float for the float lane's.
 /// BSeed is the whole of region B's seed, taken at the argument rather than as
 /// one polynomial over the region: the shipped partition's seed is one fit
@@ -177,6 +185,42 @@ __device__ __forceinline__ double DeviceHornerMono(const double* c, int deg, dou
     return acc;
 }
 
+// The rational route's summation: a piece is a numerator and a denominator, both
+// stored ascending, both summed by Horner, divided once. The denominator's
+// constant term is held at one, so its own sum ends in a multiply-add against
+// that one rather than carrying a coefficient for it; a pair whose denominator
+// degree is zero has no denominator at all and the numerator is the value. It is
+// the kernel's reading of the stored form, coefficient for coefficient the same
+// as the host lane's piece and seed evaluations (boys_impl.hpp
+// RationalPieceAtCut, RationalSeedAtCut): the two lanes' figures are comparable
+// because they sum the same numbers the same way.
+__device__ __forceinline__ double DeviceRatSum(const double* num,
+                                              int numDeg,
+                                              const double* den,
+                                              int denDeg,
+                                              double t) {
+    double numerator = num[numDeg];
+
+    for (int j = numDeg - 1; j >= 0; --j)
+    {
+        numerator = __fma_rn(numerator, t, num[j]);
+    }
+
+    if (denDeg == 0)
+    {
+        return numerator;
+    }
+
+    double denominator = den[denDeg - 1];
+
+    for (int j = denDeg - 2; j >= 0; --j)
+    {
+        denominator = __fma_rn(denominator, t, den[j]);
+    }
+
+    return numerator / __fma_rn(denominator, t, 1.0);
+}
+
 // Which basis a lane's coefficients are stored in. A lane that reads the
 // monomial pool carries a kMonomial member and one that reads the Chebyshev
 // pool does not, so the scheme axis is this trait and the summation below it,
@@ -186,6 +230,17 @@ struct LaneMonomial : std::false_type {};
 
 template <typename Lane>
 struct LaneMonomial<Lane, std::void_t<decltype(Lane::kMonomial)>> : std::true_type {};
+
+// A lane whose pieces are rational pairs rather than polynomials: it carries a
+// kRational member and names its two coefficient blocks and their two degrees in
+// place of Deg. The route is a family of its own and not a basis, so the trait is
+// beside the scheme's rather than under it - a rational piece has no Chebyshev
+// form and no monomial one, and neither scheme changes the numbers it reads.
+template <typename Lane, typename = void>
+struct LaneRational : std::false_type {};
+
+template <typename Lane>
+struct LaneRational<Lane, std::void_t<decltype(Lane::kRational)>> : std::true_type {};
 
 template <typename Lane>
 __device__ __forceinline__ double DevicePieceSum(const Lane& lane,
@@ -224,9 +279,19 @@ __device__ __forceinline__ double DeviceSeed(const Lane& lane, int order, double
         }
     }
 
-    const double* c = lane.Coeffs(order, p);
     const double t = 2.0 * (x - lane.A(order, p)) / (lane.B(order, p) - lane.A(order, p)) - 1.0;
-    return DevicePieceSum(lane, c, lane.Deg(order, p), t);
+
+    if constexpr (LaneRational<Lane>::value)
+    {
+        return DeviceRatSum(lane.Coeffs(order, p),
+                            lane.NumDeg(order, p),
+                            lane.DenCoeffs(order, p),
+                            lane.DenDeg(order, p),
+                            t);
+    } else
+    {
+        return DevicePieceSum(lane, lane.Coeffs(order, p), lane.Deg(order, p), t);
+    }
 }
 
 template <typename Lane>

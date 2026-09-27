@@ -498,6 +498,11 @@ int BoysCudaLaunchAllOrdersF64OrdersMono(const int*, const double*, double*, std
 int BoysCudaLaunchAllOrdersF64NarrowMono(const int*, const double*, double*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF64NarrowOrdersMono(
     const int*, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF64Rat(const int*, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF64OrdersRat(const int*, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF64NarrowRat(const int*, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF64NarrowOrdersRat(
+    const int*, const double*, double*, std::size_t, void*);
 int BoysCudaLaunchAllNF64(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
 int BoysCudaLaunchSingleF16(const int*, const void*, void*, std::size_t, void*);
@@ -548,6 +553,25 @@ int LaunchLaunched(ProbeEntry entry,
             break;
         case ProbeEntry::kAllOrdersF64NarrowOrdersMono:
             BoysCudaLaunchAllOrdersF64NarrowOrdersMono(
+                n, x, static_cast<double*>(out), count, stream);
+            break;
+        // The fit route's rows: the two scheme names of a shape select one
+        // arithmetic, so both names launch the same kernel.
+        case ProbeEntry::kAllOrdersF64Rat:
+        case ProbeEntry::kAllOrdersF64RatHorner:
+            BoysCudaLaunchAllOrdersF64Rat(n, x, static_cast<double*>(out), count, stream);
+            break;
+        case ProbeEntry::kAllOrdersF64OrdersRat:
+        case ProbeEntry::kAllOrdersF64OrdersRatHorner:
+            BoysCudaLaunchAllOrdersF64OrdersRat(n, x, static_cast<double*>(out), count, stream);
+            break;
+        case ProbeEntry::kAllOrdersF64NarrowRat:
+        case ProbeEntry::kAllOrdersF64NarrowRatHorner:
+            BoysCudaLaunchAllOrdersF64NarrowRat(n, x, static_cast<double*>(out), count, stream);
+            break;
+        case ProbeEntry::kAllOrdersF64NarrowOrdersRat:
+        case ProbeEntry::kAllOrdersF64NarrowOrdersRatHorner:
+            BoysCudaLaunchAllOrdersF64NarrowOrdersRat(
                 n, x, static_cast<double*>(out), count, stream);
             break;
         case ProbeEntry::kAllOrdersF32:

@@ -404,6 +404,59 @@ public:
     static BoysStatus AllOrdersF64NarrowOrdersMono(
         const int* n, const double* x, double* out, std::size_t count, void* stream);
 
+    /// F_0(x[i])..F_n(x[i]) as AllOrdersF64 with the other fit route: every
+    /// piece is a numerator/denominator pair, evaluated as two Horner sums and
+    /// a division, over the same pieces and intervals and in the same region
+    /// structure as the shipped entry. Shape, layout, arguments and the
+    /// multiplier are AllOrdersF64's.
+    ///
+    /// The route is a choice of fit and not of scheme: the pair is stored once,
+    /// so both scheme names select this arithmetic and the scheme axis is inert
+    /// here (kEvalSchemeRows, boys_coefficients.hpp, carries each route's own
+    /// certified figures). What the route buys and costs is the pair's degree
+    /// against the polynomial's at the same budget — a numerator and a
+    /// denominator summed, one division, and the route's own stored tables —
+    /// and the two routes are ranked by the option probe.
+    ///
+    /// The rung's cut is the route's own, certified per reading: this shape
+    /// seeds at its top order's piece and carries that piece's w(b), where
+    /// AllOrdersF64OrdersRat reads each order's piece at A = 1.
+    ///
+    /// \returns kDeviceError when the launch fails.
+    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+    static BoysStatus AllOrdersF64Rat(
+        const int* n, const double* x, double* out, std::size_t count, void* stream);
+
+    /// The rational route's orders-axis member: F_0(x[i])..F_n(x[i]) with
+    /// region A read as one fit per order, each summed as the pair
+    /// AllOrdersF64Rat names. The two choices compose — the axis is a body
+    /// choice inside region A, and the route is the family those bodies read —
+    /// so this is the same relation to AllOrdersF64Rat that AllOrdersF64Orders
+    /// has to AllOrdersF64. Its rung reads the per-order cut.
+    ///
+    /// \returns kDeviceError when the launch fails.
+    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+    static BoysStatus AllOrdersF64OrdersRat(
+        const int* n, const double* x, double* out, std::size_t count, void* stream);
+
+    /// The rational route over the narrow partition: F_0(x[i])..F_n(x[i]) from
+    /// the narrow pieces, their piecewise region-B seed and their per-rung
+    /// effective degrees, each piece summed as the pair AllOrdersF64Rat names.
+    ///
+    /// \returns kDeviceError when the launch fails.
+    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+    static BoysStatus AllOrdersF64NarrowRat(
+        const int* n, const double* x, double* out, std::size_t count, void* stream);
+
+    /// Both of the choices above in force at once: the narrow partition read
+    /// one fit per order inside region A, each piece summed as the pair
+    /// AllOrdersF64Rat names, with the certified all-orders body past kX0.
+    ///
+    /// \returns kDeviceError when the launch fails.
+    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+    static BoysStatus AllOrdersF64NarrowOrdersRat(
+        const int* n, const double* x, double* out, std::size_t count, void* stream);
+
     /// F_0(x[i])..F_nmax(x[i]) at one common nmax, double precision — the
     /// uniform-order batch: many arguments, all nmax + 1 orders each, the
     /// layout AllNF32 documents and the bound the CPU lane's BoysAllN

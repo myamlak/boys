@@ -55,6 +55,15 @@ enum class DeviceEntry : int {
     kAllOrdersF64NarrowMono, ///< BoysCuda::AllOrdersF64NarrowMono, launched
     kAllOrdersF64NarrowOrdersMono, ///< BoysCuda::AllOrdersF64NarrowOrdersMono, launched
 
+    kAllOrdersF64Rat, ///< BoysCuda::AllOrdersF64Rat at EvalScheme::kSplitClenshaw, launched
+    kAllOrdersF64RatHorner, ///< BoysCuda::AllOrdersF64Rat at EvalScheme::kHorner, launched
+    kAllOrdersF64OrdersRat, ///< BoysCuda::AllOrdersF64OrdersRat at kSplitClenshaw, launched
+    kAllOrdersF64OrdersRatHorner, ///< BoysCuda::AllOrdersF64OrdersRat at kHorner, launched
+    kAllOrdersF64NarrowRat, ///< BoysCuda::AllOrdersF64NarrowRat at kSplitClenshaw, launched
+    kAllOrdersF64NarrowRatHorner, ///< BoysCuda::AllOrdersF64NarrowRat at kHorner, launched
+    kAllOrdersF64NarrowOrdersRat, ///< BoysCuda::AllOrdersF64NarrowOrdersRat at kSplitClenshaw
+    kAllOrdersF64NarrowOrdersRatHorner, ///< BoysCuda::AllOrdersF64NarrowOrdersRat at kHorner
+
     kAllNF64, ///< BoysCuda::AllNF64, launched
     kAllNF32, ///< BoysCuda::AllNF32, launched
     kAllNF16, ///< BoysCuda::AllNF16, launched
@@ -140,6 +149,7 @@ enum class DeviceOptionAxis : int {
     kPartition, ///< which cut of the regions the entry reads its fits from
     kPacking, ///< how region A's fits are read: one ladder, or one fit per order
     kScheme, ///< which basis the entry sums its stored fits in; its member is \c scheme
+    kRoute, ///< which family of fit the entry's pieces are; its member is \c route
 };
 
 /// One row of the device option space: an option this surface offers, with

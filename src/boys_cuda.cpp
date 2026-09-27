@@ -28,7 +28,13 @@ int BoysCudaUploadEffTables(double m,
                             const int* monoA,
                             const int* monoB,
                             const int* narrowMonoA,
-                            const int* narrowMonoB);
+                            const int* narrowMonoB,
+                            const int* ratSeedA,
+                            const int* ratOrdA,
+                            const int* ratB,
+                            const int* narrowRatSeedA,
+                            const int* narrowRatOrdA,
+                            const int* narrowRatB);
 int BoysCudaLaunchSingleF32(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchSingleF32Fast(
@@ -67,6 +73,22 @@ int BoysCudaLaunchAllOrdersF64NarrowMonoEff(
 int BoysCudaLaunchAllOrdersF64NarrowOrdersMono(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64NarrowOrdersMonoEff(
+    const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64Rat(
+    const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64RatEff(
+    const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64OrdersRat(
+    const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64OrdersRatEff(
+    const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64NarrowRat(
+    const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64NarrowRatEff(
+    const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64NarrowOrdersRat(
+    const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64NarrowOrdersRatEff(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllNF64(int nmax, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchSingleF32Eff(
@@ -293,6 +315,74 @@ template <double kAccuracyMultiplier> void FillNarrowMonoLane() {
     }
 }
 
+// The fit route's cut of the same rung, two ints per cell: the numerator's cut
+// degree then the denominator's, which is the pair the criterion certifies
+// together. Region A lands twice because the route's cut is per reading — the
+// arguments shape seeds at its top order's piece and pays that piece's w(b), the
+// orders shape reads each order's own piece at A = 1 — and both are taken from
+// the derivation over the partition's rows and reshaped to the lane's
+// (order, pieceInOrder) indexing. Region B is one pair either way, so one pair
+// is what lands.
+constexpr int kRatCutCells = (kEffMaxOrder + 1) * kEffMaxPieces * 2;
+constexpr int kNarrowRatCutPieces = detail::kNarrowBPieces * 2;
+
+std::array<int, kRatCutCells> gRatSeedA{};
+std::array<int, kRatCutCells> gRatOrdA{};
+std::array<int, 2> gRatB{};
+std::array<int, kNarrowFlatPieces * 2> gNarrowRatSeedA{};
+std::array<int, kNarrowFlatPieces * 2> gNarrowRatOrdA{};
+std::array<int, kNarrowRatCutPieces> gNarrowRatB{};
+
+template <double kAccuracyMultiplier> void FillRatLane() {
+    static constexpr auto kSeed = detail::RationalRegionASeedDegrees<kAccuracyMultiplier,
+                                                                    detail::BoysRole::kDoubleBatch>();
+    static constexpr auto kOrd = detail::RationalRegionADegrees<kAccuracyMultiplier>();
+    static constexpr auto kB = detail::RationalRegionBDegrees<kAccuracyMultiplier>();
+
+    for (int order = 0; order <= detail::kMaxOrder; ++order)
+    {
+        for (int p = detail::kPieceStart[static_cast<std::size_t>(order)];
+             p < detail::kPieceStart[static_cast<std::size_t>(order) + 1];
+             ++p)
+        {
+            const int pieceInOrder = p - detail::kPieceStart[static_cast<std::size_t>(order)];
+            const std::size_t cell = static_cast<std::size_t>(order * kEffMaxPieces + pieceInOrder);
+            const std::size_t index = static_cast<std::size_t>(p);
+            gRatSeedA[cell * 2] = kSeed.num[index];
+            gRatSeedA[cell * 2 + 1] = kSeed.den[index];
+            gRatOrdA[cell * 2] = kOrd.num[index];
+            gRatOrdA[cell * 2 + 1] = kOrd.den[index];
+        }
+    }
+
+    gRatB[0] = kB.num[0];
+    gRatB[1] = kB.den[0];
+}
+
+template <double kAccuracyMultiplier> void FillNarrowRatLane() {
+    static constexpr auto kSeed =
+        detail::RationalNarrowRegionASeedDegrees<kAccuracyMultiplier,
+                                                detail::BoysRole::kDoubleBatch>();
+    static constexpr auto kOrd = detail::RationalNarrowRegionADegrees<kAccuracyMultiplier>();
+    static constexpr auto kB = detail::RationalNarrowRegionBDegrees<kAccuracyMultiplier>();
+
+    for (int p = 0; p < kNarrowFlatPieces; ++p)
+    {
+        const std::size_t index = static_cast<std::size_t>(p);
+        gNarrowRatSeedA[index * 2] = kSeed.num[index];
+        gNarrowRatSeedA[index * 2 + 1] = kSeed.den[index];
+        gNarrowRatOrdA[index * 2] = kOrd.num[index];
+        gNarrowRatOrdA[index * 2 + 1] = kOrd.den[index];
+    }
+
+    for (int k = 0; k < detail::kNarrowBPieces; ++k)
+    {
+        const std::size_t index = static_cast<std::size_t>(k);
+        gNarrowRatB[index * 2] = kB.num[index];
+        gNarrowRatB[index * 2 + 1] = kB.den[index];
+    }
+}
+
 // The six CUDA lanes' roles: the double batch seed evaluates the DOUBLE
 // piece table even for the float/fp16 batch lanes (RoleUsesDoubleTables —
 // the downward recursion amplifies float seed errors beyond their budgets).
@@ -322,6 +412,8 @@ template <double kAccuracyMultiplier> BoysStatus EnsureEffTables() {
         FillNarrowLane<kAccuracyMultiplier>();
         FillMonoLane<kAccuracyMultiplier>();
         FillNarrowMonoLane<kAccuracyMultiplier>();
+        FillRatLane<kAccuracyMultiplier>();
+        FillNarrowRatLane<kAccuracyMultiplier>();
         gEffCachedM = kAccuracyMultiplier;
     }
 
@@ -333,7 +425,13 @@ template <double kAccuracyMultiplier> BoysStatus EnsureEffTables() {
                                                  gMonoDegA.data(),
                                                  gMonoDegB.data(),
                                                  gNarrowMonoDegA.data(),
-                                                 gNarrowMonoDegB.data()));
+                                                 gNarrowMonoDegB.data(),
+                                                 gRatSeedA.data(),
+                                                 gRatOrdA.data(),
+                                                 gRatB.data(),
+                                                 gNarrowRatSeedA.data(),
+                                                 gNarrowRatOrdA.data(),
+                                                 gNarrowRatB.data()));
 }
 
 } // namespace
@@ -730,6 +828,106 @@ BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono(
     }
 }
 
+// The fit route's four shapes, on the same path for the same reason: the pieces,
+// the table upload and the rung upload are the entries above', and the launcher
+// names the pair a piece is read from. The route's own cut is per reading, so
+// each shape's launcher names which of the two cuts it reads.
+template <double kAccuracyMultiplier>
+BoysStatus BoysCuda::AllOrdersF64Rat(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    if constexpr (kAccuracyMultiplier == 1.0)
+    {
+        return RunLaunch(BoysCudaLaunchAllOrdersF64Rat, n, x, out, count, stream);
+    } else
+    {
+        const auto status = EnsureEffTables<kAccuracyMultiplier>();
+
+        if (status != BoysStatus::kSuccess)
+        {
+            return status;
+        }
+
+        return RunLaunch(BoysCudaLaunchAllOrdersF64RatEff, n, x, out, count, stream);
+    }
+}
+
+template <double kAccuracyMultiplier>
+BoysStatus BoysCuda::AllOrdersF64OrdersRat(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    if constexpr (kAccuracyMultiplier == 1.0)
+    {
+        return RunLaunch(BoysCudaLaunchAllOrdersF64OrdersRat, n, x, out, count, stream);
+    } else
+    {
+        const auto status = EnsureEffTables<kAccuracyMultiplier>();
+
+        if (status != BoysStatus::kSuccess)
+        {
+            return status;
+        }
+
+        return RunLaunch(BoysCudaLaunchAllOrdersF64OrdersRatEff, n, x, out, count, stream);
+    }
+}
+
+template <double kAccuracyMultiplier>
+BoysStatus BoysCuda::AllOrdersF64NarrowRat(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    if constexpr (kAccuracyMultiplier == 1.0)
+    {
+        return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowRat, n, x, out, count, stream);
+    } else
+    {
+        const auto status = EnsureEffTables<kAccuracyMultiplier>();
+
+        if (status != BoysStatus::kSuccess)
+        {
+            return status;
+        }
+
+        return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowRatEff, n, x, out, count, stream);
+    }
+}
+
+template <double kAccuracyMultiplier>
+BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    if constexpr (kAccuracyMultiplier == 1.0)
+    {
+        return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrdersRat, n, x, out, count, stream);
+    } else
+    {
+        const auto status = EnsureEffTables<kAccuracyMultiplier>();
+
+        if (status != BoysStatus::kSuccess)
+        {
+            return status;
+        }
+
+        return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrdersRatEff, n, x, out, count, stream);
+    }
+}
+
 template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllNF64(
     int nmax, const double* x, double* out, std::size_t count, void* stream) {
@@ -874,6 +1072,14 @@ template BoysStatus BoysCuda::AllOrdersF64NarrowMono<1.0>(
     const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono<1.0>(
     const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Rat<1.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64OrdersRat<1.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowRat<1.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat<1.0>(
+    const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllNF64<1.0>(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
 template BoysStatus BoysCuda::SingleF16<1.0>(const int*, const F16*, F16*, std::size_t, void*);
@@ -903,6 +1109,14 @@ template BoysStatus BoysCuda::AllOrdersF64OrdersMono<2.0>(
 template BoysStatus BoysCuda::AllOrdersF64NarrowMono<2.0>(
     const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono<2.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Rat<2.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64OrdersRat<2.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowRat<2.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat<2.0>(
     const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllNF64<2.0>(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
@@ -935,6 +1149,14 @@ template BoysStatus BoysCuda::AllOrdersF64NarrowMono<10.0>(
     const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono<10.0>(
     const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Rat<10.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64OrdersRat<10.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowRat<10.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat<10.0>(
+    const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllNF64<10.0>(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
 template BoysStatus BoysCuda::SingleF16<10.0>(const int*, const F16*, F16*, std::size_t, void*);
@@ -966,6 +1188,14 @@ template BoysStatus BoysCuda::AllOrdersF64NarrowMono<100.0>(
     const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono<100.0>(
     const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Rat<100.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64OrdersRat<100.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowRat<100.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat<100.0>(
+    const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllNF64<100.0>(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
 template BoysStatus BoysCuda::SingleF16<100.0>(const int*, const F16*, F16*, std::size_t, void*);
@@ -996,6 +1226,14 @@ template BoysStatus BoysCuda::AllOrdersF64NarrowMono<1e4>(
     const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono<1e4>(
     const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Rat<1e4>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64OrdersRat<1e4>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowRat<1e4>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat<1e4>(
+    const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllNF64<1e4>(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
 template BoysStatus BoysCuda::SingleF16<1e4>(const int*, const F16*, F16*, std::size_t, void*);
@@ -1025,6 +1263,14 @@ template BoysStatus BoysCuda::AllOrdersF64OrdersMono<1e8>(
 template BoysStatus BoysCuda::AllOrdersF64NarrowMono<1e8>(
     const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono<1e8>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64Rat<1e8>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64OrdersRat<1e8>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowRat<1e8>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat<1e8>(
     const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllNF64<1e8>(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
@@ -1143,6 +1389,50 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme, RegionBExp::kAccurate,
      BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kHorner},
+
+    // The fit route's rows, one per scheme name the surface offers on it. Both
+    // names select one arithmetic — the pair is stored once and summed by
+    // Horner — so each pair of rows below runs one kernel and reports one
+    // delivered figure, and the row's own \c scheme says which name reached it.
+    {DeviceEntry::kAllOrdersF64Rat, "all-orders-fp64-rat", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRoute, RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64,
+     kFormF64, true, nullptr, EvalScheme::kSplitClenshaw, FitRoute::kRationalMinimax},
+    {DeviceEntry::kAllOrdersF64RatHorner, "all-orders-fp64-rat-horner",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kHorner,
+     FitRoute::kRationalMinimax},
+    {DeviceEntry::kAllOrdersF64OrdersRat, "all-orders-fp64-orders-rat",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kSplitClenshaw,
+     FitRoute::kRationalMinimax},
+    {DeviceEntry::kAllOrdersF64OrdersRatHorner, "all-orders-fp64-orders-rat-horner",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kHorner,
+     FitRoute::kRationalMinimax},
+    {DeviceEntry::kAllOrdersF64NarrowRat, "all-orders-fp64-narrow-rat",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kSplitClenshaw,
+     FitRoute::kRationalMinimax},
+    {DeviceEntry::kAllOrdersF64NarrowRatHorner, "all-orders-fp64-narrow-rat-horner",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kHorner,
+     FitRoute::kRationalMinimax},
+    {DeviceEntry::kAllOrdersF64NarrowOrdersRat, "all-orders-fp64-narrow-orders-rat",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kSplitClenshaw,
+     FitRoute::kRationalMinimax},
+    {DeviceEntry::kAllOrdersF64NarrowOrdersRatHorner, "all-orders-fp64-narrow-orders-rat-horner",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kHorner,
+     FitRoute::kRationalMinimax},
 
     {DeviceEntry::kAllNF64, "all-n-fp64", DeviceOptionGroup::kLaunched,
      DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllN, DeviceOptionQuestion::kAllN,

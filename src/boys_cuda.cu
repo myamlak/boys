@@ -193,6 +193,73 @@ __device__ int dNarrowMonoDegEff[kNarrowPiecesTotal];
 __device__ int dNarrowMonoBDegEff[detail::kNarrowBPieces * (detail::kMaxOrder + 1)];
 
 // ---------------------------------------------------------------------------
+// the rational route's stored form, on this lane
+// ---------------------------------------------------------------------------
+// The other route's tables: a numerator/denominator pair per piece rather than
+// one polynomial, over the same pieces — the route reads the shipped partition's
+// own intervals and the narrow partition's, so no piece table, edge or count here
+// is new. What is new is what a piece's coefficients are: the numerator ascending
+// from p_0, then the denominator's q_1..q_k with q_0 held at one, so the
+// denominator's base is the STORED numerator degree's position and not the cut's
+// (boys_impl.hpp RationalPieceAtCut). The pair is evaluated as two Horner sums
+// and a division, which is the kernel path this family needs and the reason it
+// is a lane of its own rather than a pool beside the Chebyshev one.
+//
+// The degrees are carried twice per piece: the pair the table was stored at,
+// which is what a full-accuracy rung reads the whole of, and the cut a rung's
+// criterion certifies. A rung's cut is per reading as well as per partition —
+// region A read one piece per order pays A = 1, and the same piece read as a
+// batch seed pays its own w(b) — so the two shapes carry their own cut table and
+// the argument shape's cells read the seed's.
+//
+// All of it global memory, for the reason the pools above are: the constant bank
+// is full.
+constexpr int kRatACoeffsTotal = static_cast<int>(std::size(detail::kRatACoeffs));
+constexpr int kNarrowRatACoeffsTotal = static_cast<int>(std::size(detail::kNarrowRatACoeffs));
+constexpr int kNarrowRatBCoeffsTotal = static_cast<int>(std::size(detail::kNarrowRatBCoeffs));
+constexpr int kRatBPool = static_cast<int>(std::size(detail::kRatBnum));
+constexpr int kRatBPoolDen = static_cast<int>(std::size(detail::kRatBden));
+
+// The shipped partition's pairs, indexed as the Chebyshev pieces are: a row per
+// order, a column per piece within the order. The two coefficient blocks are
+// addressed separately because the cut moves the numerator's base — the
+// denominator's is the STORED numerator degree's position, which is why it is
+// carried as an offset rather than computed at the read.
+__device__ double dRatACoeffs[kRatACoeffsTotal];
+__device__ int dRatAOffset[detail::kMaxOrder + 1][kMaxPieces];
+__device__ int dRatADenOffset[detail::kMaxOrder + 1][kMaxPieces];
+__device__ int dRatANumDeg[detail::kMaxOrder + 1][kMaxPieces];
+__device__ int dRatADenDeg[detail::kMaxOrder + 1][kMaxPieces];
+__device__ double dRatBnum[kRatBPool];
+__device__ double dRatBden[kRatBPoolDen];
+
+// The rungs' cuts, one table per region-A reading; region B's is one pair either
+// way, so the two readings share it. A cell is the pair a cut leaves — the
+// numerator's degree then the denominator's — which is why every table here has
+// a trailing two: the criterion derives the two together and a rung that used
+// one without the other would be a cut nobody certified.
+__device__ int dRatSeedDeg[detail::kMaxOrder + 1][kMaxPieces][2];
+__device__ int dRatOrdDeg[detail::kMaxOrder + 1][kMaxPieces][2];
+__device__ int dRatBDeg[2];
+
+// The narrow partition's, flat over its rows as its Chebyshev counterpart is.
+__device__ double dNarrowRatACoeffs[kNarrowRatACoeffsTotal];
+__device__ int dNarrowRatAOffset[kNarrowPiecesTotal];
+__device__ int dNarrowRatADenOffset[kNarrowPiecesTotal];
+__device__ int dNarrowRatANumDeg[kNarrowPiecesTotal];
+__device__ int dNarrowRatADenDeg[kNarrowPiecesTotal];
+__device__ int dNarrowRatSeedDeg[kNarrowPiecesTotal][2];
+__device__ int dNarrowRatOrdDeg[kNarrowPiecesTotal][2];
+__device__ double dNarrowRatBCoeffs[kNarrowRatBCoeffsTotal];
+__device__ int dNarrowRatBOffset[detail::kNarrowBPieces];
+// One stored numerator degree per piece: it is both the degree a full-accuracy
+// read sums to and the position the denominator's q_1 sits above, which is what
+// a cut leaves where it is.
+__device__ int dNarrowRatBStoredNumDeg[detail::kNarrowBPieces];
+__device__ int dNarrowRatBDenDeg[detail::kNarrowBPieces];
+__device__ int dNarrowRatBDeg[detail::kNarrowBPieces][2];
+
+// ---------------------------------------------------------------------------
 // the lanes: what the kernels below hand the shared arithmetic
 // ---------------------------------------------------------------------------
 // boys_cuda_arithmetic.hpp holds one body per (precision, shape), and it takes
@@ -549,6 +616,177 @@ template <bool kRelaxed> struct Lane64NarrowMono {
             kRelaxed ? dNarrowMonoBDegEff[piece * (detail::kMaxOrder + 1)]
                      : detail::kNarrowBDeg,
             t);
+    }
+};
+
+// ---------------------------------------------------------------------------
+// the rational route's lanes
+// ---------------------------------------------------------------------------
+// The other family's pieces: the same partitions, the same intervals, the same
+// region structure and the same bodies, with a piece summed as a pair
+// (boys_cuda_arithmetic.hpp). The kRational member is what tells the shared
+// bodies so, exactly as kMonomial does for the scheme.
+//
+// The route's degree table is per piece AND per reading, so a lane names which
+// reading its cut is: the arguments shape seeds at the top order's piece and
+// recurses down, which pays the piece's own w(b) for the seed it carries, and
+// the orders shape reads each order's own piece, which pays A = 1. Region B is
+// one pair read at order 0 either way, so the two readings share its table.
+enum class RatCut : int {
+    kPerOrder = 0, // the argument shape's reading: the piece is the order's value
+    kBatchSeed = 1, // the recursion's reading: the seed is carried down from the piece
+};
+
+struct Lane64RatFull {
+    static constexpr bool kRational = true;
+
+    __device__ __forceinline__ int Count(int order) const {
+        return cCount[order];
+    }
+
+    __device__ __forceinline__ double A(int order, int piece) const {
+        return cA[order][piece];
+    }
+
+    __device__ __forceinline__ double B(int order, int piece) const {
+        return cB[order][piece];
+    }
+
+    __device__ __forceinline__ const double* Coeffs(int order, int piece) const {
+        return dRatACoeffs + dRatAOffset[order][piece];
+    }
+
+    __device__ __forceinline__ const double* DenCoeffs(int order, int piece) const {
+        return dRatACoeffs + dRatADenOffset[order][piece];
+    }
+
+    __device__ __forceinline__ int NumDeg(int order, int piece) const {
+        return dRatANumDeg[order][piece];
+    }
+
+    __device__ __forceinline__ int DenDeg(int order, int piece) const {
+        return dRatADenDeg[order][piece];
+    }
+
+    __device__ __forceinline__ double BSeed(double x, int) const {
+        const double t = 2.0 * (x - detail::kX0) / (detail::kX1 - detail::kX0) - 1.0;
+        return detail::DeviceRatSum(dRatBnum, detail::kRatBnumDeg, dRatBden, detail::kRatBdenDeg, t);
+    }
+};
+
+// A rung of the shipped partition, at one of the route's two readings.
+template <RatCut kCut> struct Lane64RatEff {
+    static constexpr bool kRational = true;
+
+    __device__ __forceinline__ int Count(int order) const {
+        return cCount[order];
+    }
+
+    __device__ __forceinline__ double A(int order, int piece) const {
+        return cA[order][piece];
+    }
+
+    __device__ __forceinline__ double B(int order, int piece) const {
+        return cB[order][piece];
+    }
+
+    __device__ __forceinline__ const double* Coeffs(int order, int piece) const {
+        return dRatACoeffs + dRatAOffset[order][piece];
+    }
+
+    __device__ __forceinline__ const double* DenCoeffs(int order, int piece) const {
+        return dRatACoeffs + dRatADenOffset[order][piece];
+    }
+
+    __device__ __forceinline__ int NumDeg(int order, int piece) const {
+        return kCut == RatCut::kBatchSeed ? dRatSeedDeg[order][piece][0]
+                                          : dRatOrdDeg[order][piece][0];
+    }
+
+    __device__ __forceinline__ int DenDeg(int order, int piece) const {
+        return kCut == RatCut::kBatchSeed ? dRatSeedDeg[order][piece][1]
+                                          : dRatOrdDeg[order][piece][1];
+    }
+
+    __device__ __forceinline__ double BSeed(double x, int) const {
+        const double t = 2.0 * (x - detail::kX0) / (detail::kX1 - detail::kX0) - 1.0;
+        return detail::DeviceRatSum(dRatBnum, dRatBDeg[0], dRatBden, dRatBDeg[1], t);
+    }
+};
+
+// The narrow partition, in the two forms a rung has and at either reading:
+// kRelaxed false reads the pairs the table was stored at and true the rung's own
+// cut, and kCut chooses which of the two cuts that is. Region B's seed is a pair
+// per piece here, so its cut is per piece as well and the two readings share it.
+template <bool kRelaxed, RatCut kCut> struct Lane64NarrowRat {
+    static constexpr bool kRational = true;
+
+    __device__ __forceinline__ int Count(int order) const {
+        return dNarrowAPieceStart[order + 1] - dNarrowAPieceStart[order];
+    }
+
+    __device__ __forceinline__ double A(int order, int piece) const {
+        return dNarrowAA[dNarrowAPieceStart[order] + piece];
+    }
+
+    __device__ __forceinline__ double B(int order, int piece) const {
+        return dNarrowAB[dNarrowAPieceStart[order] + piece];
+    }
+
+    __device__ __forceinline__ const double* Coeffs(int order, int piece) const {
+        return dNarrowRatACoeffs + dNarrowRatAOffset[dNarrowAPieceStart[order] + piece];
+    }
+
+    __device__ __forceinline__ const double* DenCoeffs(int order, int piece) const {
+        return dNarrowRatACoeffs + dNarrowRatADenOffset[dNarrowAPieceStart[order] + piece];
+    }
+
+    __device__ __forceinline__ int NumDeg(int order, int piece) const {
+        const int flat = dNarrowAPieceStart[order] + piece;
+
+        if constexpr (kRelaxed)
+        {
+            return kCut == RatCut::kBatchSeed ? dNarrowRatSeedDeg[flat][0]
+                                              : dNarrowRatOrdDeg[flat][0];
+        } else
+        {
+            return dNarrowRatANumDeg[flat];
+        }
+    }
+
+    __device__ __forceinline__ int DenDeg(int order, int piece) const {
+        const int flat = dNarrowAPieceStart[order] + piece;
+
+        if constexpr (kRelaxed)
+        {
+            return kCut == RatCut::kBatchSeed ? dNarrowRatSeedDeg[flat][1]
+                                              : dNarrowRatOrdDeg[flat][1];
+        } else
+        {
+            return dNarrowRatADenDeg[flat];
+        }
+    }
+
+    __device__ __forceinline__ double BSeed(double x, int) const {
+        int piece = 0;
+
+        while (piece + 1 < detail::kNarrowBPieces && x >= dNarrowBEdges[piece + 1])
+        {
+            ++piece;
+        }
+
+        const double a = dNarrowBEdges[piece];
+        const double b = dNarrowBEdges[piece + 1];
+        const double t = 2.0 * (x - a) / (b - a) - 1.0;
+        const double* num = dNarrowRatBCoeffs + dNarrowRatBOffset[piece];
+
+        return detail::DeviceRatSum(num,
+                                    kRelaxed ? dNarrowRatBDeg[piece][0]
+                                             : dNarrowRatBStoredNumDeg[piece],
+                                    num + dNarrowRatBStoredNumDeg[piece] + 1,
+                                    kRelaxed ? dNarrowRatBDeg[piece][1]
+                                             : dNarrowRatBDenDeg[piece],
+                                    t);
     }
 };
 
@@ -1015,6 +1253,143 @@ __global__ void BoysAllOrdersF64NarrowOrdersMonoKernelEff(const int* n,
     DeviceOrdersBody(Lane64NarrowMono<true>{}, n[i], x[i], out, count, i);
 }
 
+// ---------------------------------------------------------------------------
+// the fit route: the same fits as rational minimax pairs
+// ---------------------------------------------------------------------------
+// The route axis is a lane choice like the scheme axis: the pieces, the edges,
+// the partitions, the region structure and the shapes are the shipped ones, and
+// what changes is what a piece's coefficients are — a numerator/denominator
+// pair summed by two Horner passes and a division (boys_cuda_arithmetic.hpp) —
+// so these are the same four shapes with a rational lane.
+//
+// Each shape appears twice because the route's cut is per reading: the
+// arguments shape seeds at its top order's piece and carries that piece's w(b),
+// and the orders shape reads each order's own piece at A = 1, so the two name
+// different cuts of the same stored pairs.
+//
+// The scheme axis is inert on this route: the pair is stored once, in one
+// basis, so both scheme names launch this same kernel. That is why the row that
+// carries this route names one arithmetic rather than two.
+__global__ void BoysAllOrdersF64RatKernel(const int* n,
+                                          const double* __restrict__ x,
+                                          double* __restrict__ out,
+                                          size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    detail::DeviceAllOrdersF64(Lane64RatFull{}, n[i], x[i], [&](int l, double v) {
+        out[l * count + i] = v;
+    });
+}
+
+__global__ void BoysAllOrdersF64RatKernelEff(const int* n,
+                                             const double* __restrict__ x,
+                                             double* __restrict__ out,
+                                             size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    detail::DeviceAllOrdersF64(Lane64RatEff<RatCut::kBatchSeed>{}, n[i], x[i], [&](int l, double v) {
+        out[l * count + i] = v;
+    });
+}
+
+__global__ void BoysAllOrdersF64OrdersRatKernel(const int* n,
+                                                const double* __restrict__ x,
+                                                double* __restrict__ out,
+                                                size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DeviceOrdersBody(Lane64RatFull{}, n[i], x[i], out, count, i);
+}
+
+__global__ void BoysAllOrdersF64OrdersRatKernelEff(const int* n,
+                                                   const double* __restrict__ x,
+                                                   double* __restrict__ out,
+                                                   size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DeviceOrdersBody(Lane64RatEff<RatCut::kPerOrder>{}, n[i], x[i], out, count, i);
+}
+
+__global__ void BoysAllOrdersF64NarrowRatKernel(const int* n,
+                                                const double* __restrict__ x,
+                                                double* __restrict__ out,
+                                                size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    detail::DeviceAllOrdersF64(Lane64NarrowRat<false, RatCut::kPerOrder>{}, n[i], x[i], [&](int l, double v) {
+        out[l * count + i] = v;
+    });
+}
+
+__global__ void BoysAllOrdersF64NarrowRatKernelEff(const int* n,
+                                                   const double* __restrict__ x,
+                                                   double* __restrict__ out,
+                                                   size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    detail::DeviceAllOrdersF64(Lane64NarrowRat<true, RatCut::kBatchSeed>{}, n[i], x[i], [&](int l, double v) {
+        out[l * count + i] = v;
+    });
+}
+
+__global__ void BoysAllOrdersF64NarrowOrdersRatKernel(const int* n,
+                                                      const double* __restrict__ x,
+                                                      double* __restrict__ out,
+                                                      size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DeviceOrdersBody(Lane64NarrowRat<false, RatCut::kPerOrder>{}, n[i], x[i], out, count, i);
+}
+
+__global__ void BoysAllOrdersF64NarrowOrdersRatKernelEff(const int* n,
+                                                         const double* __restrict__ x,
+                                                         double* __restrict__ out,
+                                                         size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DeviceOrdersBody(Lane64NarrowRat<true, RatCut::kPerOrder>{}, n[i], x[i], out, count, i);
+}
+
 template <int kLane, bool kFastExp>
 __global__ void BoysSingleF32KernelEff(const int* n,
                                        const double* __restrict__ x,
@@ -1150,6 +1525,15 @@ extern "C" int BoysCudaUploadTables() {
         // The monomial scheme's pool, packed at the same offsets as the
         // Chebyshev one — the two forms of one fit over the same pieces.
         double monoCoeffs[kMaxCoeffs] = {};
+        // The fit route's own blocks, at the same offsets: a piece's numerator
+        // and denominator are one run of the pool and the route's metadata says
+        // where each begins. The two blocks are addressed separately because a
+        // rung's cut moves the numerator's end and leaves the denominator's
+        // start where the stored numerator's degree put it.
+        int ratOffset[33][kMaxPieces] = {};
+        int ratDenOffset[33][kMaxPieces] = {};
+        int ratNumDeg[33][kMaxPieces] = {};
+        int ratDenDeg[33][kMaxPieces] = {};
         int offset[33][kMaxPieces] = {};
         double a[33][kMaxPieces] = {};
         double b[33][kMaxPieces] = {};
@@ -1190,6 +1574,11 @@ extern "C" int BoysCudaUploadTables() {
                 flatB[p] = piece.b;
                 flatDeg[p] = piece.deg;
                 flatOffset[p] = runningOffset;
+                ratOffset[o][index] = detail::kRatAOffset[p];
+                ratDenOffset[o][index] =
+                    detail::kRatAOffset[p] + detail::kRatANumDeg[p] + 1;
+                ratNumDeg[o][index] = detail::kRatANumDeg[p];
+                ratDenDeg[o][index] = detail::kRatADenDeg[p];
 
                 for (int k = 0; k <= piece.deg; ++k)
                 {
@@ -1298,6 +1687,27 @@ extern "C" int BoysCudaUploadTables() {
 
         if (cudaMemcpyToSymbol(dMonoBcoeffs, detail::kMonoBcoeffs.data(),
                                sizeof(detail::kMonoBcoeffs)) != cudaSuccess)
+        {
+            return 2;
+        }
+
+        // The fit route's pool, metadata and region-B pair. The pool is copied
+        // as the header stores it — a cut reads a prefix of the same run — and
+        // region B is the two arrays the header keeps, which is why it needs no
+        // per-piece table here.
+        if (cudaMemcpyToSymbol(dRatACoeffs,
+                               detail::kRatACoeffs.data(),
+                               sizeof(detail::kRatACoeffs)) != cudaSuccess ||
+            cudaMemcpyToSymbol(dRatAOffset, ratOffset, sizeof(ratOffset)) != cudaSuccess ||
+            cudaMemcpyToSymbol(dRatADenOffset, ratDenOffset, sizeof(ratDenOffset)) != cudaSuccess ||
+            cudaMemcpyToSymbol(dRatANumDeg, ratNumDeg, sizeof(ratNumDeg)) != cudaSuccess ||
+            cudaMemcpyToSymbol(dRatADenDeg, ratDenDeg, sizeof(ratDenDeg)) != cudaSuccess ||
+            cudaMemcpyToSymbol(dRatBnum,
+                               detail::kRatBnum.data(),
+                               sizeof(detail::kRatBnum)) != cudaSuccess ||
+            cudaMemcpyToSymbol(dRatBden,
+                               detail::kRatBden.data(),
+                               sizeof(detail::kRatBden)) != cudaSuccess)
         {
             return 2;
         }
@@ -1472,6 +1882,16 @@ extern "C" int BoysCudaUploadTables() {
         double edges[detail::kNarrowBPieces + 1] = {};
         double bcoeffs[detail::kNarrowBPieces * (detail::kNarrowBDeg + 1)] = {};
         double monoBcoeffs[detail::kNarrowBPieces * (detail::kNarrowBDeg + 1)] = {};
+        // The partition's fits in the rational route's form: a pair per row, at
+        // the header's own offsets, and region B's pairs per piece above the
+        // shared offsets the Chebyshev seed does not use.
+        int ratOffset[kNarrowPiecesTotal] = {};
+        int ratDenOffset[kNarrowPiecesTotal] = {};
+        int ratNumDeg[kNarrowPiecesTotal] = {};
+        int ratDenDeg[kNarrowPiecesTotal] = {};
+        int ratBOffset[detail::kNarrowBPieces] = {};
+        int ratBStored[detail::kNarrowBPieces] = {};
+        int ratBDenDeg[detail::kNarrowBPieces] = {};
 
         for (int o = 0; o <= detail::kMaxOrder + 1; ++o)
         {
@@ -1491,6 +1911,11 @@ extern "C" int BoysCudaUploadTables() {
             a[p] = piece.a;
             b[p] = piece.b;
             stored[p] = piece.deg;
+            ratOffset[p] = detail::kNarrowRatAOffset[static_cast<std::size_t>(p)];
+            ratDenOffset[p] = detail::kNarrowRatAOffset[static_cast<std::size_t>(p)] +
+                              detail::kNarrowRatANumDeg[static_cast<std::size_t>(p)] + 1;
+            ratNumDeg[p] = detail::kNarrowRatANumDeg[static_cast<std::size_t>(p)];
+            ratDenDeg[p] = detail::kNarrowRatADenDeg[static_cast<std::size_t>(p)];
 
             for (int k = 0; k <= piece.deg; ++k)
             {
@@ -1499,6 +1924,13 @@ extern "C" int BoysCudaUploadTables() {
                 monoCoeffs[piece.offset + k] =
                     detail::kNarrowAMonoCoeffs[static_cast<std::size_t>(piece.offset + k)];
             }
+        }
+
+        for (int p = 0; p < detail::kNarrowBPieces; ++p)
+        {
+            ratBOffset[p] = detail::kNarrowRatBOffset[static_cast<std::size_t>(p)];
+            ratBStored[p] = detail::kNarrowRatBNumDeg[static_cast<std::size_t>(p)];
+            ratBDenDeg[p] = detail::kNarrowRatBDenDeg[static_cast<std::size_t>(p)];
         }
 
         for (int p = 0; p <= detail::kNarrowBPieces; ++p)
@@ -1521,7 +1953,24 @@ extern "C" int BoysCudaUploadTables() {
             cudaMemcpyToSymbol(dNarrowAMonoCoeffs, monoCoeffs, sizeof(monoCoeffs)) != cudaSuccess ||
             cudaMemcpyToSymbol(dNarrowBEdges, edges, sizeof(edges)) != cudaSuccess ||
             cudaMemcpyToSymbol(dNarrowBCoeffs, bcoeffs, sizeof(bcoeffs)) != cudaSuccess ||
-            cudaMemcpyToSymbol(dNarrowBMonoCoeffs, monoBcoeffs, sizeof(monoBcoeffs)) != cudaSuccess)
+            cudaMemcpyToSymbol(dNarrowBMonoCoeffs, monoBcoeffs, sizeof(monoBcoeffs)) != cudaSuccess ||
+            cudaMemcpyToSymbol(dNarrowRatACoeffs,
+                               detail::kNarrowRatACoeffs.data(),
+                               sizeof(detail::kNarrowRatACoeffs)) != cudaSuccess ||
+            cudaMemcpyToSymbol(dNarrowRatAOffset, ratOffset, sizeof(ratOffset)) != cudaSuccess ||
+            cudaMemcpyToSymbol(dNarrowRatADenOffset,
+                               ratDenOffset,
+                               sizeof(ratDenOffset)) != cudaSuccess ||
+            cudaMemcpyToSymbol(dNarrowRatANumDeg, ratNumDeg, sizeof(ratNumDeg)) != cudaSuccess ||
+            cudaMemcpyToSymbol(dNarrowRatADenDeg, ratDenDeg, sizeof(ratDenDeg)) != cudaSuccess ||
+            cudaMemcpyToSymbol(dNarrowRatBCoeffs,
+                               detail::kNarrowRatBCoeffs.data(),
+                               sizeof(detail::kNarrowRatBCoeffs)) != cudaSuccess ||
+            cudaMemcpyToSymbol(dNarrowRatBOffset, ratBOffset, sizeof(ratBOffset)) != cudaSuccess ||
+            cudaMemcpyToSymbol(dNarrowRatBStoredNumDeg,
+                               ratBStored,
+                               sizeof(ratBStored)) != cudaSuccess ||
+            cudaMemcpyToSymbol(dNarrowRatBDenDeg, ratBDenDeg, sizeof(ratBDenDeg)) != cudaSuccess)
         {
             return 2;
         }
@@ -1700,6 +2149,13 @@ extern "C" int BoysCudaEffTablesResident(double m) {
 // [order][pieceInOrder] ((kMaxOrder + 1) x kMaxPieces); monoB layout: [order]
 // (kMaxOrder + 1); narrowMonoA: flat over the narrow partition's rows;
 // narrowMonoB: [piece][order], as the Chebyshev narrow region-B table is.
+//
+// The fit route's cuts travel the same way and for the same reason, two ints
+// per cell — the numerator's cut degree then the denominator's. ratSeedA:
+// [order][pieceInOrder], the cut the arguments shape reads; ratOrdA: the same
+// layout, the cut the orders shape reads; ratB: one pair, the region B both
+// readings share; narrowRatSeedA / narrowRatOrdA: flat over the narrow
+// partition's rows; narrowRatB: one pair per narrow region-B piece.
 extern "C" int BoysCudaUploadEffTables(double m,
                                        const int* degA,
                                        const int* degB,
@@ -1708,7 +2164,13 @@ extern "C" int BoysCudaUploadEffTables(double m,
                                        const int* monoA,
                                        const int* monoB,
                                        const int* narrowMonoA,
-                                       const int* narrowMonoB) {
+                                       const int* narrowMonoB,
+                                       const int* ratSeedA,
+                                       const int* ratOrdA,
+                                       const int* ratB,
+                                       const int* narrowRatSeedA,
+                                       const int* narrowRatOrdA,
+                                       const int* narrowRatB) {
     int device = 0;
 
     if (cudaGetDevice(&device) != cudaSuccess)
@@ -1797,6 +2259,30 @@ extern "C" int BoysCudaUploadEffTables(double m,
                            narrowMonoB,
                            detail::kNarrowBPieces * (detail::kMaxOrder + 1) * sizeof(int)) !=
             cudaSuccess)
+    {
+        return 2;
+    }
+
+    // The fit route's cut of the same rung, in the same shapes as its stored
+    // tables: region A per piece and per reading, region B one pair either way.
+    if (cudaMemcpyToSymbol(dRatSeedDeg,
+                           ratSeedA,
+                           (detail::kMaxOrder + 1) * kMaxPieces * 2 * sizeof(int)) !=
+            cudaSuccess ||
+        cudaMemcpyToSymbol(dRatOrdDeg,
+                           ratOrdA,
+                           (detail::kMaxOrder + 1) * kMaxPieces * 2 * sizeof(int)) !=
+            cudaSuccess ||
+        cudaMemcpyToSymbol(dRatBDeg, ratB, 2 * sizeof(int)) != cudaSuccess ||
+        cudaMemcpyToSymbol(dNarrowRatSeedDeg,
+                           narrowRatSeedA,
+                           kNarrowPiecesTotal * 2 * sizeof(int)) != cudaSuccess ||
+        cudaMemcpyToSymbol(dNarrowRatOrdDeg,
+                           narrowRatOrdA,
+                           kNarrowPiecesTotal * 2 * sizeof(int)) != cudaSuccess ||
+        cudaMemcpyToSymbol(dNarrowRatBDeg,
+                           narrowRatB,
+                           detail::kNarrowBPieces * 2 * sizeof(int)) != cudaSuccess)
     {
         return 2;
     }
@@ -1947,6 +2433,63 @@ extern "C" int BoysCudaLaunchAllOrdersF64NarrowOrdersMono(
 extern "C" int BoysCudaLaunchAllOrdersF64NarrowOrdersMonoEff(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
     BoysAllOrdersF64NarrowOrdersMonoKernelEff
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+// The fit route's four shapes, each in the two forms a rung has.
+extern "C" int BoysCudaLaunchAllOrdersF64Rat(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    BoysAllOrdersF64RatKernel
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF64RatEff(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    BoysAllOrdersF64RatKernelEff
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF64OrdersRat(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    BoysAllOrdersF64OrdersRatKernel
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF64OrdersRatEff(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    BoysAllOrdersF64OrdersRatKernelEff
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF64NarrowRat(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    BoysAllOrdersF64NarrowRatKernel
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF64NarrowRatEff(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    BoysAllOrdersF64NarrowRatKernelEff
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF64NarrowOrdersRat(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    BoysAllOrdersF64NarrowOrdersRatKernel
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF64NarrowOrdersRatEff(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    BoysAllOrdersF64NarrowOrdersRatKernelEff
         <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
     return static_cast<int>(cudaGetLastError());
 }
