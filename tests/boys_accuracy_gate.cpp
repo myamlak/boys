@@ -5960,6 +5960,8 @@ int main(int argc, char** argv) {
             constexpr double kMultiplier =
                 boys::AccuracyMultiplier(static_cast<boys::AccuracyTier>(kRung));
             constexpr std::size_t kRouteIdx = static_cast<std::size_t>(kRoute);
+            constexpr std::size_t kPartIdx = static_cast<std::size_t>(kPart);
+            constexpr std::size_t kSchemeIdx = static_cast<std::size_t>(kScheme);
             using Policy = boys::EvalPolicy<kRoute,
                                             kScheme,
                                             boys::BoysBudget::kFloat,
