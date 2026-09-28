@@ -770,6 +770,17 @@ int main() {
     target_link_libraries(boys-consumer-defaults PRIVATE boys)
     boys_strict_warnings(boys-consumer-defaults)
 
+    # The default-versus-documentation check: the table a reader believes, against
+    # the constants the call sites resolve to. boys-consumer-defaults above checks
+    # that the named policy and the unnamed one are the same call, which is true
+    # whichever value the constant holds; this is the one that notices when the
+    # document stops describing the library.
+    add_executable(boys-consumer-defaults-match-docs tests/consumer_defaults_match_docs.cpp)
+    target_link_libraries(boys-consumer-defaults-match-docs PRIVATE boys)
+    target_compile_definitions(boys-consumer-defaults-match-docs PRIVATE
+        BoysSourceDir="${CMAKE_CURRENT_SOURCE_DIR}")
+    boys_strict_warnings(boys-consumer-defaults-match-docs)
+
     add_executable(boys-consumer-option-space tests/consumer_option_space.cpp)
     target_link_libraries(boys-consumer-option-space PRIVATE boys)
     target_compile_definitions(boys-consumer-option-space PRIVATE
@@ -781,6 +792,7 @@ int main() {
     add_test(NAME boys-consumer-umbrella COMMAND boys-consumer-umbrella)
     add_test(NAME boys-consumer-header-only COMMAND boys-consumer-header-only)
     add_test(NAME boys-consumer-defaults COMMAND boys-consumer-defaults)
+    add_test(NAME boys-consumer-defaults-match-docs COMMAND boys-consumer-defaults-match-docs)
     add_test(NAME boys-consumer-option-space COMMAND boys-consumer-option-space)
     # --strict: the gate fails on a claim whose evidence is not in the tree as
     # well as on one it measures exceeded, so a green ctest never means "every
