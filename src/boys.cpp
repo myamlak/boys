@@ -539,6 +539,20 @@ const char* GranularityName(FitGranularity granularity) noexcept {
     return "unknown";
 }
 
+const char* DivisionFormName(DivisionForm form) noexcept {
+    switch (form)
+    {
+    case DivisionForm::kExactDivision:
+        return "exact-division";
+    case DivisionForm::kPlainReciprocal:
+        return "plain-reciprocal";
+    case DivisionForm::kRefinedReciprocal:
+        return "refined-reciprocal";
+    }
+
+    return "unknown";
+}
+
 std::span<const PackAxisInfo> BoysPackAxes() noexcept {
     // Both members evaluate the region-A per-order fits of the double lane, so
     // both are certified against that region's bar. The packed lanes cover

@@ -122,6 +122,69 @@ inline constexpr PackAxis kDefaultPackAxis = PackAxis::kArguments;
 /// "unknown".
 const char* PackAxisName(PackAxis axis) noexcept;
 
+/// How the recursion's per-order division is performed.
+///
+/// Every one of this library's recurrences is a dependent chain of one step per
+/// order, and each step ends in one of these. They are different arithmetic and
+/// not three spellings of one: a quotient is correctly rounded, and a product by
+/// a rounded reciprocal rounds twice, so the plain form may differ from the
+/// exact one by an ulp per step and a ladder of them accumulates that; the
+/// refined form is the plain one carried back to the exact one's rounding by a
+/// fused multiply-add, at the price of two dependent operations per step.
+///
+/// **Which of the three is cheapest is a property of the host and not of this
+/// library.** A processor whose division is a multi-instruction sequence pays
+/// far more for the exact form than for either product; one whose fused
+/// multiply-add is scarce relative to its multiplier pays more for the refined
+/// form than the plain one. The three are therefore all carried, and ranked by
+/// the option probe on the machine it is run on, rather than one being chosen
+/// here on the evidence of a laptop. The measured figures for this host are in
+/// the probe's own report.
+///
+/// \ingroup boys
+enum class DivisionForm : std::uint8_t {
+    /// One division per order: the form the recurrences are written in.
+    kExactDivision = 0,
+
+    /// One division per argument and one product per order: the argument's
+    /// reciprocal, formed once and multiplied through the ladder.
+    kPlainReciprocal = 1,
+
+    /// The plain form with the correctly rounded quotient recovered from it, by
+    /// the product's error and one fused multiply-add per step.
+    kRefinedReciprocal = 2,
+};
+
+/// The division form the recurrences take when the caller names none.
+///
+/// **Measured.** At the per-call entry, over eight interleaved rounds whose
+/// fixed-work canary held to 6%, both reciprocal forms came out about a quarter
+/// cheaper than exact division on the molecular stream: 0.751 and 0.742 of its
+/// cost, the two within 1% of each other against a spread wider than that.
+///
+/// **This one, because it is the reciprocal that moves nothing.** The refinement
+/// recovers the correctly rounded quotient from the product with one fused
+/// multiply-add per step, so this form is bit-identical to exact division: it
+/// delivers the values every published per-region figure was measured at, at the
+/// cost the plain form pays where the real workload lives. The plain form is the
+/// one to reach for when ladders are long — on the host's own dependent chain it
+/// reads 3.220 ns per step against 5.333 here, the difference being the
+/// refinement's two fused multiply-adds paid once per order. All three forms are
+/// served, and the option probe measures them.
+inline constexpr DivisionForm kDefaultDivisionForm = DivisionForm::kRefinedReciprocal;
+
+/// The name a report prints a division form under, and never null.
+///
+/// \param form the form
+///
+/// \returns a string literal naming it: "exact-division", "plain-reciprocal" or
+///          "refined-reciprocal", and "unknown" for a value outside the
+///          enumerators
+///
+/// A value outside the enumerators is answered rather than refused, on the same
+/// reading as \c PackAxisName.
+const char* DivisionFormName(DivisionForm form) noexcept;
+
 /// How narrowly the fitted domain is cut into pieces.
 ///
 /// A stored fit is a polynomial over one interval, and a narrower interval
@@ -301,7 +364,7 @@ concept FitPolicy = requires(std::size_t index, double t, double x, int l) {
     { F::kRegionAFitsFrom } -> std::convertible_to<double>;
     { F::EvalPiece(index, t) } -> std::same_as<double>;
     { F::RegionBSeed(x) } -> std::same_as<double>;
-    { typename F::BandSource(x).Next(l, x) } -> std::same_as<double>;
+    { typename F::template BandSource<kDefaultDivisionForm>(x).Next(l, x) } -> std::same_as<double>;
 } && RegionAPartition<typename F::Partition>;
 
 /// The fit one (route, scheme) pair evaluates. The families themselves are in
@@ -418,13 +481,17 @@ struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kNarrow> {
 /// \tparam kGranularity   how narrowly the fitted domain is cut into pieces;
 ///                        \c kDefaultFitGranularity by default, which is
 ///                        \c FitGranularity::kNarrow
+/// \tparam kDivision      how the recursion's per-order division is performed;
+///                        \c kDefaultDivisionForm by default, which is
+///                        \c DivisionForm::kExactDivision
 ///
 /// \ingroup boys
 template <FitRoute kFitRoute = kDefaultFitRoute,
           EvalScheme kEvalScheme = kDefaultEvalScheme,
           BoysBudget kEngineBudget = BoysBudget::kFloat,
           PackAxis kPackedAxis = kDefaultPackAxis,
-          FitGranularity kFitGranularity = kDefaultFitGranularity>
+          FitGranularity kFitGranularity = kDefaultFitGranularity,
+          DivisionForm kDivisionForm = kDefaultDivisionForm>
 struct EvalPolicy {
     /// The fit this policy evaluates, where the combination is one the library
     /// carries.
@@ -445,6 +512,8 @@ struct EvalPolicy {
     static constexpr PackAxis kPack = kPackedAxis;
     /// How narrowly the fitted domain is cut into pieces.
     static constexpr FitGranularity kGranularity = kFitGranularity;
+    /// How the recursion's per-order division is performed.
+    static constexpr DivisionForm kDivision = kDivisionForm;
 };
 
 /// The constraint the entries put on a policy, so a combination the library
@@ -463,6 +532,7 @@ concept EvalPolicyLike = requires {
     { P::kBudget } -> std::convertible_to<BoysBudget>;
     { P::kPack } -> std::convertible_to<PackAxis>;
     { P::kGranularity } -> std::convertible_to<FitGranularity>;
+    { P::kDivision } -> std::convertible_to<DivisionForm>;
 };
 
 /// The evaluation policy a caller gets by naming no axis, one name per
@@ -476,9 +546,10 @@ concept EvalPolicyLike = requires {
 /// defaults are these names. The four differ in one field and in one only:
 ///
 ///  - the **double** lanes read no budget, so \c DefaultPolicyFp64 selects the
-///    Chebyshev route, the Horner scheme, the narrow partition and the
-///    arguments-packing axis - whatever \c kDefaultFitRoute,
-///    \c kDefaultEvalScheme, \c kDefaultFitGranularity and \c kDefaultPackAxis
+///    Chebyshev route, the Horner scheme, the narrow partition, the
+///    arguments-packing axis and the exact division form - whatever
+///    \c kDefaultFitRoute, \c kDefaultEvalScheme, \c kDefaultFitGranularity,
+///    \c kDefaultPackAxis and \c kDefaultDivisionForm
 ///    name at the revision a caller builds against - and the budget its policy
 ///    carries is inert;
 ///  - the **float** lane reads the budget at a relaxed multiplier, and its own

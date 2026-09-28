@@ -292,10 +292,156 @@ inline double RegionBExtendedSeed(double x) noexcept {
                                                 t);
 }
 
+// The three division forms, one entry each, and the two selectors the bodies
+// read. Which of the three is cheapest is a property of the host (see
+// DivisionForm in backend.hpp), so the bodies take the form from the policy and
+// none of the three is written into a body.
+
+// The exact form: the correctly rounded quotient, and what a published bound
+// over a region is stated for.
+inline double DivideExact(double a, double x) noexcept {
+    return a / x;
+}
+
+// The plain form: the quotient through the argument's reciprocal. It rounds
+// twice where the exact form rounds once, so a step may differ by an ulp and a
+// ladder of them accumulates the difference.
+inline double DividePlain(double a, double invx) noexcept {
+    return a * invx;
+}
+
+// The refined form: the plain product, then the classical refinement. The
+// product's error is recovered exactly by the fused multiply-add, and the second
+// fused multiply-add carries it back through the reciprocal, which is the
+// correctly rounded quotient whenever the reciprocal is the correctly rounded
+// 1/x.
+inline double DivideByReciprocal(double a, double x, double invx) noexcept {
+    const double quotient = a * invx;
+    return std::fma(std::fma(-quotient, x, a), invx, quotient);
+}
+
+// One divide in the form named, taking whichever of the argument and its
+// reciprocal that form reads.
+template <DivisionForm kForm>
+inline double DivideStep(double a, double x, double invx) noexcept {
+    if constexpr (kForm == DivisionForm::kExactDivision)
+    {
+        static_cast<void>(invx);
+        return DivideExact(a, x);
+    } else if constexpr (kForm == DivisionForm::kPlainReciprocal)
+    {
+        static_cast<void>(x);
+        return DividePlain(a, invx);
+    } else
+    {
+        return DivideByReciprocal(a, x, invx);
+    }
+}
+
+// The reciprocal a form needs, and the exact form's is not formed at all: the
+// three are ranked on the work each actually does, so a form that divides must
+// not also pay for a reciprocal it never reads.
+template <DivisionForm kForm>
+inline double StepReciprocal(double x) noexcept {
+    if constexpr (kForm == DivisionForm::kExactDivision)
+    {
+        static_cast<void>(x);
+        return 0.0;
+    } else
+    {
+        return 1.0 / x;
+    }
+}
+
+
+// ---------------------------------------------------------------------------
+// Region B's exponential, at the accuracy the ladder demands of it
+// ---------------------------------------------------------------------------
+//
+// The region-B body seeds F_0 and steps up to the caller's top order N, using
+// the same term at every step:
+//
+//     F_{l+1} = ((l + 1/2) F_l - t) / x,        t = e^{-x}/2.
+//
+// An error d in `t` reaches F_N multiplied by the product of the steps that
+// follow the step it was injected at, summed over where it can be injected:
+//
+//     T(N, x) = (1/(2x)) * sum_{l=0}^{N-1} prod_{j=l+1}^{N-1} (2j+1)/(2x),
+//
+// so the whole ladder's answer moves by |delta| T(N, x). The library's promise
+// is absolute, so the term is admissible as long as
+//
+//     |delta| <= kRegionBExpBar / T(N, x),
+//
+// which is a relative requirement of kRegionBExpBar / (t * T(N, x)) on it: near
+// double precision at kX0, where the ladder's own gain is 3.8e4, and slack at
+// the top of the region, where the gain has fallen below 0.2. It is the
+// requirement and not a preference that decides which exponential an argument
+// gets: above kRegionBExpCheapFrom it is loose enough that the polynomial below
+// stands inside it ten times over, and below it the libm call is the only
+// admissible one and is kept.
+//
+// The requirement is read at the widest ladder (N = 32) rather than at the
+// caller's own top order, so what a batch's column and the per-argument entry
+// documented to equal both evaluate is one function of x.
+inline constexpr double kRegionBExpBar = 1.0e-14;
+
+// The smallest x whose requirement reaches ten times the polynomial's own
+// error, solved from T(32, 0, x). At a narrower ladder the requirement is
+// slacker, so what this buys at N = 32 it buys at every N <= 32 as well.
+inline constexpr double kRegionBExpCheapFrom = 16.173039304440838;
+
+// e^{-r} on |r| <= ln 2/2, degree 7, Chebyshev fit, 8.336e-11 relative
+// (re-measured at 40 digits against the exponential itself).
+inline constexpr double kRegionBExpReduced[8] = {
+    0.9999999999190966,
+    -0.9999999999910163,
+    0.5000000168381031,
+    -0.16666666853653805,
+    0.04166608365203089,
+    -0.008333268585902836,
+    0.0013956053200368968,
+    -0.00019915868993476617,
+};
+
+inline constexpr double kRegionBExpLog2e = 1.4426950408889634073599246810018921;
+inline constexpr double kRegionBExpLn2 = 0.6931471805599453094172321214581766;
+inline constexpr double kRegionBExpRoundMagic = 6755399441055744.0; // 1.5 * 2^52
+
+// 0.5 * e^{-x} for a region-B argument.
+//
+// The reduction is the textbook one - x = k ln2 + r with |r| <= ln2/2, so
+// e^{-x} = 2^{-k} e^{-r} - and both halves are cheap: k comes out of a magic
+// constant rather than a libm rounding call, and 2^{-k} is assembled from the
+// exponent field rather than through ldexp. Over region B k is in [25, 42], far
+// from the exponent field's ends, so the scale is exact.
+inline double RegionBHalfExp(double x) noexcept {
+    if (x < kRegionBExpCheapFrom)
+    {
+        return 0.5 * std::exp(-x);
+    }
+
+    const double biased = x * kRegionBExpLog2e + kRegionBExpRoundMagic;
+    const double kd = biased - kRegionBExpRoundMagic;
+    const double r = x - kd * kRegionBExpLn2;
+
+    double p = kRegionBExpReduced[7];
+
+    for (int k = 6; k >= 0; --k)
+    {
+        p = p * r + kRegionBExpReduced[k];
+    }
+
+    const int k = static_cast<int>(kd);
+    return 0.5 * std::bit_cast<double>(static_cast<std::uint64_t>(1023 - k) << 52) * p;
+}
+
 // One step of the upward recursion: F_l(x) from F_{l-1}(x). The band's orders,
-// the single-order band entry and region B all ride this step.
-inline double UpwardStep(int l, double f, double x, double expx) noexcept {
-    return ((l - 0.5) * f - expx) / x;
+// the single-order band entry and region B all ride this step, in the division
+// form the policy names.
+template <DivisionForm kForm = kDefaultDivisionForm>
+inline double UpwardStep(int l, double f, double x, double invx, double expx) noexcept {
+    return DivideStep<kForm>((l - 0.5) * f - expx, x, invx);
 }
 
 // Region-A F_order(x) in a fit's own scheme, over the piece the fit's own
@@ -401,15 +547,23 @@ struct ChebyshevFit {
     // The band's orders: one seed at the band's left edge, then one upward step
     // per order. The state is the step's, so a batch pays one division per
     // order rather than one run of the recurrence per order.
+    //
+    // The source is constructed at the argument, so its reciprocal is the
+    // construction's too and the step never divides; the stepped argument still
+    // arrives with each step because the step's arithmetic is the quotient's.
+    template <DivisionForm kForm = kDefaultDivisionForm>
     struct BandSource {
         double f;
         double expx;
+        double invx;
 
         explicit BandSource(double x) noexcept
-            : f(RegionBExtendedSeed<kScheme>(x)), expx(0.5 * std::exp(-x)) {}
+            : f(RegionBExtendedSeed<kScheme>(x)),
+              expx(0.5 * std::exp(-x)),
+              invx(StepReciprocal<kForm>(x)) {}
 
         double Next(int l, double x) noexcept {
-            return l == 0 ? f : (f = UpwardStep(l, f, x, expx));
+            return l == 0 ? f : (f = UpwardStep<kForm>(l, f, x, invx, expx));
         }
     };
 };
@@ -481,6 +635,7 @@ struct RationalFit {
 
     // The band's orders: this route has no seed to carry up - each of those
     // orders is its own fit - so the source carries no state.
+    template <DivisionForm kForm = kDefaultDivisionForm>
     struct BandSource {
         explicit BandSource(double) noexcept {}
 
@@ -574,6 +729,7 @@ struct RationalFitNarrow {
     }
 
     // Each of the band's orders is its own fit, as it is on the shipped member.
+    template <DivisionForm kForm = kDefaultDivisionForm>
     struct BandSource {
         explicit BandSource(double) noexcept {}
 
@@ -701,6 +857,7 @@ struct RationalFitAtRung {
     }
 
     // Each of the band's orders is its own fit, as it is on the uncut route.
+    template <DivisionForm kForm = kDefaultDivisionForm>
     struct BandSource {
         explicit BandSource(double) noexcept {}
 
@@ -768,6 +925,7 @@ struct RationalFitNarrowAtRung {
         return RationalSeedNarrowAtCut(index, kPairsB.num[index], kPairsB.den[index], t);
     }
 
+    template <DivisionForm kForm = kDefaultDivisionForm>
     struct BandSource {
         explicit BandSource(double) noexcept {}
 
@@ -1930,7 +2088,7 @@ void AllOrdersBody(int nmax, double x, double* out) noexcept {
 
         if (x >= Fit::kRegionAFitsFrom)
         {
-            typename Fit::BandSource source(x);
+            typename Fit::template BandSource<Policy::kDivision> source(x);
 
             for (int l = 0; l <= served; ++l)
             {
@@ -1962,11 +2120,12 @@ void AllOrdersBody(int nmax, double x, double* out) noexcept {
     {
         double f = Fit::RegionBSeed(x);
         out[0] = f;
-        const double expx = 0.5 * std::exp(-x);
+        const double expx = RegionBHalfExp(x);
+        const double invx = StepReciprocal<Policy::kDivision>(x);
 
         for (int l = 1; l <= nmax; ++l)
         {
-            f = UpwardStep(l, f, x, expx);
+            f = UpwardStep<Policy::kDivision>(l, f, x, invx, expx);
             out[l] = f;
         }
 
@@ -1975,10 +2134,11 @@ void AllOrdersBody(int nmax, double x, double* out) noexcept {
 
     double f = kBoysHalfSqrtPi / std::sqrt(x);
     out[0] = f;
+    const double invx = StepReciprocal<Policy::kDivision>(x);
 
     for (int l = 1; l <= nmax; ++l)
     {
-        f = (l - 0.5) * f / x;
+        f = DivideStep<Policy::kDivision>((l - 0.5) * f, x, invx);
         out[l] = f;
     }
 }
@@ -2001,7 +2161,7 @@ double SingleOrder(int n, double x) noexcept {
     {
         if (x >= detail::kTierThresholds[static_cast<std::size_t>(n)])
         {
-            typename Fit::BandSource source(x);
+            typename Fit::template BandSource<Policy::kDivision> source(x);
             double f = 0.0;
 
             // The order is at most kMaxBoysOrder, and bounding the walk by it
@@ -2023,21 +2183,23 @@ double SingleOrder(int n, double x) noexcept {
     if (x < kX1)
     {
         double f = Fit::RegionBSeed(x);
-        const double expx = 0.5 * std::exp(-x);
+        const double expx = RegionBHalfExp(x);
+        const double invx = StepReciprocal<Policy::kDivision>(x);
 
         for (int l = 1; l <= n; ++l)
         {
-            f = UpwardStep(l, f, x, expx);
+            f = UpwardStep<Policy::kDivision>(l, f, x, invx, expx);
         }
 
         return f;
     }
 
     double f = kBoysHalfSqrtPi / std::sqrt(x);
+    const double invx = StepReciprocal<Policy::kDivision>(x);
 
     for (int l = 0; l < n; ++l)
     {
-        f = (l + 0.5) * f / x;
+        f = DivideStep<Policy::kDivision>((l + 0.5) * f, x, invx);
     }
 
     return f;
@@ -2141,21 +2303,23 @@ double BoysSingleImpl(int n, double x) noexcept {
 
         if (x < kX1)
         {
-            const double expx = 0.5 * std::exp(-x);
+            const double expx = RegionBHalfExp(x);
+            const double invx = StepReciprocal<Policy::kDivision>(x);
 
             for (int l = 0; l < n; ++l)
             {
-                f = ((l + 0.5) * f - expx) / x;
+                f = DivideStep<Policy::kDivision>((l + 0.5) * f - expx, x, invx);
             }
 
             return f;
         }
 
         f = kBoysHalfSqrtPi / std::sqrt(x);
+        const double invx = StepReciprocal<Policy::kDivision>(x);
 
         for (int l = 0; l < n; ++l)
         {
-            f = (l + 0.5) * f / x;
+            f = DivideStep<Policy::kDivision>((l + 0.5) * f, x, invx);
         }
 
         return f;
@@ -2277,10 +2441,11 @@ void BoysAllOrdersImpl(int nmax, double x, double* out) noexcept {
                 x, 0);
             out[0] = f;
             const double expx = 0.5 * std::exp(-x);
+            const double invx = StepReciprocal<Policy::kDivision>(x);
 
             for (int l = 1; l <= nmax; ++l)
             {
-                f = ((l - 0.5) * f - expx) / x;
+                f = DivideStep<Policy::kDivision>((l - 0.5) * f - expx, x, invx);
                 out[l] = f;
             }
 
@@ -2289,10 +2454,11 @@ void BoysAllOrdersImpl(int nmax, double x, double* out) noexcept {
 
         double f = kBoysHalfSqrtPi / std::sqrt(x);
         out[0] = f;
+        const double invx = StepReciprocal<Policy::kDivision>(x);
 
         for (int l = 1; l <= nmax; ++l)
         {
-            f = (l - 0.5) * f / x;
+            f = DivideStep<Policy::kDivision>((l - 0.5) * f, x, invx);
             out[l] = f;
         }
     }
@@ -2372,10 +2538,11 @@ void BoysFixedNImpl(
                 {
                     double f = RegionBExtendedSeed<Policy::kScheme>(xi);
                     const double expx = 0.5 * std::exp(-xi);
+                    const double invxi = StepReciprocal<Policy::kDivision>(xi);
 
                     for (int l = 0; l < n; ++l)
                     {
-                        f = ((l + 0.5) * f - expx) / xi;
+                        f = DivideStep<Policy::kDivision>((l + 0.5) * f - expx, xi, invxi);
                     }
 
                     out[i * stride] = f;
@@ -2387,14 +2554,15 @@ void BoysFixedNImpl(
             }
 
             double f = PolicyRegionBSeed<Policy>(xi);
+            const double invxi = StepReciprocal<Policy::kDivision>(xi);
 
             if (xi < kX1)
             {
-                const double expx = 0.5 * std::exp(-xi);
+                const double expx = RegionBHalfExp(xi);
 
                 for (int l = 0; l < n; ++l)
                 {
-                    f = ((l + 0.5) * f - expx) / xi;
+                    f = DivideStep<Policy::kDivision>((l + 0.5) * f - expx, xi, invxi);
                 }
 
                 out[i * stride] = f;
@@ -2405,7 +2573,7 @@ void BoysFixedNImpl(
 
             for (int l = 0; l < n; ++l)
             {
-                f = (l + 0.5) * f / xi;
+                f = DivideStep<Policy::kDivision>((l + 0.5) * f, xi, invxi);
             }
 
             out[i * stride] = f;
@@ -2437,14 +2605,15 @@ void BoysFixedNImpl(
             double f =
                 PolicyRegionBSeedAtRung<Policy, kAccuracyMultiplier, BoysRole::kDoubleSingle>(xi,
                                                                                               n);
+            const double invxi = StepReciprocal<Policy::kDivision>(xi);
 
             if (xi < kX1)
             {
-                const double expx = 0.5 * std::exp(-xi);
+                const double expx = RegionBHalfExp(xi);
 
                 for (int l = 0; l < n; ++l)
                 {
-                    f = ((l + 0.5) * f - expx) / xi;
+                    f = DivideStep<Policy::kDivision>((l + 0.5) * f - expx, xi, invxi);
                 }
 
                 out[i * stride] = f;
@@ -2455,7 +2624,7 @@ void BoysFixedNImpl(
 
             for (int l = 0; l < n; ++l)
             {
-                f = (l + 0.5) * f / xi;
+                f = DivideStep<Policy::kDivision>((l + 0.5) * f, xi, invxi);
             }
 
             out[i * stride] = f;
@@ -3277,42 +3446,50 @@ inline void BoysAllNScatter(int order,
     }
 }
 
-// One argument's column of the caller's planes: plane[k * count] = F_k(x) for
-// k = 0..nmax. These bodies are the per-argument entry's, restructured onto the
-// caller's layout; keep the two in lockstep.
-inline void BoysAllNBodyZero(int nmax, std::size_t count, double* plane) noexcept {
+// One argument's column, at `stride` doubles per order: plane[k * stride] =
+// F_k(x) for k = 0..nmax. These bodies are the per-argument entry's,
+// restructured onto the caller's layout; keep the two in lockstep.
+//
+// The stride is the caller's count when the kernel writes a column straight
+// into the caller's planes, and the width of the tile it stages when the kernel
+// stages one. No body reads the stride's value - it is a store address and
+// never an operand, and it appears nowhere but in the index of a store - so the
+// values these bodies produce do not depend on it, and a batch staged through a
+// tile returns what the same bodies returned written straight into the caller's
+// array.
+inline void BoysAllNBodyZero(int nmax, std::size_t stride, double* plane) noexcept {
     for (int l = 0; l <= nmax; ++l)
     {
-        plane[static_cast<std::size_t>(l) * count] = 1.0 / (2.0 * l + 1.0);
+        plane[static_cast<std::size_t>(l) * stride] = 1.0 / (2.0 * l + 1.0);
     }
 }
 
 // Region A below the band: the downward recursion from the per-order fit.
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
-inline void BoysAllNBodyRegionADown(int nmax, double x, std::size_t count, double* plane) noexcept {
+inline void BoysAllNBodyRegionADown(int nmax, double x, std::size_t stride, double* plane) noexcept {
     if constexpr (kAccuracyMultiplier == 1.0)
     {
         double f = PolicyRegionAValue<Policy>(nmax, x);
-        plane[static_cast<std::size_t>(nmax) * count] = f;
+        plane[static_cast<std::size_t>(nmax) * stride] = f;
         const double expx = 0.5 * std::exp(-x);
 
         for (int l = nmax - 1; l >= 0; --l)
         {
             f = (x * f + expx) / (l + 0.5);
-            plane[static_cast<std::size_t>(l) * count] = f;
+            plane[static_cast<std::size_t>(l) * stride] = f;
         }
     } else
     {
         RequireShippedRoute<Policy>();
         double f =
             PolicyRegionAValueAtRung<Policy, kAccuracyMultiplier, BoysRole::kDoubleBatch>(nmax, x);
-        plane[static_cast<std::size_t>(nmax) * count] = f;
+        plane[static_cast<std::size_t>(nmax) * stride] = f;
         const double expx = 0.5 * std::exp(-x);
 
         for (int l = nmax - 1; l >= 0; --l)
         {
             f = (x * f + expx) / (l + 0.5);
-            plane[static_cast<std::size_t>(l) * count] = f;
+            plane[static_cast<std::size_t>(l) * stride] = f;
         }
     }
 }
@@ -3324,7 +3501,7 @@ inline void BoysAllNBodyRegionADown(int nmax, double x, std::size_t count, doubl
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 inline void BoysAllNBodyRegionAExtended(int nmax,
                                         double x,
-                                        std::size_t count,
+                                        std::size_t stride,
                                         double* plane) noexcept {
     static_assert(kAccuracyMultiplier == 1.0,
                   "the extended band is a path of the m = 1 dispatch only");
@@ -3339,32 +3516,34 @@ inline void BoysAllNBodyRegionAExtended(int nmax,
     double f = RegionBExtendedSeed<Policy::kScheme>(x);
     plane[0] = f;
     const double expx = 0.5 * std::exp(-x);
+    const double invx = StepReciprocal<Policy::kDivision>(x);
 
     for (int l = 1; l <= served; ++l)
     {
-        f = ((l - 0.5) * f - expx) / x;
-        plane[static_cast<std::size_t>(l) * count] = f;
+        f = DivideStep<Policy::kDivision>((l - 0.5) * f - expx, x, invx);
+        plane[static_cast<std::size_t>(l) * stride] = f;
     }
 
     for (int l = served + 1; l <= nmax; ++l)
     {
-        plane[static_cast<std::size_t>(l) * count] = PolicyRegionAValue<Policy>(l, x);
+        plane[static_cast<std::size_t>(l) * stride] = PolicyRegionAValue<Policy>(l, x);
     }
 }
 
 // Region B: the F0 seed + upward recursion.
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
-inline void BoysAllNBodyRegionB(int nmax, double x, std::size_t count, double* plane) noexcept {
+inline void BoysAllNBodyRegionB(int nmax, double x, std::size_t stride, double* plane) noexcept {
     if constexpr (kAccuracyMultiplier == 1.0)
     {
         double f = PolicyRegionBSeed<Policy>(x);
         plane[0] = f;
-        const double expx = 0.5 * std::exp(-x);
+        const double expx = RegionBHalfExp(x);
+        const double invx = StepReciprocal<Policy::kDivision>(x);
 
         for (int l = 1; l <= nmax; ++l)
         {
-            f = ((l - 0.5) * f - expx) / x;
-            plane[static_cast<std::size_t>(l) * count] = f;
+            f = DivideStep<Policy::kDivision>((l - 0.5) * f - expx, x, invx);
+            plane[static_cast<std::size_t>(l) * stride] = f;
         }
     } else
     {
@@ -3375,30 +3554,169 @@ inline void BoysAllNBodyRegionB(int nmax, double x, std::size_t count, double* p
         double f =
             PolicyRegionBSeedAtRung<Policy, kAccuracyMultiplier, BoysRole::kDoubleBatch>(x, 0);
         plane[0] = f;
-        const double expx = 0.5 * std::exp(-x);
+        const double expx = RegionBHalfExp(x);
+        const double invx = StepReciprocal<Policy::kDivision>(x);
 
         for (int l = 1; l <= nmax; ++l)
         {
-            f = ((l - 0.5) * f - expx) / x;
-            plane[static_cast<std::size_t>(l) * count] = f;
+            f = DivideStep<Policy::kDivision>((l - 0.5) * f - expx, x, invx);
+            plane[static_cast<std::size_t>(l) * stride] = f;
         }
     }
 }
 
 // Region C: the asymptotic form (m-invariant).
-inline void BoysAllNBodyRegionC(int nmax, double x, std::size_t count, double* plane) noexcept {
+template <DivisionForm kForm = kDefaultDivisionForm>
+inline void BoysAllNBodyRegionC(int nmax, double x, std::size_t stride, double* plane) noexcept {
     double f = kBoysHalfSqrtPi / std::sqrt(x);
     plane[0] = f;
+    const double invx = StepReciprocal<kForm>(x);
 
     for (int l = 1; l <= nmax; ++l)
     {
-        f = (l - 0.5) * f / x;
-        plane[static_cast<std::size_t>(l) * count] = f;
+        f = DivideStep<kForm>((l - 0.5) * f, x, invx);
+        plane[static_cast<std::size_t>(l) * stride] = f;
+    }
+}
+
+// The tile every kernel of the partitioned entry writes through.
+//
+// A run of the argument line is walked in tiles of kBoysAllNChunk arguments.
+// Each tile is filled in a fixed stack frame by `fill` - the kernel's own body,
+// filling it with the values that kernel produces - and then written to the
+// caller's planes one order at a time: BoysAllNScatter turns one order's tile
+// into one contiguous run of `block` doubles inside that plane.
+//
+// That is the whole reason the tile exists. Writing an argument's column
+// straight into the caller's planes puts consecutive stores count * 8 bytes
+// apart - 33.5 MB on a four-million-argument call - so every store lands on a
+// cache line of its own and is followed by a miss. Inside a tile a store is
+// followed by its neighbour, and the plane stride is paid once per tile per
+// order instead of once per element.
+//
+// The frame is the entry's own, (kMaxBoysOrder + 1) * kBoysAllNChunk doubles,
+// the same size whatever `count` is: a batch's stack use does not grow with its
+// argument count.
+//
+// `fill(base, block, stage)` writes the tile at stage[l * block + t] for order l
+// and the tile's t-th argument, t < block. The tile's width is `block` and not
+// kBoysAllNChunk, which is why it is passed rather than assumed.
+template <typename Fill>
+void BoysAllNTile(int nmax,
+                  std::size_t count,
+                  const std::size_t* index,
+                  double* out,
+                  std::size_t begin,
+                  std::size_t end,
+                  Fill fill) noexcept {
+    std::array<double, (kMaxBoysOrder + 1) * kBoysAllNChunk> stage;
+
+    for (std::size_t base = begin; base < end; base += kBoysAllNChunk)
+    {
+        const std::size_t block = std::min(kBoysAllNChunk, end - base);
+        fill(base, block, stage.data());
+
+        for (int l = 0; l <= nmax; ++l)
+        {
+            BoysAllNScatter(l,
+                            count,
+                            index,
+                            base,
+                            block,
+                            stage.data() + static_cast<std::size_t>(l) * block,
+                            out);
+        }
+    }
+}
+
+// The path's body, at one argument and one stride. Both writers below run it,
+// and the stride is the only thing that differs between them.
+template <double kAccuracyMultiplier, BoysPath kPath, EvalPolicyLike Policy>
+inline void BoysAllNBodyForPath(int nmax, double xi, std::size_t stride, double* plane) noexcept {
+    if constexpr (kPath == BoysPath::kZero)
+    {
+        BoysAllNBodyZero(nmax, stride, plane);
+    }
+    else if constexpr (kPath == BoysPath::kTabulated)
+    {
+        BoysAllNBodyRegionADown<kAccuracyMultiplier, Policy>(nmax, xi, stride, plane);
+    }
+    else if constexpr (kPath == BoysPath::kExtended)
+    {
+        BoysAllNBodyRegionAExtended<kAccuracyMultiplier, Policy>(nmax, xi, stride, plane);
+    }
+    else if constexpr (kPath == BoysPath::kMiddle)
+    {
+        BoysAllNBodyRegionB<kAccuracyMultiplier, Policy>(nmax, xi, stride, plane);
+    }
+    else
+    {
+        BoysAllNBodyRegionC<Policy::kDivision>(nmax, xi, stride, plane);
     }
 }
 
 // The ungrouped kernel: one argument at a time over the run, the path's body
-// per argument, the caller's planes.
+// per argument.
+//
+// Which of the two writers it uses is decided by where its stores land, which
+// is a property of the caller's array and not of the shape. Both write the same
+// values - the bodies are the per-argument path's own and are called with the
+// same arguments at the same nmax either way - so this is a choice about the
+// stores alone, and it is made by measurement:
+//
+//   the run's arguments are consecutive in the output. That is the sorted
+//     overload, whose run's index IS the argument's own position, so the tile
+//     turns one order's run into one contiguous run of stores. It is worth
+//     doing there: on the uniform stream at nmax 32 the entry is 19.9% faster
+//     through it over three paired rounds, with the machine-speed canary
+//     agreeing to 0.1% between the two sides.
+//   the run's arguments are the caller's positions in the caller's own order.
+//     That is the unsorted entry, which sorted for the caller and must return
+//     the values in the order it was handed them, so a plane's stores land
+//     wherever the permutation puts them. The tile cannot make those
+//     consecutive, only less far apart, and what it costs to stage them is
+//     more than that buys: the same measurement puts the unsorted entry at
+//     +0.2% on the uniform stream and +13.8% on the molecular one. This kernel
+//     therefore writes the unsorted entry's columns straight into the caller's
+//     planes, as it always did.
+//
+// The two writers are the same function and differ in one argument: what the
+// body is told its stride is.
+template <double kAccuracyMultiplier, BoysPath kPath, EvalPolicyLike Policy>
+void BoysAllNRunUngroupedDirect(int nmax,
+                                const double* x,
+                                double* out,
+                                std::size_t count,
+                                const std::size_t* index,
+                                std::size_t begin,
+                                std::size_t end) noexcept {
+    for (std::size_t j = begin; j < end; ++j)
+    {
+        const std::size_t i = (index != nullptr) ? index[j] : j;
+        BoysAllNBodyForPath<kAccuracyMultiplier, kPath, Policy>(nmax, x[i], count, out + i);
+    }
+}
+
+template <double kAccuracyMultiplier, BoysPath kPath, EvalPolicyLike Policy>
+void BoysAllNRunUngroupedTiled(int nmax,
+                               const double* x,
+                               double* out,
+                               std::size_t count,
+                               std::size_t begin,
+                               std::size_t end) noexcept {
+    BoysAllNTile(nmax, count, nullptr, out, begin, end,
+                 [&](std::size_t base, std::size_t block, double* stage) {
+                     for (std::size_t t = 0; t < block; ++t)
+                     {
+                         // The body's stride is the tile's width: it writes the
+                         // column it owns in the frame, and the tile's writes to
+                         // the caller's planes are the scatter's.
+                         BoysAllNBodyForPath<kAccuracyMultiplier, kPath, Policy>(
+                             nmax, x[base + t], block, stage + t);
+                     }
+                 });
+}
+
 template <double kAccuracyMultiplier, BoysPath kPath, EvalPolicyLike Policy>
 void BoysAllNRunUngrouped(int nmax,
                           const double* x,
@@ -3407,40 +3725,22 @@ void BoysAllNRunUngrouped(int nmax,
                           const std::size_t* index,
                           std::size_t begin,
                           std::size_t end) noexcept {
-    for (std::size_t j = begin; j < end; ++j)
+    if (index == nullptr)
     {
-        const std::size_t i = (index != nullptr) ? index[j] : j;
-        const double xi = x[i];
-        double* plane = out + i;
-
-        if constexpr (kPath == BoysPath::kZero)
-        {
-            BoysAllNBodyZero(nmax, count, plane);
-        }
-        else if constexpr (kPath == BoysPath::kTabulated)
-        {
-            BoysAllNBodyRegionADown<kAccuracyMultiplier, Policy>(nmax, xi, count, plane);
-        }
-        else if constexpr (kPath == BoysPath::kExtended)
-        {
-            BoysAllNBodyRegionAExtended<kAccuracyMultiplier, Policy>(nmax, xi, count, plane);
-        }
-        else if constexpr (kPath == BoysPath::kMiddle)
-        {
-            BoysAllNBodyRegionB<kAccuracyMultiplier, Policy>(nmax, xi, count, plane);
-        }
-        else
-        {
-            BoysAllNBodyRegionC(nmax, xi, count, plane);
-        }
+        BoysAllNRunUngroupedTiled<kAccuracyMultiplier, kPath, Policy>(
+            nmax, x, out, count, begin, end);
+        return;
     }
+
+    BoysAllNRunUngroupedDirect<kAccuracyMultiplier, kPath, Policy>(
+        nmax, x, out, count, index, begin, end);
 }
 
-// The grouped kernel: the region-A lane over a homogeneous run, chunked so the
-// staging planes stay inside a fixed stack frame. Both region-A paths take this
-// shape when they take it at all - the lane covers [0, kX0), so which of the
-// two scalar bodies the sort's path split assigned an argument to does not
-// choose the kernel; the lane serves the band as well, at its band accuracy.
+// The grouped kernel: the region-A lane over a homogeneous run, filling the
+// same tile the scalar bodies fill. Both region-A paths take this shape when
+// they take it at all - the lane covers [0, kX0), so which of the two scalar
+// bodies the sort's path split assigned an argument to does not choose the
+// kernel; the lane serves the band as well, at its band accuracy.
 //
 // Region B keeps its scalar body. BoysRegionBSimd does not hold its own
 // documented bound across the region - at n = 32, x = kX0 it lands 2.2e-13 from
@@ -3453,26 +3753,24 @@ inline void BoysAllNRunGrouped(int nmax,
                                const std::size_t* index,
                                std::size_t begin,
                                std::size_t end) noexcept {
-    std::array<double, (kMaxBoysOrder + 1) * kBoysAllNChunk> stage;
     std::array<double, kBoysAllNChunk> args;
 
-    for (std::size_t base = begin; base < end; base += kBoysAllNChunk)
-    {
-        const std::size_t block = std::min(kBoysAllNChunk, end - base);
+    BoysAllNTile(nmax, count, index, out, begin, end,
+                 [&](std::size_t base, std::size_t block, double* stage) {
+                     for (std::size_t t = 0; t < block; ++t)
+                     {
+                         args[t] = x[(index != nullptr) ? index[base + t] : base + t];
+                     }
 
-        for (std::size_t t = 0; t < block; ++t)
-        {
-            args[t] = x[(index != nullptr) ? index[base + t] : base + t];
-        }
-
-        // The region-A lane is per order, so the entry asks it for one order at
-        // a time, which is the shape the region-A fits have.
-        for (int l = 0; l <= nmax; ++l)
-        {
-            BoysRegionASimd(l, args.data(), stage.data(), block);
-            BoysAllNScatter(l, count, index, base, block, stage.data(), out);
-        }
-    }
+                     // The region-A lane is per order, so the entry asks it for
+                     // one order at a time, which is the shape the region-A fits
+                     // have.
+                     for (int l = 0; l <= nmax; ++l)
+                     {
+                         BoysRegionASimd(
+                             l, args.data(), stage + static_cast<std::size_t>(l) * block, block);
+                     }
+                 });
 }
 
 // One run of one path, by the shape the tier can serve.
@@ -3552,6 +3850,11 @@ void BoysAllNRun(int nmax,
 
 // The per-argument path, in the caller's planes - the shape the C entry point's
 // batch loop already has, and the batch entry's total fallback.
+//
+// It writes its columns straight into the caller's planes, like the at-orders
+// entry above and for the same reason: a column here is short where the shape
+// that needs this path is the orders axis's, and staging short columns through
+// a tile costs more than the stores it saves.
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 void BoysAllNRunPerArgument(int nmax,
                             const double* x,
@@ -3811,7 +4114,7 @@ void BoysAllNSortedPartitionedImpl(int nmax,
 }
 
 // The per-element-top-order batch: the per-argument all-orders body at each
-// argument's own top order, scattered into the caller's planes. The tops differ
+// argument's own top order, written into the caller's planes. The tops differ
 // per element, so a run has no common nmax to be grouped at and this entry has
 // nothing to group; its whole content is the layout, and the cells above each
 // column's own top order, which it leaves exactly as the caller left them.
@@ -3819,6 +4122,16 @@ void BoysAllNSortedPartitionedImpl(int nmax,
 // The body is the per-argument entry's, so this entry takes the policies that
 // entry takes - including a named fit route, which the plane entry (whose runs
 // carry the shipped fits as their own region bodies) does not.
+//
+// The columns are written straight into the caller's planes and not staged
+// through the tile the plane entry's kernels use, because here the tile costs
+// more than it saves. A column here is short - the molecular stream's tops
+// average about one order - so a tile of them has to be scattered one plane at
+// a time over the whole tile's width to reach the few cells each column owns,
+// which is a full pass per order for every column that reaches that order. That
+// is measurably worse: with the tile this entry was 24.7% slower on the uniform
+// stream and 54.6% slower on the molecular one, the latter over four repeats of
+// an alternating before/after pair with the canary agreeing to 1%.
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 void BoysAllNAtOrdersImpl(const int* n, const double* x, double* out, std::size_t count) noexcept {
     static_assert(kAccuracyMultiplier >= 1.0,

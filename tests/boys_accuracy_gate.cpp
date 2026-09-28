@@ -750,22 +750,48 @@ void RunProbe(const Reference& ref, int n, double x)
     }
 
     {
-        double out = 0.0;
+        // The fp64 region kernels at count = 1 (the scalar tail) and count = 4
+        // (the vector path), which is the treatment the half-I/O kernels
+        // already get: a difference between the two shapes is exactly what a
+        // sweep cannot show, since a sweep only reports its maximum.
+        //
+        // Each shape is read against the reference and not against the other
+        // body. The two bodies are different arithmetic - the vector body
+        // applies the form to four lanes whatever the arguments are, and its
+        // region-C seed is sqrt(1/x) against the scalar form's 1/sqrt(x) - so
+        // requiring them to be bit-equal would be a pin of one spelling to
+        // another, which is the mistake the count=1 rows were already making in
+        // the other direction. Above kX1 both are the same form and both are
+        // judged by the same budget.
+        const auto simdRow = [&](const char* lane, std::size_t count) {
+            std::vector<double> xs(count, x);
+            std::vector<double> out(count);
+            std::vector<double> plane(count * (static_cast<std::size_t>(n) + 1));
+            double got = 0.0;
 
-        if (x < boys::detail::kX0)
-        {
-            boys::detail::BoysRegionASimd(n, &x, &out, 1);
-            row("RegionASimd[count=1]", out, refV);
-        } else if (x < boys::detail::kX1)
-        {
-            std::array<double, 33> plane{};
-            boys::detail::BoysRegionBSimd(n, &x, plane.data(), 1);
-            row("RegionBSimd[count=1]", plane[static_cast<std::size_t>(n)], refV);
-        } else
-        {
-            boys::detail::BoysRegionCSimd(n, &x, &out, 1);
-            row("RegionCSimd[count=1]", out, refV);
-        }
+            if (x < boys::detail::kX0)
+            {
+                boys::detail::BoysRegionASimd(n, xs.data(), out.data(), count);
+                got = out[0];
+            } else if (x < boys::detail::kX1)
+            {
+                boys::detail::BoysRegionBSimd(n, xs.data(), plane.data(), count);
+                got = plane[static_cast<std::size_t>(n) * count];
+            } else
+            {
+                boys::detail::BoysRegionCSimd(n, xs.data(), out.data(), count);
+                got = out[0];
+            }
+
+            row(lane, got, refV);
+        };
+
+        simdRow("RegionASimd[count=1]", 1);
+        simdRow("RegionASimd[count=4]", 4);
+        simdRow("RegionBSimd[count=1]", 1);
+        simdRow("RegionBSimd[count=4]", 4);
+        simdRow("RegionCSimd[count=1]", 1);
+        simdRow("RegionCSimd[count=4]", 4);
     }
 
 #ifdef BOYS_GATE_FP16
@@ -8264,29 +8290,76 @@ int main(int argc, char** argv) {
             "argument stops being reached");
     }
 
-    // The pin: on region C the library's own value is this spelling's, bit for
-    // bit, and that is what makes the two rows below a measurement of the
-    // library's form rather than of a transcription of it. A change to the
-    // library's branch moves this count, and the shape row fails with it.
-    std::size_t formPinChecked = 0;
-    std::size_t formPinMismatches = 0;
+    // Every division form the axis carries, at region C's own budget. This was
+    // a pin - the library's own value on region C had to be this spelling's, bit
+    // for bit - and it cannot be one any more: the recurrence's division is a
+    // policy field, so the library has three values on this branch and not one.
+    // What a consumer relies on is not that the library computes what this file
+    // spells but that every form it offers is inside the branch's bound, and
+    // that is what is measured here. A form that leaves the bound fails the row;
+    // a form that agrees with the library by construction no longer can, which
+    // is the difference between a measurement and a transcription.
+    std::size_t formChecked = 0;
+    std::size_t formOutside = 0;
+    double formWorst = 0.0;
+    int formWorstN = 0;
+    double formWorstX = 0.0;
 
-    for (int n = 0; n <= nmax; ++n)
     {
-        for (std::size_t i = 0; i < count; ++i)
-        {
-            const double x = ref.x[i];
+        using PExact = boys::EvalPolicy<boys::kDefaultFitRoute,
+                                        boys::kDefaultEvalScheme,
+                                        boys::BoysBudget::kFloat,
+                                        boys::kDefaultPackAxis,
+                                        boys::kDefaultFitGranularity,
+                                        boys::DivisionForm::kExactDivision>;
+        using PPlain = boys::EvalPolicy<boys::kDefaultFitRoute,
+                                        boys::kDefaultEvalScheme,
+                                        boys::BoysBudget::kFloat,
+                                        boys::kDefaultPackAxis,
+                                        boys::kDefaultFitGranularity,
+                                        boys::DivisionForm::kPlainReciprocal>;
+        using PRefined = boys::EvalPolicy<boys::kDefaultFitRoute,
+                                          boys::kDefaultEvalScheme,
+                                          boys::BoysBudget::kFloat,
+                                          boys::kDefaultPackAxis,
+                                          boys::kDefaultFitGranularity,
+                                          boys::DivisionForm::kRefinedReciprocal>;
 
-            if (x < boys::detail::kX1)
+        const auto measure = [&](double got, int n, double x, std::size_t i) {
+            ++formChecked;
+
+            const double err = std::abs(got - ref.v[ref.Index(n, i)]);
+
+            if (err > formWorst)
             {
-                continue;
+                formWorst = err;
+                formWorstN = n;
+                formWorstX = x;
             }
 
-            ++formPinChecked;
-
-            if (RegionCForm(n, x) != boys::BoysSingle<boys::kBoysFullAccuracyMultiplier>(n, x))
+            if (err > kBoundSingleC)
             {
-                ++formPinMismatches;
+                ++formOutside;
+            }
+        };
+
+        for (int n = 0; n <= nmax; ++n)
+        {
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                const double x = ref.x[i];
+
+                if (x < boys::detail::kX1)
+                {
+                    continue;
+                }
+
+                measure(boys::BoysSingle<boys::kBoysFullAccuracyMultiplier, PExact>(n, x), n, x, i);
+                measure(boys::BoysSingle<boys::kBoysFullAccuracyMultiplier, PPlain>(n, x), n, x, i);
+                measure(boys::BoysSingle<boys::kBoysFullAccuracyMultiplier, PRefined>(n, x),
+                        n,
+                        x,
+                        i);
             }
         }
     }
@@ -8310,8 +8383,7 @@ int main(int argc, char** argv) {
         "growing continuously as x falls below the edge",
         "docs/lane-contract.md, region C (read before this revision: \"the error jumps five to "
         "eight orders - a hard floor, not a taper\")",
-        (asymStepRatioMax < 10.0 && formPinMismatches == 0) ? Verdict::Verified
-                                                            : Verdict::Exceeded,
+        (asymStepRatioMax < 10.0 && formOutside == 0) ? Verdict::Verified : Verdict::Exceeded,
         Fmt("the shape, on the form as coded, over the arguments below x = 16 - where the "
             "sentence puts the growth - at every order: %zu neighbouring pairs of relative "
             "error, %zu of them rising as x rises, so the curve is not monotone everywhere "
@@ -8328,9 +8400,10 @@ int main(int argc, char** argv) {
             "%.4g over two-unit windows - %.1f to %.1f orders, below the five to eight it "
             "published - and against the branch's own in-domain error %.4g, which is the "
             "5.5e-14 budget the other reading divides by, the same cells give %.4g to %.4g "
-            "(%.1f to %.1f orders over orders 0..24). The form is evaluated here and pinned "
-            "to the library: %zu of %zu argument(s) at or above kX1 disagree with the "
-            "library's own value for that form, and the shape above is the form's error and "
+            "(%.1f to %.1f orders over orders 0..24). The branch is evaluated here through "
+            "the library at every division form the axis carries: %zu region-C cell(s) over "
+            "the three forms, %zu of them outside the branch's bound, the worst %.6g at "
+            "(n=%d, x=%.17g); the shape above is the form's error and "
             "not the stored fit's on every host, which it was not before this revision - a "
             "host without AVX2 has no vector body to reach the form through, so the same "
             "call measured the region-B fit there and reported its smoothness as the form's",
@@ -8360,8 +8433,11 @@ int main(int argc, char** argv) {
             asymBelowRelMax,
             std::log10(asymBelowRelMin),
             std::log10(asymBelowRelMax),
-            formPinMismatches,
-            formPinChecked),
+            formChecked,
+            formOutside,
+            formWorst,
+            formWorstN,
+            formWorstX),
         {},
         Fmt("the row fails if any pair of neighbouring arguments below the edge differs in "
             "relative error by more than an order of magnitude - that is what a threshold "
