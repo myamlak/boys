@@ -7,12 +7,10 @@
 /// the route its fits come from and the scheme their coefficients are summed
 /// in.
 ///
-/// They stand in their own header because not every header that names them
-/// needs the kernel: an entry that takes the multiplier as a template
-/// parameter names the two constants and nothing else, and the CUDA lane's
-/// option rows are read from a header that has to stay free of the library's
-/// C++23 ones, so defining the axes here is what lets one name describe an
-/// option on both sides of the device boundary.
+/// They stand in their own header so that a header naming them need not carry
+/// the kernel: the CUDA lane's option rows are read from a header that has to
+/// stay free of the library's C++23 ones, and defining the axes here is what
+/// lets one name describe an option on both sides of the device boundary.
 
 #include <cstdint>
 
@@ -36,21 +34,18 @@ inline constexpr double kBoysFullAccuracyMultiplier = 1.0;
 /// evaluates: region B's is one lowest-order seed per route that the higher
 /// orders are reached from, and region A's is a fit of every order over each of
 /// the region's two bands. They are alternatives rather than rungs of one
-/// design: the Chebyshev tables are the default and the route every lane has
-/// always been certified with, and naming the rational one changes the fits
-/// that serve the intervals it covers and nothing else.
+/// design: naming the rational one changes the fits that serve the intervals it
+/// covers and nothing else.
 ///
 /// What each route promises, over what interval, and from which argument naming
 /// it changes anything, is BoysFitRoutes' report rather than this enumeration's:
-/// those are properties of the fit and of the selector, and a route whose fit
-/// reaches further than its selector takes over says so there instead of being
-/// stretched to claim a domain it does not serve. Region A's rational route is
-/// the case that rule exists for.
+/// a route whose fit reaches further than its selector takes over says so there
+/// instead of being stretched to claim a domain it does not serve. Region A's
+/// rational route is that case.
 ///
 /// A value outside the enumerators - cast in from outside the enum, or named by
 /// a newer header - is not a route, and every entry on this surface treats it
-/// as \c kChebyshev: the default is the route every build carries, so a caller
-/// is never handed a fit they did not ask for.
+/// as \c kChebyshev: the default is the route every build carries.
 ///
 /// \ingroup boys
 enum class FitRoute : int {
@@ -91,7 +86,8 @@ inline constexpr FitRoute kDefaultFitRoute = FitRoute::kChebyshev;
 /// \ingroup boys
 enum class EvalScheme : std::uint8_t {
     /// The even/odd split Clenshaw recurrence on the Chebyshev form: the
-    /// certified route, and the default.
+    /// summation the certified lanes were first written with, and the one a
+    /// caller names to read a fit that way.
     kSplitClenshaw = 0,
 
     /// Horner's rule on the monomial form of the same fit.
@@ -100,9 +96,24 @@ enum class EvalScheme : std::uint8_t {
 
 /// The scheme the entries evaluate in when the caller names none.
 ///
-/// The certified route: naming the other one is how a caller asks for it, so a
-/// call site that names no scheme is compiled exactly as it was before one
-/// existed.
-inline constexpr EvalScheme kDefaultEvalScheme = EvalScheme::kSplitClenshaw;
+/// Horner's rule: a call site that names no scheme is compiled as the entry
+/// naming \c kHorner, and naming \c kSplitClenshaw is how a caller asks for the
+/// other summation. The two sum one fit, so this value is a choice between two
+/// ways of computing the same answer rather than between two accuracies.
+///
+/// **It is not the cheaper of the two at either partition.** On the host these
+/// were last measured on, the two schemes came out within 0.6% of each other
+/// where the fit they sum is a piece of the narrow partition, while at the
+/// shipped partition the split Clenshaw recurrence was 20% to 22% cheaper than
+/// Horner's rule. What that measurement establishes is a tie: three rows of the
+/// double lane's full-accuracy class for the all-orders shape — the shipped
+/// partition summed by the split Clenshaw recurrence, and the narrow partition
+/// summed by either scheme — came out within 0.9% of each other, against the 5.6
+/// to 7.4 points one of those rows moves by from one run to the next, with the
+/// class's next row 11.5% to 12% behind them. This default is one of the three
+/// tied rows. A caller who wants this ranking on their own machine runs the
+/// option probe (boys_probe.hpp), which measures it there and names the pairs it
+/// could and could not separate.
+inline constexpr EvalScheme kDefaultEvalScheme = EvalScheme::kHorner;
 
 } // namespace boys

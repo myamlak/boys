@@ -1009,9 +1009,13 @@ void CheckTiers(Report& report) {
                 differs > 0,
                 "the route-carrying tier entry answers the route it was given, not the default");
 
+        // The two-selector overload names a route and no scheme, so the call it
+        // is one with is the three-selector call that names the default scheme:
+        // the scheme is the library's on an axis the caller leaves unnamed, and
+        // the two overloads answer one call rather than two.
         boys::BoysAllOrdersAtTier(boys::AccuracyTier::kRelaxed64,
                                   boys::FitRoute::kRationalMinimax,
-                                  boys::EvalScheme::kSplitClenshaw,
+                                  boys::kDefaultEvalScheme,
                                   boys::kMaxBoysOrder,
                                   x,
                                   out);
@@ -1020,7 +1024,8 @@ void CheckTiers(Report& report) {
         {
             Require(report,
                     relaxed[n] == out[n],
-                    "the two- and three-selector tier overloads agree, bit for bit");
+                    "naming the default scheme on the three-selector overload is the "
+                    "two-selector call, bit for bit");
         }
 
         // The reference rung of the route is the uncut route's own entry: the
@@ -1497,18 +1502,32 @@ void CheckFitRoutesF32(Report& report, const std::vector<Cell>& cells) {
 /// The float lane's policy path, which a consumer reaches as a template argument
 /// on the entries themselves rather than through the run-time selector. Three
 /// readings make that path an option rather than a name: a policy naming the
-/// shipped pair is the entry naming no policy, bit for bit; naming the other
-/// scheme changes values the shipped scheme answers with; and each route's policy
-/// answers exactly what that route's run-time selector answers, which is one body
-/// reached two ways rather than two wirings that happen to agree.
+/// default pair — the Chebyshev route by Horner's rule, read off the library's
+/// own default rather than written here — is the entry naming no policy, bit for
+/// bit; naming the split Clenshaw scheme changes values the default scheme
+/// answers with; and each route's policy answers exactly what that route's
+/// run-time selector answers, which is one body reached two ways rather than two
+/// wirings that happen to agree.
 void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
-    using Shipped = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw>;
-    using Horner = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>;
+    using ByDefault = boys::DefaultPolicyFp32;
+    using SplitClenshaw =
+        boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw>;
     using Rational = boys::EvalPolicy<boys::FitRoute::kRationalMinimax>;
 
-    static_assert(Shipped{}.kRoute == boys::kDefaultFitRoute &&
-                      Shipped{}.kScheme == boys::kDefaultEvalScheme,
-                  "the pair this check calls the shipped one is the library's own default pair");
+    static_assert(ByDefault{}.kRoute == boys::kDefaultFitRoute &&
+                      ByDefault{}.kScheme == boys::kDefaultEvalScheme &&
+                      ByDefault{}.kGranularity == boys::kDefaultFitGranularity,
+                  "the policy this check calls the default one names every axis the library "
+                  "defaults, so none of them is a second value written here");
+
+    // Naming the other scheme moves the scheme and nothing else, which is what
+    // makes the reading below a reading about the scheme rather than about a
+    // pair of values that differ in two places.
+    static_assert(SplitClenshaw{}.kRoute == ByDefault{}.kRoute &&
+                      SplitClenshaw{}.kGranularity == ByDefault{}.kGranularity &&
+                      SplitClenshaw{}.kScheme != ByDefault{}.kScheme,
+                  "the policy this check calls the split Clenshaw one differs from the default "
+                  "in its scheme alone");
 
     std::size_t sameAsDefault = 0;
     std::size_t sameAsSelector[2] = {0, 0};
@@ -1520,22 +1539,22 @@ void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
     {
         const float xf = static_cast<float>(cell.x);
         const float byDefault = boys::BoysSingleF32(cell.n, xf);
-        const float shipped =
-            boys::BoysSingleF32<boys::kBoysFullAccuracyMultiplier, Shipped>(cell.n, xf);
-        const float horner =
-            boys::BoysSingleF32<boys::kBoysFullAccuracyMultiplier, Horner>(cell.n, xf);
+        const float byItsDefault =
+            boys::BoysSingleF32<boys::kBoysFullAccuracyMultiplier, ByDefault>(cell.n, xf);
+        const float splitClenshaw =
+            boys::BoysSingleF32<boys::kBoysFullAccuracyMultiplier, SplitClenshaw>(cell.n, xf);
         const float rational =
             boys::BoysSingleF32<boys::kBoysFullAccuracyMultiplier, Rational>(cell.n, xf);
         const float bySelector[2] = {
             boys::BoysSingleF32WithRoute(boys::FitRoute::kChebyshev, cell.n, xf),
             boys::BoysSingleF32WithRoute(boys::FitRoute::kRationalMinimax, cell.n, xf)};
 
-        sameAsDefault += (shipped == byDefault) ? 1 : 0;
-        sameAsSelector[0] += (shipped == bySelector[0]) ? 1 : 0;
+        sameAsDefault += (byItsDefault == byDefault) ? 1 : 0;
+        sameAsSelector[0] += (byItsDefault == bySelector[0]) ? 1 : 0;
         sameAsSelector[1] += (rational == bySelector[1]) ? 1 : 0;
-        changedByScheme += (horner != shipped) ? 1 : 0;
-        changedByRoute += (rational != shipped) ? 1 : 0;
-        allFinite = allFinite && std::isfinite(horner) && std::isfinite(rational);
+        changedByScheme += (splitClenshaw != byItsDefault) ? 1 : 0;
+        changedByRoute += (rational != byItsDefault) ? 1 : 0;
+        allFinite = allFinite && std::isfinite(splitClenshaw) && std::isfinite(rational);
     }
 
     Require(report,
@@ -1544,7 +1563,7 @@ void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
             "reference grid");
     Require(report,
             cells.size() > 0 && sameAsDefault == cells.size(),
-            "naming the shipped route and scheme is the entry naming no policy, bit for bit, at "
+            "naming the default route and scheme is the entry naming no policy, bit for bit, at "
             "every cell of the reference grid");
     Require(report,
             sameAsSelector[0] == cells.size() && sameAsSelector[1] == cells.size(),
@@ -1552,18 +1571,19 @@ void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
             "bit, so the two ways in read one body");
     Require(report,
             changedByScheme > 0,
-            "naming the Horner scheme on the float lane changes values the shipped scheme "
-            "answers with");
+            "naming the split Clenshaw scheme on the float lane changes values the default "
+            "scheme answers with");
     Require(report,
             changedByRoute > 0,
-            "naming the rational route on the float lane changes values the shipped route "
+            "naming the rational route on the float lane changes values the default route "
             "answers with somewhere on the reference grid");
 
     // The same pair on the all-orders shape. Its seeds are not the single
     // entry's - region A's is the double lane's fit at the policy's route and
     // scheme, region B's is this lane's - so the two entries answer the same fit
     // by different roads and the reading here is reachability, not identity: the
-    // pair reaches this entry too, and it is the shipped pair by default.
+    // pair reaches this entry too, and it is the pair this call carries when it
+    // names no policy.
     std::size_t batchSameAsDefault = 0;
     std::size_t batchChangedByScheme = 0;
     std::size_t batchChangedByRoute = 0;
@@ -1575,14 +1595,14 @@ void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
         const float xf = static_cast<float>(x);
         std::array<float, boys::kMaxBoysOrder + 1> plain = {};
         std::array<float, boys::kMaxBoysOrder + 1> named = {};
-        std::array<float, boys::kMaxBoysOrder + 1> horner = {};
+        std::array<float, boys::kMaxBoysOrder + 1> splitClenshaw = {};
         std::array<float, boys::kMaxBoysOrder + 1> rational = {};
 
         boys::BoysAllOrdersF32(boys::kMaxBoysOrder, xf, plain.data());
-        boys::BoysAllOrdersF32<boys::kBoysFullAccuracyMultiplier, Shipped>(
+        boys::BoysAllOrdersF32<boys::kBoysFullAccuracyMultiplier, ByDefault>(
             boys::kMaxBoysOrder, xf, named.data());
-        boys::BoysAllOrdersF32<boys::kBoysFullAccuracyMultiplier, Horner>(
-            boys::kMaxBoysOrder, xf, horner.data());
+        boys::BoysAllOrdersF32<boys::kBoysFullAccuracyMultiplier, SplitClenshaw>(
+            boys::kMaxBoysOrder, xf, splitClenshaw.data());
         boys::BoysAllOrdersF32<boys::kBoysFullAccuracyMultiplier, Rational>(
             boys::kMaxBoysOrder, xf, rational.data());
 
@@ -1590,13 +1610,14 @@ void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
         batchSameAsDefault +=
             std::memcmp(plain.data(), named.data(), sizeof(plain)) == 0 ? 1 : 0;
         batchChangedByScheme +=
-            std::memcmp(plain.data(), horner.data(), sizeof(plain)) == 0 ? 0 : 1;
+            std::memcmp(plain.data(), splitClenshaw.data(), sizeof(plain)) == 0 ? 0 : 1;
         batchChangedByRoute +=
             std::memcmp(plain.data(), rational.data(), sizeof(plain)) == 0 ? 0 : 1;
 
         for (std::size_t k = 0; k < plain.size(); ++k)
         {
-            batchFinite = batchFinite && std::isfinite(horner[k]) && std::isfinite(rational[k]);
+            batchFinite =
+                batchFinite && std::isfinite(splitClenshaw[k]) && std::isfinite(rational[k]);
         }
     }
 
@@ -1605,7 +1626,7 @@ void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
             "a policy this build stores answers a finite value at every order of the batch entry");
     Require(report,
             batchArgs > 0 && batchSameAsDefault == batchArgs,
-            "naming the shipped pair on the batch entry is the call naming no policy, bit for "
+            "naming the default pair on the batch entry is the call naming no policy, bit for "
             "bit, at every argument of the reference grid");
     Require(report,
             batchChangedByScheme > 0 && batchChangedByRoute > 0,
@@ -2448,64 +2469,83 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
 
     // The two axes compose into one selection: a policy names the fit route and
     // the scheme together, and every templated entry takes that policy. The
-    // default policy is the certified pair, so a call site that names neither
-    // axis is the call this library has always answered.
+    // default policy is the Chebyshev route by Horner's rule, so a call site
+    // that names neither axis reads the pair the library's defaults name.
     using DefaultPolicy = boys::EvalPolicy<>;
-    using ClenshawPolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
-                                           boys::EvalScheme::kSplitClenshaw>;
+    using SplitClenshawPolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                                 boys::EvalScheme::kSplitClenshaw>;
     using HornerPolicy =
         boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>;
 
     // The policy's fields read back what it was named with, so a consumer can
-    // ask a policy which pair it carries rather than reading its type.
+    // ask a policy which pair it carries rather than reading its type. What is
+    // pinned about the default one is that it names the library's own defaults -
+    // read from the constants rather than written here, so a move of one is the
+    // library's decision and not a value this check restates.
     constexpr DefaultPolicy kDefaultPolicy{};
-    static_assert(kDefaultPolicy.kRoute == boys::FitRoute::kChebyshev &&
-                      kDefaultPolicy.kScheme == boys::EvalScheme::kSplitClenshaw &&
+    static_assert(kDefaultPolicy.kRoute == boys::kDefaultFitRoute &&
+                      kDefaultPolicy.kScheme == boys::kDefaultEvalScheme &&
+                      kDefaultPolicy.kGranularity == boys::kDefaultFitGranularity &&
                       kDefaultPolicy.kBudget == boys::BoysBudget::kFloat,
-                  "the default policy is the Chebyshev route by the split Clenshaw recurrence "
-                  "at the float lane's budget");
-    static_assert(HornerPolicy{}.kScheme == boys::EvalScheme::kHorner,
+                  "the policy this check calls the default one names every axis the library "
+                  "defaults, at the float lane's budget");
+    static_assert(HornerPolicy{}.kScheme == boys::EvalScheme::kHorner &&
+                      SplitClenshawPolicy{}.kScheme == boys::EvalScheme::kSplitClenshaw,
                   "a policy carries the scheme it was named with");
 
     // The two schemes sum one polynomial, so the entries that name them differ
-    // by no more than their own bounds and the Horner entry is inside the
-    // certified entry's error plus twice that. A scheme that reached the wrong
-    // fit, or no fit, would be wrong by orders of magnitude rather than by a
-    // bound, which is what this separates.
+    // by no more than their own bounds and either entry is inside the other's
+    // error plus twice that. A scheme that reached the wrong fit, or no fit,
+    // would be wrong by orders of magnitude rather than by a bound, which is what
+    // this separates.
     for (const Cell& cell : cells)
     {
         const double byDefault =
             boys::BoysSingle<boys::kBoysFullAccuracyMultiplier>(cell.n, cell.x);
-        const double byName =
-            boys::BoysSingle<boys::kBoysFullAccuracyMultiplier, ClenshawPolicy>(cell.n, cell.x);
-        Require(report, byDefault == byName, "a call naming no policy is the certified route");
+        const double byDefaultNamed =
+            boys::BoysSingle<boys::kBoysFullAccuracyMultiplier, DefaultPolicy>(cell.n, cell.x);
+        Require(report,
+                byDefault == byDefaultNamed,
+                "a call naming no policy is the pair the library's defaults name, bit for bit");
+
+        const double byHorner =
+            boys::BoysSingle<boys::kBoysFullAccuracyMultiplier, HornerPolicy>(cell.n, cell.x);
+        Require(report,
+                byDefault == byHorner,
+                "a call naming no policy is the Horner entry, bit for bit, the default scheme "
+                "being Horner's rule");
 
         std::array<double, 33> un = {};
         std::array<double, 33> named = {};
         boys::BoysAllOrders<boys::kBoysFullAccuracyMultiplier>(cell.n, cell.x, un.data());
-        boys::BoysAllOrders<boys::kBoysFullAccuracyMultiplier, ClenshawPolicy>(
+        boys::BoysAllOrders<boys::kBoysFullAccuracyMultiplier, DefaultPolicy>(
             cell.n, cell.x, named.data());
         Require(report,
                 std::memcmp(un.data(), named.data(), sizeof(un)) == 0,
-                "a batch call naming no policy is the certified route, bit for bit");
+                "a batch call naming no policy is the pair the library's defaults name, bit "
+                "for bit");
 
         // The other scheme is reachable from both entries, and they agree with
         // each other: the batch entry is not a second, differently-wired way in.
-        const double horner =
-            boys::BoysSingle<boys::kBoysFullAccuracyMultiplier, HornerPolicy>(cell.n, cell.x);
-        Require(report, std::isfinite(horner), "the Horner scheme answers a finite value");
-
-        std::array<double, 33> hornerOut = {};
-        boys::BoysAllOrders<boys::kBoysFullAccuracyMultiplier, HornerPolicy>(
-            cell.n, cell.x, hornerOut.data());
+        const double splitClenshaw =
+            boys::BoysSingle<boys::kBoysFullAccuracyMultiplier, SplitClenshawPolicy>(cell.n,
+                                                                                     cell.x);
         Require(report,
-                hornerOut[static_cast<std::size_t>(cell.n)] == horner,
-                "the batch entry answers the Horner scheme the same value as the single entry");
+                std::isfinite(splitClenshaw),
+                "the split Clenshaw scheme answers a finite value");
+
+        std::array<double, 33> splitClenshawOut = {};
+        boys::BoysAllOrders<boys::kBoysFullAccuracyMultiplier, SplitClenshawPolicy>(
+            cell.n, cell.x, splitClenshawOut.data());
+        Require(report,
+                splitClenshawOut[static_cast<std::size_t>(cell.n)] == splitClenshaw,
+                "the batch entry answers the split Clenshaw scheme the same value as the "
+                "single entry");
 
         Require(report,
-                std::abs(horner - cell.value) <=
+                std::abs(splitClenshaw - cell.value) <=
                     std::abs(byDefault - cell.value) + 2.0 * worstSchemeBound,
-                "the Horner entry is inside the certified entry's error plus the "
+                "the split Clenshaw entry is inside the default entry's error plus the "
                 "two schemes' own bounds");
     }
 
@@ -2530,11 +2570,11 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
 // region B's seed - so the things a consumer has to be able to read from it are
 // that naming it changes the values over the fitted domain at both of the
 // regions the two tables are cut in, so that the member is a partition and not
-// the shipped tables under another name; that it changes nothing at or above the
-// fitted domain's end, the axis being a selection between two stored tables and
-// not a second arithmetic path; that naming the shipped member is the default
-// call bit for bit, so the default is a member of the axis rather than a third
-// reading beside it; and that every value it returns is inside the lane's
+// the default's tables under another name; that it changes nothing at or above
+// the fitted domain's end, the axis being a selection between two stored tables
+// and not a second arithmetic path; that naming the default member is the
+// default call bit for bit, so the default is a member of the axis rather than a
+// third reading beside it; and that every value it returns is inside the lane's
 // published bound, so the member does not widen the contract a caller already
 // relies on.
 //
@@ -2544,21 +2584,31 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
 // policy carries the partition it was named with, so a call site that names one
 // is not silently handed the other.
 void CheckGranularityLane(Report& report, const std::vector<Cell>& cells) {
-    using NarrowPolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
-                                          boys::EvalScheme::kSplitClenshaw,
-                                          boys::BoysBudget::kFloat,
-                                          boys::kDefaultPackAxis,
-                                          boys::FitGranularity::kNarrow>;
-    using ShippedPolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
-                                           boys::EvalScheme::kSplitClenshaw,
+    // The axis' default member, named: the library's own policy, so the reading
+    // below is that the member a call reaches by naming nothing is the member the
+    // default names.
+    using DefaultPolicy = boys::EvalPolicy<>;
+
+    // The other member, named: every axis the default policy carries, with the
+    // partition named to the value the default does not name.
+    using ShippedPolicy = boys::EvalPolicy<boys::kDefaultFitRoute,
+                                           boys::kDefaultEvalScheme,
                                            boys::BoysBudget::kFloat,
                                            boys::kDefaultPackAxis,
                                            boys::FitGranularity::kShipped>;
 
-    static_assert(NarrowPolicy{}.kGranularity == boys::FitGranularity::kNarrow &&
+    static_assert(DefaultPolicy{}.kGranularity == boys::kDefaultFitGranularity &&
                       ShippedPolicy{}.kGranularity == boys::FitGranularity::kShipped,
-                  "a policy carries the partition it was named with");
-    static_assert(!std::is_same_v<NarrowPolicy::Fit, ShippedPolicy::Fit>,
+                  "a policy carries the partition it was named with, and the one this check "
+                  "calls the default carries the library's default");
+    static_assert(ShippedPolicy{}.kRoute == DefaultPolicy{}.kRoute &&
+                      ShippedPolicy{}.kScheme == DefaultPolicy{}.kScheme &&
+                      ShippedPolicy{}.kBudget == DefaultPolicy{}.kBudget &&
+                      ShippedPolicy{}.kPack == DefaultPolicy{}.kPack &&
+                      ShippedPolicy{}.kGranularity != DefaultPolicy{}.kGranularity,
+                  "the policy this check calls the shipped one differs from the default in its "
+                  "partition alone, so what the readings below separate is the partition");
+    static_assert(!std::is_same_v<DefaultPolicy::Fit, ShippedPolicy::Fit>,
                   "the two partitions are different fits: neither is the other under a second "
                   "name");
 
@@ -2567,7 +2617,7 @@ void CheckGranularityLane(Report& report, const std::vector<Cell>& cells) {
                         boys::GranularityName(boys::FitGranularity::kNarrow)) != 0,
             "the two partitions are reported under different names rather than one blank");
 
-    Rule& rule = NewRule("granularity: the narrow partition through the entries");
+    Rule& rule = NewRule("granularity: both partitions through the entries");
 
     // x1, where the fitted domain ends and the asymptotic path takes over, as
     // the umbrella header publishes it - region B runs x0 <= x < x1 and region C
@@ -2581,21 +2631,24 @@ void CheckGranularityLane(Report& report, const std::vector<Cell>& cells) {
     std::size_t changedInB = 0;
     std::size_t aboveDomain = 0;
     std::size_t changedAboveDomain = 0;
-    std::size_t shippedDiffering = 0;
+    std::size_t defaultDiffering = 0;
 
     for (const Cell& cell : cells)
     {
         const double byDefault = boys::BoysSingle<boys::kBoysFullAccuracyMultiplier>(cell.n, cell.x);
-        const double narrow =
-            boys::BoysSingle<boys::kBoysFullAccuracyMultiplier, NarrowPolicy>(cell.n, cell.x);
-        const double named =
+        // The default member, named, and the other member, named: the two
+        // readings below are what a consumer reaches each by, and the call that
+        // names neither is the default one of them.
+        const double byDefaultNamed =
+            boys::BoysSingle<boys::kBoysFullAccuracyMultiplier, DefaultPolicy>(cell.n, cell.x);
+        const double shipped =
             boys::BoysSingle<boys::kBoysFullAccuracyMultiplier, ShippedPolicy>(cell.n, cell.x);
 
         if (cell.x < boys::kRegionAEnd)
         {
             ++inA;
 
-            if (narrow != byDefault)
+            if (shipped != byDefault)
             {
                 ++changedInA;
             }
@@ -2603,7 +2656,7 @@ void CheckGranularityLane(Report& report, const std::vector<Cell>& cells) {
         {
             ++inB;
 
-            if (narrow != byDefault)
+            if (shipped != byDefault)
             {
                 ++changedInB;
             }
@@ -2611,18 +2664,19 @@ void CheckGranularityLane(Report& report, const std::vector<Cell>& cells) {
         {
             ++aboveDomain;
 
-            if (narrow != byDefault)
+            if (shipped != byDefault)
             {
                 ++changedAboveDomain;
             }
         }
 
-        if (named != byDefault)
+        if (byDefaultNamed != byDefault)
         {
-            ++shippedDiffering;
+            ++defaultDiffering;
         }
 
-        Judge(rule, narrow, cell.value, SingleBound(cell.x, 1.0), cell.n, cell.x);
+        Judge(rule, shipped, cell.value, SingleBound(cell.x, 1.0), cell.n, cell.x);
+        Judge(rule, byDefaultNamed, cell.value, SingleBound(cell.x, 1.0), cell.n, cell.x);
     }
 
     // Each rule says which cells it measured rather than passing on an empty
@@ -2630,20 +2684,21 @@ void CheckGranularityLane(Report& report, const std::vector<Cell>& cells) {
     // the reading vacuous.
     Require(report,
             inA > 0 && changedInA > 0,
-            "naming the narrow partition changes region A's values: the member cuts region A's "
-            "pieces as well as region B's seed, and the change is visible through the entry");
+            "naming the shipped partition changes region A's values against the default call: "
+            "the member cuts region A's pieces as well as region B's seed, and the change is "
+            "visible through the entry");
     Require(report,
             inB > 0 && changedInB > 0,
-            "naming the narrow partition changes region B's values: the member is a partition "
-            "and not the shipped seed under another name");
+            "naming the shipped partition changes region B's values against the default call: "
+            "the member is a partition and not the default seed under another name");
     Require(report,
             aboveDomain > 0 && changedAboveDomain == 0,
-            "naming the narrow partition changes nothing at or above the fitted domain's end: "
+            "naming the shipped partition changes nothing at or above the fitted domain's end: "
             "above it the entry reads the asymptotic path, which no partition of the stored "
             "fits is part of");
     Require(report,
-            shippedDiffering == 0,
-            "naming the shipped partition is the default call bit for bit, so the default is "
+            defaultDiffering == 0,
+            "naming the default partition is the default call bit for bit, so the default is "
             "that member and not a third reading beside the two");
 
     std::printf("  %-56s %7zu cells  %zu of %zu in region A changed, %zu of %zu in region B, "

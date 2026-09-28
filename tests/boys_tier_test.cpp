@@ -1334,14 +1334,24 @@ TEST(Tier, DeliveredErrorRatiosArePinnedSoASilentRegressionIsVisible) {
         double ratio[3];
     };
 
+    // Measured at the library's default policy, which is the policy the tier
+    // entry runs when it is called with a tier alone: the rungs below are read
+    // off the narrow partition at Horner's rule, and every figure moved when the
+    // defaults did. The previous table was measured on the shipped partition by
+    // the split Clenshaw recurrence - kReference A 0.0585 B 0.1807, kRelaxed64 A
+    // 0.7049 B 0.0743, kRelaxed256 A 0.7841 B 0.5211, kRelaxed1024 A 0.9759 B
+    // 0.1303, kRelaxed4096 A 0.8015 B 0.8419, kRelaxed16384 A 0.6249 B 0.2105,
+    // kRelaxed65536 A 0.9786 B 0.0526, region C 0.9091 at every rung - and it is
+    // not recoverable by a caller who names neither axis, because naming neither
+    // is what now reads these tables.
     constexpr std::array<Recorded, 7> kRecorded{{
-        {"kReference", {0.0585, 0.1807, 0.9091}},
-        {"kRelaxed64", {0.7049, 0.0743, 0.9091}},
-        {"kRelaxed256", {0.7841, 0.5211, 0.9091}},
-        {"kRelaxed1024", {0.9759, 0.1303, 0.9091}},
-        {"kRelaxed4096", {0.8015, 0.8419, 0.9091}},
-        {"kRelaxed16384", {0.6249, 0.2105, 0.9091}},
-        {"kRelaxed65536", {0.9786, 0.0526, 0.9091}},
+        {"kReference", {0.0585, 0.0137, 0.9091}},
+        {"kRelaxed64", {0.9121, 0.3202, 0.9091}},
+        {"kRelaxed256", {0.8781, 0.0800, 0.9091}},
+        {"kRelaxed1024", {0.9936, 0.7872, 0.9091}},
+        {"kRelaxed4096", {0.8513, 0.3702, 0.9091}},
+        {"kRelaxed16384", {0.8302, 0.0926, 0.9091}},
+        {"kRelaxed65536", {0.9687, 0.3627, 0.9091}},
     }};
 
     // 5% above the recorded value: an improvement is a smaller ratio and
@@ -2150,8 +2160,15 @@ template <double M> double LibrarySingle(int n, double x) noexcept {
     return boys::BoysSingle<M>(n, x);
 }
 
-template <double M> double LibrarySingleRational(int n, double x) noexcept {
-    return boys::BoysSingle<M, boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(n, x);
+// The reference the run-time route entry is compared against names the scheme
+// as well as the route: the entry below asks for a scheme by name, and a policy
+// that leaves its scheme to the default is a policy about the default rather
+// than about the call the entry answers. The axes the entry leaves to the
+// library - the budget, the packing axis and the partition - are left to it on
+// both sides.
+template <double M, boys::EvalScheme kScheme>
+double LibrarySingleRational(int n, double x) noexcept {
+    return boys::BoysSingle<M, boys::EvalPolicy<boys::FitRoute::kRationalMinimax, kScheme>>(n, x);
 }
 
 constexpr std::array<SingleFn, 7> kLibrarySingles{{
@@ -2165,13 +2182,14 @@ constexpr std::array<SingleFn, 7> kLibrarySingles{{
 }};
 
 constexpr std::array<SingleFn, 7> kLibraryRationalSingles{{
-    &LibrarySingleRational<boys::kBoysFullAccuracyMultiplier>,
-    &LibrarySingleRational<64.0>,
-    &LibrarySingleRational<256.0>,
-    &LibrarySingleRational<1024.0>,
-    &LibrarySingleRational<4096.0>,
-    &LibrarySingleRational<16384.0>,
-    &LibrarySingleRational<65536.0>,
+    &LibrarySingleRational<boys::kBoysFullAccuracyMultiplier,
+                           boys::EvalScheme::kSplitClenshaw>,
+    &LibrarySingleRational<64.0, boys::EvalScheme::kSplitClenshaw>,
+    &LibrarySingleRational<256.0, boys::EvalScheme::kSplitClenshaw>,
+    &LibrarySingleRational<1024.0, boys::EvalScheme::kSplitClenshaw>,
+    &LibrarySingleRational<4096.0, boys::EvalScheme::kSplitClenshaw>,
+    &LibrarySingleRational<16384.0, boys::EvalScheme::kSplitClenshaw>,
+    &LibrarySingleRational<65536.0, boys::EvalScheme::kSplitClenshaw>,
 }};
 
 constexpr std::array<double, 9> kSingleArgs{{

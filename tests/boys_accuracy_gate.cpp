@@ -447,6 +447,20 @@ const char* RouteLaneF32(boys::FitRoute route, boys::AccuracyRegion region) {
 template <boys::EvalScheme kScheme>
 using SchemePolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme>;
 
+// The same pair with the partition named, for the rows that ask whether the
+// packed region-A lane was reached. That lane holds one stored table and one
+// recurrence, so it is the shipped partition's and no other's: a probe that
+// left the partition to the default would lose the lane for every scheme at
+// once as soon as the default moved, and the row would then read the partition
+// while claiming to read the scheme.
+template <boys::EvalScheme kScheme>
+using SchemeLanePolicy =
+    boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                     kScheme,
+                     boys::BoysBudget::kFloat,
+                     boys::PackAxis::kArguments,
+                     boys::FitGranularity::kShipped>;
+
 // The policy the granularity book's rows are measured under: the shipped route
 // at the scheme the row names, at one of the two partitions. The partition is
 // the only difference from SchemePolicy, and naming it is the whole of the
@@ -491,21 +505,13 @@ using OrdersPackPolicy =
     boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
                      boys::PackAxis::kOrders>;
 
-// The stored fit one lane names, summed by one scheme. This is the kernel the
-// double single entries dispatch to, at the scheme they were compiled with.
+// The stored fit one lane names, summed by one scheme, on the shipped partition.
+// This is the kernel the double single entries dispatch to, at the scheme they
+// were compiled with; the partition is named rather than left to the default, so
+// that what this reads does not move when the default does.
 template <boys::EvalScheme kScheme>
 double FitValue(boys::EvalLane lane, int n, double x) {
-    switch (lane)
-    {
-    case boys::EvalLane::kRegionA:
-        return boys::detail::ChebyshevValue<kScheme>(n, x);
-    case boys::EvalLane::kRegionB:
-        return boys::detail::RegionBSeed<kScheme>(x);
-    case boys::EvalLane::kExtendedBand:
-        return boys::detail::RegionBExtendedSeed<kScheme>(x);
-    }
-
-    return 0.0;
+    return PartitionFitValue<kScheme, boys::FitGranularity::kShipped>(lane, n, x);
 }
 
 // Whether an argument is inside the interval the fit is defined on. The
@@ -2809,11 +2815,30 @@ int main(int argc, char** argv) {
     Verdict f32PolicyVerdict[2] = {Verdict::Verified, Verdict::Verified};
 
     {
+        // Every axis is named, the reference pair included. The reference is
+        // what the rows below call the shipped pair, and each other policy is
+        // that pair with one axis moved: a reference that left an axis to the
+        // default would differ from the policy it is read against in that axis
+        // as well, and a move of the default would make it a policy this block
+        // already has a row for.
         using ShippedPair =
-            boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw>;
+            boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                             boys::EvalScheme::kSplitClenshaw,
+                             boys::BoysBudget::kFloat,
+                             boys::PackAxis::kArguments,
+                             boys::FitGranularity::kShipped>;
         using HornerPair =
-            boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>;
-        using RationalPair = boys::EvalPolicy<boys::FitRoute::kRationalMinimax>;
+            boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                             boys::EvalScheme::kHorner,
+                             boys::BoysBudget::kFloat,
+                             boys::PackAxis::kArguments,
+                             boys::FitGranularity::kShipped>;
+        using RationalPair =
+            boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+                             boys::EvalScheme::kSplitClenshaw,
+                             boys::BoysBudget::kFloat,
+                             boys::PackAxis::kArguments,
+                             boys::FitGranularity::kShipped>;
         // The same two fits at the narrow partition of region A and its own
         // region-B seed: the partition is the only difference from the pairs
         // above, and naming it is the whole of that axis.
@@ -5490,7 +5515,7 @@ int main(int argc, char** argv) {
             t.scheme = kScheme;
             t.name = boys::EvalSchemeName(kScheme);
             std::vector<double> batch(count * static_cast<std::size_t>(kLaneNmax + 1));
-            boys::BoysAllN<1.0, SchemePolicy<kScheme>>(
+            boys::BoysAllN<1.0, SchemeLanePolicy<kScheme>>(
                 kLaneNmax, ref.x.data(), batch.data(), count);
 
             for (std::size_t i = 0; i < count; ++i)
@@ -5504,7 +5529,9 @@ int main(int argc, char** argv) {
                 }
 
                 std::array<double, 33> per{};
-                boys::BoysAllOrders<1.0, SchemePolicy<kScheme>>(kLaneNmax, ref.x[i], per.data());
+                boys::BoysAllOrders<1.0, SchemeLanePolicy<kScheme>>(kLaneNmax,
+                                                                    ref.x[i],
+                                                                    per.data());
 
                 for (int n = 0; n <= kLaneNmax; ++n)
                 {
@@ -6329,7 +6356,9 @@ int main(int argc, char** argv) {
                     boys::detail::RegionADegrees<kM, boys::detail::BoysRole::kDoubleSingle, kBasis>();
 
                 return (lane == boys::EvalLane::kRegionA)
-                           ? boys::detail::ChebyshevValueWithDegrees<kScheme>(n, x, kDegreesA)
+                           ? boys::detail::ChebyshevValueWithDegrees<kScheme,
+                                                                    boys::FitGranularity::kShipped>(
+                                 n, x, kDegreesA)
                            : boys::detail::RegionBSeedWithDegrees<kScheme>(x, kDegreesB[0]);
             } else
             {
@@ -6952,7 +6981,9 @@ int main(int argc, char** argv) {
         worstOf({kFloatSingle, kFloatOrders, kFloatOrdersPacked, kFloatAllN}));
 
     add("README.half",
-        "fp16 and bf16 store-half lanes: m*1e-7 + one half-ULP, single and batch",
+        "fp16 and bf16 store-half lanes: m*1.5e-7 + one half-ULP, single and batch - the float "
+        "lane's figure, which is the arithmetic these lanes run, plus the half-ULP term their "
+        "store adds",
         "README accuracy contract and include/boys/boys.hpp",
 #ifdef BOYS_GATE_FP16
         verdictOf({kF16Single, kF16Orders, kBf16Single, kBf16Orders}) == Verdict::Verified
@@ -6960,7 +6991,10 @@ int main(int argc, char** argv) {
             : verdictOf({kF16Single, kF16Orders, kBf16Single, kBf16Orders}),
         worstOf({kF16Single, kF16Orders, kBf16Single, kBf16Orders}),
         "the arguments where |F_n(x)| > m*1e-7 + one half-ULP of the returned value, and no "
-        "others - the restriction the half lanes' paragraph in docs/lane-contract.md states",
+        "others - the restriction the half lanes' paragraph in docs/lane-contract.md states. "
+        "The row judges at that base, which is the region target the half lanes' fits are cut "
+        "for and is tighter than the m*1.5e-7 the library publishes for them, so its domain is "
+        "wider than the published claim's and a pass here is the stronger result",
         "the row fails if the budget is read as claimed over the whole argument range: the "
         "counted-apart cells in LC.half.vacuous_floor are exactly the cells that reading would "
         "turn into failures");
@@ -7280,7 +7314,8 @@ int main(int argc, char** argv) {
             : verdictOf({kF16Single, kF16Orders, kBf16Single, kBf16Orders}),
         worstOf({kF16Single, kF16Orders, kBf16Single, kBf16Orders}),
         "the arguments where |F_n(x)| > m*1e-7 + one half-ULP of the returned value, and no "
-        "others",
+        "others - the base the half lanes' fits are cut for, tighter than the m*1.5e-7 the "
+        "library publishes for them",
         "the row fails if a cell inside that domain delivers more than the bound, or if the "
         "domain's edge moves down to arguments where the return is the format's floor: the "
         "counts are in LC.half.vacuous_floor");
@@ -7414,7 +7449,8 @@ int main(int argc, char** argv) {
             bf16Single.vacuousZero,
             bf16Single.vacuous - bf16Single.vacuousZero),
         "the arguments where |F_n(x)| > m*1e-7 + one half-ULP of the returned value - the "
-        "domain the half lanes' paragraph claims over, and no others",
+        "domain a base the half lanes' fits are cut for carves, tighter than the m*1.5e-7 the "
+        "library publishes and so wider than the published claim, and no others",
         "the row fails if the document ever reads as claiming accuracy past that ceiling - a "
         "claim over the whole argument range would make every point past the ceiling a "
         "failure, and the counters above are the number of them; it also fails if a point "
@@ -10312,16 +10348,19 @@ int main(int argc, char** argv) {
     //
     // Each row is judged at the figure the lane publishes for that shape, read
     // from BoysLaneContracts() - m x 5.5e-14 for the double lane, m x 1.5e-7 for
-    // the single-precision one, m x 1e-7 for the half-precision one - which is
-    // the same table the accessor below answers from and the same figures
-    // README.md publishes, so a figure a consumer reads off this table is the
-    // figure the library hands them.
+    // the single-precision one, and m x 1.5e-7 for the half-precision one, whose
+    // lanes run that arithmetic and add the half-ULP term their store carries -
+    // which is the same table the accessor below answers from and the same
+    // figures README.md publishes, so a figure a consumer reads off this table is
+    // the figure the library hands them.
     //
     // The half-precision lane's bound is a claim only where the value exceeds
-    // it: a return whose magnitude is at or below m x 1e-7 plus half a
-    // representable digit of that return is the format's floor and not the
+    // it: a return whose magnitude is at or below the published figure plus half
+    // a representable digit of that return is the format's floor and not the
     // arithmetic's, and this block counts those cells rather than passing them.
-    // The count is printed on the row.
+    // The count is printed on the row. The clause rows below judge at the tighter
+    // base the fits are cut for, m x 1e-7, over the wider domain that base
+    // carves - a test stricter than the published claim, never a looser one.
     //
     // The *entries* are a further axis and are not crossed here, which is a
     // boundary and not a claim of coverage: they are measured by the scheme

@@ -202,8 +202,10 @@ A stored fit is a polynomial over one interval, and the interval's width is the 
 the truncation bound carries the half-width as roughly `(h / 2d)^d`, so **halving a piece buys about
 `2^d`**, while raising the degree at a fixed width buys far less, because the optimal ellipse
 parameter falls as the degree rises and partly cancels the gain. **Splitting is the design move;
-more degree is not.** The library offers two partitions and no spectrum between them, and the
-shipped one is the default.
+more degree is not.** The library offers two partitions and no spectrum between them, and the narrow
+one is the default: a call site that names no partition reads the pieces cut to the proved bound, and
+`FitGranularity::kShipped` is how a caller asks for the committed table by name. The two cut one fit,
+so the move is a choice of table and not of accuracy.
 
 **What narrower pieces buy, and what they cost.** They cut the number of coefficients an evaluation
 reads, not the size of the table: a narrower piece needs a lower degree, and there are more of them.
@@ -841,8 +843,10 @@ route is a name a report prints only where it is really two roundings.
 A stored fit is a polynomial, and the recurrence above is one way to sum it. The single lanes offer a
 second: the same fit, at the same degree over the same interval, evaluated by Horner's rule
 on the monomial form of the same coefficients. **Both are offered and neither replaces the other.**
-A call site that names no scheme is compiled exactly as it was before the second one existed, so the
-certified route is the default and its figures on this page are unchanged.
+Horner's rule is the default: a call site that names no scheme is compiled as the entry naming
+\c kHorner, and naming the split Clenshaw recurrence is how a caller asks for the other summation.
+The two sum one fit to one bound, so the move is a choice of arithmetic and not of accuracy, and the
+figures on this page are the fit's rather than either summation's.
 
 The two schemes sum one polynomial at the full degree, so the stored fits' figures below are the
 same reading twice and differ only by the arithmetic that carried the sum.
@@ -1437,26 +1441,40 @@ offers has one, each entry of that precision runs it when the call site names no
 lanes as a fixed policy, since those entries take no policy argument at all — and this section states
 what each name selects and the bound it carries.
 
-**These are the shipped settings, and not a measurement.** No default on this page was chosen against
-a timing: the option space is not yet ranked against one, and the runs that would set a default per
-precision are the probe's, taken where the library is deployed rather than here. Setting one from
-such a run is one line per name — the aliases in `backend.hpp`, and the device lane's two in
-`accuracy.hpp` and `boys_device_tables.hpp`. Until then nothing here is a claim about which setting
-is fastest. *What is not claimed*, at the end of this page, is the same statement for every lane.
+**Two of these axes have been measured and two have not, and the table says which is which.** The
+scheme and the partition were set from the option probe's own runs on a quiet host, and **those runs
+did not separate the rows of either axis**: on the double lane's full-accuracy class for the
+all-orders shape, the shipped partition read by the split Clenshaw recurrence and the narrow
+partition read by either scheme came out within 0.9% of each other, against the 5.6 to 7.4 points one
+of those rows moves by from one run to the next, with the class's next row 11.5% to 12% behind them.
+The two settings in the table are therefore two of the rows those runs could not separate rather than
+rows they found cheaper — the probe is what a consumer runs where they deploy, and the figures behind
+these two are its report rather than a recommendation this page can restate, because which option is
+fastest is a property of
+the host, its flags and its card. The route and the packing axis carry the settings the library has
+always shipped and have not been ranked against a timing. Setting any of them from a run is one line per
+name — the aliases in `backend.hpp`, and the device lane's two in `accuracy.hpp` and
+`boys_device_tables.hpp`. *What is not claimed*, at the end of this page, names the lanes nothing
+here was measured on.
 
 | Precision | Name | Fit route | Scheme | Granularity | Packing axis | Engine budget |
 |---|---|---|---|---|---|---|
-| double | `boys::DefaultPolicyFp64` | chebyshev | split Clenshaw | shipped | arguments | none — the double lanes read no budget |
-| float | `boys::DefaultPolicyFp32` | chebyshev | split Clenshaw | shipped | arguments | `BoysBudget::kFloat` |
-| fp16 | `boys::DefaultPolicyFp16` | chebyshev | split Clenshaw | shipped | arguments | `BoysBudget::kFp16` |
-| bf16 | `boys::DefaultPolicyBf16` | chebyshev | split Clenshaw | shipped | arguments | `BoysBudget::kFp16` |
+| double | `boys::DefaultPolicyFp64` | chebyshev | Horner | narrow | arguments | none — the double lanes read no budget |
+| float | `boys::DefaultPolicyFp32` | chebyshev | Horner | narrow | arguments | `BoysBudget::kFloat` |
+| fp16 | `boys::DefaultPolicyFp16` | chebyshev | Horner | narrow | arguments | `BoysBudget::kFp16` |
+| bf16 | `boys::DefaultPolicyBf16` | chebyshev | Horner | narrow | arguments | `BoysBudget::kFp16` |
 
-The route column is the lane's shipped Chebyshev table; the scheme reads it by the split Clenshaw
-recurrence, which is the lane's certified form; the granularity is the shipped partition, region A's
-two equal-width bands per order and region B's one seed; and the packing axis is the arguments axis,
-the one a call has whether or not anybody names it. What the other member of each axis costs and buys
-is in *The two fit routes*, *Interval granularity*, *The evaluation scheme* and *The packing axis*
-above.
+The route column is the lane's Chebyshev table; the scheme reads the fits the lane sums by Horner's
+rule on their monomial form; the granularity is the narrow partition, a piece cut to the width the
+proved truncation bound supports at the bar it is read under rather than region A's two equal-width
+bands per order and region B's one seed; and the packing axis is the arguments axis, the one a call
+has whether or not anybody names it. What the other member of each axis costs and buys is in *The
+two fit routes*, *Interval granularity*, *The evaluation scheme* and *The packing axis* above.
+
+**What the defaults moved is a value and not a contract.** The scheme and the partition are each a
+choice between two ways of computing one answer: both schemes sum one fit, and both partitions cut
+one fit, each certified to its own published bound, so neither move costs accuracy. What a caller who
+reads a bound off this page relies on is that bound, and it is the lane's own at either value.
 
 **The bound each name carries is the lane's own**, stated above and not restated here: the double
 single entry at most 1e-15 below x = 1.0855, 3e-14 below x = 11.899848152108484 and 5.5e-14

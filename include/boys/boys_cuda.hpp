@@ -60,14 +60,13 @@ enum class BoysStatus {
 /// is built with, which is why the first call at a new m uploads that
 /// instantiation's tables. The multiplier is monotonically relaxing exactly as
 /// the CPU lanes document it, and the rungs this lane instantiates are the
-/// option space's seven — 1, 64, 256, 1024, 4096, 16384 and 65536, the
-/// multipliers the CPU tier lane's AccuracyTier names — beside the lane's own
-/// six, 1, 2, 10, 100, 1e4 and 1e8: the finer set at the low end and the coarser
-/// one at the top that this lane carried before it carried the option space's.
-/// The two sets meet at m = 1 alone, and their union is the twelve multipliers
-/// of kDeviceRungs (boys_cuda_options.hpp). The rung a caller names is therefore
-/// a rung the lane serves, and a caller carrying a tier names it here instead of
-/// approximating it by the nearest member of another set.
+/// twelve of kDeviceRungs (boys_cuda_options.hpp): the option space's seven —
+/// 1, 64, 256, 1024, 4096, 16384 and 65536, the multipliers the CPU tier lane's
+/// AccuracyTier names — beside the lane's own six, the finer set at the low end
+/// and the coarser one at the top, 1, 2, 10, 100, 1e4 and 1e8. The two sets meet
+/// at m = 1 alone. The rung a caller names is therefore a rung the lane serves,
+/// and a caller carrying a tier names it here instead of approximating it by the
+/// nearest member of another set.
 ///
 /// The device-callable entries (boys_cuda_device.hpp) are at once the wider
 /// surface and the narrower one. Wider, because each takes the multiplier as a
@@ -81,19 +80,16 @@ enum class BoysStatus {
 /// kBoysFullAccuracyMultiplier reads tables that are always uploaded, so it is
 /// served whatever rung is resident and does not depend on that choice.
 ///
-/// **What the rung set's growth to twelve does to that rule, and why the rule
-/// is not lifted with it.** The rule is a property of the storage and not of how
-/// many rungs there are: what a larger set changes is which multipliers can be
-/// made resident — twelve values of m where six could be — and not what
+/// **One rung is resident, and the size of the rung set does not change that.**
+/// What a larger set changes is which multipliers can be made resident, not what
 /// residency is or what a switch costs. One rung is resident because one rung is
 /// one cut of every table the lane holds, and the batch kernels read their own
 /// cut from the constant bank, where the six lanes' degree tables are 2574 ints:
 /// twelve rungs of them would be 121 KB against the 64 KB it has. So a caller
-/// moving along the ladder pays a fill on each switch — the price the lane's own
-/// six rungs have always carried, now payable at twelve values of m instead of
-/// six — and what a filled handle holds is unchanged by any of it: the addresses
-/// of the resident rung's degree tables, the address of the scalar naming it,
-/// and the full-accuracy tables, which no fill retires.
+/// moving along the ladder pays a fill on each switch, and what a filled handle
+/// holds is unchanged: the addresses of the resident rung's degree tables, the
+/// address of the scalar naming it, and the full-accuracy tables, which no fill
+/// retires.
 ///
 /// What neither surface has is the CPU double lane's per-call tier machinery:
 /// BoysAllOrdersAtTier (one tier, all orders), QueryTier, AccuracyMultiplier and
@@ -118,14 +114,12 @@ enum class BoysStatus {
 /// value shows it and no entry reports it — a caller has to read the kernel or
 /// know this paragraph.
 ///
-/// This is a work item and not an impossibility. The fused intrinsic is what
-/// makes it unfixable today; a kernel written as a bare product-plus-add leaves
-/// the choice to the device compiler's own contraction setting, which is the
-/// same mechanism the host build uses to deliver the two routes, and the device
-/// lane would then honour the route the same way the scalar backends do. Until
-/// that lands, treat the device lane as fused unconditionally: it is the fused
-/// route's arithmetic, and the fused route's bounds are the ones its values
-/// hold, whatever the host build selected.
+/// This is unbuilt work rather than an impossibility: a kernel written as a bare
+/// product-plus-add leaves the choice to the device compiler's own contraction
+/// setting, the same mechanism the host build uses to deliver the two routes, and
+/// the device lane would then honour the route the way the scalar backends do.
+/// Until that lands, treat the device lane as fused unconditionally: the fused
+/// route's bounds are the ones its values hold, whatever the host build selected.
 ///
 /// The three shapes per precision family: Single* (one order per argument),
 /// AllOrders* (all orders per argument, top order per element), AllN* (all
@@ -347,6 +341,14 @@ public:
     /// was stored at and uploads nothing, so it does not disturb a relaxed rung
     /// another call made resident.
     ///
+    /// \tparam kAccuracyMultiplier as AllOrdersF64: m = 1 reads the degrees the
+    ///   tables were stored at, m > 1 this entry's certified table at that rung.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
     /// \returns kDeviceError when the launch fails.
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64Narrow(
@@ -363,6 +365,14 @@ public:
     /// The CPU lane's packing axis is the same choice (BoysPackAxes), and its
     /// orders member's interval is region A for the same reason.
     ///
+    /// \tparam kAccuracyMultiplier as AllOrdersF64: m = 1 reads the degrees the
+    ///   tables were stored at, m > 1 this entry's certified table at that rung.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
     /// \returns kDeviceError when the launch fails.
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64Orders(
@@ -372,6 +382,14 @@ public:
     /// narrow partition's pieces, read one fit per order inside region A and
     /// its piecewise region-B seed outside it, with the certified all-orders
     /// body past kX0.
+    ///
+    /// \tparam kAccuracyMultiplier as AllOrdersF64: m = 1 reads the degrees the
+    ///   tables were stored at, m > 1 this entry's certified table at that rung.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
     ///
     /// \returns kDeviceError when the launch fails.
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
@@ -392,6 +410,14 @@ public:
     /// this entry is the cheaper summation of the two on hardware where the two
     /// issue alike, and the two are ranked by the option probe.
     ///
+    /// \tparam kAccuracyMultiplier as AllOrdersF64: m = 1 reads the degrees the
+    ///   tables were stored at, m > 1 this entry's certified table at that rung.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
     /// \returns kDeviceError when the launch fails.
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64Mono(
@@ -404,6 +430,14 @@ public:
     /// this is the same relation to AllOrdersF64Mono that AllOrdersF64Orders
     /// has to AllOrdersF64.
     ///
+    /// \tparam kAccuracyMultiplier as AllOrdersF64: m = 1 reads the degrees the
+    ///   tables were stored at, m > 1 this entry's certified table at that rung.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
     /// \returns kDeviceError when the launch fails.
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64OrdersMono(
@@ -413,6 +447,14 @@ public:
     /// the narrow pieces, their piecewise region-B seed and their per-rung
     /// effective degrees, summed in the basis AllOrdersF64Mono names.
     ///
+    /// \tparam kAccuracyMultiplier as AllOrdersF64: m = 1 reads the degrees the
+    ///   tables were stored at, m > 1 this entry's certified table at that rung.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
     /// \returns kDeviceError when the launch fails.
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64NarrowMono(
@@ -421,6 +463,14 @@ public:
     /// Both of the choices above in force at once: the narrow partition read
     /// one fit per order inside region A, summed in the monomial basis, with
     /// the certified all-orders body past kX0.
+    ///
+    /// \tparam kAccuracyMultiplier as AllOrdersF64: m = 1 reads the degrees the
+    ///   tables were stored at, m > 1 this entry's certified table at that rung.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
     ///
     /// \returns kDeviceError when the launch fails.
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
@@ -445,6 +495,14 @@ public:
     /// seeds at its top order's piece and carries that piece's w(b), where
     /// AllOrdersF64OrdersRat reads each order's piece at A = 1.
     ///
+    /// \tparam kAccuracyMultiplier as AllOrdersF64: m = 1 reads the degrees the
+    ///   tables were stored at, m > 1 this entry's certified table at that rung.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
     /// \returns kDeviceError when the launch fails.
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64Rat(
@@ -457,6 +515,14 @@ public:
     /// so this is the same relation to AllOrdersF64Rat that AllOrdersF64Orders
     /// has to AllOrdersF64. Its rung reads the per-order cut.
     ///
+    /// \tparam kAccuracyMultiplier as AllOrdersF64: m = 1 reads the degrees the
+    ///   tables were stored at, m > 1 this entry's certified table at that rung.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
     /// \returns kDeviceError when the launch fails.
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64OrdersRat(
@@ -466,6 +532,14 @@ public:
     /// the narrow pieces, their piecewise region-B seed and their per-rung
     /// effective degrees, each piece summed as the pair AllOrdersF64Rat names.
     ///
+    /// \tparam kAccuracyMultiplier as AllOrdersF64: m = 1 reads the degrees the
+    ///   tables were stored at, m > 1 this entry's certified table at that rung.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
     /// \returns kDeviceError when the launch fails.
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64NarrowRat(
@@ -474,6 +548,14 @@ public:
     /// Both of the choices above in force at once: the narrow partition read
     /// one fit per order inside region A, each piece summed as the pair
     /// AllOrdersF64Rat names, with the certified all-orders body past kX0.
+    ///
+    /// \tparam kAccuracyMultiplier as AllOrdersF64: m = 1 reads the degrees the
+    ///   tables were stored at, m > 1 this entry's certified table at that rung.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
     ///
     /// \returns kDeviceError when the launch fails.
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>

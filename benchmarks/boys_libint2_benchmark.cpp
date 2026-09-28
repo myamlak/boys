@@ -20,6 +20,19 @@
 // libint2 include directory; libint2 is not a dependency of the library, and a
 // tree without it builds everything else unchanged.
 //
+// **Rows.** A run with no argument compares the cell a caller who names no
+// policy reaches. An optional `--row <name>` selects one of the three cells of
+// the double lane's option grid that the library's option probe could not
+// separate at full accuracy for the all-orders shape - the shipped partition
+// summed by the split Clenshaw recurrence, and the narrow partition summed by
+// either scheme - under the names that probe's report uses. The library's
+// default is one of the three, and which row that is is read from the policy
+// type rather than from a name, so the cells and the default cannot drift
+// apart. A tie established between the library's own rows says nothing about
+// an outside implementation, which is why the selection is here: a reader
+// asking whether those three are one cell's worth of work or three needs them
+// run against libint2.
+//
 // **Both sides evaluate the same ladder.** Per argument this library fills
 // F_0(x)..F_n(x) and libint2 fills F_0(x)..F_m_max(x), both at the plain
 // definition F_m(x) = the integral of t^(2m) exp(-x t^2) over t in [0, 1], with
@@ -64,6 +77,8 @@
 #include <cstdio>
 #include <limits>
 #include <random>
+#include <string_view>
+#include <type_traits>
 #include <vector>
 
 // libint2's headers reach for the SIMD types through <intrin.h> on MSVC and key
@@ -216,16 +231,15 @@ std::vector<Item> MolecularInputs() {
     return items;
 }
 
-// One pass of this library over a stream. The policy named here is the
-// library's default for the double lane, which is also the entries' template
-// default, so this is the instantiation a caller who names nothing reaches; the
+// One pass of this library over a stream, at one cell of its option grid. The
 // argument's own row feeds the sink so the call cannot be eliminated.
-void DefaultEntryPass(const std::vector<Item>& items, volatile double& sink) {
+template <typename Policy>
+void EntryPass(const std::vector<Item>& items, volatile double& sink) {
     std::array<double, kLadderSize> ladder{};
 
     for (const Item& item : items)
     {
-        boys::BoysAllOrders<boys::kBoysFullAccuracyMultiplier, boys::DefaultPolicyFp64>(
+        boys::BoysAllOrders<boys::kBoysFullAccuracyMultiplier, Policy>(
             item.n, item.x, ladder.data());
         sink += ladder[static_cast<std::size_t>(item.n)];
     }
@@ -245,7 +259,8 @@ void Libint2Pass(const libint2::FmEval_Chebyshev7<double>& fm,
 }
 
 // The largest difference between the two ladders over one stream, and the
-// argument that produced it.
+// argument that produced it, for one cell of this library's option grid.
+template <typename Policy>
 Agreement MeasureAgreement(const libint2::FmEval_Chebyshev7<double>& fm,
                            const std::vector<Item>& items) {
     std::array<double, kLadderSize> mine{};
@@ -254,7 +269,7 @@ Agreement MeasureAgreement(const libint2::FmEval_Chebyshev7<double>& fm,
 
     for (const Item& item : items)
     {
-        boys::BoysAllOrders<boys::kBoysFullAccuracyMultiplier, boys::DefaultPolicyFp64>(
+        boys::BoysAllOrders<boys::kBoysFullAccuracyMultiplier, Policy>(
             item.n, item.x, mine.data());
         fm.eval(theirs.data(), item.x, item.n);
 
@@ -281,12 +296,84 @@ Spread Summarise(const std::vector<double>& samples) {
     return Spread{sorted.front(), sorted[sorted.size() / 2], sorted.back()};
 }
 
-// The name the library itself prints for the route its default policy selects,
-// read from the route table rather than restated here.
-const char* DefaultRouteName() {
+// One cell of the library's option grid: the four axes that select what an
+// all-orders double call evaluates, the name the library's option probe prints
+// for that cell, and whether this cell is the one the library's default policy
+// reaches. The last is read off the policy type, so a run naming no row
+// compares whatever the default selects at the revision it is built against.
+struct Row {
+    const char* name;
+    boys::FitRoute route;
+    boys::EvalScheme scheme;
+    boys::BoysBudget budget;
+    boys::PackAxis pack;
+    boys::FitGranularity granularity;
+    bool isDefault;
+    void (*pass)(const std::vector<Item>&, volatile double&);
+    Agreement (*agreement)(const libint2::FmEval_Chebyshev7<double>&, const std::vector<Item>&);
+};
+
+template <typename Policy>
+Row MakeRow(const char* name) {
+    return Row{name,
+               Policy::kRoute,
+               Policy::kScheme,
+               Policy::kBudget,
+               Policy::kPack,
+               Policy::kGranularity,
+               std::is_same_v<Policy, boys::DefaultPolicyFp64>,
+               &EntryPass<Policy>,
+               &MeasureAgreement<Policy>};
+}
+
+/// The shipped partition summed by the split Clenshaw recurrence.
+using ShippedPartitionRow =
+    boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                     boys::EvalScheme::kSplitClenshaw,
+                     boys::BoysBudget::kFloat,
+                     boys::PackAxis::kArguments,
+                     boys::FitGranularity::kShipped>;
+
+/// The narrow partition summed by the split Clenshaw recurrence.
+using NarrowSplitRow = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                        boys::EvalScheme::kSplitClenshaw,
+                                        boys::BoysBudget::kFloat,
+                                        boys::PackAxis::kArguments,
+                                        boys::FitGranularity::kNarrow>;
+
+/// The narrow partition summed by Horner's rule, which is what the library's
+/// default selects where the axes above name what they name at this revision.
+using NarrowHornerRow = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                         boys::EvalScheme::kHorner,
+                                         boys::BoysBudget::kFloat,
+                                         boys::PackAxis::kArguments,
+                                         boys::FitGranularity::kNarrow>;
+
+// The default has to be one of the cells listed here: a run naming no row
+// compares the default, so a default that moved off this list would leave the
+// harness with nothing to compare. Failing here says which file to follow.
+static_assert(std::is_same_v<ShippedPartitionRow, boys::DefaultPolicyFp64> ||
+                  std::is_same_v<NarrowSplitRow, boys::DefaultPolicyFp64> ||
+                  std::is_same_v<NarrowHornerRow, boys::DefaultPolicyFp64>,
+              "the library's default has moved off the three cells this harness lists; the row "
+              "table below has to name the cell the default reaches");
+
+const std::vector<Row>& Rows() {
+    static const std::vector<Row> rows = {
+        MakeRow<ShippedPartitionRow>("batch-fp64"),
+        MakeRow<NarrowSplitRow>("narrow-fp64"),
+        MakeRow<NarrowHornerRow>("narrow-horner-fp64"),
+    };
+
+    return rows;
+}
+
+// The name the library itself prints for a route, read from the route table
+// rather than restated here.
+const char* RouteName(boys::FitRoute route) {
     for (const boys::FitRouteInfo& row : boys::BoysFitRoutes())
     {
-        if (row.route == boys::DefaultPolicyFp64::kRoute)
+        if (row.route == route)
         {
             return row.name;
         }
@@ -317,16 +404,18 @@ double MaxArgumentOf(const std::vector<Item>& items) {
     return xmax;
 }
 
-void PrintBanner() {
-    std::printf("comparison: this library's default Boys entry vs libint2 Boys\n");
-    std::printf("this library entry: BoysAllOrders (batch) at boys::DefaultPolicyFp64"
-                " - the library's default, and the entries' template default\n");
-    std::printf("default selectors: route %s | scheme %s | granularity %s | packing %s\n",
-                DefaultRouteName(),
-                boys::EvalSchemeName(boys::DefaultPolicyFp64::kScheme),
-                boys::GranularityName(boys::DefaultPolicyFp64::kGranularity),
-                boys::PackAxisName(boys::DefaultPolicyFp64::kPack));
-    std::printf("default accuracy: multiplier m = 1 (full), bound %.3e absolute per value\n",
+void PrintBanner(const Row& row) {
+    std::printf("comparison: this library's all-orders Boys entry vs libint2 Boys\n");
+    std::printf("this library entry: BoysAllOrders (batch) at boys::EvalPolicy "
+                "route %s | scheme %s | granularity %s | packing %s\n",
+                RouteName(row.route),
+                boys::EvalSchemeName(row.scheme),
+                boys::GranularityName(row.granularity),
+                boys::PackAxisName(row.pack));
+    std::printf("selected row: %s | the library's default policy: %s\n",
+                row.name,
+                row.isDefault ? "yes, this is the cell it reaches" : "no");
+    std::printf("row accuracy: multiplier m = 1 (full), bound %.3e absolute per value\n",
                 kDefaultEntryBound);
     std::printf("other side: libint2 v2.13.1 FmEval_Chebyshev7<double>, header-only, "
                 "at its table's own precision (bound %.3e relative)\n",
@@ -355,10 +444,11 @@ void PrintTimingRow(const char* side, const Spread& spread) {
 // the recorded passes, then the two sides' rows.
 void CompareStream(const char* name,
                    const std::vector<Item>& items,
-                   const libint2::FmEval_Chebyshev7<double>& fm) {
+                   const libint2::FmEval_Chebyshev7<double>& fm,
+                   const Row& row) {
     PrintStreamRow(name, items);
 
-    const Agreement agreement = MeasureAgreement(fm, items);
+    const Agreement agreement = row.agreement(fm, items);
     const bool within = agreement.maxDiff <= kAgreementBudget;
     std::printf("agreement: %s | max_abs_diff: %.3e | budget: %.3e | within_budget: %s | "
                 "worst at n: %d | worst at x: %.9f\n",
@@ -382,7 +472,7 @@ void CompareStream(const char* name,
     // printed at the end are each side's and not a shared running total.
     volatile double librarySink = 0.0;
     volatile double libint2Sink = 0.0;
-    const auto libraryPass = [&items, &librarySink]() { DefaultEntryPass(items, librarySink); };
+    const auto libraryPass = [&items, &librarySink, &row]() { row.pass(items, librarySink); };
     const auto libint2Pass = [&items, &fm, &libint2Sink]() { Libint2Pass(fm, items, libint2Sink); };
 
     // Warm-up: one pass per side, so both sides' tables and pages are resident
@@ -404,26 +494,82 @@ void CompareStream(const char* name,
     const Spread library = Summarise(libraryPasses);
     const Spread libint2 = Summarise(libint2Passes);
     std::printf("timing: %s | warmup_passes: 1 | recorded_passes: %d\n", name, kPasses);
-    PrintTimingRow("default-entry", library);
+    PrintTimingRow("library-row", library);
     PrintTimingRow("libint2-cheb7", libint2);
-    std::printf("  median ns_per_arg ratio (libint2 / default-entry): %.3fx\n",
+    std::printf("  median ns_per_arg ratio (libint2 / library-row): %.3fx\n",
                 libint2.median / library.median);
-    std::printf("  sink: default-entry %.17g | libint2 %.17g\n",
+    std::printf("  sink: library-row %.17g | libint2 %.17g\n",
                 static_cast<double>(librarySink),
                 static_cast<double>(libint2Sink));
 }
 
+// The row a run compares: the one named on the command line, or the cell the
+// library's default policy reaches when none is named.
+const Row* SelectRow(int argc, char** argv) {
+    const std::vector<Row>& rows = Rows();
+
+    if (argc == 1)
+    {
+        for (const Row& row : rows)
+        {
+            if (row.isDefault)
+            {
+                return &row;
+            }
+        }
+
+        std::printf("no row named and none of the listed cells is the library's default\n");
+        return nullptr;
+    }
+
+    if (argc != 3 || std::string_view(argv[1]) != "--row")
+    {
+        std::printf("usage: %s [--row <name>]\n  rows:\n", argv[0]);
+
+        for (const Row& row : rows)
+        {
+            std::printf("    %s%s\n", row.name, row.isDefault ? "  (the library's default)" : "");
+        }
+
+        return nullptr;
+    }
+
+    for (const Row& row : rows)
+    {
+        if (std::string_view(argv[2]) == row.name)
+        {
+            return &row;
+        }
+    }
+
+    std::printf("unknown row \"%s\"; the rows this harness carries are:\n", argv[2]);
+
+    for (const Row& row : rows)
+    {
+        std::printf("    %s\n", row.name);
+    }
+
+    return nullptr;
+}
+
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    const Row* row = SelectRow(argc, argv);
+
+    if (row == nullptr)
+    {
+        return 2;
+    }
+
     // The stream arguments are identical on both sides: one input list is built
     // and handed to each.
     const std::vector<Item> uniform = UniformInputs();
     const std::vector<Item> molecular = MolecularInputs();
     const libint2::FmEval_Chebyshev7<double> fm(boys::kMaxBoysOrder);
 
-    PrintBanner();
-    CompareStream("uniform-n32-x40", uniform, fm);
-    CompareStream("molecular-benzene-631gd", molecular, fm);
+    PrintBanner(*row);
+    CompareStream("uniform-n32-x40", uniform, fm, *row);
+    CompareStream("molecular-benzene-631gd", molecular, fm, *row);
     return 0;
 }

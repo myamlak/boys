@@ -81,8 +81,10 @@ void Usage() {
                "  --bg=SECONDS       background load window (default 1.0)\n"
                "  --cal=SECONDS      load calibration window (default 0.5)\n"
                "  --refine-runs=N    runs the refinement stage takes over the\n"
-               "                     options a class left tied, of which the one\n"
-               "                     that leads most of them is the default\n"
+               "                     options a class left tied. The vote says\n"
+               "                     whether the row the figures put first holds\n"
+               "                     up over more rounds or whether the two\n"
+               "                     cannot be separated\n"
                "                     (default 5)\n"
                "  --refine-factor=N  how much longer each refinement run is than\n"
                "                     one pass protocol: passes and rounds are both\n"
@@ -93,6 +95,14 @@ void Usage() {
                "                     machine. A diagnostic: it discards nothing\n"
                "                     and is reported beside every pass\n"
                "                     (default 5.0)\n"
+               "  --reference=NAME   the entry every ratio of this run is formed\n"
+               "                     against, by name (default: the library's own\n"
+               "                     default double-precision all-orders entry). The\n"
+               "                     anchor is a choice of the reporting and not of the\n"
+               "                     measurement, so two runs of one binary under two\n"
+               "                     anchors measure the same thing; a name this run did\n"
+               "                     not measure falls back to the default and the\n"
+               "                     report says so.\n"
                "  --only=A,B         measure only these options, by name, repeatable\n"
                "                     and comma-separated (default: every option this\n"
                "                     build offers). A name that is no option of this\n"
@@ -148,6 +158,9 @@ int main(int argc, char** argv) {
         } else if (arg.rfind("--canary-spread=", 0) == 0)
         {
             options.canarySpreadAlarm = std::strtod(arg.c_str() + 16, nullptr);
+        } else if (arg.rfind("--reference=", 0) == 0)
+        {
+            options.reference = arg.c_str() + 12;
         } else if (arg.rfind("--only=", 0) == 0)
         {
             AppendNames(arg.c_str() + 7, options.only);

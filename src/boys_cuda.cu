@@ -101,11 +101,10 @@ __device__ float dBSeed32[24];
 // piece-start table its region-A seed reads its coefficients with, exactly as
 // the full-accuracy table above is.
 //
-// The lane order is cDegEff's: 0 double single, 1 double batch, 2 float single,
-// 3 float batch, 4 fp16 single, 5 fp16 batch. Lanes 0, 1, 3 and 5 are indexed by
-// the double piece table (the batch lanes' region-A seed is computed in double
-// whatever precision they return — RoleUsesDoubleTables) and lanes 2 and 4 by
-// the float one.
+// The lane order is cDegEff's. Lanes 0, 1, 3 and 5 are indexed by the double
+// piece table (the batch lanes' region-A seed is computed in double whatever
+// precision they return — RoleUsesDoubleTables) and lanes 2 and 4 by the float
+// one.
 constexpr int kRelaxedPieces = kPiecesTotal > kPiecesTotal32 ? kPiecesTotal : kPiecesTotal32;
 
 __device__ int dDegEff[kEffLaneCount * kRelaxedPieces];
@@ -170,8 +169,7 @@ __device__ int dNarrowBDegEff[detail::kNarrowBPieces * (detail::kMaxOrder + 1)];
 // pool and the float lane's tables already fill most of the 64 KB constant
 // bank, so a second double pool of the same size does not fit beside them; the
 // narrow pool is out of the bank for the same reason the Chebyshev narrow one
-// is. One fetch per piece per thread is the pattern the flat image above
-// serves that way.
+// is.
 __device__ double dMonoCoeffs[kMaxCoeffs];
 __device__ double dMonoBcoeffs[24];
 __device__ double dNarrowAMonoCoeffs[kNarrowCoeffsTotal];
@@ -184,9 +182,8 @@ __device__ double dNarrowBMonoCoeffs[detail::kNarrowBPieces * (detail::kNarrowBD
 // cut is derived per order and piece; region B is one row per order, read at
 // the order-0 entry by the batch shape.
 //
-// The narrow partition's cut is one table each for the same reason its
-// Chebyshev counterpart is: the entries carrying the partition are the double
-// batch, so there is no lane axis to carry.
+// The narrow partition's cut is one table each, as its Chebyshev counterpart's
+// is.
 __device__ int dMonoDegEff[detail::kMaxOrder + 1][kMaxPieces];
 __device__ int dMonoBDegEff[detail::kMaxOrder + 1];
 __device__ int dNarrowMonoDegEff[kNarrowPiecesTotal];
@@ -202,8 +199,7 @@ __device__ int dNarrowMonoBDegEff[detail::kNarrowBPieces * (detail::kMaxOrder + 
 // from p_0, then the denominator's q_1..q_k with q_0 held at one, so the
 // denominator's base is the STORED numerator degree's position and not the cut's
 // (boys_impl.hpp RationalPieceAtCut). The pair is evaluated as two Horner sums
-// and a division, which is the kernel path this family needs and the reason it
-// is a lane of its own rather than a pool beside the Chebyshev one.
+// and a division.
 //
 // The degrees are carried twice per piece: the pair the table was stored at,
 // which is what a full-accuracy rung reads the whole of, and the cut a rung's
@@ -268,15 +264,13 @@ __device__ int dNarrowRatBDeg[detail::kNarrowBPieces][2];
 // same code. These six lane objects are the kernels' side of that: the
 // __constant__ tables of this translation unit.
 //
-// The relaxed lanes read their degrees from cDegEff/cBDegEff. Which degree
-// table a lane reads, and whether its region-B degree is the per-order entry
-// or the order-0 one, is the identity of the lane a kernel names — 0 double
-// single, 1 double batch, 2 float single, 3 float batch, 4 fp16 single,
-// 5 fp16 batch — and it is the only thing the relaxed lane objects differ in.
-// The batch lanes read the order-0 region-B entry because the F0 seed's error
-// reaches every output with gain at most 1 + 1.846e-17, and the per-order
-// region-A entry at the batch's top order, which is the order the batch
-// bodies pass.
+// The relaxed lanes read their degrees from cDegEff/cBDegEff, in the lane
+// order documented there. Which degree table a lane reads, and whether its
+// region-B degree is the per-order entry or the order-0 one, is the only thing
+// the relaxed lane objects differ in. The batch lanes read the order-0
+// region-B entry because the F0 seed's error reaches every output with gain
+// at most 1 + 1.846e-17, and the per-order region-A entry at the batch's top
+// order, which is the order the batch bodies pass.
 
 struct Lane64Full {
     __device__ __forceinline__ int Count(int order) const {
@@ -795,8 +789,7 @@ template <bool kRelaxed, RatCut kCut> struct Lane64NarrowRat {
 // ---------------------------------------------------------------------------
 // Each of these is one thread's worth of index arithmetic around one call into
 // the shared bodies of boys_cuda_arithmetic.hpp — the same bodies the
-// device-callable entries run. The batch kernels and a caller's own fused
-// kernel are therefore one piece of arithmetic rather than two that can drift.
+// device-callable entries run.
 //
 // __restrict__ on x/out: the buffers are distinct DeviceBuffers by
 // construction, and without it every out store would force nvcc to reload x
@@ -878,8 +871,7 @@ __global__ void BoysAllOrdersF64Kernel(const int* n, const double* x, double* ou
     });
 }
 
-// The uniform-order entry: one nmax for the whole batch, so the recursion
-// bounds are warp-uniform and no order array is read.
+// The uniform-order entry (see BoysAllNF32Kernel).
 __global__ void BoysAllNF64Kernel(int nmax, const double* x, double* out, size_t count) {
     const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
 
@@ -959,17 +951,13 @@ __global__ void BoysAllNF16Kernel(int nmax,
 // (same arithmetic, same region structure, same output layout) except that
 // the seed degrees come from cDegEff/cBDegEff — the m = 1 kernels stay
 // byte-identical (the full-accuracy pin). The lane index is the kernel's
-// identity:
-//   0 double single, 1 double batch, 2 float single, 3 float batch,
-//   4 fp16 single, 5 fp16 batch.
-// The batch lanes read the order-0 region-B entry (the F0 seed's error
-// reaches every output with gain <= 1 + 1.846e-17) and the per-order
-// region-A entry at the batch's top order (the A_A(nmax) amplification
-// covers the downward recursion) — exactly the CPU relaxed batches. Which
-// lane object a kernel passes is the whole of the difference from the kernels
-// above: the relaxed single lanes read their region-B degree per order, and
-// the relaxed batch lanes read the order-0 entry whatever order their body
-// hands them.
+// identity, in the order documented at cDegEff. The batch lanes read the
+// order-0 region-B entry and the per-order region-A entry at the batch's top
+// order (the A_A(nmax) amplification covers the downward recursion) — exactly
+// the CPU relaxed batches. Which lane object a kernel passes is the whole of
+// the difference from the kernels above: the relaxed single lanes read their
+// region-B degree per order, and the relaxed batch lanes read the order-0
+// entry whatever order their body hands them.
 template <int kLane>
 __global__ void BoysSingleF64KernelEff(const int* n, const double* x, double* out, size_t count) {
     const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
@@ -997,8 +985,7 @@ __global__ void BoysAllOrdersF64KernelEff(const int* n, const double* x, double*
 }
 
 // The uniform-order entry reads its lane's degree table exactly as its
-// per-element twin does (kDoubleBatch: the order-0 region-B entry and the
-// per-order region-A entry at the batch's top order).
+// per-element twin does.
 template <int kLane>
 __global__ void BoysAllNF64KernelEff(int nmax, const double* x, double* out, size_t count) {
     const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
@@ -1014,13 +1001,12 @@ __global__ void BoysAllNF64KernelEff(int nmax, const double* x, double* out, siz
 }
 
 // ---------------------------------------------------------------------------
-// the two shapes the lane gained: the orders axis, and the narrow partition
+// the orders axis and the narrow partition
 // ---------------------------------------------------------------------------
 // Six kernels and not two, because each shape has a full-accuracy form and a
 // rung's form, exactly as the all-orders kernel above does. The orders axis is
 // a body choice and the partition is a lane choice, so the two compose: the
-// last pair is the narrow partition read with the orders axis, and it is the
-// combination a caller asking for both gets rather than a third arithmetic.
+// last pair is the narrow partition read with the orders axis.
 //
 // The orders axis is a choice inside region A only: past kX0 these kernels run
 // the certified all-orders body, whose row is the lane's own bound over the
@@ -1130,9 +1116,8 @@ __global__ void BoysAllOrdersF64NarrowOrdersKernelEff(const int* n,
 // are read by (boys_cuda_arithmetic.hpp) — so these are the same four shapes
 // with a monomial lane, each with the full-accuracy form and the rung's.
 //
-// The orders axis composes with it for the same reason it composes with the
-// partition: DeviceOrdersBody takes the lane, and the axis is a choice inside
-// region A whichever basis that lane sums.
+// The orders axis composes with it too: DeviceOrdersBody takes the lane, so
+// the axis is a choice inside region A whichever basis that lane sums.
 __global__ void BoysAllOrdersF64MonoKernel(const int* n,
                                            const double* __restrict__ x,
                                            double* __restrict__ out,
@@ -1268,8 +1253,7 @@ __global__ void BoysAllOrdersF64NarrowOrdersMonoKernelEff(const int* n,
 // different cuts of the same stored pairs.
 //
 // The scheme axis is inert on this route: the pair is stored once, in one
-// basis, so both scheme names launch this same kernel. That is why the row that
-// carries this route names one arithmetic rather than two.
+// basis, so both scheme names launch this same kernel.
 __global__ void BoysAllOrdersF64RatKernel(const int* n,
                                           const double* __restrict__ x,
                                           double* __restrict__ out,
@@ -2120,9 +2104,7 @@ double gEffM = -1.0;
 // comparison on the multiplier alone would answer for a device that has never
 // held them, and a device no upload has reached reads zero-initialized
 // constants. The device arrives as an argument rather than from a call so that
-// every row of the comparison is exercisable on one card, the row that matters
-// included — record naming device 0, caller asking about device 1, same
-// multiplier, which must answer not resident.
+// both rows of the comparison are exercisable on one card.
 extern "C" int BoysCudaEffTablesResidentOn(
     int device, double m, int recordedDevice, double recordedM) {
     return (device == recordedDevice && m == recordedM) ? 1 : 0;
@@ -2235,9 +2217,7 @@ extern "C" int BoysCudaUploadEffTables(double m,
         return 2;
     }
 
-    // The narrow partition's cut for the same rung. It is the double batch
-    // role's table alone — the role the entries carrying the partition have —
-    // and no lane axis, so it lands as one table per rung.
+    // The narrow partition's cut for the same rung: one table, no lane axis.
     if (cudaMemcpyToSymbol(dNarrowDegEff, narrowA, kNarrowPiecesTotal * sizeof(int)) != cudaSuccess ||
         cudaMemcpyToSymbol(dNarrowBDegEff,
                            narrowB,

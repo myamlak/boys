@@ -112,8 +112,11 @@ always served.
 **Choosing nothing.** A caller that has picked a precision and no axis writes one name: each precision
 has a named default, and so does the device lane. [docs/lane-contract.md](docs/lane-contract.md#the-default-policy-per-precision-and-per-device)
 states what each selects, the bound it carries, and the command that prints the name and the in-force
-default as numbers. They are the shipped settings and not a measurement: no default here was chosen
-against a timing, and the option probe below is what ranks the options, on the machine it is run on.
+default as numbers. Two of the five axes — the evaluation scheme and the interval granularity — were
+set from the option probe's own runs, and the other two carry the settings the library has always
+shipped; the option probe below is what ranks the rest, on the machine it is run on. **Each default
+is a choice between two ways of computing one answer and not between two accuracies**, so a version
+that moves one costs no accuracy at any call site that names nothing.
 
 The rows above are bounds, and a bound is not the figure a lane delivers. Two lanes are delivered at
 a different figure depending on one property of the build — whether the compiler fuses a bare
@@ -451,9 +454,10 @@ How narrowly the fitted domain is cut into pieces is the fifth field of `EvalPol
 choice with a price on each side. A narrower piece needs a lower degree to hold the same bound —
 halving a piece buys about `2^d` in the truncation, so **splitting is the lever and more degree is
 not** — and the cost is that a table of narrow pieces stores more in total and needs a piece lookup
-per call. Two partitions are offered and no spectrum between them: `FitGranularity::kShipped`, which
-is the committed table and the default, and `FitGranularity::kNarrow`, a partition of region A and of
-region B derived from the proved truncation bound below rather than placed by sampling.
+per call. Two partitions are offered and no spectrum between them: `FitGranularity::kShipped`, the
+committed table the library has always carried, and `FitGranularity::kNarrow`, a partition of region
+A and of region B derived from the proved truncation bound below rather than placed by sampling —
+which is the default, and the one a call site that names no partition reads.
 `tools/gen_boys_coefficients.py --derive-partition` prints the design law's answer.
 
 | partition | stored coefficients | stored rows | read per evaluation |
@@ -611,24 +615,37 @@ options. Each pass carries runs of a fixed-work canary beside its rounds. It is 
 gates nothing: a fixed work read by wall clock measures the clock as much as the load, so a decaying
 clock widens the canary on a machine that is doing nothing else, and a rule that discarded a pass on
 that would discard the measurement rather than the machine. What the ordering is made in is the
-spread of the paired ratios, which the report measures. The reported figure is the lower quartile of
-the rounds with its spread printed beside it, not the minimum.
+spread of the paired ratios, which the report measures. The reported figure is the option's
+within-round ratio to the reference lane at the middle of the run's rounds, scaled by that lane's own
+cost, with its spread printed beside it: the middle rather than a lower quartile, because the
+reference's ratio to itself is one in every round, so scoring every other option at a lower quartile
+of its ratio would give the reference the middle of its own rounds and its rivals less than the
+middle of theirs — a ranking that turns on which row the run anchored on.
 
-Options are ranked in classes, and a class is one precision at one accuracy rung — the multiplier an
-option was built at, which the library's own tables report. Every row of a class was built at the
-same multiplier, so nothing inside one traded accuracy for speed, and the default is taken from the
-certified double lane's precision at the library's own full-accuracy multiplier alone: a faster row
-of a relaxed rung, or of another precision, is a different class and never a default candidate.
+Options are ranked in classes, and a class is one precision, one accuracy rung — the multiplier an
+option was built at, which the library's own tables report — and one question shape: what the option
+hands back, either one argument's ladder up to that argument's own order or one common ladder over an
+array of arguments at one top order. Every row of a class was built at the same multiplier and
+answers the same question, so nothing inside one traded accuracy for speed and nothing inside it is
+an answer to something else; the routes, schemes, partitions and packing axes a caller does not
+choose are columns inside the class and compete in one ranking. The default is taken from the
+certified double lane's precision at the library's own full-accuracy multiplier, answering the shape
+this probe's workload asks: a faster row of a relaxed rung, of another precision, or of the other
+shape is a different class and never a default candidate. Within that class the default is the row
+the run's own figures put first, so the name it prints and the table it prints it beside never
+disagree about which option is cheapest.
 
 When a class cannot be ordered — a pair whose within-round ratio band straddles one, or too few
 rounds for a band to exist — the run still ends with one combination, and it says how it reached it.
 The options the class left tied are re-run alone at a longer protocol (more passes over more rounds,
-set by `--refine-runs` and `--refine-factor`), and the one that led the most of those runs is the
-default. A unanimous re-run, a majority over split runs, and a pick among options that divided the
-runs evenly are three different answers, and the report says which one it is making. A class that
-holds one option names that option: one entry is not a ranking, and there is no alternative to it. A
-run in which no option produced a figure at all reports `CANNOT DETERMINE` and the number of paired
-rounds a band needs, rather than a name it never measured — and it offers no fallback read from a
+set by `--refine-runs` and `--refine-factor`) and voted on. That vote is read against the run it
+refines: where it names the same row, the report says the re-run confirmed it; where it names
+another, the report prints both figures and says the class's top entries cannot be separated by the
+run, and the default is the row the report's own table puts first — never a row its own figures show
+behind another. A class that holds one option names that option: one entry is not a ranking, and
+there is no alternative to it. A run in which no option produced a figure at all reports `CANNOT
+DETERMINE` and the number of paired rounds a band needs, rather than a name it never measured — and
+it offers no fallback read from a
 table, because a name chosen that way would be a name this run cannot stand behind. What the refusal
 does give you is the evidence: every option the class could not place behind its leader is printed
 with the band that pair fell in and in how many rounds each was the slower of the two.
@@ -649,8 +666,10 @@ ratio is 32, and a card whose compute capability predates the bf16 tensor instru
 path at all. So the CUDA lane ships the same kind of measurement. `boys::RunDeviceOptionProbe` takes
 a device ordinal, establishes that device's context before it allocates anything, and returns a
 `boys::DeviceProbeReport` — the card's name and compute capability in the returned data, one figure
-per entry with the spread it was taken under, one class per precision holding one ranking per question
-shape with the resolution that ranking was ordered at, and the entries it could not separate.
+per entry at every accuracy rung the lane serves, one class per precision, accuracy rung and question
+shape with the resolution that class was ordered at, and the entries it could not separate. The
+entry's cost and its documented bound are reported at the rung it was measured at, and the classes at
+the full-accuracy rung m = 1 are the ones a default is read from.
 `boys-device-probe` is a thin driver over it for the terminal:
 
     cmake -S . -B build-cuda -DBUILD_CUDA=ON
@@ -703,25 +722,31 @@ difference and the band the difference fell in, so a row's removal can be checke
 The ordering is paired, the way the host probe's is. Every entry is launched once in every round,
 and two entries are compared by the ratio of their times *within one round*, so a card whose clock
 moves through a run — a boost that decays as the part heats — cancels in that ratio instead of being
-read as a difference between the two entries. The figure a row carries is the lower quartile of its
-rounds with its spread printed beside it, not the minimum, which is biased toward peak performance;
-the peak is kept in a column of its own, labelled as the entry's fastest single round, so the two
-can be read apart. Every pass launches a fixed-work kernel that does no Boys arithmetic beside its
+read as a difference between the two entries. The figure a row carries is its within-round ratio to
+the reference entry at the middle of the run's rounds, scaled by that entry's own cost, with its
+spread printed beside it: the middle rather than a lower quartile, for the same reason as on the host
+side — the reference's ratio to itself is one in every round, so a lower quartile would credit the
+reference and debit its rivals by an amount that depends on where the anchor was put. The minimum is
+kept in a column of its own, labelled as the entry's fastest single round, so a peak-clock reading
+and the figure a caller meets can be read apart. Every pass launches a fixed-work kernel that does no Boys arithmetic beside its
 rounds and reports that kernel's own spread; it is a diagnostic that gates nothing, because fixed
 work read by the same clock the entries ran on measures the clock as much as the card, and a rule
 that discarded a pass on it would discard the measurement rather than the machine. What a shape's
 ordering is made in is the spread of the paired ratios. A shape whose own rounds cannot separate two
-entries still ends with exactly one of them: the entries it could not place behind the leader are
-re-run alone at a longer protocol, set by `--refine-runs` and `--refine-factor`, and the one that led
-the most of those runs is the shape's entry. A unanimous re-run, a majority over split runs, and a
-pick among entries that divided the runs evenly are three answers of different strength, and the
-report says which one it is making. A shape whose rows the run's own checks set aside — a subtraction
-that resolved nothing, a figure the repetition control could not hold — is not left without an answer:
-the rows it did produce a figure for go to that same stage, and the shape ends with one of them, named
-with the way it was reached rather than as an ordering this shape's own rounds established. A shape
-holding one entry names that entry, since there is no alternative to name and one entry is not a
-ranking; a shape that produced no figure at all is the one case that reports `CANNOT DETERMINE` and
-names no entry, and the reason says which count or which row was missing. Where a shape was not ordered outright, every entry it could not place behind the leader is
+entries still ends with exactly one of them — always the one its own figures put first, the row its
+own table lists first, so a caller never meets a default the figures beside it contradict. The
+entries the shape could not place behind the leader are re-run alone at a longer protocol, set by
+`--refine-runs` and `--refine-factor`, and what those runs decide is *how* that entry was reached:
+a unanimous re-run that named it, a majority that named it, or a vote that named another entry, which
+is a tie the runs could not break. Those are three answers of different strength, and the report says
+which one it is making, with the vote printed run by run. A shape whose rows the run's own checks set
+aside — a subtraction that resolved nothing, a figure the repetition control could not hold — is not
+left without an answer: the rows it did produce a figure for go to that same stage, and the shape ends
+with one of them, named with the way it was reached rather than as an ordering this shape's own
+rounds established. A shape holding one entry names that entry, since there is no alternative to
+name and one entry is not a ranking; a shape that produced no figure at all is the one case that
+reports `CANNOT DETERMINE` and names no entry, and the reason says which count or which row was
+missing. Where a shape was not ordered outright, every entry it could not place behind the leader is
 printed with the band that pair fell in and in how many rounds each was the slower of the two.
 
 The device probe checks the clock rather than assuming it. Two entries need not carry this card's

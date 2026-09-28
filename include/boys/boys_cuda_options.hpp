@@ -9,8 +9,7 @@
 /// (BoysCuda, in boys_cuda.hpp) and the device functions that implement them
 /// (boys_cuda_device.hpp). The second is compiled by nvcc, in a translation
 /// unit that has to stay free of the library's C++23 headers, so the rows live
-/// here — beside the device tables they are read from and reachable from both
-/// sides — rather than in the host header alone. That is what lets a probe's
+/// here rather than in the host header alone — which is what lets a probe's
 /// rows and an accuracy gate's claims be projections of one report instead of
 /// lists that drift from it.
 
@@ -242,14 +241,25 @@ struct DeviceOptionInfo {
     /// The evaluation scheme the option's stored basis is summed in, and the
     /// route its pieces are cut from.
     ///
-    /// Stated on every row rather than only on the rows that move them, because
-    /// the two are the family a row belongs to and a chooser placing two rows
-    /// side by side is asking whether they are the same family: the shipped
-    /// values are the defaults here, so a row that carries them says so by
-    /// carrying them. The member of a row whose \c axis is kScheme is \c scheme;
-    /// of one whose axis is kRoute, \c route.
+    /// Stated on every row, and not only on the rows that move them: the two
+    /// name the family a row belongs to, so a chooser placing two rows side by
+    /// side reads whether they are the same family off the rows themselves. The
+    /// member of a row whose \c axis is kScheme is \c scheme; of one whose axis
+    /// is kRoute, \c route.
     EvalScheme scheme = kDefaultEvalScheme;
-    FitRoute route = kDefaultFitRoute;
+    FitRoute route = kDefaultFitRoute; ///< the route its pieces are cut from
+
+    /// The term of this row's documented bound that does not scale with the
+    /// multiplier, as a figure.
+    ///
+    /// \c boundForm is the same statement in words and \c bound is the figure at
+    /// m = 1, so the three agree: the bound a row documents at a rung m is
+    /// \c m * (bound - boundFixed) + boundFixed, with the term a returned value
+    /// decides dropped exactly as \c bound drops it. Zero for every form in this
+    /// table but the fast region-B exponential's, whose form adds a seed
+    /// contribution the truncation does not scale; a lane that documents another
+    /// such term states it here.
+    double boundFixed = 0.0;
 };
 
 /// The device option space this revision defines, one row per option, read from

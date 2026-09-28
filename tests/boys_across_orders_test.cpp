@@ -508,18 +508,19 @@ TEST(BoysAcrossOrders, AgreesWithTheShippedAllOrdersEntryWithinItsBudget) {
 
 namespace {
 
-// The policy the public axis is named with.
+// The policy the public axis is named with, on the shipped tables: the axis the
+// lane below is, with the partition named rather than left to the default.
 template <boys::EvalScheme kScheme>
 using OrdersPolicy =
     boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
-                     boys::PackAxis::kOrders>;
+                     boys::PackAxis::kOrders, boys::FitGranularity::kShipped>;
 
 // The same axis with the rational route named: the first of the two calls the
 // axis answers beyond its shipped reading.
 template <boys::EvalScheme kScheme>
 using RationalOrdersPolicy =
     boys::EvalPolicy<boys::FitRoute::kRationalMinimax, kScheme, boys::BoysBudget::kFloat,
-                     boys::PackAxis::kOrders>;
+                     boys::PackAxis::kOrders, boys::FitGranularity::kShipped>;
 
 // The per-order lane the entry falls back to outside the packed interval, at
 // the same rung: the certified scalar single entry, which is the one lane the
@@ -527,7 +528,7 @@ using RationalOrdersPolicy =
 template <boys::EvalScheme kScheme>
 using PerOrderPolicy =
     boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
-                     boys::PackAxis::kArguments>;
+                     boys::PackAxis::kArguments, boys::FitGranularity::kShipped>;
 
 // The narrow partition on the axis. Its region-A pieces are cut per order, so
 // the packed lane has no shared stride to step and fetches each of the four
@@ -617,7 +618,11 @@ TEST(BoysAcrossOrders, ThePublicAxisIsDefinedPastItsOwnDomain) {
 
         for (int l = 0; l <= kNmax; ++l)
         {
-            const double single = boys::BoysSingle(l, x);
+            // The certified scalar single lane at the policy the entry was
+            // called with, which is what the fallback runs: the default entry
+            // is a different policy, and a measurement moves it.
+            const double single =
+                boys::BoysSingle<1.0, PerOrderPolicy<boys::EvalScheme::kSplitClenshaw>>(l, x);
 
             if (!SameBits(out[static_cast<std::size_t>(l)], single))
             {
@@ -629,6 +634,14 @@ TEST(BoysAcrossOrders, ThePublicAxisIsDefinedPastItsOwnDomain) {
     EXPECT_EQ(differing, 0u) << "the entry's fallback is not the certified scalar single lane";
 }
 
+// The axis at the partition the run-time route selector reads: every axis but
+// the route and the scheme is the library's, and the partition is the value the
+// library's own default names.
+template <boys::FitRoute kRoute, boys::EvalScheme kScheme>
+using RoutedAxisPolicy =
+    boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFloat, boys::PackAxis::kOrders,
+                     boys::kDefaultFitGranularity>;
+
 // The rational route on the axis: a policy names the route, the entry answers,
 // and the values are that route's own region-A fits. The routed per-argument
 // entry is the second reading that says which values those are - it reads the
@@ -637,6 +650,14 @@ TEST(BoysAcrossOrders, ThePublicAxisIsDefinedPastItsOwnDomain) {
 // scalar fit evaluation and by nothing else, so where the two routes' readings
 // part by more than that arithmetic can explain, the axis has to be the routed
 // one: that is the cell that says which table it read.
+//
+// The partition is held at the library's default, which is the one the routed
+// entry reads. That entry takes a route and a scheme and no partition: the axis
+// a caller does not name is the library's to choose, and the value it chooses is
+// that axis's default. Comparing the axis at the other partition would measure
+// the partition rather than the route - over this grid it accounts for 1610 of
+// the 1793 cells that tell the two routes apart on the shipped partition - and
+// the subject here is the route.
 TEST(BoysAcrossOrders, TheRationalRouteOnTheAxisIsTheRoutesOwnReading) {
     if (!VectorTier())
     {
@@ -657,10 +678,12 @@ TEST(BoysAcrossOrders, TheRationalRouteOnTheAxisIsTheRoutesOwnReading) {
 
         for (double x : grid)
         {
-            boys::BoysAllOrders<1.0, RationalOrdersPolicy<kScheme>>(kNmax, x, ours.data());
+            boys::BoysAllOrders<1.0, RoutedAxisPolicy<boys::FitRoute::kRationalMinimax, kScheme>>(
+                kNmax, x, ours.data());
             boys::BoysAllOrdersWithRoute(
                 boys::FitRoute::kRationalMinimax, kScheme, kNmax, x, routed.data());
-            boys::BoysAllOrders<1.0, OrdersPolicy<kScheme>>(kNmax, x, shipped.data());
+            boys::BoysAllOrders<1.0, RoutedAxisPolicy<boys::FitRoute::kChebyshev, kScheme>>(
+                kNmax, x, shipped.data());
 
             for (int l = 0; l <= kNmax; ++l)
             {
@@ -690,7 +713,7 @@ TEST(BoysAcrossOrders, TheRationalRouteOnTheAxisIsTheRoutesOwnReading) {
 
         std::printf("  rational route on the axis, %-14s: worst %.6e from the routed entry over "
                     "%zu order values, %zu of them differing; %zu cells tell the two routes apart "
-                    "and %zu of those kept the shipped table\n",
+                    "and %zu of those kept the default route's table\n",
                     name,
                     worst,
                     compared,

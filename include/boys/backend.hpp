@@ -12,8 +12,7 @@
 /// attributed to the arithmetic that produced it rather than to a type only
 /// the compiler knows.
 ///
-/// Two multiply-adds are named, and the difference between them is the whole
-/// point of naming them:
+/// Two multiply-adds are named, because they are two arithmetics:
 ///
 ///  - MulAdd is fused: the product is exact and the sum rounds once. It is the
 ///    operation a Chebyshev recurrence wants, and the one the kernels are
@@ -95,8 +94,8 @@ namespace boys {
 ///
 /// \ingroup boys
 enum class PackAxis : std::uint8_t {
-    /// Four arguments of one order: the packed lanes this library has always
-    /// shipped, reached through the fixed-order and plane entries.
+    /// Four arguments of one order: the packed lanes the fixed-order and plane
+    /// entries reach.
     kArguments = 0,
 
     /// Four orders of one argument: the shape \c BoysAllOrders has, and the
@@ -106,8 +105,7 @@ enum class PackAxis : std::uint8_t {
 
 /// The axis the entries pack when the caller names none.
 ///
-/// The shipped one, so a call site that names no axis compiles exactly as it
-/// did before the other existed.
+/// The shipped one: a call site that names no axis packs the arguments axis.
 inline constexpr PackAxis kDefaultPackAxis = PackAxis::kArguments;
 
 /// The name a report prints a packing axis under.
@@ -116,6 +114,7 @@ inline constexpr PackAxis kDefaultPackAxis = PackAxis::kArguments;
 ///
 /// \returns a string literal naming it
 const char* PackAxisName(PackAxis axis) noexcept;
+
 /// How narrowly the fitted domain is cut into pieces.
 ///
 /// A stored fit is a polynomial over one interval, and a narrower interval
@@ -136,8 +135,7 @@ const char* PackAxisName(PackAxis axis) noexcept;
 /// coefficients to read per evaluation and more pieces to store and to look up
 /// in, so the axis trades per-evaluation work against table size. A consumer
 /// whose cost is per evaluation gains; one whose cost is the table gains
-/// nothing and pays the lookup. It is offered for a consumer to choose between
-/// and not as a winner.
+/// nothing and pays the lookup.
 ///
 /// **The axis cuts both fitted regions, and region A pays a second criterion.**
 /// Region B's seed is read for itself, so a narrow piece there is held to the
@@ -165,42 +163,54 @@ const char* PackAxisName(PackAxis axis) noexcept;
 /// reason, rather than answered from the shipped tables: the two partitions'
 /// coefficients are different fits of the same function over the same
 /// interval, so a silent substitution would return the shipped partition's
-/// values under the other's name. The refusals are the rational route over the narrow
-/// partition on the packing axis - the route's region-A pairs cover the shipped
-/// per-order pieces and the packed lane steps one order's coefficients to the next at a
-/// fixed stride, so a packed kernel over the pairs' own narrow pieces is a kernel to
-/// write - and the narrow partition on the single-precision lanes past the reference
-/// multiplier, which hold one coefficient set and one degree table and so have no narrow
-/// rung table to cut. The relaxed rungs and the across-orders packing axis are otherwise
-/// built: a rung of this partition is derived against its own pieces rather than
-/// truncated from the shipped rows, and the packed lane reaches a per-order cut with a
-/// gathered fetch, reading each of the four orders it holds its own piece and
-/// coefficients instead of stepping one piece's coefficients at a fixed stride. Each
-/// refusal that remains names the work it would need - a packed kernel over the route's
-/// narrow pairs, a narrow rung table for the single-precision lanes - and is unbuilt
-/// work rather than an impossible combination, named where it is refused so that it can
-/// be counted.
+/// values under the other's name. Two refusals remain, each naming the work it
+/// would need: the rational route over the narrow partition on the packing axis,
+/// where the route's region-A pairs cover the shipped per-order pieces and the
+/// packed lane steps one order's coefficients to the next at a fixed stride, so
+/// a packed kernel over the pairs' own narrow pieces is a kernel to write; and
+/// the narrow partition on the single-precision lanes past the reference
+/// multiplier, which hold one coefficient set and one degree table and so have no
+/// narrow rung table to cut. The relaxed rungs and the across-orders packing axis
+/// are otherwise built: a rung of this partition is derived against its own
+/// pieces rather than truncated from the shipped rows, and the packed lane
+/// reaches a per-order cut with a gathered fetch, reading each of the four orders
+/// it holds its own piece and coefficients instead of stepping one piece's
+/// coefficients at a fixed stride.
 ///
 /// \ingroup boys
 enum class FitGranularity : std::uint8_t {
-    /// The partition this library has always shipped: region A's two bands per
+    /// The partition the certified lanes are defined by: region A's two bands per
     /// order and region B's single seed, at the degrees the committed tables
-    /// carry. The default, and the partition every certified lane is defined
-    /// by.
+    /// carry. A caller names it to read those tables.
     kShipped = 0,
 
-    /// A deliberately narrower partition of both fitted regions, at the degrees
-    /// the proved truncation bound gives a piece of that width at the bar the
-    /// piece is read under. Fewer coefficients per evaluation, more pieces in
-    /// the table.
+    /// A narrower partition of both fitted regions, at the degrees the proved
+    /// truncation bound gives a piece of that width at the bar the piece is read
+    /// under. Fewer coefficients per evaluation, more pieces in the table.
     kNarrow = 1,
 };
 
 /// The partition the entries evaluate when the caller names none.
 ///
-/// The shipped one, so a call site that names no partition compiles the tables
-/// it always did.
-inline constexpr FitGranularity kDefaultFitGranularity = FitGranularity::kShipped;
+/// The narrow one: a call site that names no partition reads the narrow pieces'
+/// coefficients, and naming \c kShipped is how a caller asks for the other
+/// partition. The two cut the same fits, so this value is a choice between two
+/// ways of computing the same answer rather than between two accuracies.
+///
+/// **It is not the cheaper of the two at either setting of the other axis.** On
+/// the host these were last measured on, the narrow partition was 0.3% to 0.8%
+/// behind the shipped one where the fit is summed by the split Clenshaw
+/// recurrence — inside the 5.6 to 7.4 points one of these rows moves by from one
+/// run to the next — while summed by Horner's rule, the scheme this default
+/// reads, it was 15% to 17% cheaper. What the measurement establishes is a tie:
+/// three rows of the double lane's full-accuracy class for the all-orders shape —
+/// the shipped partition summed by the split Clenshaw recurrence, and the narrow
+/// partition summed by either scheme — came out within 0.9% of each other, with
+/// the class's next row 11.5% to 12% behind them. This default is one of the
+/// three tied rows. A caller who wants this ranking on their own machine runs the
+/// option probe (boys_probe.hpp), which measures it there and names the pairs it
+/// could and could not separate.
+inline constexpr FitGranularity kDefaultFitGranularity = FitGranularity::kNarrow;
 
 /// The name a report prints a granularity under.
 ///
@@ -221,7 +231,11 @@ enum class BoysBudget : std::uint8_t {
     /// The float lane's 1.5e-7 budget.
     kFloat = 0,
 
-    /// The fp16/bf16 lanes' tighter 1e-7 budget.
+    /// The fp16/bf16 engine's 1e-7 region target. The half lanes run the float
+    /// lane's engine with the fits cut for the tighter target, and what they
+    /// publish is that lane's own figure, 1.5e-7, plus the half-ULP term their
+    /// store adds: a budget is what the cuts are placed against, not a bound a
+    /// caller is given.
     kFp16 = 1,
 };
 
@@ -373,14 +387,14 @@ struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kNarrow> {
 /// interval and a fallback would return the shipped values under the other partition's
 /// name. The single-precision lanes carry one more: their narrow partition is served at
 /// the reference multiplier and refused past it, where the rung reads the one degree
-/// table this lane stores. Each is unbuilt work and is refused with the work it names,
-/// so a gap is countable. The rungs are not among them on the double lane: a relaxed
+/// table this lane stores. The rungs are not among them on the double lane: a relaxed
 /// rung cuts a stored fit's own coefficients, so the rung is derived per partition at
 /// compile time and every rung of every combination above is served there.
 ///
 /// \tparam kFitRoute      the fit route; \c FitRoute::kChebyshev by default
 /// \tparam kEvalScheme    the scheme the fit's coefficients are summed in;
-///                        \c EvalScheme::kSplitClenshaw by default
+///                        \c kDefaultEvalScheme by default, which is
+///                        \c EvalScheme::kHorner
 /// \tparam kEngineBudget  the computation budget of a single-precision engine,
 ///                        read by the float and half-precision lanes and by
 ///                        nothing else; \c BoysBudget::kFloat by default
@@ -388,7 +402,8 @@ struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kNarrow> {
 ///                        the entries that have a wide axis to fill;
 ///                        \c PackAxis::kArguments by default
 /// \tparam kGranularity   how narrowly the fitted domain is cut into pieces;
-///                        \c FitGranularity::kShipped by default
+///                        \c kDefaultFitGranularity by default, which is
+///                        \c FitGranularity::kNarrow
 ///
 /// \ingroup boys
 template <FitRoute kFitRoute = kDefaultFitRoute,
@@ -447,30 +462,37 @@ concept EvalPolicyLike = requires {
 /// defaults are these names. The four differ in one field and in one only:
 ///
 ///  - the **double** lanes read no budget, so \c DefaultPolicyFp64 selects the
-///    shipped route, the shipped scheme, the shipped partition and the
-///    arguments-packing axis, and the budget its policy carries is inert;
+///    Chebyshev route, the Horner scheme, the narrow partition and the
+///    arguments-packing axis - whatever \c kDefaultFitRoute,
+///    \c kDefaultEvalScheme, \c kDefaultFitGranularity and \c kDefaultPackAxis
+///    name at the revision a caller builds against - and the budget its policy
+///    carries is inert;
 ///  - the **float** lane reads the budget at a relaxed multiplier, and its own
 ///    is \c BoysBudget::kFloat;
 ///  - the **half** lanes (\c fp16 and \c bf16) are the same engine under the
-///    tighter \c BoysBudget::kFp16 budget, which is the axis that makes their
-///    bound 1e-7 rather than the float lane's 1.5e-7 — this is the one place
-///    the four names differ in more than their spelling, and it is why a
-///    single default for every precision would be the float lane's budget
-///    imposed on the half lanes;
+///    tighter \c BoysBudget::kFp16 budget, which is the axis that cuts their
+///    fits for a 1e-7 region target rather than the float lane's — this is the
+///    one place the four names differ in more than their spelling, and it is
+///    why a single default for every precision would be the float lane's
+///    budget imposed on the half lanes. It is not an accuracy they can
+///    publish: they run the float lane's arithmetic and store what it returns,
+///    so their published figure is that lane's (1.5e-7) plus the half-ULP
+///    term the store adds;
 ///  - \c DefaultPolicyFp16 and \c DefaultPolicyBf16 denote one and the same
 ///    policy type, because fp16 and bf16 are one lane at one budget; they are
 ///    named twice so that a document can cite the default for the format its
 ///    reader is using, and a reader comparing the two names is comparing a
 ///    lane, not a choice.
 ///
-/// **These are the shipped settings and not a measurement.** No default here
-/// was chosen against a timing: which option is fastest is a property of the
-/// host, its flags and its card, and this library answers that question with
-/// the option probe a consumer runs where they deploy rather than with a
-/// recommendation. The names exist so that the shipping default is a thing a
-/// caller can point at, cite and change in one line, and setting one of them
-/// from a measurement is that line alone. What each name selects is stated
-/// lane by lane in docs/lane-contract.md.
+/// **These defaults are a measurement, and the option probe is how it was
+/// taken.** Which option is fastest is a property of the host, its flags and
+/// its card, so the figures behind the two axes that have been measured were
+/// read off the option probe this library ships for a consumer to run where
+/// they deploy, and the axes that have not been measured against it carry the
+/// shipped settings. The line between the two is stated axis by axis in
+/// docs/lane-contract.md; the numbers behind the measured ones are the probe's
+/// own report, on the machine it is run on, and not a figure this header can
+/// restate.
 ///
 /// \ingroup boys
 using DefaultPolicyFp64 = EvalPolicy<>;

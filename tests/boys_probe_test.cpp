@@ -108,15 +108,18 @@ std::string RowLine(const std::string& text, const std::string& name) {
 }
 
 // The members of the class the probe takes its default from: the certified
-// double lane's precision at the library's own full-accuracy multiplier. The
-// key is precision and rung together — a faster row of another rung, or of
-// another precision, is a different class and not this one.
+// double lane's precision at the library's own full-accuracy multiplier,
+// answering the all-orders question — the shape the workload is asked in and the
+// shape the library's own default entry answers. The key is that triple, so a
+// faster row of another rung, of another precision or of another shape is a
+// different class and not this one.
 std::vector<const OptionProbeMeasurement*> ReferenceMembers(const OptionProbeReport& report) {
     std::vector<const OptionProbeMeasurement*> members;
 
     for (const OptionProbeMeasurement& measurement : report.measurements) {
         if (measurement.measured && measurement.precision == boys::OptionPrecision::kFp64 &&
-            measurement.tier == AccuracyTier::kReference) {
+            measurement.tier == AccuracyTier::kReference &&
+            measurement.shape == boys::OptionProbeShape::kAllOrders) {
             members.push_back(&measurement);
         }
     }
@@ -139,12 +142,14 @@ const OptionProbeMeasurement* ReferenceLeader(const OptionProbeReport& report) {
     return leader;
 }
 
-// The class one precision was ranked in at one rung, empty when the report
-// carries none. Every class of the report is keyed by that pair.
+// The class one precision was ranked in at one rung for one question shape,
+// empty when the report carries none. Every class of the report is keyed by that
+// triple.
 const boys::OptionProbeClass* ClassOf(const OptionProbeReport& report,
-                                      boys::OptionPrecision precision, AccuracyTier tier) {
+                                      boys::OptionPrecision precision, AccuracyTier tier,
+                                      boys::OptionProbeShape shape) {
     for (const boys::OptionProbeClass& entry : report.classes) {
-        if (entry.precision == precision && entry.tier == tier) {
+        if (entry.precision == precision && entry.tier == tier && entry.shape == shape) {
             return &entry;
         }
     }
@@ -351,15 +356,16 @@ TEST(ProbeTest, TheNarrowerLanesAreHeldToTheirOwnBound) {
 }
 
 // A relaxed rung is documented looser than the certified lane, and it is a
-// class of its own at that: the class key is one precision AND one rung, so a
-// relaxed row is never a member of the class the default is taken from, however
-// the two figures compare. The figures are still reported — that is what lets a
+// class of its own at that: the class key is one precision, one rung AND one
+// question shape, so a relaxed row is never a member of the class the default is
+// taken from, however the two figures compare. The figures are still reported — that is what lets a
 // reader see a faster option was faster at a lower accuracy rather than at the
 // same one.
 TEST(ProbeTest, ARelaxedRungIsNeverInTheCertifiedAccuracyClass) {
     const OptionProbeReport report = boys::RunOptionProbe(Timed());
     const boys::OptionProbeClass* reference =
-        ClassOf(report, boys::OptionPrecision::kFp64, AccuracyTier::kReference);
+        ClassOf(report, boys::OptionPrecision::kFp64, AccuracyTier::kReference,
+                                     boys::OptionProbeShape::kAllOrders);
 
     ASSERT_NE(reference, nullptr) << "the certified lane's reference class is not in the report";
 
@@ -506,14 +512,15 @@ TEST(ProbeTest, TheResolutionIsTheWidestBandTheClassShowed) {
 // A class the run ordered names its own leader and leaves no rival unplaced;
 // a class the run could not order still ends in one default, and the options it
 // could not place are named beside it, so a reader is never handed a name
-// without the evidence that is missing for it. The class is one precision at
-// one rung, so a faster row of another precision or another rung is never a
-// rival of it.
+// without the evidence that is missing for it. The class is one precision, one
+// rung and one question shape, so a faster row of another precision, another
+// rung or another shape is never a rival of it.
 TEST(ProbeTest, ARecommendationLeavesNoRivalUnplaced) {
     const OptionProbeReport report = boys::RunOptionProbe(Timed());
     const OptionProbeMeasurement* leader = ReferenceLeader(report);
     const boys::OptionProbeClass* doubles =
-        ClassOf(report, OptionPrecision::kFp64, AccuracyTier::kReference);
+        ClassOf(report, OptionPrecision::kFp64, AccuracyTier::kReference,
+                                 boys::OptionProbeShape::kAllOrders);
 
     if (report.verdict == OptionProbeVerdict::kRecommend) {
         EXPECT_FALSE(report.recommended.empty());
@@ -522,6 +529,16 @@ TEST(ProbeTest, ARecommendationLeavesNoRivalUnplaced) {
         ASSERT_NE(doubles, nullptr);
         ASSERT_NE(leader, nullptr);
         EXPECT_EQ(doubles->leader, leader->name);
+
+        // The invariant the whole report rests on: the default is the row the
+        // report's own figures put first in the class the rule names. Whether the
+        // class ordered, the refinement runs agreed or they named another row, the
+        // name printed as the default is the name the class block prints first -
+        // a report whose two halves disagree about which option is cheapest is a
+        // report the reader has to correct, and no vote may produce one.
+        EXPECT_EQ(report.recommended, leader->name)
+            << "the default is not the cheapest row of its own class by the figures printed "
+               "beside it";
 
         if (report.defaultHow == OptionProbeDefaultHow::kOrdered) {
             EXPECT_TRUE(report.inseparable.empty()) << "an ordering left a rival unplaced";
@@ -537,10 +554,10 @@ TEST(ProbeTest, ARecommendationLeavesNoRivalUnplaced) {
             return;
         }
 
-        // Reached by the refinement's vote, or by a pick among equals: the name
-        // is one of the class's own options, the pair the class could not place
-        // is reported, and the runs that decided between the candidates are in
-        // the report rather than only their outcome.
+        // Reached by the refinement's vote, or by a tie this run could not break:
+        // the name is one of the class's own options, the pair the class could not
+        // place is reported, and the runs taken over the tied set are in the report
+        // rather than only their outcome.
         bool member = false;
 
         for (const OptionProbeMeasurement* candidate : ReferenceMembers(report)) {
@@ -552,6 +569,33 @@ TEST(ProbeTest, ARecommendationLeavesNoRivalUnplaced) {
             << "a tie was decided without naming the pair the class could not place";
         EXPECT_FALSE(report.refinements.empty())
             << "a tie was decided with no refinement run behind the choice";
+
+        // From here the class is tied, and the way the report says the tie was
+        // reached has to match the vote's own record: the vote naming this row is
+        // what kRefined and kVote mean, and a vote that named another row is a
+        // kChosenAmongEquals whose reason prints both figures.
+        const boys::OptionProbeRefinement& stage = report.refinements.front();
+        const bool voteNamesThisRow = stage.winner == report.recommended;
+
+        if (report.defaultHow == OptionProbeDefaultHow::kChosenAmongEquals && stage.ran &&
+            !stage.winner.empty() && !voteNamesThisRow) {
+            EXPECT_NE(report.reason.find(stage.winner), std::string::npos)
+                << "the vote named another row and the reason does not say which";
+            EXPECT_NE(report.reason.find("cannot be separated"), std::string::npos)
+                << "a tie the vote did not confirm is not reported as one";
+
+            const std::string text = boys::FormatOptionProbe(report);
+            EXPECT_NE(text.find("could not be separated"), std::string::npos)
+                << "the printed report does not say the top entries could not be separated";
+        } else if (voteNamesThisRow && stage.ran) {
+            EXPECT_EQ(report.defaultHow,
+                      stage.unanimous
+                          ? OptionProbeDefaultHow::kRefined
+                          : (stage.plurality ? OptionProbeDefaultHow::kVote
+                                             : OptionProbeDefaultHow::kChosenAmongEquals))
+                << "the vote named this row and the report does not say so with the right answer";
+        }
+
         return;
     }
 
@@ -662,7 +706,8 @@ TEST(ProbeTest, AnOrderingNeedsFourPairedRounds) {
     EXPECT_NE(report.reason.find("quartile"), std::string::npos) << report.reason;
 
     const boys::OptionProbeClass* doubles =
-        ClassOf(report, OptionPrecision::kFp64, AccuracyTier::kReference);
+        ClassOf(report, OptionPrecision::kFp64, AccuracyTier::kReference,
+                                 boys::OptionProbeShape::kAllOrders);
     ASSERT_NE(doubles, nullptr);
     ASSERT_FALSE(doubles->leader.empty());
     EXPECT_FALSE(doubles->ordered) << "a class was ordered on too few rounds for a band";
@@ -682,7 +727,22 @@ TEST(ProbeTest, AnOrderingNeedsFourPairedRounds) {
     const boys::OptionProbeRefinement& stage = report.refinements.front();
 
     EXPECT_EQ(stage.precision, OptionPrecision::kFp64);
-    EXPECT_EQ(stage.winner, report.recommended);
+
+    // The default is the class's own fastest row by the printed figure. The vote
+    // is the same question asked again at a longer protocol: it confirms that row
+    // or names another, and it may not name a row the figures beside it put behind.
+    const OptionProbeMeasurement* classLeader = ReferenceLeader(report);
+    ASSERT_NE(classLeader, nullptr);
+    EXPECT_EQ(report.recommended, classLeader->name)
+        << "the default is not the class's own fastest row by the printed figure";
+    EXPECT_EQ(report.defaultHow,
+              stage.winner == report.recommended
+                  ? (stage.unanimous
+                         ? OptionProbeDefaultHow::kRefined
+                         : (stage.plurality ? OptionProbeDefaultHow::kVote
+                                            : OptionProbeDefaultHow::kChosenAmongEquals))
+                  : OptionProbeDefaultHow::kChosenAmongEquals);
+
     EXPECT_EQ(stage.runs, report.options.refinementRuns);
     EXPECT_EQ(stage.passes, report.options.passes * report.options.refinementFactor)
         << "the re-run was not at a larger protocol than the run that could not order";
@@ -795,8 +855,25 @@ TEST(ProbeTest, ATiedClassIsReRunAloneAndVotedOn) {
     EXPECT_EQ(stage.runs, 6);
     EXPECT_EQ(stage.runLeaders.size(), 6u) << "a run of the vote placed no leader";
     EXPECT_FALSE(stage.winner.empty()) << "the vote ended with no entry to name";
-    EXPECT_EQ(stage.winner, report.recommended)
-        << "the vote named one entry and the report another";
+
+    // The default is the class's own fastest row by the figure the report prints,
+    // and the vote is the longer protocol's reading of the same question: it either
+    // names that row — and then the report says the vote is what carried it — or it
+    // names another, and then the report prints both figures and says the two
+    // cannot be separated. What it never does is hand back a row the figures
+    // beside it put behind.
+    const OptionProbeMeasurement* classLeader = ReferenceLeader(report);
+    ASSERT_NE(classLeader, nullptr);
+    EXPECT_EQ(report.recommended, classLeader->name);
+    EXPECT_EQ(report.defaultHow,
+              stage.winner == report.recommended
+                  ? (stage.unanimous
+                         ? OptionProbeDefaultHow::kRefined
+                         : (stage.plurality ? OptionProbeDefaultHow::kVote
+                                            : OptionProbeDefaultHow::kChosenAmongEquals))
+                  : OptionProbeDefaultHow::kChosenAmongEquals)
+        << "the way-it-was-reached does not match what the vote named";
+
     EXPECT_GT(stage.rounds, report.pairedRounds)
         << "the re-run was not at a longer protocol than the run that could not order";
     EXPECT_GT(stage.passes, report.options.passes);
@@ -828,16 +905,22 @@ TEST(ProbeTest, ATiedClassIsReRunAloneAndVotedOn) {
     EXPECT_NE(report.defaultHow, OptionProbeDefaultHow::kNone);
     EXPECT_NE(report.defaultHow, OptionProbeDefaultHow::kOrdered)
         << "a two-round run reported a measured ordering";
-    EXPECT_EQ(report.defaultHow, stage.unanimous
-                                     ? OptionProbeDefaultHow::kRefined
-                                     : (stage.plurality ? OptionProbeDefaultHow::kVote
-                                                        : OptionProbeDefaultHow::kChosenAmongEquals));
 
     const std::string text = boys::FormatOptionProbe(report);
     EXPECT_NE(text.find("the refinement stage"), std::string::npos);
     EXPECT_NE(text.find("vote: " + stage.winner), std::string::npos);
     EXPECT_NE(text.find("default: " + report.recommended), std::string::npos);
     EXPECT_NE(text.find("reached by:"), std::string::npos);
+
+    // Whichever of the two rows the vote preferred, the printed report says which
+    // it was: a tie the vote did not confirm is printed as one, with both figures,
+    // rather than as an ordering the run did not measure.
+    if (stage.winner != report.recommended) {
+        EXPECT_NE(report.reason.find(stage.winner), std::string::npos) << report.reason;
+        EXPECT_NE(report.reason.find("cannot be separated"), std::string::npos) << report.reason;
+        EXPECT_NE(report.confidence.find(stage.winner), std::string::npos) << report.confidence;
+        EXPECT_NE(text.find("could not be separated"), std::string::npos);
+    }
 }
 
 // The owner's acceptance rule, stated where it can be checked: a run that
@@ -863,7 +946,8 @@ TEST(ProbeTest, EveryRunThatMeasuredEndsInExactlyOneDefault) {
         EXPECT_NE(report.reason.find(report.recommended), std::string::npos) << report.reason;
 
         const boys::OptionProbeClass* doubles =
-            ClassOf(report, OptionPrecision::kFp64, AccuracyTier::kReference);
+            ClassOf(report, OptionPrecision::kFp64, AccuracyTier::kReference,
+                                 boys::OptionProbeShape::kAllOrders);
         ASSERT_NE(doubles, nullptr);
         EXPECT_EQ(doubles->how, report.defaultHow)
             << "the class the default is taken from reports a different way of reaching one";
@@ -878,11 +962,17 @@ TEST(ProbeTest, EveryRunThatMeasuredEndsInExactlyOneDefault) {
         if (report.defaultHow == OptionProbeDefaultHow::kOrdered) {
             EXPECT_EQ(report.recommended, doubles->leader);
             EXPECT_TRUE(report.inseparable.empty());
-        } else if (report.recommended != doubles->leader) {
-            EXPECT_NE(doubles->note.find("The entry this class names is"), std::string::npos)
-                << "the class prints another entry than its leader without saying so: "
+        } else if (!report.refinements.empty() &&
+                   report.refinements.front().winner != report.recommended) {
+            // The vote named another row: the class the default is taken from says
+            // so, names the row, and says the two cannot be separated — the class
+            // block is where a reader looks for which row it names and why.
+            EXPECT_NE(doubles->note.find(report.refinements.front().winner), std::string::npos)
+                << "the class the default is taken from does not name the row the vote "
+                   "preferred: "
                 << doubles->note;
-            EXPECT_NE(doubles->note.find(report.recommended), std::string::npos) << doubles->note;
+            EXPECT_NE(doubles->note.find("cannot be separated"), std::string::npos)
+                << doubles->note;
         }
     }
 }
@@ -952,7 +1042,8 @@ TEST(ProbeTest, ThePassBookkeepingAddsUp) {
 
 // The verdict and the names it is built from always agree with each other: the
 // default is an option of the certified lane's precision at the library's own
-// multiplier — never a faster row of another precision or another rung — and a
+// multiplier, answering the workload's own question — never a faster row of
+// another precision, another rung or another shape — and a
 // class the run ordered hands over its own leader while a class it could not
 // order hands over one of the options it left tied, with the pair it could not
 // place named beside the answer. The narrowest reading names the fastest option
@@ -1000,32 +1091,37 @@ TEST(ProbeTest, TheVerdictAndTheNamesAgree) {
     }
 }
 
-// A class is one precision at one rung, and that pair is the whole key: nothing
-// inside a class was built at another precision or another multiplier, the
-// leader of a class is its fastest member, a class that says it is ordered holds
-// no unplaced member and no member of one entry — one entry is not a ranking —
-// and every figure the run produced is ranked in the class of its own pair and
-// in no other. A class is built from the rounds the run took, so an uncalibrated
+// A class is one precision, one rung and one question shape, and that triple is
+// the whole key: nothing inside a class was built at another precision or
+// another multiplier and nothing inside it answers another question, the leader
+// of a class is its fastest member, a class that says it is ordered holds no
+// unplaced member and no member of one entry — one entry is not a ranking — and
+// every figure the run produced is ranked in the class of its own triple and in
+// no other. A class is built from the rounds the run took, so an uncalibrated
 // instrument still produces them; what a short run cannot produce is a band, and
 // then nothing in a class of more than one is ordered.
-TEST(ProbeTest, EveryClassIsOnePrecisionAndOneRungAndRanksOnlyItsOwn) {
+TEST(ProbeTest, EveryClassIsOnePrecisionOneRungAndOneShapeAndRanksOnlyItsOwn) {
     const OptionProbeReport report = boys::RunOptionProbe(Timed());
 
     ASSERT_FALSE(report.classes.empty());
 
-    std::set<std::pair<int, int>> keys;
+    std::set<std::tuple<int, int, int>> keys;
 
     for (const boys::OptionProbeClass& entry : report.classes) {
         EXPECT_FALSE(entry.name.empty()) << "a class with no name is one a reader cannot place";
-        EXPECT_TRUE(
-            keys.insert({static_cast<int>(entry.precision), static_cast<int>(entry.tier)}).second)
-            << entry.name << " shares its precision and its rung with another class";
+        EXPECT_TRUE(keys
+                        .insert({static_cast<int>(entry.precision), static_cast<int>(entry.tier),
+                                 static_cast<int>(entry.shape)})
+                        .second)
+            << entry.name << " shares its precision, its rung and its shape with another class";
+        EXPECT_NE(entry.name.find(boys::OptionProbeShapeName(entry.shape)), std::string::npos)
+            << entry.name << " does not carry the question shape it is keyed on";
 
         std::size_t measured = 0;
 
         for (const OptionProbeMeasurement& measurement : report.measurements) {
             if (measurement.measured && measurement.precision == entry.precision &&
-                measurement.tier == entry.tier) {
+                measurement.tier == entry.tier && measurement.shape == entry.shape) {
                 ++measured;
             }
         }
@@ -1036,8 +1132,8 @@ TEST(ProbeTest, EveryClassIsOnePrecisionAndOneRungAndRanksOnlyItsOwn) {
             EXPECT_TRUE(entry.ranked.empty()) << entry.name;
             EXPECT_FALSE(entry.ordered) << entry.name << " has no leader to be ordered around";
             EXPECT_FALSE(entry.note.empty()) << entry.name;
-            EXPECT_EQ(measured, 0u) << entry.name << " reports no figure yet options were measured "
-                                                         "in its precision and rung";
+            EXPECT_EQ(measured, 0u) << entry.name << " reports no figure yet options were "
+                                                         "measured in its precision, rung and shape";
             continue;
         }
 
@@ -1048,13 +1144,15 @@ TEST(ProbeTest, EveryClassIsOnePrecisionAndOneRungAndRanksOnlyItsOwn) {
         EXPECT_TRUE(leader->measured) << entry.name << " names a leader that was never measured";
         EXPECT_EQ(leader->precision, entry.precision) << entry.name;
         EXPECT_EQ(leader->tier, entry.tier) << entry.name << " names a leader of another rung";
+        EXPECT_EQ(leader->shape, entry.shape)
+            << entry.name << " names a leader that answers another question";
         EXPECT_DOUBLE_EQ(entry.leaderNsPerArgument, leader->nsPerArgument) << entry.name;
         EXPECT_EQ(entry.ranked.front(), entry.leader)
             << entry.name << " ranks its leader somewhere behind its own first row";
 
         for (const OptionProbeMeasurement& measurement : report.measurements) {
             if (measurement.measured && measurement.precision == entry.precision &&
-                measurement.tier == entry.tier) {
+                measurement.tier == entry.tier && measurement.shape == entry.shape) {
                 EXPECT_GE(measurement.nsPerArgument, leader->nsPerArgument)
                     << entry.name << " names " << entry.leader << " as its leader with "
                     << measurement.name << " measured faster in it";
@@ -1087,6 +1185,8 @@ TEST(ProbeTest, EveryClassIsOnePrecisionAndOneRungAndRanksOnlyItsOwn) {
                 << name << " is ranked in " << entry.name << " but is another precision";
             EXPECT_EQ(member->tier, entry.tier)
                 << name << " is ranked in " << entry.name << " but was built at another rung";
+            EXPECT_EQ(member->shape, entry.shape)
+                << name << " is ranked in " << entry.name << " but answers another question";
 
             if (entry.ordered && name != entry.leader) {
                 EXPECT_GT(member->nsPerArgument, leader->nsPerArgument)
@@ -1105,16 +1205,17 @@ TEST(ProbeTest, EveryClassIsOnePrecisionAndOneRungAndRanksOnlyItsOwn) {
         }
 
         const boys::OptionProbeClass* entry =
-            ClassOf(report, measurement.precision, measurement.tier);
+            ClassOf(report, measurement.precision, measurement.tier, measurement.shape);
         ASSERT_NE(entry, nullptr) << measurement.name
-                                  << " was measured in a precision and rung the report classes "
-                                     "nowhere";
+                                  << " was measured in a precision, rung and shape the report "
+                                     "classes nowhere";
         EXPECT_NE(std::find(entry->ranked.begin(), entry->ranked.end(), measurement.name),
                   entry->ranked.end())
             << measurement.name << " is measured in " << entry->name << " and is not ranked in it";
 
         for (const boys::OptionProbeClass& other : report.classes) {
-            if (other.precision == measurement.precision && other.tier == measurement.tier) {
+            if (other.precision == measurement.precision && other.tier == measurement.tier &&
+                other.shape == measurement.shape) {
                 continue;
             }
 
@@ -1126,28 +1227,46 @@ TEST(ProbeTest, EveryClassIsOnePrecisionAndOneRungAndRanksOnlyItsOwn) {
 }
 
 // The report says in its own words what a class is and what its key is — one
-// precision at one rung, decided by the multiplier an option was built at and
-// never by comparing one lane's documented figure against another's — so a
-// reader who takes the name it prints knows which question the answer belongs
-// to. Every class the run made carries its key in its name, so two of them can
-// never be read as one.
-TEST(ProbeTest, TheReportSaysAClassIsOnePrecisionAndOneRung) {
+// precision, one rung and one question shape, decided by the multiplier an
+// option was built at and by what it hands back, and never by comparing one
+// lane's documented figure against another's — and it says what the winner of a
+// class is a claim about, so a reader who takes the name it prints knows which
+// question the answer belongs to and how far the claim reaches. Every class the
+// run made carries its key in its name, so two of them can never be read as one.
+TEST(ProbeTest, TheReportSaysAClassIsOnePrecisionOneRungAndOneShape) {
     const OptionProbeReport report = boys::RunOptionProbe(Timed());
     const std::string text = boys::FormatOptionProbe(report);
 
     EXPECT_NE(text.find("the accuracy classes"), std::string::npos);
-    EXPECT_NE(text.find("one precision at one rung"), std::string::npos);
-    EXPECT_NE(text.find("A class is one precision and one rung of the accuracy axis"),
+    EXPECT_NE(text.find("one precision, one rung and one question shape"), std::string::npos);
+    EXPECT_NE(text.find("A class is the set of options that are alternatives for one need"),
               std::string::npos);
     EXPECT_NE(text.find("never by comparing"), std::string::npos);
     EXPECT_NE(text.find("Every row of a class was built"), std::string::npos);
-    EXPECT_NE(text.find("Nothing here is ordered across classes"), std::string::npos);
+    EXPECT_NE(text.find("Nothing here is ordered"), std::string::npos);
     EXPECT_NE(text.find("not a slower answer to this one"), std::string::npos);
+
+    // Both shapes the probe measures are named with what they hand back, so a
+    // reader of a class key knows which question it stands for.
+    EXPECT_NE(text.find("all-orders  one argument per call"), std::string::npos);
+    EXPECT_NE(text.find("all-n       one call per order run"), std::string::npos);
+
+    // What a class's entry is a claim about, in the report's own words: one
+    // rung, one question, this machine.
+    EXPECT_NE(text.find("is its fastest option at"), std::string::npos);
+    EXPECT_NE(text.find("for that question, on this machine and no more"), std::string::npos);
+
+    // The axes that only change how one answer is computed are named as columns
+    // of a class rather than as part of its key.
+    EXPECT_NE(text.find("a column inside the class, so those options compete in one ranking"),
+              std::string::npos);
 
     for (const boys::OptionProbeClass& entry : report.classes) {
         EXPECT_NE(text.find(entry.name), std::string::npos) << entry.name;
         EXPECT_NE(entry.name.find("m="), std::string::npos)
             << entry.name << " does not carry the rung it was built at";
+        EXPECT_NE(entry.name.find(boys::OptionProbeShapeName(entry.shape)), std::string::npos)
+            << entry.name << " does not carry the question shape it is keyed on";
     }
 }
 
@@ -1323,30 +1442,103 @@ TEST(ProbeTest, TheOptionSpaceIsTheLibrarysOwnProduct) {
     ASSERT_FALSE(report.cells.empty());
     EXPECT_FALSE(report.granularities.empty());
 
-    // The axes' own sizes, read from the tables the library reports.
-    std::vector<boys::FitRoute> routes;
-    for (const boys::FitRouteInfo& row : boys::BoysFitRoutes()) {
-        if (std::find(routes.begin(), routes.end(), row.route) == routes.end()) {
-            routes.push_back(row.route);
+    // The routes a lane's cells are enumerated over: the double lane's own fit
+    // table, or the single-precision engine's, which is the table the float and
+    // half lanes' fits are reported in. Read from the library's own report of
+    // each lane rather than from one table for all of them.
+    const auto routes_of = [](boys::Precision lane) {
+        std::vector<boys::FitRoute> routes;
+        const std::span<const boys::FitRouteInfo> table =
+            (lane == boys::Precision::kFp32 || lane == boys::Precision::kFp16)
+                ? boys::BoysFitRoutesF32()
+                : boys::BoysFitRoutes();
+
+        for (const boys::FitRouteInfo& row : table) {
+            if (std::find(routes.begin(), routes.end(), row.route) == routes.end()) {
+                routes.push_back(row.route);
+            }
         }
+
+        return routes;
+    };
+
+    // The rungs a lane serves, found the way the probe finds them: the double
+    // lane's are the tiers whose reported reach differs from the reference
+    // multiplier's, and a narrower lane's are the tiers the library answers a
+    // figure for at that lane's own default combination.
+    const auto rungs_of = [](boys::Precision lane) {
+        if (lane != boys::Precision::kFp64) {
+            std::size_t served = 0;
+
+            for (int raw = 0; raw <= 32; ++raw) {
+                if (boys::BoysAccuracyGuaranteed(lane, boys::kDefaultFitRoute,
+                                                 boys::kDefaultEvalScheme,
+                                                 boys::kDefaultPackAxis,
+                                                 boys::kDefaultFitGranularity,
+                                                 static_cast<boys::AccuracyTier>(raw))
+                        .available) {
+                    ++served;
+                }
+            }
+
+            return served;
+        }
+
+        std::size_t rungs = 1;
+        const double referenceReach =
+            QueryTier(AccuracyTier::kReference, AccuracyRegion::kA, 0.0).reachable;
+        for (int raw = 1; raw <= 32; ++raw) {
+            const auto tier = static_cast<AccuracyTier>(raw);
+            if (QueryTier(tier, AccuracyRegion::kA, 0.0).reachable != referenceReach) {
+                ++rungs;
+            }
+        }
+
+        return rungs;
+    };
+
+    // One book per precision class, each the product of its own lane's axes, so
+    // the space the report accounts for is the library's and not one lane's
+    // product read four times: a class measured at fewer cells than its lane
+    // serves is the defect this book exists to prevent.
+    std::vector<boys::OptionPrecision> classes = {boys::OptionPrecision::kFp64,
+                                                  boys::OptionPrecision::kFp32};
+#if BoysFp16
+    classes.push_back(boys::OptionPrecision::kFp16);
+    classes.push_back(boys::OptionPrecision::kBf16);
+#endif
+
+    std::size_t expected = 0;
+
+    for (const boys::OptionPrecision precision : classes) {
+        const boys::OptionProbeCell* sample = nullptr;
+
+        for (const boys::OptionProbeCell& cell : report.cells) {
+            if (cell.precision == precision) {
+                sample = &cell;
+                break;
+            }
+        }
+
+        ASSERT_NE(sample, nullptr) << "no cell of the space is enumerated for this precision";
+
+        // Every cell of one class was enumerated from one lane, which is the
+        // library's answer and not the test's: the two half formats are one lane
+        // and two classes.
+        for (const boys::OptionProbeCell& cell : report.cells) {
+            if (cell.precision == precision) {
+                EXPECT_EQ(cell.lane, sample->lane)
+                    << cell.name << " was enumerated from another lane than its own class's";
+            }
+        }
+
+        expected += routes_of(sample->lane).size() * boys::BoysEvalSchemes().size() *
+                    report.granularities.size() * boys::BoysPackAxes().size() *
+                    rungs_of(sample->lane);
     }
 
-    // The rungs this build serves, found the way the probe finds them: a tier
-    // whose reported reach differs from the reference multiplier's.
-    std::size_t rungs = 1;
-    const double referenceReach =
-        QueryTier(AccuracyTier::kReference, AccuracyRegion::kA, 0.0).reachable;
-    for (int raw = 1; raw <= 32; ++raw) {
-        const auto tier = static_cast<AccuracyTier>(raw);
-        if (QueryTier(tier, AccuracyRegion::kA, 0.0).reachable != referenceReach) {
-            ++rungs;
-        }
-    }
-
-    const std::size_t expected = routes.size() * boys::BoysEvalSchemes().size() *
-                                 report.granularities.size() * boys::BoysPackAxes().size() * rungs;
     EXPECT_EQ(report.cells.size(), expected)
-        << "the coverage is not the product of the axes the library reports";
+        << "the coverage is not the product of the axes the library reports, lane by lane";
 
     std::set<std::string> names;
 
@@ -1360,7 +1552,7 @@ TEST(ProbeTest, TheOptionSpaceIsTheLibrarysOwnProduct) {
             EXPECT_TRUE(cell.reason.empty()) << cell.name << " is served yet gives a reason";
             ASSERT_NE(measurement, nullptr)
                 << cell.name << " is served by this build yet nothing was measured for it";
-            EXPECT_EQ(measurement->precision, boys::OptionPrecision::kFp64) << cell.name;
+            EXPECT_EQ(measurement->precision, cell.precision) << cell.name;
             EXPECT_EQ(measurement->route, cell.route) << cell.name;
             EXPECT_EQ(measurement->scheme, cell.scheme) << cell.name;
             EXPECT_EQ(measurement->granularity, cell.granularity) << cell.name;

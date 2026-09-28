@@ -48,8 +48,8 @@
 /// 5.0000e-14, order 32 at the region-C boundary x1, which is why the table
 /// states 5.5e-14 and not 5e-14.
 ///
-/// The lane split is deliberate: consumer GPUs run double precision at 1/32
-/// of single-precision throughput (measured on a Quadro T1000: the float
+/// The lane split follows the hardware: consumer GPUs run double precision at
+/// 1/32 of single-precision throughput (measured on a Quadro T1000: the float
 /// kernel is 8.4x faster than the fastest double-precision table kernel and
 /// 5.2x faster than the fastest double kernel overall), so callers that
 /// tolerate the certified 1.5e-7 absolute error should prefer the F32 lane
@@ -101,7 +101,7 @@
 /// | double single | \|F̂ − F\| ≤ m·1e-15 | ≤ m·3e-14 | ≤ m·3e-14 | ≤ m·5.5e-14 |
 /// | double batch | ≤ m·5.5e-14 | ≤ m·5.5e-14 | ≤ m·5.5e-14 | ≤ m·5.5e-14 |
 /// | float single / batch | ≤ m·1.5e-7 | ≤ m·1.5e-7 | ≤ m·1.5e-7 | ≤ m·1.5e-7 |
-/// | fp16 / bf16 | ≤ m·1e-7 + ½ULP | ≤ m·1e-7 + ½ULP | ≤ m·1e-7 + ½ULP | ≤ m·1e-7 + ½ULP |
+/// | fp16 / bf16 | ≤ m·1.5e-7 + ½ULP | ≤ m·1.5e-7 + ½ULP | ≤ m·1.5e-7 + ½ULP | ≤ m·1.5e-7 + ½ULP |
 /// | native half | — | — | — | ≤ 8 ULP of the returned value |
 ///
 /// Region A is the per-order Chebyshev fits' own argument range, the extended
@@ -133,17 +133,20 @@
 /// against, and why that tail is the one the scheme's own summation reads — is
 /// stated beside the machinery that applies it, in boys_effective_degrees.hpp.
 /// The CUDA lane's relaxed path holds one degree table per process (filled once
-/// per m, the InitializeTables thread-safety contract). The fp16/bf16
-/// m·1e-7 + ½ULP base above is the suite-asserted bound — strictly stronger
-/// than the float lanes' documented 1.5e-7 + ½ULP: the suite tolerance's
-/// 1e-7 base is the fp16 lanes' asserted base, not the float budget.
+/// per m, the InitializeTables thread-safety contract). The fp16/bf16 base is
+/// the float lane's own figure — the half lanes run that lane's arithmetic and
+/// store what it returns — plus the half-ULP term the store adds. The suite
+/// asserts them at the tighter 1e-7 the region targets are placed against, so a
+/// pass there is a stronger result than the published figure requires.
 ///
 /// **The fp16/bf16 bound is a claim only where the value exceeds it.** With u
 /// the format's quantum at the returned value, the half lanes bind where
-/// |F_n(x)| > m·1e-7 + ½u — there the return is within that distance of the
+/// |F_n(x)| > m·1.5e-7 + ½u — there the return is within that distance of the
 /// value — and over no other arguments, and **no accuracy is claimed** past
-/// that ceiling: a caller that needs |F_n(x)| at or below m·1e-7 wants the
-/// float or the double lane, which carry no such floor. What the return is past
+/// that ceiling: a caller that needs |F_n(x)| at or below m·1.5e-7 wants the
+/// double lane, or the float lane with the half format's exponent range in
+/// mind, since below the ceiling it is the format's floor that answers and not
+/// the arithmetic. What the return is past
 /// the ceiling differs between the two formats, because their exponent ranges
 /// do. In f16 the ceiling and the format's floor coincide: every argument past
 /// it returns a subnormal half, then exactly zero, with the bound met by that
@@ -162,9 +165,8 @@ namespace boys {
 /// A run-time accuracy tier: one of the multipliers this kernel
 /// instantiates, chosen per call rather than fixed at build time.
 ///
-/// The tier belongs to the call and to nothing else. Nothing is carried
-/// between calls, so a coarse tier picked for one call is never reused by a
-/// later call that did not ask for it.
+/// The tier belongs to the call and to nothing else: a coarse tier picked for
+/// one call is never reused by a later call that did not ask for it.
 ///
 /// The relaxed enumerators are consecutive rungs of one design family — the
 /// same a-priori degree truncation, monotone in m — spaced so that their
@@ -941,8 +943,7 @@ void BoysAllOrdersAtTier(
 /// own fits to the degrees its criterion certifies, and the criterion reads the
 /// table the route evaluates. So a caller that wants the rational route at a
 /// relaxed budget wants this entry, and a caller that names only a tier gets
-/// the default route's rung, which is what \c BoysAllOrdersAtTier has always
-/// answered.
+/// the default route's rung, which is what \c BoysAllOrdersAtTier answers.
 ///
 /// The rung is a property of the route rather than of the multiplier: the
 /// Chebyshev family's rung is a cut of its stored coefficients, and the
@@ -1058,10 +1059,13 @@ double BoysSingleAtTier(AccuracyTier tier, int n, double x) noexcept;
 ///         ones that refuse the rational route, and they say so where the call
 ///         is named
 /// \tparam Policy the evaluation policy (\c EvalPolicy): the fit route, the
-///         scheme its coefficients are summed in, and a single-precision
-///         engine's budget, selected together. The default is the Chebyshev
-///         route summed by the split Clenshaw recurrence, so a call site that
-///         names neither axis compiles the certified route's code path
+///         scheme its coefficients are summed in, the partition of the fitted
+///         regions, and a single-precision engine's budget, selected together.
+///         The default names every axis the library defaults - the Chebyshev
+///         route, the Horner scheme, the narrow partition and the
+///         arguments-packing axis at this revision - so a call site that names
+///         no axis compiles that pair's code path, and naming any axis is how a
+///         caller asks for another
 /// \param n     order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0
 /// \returns     F_n(x)
@@ -1359,9 +1363,12 @@ void BoysAllNAtOrders(const int* n, const double* x, double* out, std::size_t co
 /// scheme.
 ///
 /// The many-argument entries hand their low-order region-A runs to the packed
-/// AVX2 lane where the build has one. That lane holds the shipped Chebyshev
-/// coefficients and the split Clenshaw recurrence, so it serves the shipped
-/// scheme and no other: a call naming another scheme is answered on the scalar
+/// AVX2 lane where the build has one. That lane holds the Chebyshev
+/// coefficients and the split Clenshaw recurrence, so it serves the split
+/// Clenshaw scheme and no other - which is not the default scheme at this
+/// revision, so the lane is what a call naming \c kSplitClenshaw reaches and
+/// not what a call naming no scheme reaches: a call naming another scheme is
+/// answered on the scalar
 /// body, at the same bound and with the same values the per-argument entry
 /// returns. What is not offered is the lane, not the value - and a lane is a
 /// performance property, so nothing in the returned values can show which one
@@ -1379,7 +1386,11 @@ void BoysAllNAtOrders(const int* n, const double* x, double* out, std::size_t co
 /// \ingroup boys
 constexpr bool BoysPackedLaneServes(EvalScheme scheme) noexcept
 {
-    return scheme == kDefaultEvalScheme;
+    // The scheme the lane's own recurrence is, named rather than read from the
+    // default: the lane serves one summation and the default is a value a
+    // measurement may move, so answering with it would report a lane the
+    // caller does not get.
+    return scheme == EvalScheme::kSplitClenshaw;
 }
 
 /// F_n(x) in single precision, |F̂ − F| ≤ m·1.5e-7.
@@ -1452,10 +1463,8 @@ void BoysAllOrdersF32(int nmax, float x, float* out) noexcept;
 ///
 /// Layout and totality as BoysAllN: out[k * count + i] = F_k(x[i]), order-major
 /// planes, the output holding count * (nmax + 1) floats. The same shape exists on
-/// the device (BoysCuda::AllNF32), and before this entry it existed on the CPU
-/// only as a loop a caller wrote for itself — which is what the C surface's
-/// BoysFloatBatch was — so a consumer porting a batch between the lanes had a
-/// call on one side and its own loop on the other.
+/// the device (BoysCuda::AllNF32), so a consumer porting a batch between the two
+/// lanes has a call on both.
 ///
 /// What it is not is a grouping entry. The packed region-A lane the double batch
 /// hands its low-order runs to is an AVX2 kernel over doubles; the float lane has
@@ -1574,15 +1583,17 @@ bool BoysAvx2Available() noexcept;
 /// the certified fp32 engine. The argument is rounded to fp16 before
 /// evaluation (the lane evaluates at the fp16 value), the computation is
 /// the F32 lane's, and the result is the correctly rounded fp16 of it —
-/// |result - F_n(x16)| <= m·1e-7 + one half-ULP of representation (the
-/// representation term is m-independent). The bound is claimed only over the
+/// |result - F_n(x16)| <= m·1.5e-7 + one half-ULP of representation (the
+/// representation term is m-independent, and the base is the float lane's own
+/// figure: this lane runs that lane's arithmetic). The bound is claimed only over the
 /// arguments where |F_n(x16)| exceeds it, and no accuracy is claimed past that
 /// ceiling: in f16 the return there is a subnormal number, then exactly zero,
 /// with the bound met by the format's floor rather than by the lane — see the
 /// contract table in the file preamble.
 ///
-/// The lane runs \c DefaultPolicyFp16 — the shipped route and scheme at the
-/// fp16 engine budget — and its entries take no policy argument, because the
+/// The lane runs \c DefaultPolicyFp16 — the library's default route, scheme and
+/// partition at the fp16 engine budget — and its entries take no policy
+/// argument, because the
 /// budget is the whole of what this lane's default adds to the float lane's:
 /// the policy is named so that a document can cite what the call runs and a
 /// test can hold it to the name, not so that a call site selects it.

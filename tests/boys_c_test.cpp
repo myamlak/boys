@@ -254,8 +254,16 @@ TEST(BoysCTest, DoubleBatchAtOrdersMatchesCppPerElement) {
 
     for (std::size_t i = 0; i < count; ++i)
     {
-        std::vector<double> row(nmax + 1);
-        boys::BoysAllOrders(nmax, xs[i], row.data());
+        // The reference is this argument's OWN top order, which is what the
+        // batch entry documents: each column is run at its argument's own order,
+        // and out[k * count + i] is bit for bit what BoysAllOrders(tops[i],
+        // xs[i]) writes at out[k]. The batch's nmax is not that reference: below
+        // the first tier threshold an all-orders body seeds the downward
+        // recursion once at the order it is called with, so a column read at a
+        // larger order carries that order's recurrence in every cell beneath it
+        // rather than the value this entry writes.
+        std::vector<double> row(static_cast<std::size_t>(tops[i]) + 1);
+        boys::BoysAllOrders(tops[i], xs[i], row.data());
 
         for (int k = 0; k <= nmax; ++k)
         {

@@ -77,18 +77,29 @@ so a clock drift common to the round cancels in it instead of being read as a di
 options. Each pass carries runs of a fixed-work integer canary beside its rounds. It is a diagnostic
 that gates nothing — a fixed work read by wall clock measures the clock as much as the load, so a
 decaying clock widens it on an idle machine — and what the ordering is made in is the spread of the
-paired ratios, which the report measures. The reported figure is the lower quartile of the rounds,
-with its spread printed beside it, and not the minimum.
+paired ratios, which the report measures. The reported figure is the option's within-round ratio to
+the reference lane at the middle of the run's rounds, scaled by that lane's own cost, with its spread
+printed beside it; the middle rather than a lower quartile, because the reference's ratio to itself
+is one in every round, so scoring every other option at a lower quartile of its ratio would give the
+reference the middle of its own rounds and its rivals less than the middle of theirs — a ranking that
+turns on which row the run anchored on.
 
-The classes the report ranks inside are one precision at one accuracy rung — the multiplier an option
-was built at, as the library's own tables report it — and the default is taken from the certified
-double lane's precision at the library's full-accuracy multiplier alone, so a faster row of a relaxed
-rung or of another precision is never a candidate for it. When a class cannot be ordered — a pair
-whose within-round ratio band straddles one, or too few rounds for a band to exist — the run still
-ends with one combination: the options the class left tied are re-run alone at a longer protocol and
-the one that led the most of those runs is the default, with a unanimous result, a majority and a
-pick among options that divided the runs evenly reported as the three different answers they are. A
-class of one names its option, because one entry is not a ranking and there is no alternative to it,
+The classes the report ranks inside are one precision, one accuracy rung — the multiplier an option
+was built at, as the library's own tables report it — and one question shape, which is what the
+option hands back: one argument's ladder up to its own order, or one common ladder over an array of
+arguments. Every row of a class answers the same question, and the axes a caller does not choose —
+the fit route, the evaluation scheme, the partition of the fitted regions and the packing axis — are
+columns inside it that compete in one ranking. The default is taken from the certified double lane's
+precision at the library's full-accuracy multiplier, answering the shape the probe's workload asks,
+so a faster row of a relaxed rung, of another precision or of the other shape is never a candidate
+for it, and within that class it is the row the run's own figures put first — the name printed and
+the table printed beside it never disagree about which option is cheapest. When a class cannot be
+ordered — a pair whose within-round ratio band straddles one, or too few rounds for a band to exist
+— the run still ends with one combination: the options the class left tied are re-run alone at a
+longer protocol and voted on, and the report says whether that vote confirmed the row the figures
+put first or named another, in which case both figures are printed and the class's top entries are
+reported as entries the run could not separate. A class of one names its option, because one entry
+is not a ranking and there is no alternative to it,
 and a run that measured no figure at all reports `CANNOT DETERMINE` with the rounds a band needs
 rather than a name read from a table. Every option the run could not place behind the leader is
 printed with the band that pair fell in, so the answer and the evidence missing for it are read

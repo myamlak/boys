@@ -29,9 +29,8 @@
 /// answers the piece read with four members in place of one: `NumDeg` and
 /// `DenDeg` for the pair's two degrees, `Coeffs` for the numerator's block and
 /// `DenCoeffs` for the denominator's, and the summation is the two Horner sums
-/// and the division above. The route is a family and not a basis, so this is
-/// beside the scheme's member rather than under it: a pair has one stored form
-/// and either scheme sums it.
+/// and the division above. The route is a family and not a basis: a pair has
+/// one stored form and either scheme sums it.
 ///
 /// T is double for the double lane's seeds and float for the float lane's.
 /// BSeed is the whole of region B's seed, taken at the argument rather than as
@@ -322,22 +321,13 @@ __device__ __forceinline__ float DeviceSeed32(const Lane& lane, int order, float
 // boys_cuda.hpp), and the one factor of the region-B path a caller can trade
 // accuracy for speed on.
 //
-// The recurrence that consumes this value amplifies its error by the
-// condition number of the forward recursion, which is up to 7.6e4 at the
-// region-B boundary and falls as the argument grows. An approximation whose
-// relative error grows with the argument therefore fails a bound that the
-// same approximation holds everywhere else, so what matters is not the ulp
-// count at one argument but whether that count stays flat.
-//
 //  - kFastExp is the hardware approximation with its argument-scaling
 //    residual removed: __expf(y) evaluates 2^fl(y log2 e), and that one
 //    rounding is the term that grows with |y|. The residual
 //    fma(y, log2 e, -t) of that product is exact, and 2^(t + d) = 2^t 2^d
 //    ~= 2^t (1 + d ln 2), so two fused steps take the error back to the
 //    approximation's own few ulp, flat in the argument.
-//  - otherwise the library routine, which is what the batch bodies compute:
-//    at m = 1 a single and a batch evaluation of the same (n, x) return the
-//    same bits outside region A.
+//  - otherwise the library routine, which is what the batch bodies compute.
 template <bool kFastExp>
 __device__ __forceinline__ float DeviceRegionBExp(float xx) {
     if constexpr (kFastExp)

@@ -73,15 +73,13 @@ inline void HalfNativeLadder(int nmax, Half2 x, Half2* out) noexcept {
     const Half2 seed = Half2::Broadcast(kHalfNativeSeedConstant);
     const Half2 scale = Half2::Broadcast(kHalfNativeScaleConstant);
 
-    // Seed: F_0(x) = (1/2) sqrt(pi/x) -- one square root and one divide, each
-    // correctly rounded to half -- then the exact per-order scale.
+    // Seed: F_0(x) = (1/2) sqrt(pi/x), then the exact per-order scale.
     Half2 f = Half2Mul(Half2Div(seed, Half2Sqrt(x)), scale);
     out[0] = f;
 
     for (int l = 1; l <= nmax; ++l)
     {
-        // The shipped region-C body, op for op: f = (l - 1/2) * f / x, one
-        // packed multiply and one packed divide, two roundings per order.
+        // The shipped region-C body, op for op: f = (l - 1/2) * f / x.
         const F16 factor = F16FromDouble(static_cast<double>(l) - 0.5);
         f = Half2Div(Half2Mul(Half2::Broadcast(factor), f), x);
         out[l] = f;

@@ -25,23 +25,17 @@ template <double kAccuracyMultiplier> float BoysSingleF32Relaxed(int n, float x)
 }
 
 // The library's accuracy-rung vocabulary: the multipliers this library names,
-// ascending, and the rungs every run-time surface of it is named at. It is one
-// set rather than one surface's. The accuracy contract's
-// rungs are the seven the CPU tier lane's AccuracyTier names — m = 1, 64, 256,
-// 1024, 4096, 16384 and 65536 — which the contract is published over and every
-// CPU lane serves at run time; the device lane carries a finer-at-the-low-end
-// sample set beside them, m = 2, 10, 100, 1e4 and 1e8. The two overlap at m = 1
-// alone, which is every lane's default and full-accuracy rung, and their union
-// is the twelve below. It is the same twelve the device lane publishes as
-// kDeviceRungs (boys_cuda_options.hpp), so a rung added to the library belongs
-// to that table, to this one and to the documentation in boys_c.h together.
+// ascending, and the rungs every run-time surface of it is named at. The
+// accuracy contract's rungs are the seven the CPU tier lane's AccuracyTier
+// names — m = 1, 64, 256, 1024, 4096, 16384 and 65536 — which the contract is
+// published over and every CPU lane serves at run time; the device lane
+// carries a finer-at-the-low-end sample set beside them, m = 2, 10, 100, 1e4
+// and 1e8. The two overlap at m = 1 alone, which is every lane's default and
+// full-accuracy rung, and their union is the twelve below — the same twelve the
+// device lane publishes as kDeviceRungs (boys_cuda_options.hpp).
 //
 // Dispatch is by exact double equality: the set members are exactly
-// representable, so callers pass the same literals. The table is read by
-// position and the scan runs over the table's own size, so a rung appended
-// below is reached by the scan without a second edit. Each case names the
-// multiplier it serves, so a rung of the vocabulary is answered from its own
-// instantiation or refused by the default case.
+// representable, so callers pass the same literals.
 constexpr double kRungMultipliers[] = {
     1.0, 2.0, 10.0, 64.0, 100.0, 256.0, 1024.0, 4096.0, 1e4, 16384.0, 65536.0, 1e8};
 
@@ -67,9 +61,8 @@ bool ValidX(double x) {
 
 // The per-argument top order is validated for the whole batch before any output
 // is written, so a batch this entry rejects leaves the caller's buffer as it
-// found it. Validation is the C surface's own job: the C++ entry is a total
-// function whose precondition it cannot check, and the C entry is what a caller
-// without a contract to read checks itself against.
+// found it. Validation is this surface's own job: the C++ entry is a total
+// function whose precondition it cannot check.
 int RunBatchDoubleAtOrders(const int* n, int count, const double* x, double* out) {
     if (count < 0)
     {

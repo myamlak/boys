@@ -6,16 +6,15 @@
 /// enough to name one at all.
 ///
 /// **Why this is a library entry and not a benchmark.** Which option wins is a
-/// property of the machine and the build, not of the library. The same entry
-/// that is fastest on one host can lose on another: the vector tier is present
-/// on x86_64 and absent elsewhere; a bare `a * b + c` is one rounding or two
-/// depending on the target and the flags, so an arithmetic with more multiply
-/// adds can be the cheap one on a host that fuses and the expensive one on a
-/// host that calls out; and a lane that halves the precision of the argument
-/// trades accuracy for cost by an amount that depends on how the consumer
-/// builds. A ranking printed in documentation is therefore a claim about the
-/// machine it was written on. This entry measures the ranking on the machine it
-/// is called on and reports what it found, including how confident it is.
+/// property of the machine and the build, not of the library: the vector tier is
+/// present on x86_64 and absent elsewhere, a bare `a * b + c` is one rounding or
+/// two depending on the target and the flags, so an arithmetic with more multiply
+/// adds can be the cheap one on a host that fuses and the expensive one on a host
+/// that calls out, and a lane that halves the precision of the argument trades
+/// accuracy for cost by an amount that depends on how the consumer builds. A
+/// ranking printed in documentation would be a claim about the machine it was
+/// written on; this entry measures the ranking on the machine it is called on and
+/// reports what it found, including how confident it is.
 ///
 /// **What it measures.** Every option is asked the library's own question:
 /// a set of arguments in which each argument carries its own highest order, and
@@ -24,69 +23,75 @@
 /// asks for. The arguments are log-uniform over a range that populates every
 /// region of the kernel, and the per-argument orders are drawn as the sum of two
 /// shell angular momenta, which is the distribution a shell-pair batch presents.
-/// A benchmark that measured a shape the library never runs would rank the
-/// options by the wrong thing.
 ///
-/// **What it reports per option**: the cost per argument, the spread of that
-/// cost over the rounds it was measured in, its ratio to the reference lane, the
-/// machine load the rounds were taken under, the axes the option instantiates,
-/// and the accuracy the option actually delivered — so a consumer can see whether
-/// a faster option was faster at the same accuracy or merely at a lower one.
+/// **What it reports per option**: the accuracy the option actually delivered
+/// beside its cost, so a consumer can see whether a faster option was faster at
+/// the same accuracy or merely at a lower one. Every column is documented on the
+/// field that carries it.
 ///
-/// **The whole option space, enumerated from the library.** The library lets a
-/// caller choose a fit route, an evaluation scheme, a partition of the fitted
-/// regions and a packing axis, and each of those choices is a member of a
-/// reported set (BoysFitRoutes, BoysEvalSchemes, BoysFitGranularities,
-/// BoysPackAxes) crossed with the accuracy rungs the build can name. The probe
-/// walks that product rather than a list written beside it, so a member this
-/// change did not think of, or one a later change adds, is measured without the
-/// probe being edited. A cell the library does not serve is refused where it is
-/// named, and the probe states every refused cell with the library's reason, in
-/// a coverage section that accounts for the whole product — an unstated
-/// omission would read as an option that does not exist.
+/// **The whole option space, enumerated from the library.** The fit route, the
+/// evaluation scheme, the partition of the fitted regions and the packing axis
+/// are each a member of a set the library reports (BoysFitRoutes for the double
+/// lane and its carriers, BoysFitRoutesF32 for the single-precision engine,
+/// BoysEvalSchemes, BoysFitGranularities, BoysPackAxes), crossed with the
+/// accuracy rungs the build can name. The probe walks that product once per
+/// precision lane, from the lane's own fit table and carriage answer rather than
+/// from a list written beside it, so a member the library gains is measured
+/// without the probe being edited, and no lane is measured at fewer axes than
+/// the library serves it at. A cell the library does not serve is stated with the
+/// library's reason in a coverage section that accounts for the whole product: an
+/// unstated omission would read as an option that does not exist.
 ///
-/// **The classes are one precision at one rung of the accuracy axis.** fp64,
-/// fp32, fp16 and bf16 are separate precisions and options are ordered only
-/// inside one of them: the precision is the choice the caller has already made
-/// from the accuracy their calculation needs, and halving the precision is not a
-/// faster answer to the same question. Inside a precision the classes are the
-/// rungs — the multiplier an option was built at, as the library's own tables
-/// report it — because the rung is the accuracy question an option was answering
-/// and it is not a column to read past a ranking. Membership is decided by that
-/// rung and never by comparing one row's documented figure against another's: a
-/// figure belongs to one lane, and reading one lane's figure across lanes is how
-/// a class ends up empty by construction. Every row of a class was built at the
-/// same multiplier, so a class's leader is the fastest option *at that rung* and
-/// the only thing the class trades is speed. A class that mixed the rungs would
-/// put a row that gave up accuracy against a row that did not, and its leader
-/// would be the fastest option at some accuracy, which is not a ranking of
-/// anything. A row of the class that documents another figure — the same rung
-/// reached with a looser bound — is a member and is reported by name rather than
-/// ranked as an equal silently.
+/// **The classes are one precision, one rung and one question shape.** A class
+/// is the set of options that are alternatives for one need a caller has:
+/// everything the library picks on the caller's behalf is ranked inside that one
+/// class. Three things decide membership, because each of them changes what the
+/// caller gets back. The precision — fp64, fp32, fp16 and bf16 — is the choice
+/// the caller has already made from the accuracy their calculation needs, and
+/// halving the precision is not a faster answer to the same question. The rung —
+/// the multiplier an option was built at, as the library's own tables report it
+/// — is the accuracy an option was answering at. The shape is the question
+/// itself: the all-orders entry returns one argument's own ladder per call and
+/// the all-N entry a common ladder for a whole array, so a caller asking one of
+/// them is not served by the other however fast it is. Membership in a class is
+/// decided by those three and never by comparing one row's documented figure
+/// against another's: a figure belongs to one lane, and reading one lane's figure
+/// across lanes is how a class ends up empty by construction.
 ///
-/// **The default comes from the reference class.** The default this report names
-/// is chosen inside one class: the certified double lane's precision at the
-/// reference multiplier, whose every row documents the certified bound. Choosing
-/// there is choosing among equals — the pool trades nothing but speed — which is
-/// the one thing a default is allowed to trade. A relaxed rung is never the
-/// default however fast it measures, because the speed it shows is bought with
-/// accuracy.
+/// **Everything that only changes how one answer is computed is ranked inside
+/// the class.** A class's rows differ by the fit route they read, the scheme
+/// they sum it with, the partition of the fitted regions and the packing axis
+/// they carry, and by whether a sorted array is declared to the all-N entry so
+/// that it skips the sort — all of them interchangeable bodies for one answer,
+/// so they compete inside the class and never divide it. A class's winner is
+/// therefore the fastest option of that precision, built at that rung, answering
+/// that question on this machine. A row of the class that documents another
+/// figure — the same rung reached with a looser bound — is a member and is
+/// reported by name rather than ranked as an equal silently.
 ///
-/// **How the default is reached, and what happens when the pool ties.** When the
-/// reference class's own rounds place every rival behind its leader, that leader
-/// is the default and the report says it is a measured ordering. When they do
-/// not, the probe does not fall back to a figure counted from the library's
-/// tables: it re-runs the tied options alone, at a larger protocol, several times,
-/// and takes the option that led most often. The vote is printed — how many runs,
-/// what each run led with, how many each candidate won — so a reader can tell a
-/// majority winner from a tie broken by choice. A vote with a clear plurality
-/// names that option; a vote that is split with no plurality names one of the
-/// tied options and says plainly that it is a tie among equals broken by choice
-/// rather than by a measurement. A class that holds one option needs none of
-/// that: it holds nothing to order the entry against, so that entry is the
-/// default by there being no alternative, and the report says so rather than
-/// calling it a winner. Either way a run that measured the pool ends with
-/// exactly one default, and says which of these ways it got there.
+/// **The default comes from the reference class of the workload's own shape.**
+/// The default this report names is chosen inside one class: the certified
+/// double lane's precision at the reference multiplier, for the all-orders
+/// shape, whose every row documents the certified bound and answers the question
+/// this probe's workload asks. Choosing there is choosing among equals — the
+/// pool trades nothing but speed, which is the one thing a default is allowed to
+/// trade. A relaxed rung is never the default however fast it measures, because
+/// the speed it shows is bought with accuracy, and neither is the winner of
+/// another shape's class.
+///
+/// **How the default is reached, and what happens when the pool ties.** The
+/// default is the fastest row of that class by the figures this report prints, so
+/// the name it ends with and the class table above it never disagree about which
+/// option is cheapest. Where the class's own rounds place every rival behind its
+/// leader, that row is the default and the report says it is a measured ordering.
+/// Where they do not, the probe does not fall back to a figure counted from the
+/// library's tables: it re-runs the tied options alone at a larger protocol,
+/// several times, and reports what each run led with. A vote naming the same row
+/// is reported as the longer protocol confirming the class's fastest; a vote
+/// naming another is reported as a class the run could not separate — a tie
+/// among equals, stated as one, rather than a licence to hand back a row the
+/// table shows behind. Either way a run that measured the pool ends with exactly
+/// one default, and says which of these ways it got there.
 ///
 /// **The comparison is paired, and made inside a round.** Every option is called
 /// once in every round, and the comparison between two options is the ratio of
@@ -103,15 +108,16 @@
 /// ratios rather than of absolute times taken across the run.
 ///
 /// **It refuses to order noise, and it says how close it could look.** The
-/// reported cost of an option is the lower quartile of its per-round costs, and
-/// its spread is the ratio of the upper quartile to that. For each rival of a
-/// class's leader the probe forms the pair's own within-round ratio, and the
-/// rival is ordered only when the middle half of those rounds puts it behind the
-/// leader — when the pair's own band clears one. A rival whose band straddles
-/// one cannot be placed, and the probe prints the run's resolution and says
-/// which options it could not separate and in how many of the rounds each was
-/// the slower of the two. The same happens when too few rounds were run for a
-/// band to exist.
+/// reported cost of an option is the reference lane's own lower-quartile cost
+/// scaled by that option's ratio to the lane at the middle of the run's rounds,
+/// and its spread is the ratio of the upper quartile to the lower quartile of
+/// those same ratios. For each rival of a class's leader the probe forms the
+/// pair's own within-round ratio, and the rival is ordered only when the middle
+/// half of those rounds puts it behind the leader — when the pair's own band
+/// clears one. A rival whose band straddles one cannot be placed, and the probe
+/// prints the run's resolution and says which options it could not separate and
+/// in how many of the rounds each was the slower of the two. The same happens
+/// when too few rounds were run for a band to exist.
 ///
 /// **The instrument is a diagnostic and gates nothing.** Every pass carries runs
 /// of a fixed-work integer spin — the canary — bracketing the timed region and
@@ -119,10 +125,10 @@
 /// arithmetic question this probe is about cannot change the instrument's own
 /// cost. Its readings are reported beside each pass, and a pass whose spin
 /// disagreed with itself by more than ProbeOptions::canarySpreadAlarm is marked
-/// as one that ran on a wandering machine — **and is still used**. It has to be:
-/// a fixed-work spin measured by wall clock measures the clock as much as the
-/// load, so a decaying clock widens the spin's own spread on a machine that is
-/// doing nothing else, and a rule that discards on that spread discards the
+/// as one that ran on a wandering machine — **and is still used**, because a
+/// fixed-work spin measured by wall clock measures the clock as much as the load,
+/// so a decaying clock widens the spin's own spread on a machine that is doing
+/// nothing else, and a rule that discarded on that spread would discard the
 /// measurement rather than the machine. What decides what can be ordered is the
 /// spread of the paired ratios, measured in the units the comparison is made in.
 ///
@@ -136,50 +142,39 @@
 /// processor time, which is what a system-wide counter would need — it is the
 /// load a single-threaded, CPU-bound caller actually suffered.
 ///
-/// **When a pair cannot be separated, the report says so rather than ordering
-/// noise.** A pair whose within-round ratio band straddles one was not ordered:
-/// the probe names it, with its band and its round counts, and no figure in the
-/// report rests on it. What the report still names is a default, because a
-/// consumer needs one, and it is a measured option rather than a figure counted
-/// from a table: see the reference class and the vote above.
-///
 /// **The accuracy column.** Each option's values are compared against the
 /// certified per-order fp64 lane — `BoysSingle` at the reference multiplier —
 /// evaluated at the order and the argument the option was actually asked about.
 /// That last clause matters for the lanes that narrow the argument: a
 /// single-precision lane rounds `x` before it evaluates, so holding it to the
 /// double-precision argument would measure the representation of the argument
-/// rather than the arithmetic of the lane. It matters for another reason for
-/// the batch entries: a batch seeds region A at its own highest order, so its
-/// F_k for k below that is a recurrence's value rather than a per-order walk's,
-/// and the difference shows up here as the small, bounded error it is instead
-/// of being hidden by comparing a batch against a batch. The comparison has a
-/// floor: the certified lane is itself documented at a bound, that bound is
-/// read from the library and printed, and a difference at or below it means the
-/// two are indistinguishable at this comparison's resolution — not that the
-/// option is proven to that bound, which is what the committed reference grid
-/// and the test suite are for. A row whose measured difference is above its own
-/// bound but at or below that floor is reported in a third state rather than as
-/// a failure: the difference between two partitions or two rungs carries the
-/// certified lane's own error with it, and that error is what the floor is.
+/// rather than the arithmetic of the lane. It matters again for the batch
+/// entries, whose F_k below its own highest order is a recurrence's value rather
+/// than a per-order walk's. The comparison has a floor: the certified lane is
+/// itself documented at a bound, that bound is read from the library and
+/// printed, and a difference at or below it means the two are indistinguishable
+/// at this comparison's resolution — not that the option is proven to that
+/// bound, which is what the committed reference grid and the test suite are for.
+/// A row whose measured difference is above its own bound but at or below that
+/// floor is reported in a third state rather than as a failure: the difference
+/// between two partitions or two rungs carries the certified lane's own error
+/// with it, and that error is what the floor is.
 ///
 /// **What this probe does not measure**, and why. The native half lane is left
 /// out: it covers region C only, its orders are useful up to 8, and its results
 /// are scaled by a power of two, so its cost is not the cost of the same
-/// question and a table that put it beside the others would compare different
-/// work. The region-A matrix-product transform is left out: it computes region A
-/// alone, so measuring it means composing the rest of an evaluation, and that
-/// composition would be measured rather than the entry. The CUDA lanes are left
-/// out: they are a separate optional build that needs a device, and the options
-/// this probe ranks are the CPU ones the caller's own build carries.
+/// question. The region-A matrix-product transform is left out: it computes
+/// region A alone, so measuring it means composing the rest of an evaluation, and
+/// that composition would be measured rather than the entry. The CUDA lanes are
+/// left out: they are a separate optional build that needs a device, and the
+/// options this probe ranks are the CPU ones the caller's own build carries.
 ///
 /// What the option space itself refuses is not left out but named: a cell this
 /// build cannot serve is listed with the library's reason in the report's
-/// coverage section, counted rather than omitted, and a change that builds one
-/// moves that cell out of the refused list and into the measured table. The list
-/// is read from the library's own tables rather than kept here, so it shrinks by
-/// itself as cells are built; where those tables serve every cell of the space,
-/// the list is empty and the coverage section says so in those words.
+/// coverage section, counted rather than omitted. The list is read from the
+/// library's own tables rather than kept here, so it shrinks by itself as cells
+/// are built; where those tables serve every cell of the space, the list is empty
+/// and the coverage section says so in those words.
 ///
 /// **This result is about the machine it was measured on.** The report says so
 /// in its own output, not only here, because a table of costs pasted into a
@@ -254,16 +249,28 @@ struct ProbeOptions {
     /// and excludes nothing: the canary is a fixed-work spin read by wall clock,
     /// so a machine whose clock decays widens this number with no other process
     /// involved, and a run that discarded on it would discard the measurement
-    /// rather than the machine. What decides what the run can order is the
-    /// spread of the paired within-round ratios, which the report measures.
+    /// rather than the machine.
     double canarySpreadAlarm = 5.0;
+
+    /// The entry every ratio of this run is formed against, by name, or empty
+    /// for the probe's own choice of anchor — which is the library's own default
+    /// double-precision all-orders entry.
+    ///
+    /// The anchor is a choice of the *reporting*, not of the measurement: every
+    /// cost column is this row's own cost scaled by its ratio to the anchor, and
+    /// the ordering is made of the ratios, so a run anchored on one option and a
+    /// run anchored on another measure the same thing and differ only in the
+    /// units the absolute columns are printed in and in the order the two
+    /// anchors' own figures are divided by. A name this run did not measure falls
+    /// back to the default choice and the report says so.
+    std::string reference;
 
     /// Runs of the refinement protocol: how many times the probe measures a
     /// reference class whose own rounds did not separate, before it reads the
-    /// vote. Where the runs disagree about the leader, the option that led most
-    /// of them is the default — a majority over runs rather than one run's
-    /// reading — and where the vote is split with no plurality the report takes
-    /// one of the tied options and says that it did.
+    /// vote. Each run is ordered in the figure the report prints, so the vote is
+    /// the same question asked again over more rounds; where the runs are split
+    /// with no plurality the report says so and names the row the run's own
+    /// figures put first.
     int refinementRuns = 5;
 
     /// How much longer each refinement run is than the pass protocol above: the
@@ -280,12 +287,10 @@ struct ProbeOptions {
     /// Naming a set narrows every figure and every conclusion below to that
     /// set: the fastest option reported is then the fastest of the ones asked
     /// for. A name is answered in one of three ways and the report keeps them
-    /// apart, because the three mean different things to a caller: an option this
-    /// build serves is measured; a cell of the option space that the library
-    /// refuses where it is named is reported with the library's reason, which is
-    /// unbuilt work and not a misspelling; and a name that is neither is reported
-    /// as no option of this library, so a typo is never read as a machine on
-    /// which nothing is fast.
+    /// apart: an option this build serves is measured, a cell the library refuses
+    /// is reported with the library's reason, which is unbuilt work and not a
+    /// misspelling, and a name that is neither is reported as no option of this
+    /// library, so a typo is never read as a machine on which nothing is fast.
     std::vector<std::string> only;
 };
 
@@ -342,11 +347,9 @@ struct OptionProbePass {
 /// the classes below are the whole of that partition.
 ///
 /// The documented bound is a column of each class, not its key. Two options in
-/// one class can be documented at different bounds — a relaxed accuracy rung
-/// against the certified one, the across-orders lane against the per-argument
-/// one — and the report shows each row's own bound beside it, so a class's
-/// leader is the fastest option at *some* accuracy in that precision, never
-/// "the fastest at your accuracy".
+/// one class can be documented at different bounds, and the report shows each
+/// row's own bound beside it, so a class's leader is the fastest option at *some*
+/// accuracy in that precision, never "the fastest at your accuracy".
 ///
 /// \ingroup boys
 enum class OptionPrecision : int {
@@ -368,6 +371,56 @@ enum class OptionPrecision : int {
 /// \ingroup boys
 const char* PrecisionName(OptionPrecision precision) noexcept;
 
+/// The question an option answers: what it hands back to the caller who asks
+/// it, which is what makes two options alternatives for one need.
+///
+/// Two entries are answers to one question when they return the same values for
+/// the same arguments. This library's entries are not all one question: the
+/// all-orders entry is asked one argument at a time and returns that argument's
+/// own ladder, while the all-N entry is asked one call over an array of
+/// arguments at one common top order. An option of one shape is not a slower
+/// answer to the other shape's question, and the cost this report states is per
+/// argument rather than per value, so an ordering across the two would rank the
+/// amount of output against the arithmetic.
+///
+/// The shape is not the entry an option is reached through, and it is not the
+/// axes of an evaluation policy, which are interchangeable implementations of
+/// the answer the shape asks for and belong inside a class rather than in its
+/// key. A caller whose arguments are sorted states it and skips the sort the
+/// all-N entry would otherwise pay for — the overload returns the same values,
+/// re-deriving the runs from the classification rather than from the
+/// declaration, and its documented bound is the other overload's — so that
+/// declaration is a way of computing one answer and not a question of its own.
+///
+/// \ingroup boys
+enum class OptionProbeShape : int {
+    /// One argument per call, the ladder to that argument's own order: the shape
+    /// an integral engine asks for, and the shape this probe's workload is.
+    kAllOrders = 0,
+    /// One call over many arguments at one common top order: the ladder to the
+    /// same order for every argument of the array.
+    kAllN,
+};
+
+/// The name a report prints a question shape under: "all-orders" or "all-n".
+///
+/// \param shape the shape to name
+///
+/// \returns the name, which is never empty
+///
+/// \ingroup boys
+const char* OptionProbeShapeName(OptionProbeShape shape) noexcept;
+
+/// The question a shape asks, said in full: what an option of it produces for a
+/// caller, which is what makes two options alternatives or not.
+///
+/// \param shape the shape to state
+///
+/// \returns one sentence naming what the caller gets back
+///
+/// \ingroup boys
+const char* OptionProbeShapeQuestion(OptionProbeShape shape) noexcept;
+
 /// One option, as this machine measured it.
 ///
 /// \ingroup boys
@@ -375,8 +428,8 @@ struct OptionProbeMeasurement {
     /// The option's name, as the report prints it.
     std::string name;
 
-    /// The precision class this option is ranked in, and the only set of options
-    /// it is ever ordered against.
+    /// The precision of the class this option is ranked in, and the first of the
+    /// three parts of that class's key.
     OptionPrecision precision = OptionPrecision::kFp64;
 
     /// The axes the option instantiates, as the library reports them: the route
@@ -389,11 +442,16 @@ struct OptionProbeMeasurement {
     FitGranularity granularity = kDefaultFitGranularity; ///< the partition it reads
     PackAxis pack = PackAxis::kArguments; ///< the packing axis its entry carries
 
-    /// The accuracy rung it evaluates at, which with the precision is the class
-    /// it is ranked in: two options of one precision at different rungs document
-    /// different bounds and are not alternatives to each other, so the class the
-    /// report orders is this pair and not the precision alone.
+    /// The accuracy rung it evaluates at, the second part of its class's key:
+    /// two options of one precision at different rungs document different bounds
+    /// and are not alternatives to each other.
     AccuracyTier tier = AccuracyTier::kReference;
+
+    /// The question shape it answers, the third part of its class's key: what it
+    /// hands back for the caller who asks it. An option is only ever ordered
+    /// against options of the same shape, because a faster answer to a different
+    /// question is not a faster option.
+    OptionProbeShape shape = OptionProbeShape::kAllOrders;
 
     /// The arithmetic the option ran in, named by the library's own backend
     /// table (see backend::BoysBackends), so the number is attributable to the
@@ -409,11 +467,10 @@ struct OptionProbeMeasurement {
     /// figure on this run, and the accuracy below is still the measured one.
     bool measured = false;
 
-    /// Cost per argument in nanoseconds at the lower quartile of the paired
-    /// rounds: the figure a caller with a long workload meets on a machine whose
-    /// clock is not at its peak, and not the best single observation. It is the
-    /// reference lane's own lower-quartile cost scaled by this option's ratio
-    /// below, so the column is consistent with the ratios it is built from.
+    /// Cost per argument in nanoseconds, the figure this option is ordered by.
+    /// It is the reference lane's own lower-quartile cost scaled by
+    /// \c ratioToReference, which is a central quantile and not this option's own
+    /// band; see \c ratioToReference for why that is the fair choice.
     double nsPerArgument = 0.0;
 
     /// Cost per argument at the upper quartile of the same rounds.
@@ -432,15 +489,28 @@ struct OptionProbeMeasurement {
     /// drift common to a round.
     double spread = 0.0;
 
-    /// This option's cost as a fraction of the reference lane's, at the lower
-    /// quartile of the per-round ratios between them. One exactly for the
-    /// reference lane itself.
+    /// This option's cost as a fraction of the reference lane's, at the **middle**
+    /// of the per-round ratios between them: one exactly for the reference lane
+    /// itself, and the figure \c nsPerArgument is scaled by.
+    ///
+    /// The middle, and not the lower quartile of those ratios, because the two
+    /// are not the same kind of reading for the reference and for everyone else:
+    /// the reference's ratios are one in every round, so any quantile of them is
+    /// one, while a rival's lower quartile sits below its middle by a fraction of
+    /// its own round-to-round spread — so scoring every row at a lower quartile
+    /// would hand the reference a credit no measurement supports and take it from
+    /// its rivals. The middle is the quantile that credits the two alike: it is
+    /// reciprocal under a change of anchor, element for element over the same
+    /// rounds, so this option's figure against the reference and the reference's
+    /// figure against this option always agree on which of the two is faster.
     double ratioToReference = 1.0;
 
-    /// The same ratio at the lower and the upper quartile of its rounds: the
-    /// band the middle half of the run put it in.
+    /// The band the middle half of the run put that ratio in, at the lower and
+    /// the upper quartile of the same rounds. **The band and not the figure**:
+    /// these are where a pair that cannot be separated is read from, and they
+    /// bound \c ratioToReference rather than being equal to its ends.
     double ratioLo = 0.0;
-    double ratioHi = 0.0;
+    double ratioHi = 0.0; ///< the band's other end, the ratio at its upper quartile
 
     /// How far this option's ratio to the reference moved between the run's
     /// first and second half of rounds: the second half's median ratio over the
@@ -525,25 +595,25 @@ enum class OptionProbeDefaultHow : int {
     /// answer, not a refusal, and not a ranking either.
     kOnlyEntry,
     /// The class's rounds left the leader tied with others, the tied options were
-    /// re-run alone at a larger protocol, and one of them was the fastest in
-    /// every one of those runs — a majority with no dissent.
+    /// re-run alone at a larger protocol, and every one of those runs was fastest
+    /// with the entry the report names — the row the run's own figures put first,
+    /// measured again, longer, and agreed with.
     kRefined,
-    /// The refinement runs disagreed or did not separate, and the option that led
-    /// most of them is the entry: a majority over runs, with the vote printed.
+    /// The same re-runs, with a majority rather than all of them leading with the
+    /// entry the report names: the vote had a plurality and it agreed with the
+    /// class's own rounds, which are printed with it.
     kVote,
-    /// The vote was split with no plurality, or no refinement run placed a leader
-    /// at all, so the entry is one of the tied options taken by choice. It is
-    /// named as that and not as a ranking.
+    /// The class's top entries could not be separated: the vote named another of
+    /// them, or was split across several, or no run placed a leader at all. The
+    /// entry is the row the report's own figures put first among options it cannot
+    /// tell apart — named as that, with the vote and both figures printed, and not
+    /// as a ranking.
     kChosenAmongEquals,
 };
 
 /// The name of one of those, as one token a script or a report can print beside
 /// a default: "ordered", "only-entry", "refined", "vote",
 /// "chosen-among-equals" or "none".
-///
-/// It exists so that a consumer who prints a default prints how it was reached
-/// with it, rather than leaving a reader to guess whether the entry named was
-/// measured or taken by choice.
 ///
 /// \param how the state to name
 ///
@@ -552,20 +622,19 @@ enum class OptionProbeDefaultHow : int {
 /// \ingroup boys
 std::string OptionProbeDefaultHowName(OptionProbeDefaultHow how);
 
-/// One class's ranking: the options of one precision at one accuracy rung,
-/// fastest measured first.
+/// One class's ranking: the options of one precision at one accuracy rung for
+/// one question shape, fastest measured first.
 ///
-/// A class is one precision **and** one rung of the accuracy axis — the
-/// multiplier the option was built at, m = 1, 64, 256 and so on — and it is the
-/// only set the probe orders inside. Both restrictions are the same restriction:
-/// two options are only alternatives if they answer the same question, and an
-/// option of another precision or of another rung answers a different one. The
-/// key is the rung an option was built at, never a comparison of documented
-/// figures: a figure belongs to one lane, and reading it against another lane's
-/// is how a class ends up empty by construction. Every row of a class documents
-/// the same rung, so nothing inside it is a trade of accuracy for speed — the
-/// leader is the fastest option *at that accuracy*, and a caller who needs a
-/// different accuracy reads a different class or a different rung.
+/// A class is one precision, one rung of the accuracy axis — the multiplier the
+/// option was built at, m = 1, 64, 256 and so on — and one question shape, and
+/// it is the only set the probe orders inside: two options are only alternatives
+/// if they answer the same question, and an option of another precision, another
+/// rung or another shape answers a different one. The keys are the precision,
+/// the rung and the shape, never a comparison of documented figures: a figure
+/// belongs to one lane, and reading it against another lane's is how a class ends
+/// up empty by construction. So the leader is the fastest option *at that
+/// accuracy, for that question*, and a caller who needs a different accuracy or
+/// is asking a different question reads a different class.
 ///
 /// \ingroup boys
 struct OptionProbeClass {
@@ -575,8 +644,13 @@ struct OptionProbeClass {
     /// The accuracy rung this class is.
     AccuracyTier tier = AccuracyTier::kReference;
 
-    /// The name a report prints it under: the precision, the rung and the bound
-    /// every row of it documents.
+    /// The question shape this class is: what every row of it hands back.
+    OptionProbeShape shape = OptionProbeShape::kAllOrders;
+
+    /// The name a report prints it under, which is the class's whole key: the
+    /// precision, the rung and the question shape, in that order — "fp64 m=1
+    /// all-orders". A reader who sees two of these knows which question each
+    /// answer belongs to, and that nothing was compared across them.
     std::string name;
 
     /// The bound every row of this class documents, read from the library.
@@ -616,9 +690,9 @@ struct OptionProbeClass {
     OptionProbeDefaultHow how = OptionProbeDefaultHow::kNone;
 
     /// Members documenting a figure other than the leader's, each named with its
-    /// own: a class is keyed on the rung and the precision, not on a bound, so a
-    /// row of the same precision and rung that documents a looser figure is in
-    /// the class and is reported here rather than being ranked as an equal
+    /// own: a class is keyed on the precision, the rung and the shape, not on a
+    /// bound, so a row of the same key that documents a looser figure is in the
+    /// class and is reported here rather than being ranked as an equal
     /// silently. Empty when every member of the class documents the leader's own
     /// figure, which is the ordinary case.
     std::vector<std::string> differingBounds;
@@ -637,11 +711,30 @@ struct OptionProbeClass {
 /// reason is the library's own, and the work it describes is unbuilt rather
 /// than impossible.
 ///
+/// The space is enumerated once per precision lane, because the lanes do not
+/// answer alike: the double lane's fits are its own table and the single and
+/// half lanes' are another, and a cell the double lane refuses can be one the
+/// single-precision engine serves. So a cell is a combination *of a lane's*
+/// axes, and the library is asked the carriage question of the lane the cell
+/// belongs to.
+///
 /// \ingroup boys
 struct OptionProbeCell {
     /// The cell's name, in the report's own option grammar, so a caller can
     /// name it in ProbeOptions::only and be told what this build does with it.
     std::string name;
+
+    /// The class this cell's option row is ranked in, and the classification
+    /// whose book the cell was enumerated for. The two half formats are one lane
+    /// in the library and two classes here, so this is what tells their books
+    /// apart.
+    OptionPrecision precision = OptionPrecision::kFp64;
+
+    /// The precision lane whose fit table and whose carriage answer this cell
+    /// was enumerated from. The lanes that carry the double lane's arithmetic
+    /// report theirs as \c kFp64; the half lanes are one lane at one budget and
+    /// are enumerated as \c kFp16.
+    Precision lane = Precision::kFp64;
 
     /// The fit route this cell fixes.
     FitRoute route = kDefaultFitRoute;
@@ -700,8 +793,19 @@ enum class OptionProbeVerdict : int {
 ///
 /// \ingroup boys
 struct OptionProbeRefinement {
-    /// The precision whose reference class was refined.
+    /// The precision of the class that was refined.
     OptionPrecision precision = OptionPrecision::kFp64;
+
+    /// The accuracy rung of the class that was refined, which is the reference
+    /// rung: a stage re-runs the pool the default may be taken from, and the
+    /// looser rungs are reported from their own measured rounds alone.
+    AccuracyTier tier = AccuracyTier::kReference;
+
+    /// The question shape of the class that was refined. A stage refines one
+    /// class and no other, so its tied set is the class's own: the options it
+    /// re-measures answer the question the class asks, and cannot be read as an
+    /// ordering of options that answer a different one.
+    OptionProbeShape shape = OptionProbeShape::kAllOrders;
 
     /// Whether the stage ran at all: false when the class was ordered by the main
     /// run, when it holds a single option, and when there was no class to refine.
@@ -710,8 +814,8 @@ struct OptionProbeRefinement {
     /// Runs taken, the passes each ran, and the rounds each ran. Zero when the
     /// stage did not run.
     int runs = 0;
-    int passes = 0;
-    int rounds = 0;
+    int passes = 0; ///< passes each run took
+    int rounds = 0; ///< rounds each pass took
 
     /// The options re-measured: the class's leader and every option of it the
     /// main run could not place behind the leader.
@@ -726,9 +830,14 @@ struct OptionProbeRefinement {
     /// it won.
     std::vector<std::string> tally;
 
-    /// The option the vote named. Never empty once the stage ran: a vote with no
-    /// plurality still names one of the tied options, and \c note says that is
-    /// what happened.
+    /// The option the vote named — the row that led the most runs, ordered in
+    /// each run by the same within-round figure the report orders its classes by.
+    /// It is what the vote says about the class's fastest row, and the default is
+    /// that row whether or not the vote named it: a vote for another entry is this
+    /// run saying it could not separate the class's top entries, which is how the
+    /// report states it. Never empty once the stage ran: a vote with no plurality
+    /// still names one of the tied options, and \c note says that is what
+    /// happened.
     std::string winner;
 
     /// Whether every run led with \c winner: a majority with no dissent.
@@ -792,9 +901,10 @@ struct OptionProbeReport {
     std::vector<OptionProbeMeasurement> measurements;
 
     /// One entry per class measured, in the classes' own order: the reference
-    /// rung of each precision first, then the looser rungs of it. The ranking
-    /// inside a class is that class's own and never crosses into another — not
-    /// into another precision, and not into another accuracy.
+    /// rung of each precision first, then the looser rungs of it, each rung's
+    /// question shapes beside each other. The ranking inside a class is that
+    /// class's own and never crosses into another — not into another precision,
+    /// not into another accuracy, and not into another question shape.
     std::vector<OptionProbeClass> classes;
 
     /// Every cell of the option space, served ones and refused ones alike. The
@@ -865,6 +975,11 @@ struct OptionProbeReport {
     /// from and the ratios are what the ordering is made of. The anchor carries
     /// the clock the reference itself ran under; the ratios do not carry a drift
     /// common to a round, which is the point of pairing them.
+    ///
+    /// **The anchor is a unit and not a participant.** A rank here is one
+    /// option's ratio against another's and does not depend on where the anchor
+    /// was put; the absolute columns do, and that is all it changes. Which row is
+    /// the anchor is \c ProbeOptions::reference.
     double referenceNsPerArgument = 0.0;
 
     /// Spread percentage of the canary's runs across the widest pass this run
@@ -903,28 +1018,38 @@ struct OptionProbeReport {
     OptionProbeVerdict verdict = OptionProbeVerdict::kCannotDetermine;
 
     /// **The default combination, and there is exactly one of it whenever the
-    /// pool was measured at all.** It is always an option of the certified double
-    /// lane's precision at the reference rung — the class whose members were all
-    /// built at the library's own full-accuracy multiplier, so choosing among
-    /// them trades nothing but speed — and \c defaultHow says how it was reached:
-    /// the class's own ordering, the vote over the refinement runs, or a choice
-    /// among options the measurement could not separate. Empty exactly when
-    /// \c verdict is \c kCannotDetermine.
+    /// pool was measured at all.** It is the certified double lane's precision,
+    /// at the reference rung, for the all-orders shape — the class whose members
+    /// were all built at the library's own full-accuracy multiplier and all
+    /// answer the question this probe's workload asks, so choosing among them
+    /// trades nothing but speed within one question. A caller asking the other
+    /// shape reads that class's own block, which names its fastest option.
+    ///
+    /// It is **the row the report's own figures put first in that class** —
+    /// \c fastestAtReferenceAccuracy — whether the class ordered or the run could
+    /// not separate its members: a report whose default were any other row would
+    /// be printing a name its own table contradicts. \c defaultHow says how that
+    /// row was confirmed, or that the run could not separate it from its rivals.
+    /// Empty exactly when \c verdict is \c kCannotDetermine.
     std::string recommended;
 
-    /// How \c recommended was reached. \c kOrdered is a measured ordering,
-    /// \c kRefined and \c kVote are the vote over the refinement runs, and
-    /// \c kChosenAmongEquals is a tie broken by choice, which the report names as
-    /// such rather than presenting it as a ranking. \c kOnlyEntry appears when the
-    /// caller narrowed the run to a class of one: there is nothing to order that
-    /// entry against, so it is named by there being no alternative — an answer,
-    /// and not a ranking either.
+    /// How \c recommended was reached. \c kOrdered is a measured ordering;
+    /// \c kRefined and \c kVote are the refinement runs naming this same row — a
+    /// longer protocol measuring the class's fastest and agreeing with the run;
+    /// \c kChosenAmongEquals is a tie this run could not break, including a
+    /// refinement vote that named another row, for which the report prints both
+    /// figures: the default is the row the run's own figures put first, not the
+    /// row the vote preferred. \c kOnlyEntry appears when the caller narrowed the
+    /// run to a class of one, which is named by there being no alternative — an
+    /// answer, and not a ranking either.
     OptionProbeDefaultHow defaultHow = OptionProbeDefaultHow::kNone;
 
     /// The fastest option of the certified lane's reference class by the main
     /// run's own rounds alone, empty when no option of that class was measured.
-    /// It is what the default is built from: a default reached by the vote may
-    /// differ from it, and the reason line says so where it does.
+    /// It is the class's winner by the figures this report prints, and so it is
+    /// what \c recommended names whenever the class holds more than one measured
+    /// option: the refinement vote may confirm that row or fail to, and both are
+    /// reported, but it does not name the default in its place.
     std::string fastestAtReferenceAccuracy;
 
     /// The fastest option measured, whatever its precision, empty when no option
@@ -943,15 +1068,13 @@ struct OptionProbeReport {
     std::vector<std::string> inseparable;
 
     /// One line naming how far the recommendation can be trusted, built from
-    /// the same numbers the verdict is, and carrying the run's clock check
-    /// whatever the verdict: how far the ratio of the widest-moving pair of
-    /// options travelled between the first and second half of the run, beside
-    /// the resolution that figure is read against, with a warning when it went
-    /// past it. The check is made rather than assumed because options can draw
-    /// the clock differently — a wider vector register is a lower frequency —
-    /// so the line also says whether every option this comparison put against
-    /// another ran the same arithmetic route, which is what decides whether two
-    /// register widths were ever compared. A run that ordered nothing still
+    /// the same numbers the verdict is: how far the ratio of the widest-moving
+    /// pair of options travelled between the first and second half of the run,
+    /// beside the resolution that figure is read against, with a warning when it
+    /// went past it. It also says whether every option this comparison put
+    /// against another ran the same arithmetic route, since options can draw the
+    /// clock differently — a wider vector register is a lower frequency — and two
+    /// register widths were then compared. A run that ordered nothing still
     /// carries it, so a reader can tell a clock that wandered from options that
     /// were too close to separate.
     std::string confidence = "not measured";
@@ -977,20 +1100,21 @@ struct OptionProbeReport {
 /// not this build's; the relaxed accuracy tiers are found by asking the library
 /// what each tier it can name delivers, so a build serving fewer rungs offers
 /// fewer options; and the four axes a policy carries are walked over the sets
-/// the library reports — BoysFitRoutes, BoysEvalSchemes, BoysFitGranularities
-/// and BoysPackAxes — crossed with those rungs, so the option space is the
-/// library's own and the coverage section can account for every cell of it,
-/// served or refused.
+/// the library reports — BoysFitRoutes and BoysFitRoutesF32, BoysEvalSchemes,
+/// BoysFitGranularities and BoysPackAxes — crossed with those rungs and taken
+/// once per precision lane, so the option space is the library's own, lane by
+/// lane, and the coverage section can account for every cell of it, served or
+/// refused.
 ///
 /// Then it runs the pass protocol in ProbeOptions: every pass carries runs of the
 /// fixed-work canary beside its rounds, each round calls every option once in an
-/// order shuffled per round, and the report carries each option's lower-quartile
-/// cost with its spread beside it, its ratio to the reference lane with the band
-/// that ratio fell in, the drift of that ratio between the run's halves, the
-/// resolution the paired ratios support, and the canary and load readings taken
-/// along the way as context. No pass is discarded on the canary's word: a fixed
-/// work read by wall clock measures the clock as much as the load, so the canary
-/// is reported and never gates.
+/// order shuffled per round, and the report carries, per option, its cost and the
+/// spread beside it, its ratio to the reference lane with the band it fell in,
+/// the drift of that ratio between the run's halves, the resolution the paired
+/// ratios support, and the canary and load readings taken along the way as
+/// context. No pass is discarded on the canary's word: a fixed work read by wall
+/// clock measures the clock as much as the load, so the canary is reported and
+/// never gates.
 ///
 /// The entry allocates (the workload, the samples and the report) and is not a
 /// hot path; it is meant to be called once, from a program the consumer builds

@@ -15,12 +15,12 @@
 // any other multiplier, or any other evaluation policy, compiles the rung or
 // the route it asks for from here.
 //
-// Every entry is compiled twice under if constexpr: the m = 1 branch is
-// today's certified body, which lives in the shared template bodies above and
-// is instantiated at the shipped fit (the bit-identity pin - the discarded
-// relaxed branch adds no instruction, branch, or load to the m = 1 path), and
-// the m > 1 branch evaluates the seed fits at the compile-time effective
-// degrees of boys_effective_degrees.hpp.
+// Every entry is compiled twice under if constexpr: the m = 1 branch is the
+// certified body, which lives in the shared template bodies above and is
+// instantiated at the shipped fit (the bit-identity pin - the discarded relaxed
+// branch adds no instruction, branch, or load to the m = 1 path), and the
+// m > 1 branch evaluates the seed fits at the compile-time effective degrees of
+// boys_effective_degrees.hpp.
 // The relaxed region-C paths are m-invariant (the asymptotic form has no
 // coefficients to truncate); only their scalar tails carry the multiplier.
 //
@@ -60,7 +60,7 @@ constexpr double kBoysHalfSqrtPi = 0.886226925452758014; // sqrt(pi)/2
 constexpr float kBoysHalfSqrtPiF32 = 0.88622693f; // sqrt(pi)/2, single lane
 
 // ---------------------------------------------------------------------------
-// Scalar double lane helpers (today's anonymous-namespace helpers, verbatim)
+// Scalar double lane helpers
 // ---------------------------------------------------------------------------
 // Piece containing x for this order; the pieces partition [0, kX0).
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters): (order, x) reads naturally.
@@ -88,10 +88,10 @@ inline const detail::OrderPiece& FindPiece(int order, double x) noexcept {
 // nothing the body can see, and the body asks the fit for its partition rather
 // than the fit carrying a lookup of its own.
 //
-// The shipped partition is the per-order piecewise table the lane has always
-// read. The narrow one is the second partition of the same region, derived at a
-// lower degree per piece and more pieces: the same values at fewer coefficients
-// per evaluation, against more stored rows and a longer scan to the piece.
+// The shipped partition is the per-order piecewise table the lane reads. The
+// narrow one is the second partition of the same region, derived at a lower
+// degree per piece and more pieces: the same values at fewer coefficients per
+// evaluation, against more stored rows and a longer scan to the piece.
 struct ShippedRegionAPartition {
     static std::size_t PieceIndex(int order, double x) noexcept {
         return static_cast<std::size_t>(&FindPiece(order, x) - detail::kPieces.data());
@@ -274,21 +274,15 @@ typename B::Packed FitSum(const typename B::Value* cheb,
 // tables): each order's entry is the certified boundary of the smallest
 // kmax row that covers it (the rows 4/8/16/32), so
 // BoysAllOrders(n,x)[n] == BoysSingle(n,x) == BoysAllOrders(m>=n,x)[n] exactly.
-// The band is the m = 1 lane's: the m > 1 branch keeps the
-// region-A dispatch in the band (the per-order amplification of the
-// band's upward recursion needs its own derivation, which that branch does
-// not carry), and the float lane's dispatch is untouched (its
-// double-seeded region-A branch already serves the band at the float
-// budget).
+// The band is the m = 1 lane's: the m > 1 branch keeps the region-A dispatch in
+// the band, and the float lane's dispatch is untouched (its double-seeded
+// region-A branch already serves the band at the float budget).
 
-// The extended-band seed: F_0(x) on
-// [kExtendedBX0, kX0) via the same split Clenshaw evaluation as the
-// region-B seed. It serves the upward recursion below kX0 in the m = 1
-// double lanes only, dispatched per (n, x) at the certified per-order
-// thresholds kTierThresholds; the m > 1 branch and the float lanes keep
-// their existing dispatch untouched.
-// The extended-band seed F_0(x) on [kExtendedBX0, kX0), summed by the named
-// scheme; see ChebyshevValue for the name.
+// The extended-band seed: F_0(x) on [kExtendedBX0, kX0), summed by the named
+// scheme (see ChebyshevValue for the name). It serves the upward recursion
+// below kX0 in the m = 1 double lanes only, dispatched per (n, x) at the
+// certified per-order thresholds kTierThresholds; the m > 1 branch and the
+// float lanes keep their own dispatch.
 template <EvalScheme kScheme = kDefaultEvalScheme>
 inline double RegionBExtendedSeed(double x) noexcept {
     const double t = 2.0 * (x - kExtendedBX0) / (kX0 - kExtendedBX0) - 1.0;
@@ -789,7 +783,7 @@ struct RationalFitNarrowAtRung {
 // partition and the rung stay one choice here rather than a crossing.
 template <double kAccuracyMultiplier, FitGranularity kGranularity>
 using RationalRouteFitAtRung =
-    std::conditional_t<kGranularity == kDefaultFitGranularity,
+    std::conditional_t<kGranularity == FitGranularity::kShipped,
                        RationalFitAtRung<kAccuracyMultiplier>,
                        RationalFitNarrowAtRung<kAccuracyMultiplier>>;
 
@@ -836,7 +830,7 @@ inline double PolicyRegionAValue(int order, double x) noexcept {
 }
 
 // ---------------------------------------------------------------------------
-// Scalar float lane helpers (today's anonymous-namespace helpers, verbatim)
+// Scalar float lane helpers
 // ---------------------------------------------------------------------------
 // Float-lane piece lookup; see FindPiece.
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters): (order, x) reads naturally.
@@ -928,11 +922,10 @@ inline const detail::f32::RatPiece& FindNarrowRatBPieceF32(float x) noexcept {
 // two parallel coefficient tables - the Chebyshev one ClenshawSplit reads or
 // the monomial one HornerMono reads - the piece is summed from; the pieces,
 // their intervals and their degrees are the same table under either.
-// Forced inline: the m = 1 F32-single engine must keep the full-accuracy
-// code shape (piece scan inlined); with two call sites (the kFloat and the
-// kFp16 budget instantiations) MSVC's size heuristic keeps this helper
-// out-of-line otherwise. Semantics are unaffected — inline never changes the
-// bit-identity pin.
+// Forced inline: the m = 1 F32-single engine must keep the full-accuracy code
+// shape (piece scan inlined), which MSVC's size heuristic drops with two call
+// sites (the kFloat and the kFp16 budget instantiations). Semantics are
+// unaffected - inline never changes the bit-identity pin.
 // __forceinline is MSVC-only; GCC/Clang spell the same intent with
 // always_inline (plain inline is a hint there, not a requirement).
 #if defined(_MSC_VER)
@@ -1010,7 +1003,7 @@ template <EvalScheme kScheme = kDefaultEvalScheme,
           FitGranularity kGranularity = kDefaultFitGranularity,
           typename DegreesArray>
 double ChebyshevValueWithDegrees(int order, double x, const DegreesArray& degrees) noexcept {
-    if constexpr (kGranularity == kDefaultFitGranularity)
+    if constexpr (kGranularity == FitGranularity::kShipped)
     {
         const detail::OrderPiece& piece = FindPiece(order, x);
         const std::ptrdiff_t index = &piece - detail::kPieces.data();
@@ -1046,7 +1039,7 @@ template <EvalScheme kScheme = kDefaultEvalScheme,
 inline double RegionBSeedWithDegrees(double x,
                                      const DegreesArray& degrees,
                                      int peakOrder) noexcept {
-    if constexpr (kGranularity == kDefaultFitGranularity)
+    if constexpr (kGranularity == FitGranularity::kShipped)
     {
         const double t = 2.0 * (x - kX0) / (kX1 - kX0) - 1.0;
         return FitSum<kScheme, backend::ScalarFp64>(detail::kBcoeffs.data(),
@@ -1076,7 +1069,7 @@ inline double RegionBSeedWithDegrees(double x,
 // reading of the partition the caller chose rather than of the shipped one.
 template <double kAccuracyMultiplier, EvalPolicyLike Policy, BoysRole kRole>
 constexpr auto RegionADegreeTableOf() noexcept {
-    if constexpr (Policy::kGranularity == kDefaultFitGranularity)
+    if constexpr (Policy::kGranularity == FitGranularity::kShipped)
     {
         return RegionADegrees<kAccuracyMultiplier, kRole, SchemeTailBasis<Policy::kScheme>()>();
     } else
@@ -1089,7 +1082,7 @@ constexpr auto RegionADegreeTableOf() noexcept {
 
 template <double kAccuracyMultiplier, EvalPolicyLike Policy, BoysRole kRole>
 constexpr auto RegionBDegreeTableOf() noexcept {
-    if constexpr (Policy::kGranularity == kDefaultFitGranularity)
+    if constexpr (Policy::kGranularity == FitGranularity::kShipped)
     {
         return RegionBDegrees<kAccuracyMultiplier, kRole, SchemeTailBasis<Policy::kScheme>()>();
     } else
@@ -1148,7 +1141,7 @@ template <EvalScheme kScheme = kDefaultEvalScheme,
           FitGranularity kGranularity = kDefaultFitGranularity,
           typename DegreesArray>
 float ChebyshevValueF32WithDegrees(int order, float x, const DegreesArray& degrees) noexcept {
-    if constexpr (kGranularity == kDefaultFitGranularity)
+    if constexpr (kGranularity == FitGranularity::kShipped)
     {
         const detail::f32::OrderPiece& piece = FindPieceF32(order, x);
         const std::ptrdiff_t index = &piece - detail::f32::kPieces.data();
@@ -1181,7 +1174,7 @@ template <EvalScheme kScheme = kDefaultEvalScheme,
 inline float RegionBSeedF32WithDegrees(float x,
                                        const DegreesArray& degrees,
                                        int peakOrder) noexcept {
-    if constexpr (kGranularity == kDefaultFitGranularity)
+    if constexpr (kGranularity == FitGranularity::kShipped)
     {
         const float t = 2.0f * (x - static_cast<float>(kX0)) / static_cast<float>(kX1 - kX0) - 1.0f;
         return FitSum<kScheme, backend::ScalarFp32>(
@@ -1210,10 +1203,7 @@ inline float RegionBSeedF32WithDegrees(float x,
 // piece table are one partition's pair, so a body that reaches a stored row at a
 // cut degree takes both from the policy it was named with rather than naming a
 // partition of its own. Each body below goes through these - the single-order
-// entry, the batch entry, the fixed-order entry and the all-N region bodies -
-// because a body that reads a coefficient table directly is exactly how a
-// narrow policy came to be handed the shipped partition's values under its own
-// name, and a fork taken once here cannot be left out of one of them.
+// entry, the batch entry, the fixed-order entry and the all-N region bodies.
 //
 // The role is the body's own: the single-order shapes read the per-order
 // amplification and the batch shapes the recursion's, and the criterion that
@@ -1235,10 +1225,9 @@ inline double PolicyRegionBSeedAtRung(double x, int order) noexcept {
 // ---------------------------------------------------------------------------
 // A float-lane single-order call reads a coefficient in exactly two places:
 // the region-A seed and the region-B seed. This names which pair of fits
-// those two are. They are alternatives rather than rungs of one design - the
-// Chebyshev tables are the default and the route the lane has always been
-// certified with, and naming the rational one changes the coefficients those
-// two intervals are evaluated from and nothing else.
+// those two are. They are alternatives rather than rungs of one design:
+// naming the rational one changes the coefficients those two intervals are
+// evaluated from and nothing else.
 //
 // The rational route's pieces are the family's own cover of each order's
 // interval rather than the Chebyshev table's breaks, because a cover places
@@ -1326,10 +1315,10 @@ inline float RegionBSeedRationalF32(float x) noexcept {
 template <FitGranularity kGranularity = kDefaultFitGranularity>
 inline float RationalPieceF32AtCut(std::size_t index, int numDeg, int denDeg, float t) noexcept {
     const detail::f32::RatPiece& piece =
-        (kGranularity == kDefaultFitGranularity) ? detail::f32::kRatAPieces[index]
+        (kGranularity == FitGranularity::kShipped) ? detail::f32::kRatAPieces[index]
                                                  : detail::f32::kNarrowRatAPiecesF32[index];
     const float* c =
-        (kGranularity == kDefaultFitGranularity)
+        (kGranularity == FitGranularity::kShipped)
             ? detail::f32::kRatACoeffs.data() + piece.offset
             : detail::f32::kNarrowRatACoeffsF32.data() + piece.offset;
     float num = c[numDeg];
@@ -1362,7 +1351,7 @@ inline float RationalPieceF32AtCut(std::size_t index, int numDeg, int denDeg, fl
 // the cut above them.
 template <FitGranularity kGranularity = kDefaultFitGranularity>
 inline float RationalSeedF32AtCut(std::size_t index, int numDeg, int denDeg, float t) noexcept {
-    if constexpr (kGranularity == kDefaultFitGranularity)
+    if constexpr (kGranularity == FitGranularity::kShipped)
     {
         float num = detail::f32::kRatBnum[numDeg];
 
@@ -1539,11 +1528,11 @@ inline float RegionBSeedRationalNarrowF32(float x) noexcept {
 }
 
 // The two routes as one float-lane call reads them. Each policy forwards to
-// the helper above, so the default policy's arithmetic is the shipped one
-// operation for operation. The granularity names which partition of region A
-// and which region-B seed the route reads; both routes carry both members, so
-// the partition is the route's reading of the same cut of the region rather
-// than a second family.
+// the helper above, so a policy's arithmetic is the helper's operation for
+// operation at the axes the policy names. The granularity names which partition
+// of region A and which region-B seed the route reads; both routes carry both
+// members, so the partition is the route's reading of the same cut of the
+// region rather than a second family.
 template <EvalScheme kScheme = kDefaultEvalScheme,
           FitGranularity kGranularity = kDefaultFitGranularity>
 struct ChebyshevFit32 {
@@ -1636,7 +1625,7 @@ struct ChebyshevFit32AtRung {
 
     // One piece of one order, at that piece's effective degree.
     static float EvalOrder(int n, float x) noexcept {
-        if constexpr (kGranularity == kDefaultFitGranularity)
+        if constexpr (kGranularity == FitGranularity::kShipped)
         {
             return ChebyshevValueF32WithDegrees<kScheme, kGranularity>(n, x, kDegreesA);
         } else
@@ -1649,7 +1638,7 @@ struct ChebyshevFit32AtRung {
     // is A_B(n) - the quantity RegionBDegrees certifies the degree at - so the
     // degree is the one the order it is read for was certified for.
     static float RegionBSeed(float x, int order) noexcept {
-        if constexpr (kGranularity == kDefaultFitGranularity)
+        if constexpr (kGranularity == FitGranularity::kShipped)
         {
             return RegionBSeedF32WithDegrees<kScheme, kGranularity>(x, kDegreesB, order);
         } else
@@ -1685,7 +1674,7 @@ struct RationalFit32AtRung {
     // pair is read at that piece's cut. The narrow partition is the family's
     // own cover there, so the lookup follows the pair table it reads.
     static float EvalOrder(int n, float x) noexcept {
-        if constexpr (kGranularity == kDefaultFitGranularity)
+        if constexpr (kGranularity == FitGranularity::kShipped)
         {
             const detail::f32::RatPiece& piece = FindRatPieceF32(n, x);
             const std::size_t index =
@@ -1709,7 +1698,7 @@ struct RationalFit32AtRung {
     // region holds one pair per piece, so the argument selects the row and the
     // order is still not read - the same reason, one piece down.
     static float RegionBSeed(float x, int /*order*/) noexcept {
-        if constexpr (kGranularity == kDefaultFitGranularity)
+        if constexpr (kGranularity == FitGranularity::kShipped)
         {
             const float t =
                 2.0f * (x - static_cast<float>(kX0)) / static_cast<float>(kX1 - kX0) - 1.0f;
@@ -1786,7 +1775,7 @@ double FloatBatchRegionASeedAtRung(int order, double x) noexcept {
         // reads the double lane's pairs under either partition - the shipped
         // pieces under the shipped policy and the narrow pieces under a narrow
         // one - so the pair table and the partition named here move together.
-        if constexpr (kGranularity == kDefaultFitGranularity)
+        if constexpr (kGranularity == FitGranularity::kShipped)
         {
             if (x >= RationalFit::kRegionAFitsFrom)
             {
@@ -1814,7 +1803,7 @@ double FloatBatchRegionASeedAtRung(int order, double x) noexcept {
         }
     }
 
-    if constexpr (kGranularity == kDefaultFitGranularity)
+    if constexpr (kGranularity == FitGranularity::kShipped)
     {
         static constexpr auto kDegreesA =
             RegionADegrees<kAccuracyMultiplier, kRole, SchemeTailBasis<kScheme>()>();
@@ -2055,7 +2044,7 @@ double SingleOrder(int n, double x) noexcept {
 }
 
 // ---------------------------------------------------------------------------
-// The lane engines (compiled twice: the m = 1 branch is today's body
+// The lane engines (compiled twice: the m = 1 branch is the certified body
 // verbatim; the relaxed branch evaluates at the effective degrees)
 // ---------------------------------------------------------------------------
 // Each engine takes the policy and the multiplier, and nothing else: the fit
@@ -2063,31 +2052,21 @@ double SingleOrder(int n, double x) noexcept {
 // fields, so a further axis does not reopen these signatures.
 
 // The route the batch entries' region bodies carry, and the one the fixed-order
-// entry carries. Each is the shipped one at every rung: those bodies arrive at
-// their values by a path of their own - the batch's region A seeds its downward
+// entry carries: the shipped one, at every rung. Those bodies arrive at their
+// values by a path of their own - the batch's region A seeds its downward
 // recursion from the top order's stored fit and recurses, region B seeds its
 // upward recursion from the stored seed - and they read the shipped tables
-// through it. A policy naming the rational route is rejected where the call is
-// named, with the reason, rather than answered with the shipped fits under the
-// other route's name.
+// through it. A policy naming another route takes the entry's per-argument path
+// instead, which is the body that reads its fit from the policy; nothing falls
+// back silently.
 //
 // The per-argument entries do not ask for it, because their bodies take the fit
 // from the policy: they carry either route at either rung, and the rational one
 // through RationalFitAtRung.
-// The route the region-partitioned batch shapes carry: the shipped one, at
-// every rung. Their region bodies evaluate the shipped seed and the shipped
-// per-order fits as their own, arriving at a value by a path of their own - the
-// downward recursion from a top order's stored piece, the upward recursion from
-// a stored seed - so a policy naming another route takes the entry's
-// per-argument path instead, which is the body that reads its fit from the
-// policy. The assertion states which shape this is, and the entry's dispatch is
-// where the choice is made; nothing falls back silently, because the
-// per-argument path is the entry's own second shape and not another route's
-// values.
 template <EvalPolicyLike Policy>
 constexpr void RequireShippedRoute() noexcept
 {
-    static_assert(Policy::kRoute == kDefaultFitRoute,
+    static_assert(Policy::kRoute == FitRoute::kChebyshev,
                   "this body reaches its values through the shipped fits' own path - the "
                   "downward recursion from a stored piece, or the upward recursion from a "
                   "stored seed - and reads the shipped tables through it: a policy naming "
@@ -2246,7 +2225,7 @@ void BoysAllOrdersImpl(int nmax, double x, double* out) noexcept {
             nmax, x, out);
     } else
     {
-        static_assert(Policy::kRoute == kDefaultFitRoute,
+        static_assert(Policy::kRoute == FitRoute::kChebyshev,
                       "a policy naming a route outside the FitRoute enumeration is not one this "
                       "library serves: name FitRoute::kChebyshev or FitRoute::kRationalMinimax");
 
@@ -2352,7 +2331,7 @@ void BoysFixedNImpl(
     assert(out != nullptr);
     assert(stride >= 1);
 
-    if constexpr (Policy::kRoute != kDefaultFitRoute)
+    if constexpr (Policy::kRoute != FitRoute::kChebyshev)
     {
         // The fixed-order entry carries the route too, and by the entry that
         // takes its fit from the policy: one order at every argument of an
@@ -2833,213 +2812,267 @@ template <EvalScheme kScheme = kDefaultEvalScheme,
           FitGranularity kGranularity = kDefaultFitGranularity>
 void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept;
 
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 1.0, FitRoute::kChebyshev>(
-    int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 64.0, FitRoute::kChebyshev>(
-    int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 256.0, FitRoute::kChebyshev>(
-    int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 1024.0, FitRoute::kChebyshev>(
-    int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 4096.0, FitRoute::kChebyshev>(
-    int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 16384.0, FitRoute::kChebyshev>(
-    int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 65536.0, FitRoute::kChebyshev>(
-    int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 1.0, FitRoute::kRationalMinimax>(
-    int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 64.0, FitRoute::kRationalMinimax>(
-    int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 256.0, FitRoute::kRationalMinimax>(
-    int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 1024.0, FitRoute::kRationalMinimax>(
-    int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 4096.0, FitRoute::kRationalMinimax>(
-    int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 16384.0, FitRoute::kRationalMinimax>(
-    int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme, 65536.0, FitRoute::kRationalMinimax>(
-    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
+                                         1.0,
+                                         FitRoute::kChebyshev,
+                                         FitGranularity::kShipped>(int nmax,
+                                                                   double x,
+                                                                   double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
+                                         64.0,
+                                         FitRoute::kChebyshev,
+                                         FitGranularity::kShipped>(int nmax,
+                                                                   double x,
+                                                                   double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
+                                         256.0,
+                                         FitRoute::kChebyshev,
+                                         FitGranularity::kShipped>(int nmax,
+                                                                   double x,
+                                                                   double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
+                                         1024.0,
+                                         FitRoute::kChebyshev,
+                                         FitGranularity::kShipped>(int nmax,
+                                                                   double x,
+                                                                   double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
+                                         4096.0,
+                                         FitRoute::kChebyshev,
+                                         FitGranularity::kShipped>(int nmax,
+                                                                   double x,
+                                                                   double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
+                                         16384.0,
+                                         FitRoute::kChebyshev,
+                                         FitGranularity::kShipped>(int nmax,
+                                                                   double x,
+                                                                   double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
+                                         65536.0,
+                                         FitRoute::kChebyshev,
+                                         FitGranularity::kShipped>(int nmax,
+                                                                   double x,
+                                                                   double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
+                                         1.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kShipped>(int nmax,
+                                                                   double x,
+                                                                   double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
+                                         64.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kShipped>(int nmax,
+                                                                   double x,
+                                                                   double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
+                                         256.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kShipped>(int nmax,
+                                                                   double x,
+                                                                   double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
+                                         1024.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kShipped>(int nmax,
+                                                                   double x,
+                                                                   double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
+                                         4096.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kShipped>(int nmax,
+                                                                   double x,
+                                                                   double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
+                                         16384.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kShipped>(int nmax,
+                                                                   double x,
+                                                                   double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
+                                         65536.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kShipped>(int nmax,
+                                                                   double x,
+                                                                   double* out) noexcept;
 
-extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 1.0, FitRoute::kChebyshev>(
+extern template void
+BoysAllOrdersPacked<EvalScheme::kHorner, 1.0, FitRoute::kChebyshev, FitGranularity::kShipped>(
     int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 64.0, FitRoute::kChebyshev>(
+extern template void
+BoysAllOrdersPacked<EvalScheme::kHorner, 64.0, FitRoute::kChebyshev, FitGranularity::kShipped>(
     int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 256.0, FitRoute::kChebyshev>(
+extern template void
+BoysAllOrdersPacked<EvalScheme::kHorner, 256.0, FitRoute::kChebyshev, FitGranularity::kShipped>(
     int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 1024.0, FitRoute::kChebyshev>(
+extern template void
+BoysAllOrdersPacked<EvalScheme::kHorner, 1024.0, FitRoute::kChebyshev, FitGranularity::kShipped>(
     int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 4096.0, FitRoute::kChebyshev>(
+extern template void
+BoysAllOrdersPacked<EvalScheme::kHorner, 4096.0, FitRoute::kChebyshev, FitGranularity::kShipped>(
     int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 16384.0, FitRoute::kChebyshev>(
+extern template void
+BoysAllOrdersPacked<EvalScheme::kHorner, 16384.0, FitRoute::kChebyshev, FitGranularity::kShipped>(
     int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 65536.0, FitRoute::kChebyshev>(
+extern template void
+BoysAllOrdersPacked<EvalScheme::kHorner, 65536.0, FitRoute::kChebyshev, FitGranularity::kShipped>(
     int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 1.0, FitRoute::kRationalMinimax>(
+extern template void
+BoysAllOrdersPacked<EvalScheme::kHorner, 1.0, FitRoute::kRationalMinimax, FitGranularity::kShipped>(
     int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 64.0, FitRoute::kRationalMinimax>(
-    int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 256.0, FitRoute::kRationalMinimax>(
-    int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 1024.0, FitRoute::kRationalMinimax>(
-    int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 4096.0, FitRoute::kRationalMinimax>(
-    int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 16384.0, FitRoute::kRationalMinimax>(
-    int nmax, double x, double* out) noexcept;
-extern template void BoysAllOrdersPacked<EvalScheme::kHorner, 65536.0, FitRoute::kRationalMinimax>(
-    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
+                                         64.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kShipped>(int nmax,
+                                                                   double x,
+                                                                   double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
+                                         256.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kShipped>(int nmax,
+                                                                   double x,
+                                                                   double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
+                                         1024.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kShipped>(int nmax,
+                                                                   double x,
+                                                                   double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
+                                         4096.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kShipped>(int nmax,
+                                                                   double x,
+                                                                   double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
+                                         16384.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kShipped>(int nmax,
+                                                                   double x,
+                                                                   double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
+                                         65536.0,
+                                         FitRoute::kRationalMinimax,
+                                         FitGranularity::kShipped>(int nmax,
+                                                                   double x,
+                                                                   double* out) noexcept;
 
 // The narrow partition, at both schemes and every rung, on the shipped route
 // alone: the partition is a partition of that route's region-A fits.
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme,
-                                         1.0,
-                                         FitRoute::kChebyshev,
-                                         FitGranularity::kNarrow>(int nmax,
-                                                                  double x,
-                                                                  double* out) noexcept;
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme,
+extern template void
+BoysAllOrdersPacked<EvalScheme::kSplitClenshaw, 1.0, FitRoute::kChebyshev, FitGranularity::kNarrow>(
+    int nmax, double x, double* out) noexcept;
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
                                          64.0,
                                          FitRoute::kChebyshev,
                                          FitGranularity::kNarrow>(int nmax,
                                                                   double x,
                                                                   double* out) noexcept;
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme,
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
                                          256.0,
                                          FitRoute::kChebyshev,
                                          FitGranularity::kNarrow>(int nmax,
                                                                   double x,
                                                                   double* out) noexcept;
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme,
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
                                          1024.0,
                                          FitRoute::kChebyshev,
                                          FitGranularity::kNarrow>(int nmax,
                                                                   double x,
                                                                   double* out) noexcept;
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme,
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
                                          4096.0,
                                          FitRoute::kChebyshev,
                                          FitGranularity::kNarrow>(int nmax,
                                                                   double x,
                                                                   double* out) noexcept;
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme,
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
                                          16384.0,
                                          FitRoute::kChebyshev,
                                          FitGranularity::kNarrow>(int nmax,
                                                                   double x,
                                                                   double* out) noexcept;
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme,
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
                                          65536.0,
                                          FitRoute::kChebyshev,
                                          FitGranularity::kNarrow>(int nmax,
                                                                   double x,
                                                                   double* out) noexcept;
-extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
-                                         1.0,
-                                         FitRoute::kChebyshev,
-                                         FitGranularity::kNarrow>(int nmax,
-                                                                  double x,
-                                                                  double* out) noexcept;
-extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
-                                         64.0,
-                                         FitRoute::kChebyshev,
-                                         FitGranularity::kNarrow>(int nmax,
-                                                                  double x,
-                                                                  double* out) noexcept;
-extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
-                                         256.0,
-                                         FitRoute::kChebyshev,
-                                         FitGranularity::kNarrow>(int nmax,
-                                                                  double x,
-                                                                  double* out) noexcept;
-extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
-                                         1024.0,
-                                         FitRoute::kChebyshev,
-                                         FitGranularity::kNarrow>(int nmax,
-                                                                  double x,
-                                                                  double* out) noexcept;
-extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
-                                         4096.0,
-                                         FitRoute::kChebyshev,
-                                         FitGranularity::kNarrow>(int nmax,
-                                                                  double x,
-                                                                  double* out) noexcept;
-extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
-                                         16384.0,
-                                         FitRoute::kChebyshev,
-                                         FitGranularity::kNarrow>(int nmax,
-                                                                  double x,
-                                                                  double* out) noexcept;
-extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
-                                         65536.0,
-                                         FitRoute::kChebyshev,
-                                         FitGranularity::kNarrow>(int nmax,
-                                                                  double x,
-                                                                  double* out) noexcept;
+extern template void
+BoysAllOrdersPacked<EvalScheme::kHorner, 1.0, FitRoute::kChebyshev, FitGranularity::kNarrow>(
+    int nmax, double x, double* out) noexcept;
+extern template void
+BoysAllOrdersPacked<EvalScheme::kHorner, 64.0, FitRoute::kChebyshev, FitGranularity::kNarrow>(
+    int nmax, double x, double* out) noexcept;
+extern template void
+BoysAllOrdersPacked<EvalScheme::kHorner, 256.0, FitRoute::kChebyshev, FitGranularity::kNarrow>(
+    int nmax, double x, double* out) noexcept;
+extern template void
+BoysAllOrdersPacked<EvalScheme::kHorner, 1024.0, FitRoute::kChebyshev, FitGranularity::kNarrow>(
+    int nmax, double x, double* out) noexcept;
+extern template void
+BoysAllOrdersPacked<EvalScheme::kHorner, 4096.0, FitRoute::kChebyshev, FitGranularity::kNarrow>(
+    int nmax, double x, double* out) noexcept;
+extern template void
+BoysAllOrdersPacked<EvalScheme::kHorner, 16384.0, FitRoute::kChebyshev, FitGranularity::kNarrow>(
+    int nmax, double x, double* out) noexcept;
+extern template void
+BoysAllOrdersPacked<EvalScheme::kHorner, 65536.0, FitRoute::kChebyshev, FitGranularity::kNarrow>(
+    int nmax, double x, double* out) noexcept;
 // The same partition on the other route, which the lane holds as well: the
-// packed entry reads the route's pairs over the narrow cover - the two
-// routes' regions do not coincide, so a rung of the pair is a combination of
-// its own rather than a reading of the shipped bodies - and
-// boys_orders_simd.cpp instantiates it at both schemes and every rung. The
-// declarations below are what says so here: without them this block's record
-// of what the lane holds stops one combination short of the lane, and a
-// reader who trusts it concludes that a shape the library serves is a shape
-// it refuses.
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme,
+// packed entry reads the route's pairs over the narrow cover - the two routes'
+// regions do not coincide, so a rung of the pair is a combination of its own -
+// and boys_orders_simd.cpp instantiates it at both schemes and every rung, so
+// the declarations below complete this block's record of what the lane holds.
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
                                          1.0,
                                          FitRoute::kRationalMinimax,
                                          FitGranularity::kNarrow>(int nmax,
                                                                   double x,
                                                                   double* out) noexcept;
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme,
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
                                          64.0,
                                          FitRoute::kRationalMinimax,
                                          FitGranularity::kNarrow>(int nmax,
                                                                   double x,
                                                                   double* out) noexcept;
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme,
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
                                          256.0,
                                          FitRoute::kRationalMinimax,
                                          FitGranularity::kNarrow>(int nmax,
                                                                   double x,
                                                                   double* out) noexcept;
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme,
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
                                          1024.0,
                                          FitRoute::kRationalMinimax,
                                          FitGranularity::kNarrow>(int nmax,
                                                                   double x,
                                                                   double* out) noexcept;
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme,
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
                                          4096.0,
                                          FitRoute::kRationalMinimax,
                                          FitGranularity::kNarrow>(int nmax,
                                                                   double x,
                                                                   double* out) noexcept;
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme,
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
                                          16384.0,
                                          FitRoute::kRationalMinimax,
                                          FitGranularity::kNarrow>(int nmax,
                                                                   double x,
                                                                   double* out) noexcept;
-extern template void BoysAllOrdersPacked<kDefaultEvalScheme,
+extern template void BoysAllOrdersPacked<EvalScheme::kSplitClenshaw,
                                          65536.0,
                                          FitRoute::kRationalMinimax,
                                          FitGranularity::kNarrow>(int nmax,
                                                                   double x,
                                                                   double* out) noexcept;
-extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
-                                         1.0,
-                                         FitRoute::kRationalMinimax,
-                                         FitGranularity::kNarrow>(int nmax,
-                                                                  double x,
-                                                                  double* out) noexcept;
-extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
-                                         64.0,
-                                         FitRoute::kRationalMinimax,
-                                         FitGranularity::kNarrow>(int nmax,
-                                                                  double x,
-                                                                  double* out) noexcept;
+extern template void
+BoysAllOrdersPacked<EvalScheme::kHorner, 1.0, FitRoute::kRationalMinimax, FitGranularity::kNarrow>(
+    int nmax, double x, double* out) noexcept;
+extern template void
+BoysAllOrdersPacked<EvalScheme::kHorner, 64.0, FitRoute::kRationalMinimax, FitGranularity::kNarrow>(
+    int nmax, double x, double* out) noexcept;
 extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
                                          256.0,
                                          FitRoute::kRationalMinimax,
@@ -3076,36 +3109,43 @@ extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
 // reason above - so that a call site reaches the definition the library
 // already holds rather than instantiating a second copy of the body.
 #define BOYS_F32_ORDERS_PACKED_REFERENCE(kScheme, kBudget)                                         \
-    extern template void BoysAllOrdersF32Packed<kScheme, 1.0, FitRoute::kChebyshev, kBudget>(      \
+    extern template void BoysAllOrdersF32Packed<kScheme, 1.0, FitRoute::kChebyshev, kBudget,       \
+                                                FitGranularity::kShipped>(                         \
         int nmax, float x, float* out) noexcept;                                                   \
-    extern template void                                                                            \
-    BoysAllOrdersF32Packed<kScheme, 1.0, FitRoute::kRationalMinimax, kBudget>(                     \
+    extern template void BoysAllOrdersF32Packed<kScheme, 1.0, FitRoute::kRationalMinimax, kBudget, \
+                                                FitGranularity::kShipped>(                         \
         int nmax, float x, float* out) noexcept;
 
 #define BOYS_F32_ORDERS_PACKED_RUNG(kScheme, kRoute, kMultiplier, kBudget)                         \
-    extern template void                                                                           \
-    BoysAllOrdersF32Packed<kScheme, kMultiplier, kRoute, kBudget>(int nmax, float x,               \
-                                                                  float* out) noexcept;
+    extern template void BoysAllOrdersF32Packed<kScheme, kMultiplier, kRoute, kBudget,             \
+                                                FitGranularity::kShipped>(                         \
+        int nmax, float x, float* out) noexcept;
 
 #define BOYS_F32_ORDERS_PACKED_RUNGS(kBudget)                                                      \
-    BOYS_F32_ORDERS_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kChebyshev, 64.0, kBudget)           \
-    BOYS_F32_ORDERS_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kChebyshev, 256.0, kBudget)          \
-    BOYS_F32_ORDERS_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kChebyshev, 1024.0, kBudget)         \
-    BOYS_F32_ORDERS_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kChebyshev, 4096.0, kBudget)         \
-    BOYS_F32_ORDERS_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kChebyshev, 16384.0, kBudget)        \
-    BOYS_F32_ORDERS_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kChebyshev, 65536.0, kBudget)        \
+    BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kSplitClenshaw, FitRoute::kChebyshev, 64.0, kBudget)   \
+    BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kSplitClenshaw, FitRoute::kChebyshev, 256.0, kBudget)  \
+    BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kSplitClenshaw, FitRoute::kChebyshev, 1024.0, kBudget) \
+    BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kSplitClenshaw, FitRoute::kChebyshev, 4096.0, kBudget) \
+    BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kSplitClenshaw, FitRoute::kChebyshev, 16384.0, kBudget)\
+    BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kSplitClenshaw, FitRoute::kChebyshev, 65536.0, kBudget)\
     BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 64.0, kBudget)          \
     BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 256.0, kBudget)         \
     BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 1024.0, kBudget)        \
     BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 4096.0, kBudget)        \
     BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 16384.0, kBudget)       \
     BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 65536.0, kBudget)       \
-    BOYS_F32_ORDERS_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kRationalMinimax, 64.0, kBudget)     \
-    BOYS_F32_ORDERS_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kRationalMinimax, 256.0, kBudget)    \
-    BOYS_F32_ORDERS_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kRationalMinimax, 1024.0, kBudget)   \
-    BOYS_F32_ORDERS_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kRationalMinimax, 4096.0, kBudget)   \
-    BOYS_F32_ORDERS_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kRationalMinimax, 16384.0, kBudget)  \
-    BOYS_F32_ORDERS_PACKED_RUNG(kDefaultEvalScheme, FitRoute::kRationalMinimax, 65536.0, kBudget)  \
+    BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kSplitClenshaw, FitRoute::kRationalMinimax,            \
+                                64.0, kBudget)                                                     \
+    BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kSplitClenshaw, FitRoute::kRationalMinimax,            \
+                                256.0, kBudget)                                                    \
+    BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kSplitClenshaw, FitRoute::kRationalMinimax,            \
+                                1024.0, kBudget)                                                   \
+    BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kSplitClenshaw, FitRoute::kRationalMinimax,            \
+                                4096.0, kBudget)                                                   \
+    BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kSplitClenshaw, FitRoute::kRationalMinimax,            \
+                                16384.0, kBudget)                                                  \
+    BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kSplitClenshaw, FitRoute::kRationalMinimax,            \
+                                65536.0, kBudget)                                                  \
     BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 64.0, kBudget)    \
     BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 256.0, kBudget)   \
     BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 1024.0, kBudget)  \
@@ -3113,8 +3153,8 @@ extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
     BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 16384.0, kBudget) \
     BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 65536.0, kBudget)
 
-BOYS_F32_ORDERS_PACKED_REFERENCE(kDefaultEvalScheme, BoysBudget::kFloat)
-BOYS_F32_ORDERS_PACKED_REFERENCE(kDefaultEvalScheme, BoysBudget::kFp16)
+BOYS_F32_ORDERS_PACKED_REFERENCE(EvalScheme::kSplitClenshaw, BoysBudget::kFloat)
+BOYS_F32_ORDERS_PACKED_REFERENCE(EvalScheme::kSplitClenshaw, BoysBudget::kFp16)
 BOYS_F32_ORDERS_PACKED_REFERENCE(EvalScheme::kHorner, BoysBudget::kFloat)
 BOYS_F32_ORDERS_PACKED_REFERENCE(EvalScheme::kHorner, BoysBudget::kFp16)
 BOYS_F32_ORDERS_PACKED_RUNGS(BoysBudget::kFloat)
@@ -3463,10 +3503,10 @@ void BoysAllNRun(int nmax,
     // narrow policy trades away on this entry is the four-wide lane, which is a
     // cost of the option and not a value it returns - the scalar bodies below
     // are the per-argument path's own, exact to the bit.
-    if constexpr (kAccuracyMultiplier == 1.0 && Policy::kRoute == kDefaultFitRoute &&
+    if constexpr (kAccuracyMultiplier == 1.0 && Policy::kRoute == FitRoute::kChebyshev &&
                   Policy::kScheme == EvalScheme::kSplitClenshaw &&
                   Policy::kPack == PackAxis::kArguments &&
-                  Policy::kGranularity == kDefaultFitGranularity)
+                  Policy::kGranularity == FitGranularity::kShipped)
     {
         // The lane serves region A below the crossover order; at and above it
         // the scalar body is the faster of the two.
@@ -3592,7 +3632,7 @@ void BoysAllNImpl(int nmax,
         return;
     }
 
-    if constexpr (Policy::kPack == PackAxis::kOrders || Policy::kRoute != kDefaultFitRoute)
+    if constexpr (Policy::kPack == PackAxis::kOrders || Policy::kRoute != FitRoute::kChebyshev)
     {
         // The grouping scratch is the partitioned shape's: this path partitions
         // nothing and takes none of it.
@@ -3605,8 +3645,6 @@ void BoysAllNImpl(int nmax,
     }
 }
 
-// The plane entry's arguments-axis shape: the dispatch read off the argument
-// line, the sort over it, and one kernel per homogeneous run.
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 void BoysAllNPartitionedImpl(int nmax,
                              const double* x,
@@ -3714,7 +3752,7 @@ void BoysAllNSortedImpl(int nmax,
         return;
     }
 
-    if constexpr (Policy::kPack == PackAxis::kOrders || Policy::kRoute != kDefaultFitRoute)
+    if constexpr (Policy::kPack == PackAxis::kOrders || Policy::kRoute != FitRoute::kChebyshev)
     {
         BoysAllNRunPerArgument<kAccuracyMultiplier, Policy>(nmax, x, out, count);
     }

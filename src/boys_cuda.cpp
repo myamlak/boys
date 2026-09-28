@@ -149,8 +149,7 @@ BoysStatus CheckOrder(int nmax) {
 // Shared launch path for every entry: the count == 0 no-op (a zero-block launch
 // is a CUDA error, an empty batch is a success that writes nothing) and the one
 // status mapping. Order is either entry's first argument: the per-element order
-// array or the uniform batch's nmax. The pointers carry the entry's own element
-// type, the fp16 lane's crossing as the void* the .cu exports take.
+// array or the uniform batch's nmax.
 template <typename Launcher, typename Order, typename X, typename Value>
 BoysStatus RunLaunch(
     Launcher launcher, Order order, X x, Value* out, std::size_t count, void* stream) {
@@ -166,12 +165,11 @@ BoysStatus RunLaunch(
 
 namespace {
 // ---------------------------------------------------------------------------
-// The accuracy-multiplier effective-degree tables. The CUDA side cannot see
-// the constexpr degree machinery (nvcc translation units get a CUDA-safe
-// include list only), so
-// the host layer computes the six lanes' degree tables here and uploads
-// them through BoysCudaUploadEffTables, which caches per (device, m). The
-// lane order matches the cDegEff lane axis in boys_cuda.cu:
+// The accuracy-multiplier effective-degree tables. A CUDA-safe include list
+// cannot see the constexpr degree machinery, so the host layer computes the six
+// lanes' degree tables here and uploads them through BoysCudaUploadEffTables,
+// which caches per (device, m). The lane order matches the cDegEff lane axis in
+// boys_cuda.cu:
 //   0 = double single, 1 = double batch, 2 = float single, 3 = float batch,
 //   4 = fp16 single, 5 = fp16 batch.
 // degA layout: [lane][order][pieceInOrder]; degB layout: [lane][order].
@@ -193,9 +191,8 @@ std::array<int, kEffLaneCount*(kEffMaxOrder + 1)> gEffDegB{};
 
 // The narrow partition's cut, flat over the partition's rows as the derivation
 // returns it and as the device lane indexes it. One table and not a lane axis:
-// the effective degrees of the narrow partition are derived for the roles that
-// evaluate those fits, and the entries carrying the partition are the double
-// batch, so this is that role's table.
+// the entries carrying the partition are the double batch, so this is that
+// role's table.
 constexpr int kNarrowFlatPieces = detail::kNarrowAPieceStart[detail::kMaxOrder + 1];
 constexpr int kNarrowFlatB = detail::kNarrowBPieces * (kEffMaxOrder + 1);
 
@@ -206,18 +203,16 @@ std::array<int, kNarrowFlatB> gNarrowDegB{};
 // order-major as the CUDA lane's cDegEff axis is — the derivation is flat over
 // the pieces, and the lane reads it by (order, pieceInOrder) — and region B is
 // one row per order, read at order 0 by the batch shape. One table and not a
-// lane axis, for the same reason the narrow partition's is one: the entries
-// carrying this family are the double batch.
+// lane axis, for the same reason the narrow partition's is one.
 std::array<int, (kEffMaxOrder + 1) * kEffMaxPieces> gMonoDegA{};
 std::array<int, kEffMaxOrder + 1> gMonoDegB{};
 std::array<int, kNarrowFlatPieces> gNarrowMonoDegA{};
 std::array<int, kNarrowFlatB> gNarrowMonoDegB{};
 
 // Which multiplier the host-side tables above were last computed for. It is a
-// record of the HOST computation and not of what the device holds: residency on
-// a device is the upload's question, and its guard names the device as well as
-// the multiplier. Answering residency here would skip the upload a second
-// device still needs, and that device's kernels would read a zero table.
+// record of the HOST computation and not of what the device holds, so answering
+// residency from it would skip the upload a second device still needs and that
+// device's kernels would read a zero table.
 double gEffCachedM = -1.0;
 
 template <double kAccuracyMultiplier, detail::BoysRole kRole, bool kDoublePieces>
@@ -248,8 +243,7 @@ void FillEffLane(int lane) {
 
 // The narrow partition's cut for one multiplier, for the role the entries that
 // carry it have. Region B is kept in the whole derived form — flat over (piece,
-// order) — rather than at the order-0 column the batch shape reads, so what the
-// device holds is the derivation and not a projection of it.
+// order) — rather than at the order-0 column the batch shape reads.
 template <double kAccuracyMultiplier> void FillNarrowLane() {
     static constexpr auto kDegreesA =
         detail::NarrowRegionADegrees<kAccuracyMultiplier, detail::BoysRole::kDoubleBatch>();
@@ -270,8 +264,7 @@ template <double kAccuracyMultiplier> void FillNarrowLane() {
 // The double batch's cut of the shipped and the narrow fits in the monomial
 // basis: the same derivations as the Chebyshev tables above at the other form
 // of the same stored table (TailBasis::kMonomial), which is what a Horner rung
-// drops its coefficients from. The role is the one the entries carrying this
-// family have.
+// drops its coefficients from.
 template <double kAccuracyMultiplier> void FillMonoLane() {
     static constexpr auto kDegreesA = detail::RegionADegrees<kAccuracyMultiplier,
                                                              detail::BoysRole::kDoubleBatch,
@@ -321,8 +314,7 @@ template <double kAccuracyMultiplier> void FillNarrowMonoLane() {
 // arguments shape seeds at its top order's piece and pays that piece's w(b), the
 // orders shape reads each order's own piece at A = 1 — and both are taken from
 // the derivation over the partition's rows and reshaped to the lane's
-// (order, pieceInOrder) indexing. Region B is one pair either way, so one pair
-// is what lands.
+// (order, pieceInOrder) indexing. Region B is one pair either way.
 constexpr int kRatCutCells = (kEffMaxOrder + 1) * kEffMaxPieces * 2;
 constexpr int kNarrowRatCutPieces = detail::kNarrowBPieces * 2;
 
@@ -388,11 +380,9 @@ template <double kAccuracyMultiplier> void FillNarrowRatLane() {
 // the downward recursion amplifies float seed errors beyond their budgets).
 template <double kAccuracyMultiplier> BoysStatus EnsureEffTables() {
     // Whether the device in hand already holds these tables is the .cu's
-    // question and not a cache kept here: a cache keyed on the multiplier alone
-    // cannot see a device switch, and would report one device's tables as
-    // another's. The record the answer is read from names the device, so asking
-    // it is what keeps a second device from being served the first one's
-    // answer.
+    // question: its record names the device as well as the multiplier, so
+    // asking it is what keeps a device switch from being answered with the
+    // previous device's tables.
     if (BoysCudaEffTablesResident(kAccuracyMultiplier) == 1)
     {
         return BoysStatus::kSuccess;
@@ -400,7 +390,7 @@ template <double kAccuracyMultiplier> BoysStatus EnsureEffTables() {
 
     // The host-side tables depend on the multiplier alone, so they are computed
     // once per multiplier. The upload decides for itself as well: it answers for
-    // whichever device it is about to write to, whatever its caller believed.
+    // whichever device it is about to write to.
     if (gEffCachedM != kAccuracyMultiplier)
     {
         FillEffLane<kAccuracyMultiplier, detail::BoysRole::kDoubleSingle, true>(0);
@@ -461,8 +451,7 @@ BoysStatus BoysCuda::DeviceTables(BoysDeviceTables* out) {
         return status;
     }
 
-    // The rung is made resident before the handle that reads it is handed over,
-    // so a caller that got a handle has a rung and not only a promise of one.
+    // The rung is made resident before the handle that reads it is handed over.
     // The full-accuracy tables are not in that image: a call at m = 1 has
     // nothing to upload and leaves whatever relaxed rung is resident in place.
     if constexpr (kAccuracyMultiplier != kBoysFullAccuracyMultiplier)
@@ -517,13 +506,9 @@ BoysStatus BoysCuda::SingleF32(
         return BoysStatus::kDeviceError;
     }
 
-    // The exponential is part of the call's identity, not a run-time switch:
-    // each option is its own kernel with its own bound, and no path here
-    // substitutes one for the other.
     if constexpr (kAccuracyMultiplier == 1.0)
     {
-        // Byte-identical to the full-accuracy path: the m = 1 instantiation
-        // calls the existing kernel and cDeg tables.
+        // Byte-identical to the full-accuracy path.
         if constexpr (kExp == RegionBExp::kFast)
         {
             return RunLaunch(BoysCudaLaunchSingleF32Fast, n, x, out, count, stream);
@@ -728,10 +713,8 @@ BoysStatus BoysCuda::AllOrdersF64NarrowOrders(
     }
 }
 
-// The monomial scheme's four shapes. They are the shipped entries' own path —
-// the same table upload, the same rung upload, the same status mapping — with
-// the launcher naming the pool and the summation the scheme reads, so what
-// differs from the entries above is the launcher and nothing else.
+// The monomial scheme's four shapes: the entries above' path, with the launcher
+// naming the pool and the summation the scheme reads.
 template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF64Mono(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
@@ -828,10 +811,9 @@ BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono(
     }
 }
 
-// The fit route's four shapes, on the same path for the same reason: the pieces,
-// the table upload and the rung upload are the entries above', and the launcher
-// names the pair a piece is read from. The route's own cut is per reading, so
-// each shape's launcher names which of the two cuts it reads.
+// The fit route's four shapes, on the same path: the launcher names the pair a
+// piece is read from, and the route's cut is per reading, so each shape's
+// launcher names which of the two cuts it reads.
 template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF64Rat(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
@@ -1281,17 +1263,11 @@ template BoysStatus BoysCuda::AllNF16<1e8>(int, const F16*, F16*, std::size_t, v
 #endif
 
 // ---------------------------------------------------------------------------
-// The option space's rungs on this lane. The options the accuracy contract is
-// published over are the CPU tier lane's seven multipliers (AccuracyTier), and
-// this lane carried none of them but m = 1: its own set is finer at the low end
-// and coarser at the top, so the two met at the default and at nothing else. A
-// caller who named a tier here was refused by every entry of this lane while the
-// library's accuracy accessors answered for the combination as though it were
-// carried. The blocks below are that set served. Each of the six is instantiated
-// exactly as the lane's own are — the same entries, the same degree tables cut
-// at that multiplier — so the set the API answers for and the set the kernels are
-// compiled at are one set, kDeviceRungs (boys_cuda_options.hpp), twelve
-// multipliers wide.
+// The option space's rungs on this lane: the CPU tier lane's seven multipliers
+// (AccuracyTier), instantiated exactly as the lane's own rungs are — the same
+// entries, the same degree tables cut at that multiplier — so the set the API
+// answers for and the set the kernels are compiled at are one set,
+// kDeviceRungs (boys_cuda_options.hpp), twelve multipliers wide.
 // ---------------------------------------------------------------------------
 
 template BoysStatus BoysCuda::SingleF32<64.0>(
@@ -1541,9 +1517,8 @@ template BoysStatus BoysCuda::AllNF16<65536.0>(int, const F16*, F16*, std::size_
 // The handle for each rung the lane serves, kDeviceRungs (boys_cuda_options.hpp)
 // — one instantiation per rung, the same list the entries above are compiled at,
 // because the rung a handle is filled at is the rung its entries then read. m = 1
-// is the default argument's own instantiation and is the one every existing
-// caller reaches; the rest are the rungs a device entry can be asked for, and
-// each makes its own rung resident.
+// is the default argument's own instantiation; each other makes its own rung
+// resident.
 template BoysStatus BoysCuda::DeviceTables<kBoysFullAccuracyMultiplier>(BoysDeviceTables*);
 template BoysStatus BoysCuda::DeviceTables<2.0>(BoysDeviceTables*);
 template BoysStatus BoysCuda::DeviceTables<10.0>(BoysDeviceTables*);
@@ -1563,9 +1538,7 @@ template BoysStatus BoysCuda::DeviceTables<1e8>(BoysDeviceTables*);
 // One row per option, and the rows are read from the entries above rather than
 // from a list kept beside them: a name here is the name an entry is documented
 // and reported under, a bound is the bound that entry states, and the degree
-// lane is the lane its own documentation names. Nothing in this table is a
-// figure of its own, so a report that enumerates it cannot state a bound the
-// entry does not carry.
+// lane is the lane its own documentation names.
 //
 // The fp16 rows are the build-time case of an unserved option: they are here
 // whatever the seam is set to, with the reason when it is closed, so the space
@@ -1597,6 +1570,12 @@ constexpr double kBoundF32 = 1.5e-7;
 constexpr double kBoundF32Fast = 1.5e-7 + 8e-8;
 constexpr double kBoundF16 = 1e-7;
 
+// The one bound term in this table that the accuracy multiplier does not scale:
+// the fast region-B exponential's corrected seed, whose form adds 8e-8 to the
+// truncated bound. It is the difference of the two figures above rather than a
+// third spelling of 8e-8, so the two rows cannot drift from it.
+constexpr double kFastSeedFixed = kBoundF32Fast - kBoundF32;
+
 constexpr DeviceOptionInfo kDeviceOptions[] = {
     {DeviceEntry::kSingleF64, "single-fp64", DeviceOptionGroup::kLaunched,
      DeviceOptionPrecision::kFp64, DeviceOptionShape::kSingle, DeviceOptionQuestion::kSingle,
@@ -1609,7 +1588,7 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
     {DeviceEntry::kSingleF32Fast, "single-fp32-fast", DeviceOptionGroup::kLaunched,
      DeviceOptionPrecision::kFp32, DeviceOptionShape::kSingle, DeviceOptionQuestion::kSingle,
      DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF32Single, kBoundF32Fast,
-     kFormF32Fast, true, nullptr},
+     kFormF32Fast, true, nullptr, kDefaultEvalScheme, kDefaultFitRoute, kFastSeedFixed},
     {DeviceEntry::kSingleF16, "single-fp16", DeviceOptionGroup::kLaunched,
      DeviceOptionPrecision::kFp16, DeviceOptionShape::kSingle, DeviceOptionQuestion::kSingle,
      DeviceOptionAxis::kNone, RegionBExp::kAccurate, BoysDeviceLane::kF16Single, kBoundF16,
@@ -1725,7 +1704,8 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
     {DeviceEntry::kDeviceSingleF32Fast, "device-single-fp32-fast",
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp32, DeviceOptionShape::kSingle,
      DeviceOptionQuestion::kSingle, DeviceOptionAxis::kRegionBExp, RegionBExp::kFast,
-     BoysDeviceLane::kF32Single, kBoundF32Fast, kFormF32Fast, true, nullptr},
+     BoysDeviceLane::kF32Single, kBoundF32Fast, kFormF32Fast, true, nullptr, kDefaultEvalScheme,
+     kDefaultFitRoute, kFastSeedFixed},
     {DeviceEntry::kDeviceSingleF16, "device-single-fp16", DeviceOptionGroup::kDeviceCallable,
      DeviceOptionPrecision::kFp16, DeviceOptionShape::kSingle, DeviceOptionQuestion::kSingle,
      DeviceOptionAxis::kNone, RegionBExp::kAccurate, BoysDeviceLane::kF16Single, kBoundF16,
@@ -1773,9 +1753,8 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
      kFp16Refusal},
 };
 
-// The report's contract, checked at compile time rather than asserted in prose:
-// one row per DeviceEntry and row i is entry i. A row inserted for an entry
-// without its enumerator, or a row dropped, does not compile.
+// The report's contract, checked at compile time: one row per DeviceEntry and
+// row i is entry i.
 constexpr bool DeviceOptionsAreInEnumeratorOrder() {
     if (std::size(kDeviceOptions) != static_cast<std::size_t>(DeviceEntry::kCount))
     {

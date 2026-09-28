@@ -305,16 +305,58 @@ int main() { return 0; }
 
 if (BOYS_ARCH_X86_64)
     target_compile_definitions(boys PRIVATE BOYS_SIMD_X86=1)
+
+    # The flag set these TUs carry is two things at once, and only the first is
+    # why it is here. It lets the AVX2/FMA/F16C intrinsics compile - and, on
+    # GCC and Clang, -mfma is also a licence to fuse a bare `a * b + c` into one
+    # rounding, which the rest of the build's flags do not give it.
+    #
+    # That licence is not this flag set's to spend. Whether a bare product-plus-
+    # add rounds once or twice is a property of the BUILD here: it was measured
+    # once, at the build's own flags, further up this file, and published as
+    # BOYS_SCALAR_CONTRACTS. A TU that carries the intrinsics' flags answers the
+    # same question a second time, and answers it faster than the build did - so
+    # the scalar code such a TU also carries (the fallback the packed orders axis
+    # runs outside its own interval, which is a scalar lane instantiated in that
+    # TU and not called out of line) is then a different arithmetic from the
+    # scalar lane a caller reaches, and the two part by a last bit. The
+    # measurement above is what makes that a disagreement rather than a
+    # description: a caller's own instantiation of the scalar lane is compiled at
+    # the build's flags, and the library's fallback is the value it has to
+    # reproduce.
+    #
+    # So the measured answer is pinned onto these TUs rather than inherited by
+    # them, and the arithmetic of everything they carry - vector bodies, whose
+    # FMA is written as an intrinsic and is unmoved by this, and scalar bodies,
+    # which are moved onto the build's answer - is the build's arithmetic.
     if (MSVC)
         # AVX2 intrinsics live in the SIMD TU only (F16C comes with /arch:AVX2);
         # the entry points are runtime-checked via BoysAvx2Available(), which
         # requires the FMA feature bit because the kernels are FMA chains.
+        #
+        # No contraction flag is added here: MSVC contracts only under /fp:fast,
+        # which is not what the measurement above runs under, so this flag set
+        # already carries the measured answer. /fp:contract is avoided for the
+        # reason the flag set is spelled this way at all - it is not accepted by
+        # every MSVC this library builds on.
         set_source_files_properties(src/boys_simd.cpp src/boys_orders_simd.cpp PROPERTIES
             COMPILE_OPTIONS "/arch:AVX2")
     else()
         # GCC does not imply F16C via -mavx2.
+        set(_boys_simd_flags "-mavx2;-mfma;-mf16c")
+        if (DEFINED BOYS_SCALAR_CONTRACTS)
+            if (BOYS_SCALAR_CONTRACTS)
+                list(APPEND _boys_simd_flags "-ffp-contract=fast")
+            else()
+                list(APPEND _boys_simd_flags "-ffp-contract=off")
+            endif()
+        endif()
+        # Left unpinned on a cross-compiling configure, where no answer was
+        # measured and the build states none: the flag set is then exactly the
+        # intrinsics' again, which is what the rest of that configure has too.
         set_source_files_properties(src/boys_simd.cpp src/boys_orders_simd.cpp PROPERTIES
-            COMPILE_OPTIONS "-mavx2;-mfma;-mf16c")
+            COMPILE_OPTIONS "${_boys_simd_flags}")
+        unset(_boys_simd_flags)
     endif()
 else()
     target_compile_definitions(boys PRIVATE BOYS_SIMD_X86=0)
@@ -903,6 +945,20 @@ if (BUILD_CUDA)
         target_compile_features(boys-cuda-probe-tests PRIVATE cxx_std_20)
         boys_strict_warnings(boys-cuda-probe-tests)
         add_test(NAME boys-cuda-probe-tests COMMAND boys-cuda-probe-tests)
+
+        # This suite holds two long poles and a timeout that reflects them, so a
+        # hung run fails here instead of hanging. The tie test hunts a tie and
+        # costs 52 minutes measured green on this card, 75 to 85 by the model
+        # the file's own preamble states, and past 107 minutes on a machine with
+        # other work on it; the refusal test was 35.8 minutes measured before the
+        # probe began measuring every rung, and the rest of the suite is about
+        # fifteen minutes. The four hours below are about 1.5x the upper end of
+        # that, so the suite is not failed for running on a host other lanes are
+        # using, and a run that has genuinely stopped is ended.
+        #
+        # No CI leg builds CUDA (BUILD_CUDA is OFF in every one), so this is a
+        # local-robustness bound and not a CI one.
+        set_tests_properties(boys-cuda-probe-tests PROPERTIES TIMEOUT 14400)
 
         # The DEVICE GATE (tests/boys_cuda_accuracy_gate.cpp) measures every
         # documented device bound against the CPU gate's own committed

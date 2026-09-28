@@ -62,17 +62,14 @@ namespace boys {
 ///
 /// The bare approximation is not offered at any multiplier. Its failing band is
 /// interior to region B — a caller cannot name a piece of a region — so there
-/// is no certified sub-range to restrict it to, and a bound that a wrong sign
-/// fits inside is not a bound for a consumer that reads the value rather than
-/// its distance from F_n(x). That is the whole of the exclusion: with the
-/// correction, both options hold their bounds in every region.
+/// is no certified sub-range to restrict it to. With the correction, both
+/// options hold their bounds in every region.
 ///
 /// What separates the two is then the bound and not a counted cost: the
 /// corrected form's kernel is the same size statically as the accurate one (944
-/// instructions against 944 at m = 1, 976 against 976 on the relaxed lane),
-/// where the bare approximation is eight fewer and certified nowhere, and the
-/// exponential is evaluated once per element, outside the order loop. No speed
-/// is claimed for either option, and the accurate one carries the tighter
+/// instructions against 944 at m = 1, 976 against 976 on the relaxed lane), and
+/// the exponential is evaluated once per element, outside the order loop. No
+/// speed is claimed for either option, and the accurate one carries the tighter
 /// bound of the two.
 ///
 /// One name serves both lanes that take the option — the batch entry
@@ -93,21 +90,14 @@ enum class RegionBExp : int {
 
 /// The region-B exponential the device lane's f32 entries evaluate when the
 /// call site names none, which is the option whose bound is the lane's own:
-/// \c RegionBExp::kAccurate, the library routine the f32 batch bodies have
-/// always run.
+/// \c RegionBExp::kAccurate, the library routine the f32 batch bodies run.
 ///
-/// It is named for the same reason the CPU surface's defaults are: so that the
-/// selection in force is a thing a caller can point at, a document can cite and
-/// a test can compare against, rather than the zero value of a template
-/// parameter. A caller who names no exponential gets this name; naming it
-/// explicitly is the same instantiation and no second arithmetic.
+/// A caller who names no exponential gets this name; naming it explicitly is
+/// the same instantiation and no second arithmetic.
 ///
 /// The other axis of the device lane's default is its accuracy multiplier,
-/// which is \c kBoysFullAccuracyMultiplier, the same name the CPU entries
-/// default to. The two are the whole of what "the device lane's default"
-/// selects: the device surface takes no fit route, no scheme, no budget, no
-/// packing axis and no partition, so a caller choosing a device precision and
-/// naming neither of these is choosing everything the lane has to choose.
+/// \c kBoysFullAccuracyMultiplier, the same name the CPU entries default to.
+/// The two are the whole of what "the device lane's default" selects.
 ///
 /// Neither default was chosen against a measurement — see the per-precision
 /// defaults in docs/lane-contract.md for what that means and what changes when

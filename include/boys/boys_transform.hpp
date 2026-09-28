@@ -192,12 +192,9 @@ inline constexpr double kRegionAEnd = 11.899848152108484;
 
 /// The arithmetic mode of the region-A transform, as a compile-time parameter.
 ///
-/// A mode's bound is a statement about an arithmetic, and where that arithmetic
-/// ran is what decides whether the bound is a certification. Each mode is
-/// therefore reported with its certification (BoysProductModes) rather than
-/// only with its bound: a certified mode's bound was measured by the arithmetic
-/// the mode names, and an uncertified mode's bound is arithmetic on a model of
-/// an accumulator, which is a narrower claim than a card.
+/// A mode's bound is a statement about an arithmetic, so each mode is reported
+/// with its certification (BoysProductModes) as well as with its bound; see
+/// ModeCertification for what the two classes mean.
 ///
 /// \ingroup boys
 enum class ProductMode : int {
@@ -223,10 +220,10 @@ enum class ProductMode : int {
 /// What a mode's bound is a measurement of.
 ///
 /// The distinction is not a quality ranking: both classes are measured, and
-/// neither is a guess. It is a statement about what the number can be held
-/// against. A card's fused sum truncates and aligns its addends, which the
-/// models behind the uncertified modes do not do, so an uncertified bound can
-/// be wrong in the direction that matters and only hardware can settle it.
+/// neither is a guess. A card's fused sum truncates and aligns its addends,
+/// which the models behind the uncertified modes do not do, so an uncertified
+/// bound can be wrong in the direction that matters and only hardware can
+/// settle it.
 ///
 /// \ingroup boys
 enum class ModeCertification : std::uint8_t {
@@ -339,8 +336,7 @@ extern template void BoysRegionAProduct<ProductMode::kFp16, kBoysFullAccuracyMul
     RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
 
 // The kernel behind the entry declared above, defined here so that every
-// multiplier a caller names is instantiable at the call site. The reference
-// documents the entry; this is its implementation.
+// multiplier a caller names is instantiable at the call site.
 namespace detail {
 
 // ---------------------------------------------------------------------------
@@ -433,11 +429,9 @@ using Fp16Policy = ProductPolicy<11, 24, 1, float>;
 /// The policy of a mode enumerator.
 ///
 /// The primary template is the refusal, not a default: a mode the specializations
-/// below do not name has no policy, and this is where that is said in a
-/// sentence rather than left to an incomplete type. A mode that fell through to
-/// another mode's policy would be evaluated in arithmetic it does not name and
-/// would be held to a bound its own row does not state, which is the one thing
-/// the mode axis must not do.
+/// below do not name has no policy. A mode that fell through to another mode's
+/// policy would be evaluated in arithmetic it does not name and would be held to
+/// a bound its own row does not state.
 template <ProductMode kMode> struct PolicyOf {
     static_assert(kMode == ProductMode::kFp64 || kMode == ProductMode::kTf32x3 ||
                       kMode == ProductMode::kBf16x6,
@@ -495,8 +489,7 @@ template <int kIndex> constexpr std::size_t BandOffset(int order) noexcept {
 
 /// Region A's double table is two bands shared by all orders - that is what
 /// makes its per-order fits one coefficient matrix per band, and so what makes
-/// this lane a product at all. A table that stops being that shape is a
-/// different lane's table, not a silently different product.
+/// this lane a product at all.
 constexpr bool SharedBandTable() noexcept {
     const OrderPiece& first = kPieces[static_cast<std::size_t>(kPieceStart[0])];
     const OrderPiece& second = kPieces[static_cast<std::size_t>(kPieceStart[0] + 1)];
@@ -612,8 +605,7 @@ void RegionAProductBand(int nmax, const double* x, double* out, std::size_t coun
     }
 
     // The coefficient matrix's parts: one matrix per order and degree, shared
-    // by every argument of the batch, which is what makes the work a product
-    // rather than a set of independent dot products.
+    // by every argument of the batch.
     Value coeffs[kParts][kOrders][kWidth];
 
     for (int order = 0; order <= nmax; ++order)
@@ -660,9 +652,8 @@ void RegionAProductBand(int nmax, const double* x, double* out, std::size_t coun
             }
         }
 
-        // The second Chebyshev value exists only when the width has one: at a
-        // width of 1 the whole block is discarded rather than branched over,
-        // so the block is never the one a constant condition names.
+        // The second Chebyshev value exists only when the width has one; at a
+        // width of 1 the whole block is discarded rather than branched over.
         if constexpr (kWidth > 1)
         {
             for (std::size_t s = 0; s < n; ++s)
@@ -738,11 +729,7 @@ void RegionAProductBand(int nmax, const double* x, double* out, std::size_t coun
                 // total's last bit. This is the second half of what the degree
                 // loop's direction starts: at the same formats, the other
                 // direction and a single running total cost up to three times
-                // the error. Both halves are the software's to choose -
-                // permuting the columns of the coefficient matrix and the rows
-                // of the basis by the same permutation leaves the product
-                // unchanged - so this is a layout decision and not a property
-                // of the card.
+                // the error.
                 for (int width = kWidth; width > 1; width = (width + 1) / 2)
                 {
                     for (int k = 0; 2 * k + 1 < width; ++k)

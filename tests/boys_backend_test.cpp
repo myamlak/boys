@@ -249,18 +249,18 @@ TEST(BackendTest, ThePackedPairAppearsExactlyWithTheVectorTier) {
 // ---------------------------------------------------------------------------
 // Every axis the entries select is one field of EvalPolicy, and every field has
 // its own default. What the entries do with an axis is their own business; what
-// is pinned here is that the defaults are the shipped ones, so a call site that
-// names no axis compiles the code it always did, and that the axes report
-// themselves by name.
+// is pinned here is which member each default names, so that a move of one is a
+// decision this test states rather than a value that follows silently, and that
+// the axes report themselves by name.
 static_assert(boys::EvalPolicy<>{}.kRoute == boys::FitRoute::kChebyshev,
               "the default fit route moved");
-static_assert(boys::EvalPolicy<>{}.kScheme == boys::EvalScheme::kSplitClenshaw,
+static_assert(boys::EvalPolicy<>{}.kScheme == boys::EvalScheme::kHorner,
               "the default evaluation scheme moved");
 static_assert(boys::EvalPolicy<>{}.kBudget == boys::BoysBudget::kFloat,
               "the default engine budget moved");
-static_assert(boys::EvalPolicy<>{}.kGranularity == boys::FitGranularity::kShipped,
-              "the default partition moved: a call site that names none must compile the "
-              "committed tables");
+static_assert(boys::EvalPolicy<>{}.kGranularity == boys::FitGranularity::kNarrow,
+              "the default partition moved: a call site that names none must read the narrow "
+              "pieces' coefficients");
 
 // Naming the narrow partition is answered from its own tables; the combinations
 // that have no narrow table are refused where they are named rather than

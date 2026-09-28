@@ -29,17 +29,6 @@
 /// arithmetic at each call site, which is the same arithmetic the batch kernels
 /// run.
 ///
-/// The alternative designs were weighed and rejected for stated reasons rather
-/// than by omission. A device-linked library (relocatable device code) would
-/// put the arithmetic in a separate object, so a fused kernel could not inline
-/// it — the recursion loops would become device function calls — and it would
-/// require \c -rdc=true plus a device link in every consumer's build, which is
-/// a larger demand on the caller than the compile time this header costs. A
-/// copy of the coefficient tables inside the header would duplicate roughly
-/// 21 KB of tables per translation unit that includes it, and would make the
-/// tables a compile-time property of the consumer rather than the device the
-/// library uploaded them to.
-///
 /// **Precision.** The double entries are the primary surface: a fused integral
 /// kernel is a double-precision computation, and the fp64 bound is what decides
 /// whether it can use the lane at all. The float entries follow — on consumer
@@ -66,8 +55,7 @@
 /// the range is \c kOrderOutOfRange; an order whose values do not fit the
 /// caller's array is \c kCapacityTooSmall; a handle that carries no tables is
 /// \c kTablesNotReady; a multiplier that is not the resident rung is
-/// \c kMultiplierNotResident. None of the four is silent, and none of them
-/// returns a value in place of the ones it could not compute.
+/// \c kMultiplierNotResident.
 ///
 /// The checks are ordered tables, then order, then capacity, then rung: a
 /// request that is malformed is reported as malformed whether or not the rung it
@@ -264,9 +252,8 @@ __device__ __forceinline__ bool DeviceOrderValid(int order) {
 }
 
 // Which lane's degrees a call reads, resolved once per call from the rung the
-// caller named. m = 1 reads the handle's own full-accuracy tables — the same
-// values the entries read before the rung existed — and every other rung reads
-// the resident relaxed set, which the lane index selects.
+// caller named. m = 1 reads the handle's own full-accuracy tables, and every
+// other rung reads the resident relaxed set, which the lane index selects.
 //
 // The lanes whose region-A seed is the double piece table are the double single
 // entry and the three family entries; the two single entries of the narrow

@@ -803,10 +803,19 @@ TEST(BoysTest, SimdMatchesScalarWhenAvailable) {
 
     boys::detail::BoysRegionBSimd(n, x.data(), batchOut.data(), kCount);
 
+    // The lane is the split Clenshaw recurrence over the shipped tables, so the
+    // scalar reading it has to reproduce is that policy's - not the default
+    // entry's, which is whatever the last measurement chose.
+    using LanePolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                        boys::EvalScheme::kSplitClenshaw,
+                                        boys::BoysBudget::kFloat,
+                                        boys::PackAxis::kArguments,
+                                        boys::FitGranularity::kShipped>;
+
     for (std::size_t i = 0; i < kCount; ++i)
     {
         double scalar[boys::kMaxBoysOrder + 1];
-        boys::BoysAllOrders(n, x[i], scalar);
+        boys::BoysAllOrders<1.0, LanePolicy>(n, x[i], scalar);
 
         for (int k = 0; k <= n; ++k)
         {

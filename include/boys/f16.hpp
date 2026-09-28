@@ -7,11 +7,11 @@
 /// std::float16_t / std::bfloat16_t only on toolchains that implement them
 /// (GCC 13+, Clang 17+). The MSVC STL ships `stdfloat` but declares no
 /// extended types ("We don't support any optional extended floating-point
-/// types" — 14.51 header text), so this library supplies the
-/// self-contained F16/Bf16
-/// wrappers there: pure I/O types over the IEEE-754 binary16 / bfloat16 bit
-/// patterns. No third-party half library, and no arithmetic outside the
-/// engine's float domain — the half value only crosses the lane boundary.
+/// types" — 14.51 header text), so this library supplies the self-contained
+/// F16/Bf16 wrappers there: pure I/O types over the IEEE-754 binary16 /
+/// bfloat16 bit patterns. No third-party half library, and no arithmetic
+/// outside the engine's float domain — the half value only crosses the lane
+/// boundary.
 
 #include <bit>
 #include <cstdint>
