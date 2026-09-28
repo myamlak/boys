@@ -2,11 +2,8 @@
 
 // The option space the device-cost probe measures, shared by its host
 // translation unit (boys_cuda_probe.cpp) and its device one
-// (boys_cuda_probe_kernels.cu). The rows are the library's own
-// (BoysDeviceOptions, boys_cuda_options.hpp) and this file only names them, so
-// the integer crossing the host/device boundary is never a literal on one side
-// and a switch arm on the other, and the two translation units cannot disagree
-// about which options exist.
+// (boys_cuda_probe_kernels.cu), so that the two cannot disagree about which
+// options exist.
 //
 // It includes one library header and it is CUDA-header-free, so the nvcc
 // translation unit's include list (see the .cu preamble) can hold it.
@@ -19,19 +16,16 @@ namespace probe_detail {
 /// The device option space the probe measures, as the library reports it. The
 /// rows are `boys::DeviceEntry`, the enumerators of BoysDeviceOptions(), so the
 /// integer crossing the host/device boundary is never a literal on one side and
-/// a switch arm on the other, and a row the library adds is a row this file
-/// has to handle rather than a row it silently lacks.
+/// a switch arm on the other.
 using ProbeEntry = ::boys::DeviceEntry;
 
 /// The question classes the report ranks inside, one per member of the
-/// library's own DeviceOptionQuestion: an entry produces a definite amount of
-/// output for a given workload, and two entries that produce different amounts
-/// are not being asked the same question.
+/// library's own DeviceOptionQuestion: two entries that produce different
+/// amounts of output are not being asked the same question.
 using ProbeQuestion = ::boys::DeviceOptionQuestion;
 
-/// The two routes an option is reached by, the library's own grouping: the
-/// library launched it, or the caller's kernel calls it and this probe times
-/// the difference.
+/// The two routes an option is reached by, the library's own grouping: launched
+/// by the library, or called from the caller's kernel. See ProbeRoute.
 using ProbeGroup = ::boys::DeviceOptionGroup;
 
 /// How an entry's figure was obtained. The two are not comparable as methods
@@ -49,10 +43,8 @@ enum class ProbeRoute : int {
 /// it is what the in-kernel all-n rows are measured at.
 inline constexpr int kProbeInKernelTopOrder = 32;
 
-/// The canary's work: rounds of a 64-bit xorshift per thread of a fixed grid.
-/// An integer chain deliberately, as the host probe's canary is — no
-/// floating-point state, so the arithmetic this probe ranks cannot change the
-/// cost of the instrument that judges the run.
+/// The canary's work: rounds of a 64-bit xorshift per thread of a fixed grid —
+/// an integer chain deliberately, as the host probe's canary is.
 inline constexpr int kProbeCanaryBlocks = 64;
 inline constexpr int kProbeCanaryThreads = 256;
 inline constexpr int kProbeCanaryRounds = 1 << 14;
@@ -81,8 +73,7 @@ struct ProbeBuildFacts {
 };
 
 /// What one timed region should run. One struct rather than a dozen positional
-/// arguments across the boundary, so that the host side names what it is timing
-/// at the call site instead of counting parameters.
+/// arguments across the boundary.
 struct ProbeTimeRequest {
     /// Which region: see the ProbeWhat enumerators.
     int what;
@@ -130,6 +121,23 @@ struct ProbeTimeRequest {
 
     /// Arguments in the batch.
     unsigned long long count;
+
+    /// The accuracy rung the region runs at: one of kDeviceRungs
+    /// (boys_cuda_options.hpp), and m = 1 when the caller names none. It is the
+    /// axis this probe's classes are keyed on beside the precision and the
+    /// question.
+    ///
+    /// What it selects differs between the two routes. A launched region runs
+    /// the entry's full-accuracy kernel at m = 1 and the same entry's
+    /// effective-degree kernel at any other rung, which is what the host entries
+    /// do at the same multiplier: the relaxed degrees are read from the device
+    /// and not compiled in. An in-kernel region passes it to the device-callable
+    /// entry, which matches it against the rung the handle's tables were cut for
+    /// and refuses the call when the two differ. Nothing here decides which rung
+    /// is resident: the host side makes one resident before the rows that name it
+    /// are timed, and a rung that could not be made resident is a refusal the
+    /// report states.
+    double multiplier;
 
     /// Receives the region's device milliseconds.
     double* outMs;
