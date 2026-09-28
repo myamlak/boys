@@ -25,9 +25,8 @@
 /// the packed instructions (`vaddph`/`vdivph`/`vsqrtph` on x86-64 with
 /// AVX512-FP16, the `f16` vector forms elsewhere): one instruction per
 /// operation for the register's two values. This tree carries no ISA-specific
-/// backend — a branch no leg of its test matrix can execute would be a claim
-/// with no artifact behind it — so the portable body above is what runs, and
-/// the equivalences it rests on are what the suite verifies.
+/// backend, so the portable body above is what runs, and the equivalences it
+/// rests on are what the suite verifies.
 
 #include "boys/f16.hpp"
 

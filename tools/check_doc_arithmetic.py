@@ -6,9 +6,9 @@ bound that has a verdict is a bound nobody has to re-derive. A *derived*
 statement has no such check. "sixty times more accurate than the numbers used
 to store it", "a margin of thousandths of a per cent", "five to eight orders
 of magnitude past the 5.5e-14 bound" are arithmetic on numbers the same
-sentence prints, and nothing in the repository recomputes them. Readers found
-the errors in the calibration corpus below by doing exactly that arithmetic,
-by hand.
+sentence prints, and nothing in the repository recomputes them. A reader
+checking one of them has to do exactly that arithmetic by hand, and the
+calibration corpus below is the set of shapes where that has gone wrong.
 
 This script does it mechanically, and it is deliberately noisy: a tool that
 flags a candidate for a human to judge is worth more than one that silently
@@ -142,6 +142,22 @@ HEDGE_RE = re.compile(
 MARGIN_RE = re.compile(r"margin|headroom|spare|slack|cushion", re.I)
 OCCUPANCY_RE = re.compile(r"of\s+the\s+whole\s+bound|of\s+the\s+bound"
                           r"|occupies|spends|consumes", re.I)
+# "481700 of 578888 axis cells (83.2%)": a share with both of its operands
+# printed in the claim's own sentence, immediately before the percentage. The
+# denominator is what makes it a share and not a margin: a margin is a ratio to
+# a bound and derives as 100*(1-r), a share is one count over another and
+# derives as 100*n/d, and reading one as the other reports a true figure as a
+# false one. The two numerals must run into the claim, so a percentage
+# elsewhere in the sentence cannot pick up a pair that is not its own.
+SHARE_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s+(?:of|in)\s+(?:the\s+)?"
+                      r"(\d[\d,]*(?:\.\d+)?)"
+                      r"(?:\s+[A-Za-z][A-Za-z-]*)*\s*\(?\s*$")
+# A ratio claim whose other side is named and not printed: "a factor of 4.8e4
+# below the envelope the walk holds". The sentence prints the near side (the
+# reachable figure) and the comparison's far side by description, so the
+# sentence's own numerals are not the two operands of the relation.
+DESCRIBED_RE = re.compile(r"\b(?:below|above|under|over|past|beyond)\s+the\s+[A-Za-z]",
+                          re.I)
 
 NUM_RE = re.compile(
     r"(?<![\w.])"
@@ -265,6 +281,9 @@ class Claim:
     sentence: object = None
     hi_end: int = None          # end of a "five to eight" range, so the upper
                                 # numeral is not also read as an operand
+    described_operand: bool = False   # the comparison's far side is named
+                                      # ("below the envelope the walk holds"),
+                                      # not printed in the claim's sentence
 
     def span(self):
         if self.claimed_hi is not None and self.claimed_hi != self.claimed:
@@ -744,6 +763,15 @@ def find_claims(doc):
                 claim.needed_kind = "PLAIN"
             elif relation == "of_bound":
                 claim.needed_kind = "ERROR"
+
+            if relation in ("ratio", "factor"):
+                # "a factor of 4.8e4 below the envelope the walk holds" compares
+                # the claim's own side against a quantity the sentence names and
+                # does not print, so the sentence's numerals are not the two
+                # operands of the relation, and the pool has to reach the
+                # section that prints the named quantity.
+                claim.described_operand = bool(DESCRIBED_RE.search(after))
+
             claims.append(claim)
             covered_until = max(covered_until, span_end)
     return claims
@@ -752,6 +780,19 @@ def find_claims(doc):
 def kind_at(text, index):
     """The kind hint around an index into `text`."""
     return _score_kinds(text, index, index)
+
+
+def _usable(n, claim, needed_kind):
+    """Whether a numeral can stand as one side of `claim`'s relation."""
+    # A numeral inside a multiplier expression ("m*5.5e-14") is a usable
+    # operand at its printed value: the multiplier defaults to 1, so that is
+    # what the expression equals, and check 2 sweeps the setting separately.
+    # 0 and 1 are dropped -- they carry no magnitude.
+    return (not n.in_code and n.value not in (0.0, 1.0)
+            and not (n.start == claim.start and n.end == claim.end)
+            and not (claim.hi_end is not None and claim.start <= n.start
+                     and n.end <= claim.hi_end)
+            and (needed_kind in (None, "PLAIN") or n.kind == needed_kind))
 
 
 def operand_pool(doc, claim, needed_kind):
@@ -787,17 +828,27 @@ def operand_pool(doc, claim, needed_kind):
                         for n in doc.tight_units(needed_kind) if id(n) not in known]
         ladder.append(("section", section))
 
+    if claim.described_operand:
+        # The claim compares against a quantity its sentence names and does not
+        # print, so the sentence's own numerals are one side and a stranger.
+        # The named quantity is printed where the document defines it, which is
+        # not the claim's sentence, and the pool is therefore every scope at
+        # once: the pair that reproduces the claim is chosen by the same fit
+        # every other ratio claim is chosen by, and each operand carries the
+        # scope it came from, so a reader sees that "the envelope the walk
+        # holds" resolved to the section's w(n, b) and not to a number in the
+        # sentence's own clause. What stops this reading everything is its own
+        # shape: it fires only on "N below|above|past the <noun>", where the
+        # document has said in words that the far side is named rather than
+        # printed.
+        pooled = [(n, scope) for (scope, candidates) in ladder
+                  for (n, _) in candidates if _usable(n, claim, needed_kind)]
+        if len(_dedupe(pooled)) >= 2:
+            return _dedupe(pooled), "section", None
+
     for scope, candidates in ladder:
-        # A numeral inside a multiplier expression ("m*5.5e-14") is a usable
-        # operand at its printed value: the multiplier defaults to 1, so that
-        # is what the expression equals, and check 2 sweeps the setting
-        # separately. 0 and 1 are dropped -- they carry no magnitude.
         pool = [(n, where) for (n, where) in candidates
-                if not n.in_code and n.value not in (0.0, 1.0)
-                and not (n.start == claim.start and n.end == claim.end)
-                and not (claim.hi_end is not None and claim.start <= n.start
-                         and n.end <= claim.hi_end)
-                and (needed_kind in (None, "PLAIN") or n.kind == needed_kind)]
+                if _usable(n, claim, needed_kind)]
         if len(pool) >= 2:
             return _dedupe(pool), scope, None
 
@@ -814,16 +865,27 @@ def operand_pool(doc, claim, needed_kind):
 
 
 def _dedupe(nums):
-    """Drops repeated operands: the same value read twice is one operand."""
+    """Drops repeated operands: the same value read twice is one operand.
+
+    "The same value" is judged to twelve significant digits, not to twelve
+    decimal places: this document's magnitudes are error and gain figures that
+    live between 1e-19 and 1e5, and rounding to twelve decimal places maps every
+    one of them below 1e-12 onto 0.0. Two error magnitudes three orders apart
+    then read as one operand, and the pair the claim is actually about - the
+    bound and the measurement it is a factor of - is thrown away before the
+    ratio is formed, leaving the checker to compare two numbers the sentence
+    never related. Rounding by significant digits keeps the intent (one printed
+    value, read twice, is one operand) and keeps distinct magnitudes distinct.
+    """
     seen = {}
     for (num, where) in nums:
-        key = (round(num.value, 12), num.kind)
+        key = (float(f"{num.value:.12g}"), num.kind)
         if key not in seen:
             seen[key] = (num, where)
     return list(seen.values())
 
 
-def ratio_pairs(pool, require_step=False):
+def ratio_pairs(pool, require_step=False, require_anchor=False):
     """Every ordered pair whose ratio is at least one.
 
     When the claim is stated in representable digits, one side of the ratio is
@@ -833,6 +895,13 @@ def ratio_pairs(pool, require_step=False):
     happen to sit near the printed ratio. 4.243 over 0.5 is 8.5, and 0.5 is
     what the half lane's representation allowance is; 4.243 over a format width
     is a coincidence, and "32-bit" is a width however tight its "bit" reads.
+
+    The same guard for a claim whose far side is named rather than printed:
+    that claim is pooled over its whole section, which holds every number of
+    the lane, and a pair is only admissible when one of its sides is a numeral
+    of the claim's own sentence -- the figure the sentence did print. Without
+    it the pool is a bag of numbers and the closest fit to the claim is as
+    likely to be a coincidence as the relation the sentence states.
     """
     out = []
     for i, (a, where_a) in enumerate(pool):
@@ -841,6 +910,8 @@ def ratio_pairs(pool, require_step=False):
                 continue
             if require_step and not (a.value < 1.0 or b.value < 1.0
                                      or a.step_unit or b.step_unit):
+                continue
+            if require_anchor and "sentence" not in (where_a, where_b):
                 continue
             ratio = a.value / b.value
             if ratio >= 1.0:
@@ -889,7 +960,8 @@ def check_relations(doc):
                             for (o, where) in pool]
 
         if claim.relation in ("ratio", "factor"):
-            pairs = ratio_pairs(pool, require_step=(claim.needed_kind == "DIGIT"))
+            pairs = ratio_pairs(pool, require_step=(claim.needed_kind == "DIGIT"),
+                                require_anchor=claim.described_operand)
             if not pairs:
                 finding.verdict = "not derivable"
                 finding.detail = "no operand pair gives a ratio of one or more."
@@ -978,6 +1050,33 @@ def percent_verdict(doc, claim):
     is_margin = bool(MARGIN_RE.search(window))
     is_occupancy = bool(OCCUPANCY_RE.search(sent.slice(claim.end, claim.end + 40))
                         or OCCUPANCY_RE.search(window))
+
+    # A share the sentence prints both sides of recomputes exactly, and it is
+    # not a margin: there is no ratio-to-bound in "83.2% of the axis cells" to
+    # subtract from 1, and the largest numeral at or below 1.0 in the
+    # paragraph - a count word, or some other lane's ratio - is not this
+    # claim's operand. Both halves are read from the sentence, and the
+    # percentage is 100 * numerator / denominator.
+    share = SHARE_RE.search(sent.slice(claim.start - 90, claim.start))
+    if share:
+        numerator = float(share.group(1).replace(",", ""))
+        denominator = float(share.group(2).replace(",", ""))
+        if denominator:
+            computed = 100.0 * numerator / denominator
+            tolerance = TOL_HEDGED if claim.hedged else TOL_PLAIN
+            operands = [(share.group(1), numerator, "COUNT", "sentence"),
+                        (share.group(2), denominator, "COUNT", "sentence")]
+            arithmetic = (f"share = 100 * {numerator:g} / {denominator:g} = "
+                          f"{computed:.6g} per cent, against the claimed "
+                          f"{claim.claimed:g} per cent "
+                          f"({computed / claim.claimed - 1.0:+.2%} away)")
+            if abs(computed / claim.claimed - 1.0) <= tolerance:
+                return ("verified", operands, arithmetic, "")
+            return ("mismatch", operands, arithmetic,
+                    f"the sentence prints the share's two sides, and "
+                    f"{numerator:g} of {denominator:g} is {computed:.6g} per cent, "
+                    f"not {claim.claimed:g} per cent. Operands came from the "
+                    f"sentence.")
 
     if is_occupancy and not is_margin:
         return ("not derivable", [],
@@ -1209,12 +1308,11 @@ def summarise(findings, stream):
 # --------------------------------------------------------------------------
 
 # (document, a literal that identifies the site, the verdict, the check).
-# Every case is pinned to the calibration corpus rather than to a published
-# document, because the published documents no longer carry a single one of
-# these defects: each was repaired, and pinning a check to prose that has been
-# made correct would leave it calibrated against nothing. The corpus reproduces
-# the shape of each defect instead, so the check that caught it still reports
-# the same verdict on an input that is still wrong.
+# Every case is pinned to the calibration corpus rather than to the published
+# prose, because the prose this check runs on carries none of these shapes: a
+# check pinned to a sentence that is already correct would be calibrated
+# against nothing. The corpus writes each shape deliberately, so the check
+# still reports the same verdict on an input that is still wrong.
 CALIBRATION = (
     (CALIBRATION_DOC, "sixty times more accurate", "not derivable", "relation"),
     (CALIBRATION_DOC, "7.7 times as much", "mismatch", "relation"),

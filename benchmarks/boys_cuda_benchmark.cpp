@@ -1,4 +1,4 @@
-// The GPU throughput rows of the project's recorded benchmark set,
+// The GPU throughput rows,
 // on the same uniform (n, x) workload as the CPU benchmark. Lanes:
 //   cheb-f64   - BoysCuda::SingleF64 (the certified double lane)
 //   cheb-f32   - BoysCuda::SingleF32 (the recommended GPU lane)
@@ -10,14 +10,14 @@
 //                the pure device-side cost on the same event protocol)
 //
 // Custom main(): --self-check runs the verifier against the CPU references
-// and exits; the default mode runs the runs-log protocol (warmup + 3
-// passes, min/median/max, median = the recorded cell).
+// and exits; the default mode runs the measurement protocol (warmup + 3
+// passes, min/median/max, median = the cell the run reports).
 //
 // Self-check budgets (the lanes are compared against the CPU references):
 //   cheb-f64      |out - BoysSingle|    <= 5.5e-14   (the GPU double row)
 //   cheb-f32      |out - BoysSingleF32| <= 3.5e-7    (the GPU float row)
 //   erf-f64       <= 1e-13 for x >= 10.0 (asserted device-lane domain;
-//                    the recorded k_max = 32 boundary is 9.70 on the CPU,
+//                    the k_max = 32 boundary is 9.70 on the CPU,
 //                    the device lane's turning-point rounding is ~2.3e-13 at
 //                    x = 9.73, so the gate takes headroom; off-domain errors
 //                    are recorded as the scheme's honest cost)
@@ -25,7 +25,8 @@
 //                    degree-5 Taylor truncation ~1e-15)
 //   fp16-single   GPU vs the shipped CPU fp16 lane, <= 3.5e-7 + 1 full ULP
 //                    (the GPU-vs-CPU comparison contract; the absolute
-//                    contract is pinned CPU-side by the accuracy record)
+//                    contract is the CPU lane's own, m * 1e-7 + half a ULP
+//                    against the exact value)
 #include "boys/boys.hpp"
 #include "boys/boys_cuda.hpp"
 #include "boys_cuda_benchmark_kernels.hpp"
@@ -180,8 +181,20 @@ Timing TimeLane(const char* name,
                 double* dX,
                 double* dOutF64,
                 float* dOutF32,
+#if BoysFp16
                 boys::F16* dF16In,
-                boys::F16* dF16Out) {
+                boys::F16* dF16Out
+#else
+                // The fp16 lane is declared behind the BoysFp16 seam, so a build
+                // with it closed has no fp16 buffer to pass and no fp16 type to
+                // pass it as. The two parameters stay, as the raw device pointers
+                // the buffers would have been, so every call below reads the same
+                // in both builds; the fp16-single branch is their only reader and
+                // it says there that this build does not carry the lane.
+                void* dF16In,
+                void* dF16Out
+#endif
+                ) {
     cudaEvent_t t0;
     cudaEvent_t t1;
     cudaEventCreate(&t0);
@@ -222,6 +235,14 @@ Timing TimeLane(const char* name,
             {
                 std::exit(2);
             }
+#else
+            // No fp16 lane in this build: no entry to time and no buffer to
+            // pass. A run that asks for the lane by name is told so rather than
+            // handed a time for work that never ran.
+            (void)dF16In;
+            (void)dF16Out;
+            std::fprintf(
+                stderr, "fp16-single: not carried: this build's BoysFp16 seam is closed\n");
 #endif
         }
     };
@@ -249,7 +270,7 @@ Timing TimeLane(const char* name,
     Timing timing{passes.front(), passes[1], passes.back()};
     // count/median is items per millisecond = 1e3 items/s; the /1e3 below is
     // what makes the printed value the unit its field names (Mvals/s), at the
-    // three decimals the runs log's rows carry.
+    // three decimals this driver's rows carry.
     std::printf("kernel: %s | workload: uniform-n32-x40 | count: %zu | passes: %d | "
                 "min_ms: %.3f | median_ms: %.3f | max_ms: %.3f | median_Mvals_per_s: %.3f\n",
                 name,
@@ -267,9 +288,18 @@ int SelfCheck(const std::vector<Item>& items,
               double* dX,
               double* dOutF64,
               float* dOutF32,
+#if BoysFp16
               const std::vector<boys::F16>& f16In,
               boys::F16* dF16In,
               boys::F16* dF16Out,
+#else
+              // As in TimeLane: a closed seam leaves no fp16 host values and no
+              // fp16 device buffers, so the host vector is not a parameter here
+              // and the device pointers stay as the raw addresses they would
+              // have been.
+              void* dF16In,
+              void* dF16Out,
+#endif
               int blocks) {
     int failed = 0;
 
@@ -428,7 +458,7 @@ int SelfCheck(const std::vector<Item>& items,
     // ULP of the CPU value — the GPU-vs-CPU comparison of the accompanying
     // test suite (the full-ULP term absorbs the fp16 rounding-boundary flips
     // between the two float engines). The absolute contract (m * 1e-7 + 1/2
-    // ULP vs the exact value) is pinned CPU-side by the accuracy record.
+    // ULP vs the exact value) is the CPU lane's own, asserted by its tests.
 #if BoysFp16
     {
         const auto status = boys::BoysCuda::SingleF16(dN, dF16In, dF16Out, kInputCount, nullptr);
@@ -463,6 +493,14 @@ int SelfCheck(const std::vector<Item>& items,
                     pass ? "PASS" : "FAIL");
         failed += !pass;
     }
+#else
+    // The row above is not measured here and not reported as a pass: a closed
+    // seam means there is no fp16 entry on either side to compare. It is named
+    // so a reader of this output sees a row this build does not carry rather
+    // than an output with a row missing from it.
+    (void)dF16In;
+    (void)dF16Out;
+    std::printf("self-check: fp16-single | not carried: this build's BoysFp16 seam is closed\n");
 #endif
 
     return failed == 0 ? 0 : 1;
@@ -527,8 +565,16 @@ int main(int argc, char** argv) {
     double* dX = nullptr;
     double* dOutF64 = nullptr;
     float* dOutF32 = nullptr;
+#if BoysFp16
     boys::F16* dF16In = nullptr;
     boys::F16* dF16Out = nullptr;
+#else
+    // A closed seam carries no fp16 lane to feed, so there is no fp16 buffer to
+    // allocate. The names stay, as the raw device pointers the buffers would
+    // have been, so the calls below read the same in both builds.
+    void* dF16In = nullptr;
+    void* dF16Out = nullptr;
+#endif
     cudaError_t e = cudaMalloc(&dN, kInputCount * sizeof(int));
 
     if (e == cudaSuccess)
@@ -546,6 +592,7 @@ int main(int argc, char** argv) {
         e = cudaMalloc(&dOutF32, kInputCount * sizeof(float));
     }
 
+#if BoysFp16
     if (e == cudaSuccess)
     {
         e = cudaMalloc(&dF16In, kInputCount * sizeof(boys::F16));
@@ -555,6 +602,7 @@ int main(int argc, char** argv) {
     {
         e = cudaMalloc(&dF16Out, kInputCount * sizeof(boys::F16));
     }
+#endif
 
     if (e != cudaSuccess)
     {
@@ -564,14 +612,18 @@ int main(int argc, char** argv) {
 
     std::vector<int> nHost(kInputCount);
     std::vector<double> xHost(kInputCount);
+#if BoysFp16
     std::vector<boys::F16> f16In(kInputCount);
     std::vector<boys::F16> f16Out(kInputCount);
+#endif
 
     for (std::size_t i = 0; i < kInputCount; ++i)
     {
         nHost[i] = items[i].n;
         xHost[i] = items[i].x;
+#if BoysFp16
         f16In[i] = boys::F16(static_cast<float>(items[i].x));
+#endif
     }
 
     e = cudaMemcpy(dN, nHost.data(), kInputCount * sizeof(int), cudaMemcpyHostToDevice);
@@ -581,11 +633,13 @@ int main(int argc, char** argv) {
         e = cudaMemcpy(dX, xHost.data(), kInputCount * sizeof(double), cudaMemcpyHostToDevice);
     }
 
+#if BoysFp16
     if (e == cudaSuccess)
     {
         e = cudaMemcpy(
             dF16In, f16In.data(), kInputCount * sizeof(boys::F16), cudaMemcpyHostToDevice);
     }
+#endif
 
     if (e != cudaSuccess)
     {
@@ -597,7 +651,11 @@ int main(int argc, char** argv) {
 
     if (selfCheck)
     {
+#if BoysFp16
         return SelfCheck(items, dN, dX, dOutF64, dOutF32, f16In, dF16In, dF16Out, blocks);
+#else
+        return SelfCheck(items, dN, dX, dOutF64, dOutF32, dF16In, dF16Out, blocks);
+#endif
     }
 
     TimeLane("cheb-f64", blocks, dN, dX, dOutF64, dOutF32, dF16In, dF16Out);

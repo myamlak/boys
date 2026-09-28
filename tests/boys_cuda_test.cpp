@@ -16,13 +16,23 @@
 #include "boys/f16.hpp"
 #endif
 
+// The lane's residency comparison (src/boys_cuda.cu), reached here to assert its
+// rows directly: the arguments are the device in hand and the multiplier asked
+// for, then the record of what was last uploaded and where. Both arrive as
+// arguments, so the assertion needs no second card and no CUDA call.
+extern "C" int BoysCudaEffTablesResidentOn(
+    int device, double m, int recordedDevice, double recordedM);
+
 namespace {
 
 constexpr std::size_t kCount = 1u << 16;
 constexpr double kDoubleTolerance = 5.5e-14;
 // Cross-lane budget: the CPU lane is validated <= 1.5e-7 against the
-// reference grid; the GPU lane carries its own <= ~1.5e-7 plus the __expf
-// slack of the single kernels, so GPU-vs-CPU agreement holds within ~3.5e-7.
+// reference grid, and the default CUDA lane holds the same 1.5e-7, so
+// GPU-vs-CPU agreement on the default path holds within ~3e-7; the budget is
+// stated at 3.5e-7. It is a budget on the default path only: the single
+// entry's fast region-B exponential (RegionBExp::kFast) carries a larger
+// bound of its own, which no cross-lane figure covers.
 constexpr float kFloatTolerance = 3.5e-7f;
 
 struct DeviceSetup {
@@ -175,6 +185,178 @@ TEST(BoysCudaTest, SingleF32MatchesCpu) {
 
     EXPECT_LE(worst, kFloatTolerance);
     std::printf("SingleF32 GPU vs CPU: worst |diff| = %.3e\n", worst);
+}
+
+TEST(BoysCudaTest, SingleF32ExpOptionIsCertifiedAtTheRegionBBoundary) {
+    int deviceCount = 0;
+    cudaGetDeviceCount(&deviceCount);
+
+    if (deviceCount == 0)
+    {
+        GTEST_SKIP() << "no CUDA device";
+    }
+
+    ASSERT_EQ(boys::BoysCuda::InitializeTables(), boys::BoysStatus::kSuccess);
+
+    // The first float of region B, where the two options separate and where the
+    // recurrence's condition number is at its largest (7.6e4 at this order): the
+    // value F_32(x) is itself at the level of a seed error there, and the ladder
+    // amplifies it by that factor. The double lane is the reference; its own
+    // error at this argument is below 5.5e-14, six orders under the figures
+    // this test is about.
+    const int n = boys::kMaxBoysOrder;
+    const double x = static_cast<double>(static_cast<float>(boys::detail::kX0));
+    std::vector<double> reference(static_cast<std::size_t>(n) + 1);
+    boys::BoysAllOrders(n, x, reference.data());
+    const double want = reference[static_cast<std::size_t>(n)];
+
+    const auto evaluate = [&](boys::RegionBExp option) {
+        int* deviceN = nullptr;
+        double* deviceX = nullptr;
+        float* deviceOut = nullptr;
+        const int hostN = n;
+        EXPECT_EQ(cudaMalloc(&deviceN, sizeof(int)), cudaSuccess);
+        EXPECT_EQ(cudaMalloc(&deviceX, sizeof(double)), cudaSuccess);
+        EXPECT_EQ(cudaMalloc(&deviceOut, sizeof(float)), cudaSuccess);
+        cudaMemcpy(deviceN, &hostN, sizeof(int), cudaMemcpyHostToDevice);
+        cudaMemcpy(deviceX, &x, sizeof(double), cudaMemcpyHostToDevice);
+
+        const auto status =
+            option == boys::RegionBExp::kFast
+                ? boys::BoysCuda::SingleF32<1.0, boys::RegionBExp::kFast>(
+                      deviceN, deviceX, deviceOut, 1, nullptr)
+                : boys::BoysCuda::SingleF32(deviceN, deviceX, deviceOut, 1, nullptr);
+        EXPECT_EQ(status, boys::BoysStatus::kSuccess);
+        cudaDeviceSynchronize();
+
+        float got = 0.0f;
+        cudaMemcpy(&got, deviceOut, sizeof(float), cudaMemcpyDeviceToHost);
+        cudaFree(deviceN);
+        cudaFree(deviceX);
+        cudaFree(deviceOut);
+        return static_cast<double>(got);
+    };
+
+    const double accurate = evaluate(boys::RegionBExp::kAccurate);
+    const double fast = evaluate(boys::RegionBExp::kFast);
+
+    // Both options run, and they are two arithmetics rather than one with a
+    // name for the other.
+    EXPECT_NE(accurate, fast);
+
+    // Both hold their documented bounds here: the lane's 1.5e-7 for the
+    // default, and the lane's plus the corrected seed's own contribution
+    // (8e-8) for the fast one.
+    EXPECT_LE(std::abs(accurate - want), 1.5e-7);
+    EXPECT_LE(std::abs(fast - want), 1.5e-7 + 8e-8);
+
+    // This is the cell the bare approximation returned the wrong sign at, and
+    // the reason the fast option carries a correction: with it, the return has
+    // the value's sign, and the option's own contribution here is a fraction of
+    // the value rather than larger than it. Pinned so that a regression to the
+    // uncorrected seed is a failure and not a footnote.
+    EXPECT_GT(fast * want, 0.0);
+    EXPECT_LT(std::abs(fast - accurate), std::abs(want));
+
+    std::printf("SingleF32 at the region-B boundary: accurate %.9g, fast %.9g, value %.9g\n",
+                accurate,
+                fast,
+                want);
+}
+
+// The default option is the batch entries' arithmetic, and the contract says
+// so: outside region A the single entry's seed and ladder are the all-orders
+// body's, so a consumer that reads one and the other of the same (n, x) is
+// reading one arithmetic. Region A is excluded because the two seeds differ
+// there by design - the batch seeds its downward recursion from the double
+// piece table, the single entry from the float one.
+TEST(BoysCudaTest, SingleF32DefaultIsTheBatchArithmeticOutsideRegionA) {
+    int deviceCount = 0;
+    cudaGetDeviceCount(&deviceCount);
+
+    if (deviceCount == 0)
+    {
+        GTEST_SKIP() << "no CUDA device";
+    }
+
+    ASSERT_EQ(boys::BoysCuda::InitializeTables(), boys::BoysStatus::kSuccess);
+
+    const int nmax = boys::kMaxBoysOrder;
+    const std::size_t count = 512;
+    // Arguments that are exactly floats at or above the first float of region
+    // B, so both entries evaluate the same argument and classify it the same
+    // way, and region B and region C are both covered.
+    const float firstB = static_cast<float>(boys::detail::kX0);
+    std::vector<double> hostX(count);
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        const float value =
+            firstB + (60.0f - firstB) * static_cast<float>(i) / static_cast<float>(count - 1);
+        hostX[i] = static_cast<double>(value);
+    }
+
+    const std::size_t cells = count * static_cast<std::size_t>(nmax + 1);
+    std::vector<int> gridN(cells);
+    std::vector<double> gridX(cells);
+    std::vector<int> batchN(count, nmax);
+
+    for (int order = 0; order <= nmax; ++order)
+    {
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const std::size_t e = static_cast<std::size_t>(order) * count + i;
+            gridN[e] = order;
+            gridX[e] = hostX[i];
+        }
+    }
+
+    int* deviceN = nullptr;
+    int* deviceBatchN = nullptr;
+    double* deviceX = nullptr;
+    double* deviceXGrid = nullptr;
+    float* deviceOut = nullptr;
+    ASSERT_EQ(cudaMalloc(&deviceN, cells * sizeof(int)), cudaSuccess);
+    ASSERT_EQ(cudaMalloc(&deviceBatchN, count * sizeof(int)), cudaSuccess);
+    ASSERT_EQ(cudaMalloc(&deviceX, count * sizeof(double)), cudaSuccess);
+    ASSERT_EQ(cudaMalloc(&deviceXGrid, cells * sizeof(double)), cudaSuccess);
+    ASSERT_EQ(cudaMalloc(&deviceOut, cells * sizeof(float)), cudaSuccess);
+    cudaMemcpy(deviceN, gridN.data(), cells * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(deviceBatchN, batchN.data(), count * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(deviceX, hostX.data(), count * sizeof(double), cudaMemcpyHostToDevice);
+    cudaMemcpy(deviceXGrid, gridX.data(), cells * sizeof(double), cudaMemcpyHostToDevice);
+
+    std::vector<float> single(cells);
+    ASSERT_EQ(boys::BoysCuda::SingleF32(deviceN, deviceXGrid, deviceOut, cells, nullptr),
+              boys::BoysStatus::kSuccess);
+    cudaDeviceSynchronize();
+    cudaMemcpy(single.data(), deviceOut, cells * sizeof(float), cudaMemcpyDeviceToHost);
+
+    std::vector<float> batch(cells);
+    ASSERT_EQ(boys::BoysCuda::AllOrdersF32(deviceBatchN, deviceX, deviceOut, count, nullptr),
+              boys::BoysStatus::kSuccess);
+    cudaDeviceSynchronize();
+    cudaMemcpy(batch.data(), deviceOut, cells * sizeof(float), cudaMemcpyDeviceToHost);
+
+    std::size_t differing = 0;
+
+    for (std::size_t e = 0; e < cells; ++e)
+    {
+        if (single[e] != batch[e])
+        {
+            ++differing;
+        }
+    }
+
+    EXPECT_EQ(differing, std::size_t{0});
+    std::printf(
+        "SingleF32 vs AllOrdersF32 outside region A: %zu of %zu cells differ\n", differing, cells);
+
+    cudaFree(deviceN);
+    cudaFree(deviceBatchN);
+    cudaFree(deviceX);
+    cudaFree(deviceXGrid);
+    cudaFree(deviceOut);
 }
 
 TEST(BoysCudaTest, SingleF64MatchesCpu) {
@@ -829,3 +1011,18 @@ TEST(BoysCudaTest, AllNChecksTheOrder) {
     ASSERT_EQ(boys::BoysCuda::AllNF16(-1, &y, &y, 0, nullptr), boys::BoysStatus::kInvalidArgument);
 }
 #endif // BoysFp16
+
+TEST(BoysCudaTest, EffTableResidencyNamesTheDevice) {
+    // The effective-degree tables are per-device copies of __constant__
+    // symbols, so a record compared on the multiplier alone would answer for a
+    // device that has never held them, and a device no upload has reached reads
+    // zero-initialized tables. The row that decides it is the second: the same
+    // multiplier on another device, which must not be answered as resident.
+    EXPECT_EQ(BoysCudaEffTablesResidentOn(0, 2.0, 0, 2.0), 1);
+    EXPECT_EQ(BoysCudaEffTablesResidentOn(1, 2.0, 0, 2.0), 0);
+    EXPECT_EQ(BoysCudaEffTablesResidentOn(0, 2.0, 1, 2.0), 0);
+    EXPECT_EQ(BoysCudaEffTablesResidentOn(0, 10.0, 0, 2.0), 0);
+
+    // Before any upload the record names no device and no multiplier.
+    EXPECT_EQ(BoysCudaEffTablesResidentOn(0, 2.0, -1, -1.0), 0);
+}

@@ -63,20 +63,30 @@ using boys::detail::F16FromBits;
 using boys::detail::F16FromDouble;
 using boys::detail::kX1;
 
-// The lane's documented bound, in quanta of the returned value. The worst
-// measured ratio is 4.3 (order 6, in the region-C sweep below); the bound is
-// the next power of two above it, so the assertion is a bound rather than a
-// pin of the measurement.
-constexpr double kBoundUlps = 8.0;
+// The reading of a half as a double, which is what both sections below measure
+// against: it rests on nothing the seam declares, so it sits outside the guard
+// and serves the packed type's tests and the lane's measurements alike.
+double Value(F16 value) noexcept {
+    return static_cast<double>(value);
+}
 
-// The lane's scale, as the public constant spells it (an exact power of two).
-constexpr int kScale = boys::kHalfNativeScaleExponent;
+double Value(std::uint16_t bits) noexcept {
+    return Value(F16FromBits(bits));
+}
 
+// The native half lane's two entries are declared behind the BoysFp16 seam, and
+// so is the scale constant that goes with them (boys/boys.hpp). Everything this
+// file measures about the *lane* is compiled with the entries it names, and the
+// closed configuration is reported as the skipped test at the end of this file
+// rather than as a run of greens over a lane that is not there. The packed
+// type's own arithmetic is not seam-gated, and boys/half2.hpp is a header of
+// this tree that a consumer may include directly, so the packed section below
+// is declared outside the guard and its tests run in both configurations. The
+// split is therefore by what a declaration needs, not by where it happened to be
+// written: the guard holds the lane's claim constants, the lane's reference
+// machinery and the evidence helpers only the lane's book names, and the format
+// helpers both sections share stand between them.
 constexpr double kInfinity = std::numeric_limits<double>::infinity();
-
-// The smallest normal binary16 value, 2^-14: where the scale's output stops
-// being normal, which is where this lane's claim stops.
-constexpr double kSmallestNormal = 6.103515625e-05;
 
 // --- The claims, in the accuracy gate's shape ---------------------------------
 //
@@ -84,6 +94,11 @@ constexpr double kSmallestNormal = 6.103515625e-05;
 // (or the gate, when it is extended to this lane as a fifth) can fail one
 // without touching the others. The vocabulary is the gate's, name for name.
 enum class Verdict { Verified, Exceeded, Vacuous, EvidenceAbsent };
+
+// The lane's verdict vocabulary and evidence formatter. Only the lane's claim
+// book names a verdict or formats an evidence line, so a build that carries no
+// lane has no caller for either and would read them as unused.
+#if BoysFp16
 
 const char* VerdictName(Verdict verdict) {
     switch (verdict)
@@ -112,6 +127,8 @@ std::string Fmt(const char* format, ...) {
     return std::string(buffer);
 }
 
+#endif // BoysFp16
+
 // native-half-packed: every operation correctly rounded on a packed pair, and
 // the rounding distribution that only per-operation arithmetic produces.
 struct PackedClaim {
@@ -122,6 +139,28 @@ struct PackedClaim {
     long values = 0;
     double maxUlps = 0.0;
 };
+
+PackedClaim gPacked;
+
+// The lane's claim vocabulary, which is the part of these declarations the seam
+// reaches: the scale below is the public constant boys/boys.hpp declares under
+// it, and the claim types name the domain that scale defines. The format helpers
+// under them and the packed tests below them use nothing the seam gates, so they
+// stand outside this guard and run in either build.
+#if BoysFp16
+
+// The lane's documented bound, in quanta of the returned value. The worst
+// measured ratio is 4.3 (order 6, in the region-C sweep below); the bound is
+// the next power of two above it, so the assertion is a bound rather than a
+// pin of the measurement.
+constexpr double kBoundUlps = 8.0;
+
+// The lane's scale, as the public constant spells it (an exact power of two).
+constexpr int kScale = boys::kHalfNativeScaleExponent;
+
+// The smallest normal binary16 value, 2^-14: where the scale's output stops
+// being normal, which is where this lane's claim stops.
+constexpr double kSmallestNormal = 6.103515625e-05;
 
 // native-half-bound: the ULP bound over the domain where the returned value is
 // a normal half, with the no-claim domain counted beside it.
@@ -146,17 +185,15 @@ struct CeilingClaim {
     int spanOrder = 0;
 };
 
-PackedClaim gPacked;
 BoundClaim gBound;
 CeilingClaim gCeiling;
 
-double Value(F16 value) noexcept {
-    return static_cast<double>(value);
-}
+#endif // BoysFp16
 
-double Value(std::uint16_t bits) noexcept {
-    return Value(F16FromBits(bits));
-}
+// The format's own helpers: they are declared here, outside the guard, because
+// the packed operations below them are the format's own arithmetic and are not
+// behind the seam, and because the lane's sweeps use the same vocabulary where
+// this build carries the lane.
 
 // The ordered index of a half: sign-magnitude bits into a monotone integer,
 // -Inf at 0x0400 and +Inf at 0xFC00. -0 and +0 share an index; they compare
@@ -176,7 +213,10 @@ std::uint16_t HalfBitsAt(int index) noexcept {
 }
 
 // The binary16 quantum at a magnitude: 2^(e - 10) for a normal value, and
-// the format's floor 2^-24 for a subnormal or a zero.
+// the format's floor 2^-24 for a subnormal or a zero. Its only caller is the
+// lane's error metric below, so like that metric it is declared with the lane.
+#if BoysFp16
+
 double QuantumAt(double magnitude) noexcept {
     if (magnitude < std::ldexp(1.0, -14))
     {
@@ -189,6 +229,8 @@ double QuantumAt(double magnitude) noexcept {
 double Quantum(F16 value) noexcept {
     return QuantumAt(std::fabs(Value(value)));
 }
+
+#endif // BoysFp16
 
 // The exact value of a op b, compared with the exactly representable c, as
 // -1 / 0 / +1. '+' '-' '*' of half operands are exact in binary64; '/' is
@@ -335,6 +377,13 @@ std::vector<F16> FiniteHalves() {
     return values;
 }
 
+#if BoysFp16
+
+// The lane's reference machinery. Everything from here to this guard's end reads
+// the lane's scale or exists only for the lane's sweeps, so it is declared only
+// where this build carries the lane: declared in a closed build it would be a
+// set of functions nothing refers to.
+
 // The region-C boundary as the format holds it: the fp16 value of kX1.
 F16 BoundaryArgument() {
     return F16FromDouble(kX1);
@@ -436,7 +485,12 @@ std::vector<GridRow> LoadReferenceGrid() {
     return rows;
 }
 
+#endif // BoysFp16
+
 // --- The packed operations --------------------------------------------------
+// The lane's arithmetic type: boys/half2.hpp is included directly at the top of
+// this file, defines every operation this section tests, and is not gated by
+// the seam, so these run whether the lane's entries are in the build or not.
 
 TEST(NativeHalfLaneTest, PackedContainerRoundTrip) {
     const Half2 pair(F16FromBits(0x3C00u), F16FromBits(0xBC00u));
@@ -586,7 +640,12 @@ TEST(NativeHalfLaneTest, PackedHalvesDoNotInterfere) {
     }
 }
 
+#if BoysFp16
+
 // --- The lane ---------------------------------------------------------------
+// Everything below this line calls BoysAllOrdersHalf2 or BoysAllNF16Native, or
+// reads the scale constant they document, and is compiled with the seam that
+// declares them.
 
 TEST(NativeHalfLaneTest, LaneMatchesTheCommittedReferenceGrid) {
     // The grid's region-C arguments that are exactly representable in half:
@@ -1166,5 +1225,18 @@ TEST(NativeHalfLaneTest, ClaimBookGivesEachClaimOneVerdict) {
             "evidence absent, which is not a pass\n");
     }
 }
+
+#else // BoysFp16
+
+// The other side of the seam: this build carries no native half lane, so there
+// is no measurement to make and no claim to judge. A skipped test is a test
+// runner's way of saying exactly that - it is neither the lane's verdict nor a
+// green - and it names the build fact that put it here.
+TEST(NativeHalfLaneTest, LaneIsNotCarriedByThisBuild) {
+    GTEST_SKIP() << "the native half lane is declared behind the BoysFp16 seam, which this build "
+                    "has closed (BoysFp16 = 0): no entry to measure, no claim to judge";
+}
+
+#endif // BoysFp16
 
 } // namespace

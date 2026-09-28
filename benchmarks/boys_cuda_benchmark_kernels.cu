@@ -12,7 +12,7 @@ namespace {
 
 constexpr double kHalfSqrtPi = 0.886226925452758014;
 
-// Tsuji-style LUT geometry (the published scheme): 1025 grid points over
+// Tsuji-style LUT geometry ([Tsuji2025]): 1025 grid points over
 // x in [0, 32] at step 2^-5, degree-5 Taylor corrections, and a
 // semi-infinite boundary x < a*n + b above which the pure asymptotic series
 // is used.
@@ -24,8 +24,8 @@ constexpr int kLutRows = kLutMaxOrder + kLutKmax + 1; // 38: rows 0..32 + 33..37
 constexpr double kLutThresholdA = 0.064048916778075;
 constexpr double kLutThresholdB = 28.487431543672;
 
-// 38 x 1025 x 8 B = 311.6 KB — too large for __constant__, lives in global
-// memory like the design study's table.
+// 38 x 1025 x 8 B = 311.6 KB — too large for __constant__, so it lives in
+// global memory.
 __device__ double gLut[kLutRows][kLutXiCount];
 
 __global__ void BoysErfF64Kernel(const int* n, const double* x, double* out, size_t count) {
@@ -44,7 +44,7 @@ __global__ void BoysErfF64Kernel(const int* n, const double* x, double* out, siz
         out[i] = 1.0 / (2.0 * nn + 1.0);
         return;
     }
-    // The published scheme's F0 seed (design-study mirror, rsqrt form). The
+    // The erf-F0 seed in rsqrt form. The
     // boundary-adjacent worst (n = 32 near the asserted x = 10 domain edge)
     // is the recursion's own turning-point rounding, not the seed's — the
     // self-check's asserted domain carries the headroom.

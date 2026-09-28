@@ -69,15 +69,15 @@ std::vector<ReferenceRow> LoadReference() {
 constexpr double kDoubleTolerance = 5.5e-14;
 constexpr float kFloatTolerance = 1.5e-7f;
 
-// Per-region worst bounds for the double single lane (the accuracy
-// record's cells; design-study measured worsts in parentheses):
+// Per-region worst bounds for the double single lane (measured worsts in
+// parentheses):
 // region A <= 1e-15 (6.7e-16), region B <= 3e-14 (2.9e-14), region C shares
-// the overall 5.5e-14 (5.0e-14 at (32, x1)). Each bound matches the recorded
-// cell within one significant digit.
+// the overall 5.5e-14 (5.0e-14 at (32, x1)). Each bound matches the measured
+// worst within one significant digit.
 constexpr double kRegionATolerance = 1e-15;
 constexpr double kRegionBTolerance = 3e-14;
 
-// Region bucketing per the accuracy record: region A x < kX0,
+// Region bucketing: region A x < kX0,
 // region B kX0 <= x < kX1, region C x >= kX1 (the x = kX1 and x = 100 grid
 // rows land in C, so the "(32, x1)" worst sits in region C, the
 // shared asymptotic cutoff). The extended band [kExtendedBX0, kX0) is its
@@ -715,8 +715,8 @@ TEST(BoysTest, ExpTaylorGatherTableRegionB) {
 
     // One order above the measured 1.83e-17 (still ~500x below the 5e-14
     // target). If the printed worst drifts materially above 1.83e-17 (libm
-    // differences in std::exp feed the table construction), the recorded cell
-    // is updated to the measured value — the measurement leads the record.
+    // differences in std::exp feed the table construction), the threshold is
+    // updated to the measured value rather than the other way round.
     EXPECT_LE(worst, 1e-16) << "exp-Taylor worst at x=" << worstX;
     std::printf("ExpTaylor[%g, %g): worst |error| = %.3e at x = %.6f\n", kX0, kX1, worst, worstX);
 }
@@ -724,11 +724,12 @@ TEST(BoysTest, ExpTaylorGatherTableRegionB) {
 TEST(BoysTest, FootprintSizes) {
     namespace detail = boys::detail;
 
-    // The footprint cells (~18 KB Chebyshev,
-    // i.e. 17,904 B incl. metadata — ~192 KB region-B gather table, ~5 MB
-    // flat Taylor table). The first two
-    // are computed from the committed tables; the flat-table cell follows
-    // the design study's comparator geometry (maxn = 24, step 0.01,
+    // The footprint of the committed tables beside the two flat layouts a
+    // table of the same reach could be stored in: ~18 KB of Chebyshev
+    // coefficients (17,904 B incl. metadata), a ~192 KB region-B gather
+    // table, and a ~5 MB flat Taylor table. The first two are computed from
+    // the committed tables; the flat-table figure follows the same
+    // comparator geometry (maxn = 24, step 0.01,
     // limit = 50 -> nx = 5000):
     //   _b: (maxn + 1) x (nx + 1) x 5 doubles per order
     //   _c: (nx + 1) x 6 doubles (the e^{-x} degree-5 companion table)
@@ -802,10 +803,19 @@ TEST(BoysTest, SimdMatchesScalarWhenAvailable) {
 
     boys::detail::BoysRegionBSimd(n, x.data(), batchOut.data(), kCount);
 
+    // The lane is the split Clenshaw recurrence over the shipped tables, so the
+    // scalar reading it has to reproduce is that policy's - not the default
+    // entry's, which is whatever the last measurement chose.
+    using LanePolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                        boys::EvalScheme::kSplitClenshaw,
+                                        boys::BoysBudget::kFloat,
+                                        boys::PackAxis::kArguments,
+                                        boys::FitGranularity::kShipped>;
+
     for (std::size_t i = 0; i < kCount; ++i)
     {
         double scalar[boys::kMaxBoysOrder + 1];
-        boys::BoysAllOrders(n, x[i], scalar);
+        boys::BoysAllOrders<1.0, LanePolicy>(n, x[i], scalar);
 
         for (int k = 0; k <= n; ++k)
         {

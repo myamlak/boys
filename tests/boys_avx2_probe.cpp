@@ -7,12 +7,11 @@
 // when it disagrees. That is worth more than the rest of the matrix combined,
 // because the SIMD correctness tests in boys_test.cpp gate themselves with a
 // soft GTEST_SKIP on the same predicate: a wrong CPUID bit therefore makes
-// every SIMD test SKIP while CI reports green with the whole vector tier dead,
-// which is precisely the failure this repository already suffered once. A hard
-// assertion turns that silent skip into a red leg.
+// every SIMD test SKIP while CI reports green with the whole vector tier dead.
+// A hard assertion turns that silent skip into a red leg.
 //
 // On the arm64 legs the false is not a formality either: it carries the
-// no-architecture-guard finding that added those legs (an x86-only TU and flag
+// no-architecture-guard check that added those legs (an x86-only TU and flag
 // set in a tree that claimed none), and it is the fact that separates "the
 // vector tier is absent on this target" from "the vector tier is silently
 // broken on this target".

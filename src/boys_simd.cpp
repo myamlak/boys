@@ -26,12 +26,11 @@
 //      predefines — the two macros the CMakeLists probe asks about. This is
 //      the case for a consumer that compiles this source into a target of its
 //      own instead of linking `boys` (a consumer target does exactly
-//      that), and it is why such a consumer no longer has to repeat the
-//      build's macro. It is detection, not a guess: the two spellings below
-//      are the whole x86_64 question, answered by the compiler that is doing
-//      the compiling. Detection answers the architecture question only — a
-//      consumer that compiles this TU itself still owns the AVX2/FMA/F16C
-//      flag set.
+//      that), and it is why such a consumer needs no macro of its own. It is
+//      detection, not a guess: the two spellings below are the whole x86_64
+//      question, answered by the compiler that is doing the compiling.
+//      Detection answers the architecture question only — a consumer that
+//      compiles this TU itself still owns the AVX2/FMA/F16C flag set.
 //
 // Anything neither stated nor x86_64 is an ERROR rather than a quiet 0. This
 // TU cannot tell a genuine non-x86 target from an x86 target whose predefines
@@ -80,9 +79,8 @@
 #include <cpuid.h>
 #endif
 
-// AVX2 region-sorted lanes. The engine pattern (region-first; the
-// unsorted variant's divergence penalty is reported in the accompanying
-// paper): partition the arguments by region FIRST so every
+// AVX2 region-sorted lanes. The engine pattern (region-first): partition the
+// arguments by region FIRST so every
 // 4-lane vector is homogeneous; the unsorted variant pays a measured 2.3x
 // divergence penalty.
 //
@@ -92,8 +90,8 @@
 //
 // Accuracy-multiplier treatment: every region entry is a
 // template on kAccuracyMultiplier, compiled twice under if constexpr — the
-// m = 1 branch is today's body verbatim (the bit-identity pin; the only
-// m = 1 differences are the scalar tails calling the templated scalar
+// m = 1 branch is the full-accuracy body verbatim (the bit-identity pin; the
+// only m = 1 differences are the scalar tails calling the templated scalar
 // entries at m = 1, which resolve to the same functions); the relaxed
 // branch passes the per-piece / per-order effective degrees into the
 // degree-parameterized Clenshaw variants (the loop-bound load shape is
@@ -186,8 +184,7 @@ public:
             const double x = i * kStep;
             const double decay = std::exp(-x);
 
-            // partialSum[m] = sum_{j=0..m} x^j / j!, built upward on the
-            // running term x^j / j! (one multiply-and-divide per step).
+            // partialSum[m] = sum_{j=0..m} x^j / j!.
             double term = 1.0;
             double running = 1.0;
             double partialSum[kDegree + 1];
@@ -279,7 +276,7 @@ inline __m256d Clenshaw4SplitDeg(const detail::OrderPiece& piece, int deg, __m25
     return RegionAClenshaw<backend::Avx2Fp64>(detail::kCoeffs.data(), piece, deg, xv);
 }
 
-// The m = 1 entry: the piece's full degree, as before the parametrization.
+// The m = 1 entry: the piece's full degree.
 inline __m256d Clenshaw4Split(const detail::OrderPiece& piece, __m256d xv) noexcept {
     return Clenshaw4SplitDeg(piece, piece.deg, xv);
 }
@@ -296,10 +293,8 @@ inline __m256d ClenshawB4(__m256d xv) noexcept {
 // The library instantiates the SIMD region entry points at m = 1 only (the
 // relaxed set is compiled for the scalar entries in boys_c.cpp), so in this
 // TU that caller sits in the discarded arm of an `if constexpr` and GCC/Clang
-// see a defined-but-unused internal function. It is kept because it is the
-// relaxed SIMD path's seed - an instantiation added here would use it - and it
-// is marked so the discard stays visible as a fact about the instantiation set
-// rather than a warning this tree suppresses wholesale.
+// see a defined-but-unused internal function; a relaxed SIMD instantiation
+// would use it.
 [[maybe_unused]] inline __m256d ClenshawB4Deg(int deg, __m256d xv) noexcept {
     return RegionBClenshaw<backend::Avx2Fp64, -1>(detail::kBcoeffs.data(), deg, xv);
 }
@@ -889,8 +884,8 @@ void BoysRegionCSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
 // Non-x86 targets: the same entry points, defined against the certified scalar
 // lanes. The vector engine does not exist here, so BoysAvx2Available() is
 // false and no entry asserts it; the region contract (inputs partitioned by
-// region) is still a *sufficient* precondition, it is simply no longer
-// required — the scalar lanes accept any argument >= 0.
+// region) is still a *sufficient* precondition, it is simply not required —
+// the scalar lanes accept any argument >= 0.
 //
 // The bodies mirror, element for element, the scalar tails the x86 entries run
 // for their last count % 4 elements (see the #if branch above), so a caller
@@ -1029,7 +1024,7 @@ void BoysRegionCSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
 #endif // BOYS_SIMD_X86
 
 // The default (m = 1) instantiations behind the extern-template declarations
-// in boys.hpp (the m = 1 branches are today's bodies verbatim).
+// in boys.hpp.
 namespace boys::detail {
 template void BoysRegionASimd<kBoysFullAccuracyMultiplier>(int n,
                                                            const double* x,
@@ -1087,8 +1082,8 @@ std::size_t AppendPackedBackends(BackendInfo* out) noexcept {
         return 0;
     }
 
-    out[0] = BackendInfo{Avx2Fp64::kName, Avx2Fp64::Contracts()};
-    out[1] = BackendInfo{Avx2Fp32::kName, Avx2Fp32::Contracts()};
+    out[0] = BackendInfo{Avx2Fp64::kName, Avx2Fp64::Contracts(), Avx2Fp64::kRoute};
+    out[1] = BackendInfo{Avx2Fp32::kName, Avx2Fp32::Contracts(), Avx2Fp32::kRoute};
     return 2;
 #else
     (void)out;

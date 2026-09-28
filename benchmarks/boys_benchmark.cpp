@@ -1,12 +1,10 @@
-// Boys-function kernel benchmarks — the CPU throughput rows of the
-// project's recorded benchmark set.
+// Boys-function kernel benchmarks — the CPU throughput rows.
 //
-// Workloads follow the design study: uniform
-// (n, x) pairs with n uniform in [0, 32] as used by the literature
-// benchmarks, plus a molecular x-distribution sampled from real benzene
+// Two workloads: uniform (n, x) pairs with n uniform in [0, 32], plus a
+// molecular x-distribution sampled from real benzene
 // 6-31G(d) primitive pairs (NAI-style x = p*|P-C|^2 with the
-// nuclear-attraction center C; the ERI-style second primitive pair of the
-// design study is not recreated here - the NAI-style values dominate the
+// nuclear-attraction center C; an ERI-style second primitive pair is not
+// sampled here - the NAI-style values dominate the
 // x-range of interest). The SIMD lanes are measured on region-sorted arrays
 // (the engine pattern); the unsorted penalty is measured by the mixed
 // per-vector kernel in the companion unsorted-SIMD benchmark.
@@ -47,7 +45,7 @@ std::vector<Item> UniformInputs() {
 }
 
 // Benzene at 6-31G(d): primitive exponents (Basis Set Exchange values) and
-// geometry (C-C 1.39 A, C-H 1.09 A); x samples as in the design study.
+// geometry (C-C 1.39 A, C-H 1.09 A); the x samples are the workload above.
 std::vector<Item> MolecularInputs() {
     constexpr double kBohr = 1.8897261246257702;
     constexpr double kR = 1.39;
@@ -234,9 +232,8 @@ static void BmBoysSingleF32Uniform(benchmark::State& state) {
 BENCHMARK(BmBoysSingleF32Uniform);
 
 // SIMD lane: region-sorted same-n arrays (the engine pattern). The unsorted
-// mixed variant carries the divergence penalty recorded in the runs logs
-// (3.2x on the recorded runs, measured by the companion unsorted-SIMD
-// benchmark).
+// mixed variant's divergence penalty is measured by the companion
+// unsorted-SIMD benchmark, whose header carries the protocol and the figure.
 namespace {
 
 struct SimdInputs {

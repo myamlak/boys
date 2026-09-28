@@ -1,70 +1,60 @@
-// Standalone reproduction of the boundary-measurement record: the smallest x
-// for which the double-precision
+// Standalone reproduction of the boundary measurement: the smallest x for
+// which the double-precision
 // upward recursion from an erf-seeded F0 stays within 5e-14 of the
-// reference for all n <= kmax. The boundary record
-// carries the CERTIFIED boundaries of the shipped
-// fit-seeded recurrence; the measured cells below are the witness record
-// that certification superseded.
+// reference for all n <= kmax. The shipped kernel is seeded from its stored
+// fits rather than from erf, and its certified boundaries are higher than
+// every cell below; the cells below are the measurements of the erf-seeded
+// recurrence, kept so that the spread between the walks that placed those
+// boundaries stays visible.
 //
-// Three measurement records are reproduced, exactly as recorded (each is a
-// lattice draw of an oscillating error envelope - see below):
+// Three measurements of the same quantity are reproduced, exactly as taken.
+// Each is a lattice draw of an oscillating error envelope - see below:
 //
 //   [1] the COARSE geometric grid (x = 0.05, x *= 1.02, ascending, first
-//       passing grid point) — the original design study's measurement and
-//       the record's FIRST-generation cells; superseded (the table
-//       caption and the note below it record the earlier estimates are
-//       superseded and tabulated here as the configuration-sensitivity
-//       record):
+//       passing grid point):
 //          seed   F0 = 0.886226925452758014 / sqrt(x) * erf(sqrt(x))
 //          step   f  = ((2l - 1) f - e^-x) / (2x), l = 1..kmax
 //          check  |f - RefSeries(l, x)| <= 5e-14, double precision
-//       Expected values (the superseded first-generation cells): 0.244 /
+//       Expected values: 0.244 /
 //       0.754 / 3.82 / 9.70 for kmax = 4, 8, 16, 32.
 //
 //   [2] the FINE two-phase descending sweep (0.01 then 0.001 steps, stop
-//       at the first failure) — the SECOND-generation cells' measurement
-//       (0.393 / 1.484 / 4.150 / 9.866 on the pinned builds of the
-//       recording machine; superseded as a cell record by [3], and
-//       reproduced here as part of the configuration-sensitivity record):
+//       at the first failure):
 //          seed   F0 = 0.5 * sqrt(pi / x) * erf(sqrt(x))
 //          step   f  = ((l + 0.5) f - 0.5 e^-x) / x, l = 0..n-1
 //          check  |f - RefSeries(n, x)| <= 5e-14 for n = 0..kmax
 //
 //   [3] the 0.0001-resolution descending sweep (run with --postcheck) over
-//       [0.8 x0, 1.2 x0] of each recorded cell, with the same seed, step,
-//       and 5e-14 criterion as [2] — the measurement the record's
-//       resolution-sensitivity record tabulates (the pre-certification
-//       witness cells). The cells are the first failing
-//       samples of this sweep on the recording machine (MSVC, 2026-09-05):
+//       [0.8 x0, 1.2 x0] of each cell, with the same seed, step,
+//       and 5e-14 criterion as [2]. The cells are the first failing
+//       samples of this sweep (MSVC, 2026-09-05):
 //       kmax = 4: 0.4625, kmax = 8: 1.6373, kmax = 16: 4.2367, kmax = 32:
 //       10.0492, with the passing sample one 1e-4 step above each (0.4626 /
 //       1.6374 / 4.2368 / 10.0493) and 402 / 1330 / 2629 / 3351 pass/fail
 //       alternations per band. 1e-5 spot scans over the envelope-top
 //       neighborhoods extend the largest failing samples to ~0.4625 /
-//       1.64959 / 4.29768 / 10.05917 (kmax = 4 / 8 / 16 / 32): the record
-//       is explicitly resolution-limited, not a formal proof. The post-
+//       1.64959 / 4.29768 / 10.05917 (kmax = 4 / 8 / 16 / 32), so each cell
+//       is resolution-limited rather than a formal proof. The post-
 //       check re-run confirms each walk's own first failing sample
-//       reproduces its recorded cell within the 20% band.
+//       reproduces its cell within the 20% band.
 //
 // The three definitions differ in their seed/step roundings, in whether
 // n = 0 is checked, and in the grid. The recursion error is NOT monotone
 // over the transition: the amplified seed rounding error oscillates
-// through the 5e-14 line many times, so each grid records its own lattice
-// draw — the coarser grids skip failure bands (the second-generation
-// record rose +61%/+97% above the first-generation cells for kmax = 4/8,
-// and the 0.0001 first failures sit +17.7%/+10.3%/+2.1%/+1.9% above the
-// two-phase cells for kmax = 4/8/16/32). All recorded values are
+// through the 5e-14 line many times, so each grid draws its own lattice
+// sample — the coarser grids skip failure bands ([2] reads +61%/+97% above
+// [1] for kmax = 4/8, and [3] sits +17.7%/+10.3%/+2.1%/+1.9% above the
+// two-phase cells for kmax = 4/8/16/32). All the values here are
 // genuine measurements of their respective grids and are ulp-sensitive
-// within a ~10-20% band; the record carries the [3] cells and this
-// program reproduces the [1] and [2] cells alongside them as the
-// configuration-sensitivity record.
+// within a ~10-20% band; this program reproduces all three sets so that
+// the spread between them is visible.
 //
-// The reference is the provably stable all-positive series (Vikhamar-
-// Sandberg & Repisky, arXiv:2512.10059, eq. 26):
+// The reference is the provably stable all-positive series
+// ([VikhamarSandberg2026], eq. 26):
 //     F_n(x) = (e^-x / 2) * sum_{l>=0} x^l / prod_{j=0..l} (n + j + 1/2),
 // evaluated in long double for the fine sweep and the post-check (80-bit
 // where the platform provides it, 64-bit on MSVC) and in double for the
-// coarse grid (as the original harness did). A self-test cross-checks the
+// coarse grid (as the [1] harness did). A self-test cross-checks the
 // series against the shipped 45-digit reference grid (boys_reference.csv).
 //
 // Compile: any C++17 compiler, e.g.
@@ -75,10 +65,8 @@
 //                                           [1] and [2] below)
 //          ./boys_boundary --postcheck     (section [3]: the 0.0001-
 //                                           resolution descending sweep
-//                                           over [0.8 x0, 1.2 x0] of all
-//                                           four recorded cells - the
-//                                           measurement the record's
-//                                           cells record)
+//                                           over [0.8 x0, 1.2 x0] of the
+//                                           four cells [3] records)
 //          ./boys_boundary --extended-seed (section [4]: the 0.0001-step
 //                                           descending sweep over the
 //                                           shipped kernel's extended-band
@@ -86,16 +74,15 @@
 //                                           measured consistency check)
 // No dependencies beyond the standard library.
 //
-// Expected coarse-grid values (the superseded first-generation cells):
-// 0.244, 0.754, 2.069, 3.823, 5.910, 9.697 for kmax = 4, 8, 12, 16, 24, 32.
-// Expected fine two-phase sweep values (the superseded second-generation
-// cells, the recording machine's pinned builds): 0.393, 1.484, 4.150,
+// Expected coarse-grid values ([1]): 0.244, 0.754, 2.069, 3.823, 5.910,
+// 9.697 for kmax = 4, 8, 12, 16, 24, 32.
+// Expected fine two-phase sweep values ([2], MSVC): 0.393, 1.484, 4.150,
 // 9.866 for kmax = 4, 8, 16, 32 (fresh builds draw 0.401 / 1.435 for
 // kmax = 4 / 8).
-// Expected recorded cells (the first failing samples of the 0.0001
-// descending sweep, recording machine MSVC): 0.4625, 1.6373, 4.2367,
+// Expected [3] cells (the first failing samples of the 0.0001 descending
+// sweep, MSVC): 0.4625, 1.6373, 4.2367,
 // 10.0492 for kmax = 4, 8, 16, 32; other platforms may land within the
-// ulp-sensitive band recorded by the accompanying test suite (~+/-20%).
+// ulp-sensitive band the accompanying test suite allows (~+/-20%).
 
 #include <algorithm>
 #include <array>
@@ -115,8 +102,9 @@ constexpr double kBoundaryThreshold = 5e-14;
 
 // The gate's measurement resolution (section [2b]): the pin is the largest
 // failing sample of a descending sweep at this step, so the step is part of
-// the cell, not an implementation detail. 1e-4 is the record's own
-// recorded resolution - the cells ARE its first failing samples.
+// the cell, not an implementation detail. 1e-4 is the resolution the
+// cells were taken at - each cell IS a first failing sample of a walk at
+// this step.
 constexpr double kMeasurementResolution = 1e-4;
 
 constexpr double kPi = 3.14159265358979323846;
@@ -334,9 +322,9 @@ FailureTop MeasureFailureTop(int kmax) {
 }
 
 // ---------------------------------------------------------------------------
-// Coarse-grid measurement: the original harness's recursion and its
+// Coarse-grid measurement: the coarse grid's recursion and its
 // ascending geometric grid. Checks orders l = 1..kmax only (n = 0, the
-// seed itself, is not re-checked), exactly as the original did.
+// seed itself, is not re-checked), exactly as [1] does.
 // ---------------------------------------------------------------------------
 double MeasureBoundaryCoarse(int kmax) {
     double found = -1.0;
@@ -417,13 +405,10 @@ double RoundTo3Sig(double value) {
 
 struct ThresholdRow {
     int kmax;
-    double x0Recorded; // the recorded cell: the first failing sample of the
-                    // 0.0001 descending sweep (section [3]) on the recording
-                    // machine (MSVC, 2026-09-05), adopted from the pin of
-                    // the accompanying test suite
-    double x0Coarse; // the superseded first-generation coarse-grid cell (the
-                     // original design study's measurement, reproduced as
-                     // section [1])
+    double x0Recorded; // the cell [3] records: the first failing sample of
+                    // the 0.0001 descending sweep (MSVC, 2026-09-05),
+                    // adopted from the pin of the accompanying test suite
+    double x0Coarse; // the coarse-grid cell of [1], reproduced there
     double formula; // published formula (V&S eq. 25/13), literature input
 };
 
@@ -435,10 +420,9 @@ const std::array<ThresholdRow, 4> kThresholdRows = {
 };
 
 // ---------------------------------------------------------------------------
-// [3] the 0.0001-step descending sweep over [0.8 x0, 1.2 x0] of a recorded
-// cell x0 (see the file header): the measurement the recorded cells
-// record - each cell IS the first failing sample of this walk on the
-// recording machine. The whole band is walked - not stopped at the first
+// [3] the 0.0001-step descending sweep over [0.8 x0, 1.2 x0] of a cell x0
+// (see the file header) - each cell IS the first failing sample of this
+// walk. The whole band is walked - not stopped at the first
 // failure - so the pass/fail alternations (the amplified seed-rounding error
 // oscillating through the 5e-14 line) are counted as evidence of the grid's
 // adequacy near the transition.
@@ -506,17 +490,17 @@ PostCheckResult RunPostCheck(int kmax, double x0) {
     return result;
 }
 
-// Runs the 0.0001-resolution descending sweep for all four recorded cells
+// Runs the 0.0001-resolution descending sweep for all four cells
 // (kmax = 4, 8, 16, 32) over [0.8 x0, 1.2 x0] of each, and confirms that the
-// walk's own first failing sample reproduces the recorded cell within the
-// 20% band while the band top passes (the recorded cells ARE first failing
-// samples - resolution-limited records of an oscillating envelope, not
+// walk's own first failing sample reproduces the cell within the
+// 20% band while the band top passes (the cells ARE first failing
+// samples - resolution-limited draws of an oscillating envelope, not
 // stability thresholds; a failing band top would mean this machine's draw
 // sits above the recorded cell by more than the band).
 bool RunPostCheckAll() {
     std::printf("\n");
-    std::printf("=== [3] resolution record: 0.0001-step descending sweep over\n");
-    std::printf("    [0.8 x0, 1.2 x0] of the four recorded cells ===\n");
+    std::printf("=== [3] resolution sweep: 0.0001-step descending sweep over\n");
+    std::printf("    [0.8 x0, 1.2 x0] of the four cells ===\n");
     std::printf("    (same seed, step, and 5e-14 criterion as the fine sweep of [2];\n");
     std::printf("    the sweep is resolution-limited - 1e-5 envelope-top scans are\n");
     std::printf("    recorded in the file header - and not a formal proof)\n");
@@ -541,8 +525,8 @@ bool RunPostCheckAll() {
         const ThresholdRow& row = kThresholdRows[r];
         const PostCheckResult check = RunPostCheck(row.kmax, row.x0Recorded);
 
-        // The recorded cell is the first failing sample of the walk on the
-        // recording machine; a healthy re-run reproduces it within the 20%
+        // The cell is the first failing sample of the walk; a healthy
+        // re-run reproduces it within the 20%
         // band (the cells are ulp-sensitive draws - see the file header).
         const double firstFailDeviation =
             check.firstFailIndex >= 0 ? std::abs(check.firstFailX - row.x0Recorded) / row.x0Recorded
@@ -602,7 +586,7 @@ bool RunPostCheckAll() {
 }
 
 // ---------------------------------------------------------------------------
-// [4] the extended-band path (the per-range seed design), copied verbatim
+// [4] the extended-band path, copied verbatim
 // from the shipped kernel (external/boys/include/boys/boys_impl.hpp, the
 // RegionBExtendedSeed dispatch of BoysSingleImpl<1.0>): the F0 fit on
 // [kExtendedBX0, kX0) plus the upward step, dispatched per kmax tier at the
@@ -610,9 +594,9 @@ bool RunPostCheckAll() {
 // generated header (include/boys/boys_coefficients.hpp); the code shape - the
 // split-Clenshaw seed with std::fma everywhere, the hoisted 0.5*exp(-x)
 // precompute, the step f = ((l + 0.5)*f - expx)/x - is the certified path
-// of the certified-boundary table (the interval instrument,
-// mirrors the same source). This sweep is the certified rows' measured
-// consistency check: the certified crossings sit AT OR ABOVE the recorded
+// of the certified-boundary table, and mirrors the same source. This sweep
+// is the certified rows' measured
+// consistency check: the certified crossings sit AT OR ABOVE the
 // first failures.
 // ---------------------------------------------------------------------------
 
@@ -633,7 +617,7 @@ constexpr double kExtendedBcoeffs[25] = {
     3.98661416732232774e-18,
 };
 // The certified per-order dispatch thresholds (the dispatch constants of
-// the kernel, the next doubles above the instrument's certified values):
+// the kernel, the next doubles above the certified values):
 // order n takes the extended seed exactly when x >= kTierThresholds[n].
 constexpr double kTierThresholds[33] = {
     1.08552523453493333e+00, 1.08552523453493333e+00, 1.08552523453493333e+00,
@@ -815,12 +799,12 @@ ExtendedSweepResult RunExtendedSeedSweep(const ExtendedRow& row) {
 // certified value would refute the certificate.
 bool RunExtendedSeedAll() {
     std::printf("\n");
-    std::printf("=== [4] extended-seed record: 0.0001-step descending sweep over\n");
+    std::printf("=== [4] extended-seed sweep: 0.0001-step descending sweep over\n");
     std::printf("    [0.8 x_env, kX0) of the shipped kernel's extended-band path ===\n");
     std::printf("    (the per-range F0 fit seed and the upward step, copied verbatim\n");
     std::printf("    from the shipped kernel; the certified-boundary table's measured\n");
     std::printf("    consistency check - the certification itself is the interval\n");
-    std::printf("    evaluation, the interval instrument)\n");
+    std::printf("    evaluation of the certified per-kmax boundaries)\n");
 
     bool allOk = true;
 
@@ -921,9 +905,9 @@ int main(int argc, char** argv) {
         return RunExtendedSeedAll() ? 0 : 1;
     }
 
-    // [1] coarse grid — the superseded first-generation measurement (record).
+    // [1] coarse grid — the coarse-grid measurement.
     std::printf("=== [1] coarse geometric grid (x = 0.05, x *= 1.02, first passing "
-                "point; the superseded first-generation cells) ===\n");
+                "point; the coarse-grid cells) ===\n");
     bool coarseMatch = true;
 
     for (const ThresholdRow& row : kThresholdRows)
@@ -931,7 +915,7 @@ int main(int argc, char** argv) {
         const double x0 = MeasureBoundaryCoarse(row.kmax);
         const bool match = RoundTo3Sig(x0) == RoundTo3Sig(row.x0Coarse);
         coarseMatch = coarseMatch && match;
-        std::printf("kmax=%2d: stable from x >= %.3f | superseded cell %.3f | "
+        std::printf("kmax=%2d: stable from x >= %.3f | coarse cell %.3f | "
                     "formula %.2f | margin %.1fx | %s\n",
                     row.kmax,
                     x0,
@@ -941,16 +925,15 @@ int main(int argc, char** argv) {
                     match ? "MATCH" : "MISMATCH");
     }
 
-    std::printf("coarse-grid reproduction vs the superseded cells: %s\n",
+    std::printf("coarse-grid reproduction vs [1]'s cells: %s\n",
                 coarseMatch ? "MATCH" : "MISMATCH");
     std::printf("\n");
 
-    // [2] fine two-phase sweep — the superseded second-generation
-    // measurement (record); the fresh value is a lattice draw of the same
-    // oscillating envelope, printed but NOT gated - the gate is [2b].
+    // [2] fine two-phase sweep: the fresh value is a lattice draw of the
+    // same oscillating envelope, printed but NOT gated - the gate is [2b].
     std::printf("=== [2] fine two-phase sweep (0.01 then 0.001 steps; the "
-                "second-generation cells' measurement - superseded by [3]; "
-                "reproduced as the configuration-sensitivity RECORD and NOT "
+                "cells above are [3]'s measurement, so this one is reproduced "
+                "for comparison and NOT "
                 "gated - its value is a lattice draw) ===\n");
 
     for (const ThresholdRow& row : kThresholdRows)
@@ -967,8 +950,8 @@ int main(int argc, char** argv) {
                     row.formula / x0);
     }
 
-    // [2b] THE GATE: the failure top at 1e-4. This is the same KIND of record
-    // as the recorded cells - a first failing sample at 1e-4 - so the
+    // [2b] THE GATE: the failure top at 1e-4. This is the same kind of
+    // measurement as the recorded cells - a first failing sample at 1e-4 - so the
     // comparison is like for like and the 20% band covers the ulp-level
     // seed/libm spread instead of the measurement's own lattice scatter.
     std::printf("\n");
@@ -1009,15 +992,15 @@ int main(int argc, char** argv) {
                 "(within 20%%): %s\n",
                 boundaryOk ? "MATCH" : "MISMATCH");
     std::printf("\n");
-    std::printf("The recorded cells are the first failing samples of the "
+    std::printf("The pinned cells are the first failing samples of the "
                 "0.0001 descending\n");
     std::printf("sweep, which is what [2b] measures: a failing sample is a "
                 "witness that the\n");
     std::printf("recursion leaves the window there, and a lower bound on the "
                 "top of the failure\n");
-    std::printf("set. [1] and [2] above are the superseded earlier "
-                "measurements, reproduced as\n");
-    std::printf("the configuration-sensitivity record: they are lattice draws "
+    std::printf("set. [1] and [2] above are coarser measurements of the same "
+                "quantity, reproduced\n");
+    std::printf("to show the spread between the grids: they are lattice draws "
                 "and are not gated.\n");
     return boundaryOk ? 0 : 1;
 }

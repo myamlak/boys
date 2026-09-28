@@ -9,14 +9,11 @@
 # Names are the rendered job names from a completed run - a name that matches
 # nothing is silently unenforced, so add one only from a leg that has reported.
 #
-# NO LEG IS EXCLUDED (2026-09-17). `linux-arm64 gcc Release` was excluded while
-# its boundary pin was red: the cells were a recording-machine lattice draw of
-# an oscillating error envelope, and glibc-aarch64 drew them past the recorded
-# band (kmax = 4 landed 21.9% off against a 20% band). The pin was replaced by
-# a stable measurement - the failure top of a descending sweep at a stated
-# resolution - which spreads 5.1% across gcc/clang/MSVC where the retired draw
-# spread 27.0% from the lattice alone on one machine. The leg went green with
-# every other leg (run 35164402325, 12/12) and is required here like the rest.
+# NO LEG IS EXCLUDED. The linux-arm64 leg's boundary pin is the failure top of
+# a descending sweep at a stated resolution rather than a lattice draw of the
+# oscillating error envelope: the draw spread 27.0% from the lattice alone on
+# one machine, where the failure top spreads 5.1% across gcc/clang/MSVC. The
+# leg is required here like the rest.
 
 windows-msvc Release
 windows-msvc Debug
@@ -31,6 +28,6 @@ windows-arm64 msvc Release
 macos arm64
 macos x64
 
-# Every name above is a leg that has reported green at least once (run
-# 35164402325 carries all twelve), which is the bar for adding one: a required
+# Every name above is a leg that has reported green at least once, which is
+# the bar for adding one: a required
 # name that never reports blocks every PR.
