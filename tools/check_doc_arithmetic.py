@@ -21,7 +21,9 @@ Three checks:
    numerals (times, x, factor of, orders of magnitude, per cent, parts in).
    The operands are recombined and the printed claim is compared with the
    result. Operands come from the claim's own sentence first, then its
-   paragraph, then the document; the finding says which scope supplied each.
+   paragraph, then its section and the unit words the document defines
+   elsewhere; the finding says which scope supplied each, and --min-confidence
+   sets how wide a scope a mismatch may come from and still fail the run.
 
 2. the accuracy multiplier m -- most documented budgets have the form m*B, and
    m defaults to 1. A claim that a cell "sits at 0.9999 of the bound" is a
@@ -36,13 +38,25 @@ Three checks:
 Usage:
     python tools/check_doc_arithmetic.py                  # the published set
     python tools/check_doc_arithmetic.py docs/lane-contract.md
+    python tools/check_doc_arithmetic.py --show-verified  # and the ones that came out
     python tools/check_doc_arithmetic.py --json
     python tools/check_doc_arithmetic.py --selftest       # calibration corpus
 
-Exit status is 1 when a mismatch is found, and 0 otherwise. "Not derivable"
-and "multiplier-unswept" are reports, not failures; --strict promotes the
-latter to a failure, and --min-confidence governs how wide an operand scope a
-mismatch may come from and still fail the run.
+`--selftest` runs the checks over tools/check_doc_arithmetic_calibration.md and
+pins every verdict there, so a change to the rules is measured against the
+shapes they were written for rather than against this tree alone.
+
+Exit status. The run exits 1 when a finding fails and 0 otherwise, and the
+report's last line says which of the two it is and why. A "mismatch" fails the
+run when its operands came from no wider than the scope --min-confidence
+allows; "not derivable" is a report and never fails, because it is the tool
+saying the sentence does not print the two sides it would need; under --strict
+a "multiplier-unswept" finding also fails, since a documented bound whose
+stated value holds at one multiplier and not at another is a defect in the
+document rather than in the check. `mismatch` outside the configured scope
+stays a report, so the default run fails only on the narrow, unambiguous
+class. Run with --strict in CI: the tree is expected to be clean under it, and
+that is what makes the gate worth having.
 """
 
 import argparse
@@ -158,15 +172,50 @@ SHARE_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s+(?:of|in)\s+(?:the\s+)?"
 # sentence's own numerals are not the two operands of the relation.
 DESCRIBED_RE = re.compile(r"\b(?:below|above|under|over|past|beyond)\s+the\s+[A-Za-z]",
                           re.I)
+# A margin is a ratio to a bound, and a percentage sentence derives one only
+# where it prints that ratio and says so: "0.9993 of the bound, a margin of 0.07
+# per cent". Without the phrase, a fraction sitting in the sentence is some
+# other claim's operand -- the ratio a neighbouring sentence states, or a
+# figure from a nearby row -- and 100*(1-r) computed from it is arithmetic
+# about a quantity the percentage was never about.
+RATIO_TO_BOUND_RE = re.compile(r"\s*of\s+(?:the\s+|its\s+|a\s+)?"
+                               r"(?:whole\s+)?(?:bound|bar|budget|allowance"
+                               r"|ceiling|envelope|headroom)\b", re.I)
+# "which is 2.7% of the lane's bar": a share whose denominator is named rather
+# than printed. Both sides are needed to recompute a share and the bound is the
+# missing one here, so the sentence is reported rather than checked against a
+# figure that is not the denominator.
+NAMED_BOUND_RE = re.compile(r"\s*(?:of|in|against)\s+(?:the|its|that|this)\s+"
+                            r"(?:[A-Za-z][A-Za-z'-]*\s+){0,3}"
+                            r"(?:bound|bar|budget|allowance|ceiling|envelope"
+                            r"|headroom)\b", re.I)
+# A percentage stating a spread between measurements: "within 0.9% of one
+# another", "0.02% of slots" over repeated runs, "11.5% to 12% behind them".
+# A spread is derived from the two measurements it lies between; none of these
+# sentences prints both, and a spread is not a share of a bound, so it is
+# reported rather than forced into the margin shape.
+SPREAD_RE = re.compile(r"\bwithin\b|\bapart\b|each\s+other|one\s+another"
+                       r"|\bbehind\b|\bdiffer|\bdisagree|\bagreeing\b|\bfrom\s+one\s+run"
+                       r"|\bto\s+the\s+next\b", re.I)
 
+# A numeral is a printed figure: one token, read whole. The lookbehind and the
+# lookahead keep the digits of an identifier out of the pool -- a build hash, a
+# commit abbreviation or a word like "sha256" is not an operand -- and the
+# thousands-separated branch reads one printed count as one number. Split at
+# its separators, "6,570,938,098" arrives as four figures ("6", "570", "938",
+# "098", the last losing its leading zero), and a ratio claim can then close on
+# a pair of fragments by coincidence: a table's figures divided group by group
+# "verified" a stated ratio of 3.24 as 061/19 = 3.21. A check that passes for
+# the wrong reason is worse than one that reports it cannot tell.
 NUM_RE = re.compile(
     r"(?<![\w.])"
-    r"(?P<mant>\d+(?:\.\d+)?)"
+    r"(?P<mant>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)"
     r"(?:"
     r"(?:\s*[eE]\s*(?P<exp>[+-]?\d+))"
     r"|(?:\s*[*·×]\s*10\s*\^?\s*(?P<pow>[+-]?\d+))"
     r"|(?:\s*\^\s*(?P<caret>[+-]?\d+))"
     r")?"
+    r"(?!\w)"
 )
 
 WORD_RE = re.compile(
@@ -176,6 +225,83 @@ FRACTION_WORD_RE = re.compile(
 PARTS_IN_RE = re.compile(r"\s+parts?\s+in\s+(?:a\s+|one\s+|an?\s+)?", re.I)
 NUMBER_WORD_RE = re.compile(
     r"\b(?:" + "|".join(sorted(WORD_NUMBERS, key=len, reverse=True)) + r")\b", re.I)
+
+
+# ---------- what a spelled number is doing in its sentence ---------------
+#
+# A spelled number is an operand only where the sentence uses it as a quantity
+# being related. The same words do other work in English prose, and reading
+# that work as arithmetic is how a checker reports a document wrong that is
+# right: "within 0.9% of one another" is a spread between measurements, and
+# "one" in it is the second half of a reciprocal pronoun, not the number 1;
+# "one of those rows moves by", "two of these axes have been measured and two
+# have not" and "read at two counts" count members of a set. Pairing the 1 with
+# the sentence's 0.9 recomputes a margin of 0 per cent against a printed 0.9 and
+# cries mismatch on a sentence whose arithmetic is fine.
+#
+# So: a counting word is not a quantity when
+#
+#   * it is half of the reciprocal pronoun -- "one another", "one other";
+#   * it is a partitive -- "<n> of <determiner|pronoun|number>": it picks
+#     members out of a set the sentence has already named ("one of those rows",
+#     "one of the two defaults", "two of these axes", "one of three rows");
+#   * it is a pronoun, standing where a noun would -- "the first one", "the
+#     last one", "rather than one", "one that";
+#   * it counts a plural noun -- "two counts", "three rows", "eight lanes" --
+#     where the noun is not the name of a relation or a unit ("four times
+#     apart", "five parts in ten thousand", "two orders of magnitude" are all
+#     quantities, and a fraction word is always one: "half of one representable
+#     digit" names a part of the quantity that follows it).
+#
+# A numeral the sentence uses as a quantity keeps its place in every pool. A
+# number word the rules above exclude is dropped from the operands and from
+# nothing else: it can still be the claim itself ("the ratio is two to one"
+# states a relation over two and one, and neither is suppressed), and its
+# absence is visible in the report rather than silent.
+PARTITIVE_AFTER = (
+    r"(?:the|these|those|this|that|them|it|us|you|its|their|our|your|his|her"
+    r"|any|each|every|some|no|both|all|either|neither)")
+PRONOUN_BEFORE_RE = re.compile(
+    r"\b(?:the|a|an|this|that|these|those|first|second|third|fourth|last|next"
+    r"|only|other|another|than|either|neither|each|every|no|any)\s+$", re.I)
+RELATION_AFTER_RE = re.compile(
+    r"\s+(?:times?\b|time\b|-fold\b|parts?\s+in\b|orders?\s+of\b|percent\b"
+    r"|per\s?cent\b)", re.I)
+# A relation stated as a range: "five to eight orders of magnitude". The word
+# between the two ends is a numeral in the other spelling, so a rule that only
+# looks one word ahead does not see the relation and the lower end reads as a
+# count of whatever happens to follow it.
+RANGE_RELATION_RE = re.compile(
+    r"\s+to\s+(?:[A-Za-z]+|\d+(?:\.\d+)?)\s+"
+    r"(?:times?\b|time\b|-fold\b|parts?\s+in\b|orders?\s+of\b|percent\b"
+    r"|per\s?cent\b)", re.I)
+# "two counts", "three rows", "eight lanes" and also "two named lanes", "three
+# separate runs": the modifiers sit between the count and its noun and do not
+# turn it into arithmetic. A section heading reads "A ratio stated between two
+# named lanes", and without this the count in it became an operand of a ratio
+# claim in the body below and produced a mismatch out of a heading.
+PLURAL_NOUN_RE = re.compile(
+    r"\s+(?:[A-Za-z][A-Za-z-]*\s+){0,2}[A-Za-z][A-Za-z-]*s\b")
+
+
+def word_is_a_quantity(text, match):
+    """Whether a spelled number at `match` is a quantity or a piece of prose."""
+    word = match.group(1).lower()
+    if word == "half":
+        return True                     # a fraction names part of what follows
+    after = text[match.end():]
+    before = text[:match.start()]
+    if re.match(r"\s+(?:another|other)\b", after, re.I):
+        return False
+    if re.match(r"\s+of\s+(?:" + PARTITIVE_AFTER + r"|\d|"
+                + "|".join(sorted(WORD_NUMBERS, key=len, reverse=True)) + r")\b",
+                after, re.I):
+        return False
+    if PRONOUN_BEFORE_RE.search(before):
+        return False
+    if RELATION_AFTER_RE.match(after) or RANGE_RELATION_RE.match(after):
+        return True
+    return not PLURAL_NOUN_RE.match(after)
 
 
 def read_number_words(text, pos):
@@ -263,6 +389,8 @@ class Numeral:
     tight_unit: bool = False    # its unit word is in its own phrase
     fraction_word: bool = False  # "thousandths": a fraction, not a count
     step_unit: bool = False     # its unit word is a representable increment
+    quantity: bool = True       # used as a quantity, not as a pronoun or a
+                                # count of members (see word_is_a_quantity)
 
     def show(self):
         return f"{self.derived or self.text} [{self.kind}]"
@@ -344,6 +472,9 @@ class Paragraph:
     @property
     def numerals(self):
         return [n for s in self.sentences for n in s.numerals]
+
+    def slice(self, a, b):
+        return self.text[max(0, a - self.start):max(0, b - self.start)]
 
 
 @dataclass
@@ -495,7 +626,7 @@ def extract_numerals(line):
         return any(a <= pos < b for (a, b) in spans)
 
     for match in NUM_RE.finditer(line.text):
-        mant = float(match.group("mant"))
+        mant = float(match.group("mant").replace(",", ""))
         try:
             if match.group("exp") is not None:
                 value = mant * 10.0 ** int(match.group("exp"))
@@ -520,7 +651,8 @@ def extract_numerals(line):
         word = match.group(1).lower()
         found.append(Numeral(
             start=match.start(), end=match.end(), text=match.group(1),
-            value=WORD_NUMBERS[word], derived=f"word '{word}'"))
+            value=WORD_NUMBERS[word], derived=f"word '{word}'",
+            quantity=word_is_a_quantity(line.text, match)))
 
     for match in FRACTION_WORD_RE.finditer(line.text):
         if in_code(match.start()):
@@ -782,25 +914,73 @@ def kind_at(text, index):
     return _score_kinds(text, index, index)
 
 
-def _usable(n, claim, needed_kind):
+# "3.06 times fewer instructions ... than the per-order loop it replaces", "the
+# two readings ... four times apart": the ratio is stated and the two sides of
+# it are named. A named side is not a missing one -- the two figures are
+# printed where the comparison is defined, which for a summary is the document
+# the summary links to -- but they are not in this sentence, and the sentence's
+# own other figures are not them. Saying so is the point: pairing two of the
+# ratios in "3.06 times fewer instructions ... and 3.13 times more of them"
+# divides one stated factor by another and calls the result a checked one.
+#
+# The report quotes what the sentence names rather than the phrase around it,
+# so a reader can see for themselves that the missing side is missing: "fewer
+# instructions", "retired slots", not a clause cut off mid-word.
+NAMED_STOP = r"(?:and|or|than|but|which|that|with|from|of|in|to|the|a|an)"
+NAMED_QUANTITY_RE = re.compile(
+    r"\btimes?\s+(?:fewer|more|less)\s+([a-z][a-z-]*"
+    r"(?:\s+(?!" + NAMED_STOP + r"\b)[a-z][a-z-]*)?)", re.I)
+NAMED_THAN_RE = re.compile(
+    r"\bthan\s+((?:the|its|a|an|that|these|those)\s+[a-z][a-z-]*"
+    r"(?:\s+[a-z][a-z-]*)?)", re.I)
+NAMED_APART_RE = re.compile(r"\btimes?\s+apart\b", re.I)
+
+
+def named_side(sent, claim):
+    """What a ratio claim's sentence names in place of printing a magnitude."""
+    after = sent.slice(claim.end, claim.end + 160)
+    named = [hit.group(1).strip()
+             for hit in NAMED_QUANTITY_RE.finditer(after)]
+    named.extend(hit.group(1).strip() for hit in NAMED_THAN_RE.finditer(after))
+    if NAMED_APART_RE.search(after):
+        named.append("the two readings a factor apart")
+    seen, unique = set(), []
+    for phrase in named:
+        if phrase.lower() not in seen:
+            seen.add(phrase.lower())
+            unique.append(phrase)
+    return unique
+
+
+def _usable(n, claim, needed_kind, stated=()):
     """Whether a numeral can stand as one side of `claim`'s relation."""
     # A numeral inside a multiplier expression ("m*5.5e-14") is a usable
     # operand at its printed value: the multiplier defaults to 1, so that is
     # what the expression equals, and check 2 sweeps the setting separately.
     # 0 and 1 are dropped -- they carry no magnitude.
-    return (not n.in_code and n.value not in (0.0, 1.0)
+    #
+    # A numeral the sentence uses as a count or a pronoun is dropped for the
+    # same reason: it carries no magnitude either (`n.quantity`). So is a
+    # numeral that states a relation of its own (`stated`): in "it retires 3.06
+    # times fewer instructions ... and 3.13 times more of them than ...", the
+    # printed 3.13 is not a magnitude, it is another ratio, and dividing one of
+    # the sentence's ratios by another recomputes a number nothing printed.
+    return (not n.in_code and n.quantity and n.value not in (0.0, 1.0)
+            and (n.start, n.end) not in stated
             and not (n.start == claim.start and n.end == claim.end)
             and not (claim.hi_end is not None and claim.start <= n.start
                      and n.end <= claim.hi_end)
             and (needed_kind in (None, "PLAIN") or n.kind == needed_kind))
 
 
-def operand_pool(doc, claim, needed_kind):
+def operand_pool(doc, claim, needed_kind, stated=()):
     """The operands for a claim, widest scope last, provenance recorded.
 
     Stops at the first scope that supplies two operands of the required kind.
     Returns (pool, scope, kinds_present). Nothing is invented: a scope that
     cannot supply two operands of the right kind is reported as such.
+    `stated` is the spans of the sentence's other claims, which are excluded
+    as operands (see _usable).
     """
     sent = claim.sentence
     para = paragraph_of(doc, sent) if sent else None
@@ -842,13 +1022,13 @@ def operand_pool(doc, claim, needed_kind):
         # document has said in words that the far side is named rather than
         # printed.
         pooled = [(n, scope) for (scope, candidates) in ladder
-                  for (n, _) in candidates if _usable(n, claim, needed_kind)]
+                  for (n, _) in candidates if _usable(n, claim, needed_kind, stated)]
         if len(_dedupe(pooled)) >= 2:
             return _dedupe(pooled), "section", None
 
     for scope, candidates in ladder:
         pool = [(n, where) for (n, where) in candidates
-                if _usable(n, claim, needed_kind)]
+                if _usable(n, claim, needed_kind, stated)]
         if len(pool) >= 2:
             return _dedupe(pool), scope, None
 
@@ -919,9 +1099,30 @@ def ratio_pairs(pool, require_step=False, require_anchor=False):
     return out
 
 
+def stated_relations(claims):
+    """The spans of the sentences' own claims, per sentence, as operands to drop.
+
+    A sentence that states three ratios over one comparison prints three
+    relations and no magnitude of the thing compared. Every one of them is a
+    claim this check reads, and none of them is an operand of another: the
+    operand pool has to know which of the sentence's numerals are already
+    spoken for. What stays usable is the numeral of an of_bound claim, which is
+    a magnitude after all -- a printed ratio to a bound is exactly what a
+    margin is derived from.
+    """
+    stated = {}
+    for claim in claims:
+        if claim.relation in ("ratio", "orders", "percent", "parts_in"):
+            stated.setdefault(id(claim.sentence), set()).add(
+                (claim.start, claim.end))
+    return stated
+
+
 def check_relations(doc):
     findings = []
-    for claim in find_claims(doc):
+    claims = find_claims(doc)
+    stated = stated_relations(claims)
+    for claim in claims:
         sent = claim.sentence
         finding = Finding("relation", "", doc.path, line_of(doc, claim.start),
                           claim.span(), sent.text if sent else "")
@@ -935,12 +1136,23 @@ def check_relations(doc):
         if claim.relation == "of_bound":
             continue                        # the input to check 2
 
-        pool, scope, present = operand_pool(doc, claim, claim.needed_kind)
+        pool, scope, present = operand_pool(doc, claim, claim.needed_kind,
+                                            stated.get(id(sent), ()))
         if not pool:
             finding.verdict = "not derivable"
             counts, reached = present if present else ({}, [])
             where = " and ".join(reached) if reached else "the passage"
-            if claim.needed_kind and claim.needed_kind != "PLAIN":
+            named = named_side(sent, claim) if sent else []
+            if named:
+                quoted = ", ".join(f'"{phrase}"' for phrase in named)
+                finding.detail = (
+                    f"the sentence states the ratio and names what it compares "
+                    f"({quoted}) rather than printing either magnitude, so "
+                    f"neither side of it is in the operands this check draws "
+                    f"from ({where}) and the factor cannot be recomputed. It is "
+                    f"checkable where the two figures are printed, which is not "
+                    f"this sentence.")
+            elif claim.needed_kind and claim.needed_kind != "PLAIN":
                 finding.detail = (
                     f"the claim compares two {claim.needed_kind} magnitudes, and there "
                     f"are not two of them to compare: the sentence prints "
@@ -1031,18 +1243,52 @@ def check_relations(doc):
     return findings
 
 
+def printed_ratio_to_bound(sent, claim):
+    """The numeral the sentence states as a ratio to a bound, or None.
+
+    A margin is 100*(1 - r) for the ratio r the sentence prints to the bound,
+    and the ratio has to be *stated as* one: "the worst case is 0.9993 of the
+    bound - a margin of 0.07 per cent" derives, because the sentence gives the
+    number a denominator and the denominator is the bound the margin is a
+    margin of. A numeral that merely sits nearby has no denominator at all, and
+    reading the largest one below 1 as the ratio is how "came out within 0.9%
+    of one another" - a spread between three measurements - becomes a margin
+    of 0 per cent, and a correct sentence comes back as a mismatch.
+
+    The reading stops at the claim's own sentence even though the relation
+    check reads further. A margin is stated in one breath with its ratio - the
+    ratio, a dash, the margin - and a reacher reading takes a *different*
+    sentence's bound for this percentage's denominator, which reports a share
+    of one bound as a margin against another. Where the two are split across
+    sentences the claim is reported as not derivable, which is the honest
+    answer for a sentence that does not state the denominator it used.
+    """
+    for n in (sent.numerals if sent else []):
+        if (not n.in_code and n.quantity and 0 < n.value <= 1.0
+                and not (n.start == claim.start and n.end == claim.end)
+                and RATIO_TO_BOUND_RE.match(sent.slice(n.end, n.end + 24))):
+            return n
+    return None
+
+
 def percent_verdict(doc, claim):
     """Recomputes a percentage claim, or says why it cannot be.
 
-    Two shapes are distinguished, because they derive differently:
+    Four shapes are distinguished, because they derive differently:
 
       margin    -- "0.9999 of the bound -- a margin of thousandths of a per
-                   cent". The claim states a ratio and a headroom derived from
-                   it: margin = 100 * (1 - ratio).
+                   cent". The claim states a ratio to a bound and a headroom
+                   derived from it: margin = 100 * (1 - ratio).
+      share     -- "4125493 of 5710087 cells (72.2%)". The sentence prints both
+                   sides, and the percentage is 100 * numerator / denominator.
       occupancy -- "99% of the whole bound". The claim states what share of a
                    quantity one term takes. Its operand is that term, which
                    this document prints as a description ("half of one
                    representable digit"), not as a number.
+      spread    -- "within 0.9% of each other". The claim states how far two
+                   measurements sit apart, which is not a share of anything and
+                   not a ratio to a bound: it derives from the two measurements
+                   and the sentence prints neither.
     """
     sent = claim.sentence
     para = paragraph_of(doc, sent)
@@ -1078,34 +1324,59 @@ def percent_verdict(doc, claim):
                     f"not {claim.claimed:g} per cent. Operands came from the "
                     f"sentence.")
 
+    # The margin is read before the spread, deliberately. A sentence that
+    # states a ratio to a bound has given the check its operand and is derived;
+    # a sentence that does neither is reported. Reading the spread first would
+    # hide the first case behind a phrase ("within" appears in correct margin
+    # sentences too), and a check that silently skips a sentence is the one
+    # failure this tool is built not to have.
+    ratio = printed_ratio_to_bound(sent, claim)
+    if ratio is not None:
+        computed = 100.0 * (1.0 - ratio.value)
+        tolerance = TOL_HEDGED if claim.hedged else TOL_PLAIN
+        operands = [(ratio.derived or ratio.text, ratio.value, ratio.kind,
+                     "sentence")]
+        ratio_of = computed / claim.claimed if claim.claimed else float("inf")
+        arithmetic = (f"margin = 100 * (1 - {ratio.show()}) = {computed:.6g} per "
+                      f"cent, against the claimed {claim.claimed:g} per cent "
+                      f"(a factor of {ratio_of:.2f})")
+        if abs(ratio_of - 1.0) <= tolerance:
+            return ("verified", operands, arithmetic, "")
+        return ("mismatch", operands, arithmetic,
+                f"the sentence's own {ratio.value:g} of the bound leaves a margin "
+                f"of {computed:.4g} per cent, not {claim.claimed:g} per cent, and "
+                f"the two figures are in the same sentence.")
+
+    # A named bound is read before a spread word, because it is the stronger
+    # evidence of what the percentage is: "which is 2.7% of the lane's bar" is
+    # a share of a bound the sentence names, and the same sentence also says
+    # two lanes "parted", which is a weaker signal that would otherwise label
+    # a share as a spread and give the reader the wrong missing side.
+    named = sent.slice(claim.end, claim.end + 60) if sent is not None else ""
+    hit = NAMED_BOUND_RE.search(named)
+    if hit:
+        phrase = " ".join(named[hit.start():hit.end()].split())
+        return ("not derivable", [], "",
+                f"the percentage is a share of a bound the sentence names and does "
+                f"not print (\"{phrase}\"). A share needs both of its sides, and the "
+                f"side that is missing here is the bound, so no ratio is computable "
+                f"from the sentence.")
+
+    if sent is not None and SPREAD_RE.search(sent.text):
+        return ("not derivable", [], "",
+                "the percentage states a spread between measurements - how far one "
+                "sits from another - rather than a share of a bound or a margin "
+                "against one. A spread derives from the two measurements it is "
+                "between, and the sentence prints neither of them, so there is "
+                "nothing here to recompute it against and it is reported rather "
+                "than derived from a figure that happens to sit nearby.")
+
     if is_occupancy and not is_margin:
         return ("not derivable", [],
                 "",
                 "the claim states what share of a quantity one term takes, and the "
                 "term is printed as a description ('half of one representable "
                 "digit'), not as a number. No ratio is computable from the sentence.")
-
-    ladder = (("sentence", sent.numerals if sent else []),
-              ("paragraph", para.numerals if para else []))
-    for scope, candidates in ladder:
-        ratios = [n for n in candidates
-                  if not n.in_code and 0 < n.value <= 1.0
-                  and not (n.start == claim.start and n.end == claim.end)]
-        if ratios:
-            ratio = max(ratios, key=lambda n: n.value)
-            computed = 100.0 * (1.0 - ratio.value)
-            tolerance = TOL_HEDGED if claim.hedged else TOL_PLAIN
-            operands = [(ratio.derived or ratio.text, ratio.value, ratio.kind, scope)]
-            ratio_of = computed / claim.claimed if claim.claimed else float("inf")
-            arithmetic = (f"margin = 100 * (1 - {ratio.show()}) = {computed:.6g} per "
-                          f"cent, against the claimed {claim.claimed:g} per cent "
-                          f"(a factor of {ratio_of:.2f})")
-            if abs(ratio_of - 1.0) <= tolerance:
-                return ("verified", operands, arithmetic, "")
-            return ("mismatch", operands, arithmetic,
-                    f"the printed cell is {ratio.value:g} of the bound, so the margin "
-                    f"it leaves is {computed:.4g} per cent, not {claim.claimed:g} per "
-                    f"cent. Operands came from the {scope}.")
 
     return ("not derivable", [], "",
             "no ratio in the sentence or its paragraph to derive a margin from, so "
@@ -1261,11 +1532,21 @@ def check_agreement(docs):
 # --------------------------------------------------------------------------
 
 def published_set():
-    docs = [REPO / name for name in PUBLISHED]
-    docs_dir = REPO / "docs"
-    if docs_dir.is_dir():
-        docs.extend(sorted(docs_dir.glob("*.md")))
-    return [p for p in docs if p.is_file()]
+    """The documents the run scans, each of them once.
+
+    The two listed files that already sit in `docs/` would otherwise arrive
+    twice, once from the list and once from the glob, and every finding in them
+    would be reported twice. A duplicate is not a second opinion: it reads as
+    two independent defects where there is one sentence, and it makes the
+    counts in the summary line wrong.
+    """
+    seen, docs = set(), []
+    for path in [REPO / name for name in PUBLISHED] + sorted(
+            (REPO / "docs").glob("*.md")):
+        if path.is_file() and path.resolve() not in seen:
+            seen.add(path.resolve())
+            docs.append(path)
+    return docs
 
 
 def order_findings(findings):
@@ -1294,13 +1575,25 @@ def report(findings, stream):
     stream.write("\n")
 
 
-def summarise(findings, stream):
+def summarise(findings, failures, stream):
+    """The counts, and what the run's exit status is about to be.
+
+    The counts alone do not say whether the command passed: a reader has to
+    know that a mismatch inside the configured operand scope and a
+    multiplier-unswept finding under --strict are the two verdicts that stop
+    it. The second line says which of them were counted and how many, so the
+    report and the exit status agree on their face.
+    """
     counts = {}
     for finding in findings:
         counts[finding.verdict] = counts.get(finding.verdict, 0) + 1
     stream.write("summary: " + ", ".join(f"{n} {verdict}"
                                          for verdict, n in sorted(counts.items()))
                  + "\n")
+    if failures:
+        stream.write(f"failing: {len(failures)}, so this run exits 1\n")
+    else:
+        stream.write("failing: none, so this run exits 0\n")
 
 
 # --------------------------------------------------------------------------
@@ -1321,6 +1614,34 @@ CALIBRATION = (
     (CALIBRATION_DOC, "0.9999 of the bound", "multiplier-unswept", "multiplier"),
     (CALIBRATION_DOC, "4.59", "mismatch", "agreement"),
     (CALIBRATION_DOC, "a factor of three", "mismatch", "relation"),
+    # The five below pinned the wrong verdict until the reading rules around
+    # them were corrected, so a regression on any of them fails here rather
+    # than passing silently. Each comment says which reading it pins.
+    #
+    # A spelled number doing prose work ("two of these axes") is not an
+    # operand: read as one, it made the 0.9% spread below into a margin of
+    # 100*(1-1) per cent and reported a correct sentence as a mismatch.
+    (CALIBRATION_DOC, "within 0.9% of one another", "not derivable", "relation"),
+    # A ratio whose two sides are named and not printed has no operand pair in
+    # the sentence, and the numerals it does print belong to other claims.
+    (CALIBRATION_DOC, "3.06 times fewer instructions", "not derivable",
+     "relation"),
+    # One printed count is one number: split at its commas it arrives as four,
+    # and the fragments can close on the claim by coincidence.
+    (CALIBRATION_DOC, "2.36 times fewer", "verified", "relation"),
+    # A share needs both sides; this one names its denominator and does not
+    # print it.
+    (CALIBRATION_DOC, "2.7% of the lane's bar", "not derivable", "relation"),
+    # Digits inside an identifier are not operands. Read as ones this sentence
+    # gives 64/32 = 2 and the claim passes on two build names.
+    (CALIBRATION_DOC, "2 times the count the earlier one covered",
+     "not derivable", "relation"),
+    # The last two pin a parse rather than a defect, and the pre-change check
+    # agreed with both. They are here so a later tightening of the rules cannot
+    # quietly stop reading a spelled quantity or a stated ratio to a bound.
+    (CALIBRATION_DOC, "8.5 times its representation allowance", "verified",
+     "relation"),
+    (CALIBRATION_DOC, "a margin of 0.07 per cent", "verified", "relation"),
 )
 
 
@@ -1401,13 +1722,6 @@ def main(argv=None):
         findings.extend(check_multiplier(doc))
     findings.extend(check_agreement(docs))
 
-    shown = [f for f in findings if args.show_verified or f.verdict != "verified"]
-    if args.json:
-        print(json.dumps([f.as_dict() for f in order_findings(shown)], indent=2))
-    else:
-        report(shown, sys.stdout)
-        summarise(findings, sys.stdout)
-
     depth = {"high": 0, "medium": 1, "low": 2}[args.min_confidence]
 
     def failing(finding):
@@ -1418,6 +1732,14 @@ def main(argv=None):
         return finding.worst_scope() <= depth
 
     failures = [f for f in findings if failing(f)]
+
+    shown = [f for f in findings if args.show_verified or f.verdict != "verified"]
+    if args.json:
+        print(json.dumps([f.as_dict() for f in order_findings(shown)], indent=2))
+    else:
+        report(shown, sys.stdout)
+        summarise(findings, failures, sys.stdout)
+
     return 1 if failures else 0
 
 

@@ -463,8 +463,9 @@ its worst cell reads **1.06e-07**, a ratio of 0.705 to the bar.
 
 **On this lane the axis is not the cheaper way to get the values.** It retires 3.06 times fewer
 instructions and 2.61 times fewer retired slots than the per-order loop it replaces, which is what
-filling the register buys — and 3.13 times *more* of both than the float lane's default entry, which
-serves all 33 orders from one seed fit and a downward recurrence. A caller naming this axis is
+filling the register buys — and 3.13 times *more* instructions and 3.71 times more retired slots than
+the float lane's default entry, which serves all 33 orders from one seed fit and a downward
+recurrence. A caller naming this axis is
 choosing the per-order lane's shape, and the axis is served because it was named; the figures and the
 command that reproduces them are in [docs/lane-contract.md](docs/lane-contract.md#the-same-axis-on-the-single-precision-engines-eight-orders-to-a-register).
 

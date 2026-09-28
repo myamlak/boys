@@ -72,6 +72,20 @@ Regeneration check, which is local and never CI:
 python3 tools/gen_boys_coefficients.py --check
 ```
 
+The arithmetic the documents state over their own numbers — ratios, shares, margins, percentages —
+is checked against the numbers the same sentence prints:
+
+```bash
+python3 tools/check_doc_arithmetic.py --strict
+```
+
+It reads `README.md`, `CONTRIBUTING.md` and the pages under `docs/`, recomputes every derived figure
+it finds, and exits non-zero quoting the sentence when the arithmetic does not come out. Where a
+sentence does not print both sides of the relation it states, it reports that and names the missing
+side rather than guessing from whatever figure sits nearby, so a "not derivable" line in its output
+is a reading of the prose rather than a failure. Run it before changing a figure that appears in
+prose; the same command runs as a CI step.
+
 CI runs the full platform matrix listed in the README on every push to `main` and every pull request.
 A pull request that breaks any leg fails. A maintainer run of the native toolchain gate is expected
 before merge.

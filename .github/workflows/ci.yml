@@ -83,6 +83,15 @@ concurrency:
 # linux-gcc-release) keep all of it verbatim; the new x86 legs carry the same
 # set so the retention is per-leg rather than workflow-wide.
 #
+# THE DOC-ARITHMETIC GATE is scoped to one combination with the generator and
+# Doxygen steps and for the same reason: it answers a question about the
+# DOCUMENTS, and its answer does not depend on the compiler or the build type,
+# so one leg answers it instead of seven answering it identically. It is the
+# one gate here that reads no build output at all - the documents are its
+# whole input - and it is the reason the figures in them are checked rather
+# than trusted. See the step for what it gates and what it deliberately only
+# reports.
+#
 # The VERDICTS step is a reading step, not a second gate: ctest prints a test's
 # output only when the test fails, so the accuracy gate's verdict and the
 # consumer checks' coverage never reach the log of a green leg. The step re-runs
@@ -416,6 +425,33 @@ jobs:
           g++ -std=c++17 -O2 tests/boys_boundary_standalone.cpp -o boundary-run/boys-boundary-check
           cp tests/data/boys_reference.csv boundary-run/boys_reference.csv
           cd boundary-run && ./boys-boundary-check
+      # The arithmetic the published prose states over its own numbers. The
+      # accuracy gate judges a bound against a delivered value, and the
+      # generator gates hold the tables to theirs, so a figure that has a
+      # verdict is a figure nobody has to re-derive. A DERIVED statement has no
+      # such check: "a margin of 0.07 per cent", "3.06 times fewer
+      # instructions", "4125493 of 5710087 cells (72.2%)" are arithmetic on
+      # numbers the same sentence prints, and a reader checking one of them has
+      # to do that arithmetic by hand. This step does it mechanically and fails
+      # the leg when the two disagree.
+      #
+      # It reads Python and the documents and nothing else - no build, no
+      # compiler, no network - so it is scoped to one combination like the
+      # generator step above, and it is as fast as reading four files. It runs
+      # --strict, which is the setting it is meant to be trusted under: a
+      # mismatch fails, and so does a documented bound whose stated value holds
+      # at one multiplier and not at another.
+      #
+      # Two verdicts are reports and never fail the leg, and both are printed
+      # every run rather than filtered out: "not derivable", where the sentence
+      # does not print the two sides the arithmetic would need, and a mismatch
+      # whose operands came from wider than the configured scope. Neither is a
+      # suppression list - the material is in the log, and the line under the
+      # counts says which of the two the exit status is about.
+      - name: Docs (arithmetic in the published prose)
+        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_doc_arithmetic.py --strict
       - name: Docs (zero-warning Doxygen gate)
         if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: cmake --build build --target boys-docs
