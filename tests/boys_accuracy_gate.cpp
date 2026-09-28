@@ -474,6 +474,39 @@ using GranularityPolicy =
                      boys::PackAxis::kArguments,
                      kGranularity>;
 
+// The asymptotic form, spelled the way the library spells it (boys_impl.hpp,
+// the region-C branch of the per-argument scalar entry): sqrt(pi)/2 over
+// sqrt(x), then one multiply-and-divide per order.
+//
+// The rows that measure the branch below x = 16 evaluate it here rather than
+// read it back out of boys::detail::BoysRegionCSimd. That entry is a
+// region-partitioned kernel, and the way it reaches the form is a property of
+// its x86 vector body: the body applies the form to four lanes whatever the
+// arguments are, so a full vector returns the form even for an argument below
+// kX1, and that is what those rows ask for. A host without AVX2 has no such
+// body - its fallback hands the whole run to the dispatching scalar entry,
+// which takes the region-B stored fit for an argument below kX1 - so the same
+// call measures the form on one host and a stored fit on another.
+//
+// The entry is not the thing at fault: outside region C two readings of it
+// disagree, on x86 as well (count = 1 against count = 4), by the ratio of the
+// fit's error to the form's value, so it is defined by neither body there. A
+// measurement that rested on it would be resting on an accident of the host.
+//
+// The spelling is pinned to the library rather than trusted: the shape row
+// requires bit equality with the library's own region-C value at every argument
+// at or above kX1, which is where the library does take this branch.
+inline double RegionCForm(int n, double x) noexcept {
+    double f = boys::detail::kBoysHalfSqrtPi / std::sqrt(x);
+
+    for (int l = 0; l < n; ++l)
+    {
+        f = (l + 0.5) * f / x;
+    }
+
+    return f;
+}
+
 // The stored fit one lane names at one partition, summed by one scheme. It is
 // FitValue with the partition named rather than assumed, and the shipped member
 // reads what FitValue reads: the same pieces, the same coefficients, the same
@@ -4511,11 +4544,16 @@ int main(int argc, char** argv) {
     // form as coded, against the same reference. The region-C kernel is that
     // form, and the grid carries arguments on both sides of the stated edge.
     //
-    // The kernel's vector body covers four arguments at a time and hands a
-    // shorter run to the certified scalar entry, so the form can only be
-    // reached by asking for a full vector: four copies of the argument, and
-    // the first lane is the value. Calling with count = 1 would measure the
-    // scalar lane and report its 1e-14 as if it were the asymptotic form's.
+    // The form is evaluated by RegionCForm(), and why is set out where that
+    // function is defined. It used to be read out of the region-C kernel by
+    // asking for a full vector, four copies of the argument, on the reasoning
+    // that the kernel's vector body applies the form to all four lanes and that
+    // the first lane is then the value. That holds on a host with the vector
+    // body and not on one without it, where the entry hands the whole run to
+    // the dispatching scalar entry and a below-kX1 argument comes back as the
+    // region-B fit - the same error the count = 1 reading would have made, and
+    // one that no host reports as an error, because both numbers are values of
+    // something.
     //
     // A jump has to say over what window: the error of this form is smooth in
     // x, so the ratio across the edge grows with the window and shrinks to one
@@ -4583,10 +4621,7 @@ int main(int argc, char** argv) {
                     continue;
                 }
 
-                const double in[4] = {x, x, x, x};
-                double out[4] = {};
-                boys::detail::BoysRegionCSimd(n, in, out, 4);
-                const double err = std::abs(out[0] - ref.v[ref.Index(n, i)]);
+                const double err = std::abs(RegionCForm(n, x) - ref.v[ref.Index(n, i)]);
                 const std::size_t sn = static_cast<std::size_t>(n);
                 const double trueValue = ref.v[ref.Index(n, i)];
                 // The shape is a property of the error as a function of x, and
@@ -4719,10 +4754,7 @@ int main(int argc, char** argv) {
                     continue;
                 }
 
-                const double in[4] = {x, x, x, x};
-                double out[4] = {};
-                boys::detail::BoysRegionCSimd(n, in, out, 4);
-                const double err = std::abs(out[0] - ref.v[ref.Index(n, i)]);
+                const double err = std::abs(RegionCForm(n, x) - ref.v[ref.Index(n, i)]);
 
                 if (x < 16.0 && err > asymErrBelow)
                 {
@@ -8232,6 +8264,33 @@ int main(int argc, char** argv) {
             "argument stops being reached");
     }
 
+    // The pin: on region C the library's own value is this spelling's, bit for
+    // bit, and that is what makes the two rows below a measurement of the
+    // library's form rather than of a transcription of it. A change to the
+    // library's branch moves this count, and the shape row fails with it.
+    std::size_t formPinChecked = 0;
+    std::size_t formPinMismatches = 0;
+
+    for (int n = 0; n <= nmax; ++n)
+    {
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const double x = ref.x[i];
+
+            if (x < boys::detail::kX1)
+            {
+                continue;
+            }
+
+            ++formPinChecked;
+
+            if (RegionCForm(n, x) != boys::BoysSingle<boys::kBoysFullAccuracyMultiplier>(n, x))
+            {
+                ++formPinMismatches;
+            }
+        }
+    }
+
     add("LC.regionC.m_invariance",
         "region C is m-invariant: a single closed form with no coefficients, so its budget "
         "holds with slack at every m",
@@ -8251,7 +8310,8 @@ int main(int argc, char** argv) {
         "growing continuously as x falls below the edge",
         "docs/lane-contract.md, region C (read before this revision: \"the error jumps five to "
         "eight orders - a hard floor, not a taper\")",
-        (asymStepRatioMax < 10.0) ? Verdict::Verified : Verdict::Exceeded,
+        (asymStepRatioMax < 10.0 && formPinMismatches == 0) ? Verdict::Verified
+                                                            : Verdict::Exceeded,
         Fmt("the shape, on the form as coded, over the arguments below x = 16 - where the "
             "sentence puts the growth - at every order: %zu neighbouring pairs of relative "
             "error, %zu of them rising as x rises, so the curve is not monotone everywhere "
@@ -8268,7 +8328,12 @@ int main(int argc, char** argv) {
             "%.4g over two-unit windows - %.1f to %.1f orders, below the five to eight it "
             "published - and against the branch's own in-domain error %.4g, which is the "
             "5.5e-14 budget the other reading divides by, the same cells give %.4g to %.4g "
-            "(%.1f to %.1f orders over orders 0..24)",
+            "(%.1f to %.1f orders over orders 0..24). The form is evaluated here and pinned "
+            "to the library: %zu of %zu argument(s) at or above kX1 disagree with the "
+            "library's own value for that form, and the shape above is the form's error and "
+            "not the stored fit's on every host, which it was not before this revision - a "
+            "host without AVX2 has no vector body to reach the form through, so the same "
+            "call measured the region-B fit there and reported its smoothness as the form's",
             asymPairs,
             asymPairs - asymBreaks,
             asymBreaks,
@@ -8294,14 +8359,19 @@ int main(int argc, char** argv) {
             asymBelowRelMin,
             asymBelowRelMax,
             std::log10(asymBelowRelMin),
-            std::log10(asymBelowRelMax)),
+            std::log10(asymBelowRelMax),
+            formPinMismatches,
+            formPinChecked),
         {},
         Fmt("the row fails if any pair of neighbouring arguments below the edge differs in "
             "relative error by more than an order of magnitude - that is what a threshold "
             "between two regimes would look like, and this measurement's largest such factor is "
             "%.4g; the strictly monotone reading of the old sentence would fail on the %zu "
             "breaks the same measurement counts (%.1f%% of the pairs below the edge, %.1f%% at "
-            "the top order)",
+            "the top order); or if the form this row evaluates stops agreeing with the "
+            "library's own value for it on region C - the two counts at the end of the figure "
+            "are that pin, and it is what makes this row a measurement of the library's form "
+            "rather than of a transcription of it",
             asymStepRatioMax,
             asymBreaks,
             100.0 * static_cast<double>(asymBreaks) / static_cast<double>(asymPairs == 0 ? 1 : asymPairs),
