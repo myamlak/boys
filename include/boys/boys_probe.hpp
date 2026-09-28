@@ -363,10 +363,15 @@ enum class OptionPrecision : int {
     kBf16,
 };
 
-/// The name a report prints a precision class under.
+/// The name a report prints a precision class under, and never null.
 ///
 /// \param precision the class
-/// \returns         a string literal naming it
+/// \returns         a string literal naming it: "fp64", "fp32", "fp16" or
+///                  "bf16", and "unknown" for a value outside the enumerators
+///
+/// A value outside the enumerators is answered rather than refused, so
+/// "unknown" is not a class the probe measured - a caller that has to tell the
+/// two apart tests the value against the enumerators itself.
 ///
 /// \ingroup boys
 const char* PrecisionName(OptionPrecision precision) noexcept;
@@ -406,7 +411,12 @@ enum class OptionProbeShape : int {
 ///
 /// \param shape the shape to name
 ///
-/// \returns the name, which is never empty
+/// \returns the name, which is never empty: one of those two, and "unknown"
+///          for a value outside the enumerators
+///
+/// A value outside the enumerators is answered rather than refused, and
+/// "unknown" is not a shape the probe ranked - a caller that has to tell the
+/// two apart tests the value against the enumerators itself.
 ///
 /// \ingroup boys
 const char* OptionProbeShapeName(OptionProbeShape shape) noexcept;
@@ -416,7 +426,8 @@ const char* OptionProbeShapeName(OptionProbeShape shape) noexcept;
 ///
 /// \param shape the shape to state
 ///
-/// \returns one sentence naming what the caller gets back
+/// \returns one sentence naming what the caller gets back, and "an unknown
+///          question" for a value outside the enumerators
 ///
 /// \ingroup boys
 const char* OptionProbeShapeQuestion(OptionProbeShape shape) noexcept;
@@ -617,7 +628,13 @@ enum class OptionProbeDefaultHow : int {
 ///
 /// \param how the state to name
 ///
-/// \returns the name, which is never empty
+/// \returns the name, which is never empty: one of those six tokens
+///
+/// "none" carries both of the states that are not a name: the class was not
+/// measured at all (kNone), and a value outside the enumerators, which is
+/// answered rather than refused. They are the same string, so a caller that
+/// has to tell "nothing was measured" from "this is not a state" tests the
+/// value against the enumerators itself.
 ///
 /// \ingroup boys
 std::string OptionProbeDefaultHowName(OptionProbeDefaultHow how);

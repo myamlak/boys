@@ -3842,6 +3842,84 @@ void BoysAllNAtOrdersImpl(const int* n, const double* x, double* out, std::size_
     }
 }
 
+// The rung ladder, one place for both shapes and both precisions: the accuracy
+// multiplier is the entry's first template argument, so a call that takes the
+// rung as a value has to branch to it, and the branches are written here once.
+//
+// A tier this build does not serve - a value cast in from outside the enum, or
+// one a newer header named - evaluates at the reference multiplier. The
+// reference is the one rung that is never coarser than any tier this build can
+// name, so the fallback never hands a caller less accuracy than it asked for,
+// and AccuracyMultiplier reports the same choice: the number a caller records
+// beside these values is the accuracy they were computed at. A caller that needs
+// to know whether the rung it named is served at all reads BoysAccuracyGuaranteed
+// for its combination and tier.
+template <EvalPolicyLike Policy>
+void AllOrdersF64AtRung(AccuracyTier tier, int nmax, double x, double* out) noexcept {
+    switch (tier)
+    {
+    case AccuracyTier::kReference:
+        BoysAllOrders<kBoysFullAccuracyMultiplier, Policy>(nmax, x, out);
+        return;
+    case AccuracyTier::kRelaxed64:
+        BoysAllOrders<64.0, Policy>(nmax, x, out);
+        return;
+    case AccuracyTier::kRelaxed256:
+        BoysAllOrders<256.0, Policy>(nmax, x, out);
+        return;
+    case AccuracyTier::kRelaxed1024:
+        BoysAllOrders<1024.0, Policy>(nmax, x, out);
+        return;
+    case AccuracyTier::kRelaxed4096:
+        BoysAllOrders<4096.0, Policy>(nmax, x, out);
+        return;
+    case AccuracyTier::kRelaxed16384:
+        BoysAllOrders<16384.0, Policy>(nmax, x, out);
+        return;
+    case AccuracyTier::kRelaxed65536:
+        BoysAllOrders<65536.0, Policy>(nmax, x, out);
+        return;
+
+    default:
+        break;
+    }
+
+    BoysAllOrders<kBoysFullAccuracyMultiplier, Policy>(nmax, x, out);
+}
+
+template <EvalPolicyLike Policy>
+void AllOrdersF32AtRung(AccuracyTier tier, int nmax, float x, float* out) noexcept {
+    switch (tier)
+    {
+    case AccuracyTier::kReference:
+        BoysAllOrdersF32<kBoysFullAccuracyMultiplier, Policy>(nmax, x, out);
+        return;
+    case AccuracyTier::kRelaxed64:
+        BoysAllOrdersF32<64.0, Policy>(nmax, x, out);
+        return;
+    case AccuracyTier::kRelaxed256:
+        BoysAllOrdersF32<256.0, Policy>(nmax, x, out);
+        return;
+    case AccuracyTier::kRelaxed1024:
+        BoysAllOrdersF32<1024.0, Policy>(nmax, x, out);
+        return;
+    case AccuracyTier::kRelaxed4096:
+        BoysAllOrdersF32<4096.0, Policy>(nmax, x, out);
+        return;
+    case AccuracyTier::kRelaxed16384:
+        BoysAllOrdersF32<16384.0, Policy>(nmax, x, out);
+        return;
+    case AccuracyTier::kRelaxed65536:
+        BoysAllOrdersF32<65536.0, Policy>(nmax, x, out);
+        return;
+
+    default:
+        break;
+    }
+
+    BoysAllOrdersF32<kBoysFullAccuracyMultiplier, Policy>(nmax, x, out);
+}
+
 } // namespace detail
 
 // ---------------------------------------------------------------------------
@@ -3883,6 +3961,14 @@ void BoysAllNAtOrders(const int* n, const double* x, double* out, std::size_t co
     detail::BoysAllNAtOrdersImpl<kAccuracyMultiplier, Policy>(n, x, out, count);
 }
 
+// The combination named in the type and the rung named in the call: the rung
+// ladder is the one place the two selections meet, and a caller pays for it in
+// one branch, with the four structural axes resolved at the call site.
+template <EvalPolicyLike Policy>
+void BoysAllOrdersAtTier(AccuracyTier tier, int nmax, double x, double* out) noexcept {
+    detail::AllOrdersF64AtRung<Policy>(tier, nmax, x, out);
+}
+
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 float BoysSingleF32(int n, float x) noexcept {
     return detail::BoysSingleF32Impl<kAccuracyMultiplier, Policy>(n, x);
@@ -3898,27 +3984,58 @@ void BoysAllNF32(int nmax, const float* x, float* out, std::size_t count) noexce
     detail::BoysAllNF32Impl<kAccuracyMultiplier, Policy>(nmax, x, out, count);
 }
 
+template <EvalPolicyLike Policy>
+void BoysAllOrdersF32AtTier(AccuracyTier tier, int nmax, float x, float* out) noexcept {
+    detail::AllOrdersF32AtRung<Policy>(tier, nmax, x, out);
+}
+
 #if BoysFp16
-// The fp16/bf16 lanes forward the multiplier to the F32 engine with the
-// fp16 computation budget (the m*1e-7 + 1/2-ULP formula); at m = 1 the
+// The fp16/bf16 lanes forward the multiplier and the policy to the F32 engine
+// with the fp16 computation budget (the m*1e-7 + 1/2-ULP formula); at m = 1 the
 // engine branch is the certified F32 path verbatim, so the lanes are
 // bit-unchanged. The half-ULP representation term is m-independent.
+//
+// The policy is the caller's, defaulted to the lane's own: the four axes a
+// policy carries are the option space's, and every combination this lane's book
+// carries is a policy a consumer can name, so an entry that took no policy would
+// be three quarters of the lane's cells with no way to ask for them. The budget
+// is not one of those axes - it is what makes this lane the half lane - so it is
+// DefaultPolicyFp16's rather than the caller's, and a policy named here is read
+// for its route, scheme, partition and packing axis.
 
-template <double kAccuracyMultiplier> F16 BoysSingleF16(int n, F16 x) noexcept {
+// The budget a policy named on a half lane has to carry: it is the axis that
+// makes this lane the half lane, so a policy built at the float lane's budget
+// names the float lane's combination, and reaching this entry with one would
+// answer that combination under this lane's name. It is refused where it is
+// named rather than honoured, because a half-precision lane that quietly computed
+// the float lane's combination is precisely the failure a name that does not mean
+// what it says is.
+template <double kAccuracyMultiplier, EvalPolicyLike Policy>
+F16 BoysSingleF16(int n, F16 x) noexcept {
+    static_assert(Policy::kBudget == BoysBudget::kFp16,
+                  "the half lanes run the fp16 engine budget, so a policy named here is one built "
+                  "at it: name BoysBudget::kFp16, or call the float lane's entry to run the float "
+                  "lane's arithmetic");
+
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(x >= static_cast<F16>(0.0f));
-    return static_cast<F16>(detail::BoysSingleF32Impl<kAccuracyMultiplier, DefaultPolicyFp16>(
+    return static_cast<F16>(detail::BoysSingleF32Impl<kAccuracyMultiplier, Policy>(
         n, static_cast<float>(x)));
 }
 
-template <double kAccuracyMultiplier> void BoysAllOrdersF16(int nmax, F16 x, F16* out) noexcept {
+template <double kAccuracyMultiplier, EvalPolicyLike Policy>
+void BoysAllOrdersF16(int nmax, F16 x, F16* out) noexcept {
+    static_assert(Policy::kBudget == BoysBudget::kFp16,
+                  "the half lanes run the fp16 engine budget, so a policy named here is one built "
+                  "at it: name BoysBudget::kFp16, or call the float lane's entry to run the float "
+                  "lane's arithmetic");
+
     assert(nmax >= 0 && nmax <= kMaxBoysOrder);
     assert(x >= static_cast<F16>(0.0f));
     assert(out != nullptr);
 
     float scratch[kMaxBoysOrder + 1];
-    detail::BoysAllOrdersF32Impl<kAccuracyMultiplier, DefaultPolicyFp16>(
-        nmax, static_cast<float>(x), scratch);
+    detail::BoysAllOrdersF32Impl<kAccuracyMultiplier, Policy>(nmax, static_cast<float>(x), scratch);
 
     for (int l = 0; l <= nmax; ++l)
     {
@@ -3926,21 +4043,73 @@ template <double kAccuracyMultiplier> void BoysAllOrdersF16(int nmax, F16 x, F16
     }
 }
 
-template <double kAccuracyMultiplier> Bf16 BoysSingleBf16(int n, Bf16 x) noexcept {
+template <double kAccuracyMultiplier, EvalPolicyLike Policy>
+Bf16 BoysSingleBf16(int n, Bf16 x) noexcept {
+    static_assert(Policy::kBudget == BoysBudget::kFp16,
+                  "the half lanes run the fp16 engine budget, so a policy named here is one built "
+                  "at it: name BoysBudget::kFp16, or call the float lane's entry to run the float "
+                  "lane's arithmetic");
+
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(x >= static_cast<Bf16>(0.0f));
-    return static_cast<Bf16>(detail::BoysSingleF32Impl<kAccuracyMultiplier, DefaultPolicyBf16>(
+    return static_cast<Bf16>(detail::BoysSingleF32Impl<kAccuracyMultiplier, Policy>(
         n, static_cast<float>(x)));
 }
 
-template <double kAccuracyMultiplier> void BoysAllOrdersBf16(int nmax, Bf16 x, Bf16* out) noexcept {
+template <double kAccuracyMultiplier, EvalPolicyLike Policy>
+void BoysAllOrdersBf16(int nmax, Bf16 x, Bf16* out) noexcept {
+    static_assert(Policy::kBudget == BoysBudget::kFp16,
+                  "the half lanes run the fp16 engine budget, so a policy named here is one built "
+                  "at it: name BoysBudget::kFp16, or call the float lane's entry to run the float "
+                  "lane's arithmetic");
+
     assert(nmax >= 0 && nmax <= kMaxBoysOrder);
     assert(x >= static_cast<Bf16>(0.0f));
     assert(out != nullptr);
 
     float scratch[kMaxBoysOrder + 1];
-    detail::BoysAllOrdersF32Impl<kAccuracyMultiplier, DefaultPolicyBf16>(
-        nmax, static_cast<float>(x), scratch);
+    detail::BoysAllOrdersF32Impl<kAccuracyMultiplier, Policy>(nmax, static_cast<float>(x), scratch);
+
+    for (int l = 0; l <= nmax; ++l)
+    {
+        out[l] = static_cast<Bf16>(scratch[l]);
+    }
+}
+
+// The half lanes' rung-argument entries: the fp16 engine's ladder through the
+// store this lane makes, at the policy named, so the two selections meet here as
+// they do on the double lane.
+template <EvalPolicyLike Policy>
+void BoysAllOrdersF16AtTier(AccuracyTier tier, int nmax, F16 x, F16* out) noexcept {
+    static_assert(Policy::kBudget == BoysBudget::kFp16,
+                  "the half lanes run the fp16 engine budget, so a policy named here is one built "
+                  "at it: name BoysBudget::kFp16, or call the float lane's entry to run the float "
+                  "lane's arithmetic");
+
+    assert(nmax >= 0 && nmax <= kMaxBoysOrder);
+    assert(out != nullptr);
+
+    float scratch[kMaxBoysOrder + 1];
+    detail::AllOrdersF32AtRung<Policy>(tier, nmax, static_cast<float>(x), scratch);
+
+    for (int l = 0; l <= nmax; ++l)
+    {
+        out[l] = static_cast<F16>(scratch[l]);
+    }
+}
+
+template <EvalPolicyLike Policy>
+void BoysAllOrdersBf16AtTier(AccuracyTier tier, int nmax, Bf16 x, Bf16* out) noexcept {
+    static_assert(Policy::kBudget == BoysBudget::kFp16,
+                  "the half lanes run the fp16 engine budget, so a policy named here is one built "
+                  "at it: name BoysBudget::kFp16, or call the float lane's entry to run the float "
+                  "lane's arithmetic");
+
+    assert(nmax >= 0 && nmax <= kMaxBoysOrder);
+    assert(out != nullptr);
+
+    float scratch[kMaxBoysOrder + 1];
+    detail::AllOrdersF32AtRung<Policy>(tier, nmax, static_cast<float>(x), scratch);
 
     for (int l = 0; l <= nmax; ++l)
     {

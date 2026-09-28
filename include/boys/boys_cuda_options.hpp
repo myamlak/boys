@@ -185,14 +185,48 @@ inline constexpr std::array<double, 12> kDeviceRungs = {
     1024.0,                      4096.0, 1e4,    16384.0, 65536.0, 1e8,
 };
 
+/// Where a multiplier sits in \c kDeviceRungs, or -1 where it is not one.
+///
+/// The position and not a pointer, because the position is what the lane's
+/// run-time entries dispatch on: the set the accessors here answer for, the arms
+/// an \c AtRung entry switches over and the multipliers its launchers are
+/// instantiated at are then one table read three ways rather than three lists
+/// that have to agree. The comparison is exact and the rungs are all exactly
+/// representable, which is the same match every entry of this lane makes between
+/// the multiplier a call names and the one its degree tables were cut for.
+///
+/// A value the table does not hold has no position and no rung. That is what a
+/// caller is told at a multiplier the lane cannot be resident for — a rung of it
+/// is one of the twelve or it does not exist, and a call that answered at
+/// another rung than the one it named would be the one outcome the rung argument
+/// is for ruling out.
+///
+/// \param multiplier the accuracy multiplier m a call names
+///
+/// \returns the position in \c kDeviceRungs, or -1 where \p multiplier is not a
+///          rung of this lane
+///
+/// \ingroup boys
+constexpr int DeviceRungIndex(double multiplier) noexcept {
+    for (std::size_t i = 0; i < kDeviceRungs.size(); ++i)
+    {
+        if (kDeviceRungs[i] == multiplier)
+        {
+            return static_cast<int>(i);
+        }
+    }
+
+    return -1;
+}
+
 /// Whether the CUDA lane serves a multiplier: whether it is one of
 /// \c kDeviceRungs.
 ///
-/// The comparison is exact and the rungs are all exactly representable, which
-/// is the same match every entry of that lane makes between the multiplier a
-/// call names and the one its degree tables were cut for. A value that is not a
-/// rung is not served by any entry: the lane answers no arithmetic at it, so a
-/// caller is told so rather than handed another rung's tables.
+/// The entry names of the lane are instantiated at each of those values and its
+/// run-time rung argument is matched against them, so a caller that reads this
+/// and a call that dispatches read one table. A value that is not a rung is not
+/// served by any entry: the lane answers no arithmetic at it, so a caller is
+/// told so rather than handed another rung's tables.
 ///
 /// \param multiplier the accuracy multiplier m a call names
 ///
@@ -200,15 +234,7 @@ inline constexpr std::array<double, 12> kDeviceRungs = {
 ///
 /// \ingroup boys
 constexpr bool DeviceRungServed(double multiplier) noexcept {
-    for (const double rung : kDeviceRungs)
-    {
-        if (rung == multiplier)
-        {
-            return true;
-        }
-    }
-
-    return false;
+    return DeviceRungIndex(multiplier) >= 0;
 }
 
 /// One row of the device option space: an option this surface offers, with

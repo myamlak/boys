@@ -19,6 +19,13 @@
  * certified full-accuracy lane, larger m relax the asserted error bound to m * B
  * via compile-time Chebyshev degree truncation.
  *
+ * B is the per-region bound of the lane an entry reaches, and the lanes' rows
+ * are stated in full at the top of boys/boys.hpp, in its accuracy contract
+ * table. The rows this surface reaches are: the single-order double entries,
+ * m * 1e-15 in region A and m * 3e-14 over the extended band and region B, and
+ * m * 5.5e-14 in region C; the double batch entries, m * 5.5e-14 in every
+ * region; and the single-precision entries, m * 1.5e-7 in every region.
+ *
  * \ingroup boys
  */
 
@@ -94,8 +101,9 @@ int BoysFloatWithMultiplier(double m, int n, float x, float* out);
 /** F_0(x[i])..F_nmax(x[i]) in double precision for count arguments.
  *
  * Output layout: out[k * count + i] = F_k(x[i]) — order-major, matching the
- * batch lanes of the C++ surface. x and out must hold count elements each;
- * a zero count is a no-op.
+ * batch lanes of the C++ surface. x must hold count elements and out must hold
+ * count * (nmax + 1); a zero count is a no-op, and only then may x and out be
+ * NULL.
  *
  * \param nmax  highest order, 0..BOYS_MAX_ORDER
  * \param count number of arguments

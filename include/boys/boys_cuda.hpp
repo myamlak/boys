@@ -91,6 +91,34 @@ enum class BoysStatus {
 /// address of the scalar naming it, and the full-accuracy tables, which no fill
 /// retires.
 ///
+/// **A combination is a name and a rung is an argument, on this surface too.**
+/// Every named entry of this class that queues a kernel carries its multiplier
+/// as a template argument, fixed where the call site is written, and every one
+/// of them has an \c AtRung sibling whose first argument is that multiplier as a
+/// value: \c AllOrdersF64AtRung(4096.0, n, x, out, count, stream) is the same
+/// call with the rung decided where the call is made. The two decisions a call
+/// site makes then come apart the way the CPU surface's do — the combination is
+/// written once as a name and resolved where it is written, and the rung is read
+/// off what the caller knows at the call — and a caller moving along the ladder
+/// writes no switch over the twelve.
+///
+/// An \c AtRung call makes the rung it named resident and runs that rung's own
+/// launcher, so the rung it answers at is the rung it was handed and never
+/// another. It follows that an \c AtRung call at a relaxed rung retires whichever
+/// other relaxed rung was resident — there is one set of relaxed tables and one
+/// rung of them, as the paragraph above states — and that a device-callable entry
+/// asked for the retired rung then reports it rather than reading tables that
+/// hold another rung. A call at m = 1 has no relaxed table to make resident,
+/// leaves the resident rung where it is, and retires nothing.
+///
+/// A multiplier that is not one of \c kDeviceRungs is
+/// \c BoysStatus::kInvalidArgument, nothing is launched and the caller's output
+/// is untouched. That is the refusal this surface makes and the device-callable
+/// entries make as \c BoysDeviceStatus::kMultiplierNotResident: the lane answers
+/// at twelve rungs, a multiplier outside them is resident at none of them and can
+/// never be, and a call that answered at whichever rung happened to be resident
+/// instead would be exactly the outcome the rung argument exists to rule out.
+///
 /// What neither surface has is the CPU double lane's per-call tier machinery:
 /// BoysAllOrdersAtTier (one tier, all orders), QueryTier, AccuracyMultiplier and
 /// TierCoverage, the last of which names the region component that would limit a
@@ -225,6 +253,34 @@ public:
     static BoysStatus SingleF32(
         const int* n, const double* x, float* out, std::size_t count, void* stream);
 
+    /// \c SingleF32 at a rung named in the call, over the twelve rungs this lane
+    /// serves.
+    ///
+    /// The same entry with the multiplier as the call's first argument instead of
+    /// a template argument: the rung is made resident by this call and that
+    /// rung's own launcher runs, so the values are the ones the template spelling
+    /// at that multiplier returns. \c kExp stays the template argument it is on
+    /// the entry, because it selects which arithmetic runs and not how much
+    /// accuracy is bought. The class contract states what an \c AtRung call makes
+    /// resident, what it retires, and what it refuses.
+    ///
+    /// \tparam kExp which region-B exponential the call runs; as \c SingleF32
+    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
+    ///   matched exactly against the rung this call makes resident
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array receiving F_n(x[i])
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kSuccess after the launch is queued; kInvalidArgument when
+    /// \c multiplier is not a rung of this lane, nothing launched and nothing
+    /// written; kDeviceError when the table upload or the launch fails.
+    template <RegionBExp kExp = kDefaultRegionBExp>
+    static BoysStatus SingleF32AtRung(
+        double multiplier, const int* n, const double* x, float* out, std::size_t count,
+        void* stream);
+
     /// F_0(x[i])..F_nmax(x[i]) in single precision per input (i) — all orders
     /// at every argument, the top order read per element.
     ///
@@ -250,6 +306,26 @@ public:
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF32(
         const int* n, const double* x, float* out, std::size_t count, void* stream);
+
+    /// \c AllOrdersF32 at a rung named in the call, over the twelve rungs this
+    /// lane serves. The rung is made resident by this call and that rung's own
+    /// launcher runs; the class contract states what an \c AtRung call makes
+    /// resident and what it refuses.
+    ///
+    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
+    ///   matched exactly against the rung this call makes resident
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kSuccess after the launch is queued; kInvalidArgument when
+    /// \c multiplier is not a rung of this lane, nothing launched and nothing
+    /// written; kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32AtRung(
+        double multiplier, const int* n, const double* x, float* out, std::size_t count,
+        void* stream);
 
     /// F_0(x[i])..F_nmax(x[i]) at one common nmax, single precision — every
     /// order at every argument of the batch, in one launch.
@@ -286,6 +362,27 @@ public:
     static BoysStatus AllNF32(
         int nmax, const double* x, float* out, std::size_t count, void* stream);
 
+    /// \c AllNF32 at a rung named in the call, over the twelve rungs this lane
+    /// serves. The rung is made resident by this call and that rung's own
+    /// launcher runs; the class contract states what an \c AtRung call makes
+    /// resident and what it refuses.
+    ///
+    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
+    ///   matched exactly against the rung this call makes resident
+    /// \param nmax   highest order, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, non-decreasing, each >= 0
+    /// \param out    device array, at least count * (nmax + 1) floats
+    /// \param count  number of arguments; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kSuccess after the launch is queued; kInvalidArgument when
+    /// \c multiplier is not a rung of this lane or \c nmax is outside
+    /// [0, kMaxBoysOrder], nothing launched and nothing written; kDeviceError
+    /// when the table upload or the launch fails.
+    static BoysStatus AllNF32AtRung(
+        double multiplier, int nmax, const double* x, float* out, std::size_t count,
+        void* stream);
+
     /// F_n(x[i]) in double precision, |error| <= 5.5e-14 (the double single
     /// lane's loosest per-region bound; the others are tighter).
     ///
@@ -303,15 +400,38 @@ public:
     static BoysStatus SingleF64(
         const int* n, const double* x, double* out, std::size_t count, void* stream);
 
+    /// \c SingleF64 at a rung named in the call, over the twelve rungs this lane
+    /// serves. The rung is made resident by this call and that rung's own
+    /// launcher runs; the class contract states what an \c AtRung call makes
+    /// resident and what it refuses.
+    ///
+    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
+    ///   matched exactly against the rung this call makes resident
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array receiving F_n(x[i])
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kSuccess after the launch is queued; kInvalidArgument when
+    /// \c multiplier is not a rung of this lane, nothing launched and nothing
+    /// written; kDeviceError when the table upload or the launch fails.
+    static BoysStatus SingleF64AtRung(
+        double multiplier, const int* n, const double* x, double* out, std::size_t count,
+        void* stream);
+
     /// F_0(x[i])..F_nmax(x[i]) in double precision per input (i) — shape and
     /// layout as AllOrdersF32 (a per-element top order, order-major planes).
     ///
     /// This is the entry the CPU's run-time tier entry is shaped like
-    /// (BoysAllOrdersAtTier is one argument, all orders, double), and it takes
-    /// no tier: the multiplier is the template argument below, fixed where the
-    /// call site names it, and the entry cannot be handed one at run time. The
-    /// device-callable entry of the same shape (BoysDeviceAllOrdersF64) can, and
-    /// the class contract states what that costs it.
+    /// (BoysAllOrdersAtTier is one argument, all orders, double). The tier is
+    /// named here the way this surface names it — \c AllOrdersF64AtRung takes
+    /// the multiplier as the call's first argument, and \c AllOrdersF64 takes
+    /// it as the template argument below — and the two spellings of one rung
+    /// are one instantiation and one launch rather than two arithmetics. The
+    /// device-callable entry of the same shape (BoysDeviceAllOrdersF64) takes
+    /// the rung as an argument too, and the class contract states what that
+    /// costs it.
     ///
     /// \tparam kAccuracyMultiplier as SingleF64; the batch relaxation covers
     ///   the whole output family via the order-0 region-B entry.
@@ -325,6 +445,26 @@ public:
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64(
         const int* n, const double* x, double* out, std::size_t count, void* stream);
+
+    /// \c AllOrdersF64 at a rung named in the call, over the twelve rungs this
+    /// lane serves. The rung is made resident by this call and that rung's own
+    /// launcher runs; the class contract states what an \c AtRung call makes
+    /// resident and what it refuses.
+    ///
+    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
+    ///   matched exactly against the rung this call makes resident
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kSuccess after the launch is queued; kInvalidArgument when
+    /// \c multiplier is not a rung of this lane, nothing launched and nothing
+    /// written; kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF64AtRung(
+        double multiplier, const int* n, const double* x, double* out, std::size_t count,
+        void* stream);
 
     /// F_0(x[i])..F_n(x[i]) as AllOrdersF64, with the library's second
     /// partition of the double lane's fits: region A's pieces are cut per
@@ -354,6 +494,26 @@ public:
     static BoysStatus AllOrdersF64Narrow(
         const int* n, const double* x, double* out, std::size_t count, void* stream);
 
+    /// \c AllOrdersF64Narrow at a rung named in the call, over the twelve rungs
+    /// this lane serves. The rung is made resident by this call and that rung's
+    /// own launcher runs; the class contract states what an \c AtRung call makes
+    /// resident and what it refuses.
+    ///
+    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
+    ///   matched exactly against the rung this call makes resident
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kSuccess after the launch is queued; kInvalidArgument when
+    /// \c multiplier is not a rung of this lane, nothing launched and nothing
+    /// written; kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF64NarrowAtRung(
+        double multiplier, const int* n, const double* x, double* out, std::size_t count,
+        void* stream);
+
     /// F_0(x[i])..F_n(x[i]) as AllOrdersF64, with region A read as one fit per
     /// order: every order's own piece is located and its own fit summed, where
     /// the shipped entry seeds the top order's fit and brings the lower orders
@@ -378,6 +538,26 @@ public:
     static BoysStatus AllOrdersF64Orders(
         const int* n, const double* x, double* out, std::size_t count, void* stream);
 
+    /// AllOrdersF64Orders at a rung named in the call, over the twelve rungs this lane
+    /// serves. The rung is made resident by this call and that rung's own
+    /// launcher runs; the class contract states what an \c AtRung call makes
+    /// resident and what it refuses.
+    ///
+    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
+    ///   matched exactly against the rung this call makes resident
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kSuccess after the launch is queued; kInvalidArgument when
+    /// \c multiplier is not a rung of this lane, nothing launched and nothing
+    /// written; kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF64OrdersAtRung(
+        double multiplier, const int* n, const double* x, double* out, std::size_t count,
+        void* stream);
+
     /// F_0(x[i])..F_n(x[i]) with both of the choices above in force: the
     /// narrow partition's pieces, read one fit per order inside region A and
     /// its piecewise region-B seed outside it, with the certified all-orders
@@ -395,6 +575,26 @@ public:
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64NarrowOrders(
         const int* n, const double* x, double* out, std::size_t count, void* stream);
+
+    /// AllOrdersF64NarrowOrders at a rung named in the call, over the twelve rungs this lane
+    /// serves. The rung is made resident by this call and that rung's own
+    /// launcher runs; the class contract states what an \c AtRung call makes
+    /// resident and what it refuses.
+    ///
+    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
+    ///   matched exactly against the rung this call makes resident
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kSuccess after the launch is queued; kInvalidArgument when
+    /// \c multiplier is not a rung of this lane, nothing launched and nothing
+    /// written; kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF64NarrowOrdersAtRung(
+        double multiplier, const int* n, const double* x, double* out, std::size_t count,
+        void* stream);
 
     /// F_0(x[i])..F_n(x[i]) as AllOrdersF64 with the other evaluation scheme:
     /// every piece is summed in the monomial basis by Horner in ascending
@@ -423,6 +623,26 @@ public:
     static BoysStatus AllOrdersF64Mono(
         const int* n, const double* x, double* out, std::size_t count, void* stream);
 
+    /// AllOrdersF64Mono at a rung named in the call, over the twelve rungs this lane
+    /// serves. The rung is made resident by this call and that rung's own
+    /// launcher runs; the class contract states what an \c AtRung call makes
+    /// resident and what it refuses.
+    ///
+    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
+    ///   matched exactly against the rung this call makes resident
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kSuccess after the launch is queued; kInvalidArgument when
+    /// \c multiplier is not a rung of this lane, nothing launched and nothing
+    /// written; kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF64MonoAtRung(
+        double multiplier, const int* n, const double* x, double* out, std::size_t count,
+        void* stream);
+
     /// The monomial scheme's orders-axis member: F_0(x[i])..F_n(x[i]) with
     /// region A read as one fit per order, each summed in the basis
     /// AllOrdersF64Mono names. The two choices compose — the axis is a body
@@ -443,6 +663,26 @@ public:
     static BoysStatus AllOrdersF64OrdersMono(
         const int* n, const double* x, double* out, std::size_t count, void* stream);
 
+    /// AllOrdersF64OrdersMono at a rung named in the call, over the twelve rungs this lane
+    /// serves. The rung is made resident by this call and that rung's own
+    /// launcher runs; the class contract states what an \c AtRung call makes
+    /// resident and what it refuses.
+    ///
+    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
+    ///   matched exactly against the rung this call makes resident
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kSuccess after the launch is queued; kInvalidArgument when
+    /// \c multiplier is not a rung of this lane, nothing launched and nothing
+    /// written; kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF64OrdersMonoAtRung(
+        double multiplier, const int* n, const double* x, double* out, std::size_t count,
+        void* stream);
+
     /// The monomial scheme over the narrow partition: F_0(x[i])..F_n(x[i]) from
     /// the narrow pieces, their piecewise region-B seed and their per-rung
     /// effective degrees, summed in the basis AllOrdersF64Mono names.
@@ -460,6 +700,26 @@ public:
     static BoysStatus AllOrdersF64NarrowMono(
         const int* n, const double* x, double* out, std::size_t count, void* stream);
 
+    /// AllOrdersF64NarrowMono at a rung named in the call, over the twelve rungs this lane
+    /// serves. The rung is made resident by this call and that rung's own
+    /// launcher runs; the class contract states what an \c AtRung call makes
+    /// resident and what it refuses.
+    ///
+    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
+    ///   matched exactly against the rung this call makes resident
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kSuccess after the launch is queued; kInvalidArgument when
+    /// \c multiplier is not a rung of this lane, nothing launched and nothing
+    /// written; kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF64NarrowMonoAtRung(
+        double multiplier, const int* n, const double* x, double* out, std::size_t count,
+        void* stream);
+
     /// Both of the choices above in force at once: the narrow partition read
     /// one fit per order inside region A, summed in the monomial basis, with
     /// the certified all-orders body past kX0.
@@ -476,6 +736,26 @@ public:
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64NarrowOrdersMono(
         const int* n, const double* x, double* out, std::size_t count, void* stream);
+
+    /// AllOrdersF64NarrowOrdersMono at a rung named in the call, over the twelve rungs this lane
+    /// serves. The rung is made resident by this call and that rung's own
+    /// launcher runs; the class contract states what an \c AtRung call makes
+    /// resident and what it refuses.
+    ///
+    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
+    ///   matched exactly against the rung this call makes resident
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kSuccess after the launch is queued; kInvalidArgument when
+    /// \c multiplier is not a rung of this lane, nothing launched and nothing
+    /// written; kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF64NarrowOrdersMonoAtRung(
+        double multiplier, const int* n, const double* x, double* out, std::size_t count,
+        void* stream);
 
     /// F_0(x[i])..F_n(x[i]) as AllOrdersF64 with the other fit route: every
     /// piece is a numerator/denominator pair, evaluated as two Horner sums and
@@ -508,6 +788,26 @@ public:
     static BoysStatus AllOrdersF64Rat(
         const int* n, const double* x, double* out, std::size_t count, void* stream);
 
+    /// AllOrdersF64Rat at a rung named in the call, over the twelve rungs this lane
+    /// serves. The rung is made resident by this call and that rung's own
+    /// launcher runs; the class contract states what an \c AtRung call makes
+    /// resident and what it refuses.
+    ///
+    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
+    ///   matched exactly against the rung this call makes resident
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kSuccess after the launch is queued; kInvalidArgument when
+    /// \c multiplier is not a rung of this lane, nothing launched and nothing
+    /// written; kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF64RatAtRung(
+        double multiplier, const int* n, const double* x, double* out, std::size_t count,
+        void* stream);
+
     /// The rational route's orders-axis member: F_0(x[i])..F_n(x[i]) with
     /// region A read as one fit per order, each summed as the pair
     /// AllOrdersF64Rat names. The two choices compose — the axis is a body
@@ -528,6 +828,26 @@ public:
     static BoysStatus AllOrdersF64OrdersRat(
         const int* n, const double* x, double* out, std::size_t count, void* stream);
 
+    /// AllOrdersF64OrdersRat at a rung named in the call, over the twelve rungs this lane
+    /// serves. The rung is made resident by this call and that rung's own
+    /// launcher runs; the class contract states what an \c AtRung call makes
+    /// resident and what it refuses.
+    ///
+    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
+    ///   matched exactly against the rung this call makes resident
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kSuccess after the launch is queued; kInvalidArgument when
+    /// \c multiplier is not a rung of this lane, nothing launched and nothing
+    /// written; kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF64OrdersRatAtRung(
+        double multiplier, const int* n, const double* x, double* out, std::size_t count,
+        void* stream);
+
     /// The rational route over the narrow partition: F_0(x[i])..F_n(x[i]) from
     /// the narrow pieces, their piecewise region-B seed and their per-rung
     /// effective degrees, each piece summed as the pair AllOrdersF64Rat names.
@@ -545,6 +865,26 @@ public:
     static BoysStatus AllOrdersF64NarrowRat(
         const int* n, const double* x, double* out, std::size_t count, void* stream);
 
+    /// AllOrdersF64NarrowRat at a rung named in the call, over the twelve rungs this lane
+    /// serves. The rung is made resident by this call and that rung's own
+    /// launcher runs; the class contract states what an \c AtRung call makes
+    /// resident and what it refuses.
+    ///
+    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
+    ///   matched exactly against the rung this call makes resident
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kSuccess after the launch is queued; kInvalidArgument when
+    /// \c multiplier is not a rung of this lane, nothing launched and nothing
+    /// written; kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF64NarrowRatAtRung(
+        double multiplier, const int* n, const double* x, double* out, std::size_t count,
+        void* stream);
+
     /// Both of the choices above in force at once: the narrow partition read
     /// one fit per order inside region A, each piece summed as the pair
     /// AllOrdersF64Rat names, with the certified all-orders body past kX0.
@@ -561,6 +901,26 @@ public:
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64NarrowOrdersRat(
         const int* n, const double* x, double* out, std::size_t count, void* stream);
+
+    /// AllOrdersF64NarrowOrdersRat at a rung named in the call, over the twelve rungs this lane
+    /// serves. The rung is made resident by this call and that rung's own
+    /// launcher runs; the class contract states what an \c AtRung call makes
+    /// resident and what it refuses.
+    ///
+    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
+    ///   matched exactly against the rung this call makes resident
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kSuccess after the launch is queued; kInvalidArgument when
+    /// \c multiplier is not a rung of this lane, nothing launched and nothing
+    /// written; kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF64NarrowOrdersRatAtRung(
+        double multiplier, const int* n, const double* x, double* out, std::size_t count,
+        void* stream);
 
     /// F_0(x[i])..F_nmax(x[i]) at one common nmax, double precision — the
     /// uniform-order batch: many arguments, all nmax + 1 orders each, the
@@ -585,6 +945,27 @@ public:
     static BoysStatus AllNF64(
         int nmax, const double* x, double* out, std::size_t count, void* stream);
 
+    /// AllNF64 at a rung named in the call, over the twelve rungs this lane
+    /// serves. The rung is made resident by this call and that rung's own
+    /// launcher runs; the class contract states what an \c AtRung call makes
+    /// resident and what it refuses.
+    ///
+    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
+    ///   matched exactly against the rung this call makes resident
+    /// \param nmax   highest order, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, non-decreasing, each >= 0
+    /// \param out    device array, at least count * (nmax + 1) doubles
+    /// \param count  number of arguments; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kSuccess after the launch is queued; kInvalidArgument when
+    /// \c multiplier is not a rung of this lane or \c nmax is outside
+    /// [0, kMaxBoysOrder], nothing launched and nothing written; kDeviceError
+    /// when the table upload or the launch fails.
+    static BoysStatus AllNF64AtRung(
+        double multiplier, int nmax, const double* x, double* out, std::size_t count,
+        void* stream);
+
 #if BoysFp16
     /// F_n(x[i]) in fp16 — the fp16 lane of the certified mixed-precision
     /// boundary (behind the BoysFp16 seam). Device pointers and stream
@@ -606,6 +987,26 @@ public:
     static BoysStatus SingleF16(
         const int* n, const F16* x, F16* out, std::size_t count, void* stream);
 
+    /// SingleF16 at a rung named in the call, over the twelve rungs this lane
+    /// serves. The rung is made resident by this call and that rung's own
+    /// launcher runs; the class contract states what an \c AtRung call makes
+    /// resident and what it refuses.
+    ///
+    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
+    ///   matched exactly against the rung this call makes resident
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array receiving F_n(x[i]) in fp16
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kSuccess after the launch is queued; kInvalidArgument when
+    /// \c multiplier is not a rung of this lane, nothing launched and nothing
+    /// written; kDeviceError when the table upload or the launch fails.
+    static BoysStatus SingleF16AtRung(
+        double multiplier, const int* n, const F16* x, F16* out, std::size_t count,
+        void* stream);
+
     /// F_0(x[i])..F_nmax(x[i]) in fp16 per input (i), layout as AllOrdersF32
     /// (out[order * count + i] = F_order(x[i])), device pointers and
     /// stream contract as SingleF16.
@@ -622,6 +1023,26 @@ public:
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF16(
         const int* n, const F16* x, F16* out, std::size_t count, void* stream);
+
+    /// AllOrdersF16 at a rung named in the call, over the twelve rungs this lane
+    /// serves. The rung is made resident by this call and that rung's own
+    /// launcher runs; the class contract states what an \c AtRung call makes
+    /// resident and what it refuses.
+    ///
+    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
+    ///   matched exactly against the rung this call makes resident
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kSuccess after the launch is queued; kInvalidArgument when
+    /// \c multiplier is not a rung of this lane, nothing launched and nothing
+    /// written; kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF16AtRung(
+        double multiplier, const int* n, const F16* x, F16* out, std::size_t count,
+        void* stream);
 
     /// F_0(x[i])..F_nmax(x[i]) at one common nmax in fp16 — the uniform-order
     /// batch of the fp16 lane, layout as AllNF32, device pointers and stream
@@ -643,6 +1064,26 @@ public:
     /// kDeviceError when a device operation fails.
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllNF16(int nmax, const F16* x, F16* out, std::size_t count, void* stream);
+
+    /// AllNF16 at a rung named in the call, over the twelve rungs this lane
+    /// serves. The rung is made resident by this call and that rung's own
+    /// launcher runs; the class contract states what an \c AtRung call makes
+    /// resident and what it refuses.
+    ///
+    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
+    ///   matched exactly against the rung this call makes resident
+    /// \param nmax   highest order, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, non-decreasing, each >= 0
+    /// \param out    device array, at least count * (nmax + 1) fp16 values
+    /// \param count  number of arguments; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kSuccess after the launch is queued; kInvalidArgument when
+    /// \c multiplier is not a rung of this lane or \c nmax is outside
+    /// [0, kMaxBoysOrder], nothing launched and nothing written; kDeviceError
+    /// when the table upload or the launch fails.
+    static BoysStatus AllNF16AtRung(
+        double multiplier, int nmax, const F16* x, F16* out, std::size_t count, void* stream);
 #endif // BoysFp16
 };
 

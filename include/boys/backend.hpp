@@ -108,11 +108,18 @@ enum class PackAxis : std::uint8_t {
 /// The shipped one: a call site that names no axis packs the arguments axis.
 inline constexpr PackAxis kDefaultPackAxis = PackAxis::kArguments;
 
-/// The name a report prints a packing axis under.
+/// The name a report prints a packing axis under, and never null.
 ///
 /// \param axis the axis
 ///
-/// \returns a string literal naming it
+/// \returns a string literal naming it: "arguments" or "orders", and "unknown"
+///          for a value outside the enumerators
+///
+/// A value outside the enumerators - cast in from outside the enum, or named by
+/// a newer header - is answered rather than refused: a caller that has to tell
+/// "this build does not carry that axis" from "that is not an axis at all" tests
+/// the value against the enumerators itself, because both arrive here as
+/// "unknown".
 const char* PackAxisName(PackAxis axis) noexcept;
 
 /// How narrowly the fitted domain is cut into pieces.
@@ -212,11 +219,18 @@ enum class FitGranularity : std::uint8_t {
 /// could and could not separate.
 inline constexpr FitGranularity kDefaultFitGranularity = FitGranularity::kNarrow;
 
-/// The name a report prints a granularity under.
+/// The name a report prints a granularity under, and never null.
 ///
 /// \param granularity the partition
 ///
-/// \returns a string literal naming it
+/// \returns a string literal naming it: "shipped" or "narrow", and "unknown"
+///          for a value outside the enumerators
+///
+/// A value outside the enumerators - cast in from outside the enum, or named by
+/// a newer header - is answered rather than refused. This function names a
+/// partition; it does not report whether the build serves one, which is
+/// FitGranularityHasRoute and FitGranularityHasAxis, so a caller that needs the
+/// distinction asks those rather than reading this string.
 const char* GranularityName(FitGranularity granularity) noexcept;
 
 /// The computation budget a single-precision engine evaluates at.
@@ -532,11 +546,18 @@ enum class MulAddRoute : std::uint8_t {
     kSeparate,
 };
 
-/// The name a report prints a route under.
+/// The name a report prints a route under, and never null.
 ///
 /// \param route the route
 ///
-/// \returns a string literal naming it
+/// \returns a string literal naming it: "fused" or "separate", and "unknown"
+///          for a value outside the enumerators
+///
+/// A value outside the enumerators is answered rather than refused. The route
+/// this names is the one a caller selected, which is not always the one the
+/// build runs: whether the separate route is really two roundings is the
+/// build's contraction, measured per translation unit, and \c RouteInForce<T>()
+/// and BoysBackends() are what report that.
 const char* MulAddRouteName(MulAddRoute route) noexcept;
 
 /// The arithmetic one lane runs in: a value type, a storage type, the packed

@@ -94,47 +94,6 @@ TierCoverage QueryTier(AccuracyTier tier, double x, double tolerance) noexcept {
 
 namespace {
 
-// The tier dispatch, once per evaluation policy: the policy is a compile-time
-// choice and a tier is a run-time one, so the policy is the template parameter
-// and the tier stays the switch.
-template <EvalPolicyLike Policy>
-void AllOrdersAtTier(AccuracyTier tier, int nmax, double x, double* out) noexcept {
-    switch (tier)
-    {
-    case AccuracyTier::kReference:
-        BoysAllOrders<kBoysFullAccuracyMultiplier, Policy>(nmax, x, out);
-        return;
-    case AccuracyTier::kRelaxed64:
-        BoysAllOrders<64.0, Policy>(nmax, x, out);
-        return;
-    case AccuracyTier::kRelaxed256:
-        BoysAllOrders<256.0, Policy>(nmax, x, out);
-        return;
-    case AccuracyTier::kRelaxed1024:
-        BoysAllOrders<1024.0, Policy>(nmax, x, out);
-        return;
-    case AccuracyTier::kRelaxed4096:
-        BoysAllOrders<4096.0, Policy>(nmax, x, out);
-        return;
-    case AccuracyTier::kRelaxed16384:
-        BoysAllOrders<16384.0, Policy>(nmax, x, out);
-        return;
-    case AccuracyTier::kRelaxed65536:
-        BoysAllOrders<65536.0, Policy>(nmax, x, out);
-        return;
-
-    default:
-        break;
-    }
-
-    // A tier this build does not serve - a value cast in from outside the enum,
-    // or one a newer header named. The reference multiplier is the one rung that
-    // is never coarser than any tier this build can name, and AccuracyMultiplier
-    // reports the same choice, so the accuracy a caller records beside these
-    // values is the accuracy they were computed at.
-    BoysAllOrders<kBoysFullAccuracyMultiplier, Policy>(nmax, x, out);
-}
-
 // The policy a run-time selector builds from the axes its caller named. The
 // three axes a selector does not take - the budget, the packing axis and the
 // granularity - are spelled here at their defaults rather than left to the
@@ -146,7 +105,7 @@ using SelectorPolicy =
 } // namespace
 
 void BoysAllOrdersAtTier(AccuracyTier tier, int nmax, double x, double* out) noexcept {
-    AllOrdersAtTier<EvalPolicy<>>(tier, nmax, x, out);
+    BoysAllOrdersAtTier<EvalPolicy<>>(tier, nmax, x, out);
 }
 
 namespace {
@@ -238,11 +197,11 @@ void BoysAllOrdersAtTier(
     // Each arm names the scheme the caller named; see BoysSingleAtTier.
     if (scheme == EvalScheme::kHorner)
     {
-        AllOrdersAtTier<SelectorPolicy<kDefaultFitRoute, EvalScheme::kHorner>>(tier, nmax, x, out);
+        BoysAllOrdersAtTier<SelectorPolicy<kDefaultFitRoute, EvalScheme::kHorner>>(tier, nmax, x, out);
         return;
     }
 
-    AllOrdersAtTier<SelectorPolicy<kDefaultFitRoute, EvalScheme::kSplitClenshaw>>(tier, nmax, x, out);
+    BoysAllOrdersAtTier<SelectorPolicy<kDefaultFitRoute, EvalScheme::kSplitClenshaw>>(tier, nmax, x, out);
 }
 
 void BoysAllOrdersAtTier(
@@ -264,12 +223,12 @@ void BoysAllOrdersAtTier(AccuracyTier tier,
     {
         if (scheme == EvalScheme::kHorner)
         {
-            AllOrdersAtTier<SelectorPolicy<FitRoute::kRationalMinimax, EvalScheme::kHorner>>(
+            BoysAllOrdersAtTier<SelectorPolicy<FitRoute::kRationalMinimax, EvalScheme::kHorner>>(
                 tier, nmax, x, out);
             return;
         }
 
-        AllOrdersAtTier<SelectorPolicy<FitRoute::kRationalMinimax, EvalScheme::kSplitClenshaw>>(
+        BoysAllOrdersAtTier<SelectorPolicy<FitRoute::kRationalMinimax, EvalScheme::kSplitClenshaw>>(
             tier, nmax, x, out);
         return;
     }
@@ -278,11 +237,11 @@ void BoysAllOrdersAtTier(AccuracyTier tier,
     // answers the default route; see BoysSingleAtTier.
     if (scheme == EvalScheme::kHorner)
     {
-        AllOrdersAtTier<SelectorPolicy<FitRoute::kChebyshev, EvalScheme::kHorner>>(tier, nmax, x, out);
+        BoysAllOrdersAtTier<SelectorPolicy<FitRoute::kChebyshev, EvalScheme::kHorner>>(tier, nmax, x, out);
         return;
     }
 
-    AllOrdersAtTier<SelectorPolicy<FitRoute::kChebyshev, EvalScheme::kSplitClenshaw>>(
+    BoysAllOrdersAtTier<SelectorPolicy<FitRoute::kChebyshev, EvalScheme::kSplitClenshaw>>(
         tier, nmax, x, out);
 }
 
@@ -957,9 +916,25 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
         const std::size_t p = static_cast<std::size_t>(granularity);
         Carriage c;
 
-        if (p >= partitions.size())
+        // The enumeration guard the two carriers above make, and it is made here
+        // rather than left to the row tables below. A partition's bitmask answers
+        // an out-of-enumeration route or axis with a refusal about the partition
+        // and answers an out-of-enumeration *scheme* with nothing at all: no row
+        // of a partition repeats the scheme axis, so there is no bit to be clear
+        // and the combination was read as carried. What the sentence says is what
+        // the other lanes say, because a value outside an enumeration names no
+        // combination on any lane, and the answer for it is one answer.
+        if (static_cast<std::size_t>(route) >= BoysFitRoutes().size() ||
+            static_cast<std::size_t>(scheme) >= BoysEvalSchemes().size() ||
+            static_cast<std::size_t>(axis) >= BoysPackAxes().size() ||
+            p >= partitions.size() ||
+            static_cast<std::size_t>(tier) >
+                static_cast<std::size_t>(AccuracyTier::kRelaxed65536))
         {
-            c.reason = "no partition of this library has that granularity";
+            c.reason =
+                "the value named is outside the enumeration this library serves, so it names no "
+                "combination: name a route, a scheme, a packing axis, a partition and a rung from "
+                "the enumerations this revision publishes";
 
             return c;
         }

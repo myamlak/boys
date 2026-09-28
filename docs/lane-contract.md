@@ -1533,6 +1533,25 @@ function addresses exactly when they are one instantiation, and runs the batch e
 device-callable entry on the card in both spellings, each of them beside `RegionBExp::kFast` as well,
 so a printed row shows which arithmetic the default selected.
 
+**The device lane's run-time rung is checked the same way, and its rows are counts rather than
+checkmarks.** Every named entry of `BoysCuda` that queues a kernel carries its multiplier as a
+template argument and has an `AtRung` sibling that takes the same multiplier as the call's own
+argument, and this check names each of those entries and runs it at each of the twelve rungs:
+
+    cmake --build <build> --target boys-consumer-cuda-rungs     # needs -DBUILD_CUDA=ON
+    <build>/Release/boys-consumer-cuda-rungs
+
+It prints, per precision, the combinations the device book reports as served and the combinations
+that carry a rung-argument name, with the cells each count is over; then the number of values judged
+against the committed reference grid within the figure the option's own book row states at the rung
+it ran at, the number of those outside it, and the number of bit-for-bit comparisons between the
+rung-argument spelling and the same entry's compile-time spelling at the same rung beside the count
+of them on cells where the rung moved the value. Its last block runs the device-callable entry inside
+a kernel at the rung that is resident and at one that is not, and prints what the entry answered for
+each: a value for the first, and `kMultiplierNotResident` with the output untouched for the second.
+That refusal is the rule an entry that accepted a rung and answered at another would break, so it is
+run rather than asserted.
+
 The second command prints the bound each name carries:
 
     cmake --build <build> --target boys-accuracy-gate

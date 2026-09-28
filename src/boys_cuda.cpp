@@ -424,6 +424,84 @@ template <double kAccuracyMultiplier> BoysStatus EnsureEffTables() {
                                                  gNarrowRatB.data()));
 }
 
+// ---------------------------------------------------------------------------
+// The run-time rung of the launched entries.
+//
+// Every entry of the surface above is instantiated once per rung, and which rung
+// a call answers at is a property of the instantiation the call site names. The
+// AtRung siblings take the rung as a run-time argument instead, and this is
+// where that argument becomes one of those instantiations: each arm below is one
+// rung of kDeviceRungs in the table's own order, and its body is the same two
+// steps the template spelling takes — make that rung resident, then run that
+// rung's launcher.
+//
+// The rung named is therefore the rung that becomes resident and the rung whose
+// arithmetic runs, and a call answers at the rung it was handed and never at
+// another. One rung is resident at a time, on the per-(device, m) upload this
+// entry shares with the device-callable ones, so an AtRung call at a relaxed
+// rung retires whichever other relaxed rung was resident and a device-callable
+// entry asked for that rung then reports it. m = 1 has no relaxed table, is
+// resident from the first upload, and retires nothing.
+//
+// A multiplier the table does not hold has no arm and is refused: no launcher is
+// reached and the caller's output is untouched. Answering instead at whichever
+// rung happens to be resident is the one outcome the rung argument exists to
+// rule out, and a value outside the twelve is resident at none of them.
+// ---------------------------------------------------------------------------
+
+// One rung's own step: the tables, then the launcher that reads them. The
+// launchers of a rung are not templates — one compiled launcher serves every
+// relaxed rung, because what selects the rung is which degree tables are
+// resident rather than which kernel runs — so this is the whole of what an arm
+// adds over the reference rung's.
+template <double kAccuracyMultiplier, typename Eff, typename... Args>
+BoysStatus LaunchEffRung(Eff eff, Args... args) {
+    const BoysStatus status = EnsureEffTables<kAccuracyMultiplier>();
+
+    if (status != BoysStatus::kSuccess)
+    {
+        return status;
+    }
+
+    return RunLaunch(eff, args...);
+}
+
+// The dispatch every AtRung entry is written with: `full` is the entry's
+// full-accuracy launcher, `eff` the one that reads the resident rung, and
+// `args` the entry's own launch arguments.
+template <typename Full, typename Eff, typename... Args>
+BoysStatus LaunchAtRung(double multiplier, Full full, Eff eff, Args... args) {
+    switch (DeviceRungIndex(multiplier))
+    {
+    case 0:
+        return RunLaunch(full, args...);
+    case 1:
+        return LaunchEffRung<2.0>(eff, args...);
+    case 2:
+        return LaunchEffRung<10.0>(eff, args...);
+    case 3:
+        return LaunchEffRung<64.0>(eff, args...);
+    case 4:
+        return LaunchEffRung<100.0>(eff, args...);
+    case 5:
+        return LaunchEffRung<256.0>(eff, args...);
+    case 6:
+        return LaunchEffRung<1024.0>(eff, args...);
+    case 7:
+        return LaunchEffRung<4096.0>(eff, args...);
+    case 8:
+        return LaunchEffRung<1e4>(eff, args...);
+    case 9:
+        return LaunchEffRung<16384.0>(eff, args...);
+    case 10:
+        return LaunchEffRung<65536.0>(eff, args...);
+    case 11:
+        return LaunchEffRung<1e8>(eff, args...);
+    default:
+        return BoysStatus::kInvalidArgument;
+    }
+}
+
 } // namespace
 
 BoysStatus BoysCuda::InitializeTables() {
@@ -1021,6 +1099,311 @@ BoysStatus BoysCuda::AllNF16(int nmax, const F16* x, F16* out, std::size_t count
 }
 #endif // BoysFp16
 
+// The AtRung siblings of the entries above: one definition each, one rung
+// dispatch each. They are not templates — the rung is the call's argument — and
+// every one of them is the entry's own prologue followed by LaunchAtRung, which
+// is where the argument becomes a rung of kDeviceRungs. CheckOrder comes before
+// the launch where the entry checks it, so an nmax outside the range is reported
+// whether or not the rung is served and whatever the batch's count is.
+
+
+// The f32 single sibling is a template for the same reason the entry is: the
+// exponential selects which arithmetic runs and not how much accuracy is bought,
+// so it stays where the call site writes it while the rung moves into the call.
+// Both of the entry's calibrated pairs are defined, which is what its own two
+// instantiations are.
+template <RegionBExp kExp>
+BoysStatus BoysCuda::SingleF32AtRung(
+    double multiplier, const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    if constexpr (kExp == RegionBExp::kFast)
+    {
+        return LaunchAtRung(multiplier, BoysCudaLaunchSingleF32Fast, BoysCudaLaunchSingleF32EffFast,
+                            n, x, out, count, stream);
+    }
+    else
+    {
+        return LaunchAtRung(multiplier, BoysCudaLaunchSingleF32, BoysCudaLaunchSingleF32Eff, n, x,
+                            out, count, stream);
+    }
+}
+
+
+BoysStatus BoysCuda::AllOrdersF32AtRung(
+    double multiplier, const int* n, const double* x, float* out, std::size_t count,
+    void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF32,
+                        BoysCudaLaunchAllOrdersF32Eff, n, x, out, count, stream);
+}
+
+
+BoysStatus BoysCuda::AllNF32AtRung(
+    double multiplier, int nmax, const double* x, float* out, std::size_t count,
+    void* stream) {
+    const auto valid = CheckOrder(nmax);
+
+    if (valid != BoysStatus::kSuccess)
+    {
+        return valid;
+    }
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return LaunchAtRung(multiplier, BoysCudaLaunchAllNF32,
+                        BoysCudaLaunchAllNF32Eff, nmax, x, out, count, stream);
+}
+
+
+BoysStatus BoysCuda::SingleF64AtRung(
+    double multiplier, const int* n, const double* x, double* out, std::size_t count,
+    void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return LaunchAtRung(multiplier, BoysCudaLaunchSingleF64,
+                        BoysCudaLaunchSingleF64Eff, n, x, out, count, stream);
+}
+
+
+BoysStatus BoysCuda::AllOrdersF64AtRung(
+    double multiplier, const int* n, const double* x, double* out, std::size_t count,
+    void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF64,
+                        BoysCudaLaunchAllOrdersF64Eff, n, x, out, count, stream);
+}
+
+
+BoysStatus BoysCuda::AllOrdersF64NarrowAtRung(
+    double multiplier, const int* n, const double* x, double* out, std::size_t count,
+    void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF64Narrow,
+                        BoysCudaLaunchAllOrdersF64NarrowEff, n, x, out, count, stream);
+}
+
+
+BoysStatus BoysCuda::AllOrdersF64OrdersAtRung(
+    double multiplier, const int* n, const double* x, double* out, std::size_t count,
+    void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF64Orders,
+                        BoysCudaLaunchAllOrdersF64OrdersEff, n, x, out, count, stream);
+}
+
+
+BoysStatus BoysCuda::AllOrdersF64NarrowOrdersAtRung(
+    double multiplier, const int* n, const double* x, double* out, std::size_t count,
+    void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF64NarrowOrders,
+                        BoysCudaLaunchAllOrdersF64NarrowOrdersEff, n, x, out, count, stream);
+}
+
+
+BoysStatus BoysCuda::AllOrdersF64MonoAtRung(
+    double multiplier, const int* n, const double* x, double* out, std::size_t count,
+    void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF64Mono,
+                        BoysCudaLaunchAllOrdersF64MonoEff, n, x, out, count, stream);
+}
+
+
+BoysStatus BoysCuda::AllOrdersF64OrdersMonoAtRung(
+    double multiplier, const int* n, const double* x, double* out, std::size_t count,
+    void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF64OrdersMono,
+                        BoysCudaLaunchAllOrdersF64OrdersMonoEff, n, x, out, count, stream);
+}
+
+
+BoysStatus BoysCuda::AllOrdersF64NarrowMonoAtRung(
+    double multiplier, const int* n, const double* x, double* out, std::size_t count,
+    void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF64NarrowMono,
+                        BoysCudaLaunchAllOrdersF64NarrowMonoEff, n, x, out, count, stream);
+}
+
+
+BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMonoAtRung(
+    double multiplier, const int* n, const double* x, double* out, std::size_t count,
+    void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF64NarrowOrdersMono,
+                        BoysCudaLaunchAllOrdersF64NarrowOrdersMonoEff, n, x, out, count, stream);
+}
+
+
+BoysStatus BoysCuda::AllOrdersF64RatAtRung(
+    double multiplier, const int* n, const double* x, double* out, std::size_t count,
+    void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF64Rat,
+                        BoysCudaLaunchAllOrdersF64RatEff, n, x, out, count, stream);
+}
+
+
+BoysStatus BoysCuda::AllOrdersF64OrdersRatAtRung(
+    double multiplier, const int* n, const double* x, double* out, std::size_t count,
+    void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF64OrdersRat,
+                        BoysCudaLaunchAllOrdersF64OrdersRatEff, n, x, out, count, stream);
+}
+
+
+BoysStatus BoysCuda::AllOrdersF64NarrowRatAtRung(
+    double multiplier, const int* n, const double* x, double* out, std::size_t count,
+    void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF64NarrowRat,
+                        BoysCudaLaunchAllOrdersF64NarrowRatEff, n, x, out, count, stream);
+}
+
+
+BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRatAtRung(
+    double multiplier, const int* n, const double* x, double* out, std::size_t count,
+    void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF64NarrowOrdersRat,
+                        BoysCudaLaunchAllOrdersF64NarrowOrdersRatEff, n, x, out, count, stream);
+}
+
+
+BoysStatus BoysCuda::AllNF64AtRung(
+    double multiplier, int nmax, const double* x, double* out, std::size_t count,
+    void* stream) {
+    const auto valid = CheckOrder(nmax);
+
+    if (valid != BoysStatus::kSuccess)
+    {
+        return valid;
+    }
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return LaunchAtRung(multiplier, BoysCudaLaunchAllNF64,
+                        BoysCudaLaunchAllNF64Eff, nmax, x, out, count, stream);
+}
+
+
+#if BoysFp16
+
+BoysStatus BoysCuda::SingleF16AtRung(
+    double multiplier, const int* n, const F16* x, F16* out, std::size_t count,
+    void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return LaunchAtRung(multiplier, BoysCudaLaunchSingleF16,
+                        BoysCudaLaunchSingleF16Eff, n, x, out, count, stream);
+}
+
+
+BoysStatus BoysCuda::AllOrdersF16AtRung(
+    double multiplier, const int* n, const F16* x, F16* out, std::size_t count,
+    void* stream) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF16,
+                        BoysCudaLaunchAllOrdersF16Eff, n, x, out, count, stream);
+}
+
+
+BoysStatus BoysCuda::AllNF16AtRung(
+    double multiplier, int nmax, const F16* x, F16* out, std::size_t count,
+    void* stream) {
+    const auto valid = CheckOrder(nmax);
+
+    if (valid != BoysStatus::kSuccess)
+    {
+        return valid;
+    }
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return LaunchAtRung(multiplier, BoysCudaLaunchAllNF16,
+                        BoysCudaLaunchAllNF16Eff, nmax, x, out, count, stream);
+}
+
+#endif // BoysFp16
+
 // ---------------------------------------------------------------------------
 // Explicit instantiations at the rungs this lane serves, kDeviceRungs
 // (boys_cuda_options.hpp). The entry definitions live in this TU (the header
@@ -1031,6 +1414,15 @@ BoysStatus BoysCuda::AllNF16(int nmax, const F16* x, F16* out, std::size_t count
 // exponential) pair it offers; every other entry has one arithmetic and one
 // instantiation per multiplier.
 // ---------------------------------------------------------------------------
+// The one rung-argument sibling that is itself a template: the f32 single
+// entry's exponential axis is a compile-time choice of arithmetic and stays one,
+// so this entry has two instantiations of its sibling and not twelve. Which rung
+// it answers at is the run-time argument, dispatched in the definition above.
+template BoysStatus BoysCuda::SingleF32AtRung<RegionBExp::kAccurate>(
+    double, const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::SingleF32AtRung<RegionBExp::kFast>(
+    double, const int*, const double*, float*, std::size_t, void*);
+
 template BoysStatus BoysCuda::SingleF32<1.0>(const int*, const double*, float*, std::size_t, void*);
 template BoysStatus BoysCuda::SingleF32<1.0, RegionBExp::kFast>(
     const int*, const double*, float*, std::size_t, void*);

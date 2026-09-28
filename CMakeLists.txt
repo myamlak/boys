@@ -37,16 +37,6 @@ option(BUILD_CUDA
     "Build the CUDA lane (needs the CUDA toolkit; a documented local gate — never CI)"
     OFF)
 
-# The comparison benchmark's reference library, off unless named: the include
-# directory (or directories) holding libint2's headers. libint2 is not a
-# dependency of this library — nothing here links it, and its Boys surface is
-# header-only — so this value adds one benchmark target and changes nothing
-# else, and a tree that leaves it empty builds and installs exactly as it does
-# today. The benchmark block below says what is built when it is set, and what
-# a libint2 source tree needs named beyond its own include directory.
-set(BOYS_LIBINT2_INCLUDE_DIR "" CACHE STRING
-    "Include directory holding libint2's headers (libint2/boys.h); separate several with ';'. Empty = the libint2 comparison benchmark is not built")
-
 # Warnings in this tree's own code are build failures. ON by default: a gate
 # that is off until someone opts in is not a gate, and a consumer embedding
 # this tree inherits the same standard. Turning it off keeps the warning
@@ -733,6 +723,17 @@ int main() {
     #     entries run. It prints the cells compared and the worst difference
     #     for each row.
     #
+    #   boys-consumer-option-space  is the option space's own check: every
+    #     combination the library's book reports as served is NAMED - a policy
+    #     type, one arm per name, no string and no lookup - with the accuracy
+    #     rung passed as the call's own argument, and every value that comes
+    #     back is judged against the figure the book states for that
+    #     combination and rung and compared bit for bit with the same cell's
+    #     compile-time spelling. It prints the combinations served and named
+    #     per precision and the count of cells where the rung moved the values,
+    #     so the bit-for-bit comparison is visible as one that could have
+    #     failed.
+    #
     # Neither target adds src/ to its include path (the library publishes
     # include/ as PUBLIC and src/ as PRIVATE), and both say so: they carry an
     # __has_include probe that fails the compile if the internal directory ever
@@ -769,11 +770,18 @@ int main() {
     target_link_libraries(boys-consumer-defaults PRIVATE boys)
     boys_strict_warnings(boys-consumer-defaults)
 
+    add_executable(boys-consumer-option-space tests/consumer_option_space.cpp)
+    target_link_libraries(boys-consumer-option-space PRIVATE boys)
+    target_compile_definitions(boys-consumer-option-space PRIVATE
+        BoysConsumerReference="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/boys_reference.csv")
+    boys_strict_warnings(boys-consumer-option-space)
+
     add_test(NAME boys-tests COMMAND boys-tests)
     add_test(NAME boys-boundary-standalone COMMAND boys-boundary-standalone)
     add_test(NAME boys-consumer-umbrella COMMAND boys-consumer-umbrella)
     add_test(NAME boys-consumer-header-only COMMAND boys-consumer-header-only)
     add_test(NAME boys-consumer-defaults COMMAND boys-consumer-defaults)
+    add_test(NAME boys-consumer-option-space COMMAND boys-consumer-option-space)
     # --strict: the gate fails on a claim whose evidence is not in the tree as
     # well as on one it measures exceeded, so a green ctest never means "every
     # documented claim is met at this revision" while a claim rest on a
@@ -1003,6 +1011,35 @@ if (BUILD_CUDA)
         target_compile_features(boys-consumer-cuda-defaults PRIVATE cxx_std_20)
         boys_strict_warnings(boys-consumer-cuda-defaults)
         add_test(NAME boys-consumer-cuda-defaults COMMAND boys-consumer-cuda-defaults)
+
+        # The CUDA consumer's check of the lane's RUN-TIME RUNG, which is the
+        # accuracy axis of the entry the caller writes: every launched option the
+        # device book reports as served is named here with the rung as the call's
+        # own argument, every cell is evaluated twice - through that sibling and
+        # through the same entry's compile-time spelling at the same rung - and
+        # the two are compared bit for bit and judged against the committed
+        # high-precision grid within the bound the option's own book row states
+        # at that rung. It prints the combinations served and named per precision
+        # and the count of cells where the rung moved the value, so the bit-for-
+        # bit comparison is visible as one that could have failed.
+        #
+        # It is split in two translation units for the same reason the defaults
+        # check is: the host half includes <boys/boys_cuda.hpp>, which is a host
+        # header, and the kernel half includes <boys/boys_cuda_device.hpp>, which
+        # is what a .cu may include. The device half is where the resident-rung
+        # rule is run rather than argued about: the device-callable entry is asked
+        # for the rung that is resident and for one that is not, inside a kernel,
+        # and the check prints the value it wrote for the first and the refusal
+        # and the untouched output it left for the second.
+        add_executable(boys-consumer-cuda-rungs
+            tests/consumer_cuda_rungs_host.cpp
+            tests/consumer_cuda_rungs.cu)
+        target_link_libraries(boys-consumer-cuda-rungs PRIVATE boys-cuda boys)
+        target_compile_features(boys-consumer-cuda-rungs PRIVATE cxx_std_20)
+        target_compile_definitions(boys-consumer-cuda-rungs PRIVATE
+            BoysConsumerReference="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/boys_accuracy_gate_reference.csv")
+        boys_strict_warnings(boys-consumer-cuda-rungs)
+        add_test(NAME boys-consumer-cuda-rungs COMMAND boys-consumer-cuda-rungs)
     endif()
 endif()
 
@@ -1073,45 +1110,6 @@ if (BUILD_BENCHMARKS)
     else()
         message(STATUS "boys: skipping boys-unsorted-simd-benchmark — its AVX2 "
             "kernels are x86_64-only (this is a local-only target)")
-    endif()
-
-    # The comparison driver: this library's default entry against libint2's
-    # Boys evaluator, on the same streams at full accuracy on both sides (see
-    # the file preamble for what is compared and how the numbers are read).
-    # libint2 is not a dependency of this library — its Boys surface is
-    # header-only, nothing here links it, and its headers are consumed at build
-    # time only (LGPL-3.0-or-later, never vendored) — so the target is created
-    # only where BOYS_LIBINT2_INCLUDE_DIR is set AND carries libint2/boys.h,
-    # and the configuration says in one line what it skipped and why when it is
-    # not. Its include directories are SYSTEM ones: third-party headers are not
-    # this tree's to keep warning-clean under BOYS_WERROR.
-    if (BOYS_LIBINT2_INCLUDE_DIR)
-        set(boysLibint2Found FALSE)
-
-        foreach (boysLibint2Dir IN LISTS BOYS_LIBINT2_INCLUDE_DIR)
-            if (EXISTS "${boysLibint2Dir}/libint2/boys.h")
-                set(boysLibint2Found TRUE)
-            endif()
-        endforeach()
-    else()
-        set(boysLibint2Found FALSE)
-    endif()
-
-    if (boysLibint2Found)
-        add_executable(boys-libint2-benchmark benchmarks/boys_libint2_benchmark.cpp)
-        target_link_libraries(boys-libint2-benchmark PRIVATE boys)
-        target_include_directories(boys-libint2-benchmark SYSTEM PRIVATE
-            ${BOYS_LIBINT2_INCLUDE_DIR})
-        target_compile_features(boys-libint2-benchmark PRIVATE cxx_std_23)
-        boys_strict_warnings(boys-libint2-benchmark)
-    elseif (BOYS_LIBINT2_INCLUDE_DIR)
-        message(STATUS "boys: skipping boys-libint2-benchmark — "
-            "BOYS_LIBINT2_INCLUDE_DIR is \"${BOYS_LIBINT2_INCLUDE_DIR}\", which "
-            "does not carry libint2/boys.h")
-    else()
-        message(STATUS "boys: skipping boys-libint2-benchmark — "
-            "BOYS_LIBINT2_INCLUDE_DIR is unset, and libint2 is not a dependency "
-            "of this library")
     endif()
 
     if (BUILD_CUDA)

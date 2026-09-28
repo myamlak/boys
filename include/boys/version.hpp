@@ -27,7 +27,10 @@ inline constexpr const char* kVersionString = "3.0.0";
 
 /// The library's version, as a caller queries it.
 ///
-/// \returns the version as a string, "MAJOR.MINOR.PATCH" — e.g. "2.0.0".
+/// \returns the version as a string, "MAJOR.MINOR.PATCH" — the same value
+/// \c kVersionString holds, so it needs no allocation and stays valid for the
+/// life of the program. The three numbers it is built from are separately
+/// readable as \c kVersionMajor, \c kVersionMinor and \c kVersionPatch.
 inline constexpr const char* VersionString() noexcept
 {
     return kVersionString;

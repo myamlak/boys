@@ -109,6 +109,18 @@ one rung at a time, and a call naming any other rung returns
 `BoysDeviceStatus::kMultiplierNotResident` and writes nothing. m = 1 needs no such table and is
 always served.
 
+The CUDA lane's launched entries take the rung as an argument in the same way. Each named entry of
+`BoysCuda` carries its multiplier as a template argument and has an `AtRung` sibling whose first
+argument is that multiplier as a value — `BoysCuda::AllOrdersF64AtRung(4096.0, n, x, out, count,
+stream)` against `BoysCuda::AllOrdersF64<4096.0>(n, x, out, count, stream)` — so a caller that decides
+the rung where the call is made names the combination once and passes the rung, with no switch of its
+own over the twelve. An `AtRung` call makes the rung it names resident and that rung's own launcher
+runs, so the rung it answers at is the rung it was handed and never another; because there is one set
+of relaxed tables, a call at a relaxed rung retires whichever other rung was resident, and a
+device-callable entry asked for the retired rung reports it rather than reading tables that hold
+another rung. A multiplier outside the twelve is `BoysStatus::kInvalidArgument`, nothing launched and
+nothing written: the lane answers at twelve rungs, and a value outside them is resident at none.
+
 **Choosing nothing.** A caller that has picked a precision and no axis writes one name: each precision
 has a named default, and so does the device lane. [docs/lane-contract.md](docs/lane-contract.md#the-default-policy-per-precision-and-per-device)
 states what each selects, the bound it carries, and the command that prints the name and the in-force
@@ -215,6 +227,24 @@ which is the one to rank two combinations by. They are different questions, and 
 of the returned `AccuracyFigure` says which answer a figure is. A combination this revision does not
 carry has no figure: both accessors say so and give the library's own reason rather than returning a
 number.
+
+**Choosing a combination is a name, and choosing a rung is an argument.** The four structural axes —
+route, scheme, partition, packing axis — are the fields of an `EvalPolicy`, so a combination is a type
+the call site writes once and the compiler resolves where it is written: 4 lanes × 16 axis
+combinations, **64 combinations, each reachable as a name**. Naming one costs nothing at the call —
+there is no table to look a combination up in, no string to match and no search at run time, which is
+why those four axes are not call arguments. The fifth choice, the accuracy rung, is the one a caller
+may want to make per call, and that one is the call's own argument: `BoysAllOrdersAtTier<Policy>(tier,
+nmax, x, out)` on the double lane, with `BoysAllOrdersF32AtTier`, `BoysAllOrdersF16AtTier` and
+`BoysAllOrdersBf16AtTier` beside it, takes the policy that names the combination and the rung as a
+value. Every combination a lane's book carries can be written that way and every rung the lane serves
+is honoured — those 64 axis combinations at the 7 rungs and the 4 lanes are the 448 combinations
+above, all of them named and all of them evaluated by `tests/consumer_option_space.cpp`, which prints
+the counts per precision. A rung this build
+does not serve evaluates at the reference multiplier, which is never coarser than the rung that was
+named, and `BoysAccuracyGuaranteed` answers beforehand whether the rung is carried at all.
+`BoysAllOrdersAtTier(tier, route, scheme, ...)` still names a route and a scheme as values where a
+caller has them as values, and `BoysSingleAtTier` does the same on the single-order shape.
 
 **A caller that has a target rather than a comparison asks it directly.** `QueryCombination(...)`
 takes the same six axes and the absolute error the caller needs, and answers with a verdict beside
