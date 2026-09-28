@@ -72,6 +72,74 @@ once and lets you choose the arithmetic, including a 32-bit mode for cards that 
 arithmetic. Its section in `docs/lane-contract.md` states which modes reach which accuracy, and
 which orders it may be asked to seed a recursion at.
 
+## Choosing inside the lane you picked
+
+Picking a lane is not the whole of the choice. Inside one lane the library offers the product of
+five axes, and each of them is a decision a caller can make:
+
+- **the fit route** — the stored fits that serve a region are either the Chebyshev ones the
+  certified lanes are defined by, or a rational minimax alternative that holds the same bar by
+  storing different things;
+- **the evaluation scheme** — a fit's coefficients are summed either by the split Clenshaw
+  recurrence on its Chebyshev form, or by Horner's rule on the monomial form of the same fit;
+- **the interval partition** — the fitted intervals are cut either as the shipped tables cut them,
+  or more narrowly, into pieces that hold the bar at a lower degree;
+- **the packing axis** — which of a call's values share a vector register: four arguments at one
+  order, or four orders at one argument;
+- **the accuracy rung** — how far the stored fit is cut for this call, which is what the accuracy
+  multiplier names.
+
+**Four of the five are names resolved where the code is written; the fifth is the call's own
+argument.** The route, the scheme, the partition and the packing axis are written into the call
+site, and the rung is the one a caller may need to decide at run time. The split is deliberate. How
+much accuracy you can afford may only be known at run time — from the size of the system you were
+handed, or from how many self-consistent-field cycles you are prepared to spend — so the rung has to
+be something you can compute there. Which fits to read and how to sum them is a decision made once,
+while the code is being written, and a call site that resolved it on every call would pay, every
+time, to rediscover what its author already knew. So those four are resolved where they are named
+and nowhere else: there is no combination to look up at the call, no name to match and no registry
+to consult, and a call costs nothing beyond the arithmetic it asked for.
+
+**The library defaults what a caller has not decided, and the line between the two is the one the
+library draws.** Precision, accuracy rung and the shape of the question are the caller's, because
+they change what comes back: which arithmetic is used, how much error it is allowed, and whether the
+call answers for one order or for a ladder of them, at one argument or across an array of arguments.
+The four structural axes are the library's to default, and each precision has one setting that a
+call naming nothing receives. A caller who cares about one of them may name it; a caller who does
+not is not asked to.
+
+**Where the recommendation comes from: a measurement taken where you deploy.** Which combination is
+cheapest depends on the machine, on whether your compiler fuses a product-plus-add into one
+rounding, and on how your arguments arrive, so the library ships the measurement rather than a
+recommendation. The probe in this tree (`boys-option-probe`) ranks the combinations your build
+offers and prints the accuracy each one delivered beside its cost, so you can see whether a faster
+row was faster at the same accuracy or at a lower one. Choosing is a development-time act: run it
+once, read the row it puts first for your precision, your rung and the shape of your question, and
+write that combination's name into the call site. **The figures belong to the host they were taken
+on** — a ranking taken somewhere else is not evidence about your machine. The device lane ships a
+probe of the same kind for a card (`boys-device-probe`), because which entry is cheapest on a card
+is a property of the card.
+
+**What you get by naming nothing is a tie rather than a measured win.** The route and the packing
+axis carry the settings the library has always shipped. The scheme and the partition were set from
+the probe's own runs, and those runs did not separate the rows of either axis: the three leading
+rows of the double lane's full-accuracy all-orders ranking came out closer together than any one of
+them moves between two runs of the same probe, and the settings this library ships are one of those
+three rather than the cheapest of them. That costs nothing in accuracy — the two schemes sum one fit
+and the two partitions cut one fit, each certified to a bound of its own — but it is what the
+default is, and a reader told the default was a measured win would have been told something the
+measurement does not say.
+
+**If you have a number to stay under rather than a ranking to read**, the library answers that
+question directly: name a combination and the absolute error your calculation needs, and you get a
+verdict beside the two figures it was made on. A combination whose guaranteed bound is at or below
+your requirement is inside it, and that guarantee is the state a calculation's safety can rest on. A
+combination whose bound is above the requirement while the error it was measured to deliver is at or
+below it is at your target in what it delivers and outside its guarantee — a state to read as what
+it is, and not as a promise. A combination that is neither is outside. The two figures are also what
+to rank two combinations by, and they answer different questions: one is what the lane promises, the
+other is what it was measured to do.
+
 ## What is not claimed
 
 No speed claim is made for any lane. See the end of `docs/lane-contract.md` for why, and for what a

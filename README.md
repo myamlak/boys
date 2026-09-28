@@ -124,11 +124,17 @@ nothing written: the lane answers at twelve rungs, and a value outside them is r
 **Choosing nothing.** A caller that has picked a precision and no axis writes one name: each precision
 has a named default, and so does the device lane. [docs/lane-contract.md](docs/lane-contract.md#the-default-policy-per-precision-and-per-device)
 states what each selects, the bound it carries, and the command that prints the name and the in-force
-default as numbers. Two of the five axes — the evaluation scheme and the interval granularity — were
-set from the option probe's own runs, and the other two carry the settings the library has always
-shipped; the option probe below is what ranks the rest, on the machine it is run on. **Each default
-is a choice between two ways of computing one answer and not between two accuracies**, so a version
-that moves one costs no accuracy at any call site that names nothing.
+default as numbers. Two of the five choices — the evaluation scheme and the interval partition — were
+set from the option probe's own runs, and **those runs did not separate the rows of either**: the three
+rows of the double lane's full-accuracy class for the all-orders shape came out within 0.9% of one
+another, against the 5.6 to 7.4 points one of them moves by from one run to the next, so each of the two
+defaults is one of three rows the instrument could not separate rather than the row it found cheaper.
+The route and the packing axis carry the settings the library has always shipped and have not been
+ranked against a timing. The fifth choice, the accuracy rung, carries no shipped default at all: a call
+that names nothing evaluates at the reference multiplier, the finest of the seven, and a caller names a
+coarser one at the call. The option probe below is what ranks any of them, on the machine it is run on.
+**Each default is a choice between two ways of computing one answer and not between two accuracies**, so
+a version that moves one costs no accuracy at any call site that names nothing.
 
 The rows above are bounds, and a bound is not the figure a lane delivers. Two lanes are delivered at
 a different figure depending on one property of the build — whether the compiler fuses a bare

@@ -725,10 +725,11 @@ rise of 0.12 of a bound that is m·1.5e-7 and nothing else, which leaves 0.176 o
 the tightest margin on this page and the one to watch if the float fits ever change.
 
 **Where a lane does not move, the reason differs.** Above x = 28.98933773882074 the closed form
-evaluates no multiply-add at all, so both routes land on the same bits. The float batch entry's worst
-cell is on the upward recursion, which is written as bare multiplies, subtractions and one division
-that no multiply-add route governs. And the double lane's worst cells at the smallest arguments and
-in the asymptotic region are not on a multiply-add either.
+reads no coefficient the route selects, and the one refinement its recurrence takes is written with
+the fused operation by name, so no contraction route reaches it and both routes land on the same
+bits. The float batch entry's worst cell is on the upward recursion, which is written as bare
+multiplies, subtractions and one division that no multiply-add route governs. And the double lane's
+worst cells at the smallest arguments and in the asymptotic region are not on a multiply-add either.
 
 **Three lanes are outside the choice entirely.** The half lanes
 evaluate in float and round to 16 bits once per value, so their multiply-adds are the float lane's —
