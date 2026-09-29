@@ -1519,19 +1519,16 @@ void CellRung(AccuracyTier tier, int nmax, double x, double* out) noexcept {
     }
 }
 
-/// One uniform-partition cell of the option space, at the one route, packing
-/// axis and rung this build carries that partition at.
+/// One uniform-partition cell of the option space, at the route and the rung
+/// this build carries that partition at, on either packing axis.
 ///
-/// The partition is served on one route, one packing axis and one rung, and each
-/// of the three is refused by the library where the call is named: the rational
-/// route at compile time in the fit selector, because its fit is a pair per
-/// derived piece and the grid is fixed; the across-orders axis, because the
-/// packed lane is instantiated over the two derived partitions and over no other
-/// table; and every rung past the reference multiplier, because the table stores
-/// one degree for every order and every interval. So the book this probe
-/// measures from holds no uniform cell but those three, which is why this arm
-/// can name them as constants instead of crossing an axis that has one value
-/// here.
+/// The partition is served on one route and one rung, and each is refused by the
+/// library where the call is named: the rational route at compile time in the fit
+/// selector, because its fit is a pair per derived piece and the grid is fixed;
+/// and every rung past the reference multiplier, because the table stores one
+/// degree for every order and every interval. Both packing axes are served - the
+/// across-orders packed lane carries the grid as well as the arguments axis does -
+/// so the axis is read off the cell rather than assumed.
 ///
 /// A cell outside them is not one any book of this probe can name - the
 /// enumeration asks \c BoysAccuracyGuaranteed before it registers a cell - and
@@ -1549,26 +1546,34 @@ void CellUniform(FitRoute route,
                  int nmax,
                  double x,
                  double* out) noexcept {
-    if (route != FitRoute::kChebyshev || pack != PackAxis::kArguments ||
-        tier != AccuracyTier::kReference)
+    if (route != FitRoute::kChebyshev || tier != AccuracyTier::kReference)
     {
         std::fprintf(stderr,
-                     "boys-probe: a uniform-partition cell was named at a route, a packing axis "
-                     "or a rung this partition is not served at (route %d, axis %d, m = %g)\n",
+                     "boys-probe: a uniform-partition cell was named at a route or a rung this "
+                     "revision has no member for (route %d, axis %d, m = %g); both are owed work "
+                     "and neither is a shape the call cannot have\n",
                      static_cast<int>(route),
                      static_cast<int>(pack),
                      AccuracyMultiplier(tier));
         std::abort();
     }
 
+    // The axis the book names is the axis the cell is measured at: the across-orders
+    // packed lane carries the uniform grid as well, so a cell named on either axis
+    // is evaluated through a policy naming that axis and never through the other.
     const auto with_scheme = [&]<EvalScheme kScheme>() {
-        using Policy = EvalPolicy<FitRoute::kChebyshev,
-                                  kScheme,
-                                  BoysBudget::kFloat,
-                                  PackAxis::kArguments,
-                                  FitGranularity::kUniform,
-                                  kDivision>;
-        BoysAllOrders<kBoysFullAccuracyMultiplier, Policy>(nmax, x, out);
+        if (pack == PackAxis::kOrders)
+        {
+            using Policy = EvalPolicy<FitRoute::kChebyshev, kScheme, BoysBudget::kFloat,
+                                      PackAxis::kOrders, FitGranularity::kUniform, kDivision>;
+            BoysAllOrders<kBoysFullAccuracyMultiplier, Policy>(nmax, x, out);
+        }
+        else
+        {
+            using Policy = EvalPolicy<FitRoute::kChebyshev, kScheme, BoysBudget::kFloat,
+                                      PackAxis::kArguments, FitGranularity::kUniform, kDivision>;
+            BoysAllOrders<kBoysFullAccuracyMultiplier, Policy>(nmax, x, out);
+        }
     };
 
     if (scheme == EvalScheme::kHorner)
