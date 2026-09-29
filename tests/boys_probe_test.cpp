@@ -1534,7 +1534,7 @@ TEST(ProbeTest, TheOptionSpaceIsTheLibrarysOwnProduct) {
 
         expected += routes_of(sample->lane).size() * boys::BoysEvalSchemes().size() *
                     report.granularities.size() * boys::BoysPackAxes().size() *
-                    rungs_of(sample->lane);
+                    boys::BoysDivisionForms().size() * rungs_of(sample->lane);
     }
 
     EXPECT_EQ(report.cells.size(), expected)
@@ -1557,6 +1557,7 @@ TEST(ProbeTest, TheOptionSpaceIsTheLibrarysOwnProduct) {
             EXPECT_EQ(measurement->scheme, cell.scheme) << cell.name;
             EXPECT_EQ(measurement->granularity, cell.granularity) << cell.name;
             EXPECT_EQ(measurement->pack, cell.pack) << cell.name;
+            EXPECT_EQ(measurement->division, cell.division) << cell.name;
             continue;
         }
 
@@ -1565,6 +1566,79 @@ TEST(ProbeTest, TheOptionSpaceIsTheLibrarysOwnProduct) {
                            "unstated omission the coverage exists to prevent";
         EXPECT_EQ(measurement, nullptr) << cell.name << " is refused yet was measured";
     }
+}
+
+// The division form is an axis of the option space like the others: the members
+// are read from the library rather than written out in the probe, every
+// combination of the other axes is enumerated at each of them, a cell of a
+// non-default form carries the library's own name for it, and the members are
+// ranked against each other inside one class rather than in a class apiece. The
+// defect this pins is the quiet one an unranked axis leaves: a member the
+// instrument never varies reads in a report exactly like a member the library
+// does not have.
+//
+// The protocol is the measuring one, because a class is made where a run
+// produced figures and the one-round run the option book is read from produces
+// none: a report from it carries no classes at all, and the ranking below would
+// be asserted against nothing. The rows read above are the same rows either way,
+// measured or not.
+TEST(ProbeTest, TheDivisionFormAxisIsEnumeratedAndRanked) {
+    const OptionProbeReport report = boys::RunOptionProbe(Timed());
+    const std::span<const boys::DivisionFormInfo> forms = boys::BoysDivisionForms();
+
+    ASSERT_EQ(forms.size(), 3u) << "this build reports a division-form axis of another size";
+
+    for (std::size_t i = 0; i < forms.size(); ++i)
+    {
+        EXPECT_EQ(static_cast<std::size_t>(forms[i].form), i)
+            << "the rows are not in enumerator order";
+        EXPECT_STREQ(forms[i].name, boys::DivisionFormName(forms[i].form));
+    }
+
+    // The no-axis cell of the double lane's reference rung, at each form. The
+    // default form's carries the name the shape row has always had, because that
+    // row runs the default policy and therefore divides in it; the other two
+    // carry the library's own spelling of the member beside it, and the three
+    // names differ — one name for two arithmetic bodies is what the segment is
+    // there to prevent.
+    std::set<std::string> names;
+
+    for (const boys::DivisionFormInfo& form : forms)
+    {
+        const std::string name = form.form == boys::kDefaultDivisionForm
+                                     ? std::string("batch-fp64")
+                                     : std::string("batch-") + form.name + "-fp64";
+
+        EXPECT_TRUE(names.insert(name).second) << name << " names two different cells";
+
+        const OptionProbeMeasurement* row = Find(report, name);
+
+        ASSERT_NE(row, nullptr) << name << " is not an option this run measured";
+        EXPECT_EQ(row->division, form.form) << name << " is measured at a form it does not name";
+        EXPECT_EQ(row->granularity, boys::FitGranularity::kShipped) << name;
+    }
+
+    // Ranked against each other, not in three classes of their own: this is the
+    // class the default is chosen from, and a row of each form is in it.
+    const boys::OptionProbeClass* certified =
+        ClassOf(report, boys::OptionPrecision::kFp64, AccuracyTier::kReference,
+                boys::OptionProbeShape::kAllOrders);
+
+    ASSERT_NE(certified, nullptr) << "the certified double lane's class is not in the report";
+
+    std::set<boys::DivisionForm> ranked;
+
+    for (const std::string& name : certified->ranked)
+    {
+        const OptionProbeMeasurement* row = Find(report, name);
+
+        ASSERT_NE(row, nullptr) << name << " is ranked by a class yet not measured";
+        ranked.insert(row->division);
+    }
+
+    EXPECT_EQ(ranked.size(), forms.size())
+        << "the class the default is chosen from ranks fewer division forms than the library "
+           "reports, so the axis is carried and not compared";
 }
 
 // A name that is a cell of the space this build refuses is answered with the

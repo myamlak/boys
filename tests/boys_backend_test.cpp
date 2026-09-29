@@ -261,6 +261,9 @@ static_assert(boys::EvalPolicy<>{}.kBudget == boys::BoysBudget::kFloat,
 static_assert(boys::EvalPolicy<>{}.kGranularity == boys::FitGranularity::kNarrow,
               "the default partition moved: a call site that names none must read the narrow "
               "pieces' coefficients");
+static_assert(boys::EvalPolicy<>{}.kDivision == boys::DivisionForm::kRefinedReciprocal,
+              "the default division form moved: it is the form the entries that take no policy "
+              "divide in, and the form the option probe reports an unmarked cell as running");
 
 // Naming the narrow partition is answered from its own tables; the combinations
 // that have no narrow table are refused where they are named rather than
@@ -275,4 +278,33 @@ TEST(BackendTest, ThePartitionNamesRoundTrip) {
     EXPECT_STREQ(boys::GranularityName(boys::FitGranularity::kNarrow), "narrow");
     EXPECT_STRNE(boys::GranularityName(boys::FitGranularity::kShipped),
                  boys::GranularityName(boys::FitGranularity::kNarrow));
+}
+
+// The division forms report themselves the way the other axes do: one row per
+// member, in enumerator order, named by the library's own function, with the
+// default one of the rows rather than a fourth thing beside them. A report that
+// has to name a form it measured reads the name from here, so a row this
+// accessor does not carry is a member no report can print.
+TEST(BackendTest, TheDivisionFormAxisNamesItsMembers) {
+    const std::span<const boys::DivisionFormInfo> forms = boys::BoysDivisionForms();
+
+    ASSERT_EQ(forms.size(), 3u);
+
+    bool carriesDefault = false;
+
+    for (std::size_t i = 0; i < forms.size(); ++i)
+    {
+        const boys::DivisionFormInfo& row = forms[i];
+
+        EXPECT_EQ(static_cast<std::size_t>(row.form), i) << "the rows are not in enumerator order";
+        EXPECT_STREQ(row.name, boys::DivisionFormName(row.form));
+        EXPECT_STRNE(row.name, "unknown");
+
+        if (row.form == boys::kDefaultDivisionForm)
+        {
+            carriesDefault = true;
+        }
+    }
+
+    EXPECT_TRUE(carriesDefault) << "the default form is not one of the rows this build reports";
 }

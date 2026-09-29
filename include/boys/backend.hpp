@@ -483,7 +483,7 @@ struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kNarrow> {
 ///                        \c FitGranularity::kNarrow
 /// \tparam kDivision      how the recursion's per-order division is performed;
 ///                        \c kDefaultDivisionForm by default, which is
-///                        \c DivisionForm::kExactDivision
+///                        \c DivisionForm::kRefinedReciprocal
 ///
 /// \ingroup boys
 template <FitRoute kFitRoute = kDefaultFitRoute,

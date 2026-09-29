@@ -379,6 +379,34 @@ struct PackAxisInfo {
 /// \ingroup boys
 std::span<const PackAxisInfo> BoysPackAxes() noexcept;
 
+/// What one division form is, as a report names it.
+///
+/// The form is how every recursive step of an evaluation ends, so it is a
+/// property of the arithmetic and not of a call shape: a row states which
+/// spelling of the per-order division it is, and every entry this build carries
+/// runs every one of them. That is why these rows carry no coverage fields
+/// where the packing axis and the partition rows do - there is no cell this axis
+/// is refused on - and what each member costs on a given host is what the option
+/// probe measures there.
+///
+/// \ingroup boys
+struct DivisionFormInfo {
+    DivisionForm form = DivisionForm::kExactDivision; ///< the selector value this row describes
+    const char* name = ""; ///< the name a report prints it under
+};
+
+/// The division forms this build carries, as a report prints them.
+///
+/// Which form a call runs is a template argument of its policy, so a caller
+/// choosing one names an enumerator; this answers which enumerators this build
+/// has, in the library's own spelling, without a caller writing the list out
+/// again.
+///
+/// \returns one row per form, in enumerator order
+///
+/// \ingroup boys
+std::span<const DivisionFormInfo> BoysDivisionForms() noexcept;
+
 /// One partition of the fitted regions, and what this build promises about it.
 ///
 /// The partition is how narrowly the fitted domain is cut into pieces, and it is

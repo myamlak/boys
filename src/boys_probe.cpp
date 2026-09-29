@@ -574,6 +574,11 @@ struct Option {
     EvalScheme scheme = kDefaultEvalScheme;
     FitGranularity granularity = kDefaultFitGranularity;
     PackAxis pack = PackAxis::kArguments;
+
+    /// The division form the option's recurrence steps end in: the sixth axis of
+    /// the policy, and the one a cell carries as a value where the others are
+    /// narrowed at run time.
+    DivisionForm division = kDefaultDivisionForm;
     AccuracyTier tier = AccuracyTier::kReference;
 
     /// The question this option answers, and the third part of the class it is
@@ -867,18 +872,33 @@ std::vector<AccuracyTier> LaneTiers(Precision lane) {
 /// The name a cell's option is printed under, in one grammar for all of them.
 ///
 /// The name states the cell's own axes and omits the defaults, so a defaulted
-/// route, scheme, partition and axis leave no segment behind. The partition and
-/// the rung share the first segment — `batch` for the shipped partition at the
-/// reference rung, `tier-<m>` for it at a rung, `narrow` for the other partition
-/// — and the precision closes every name, because a name is only ever read
-/// inside its class.
+/// route, scheme, partition, axis and division form leave no segment behind. The
+/// partition and the rung share the first segment — `batch` for the shipped
+/// partition at the reference rung, `tier-<m>` for it at a rung, `narrow` for
+/// the other partition — and the precision closes every name, because a name is
+/// only ever read inside its class.
+///
+/// The division form is named only where it is not the one the library's default
+/// policy runs, and that is the one reading of this axis under which the names
+/// above it keep meaning what they say: the shape rows carry the name this
+/// grammar gives the default form's cell, and the entries those rows call are the
+/// default policy's, so the form left unmarked is the form they really divide in.
+/// The other two members are named so that no two cells of one combination can
+/// print the same name — without the segment a reader would take the plain
+/// reciprocal's row for the default's, which is exactly the confusion the two
+/// forms' arithmetic differs by.
 ///
 /// The precision in the closing segment is the class the row is ranked in, not
 /// the lane its cells were enumerated from: the two half formats are one lane and
 /// two classes, so the same cell of that lane is named once for each format it is
 /// measured in.
-std::string CellName(OptionPrecision precision, FitGranularity granularity, PackAxis pack,
-                     FitRoute route, EvalScheme scheme, AccuracyTier tier) {
+std::string CellName(OptionPrecision precision,
+                     FitGranularity granularity,
+                     PackAxis pack,
+                     FitRoute route,
+                     EvalScheme scheme,
+                     DivisionForm division,
+                     AccuracyTier tier) {
     std::string name = "batch";
     const bool rungNamed = tier != AccuracyTier::kReference;
 
@@ -908,6 +928,15 @@ std::string CellName(OptionPrecision precision, FitGranularity granularity, Pack
     if (scheme == EvalScheme::kHorner)
     {
         name += "-horner";
+    }
+
+    if (division != kDefaultDivisionForm)
+    {
+        // The library's own spelling of the form, so the segment a report prints
+        // is the name the library answers for the enumerator and not a second
+        // way of writing it here.
+        name += "-";
+        name += DivisionFormName(division);
     }
 
     return name + "-" + PrecisionName(precision);
@@ -1052,10 +1081,10 @@ std::vector<std::string> DistinctRouteNames(std::span<const FitRouteInfo> routes
 ///
 /// The space is the product the library reports **for that precision**: the
 /// routes of the lane's own fit table, the evaluation schemes, the partitions of
-/// the fitted regions, the packing axes, and the accuracy rungs that lane
-/// serves. It is walked rather than listed, so a member a later change adds is
-/// enumerated and a cell the library refuses is counted as the unbuilt work it is
-/// instead of being absent from the report.
+/// the fitted regions, the packing axes, the division forms, and the accuracy
+/// rungs that lane serves. It is walked rather than listed, so a member a later
+/// change adds is enumerated and a cell the library refuses is counted as the
+/// unbuilt work it is instead of being absent from the report.
 ///
 /// The lane is part of the question and not a filter applied afterwards: the
 /// single-precision engine's fits are its own table, and a cell the double lane
@@ -1094,39 +1123,63 @@ std::vector<OptionProbeCell> EnumerateCells(OptionPrecision precision) {
             {
                 for (const PackAxisInfo& axis : BoysPackAxes())
                 {
-                    for (const AccuracyTier tier : tiers)
+                    for (const DivisionFormInfo& form : BoysDivisionForms())
                     {
-                        OptionProbeCell cell;
-                        const bool shapesRow =
-                            tier == AccuracyTier::kReference &&
-                            partition.granularity == FitGranularity::kShipped &&
-                            axis.axis == PackAxis::kArguments &&
-                            route.route == FitRoute::kChebyshev &&
-                            scheme.scheme == EvalScheme::kSplitClenshaw;
-                        cell.name = shapesRow
-                                        ? LaneShapeName(precision)
-                                        : CellName(precision, partition.granularity, axis.axis,
-                                                   route.route, scheme.scheme, tier);
-                        cell.precision = precision;
-                        cell.lane = lane;
-                        cell.route = route.route;
-                        cell.scheme = scheme.scheme;
-                        cell.granularity = partition.granularity;
-                        cell.pack = axis.axis;
-                        cell.tier = tier;
-
-                        const AccuracyFigure carriage = BoysAccuracyGuaranteed(
-                            lane, cell.route, cell.scheme, cell.pack, cell.granularity,
-                            cell.tier);
-
-                        cell.served = carriage.available;
-
-                        if (!carriage.available)
+                        for (const AccuracyTier tier : tiers)
                         {
-                            cell.reason = carriage.reason;
-                        }
+                            OptionProbeCell cell;
+                            // The form is part of the test and not only of the
+                            // name: the shape row's name is the one this grammar
+                            // gives the *default* form's cell, and the entry that
+                            // row measures runs the default form. A cell of the
+                            // same combination at another form is its own cell
+                            // and keeps its own name - two cells printing one
+                            // name is the collision the segment exists to stop.
+                            const bool shapesRow =
+                                tier == AccuracyTier::kReference &&
+                                partition.granularity == FitGranularity::kShipped &&
+                                axis.axis == PackAxis::kArguments &&
+                                route.route == FitRoute::kChebyshev &&
+                                scheme.scheme == EvalScheme::kSplitClenshaw &&
+                                form.form == kDefaultDivisionForm;
+                            cell.name = shapesRow ? LaneShapeName(precision)
+                                                  : CellName(precision,
+                                                             partition.granularity,
+                                                             axis.axis,
+                                                             route.route,
+                                                             scheme.scheme,
+                                                             form.form,
+                                                             tier);
+                            cell.precision = precision;
+                            cell.lane = lane;
+                            cell.route = route.route;
+                            cell.scheme = scheme.scheme;
+                            cell.granularity = partition.granularity;
+                            cell.pack = axis.axis;
+                            cell.division = form.form;
+                            cell.tier = tier;
 
-                        cells.push_back(cell);
+                            // The form is not asked about: it is how a step
+                            // divides, not which entry runs, so the library's
+                            // carriage answer is the same for every member of
+                            // the axis and the cell is served or refused on its
+                            // other five.
+                            const AccuracyFigure carriage = BoysAccuracyGuaranteed(lane,
+                                                                                   cell.route,
+                                                                                   cell.scheme,
+                                                                                   cell.pack,
+                                                                                   cell.granularity,
+                                                                                   cell.tier);
+
+                            cell.served = carriage.available;
+
+                            if (!carriage.available)
+                            {
+                                cell.reason = carriage.reason;
+                            }
+
+                            cells.push_back(cell);
+                        }
                     }
                 }
             }
@@ -1144,7 +1197,15 @@ std::vector<OptionProbeCell> EnumerateCells(OptionPrecision precision) {
 /// any route and scheme, the across-orders lane carries every route and scheme
 /// at any rung, and the narrow partition is reachable only as a policy.
 ///
-/// The entries whose call shape is not one of the five axes are named here,
+/// The division form of the rows named here is the library's default, and it is
+/// written as that constant rather than as an enumerator because it is a
+/// property of the entries the rows call: \c BoysAllOrders, \c BoysAllN and the
+/// narrow lanes' entries take no policy and divide in the default form, so a
+/// row that recorded another member would be claiming an arithmetic no entry it
+/// calls runs. Every other member of the axis is reached through the cell loop
+/// below, which is where a cell's own form becomes an instantiation.
+///
+/// The entries whose call shape is not one of the axes are named here,
 /// because a shape is a function and no table of them exists to read: the
 /// all-N per-run shape and its sorted overload, and the narrower lanes. Each
 /// option's arithmetic is resolved against backend::BoysBackends(), so an option
@@ -1161,10 +1222,17 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
     const backend::BackendInfo* fp64 = ResolveArithmetic(table, true);
     const backend::BackendInfo* fp32 = ResolveArithmetic(table, false);
 
-    const auto append = [&](std::string name, OptionKind kind, OptionPrecision precision,
-                            FitRoute route, EvalScheme scheme, FitGranularity granularity,
-                            PackAxis pack, AccuracyTier tier,
-                            const backend::BackendInfo* arithmetic, double bound) {
+    const auto append = [&](std::string name,
+                            OptionKind kind,
+                            OptionPrecision precision,
+                            FitRoute route,
+                            EvalScheme scheme,
+                            FitGranularity granularity,
+                            PackAxis pack,
+                            DivisionForm division,
+                            AccuracyTier tier,
+                            const backend::BackendInfo* arithmetic,
+                            double bound) {
         if (arithmetic == nullptr)
         {
             unoffered.push_back(std::move(name));
@@ -1181,6 +1249,7 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
         option.scheme = scheme;
         option.granularity = granularity;
         option.pack = pack;
+        option.division = division;
         option.tier = tier;
         option.shape = ShapeOf(kind);
         option.bound = bound;
@@ -1194,6 +1263,7 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
            EvalScheme::kSplitClenshaw,
            FitGranularity::kShipped,
            PackAxis::kArguments,
+           kDefaultDivisionForm,
            AccuracyTier::kReference,
            fp64,
            TierBound(AccuracyTier::kReference));
@@ -1204,6 +1274,7 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
            EvalScheme::kSplitClenshaw,
            FitGranularity::kShipped,
            PackAxis::kArguments,
+           kDefaultDivisionForm,
            AccuracyTier::kReference,
            fp64,
            TierBound(AccuracyTier::kReference));
@@ -1214,6 +1285,7 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
            EvalScheme::kSplitClenshaw,
            FitGranularity::kShipped,
            PackAxis::kArguments,
+           kDefaultDivisionForm,
            AccuracyTier::kReference,
            fp64,
            TierBound(AccuracyTier::kReference));
@@ -1224,6 +1296,7 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
            EvalScheme::kSplitClenshaw,
            FitGranularity::kShipped,
            PackAxis::kArguments,
+           kDefaultDivisionForm,
            AccuracyTier::kReference,
            fp32,
            LaneCellBound(OptionPrecision::kFp32, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw,
@@ -1239,6 +1312,7 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
            EvalScheme::kSplitClenshaw,
            FitGranularity::kShipped,
            PackAxis::kArguments,
+           kDefaultDivisionForm,
            AccuracyTier::kReference,
            fp32,
            LaneCellBound(OptionPrecision::kFp16, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw,
@@ -1251,6 +1325,7 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
            EvalScheme::kSplitClenshaw,
            FitGranularity::kShipped,
            PackAxis::kArguments,
+           kDefaultDivisionForm,
            AccuracyTier::kReference,
            fp32,
            LaneCellBound(OptionPrecision::kBf16, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw,
@@ -1285,9 +1360,16 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
             continue;
         }
 
-        if (cell.granularity == FitGranularity::kShipped &&
-            cell.pack == PackAxis::kArguments && cell.route == FitRoute::kChebyshev &&
-            cell.scheme == EvalScheme::kSplitClenshaw &&
+        // The form is part of the test for the same reason it is part of the
+        // shape row's: the row this skips is the one the named rows above carry
+        // at the default form, and it carries it at one form only. Skipping the
+        // cell without asking about the form would drop the plain and exact
+        // members of that combination out of the book entirely - a cell of the
+        // product with no row and no reason, which is the omission the coverage
+        // exists to prevent.
+        if (cell.granularity == FitGranularity::kShipped && cell.pack == PackAxis::kArguments &&
+            cell.route == FitRoute::kChebyshev && cell.scheme == EvalScheme::kSplitClenshaw &&
+            cell.division == kDefaultDivisionForm &&
             (cell.tier == AccuracyTier::kReference || cell.lane == Precision::kFp64))
         {
             continue;
@@ -1295,15 +1377,33 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
 
         if (cell.precision == OptionPrecision::kFp64)
         {
-            append(cell.name, OptionKind::kFp64Cell, cell.precision, cell.route, cell.scheme,
-                   cell.granularity, cell.pack, cell.tier, fp64, 0.0);
+            append(cell.name,
+                   OptionKind::kFp64Cell,
+                   cell.precision,
+                   cell.route,
+                   cell.scheme,
+                   cell.granularity,
+                   cell.pack,
+                   cell.division,
+                   cell.tier,
+                   fp64,
+                   0.0);
             continue;
         }
 
-        append(cell.name, OptionKind::kSingleCell, cell.precision, cell.route, cell.scheme,
-               cell.granularity, cell.pack, cell.tier, fp32,
-               LaneCellBound(cell.precision, cell.route, cell.scheme, cell.pack, cell.granularity,
-                             cell.tier));
+        append(
+            cell.name,
+            OptionKind::kSingleCell,
+            cell.precision,
+            cell.route,
+            cell.scheme,
+            cell.granularity,
+            cell.pack,
+            cell.division,
+            cell.tier,
+            fp32,
+            LaneCellBound(
+                cell.precision, cell.route, cell.scheme, cell.pack, cell.granularity, cell.tier));
     }
 
     // The relaxed rungs of the default policy, read off the same served-tier
@@ -1317,15 +1417,16 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
         }
 
         append(Text("tier-%g-fp64", AccuracyMultiplier(tier)),
-           OptionKind::kTierFp64,
-           OptionPrecision::kFp64,
-           FitRoute::kChebyshev,
-           EvalScheme::kSplitClenshaw,
-           FitGranularity::kShipped,
-           PackAxis::kArguments,
-           tier,
-           fp64,
-           TierBound(tier));
+               OptionKind::kTierFp64,
+               OptionPrecision::kFp64,
+               FitRoute::kChebyshev,
+               EvalScheme::kSplitClenshaw,
+               FitGranularity::kShipped,
+               PackAxis::kArguments,
+               kDefaultDivisionForm,
+               tier,
+               fp64,
+               TierBound(tier));
     }
 
     // The bound of every cell option is the figure the library documents for the
@@ -1360,21 +1461,27 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
 
 // --- one option's values ----------------------------------------------------
 
-/// One cell's own entry at one rung, as the cell's routes, schemes, partition
-/// and packing axis select it.
+/// One cell's own entry at one rung, as the cell's routes, schemes, partition,
+/// packing axis and division form select it.
 ///
 /// A cell that is not the default policy's own shape exists only as an
-/// instantiation: the partition and the packing axis are template arguments of
-/// the policy and have no run-time entry, so a consumer reaches them the way
-/// this does, by naming them. The rung is one branch per multiplier for the same
-/// reason - the multiplier is the first template argument of the entry - and the
-/// dispatch is the same five-way cross the library's own accuracy gate measures,
-/// so a cell this probe reports as served is a cell some entry of this build
-/// really runs.
-template <FitRoute kRoute, EvalScheme kScheme, PackAxis kPack, FitGranularity kGran>
+/// instantiation: the partition, the packing axis and the division form are
+/// template arguments of the policy and have no run-time entry, so a consumer
+/// reaches them the way this does, by naming them. The rung is one branch per
+/// multiplier for the same reason - the multiplier is the first template argument
+/// of the entry - and the dispatch is the same cross the library's own accuracy
+/// gate measures, so a cell this probe reports as served is a cell some entry of
+/// this build really runs.
+///
+/// \tparam kDivision the form the cell's recurrence steps divide in
+template <FitRoute kRoute,
+          EvalScheme kScheme,
+          PackAxis kPack,
+          FitGranularity kGran,
+          DivisionForm kDivision>
 void CellRung(AccuracyTier tier, int nmax, double x, double* out) noexcept {
     constexpr BoysBudget kBudget = BoysBudget::kFloat;
-    using Policy = EvalPolicy<kRoute, kScheme, kBudget, kPack, kGran>;
+    using Policy = EvalPolicy<kRoute, kScheme, kBudget, kPack, kGran, kDivision>;
 
     switch (tier)
     {
@@ -1403,18 +1510,30 @@ void CellRung(AccuracyTier tier, int nmax, double x, double* out) noexcept {
     }
 }
 
-/// The same, for a cell named at run time: each axis narrows to the template
-/// argument it names, so a cell is measured through its own policy and never
+/// The same, at one division form named as a compile-time value: the axes other
+/// than the form narrow at run time inside it, and every one of them reaches the
+/// instantiation it names, so a cell is measured through its own policy and never
 /// through another cell's.
-void CellPolicy(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity granularity,
-                AccuracyTier tier, int nmax, double x, double* out) noexcept {
+///
+/// \tparam kDivision the form this call's cells divide in
+template <DivisionForm kDivision>
+void CellFormPolicy(FitRoute route,
+                    EvalScheme scheme,
+                    PackAxis pack,
+                    FitGranularity granularity,
+                    AccuracyTier tier,
+                    int nmax,
+                    double x,
+                    double* out) noexcept {
     const auto with_partition = [&]<FitRoute kRoute, EvalScheme kScheme, PackAxis kPack>() {
         if (granularity == FitGranularity::kNarrow)
         {
-            CellRung<kRoute, kScheme, kPack, FitGranularity::kNarrow>(tier, nmax, x, out);
+            CellRung<kRoute, kScheme, kPack, FitGranularity::kNarrow, kDivision>(
+                tier, nmax, x, out);
         } else
         {
-            CellRung<kRoute, kScheme, kPack, FitGranularity::kShipped>(tier, nmax, x, out);
+            CellRung<kRoute, kScheme, kPack, FitGranularity::kShipped, kDivision>(
+                tier, nmax, x, out);
         }
     };
 
@@ -1447,6 +1566,45 @@ void CellPolicy(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity
     }
 }
 
+/// The same, for a cell named at run time, with the division form dispatched
+/// here: the form is a template argument of the policy like the partition and the
+/// packing axis, so a cell that runs one of the non-default forms needs an
+/// instantiation of its own to run, and the three cases below are that
+/// instantiation each.
+///
+/// The switch names its three enumerators and leaves no default label: a fourth
+/// member of the axis is a decision to make here rather than arithmetic to pick
+/// silently, and the build says so at this line instead of a cell quietly
+/// measuring another form's steps.
+///
+/// The form is a value of the cell and never a filter: every one of the three is
+/// served on every combination of the other axes, so no case here refuses.
+void CellPolicy(FitRoute route,
+                EvalScheme scheme,
+                PackAxis pack,
+                FitGranularity granularity,
+                DivisionForm division,
+                AccuracyTier tier,
+                int nmax,
+                double x,
+                double* out) noexcept {
+    switch (division)
+    {
+    case DivisionForm::kExactDivision:
+        CellFormPolicy<DivisionForm::kExactDivision>(
+            route, scheme, pack, granularity, tier, nmax, x, out);
+        return;
+    case DivisionForm::kPlainReciprocal:
+        CellFormPolicy<DivisionForm::kPlainReciprocal>(
+            route, scheme, pack, granularity, tier, nmax, x, out);
+        return;
+    case DivisionForm::kRefinedReciprocal:
+        CellFormPolicy<DivisionForm::kRefinedReciprocal>(
+            route, scheme, pack, granularity, tier, nmax, x, out);
+        return;
+    }
+}
+
 /// The engine budget a precision class runs at.
 ///
 /// It is a property of the class and not a choice inside it: the single-precision
@@ -1467,10 +1625,16 @@ constexpr BoysBudget BudgetOf(OptionPrecision precision) noexcept {
 /// double lane's \c CellRung, with the budget as a further template argument a
 /// consumer names, because it is a template argument of the engine's entries
 /// too.
-template <BoysBudget kBudget, FitRoute kRoute, EvalScheme kScheme, PackAxis kPack,
-          FitGranularity kGran>
+///
+/// \tparam kDivision the form the cell's recurrence steps divide in
+template <BoysBudget kBudget,
+          FitRoute kRoute,
+          EvalScheme kScheme,
+          PackAxis kPack,
+          FitGranularity kGran,
+          DivisionForm kDivision>
 void CellRungSingle(AccuracyTier tier, int nmax, float x, float* out) noexcept {
-    using Policy = EvalPolicy<kRoute, kScheme, kBudget, kPack, kGran>;
+    using Policy = EvalPolicy<kRoute, kScheme, kBudget, kPack, kGran, kDivision>;
 
     switch (tier)
     {
@@ -1499,22 +1663,33 @@ void CellRungSingle(AccuracyTier tier, int nmax, float x, float* out) noexcept {
     }
 }
 
-/// The same, with the budget as one further axis: each narrows to the template
-/// argument it names, so a cell is measured through its own policy and never
-/// through another cell's.
-void CellPolicySingle(BoysBudget budget, FitRoute route, EvalScheme scheme, PackAxis pack,
-                      FitGranularity granularity, AccuracyTier tier, int nmax, float x,
-                      float* out) noexcept {
-    const auto with_partition = [&]<BoysBudget kBudget, FitRoute kRoute, EvalScheme kScheme,
+/// The same, with the budget and the division form as two further axes: each
+/// narrows to the template argument it names, so a cell is measured through its
+/// own policy and never through another cell's.
+///
+/// \tparam kDivision the form this call's cells divide in
+template <DivisionForm kDivision>
+void CellFormPolicySingle(BoysBudget budget,
+                          FitRoute route,
+                          EvalScheme scheme,
+                          PackAxis pack,
+                          FitGranularity granularity,
+                          AccuracyTier tier,
+                          int nmax,
+                          float x,
+                          float* out) noexcept {
+    const auto with_partition = [&]<BoysBudget kBudget,
+                                    FitRoute kRoute,
+                                    EvalScheme kScheme,
                                     PackAxis kPack>() {
         if (granularity == FitGranularity::kNarrow)
         {
-            CellRungSingle<kBudget, kRoute, kScheme, kPack, FitGranularity::kNarrow>(tier, nmax, x,
-                                                                                    out);
+            CellRungSingle<kBudget, kRoute, kScheme, kPack, FitGranularity::kNarrow, kDivision>(
+                tier, nmax, x, out);
         } else
         {
-            CellRungSingle<kBudget, kRoute, kScheme, kPack, FitGranularity::kShipped>(tier, nmax, x,
-                                                                                     out);
+            CellRungSingle<kBudget, kRoute, kScheme, kPack, FitGranularity::kShipped, kDivision>(
+                tier, nmax, x, out);
         }
     };
 
@@ -1557,6 +1732,37 @@ void CellPolicySingle(BoysBudget budget, FitRoute route, EvalScheme scheme, Pack
     }
 }
 
+/// The same, for a cell named at run time, with the division form dispatched
+/// here for the same reason and in the same shape as the double lane's
+/// \c CellPolicy: the form is a template argument of the engine's entries, so
+/// each of the three cases below is the instantiation a cell of that form runs.
+void CellPolicySingle(BoysBudget budget,
+                      FitRoute route,
+                      EvalScheme scheme,
+                      PackAxis pack,
+                      FitGranularity granularity,
+                      DivisionForm division,
+                      AccuracyTier tier,
+                      int nmax,
+                      float x,
+                      float* out) noexcept {
+    switch (division)
+    {
+    case DivisionForm::kExactDivision:
+        CellFormPolicySingle<DivisionForm::kExactDivision>(
+            budget, route, scheme, pack, granularity, tier, nmax, x, out);
+        return;
+    case DivisionForm::kPlainReciprocal:
+        CellFormPolicySingle<DivisionForm::kPlainReciprocal>(
+            budget, route, scheme, pack, granularity, tier, nmax, x, out);
+        return;
+    case DivisionForm::kRefinedReciprocal:
+        CellFormPolicySingle<DivisionForm::kRefinedReciprocal>(
+            budget, route, scheme, pack, granularity, tier, nmax, x, out);
+        return;
+    }
+}
+
 /// One single-precision cell of the option space, evaluated as the entry its own
 /// axes and its class's budget select.
 ///
@@ -1565,26 +1771,48 @@ void CellPolicySingle(BoysBudget budget, FitRoute route, EvalScheme scheme, Pack
 /// space is an instantiation a consumer reaches by naming its policy, and the
 /// probe reaches it the same way.
 void CellValuesSingle(const Option& option, int nmax, float x, float* out) noexcept {
-    CellPolicySingle(BudgetOf(option.precision), option.route, option.scheme, option.pack,
-                     option.granularity, option.tier, nmax, x, out);
+    CellPolicySingle(BudgetOf(option.precision),
+                     option.route,
+                     option.scheme,
+                     option.pack,
+                     option.granularity,
+                     option.division,
+                     option.tier,
+                     nmax,
+                     x,
+                     out);
 }
 
 /// One cell of the option space, evaluated as the entry its axes select: the
 /// run-time tier entry for the default policy's own shape, which is the dispatch
 /// a consumer reaches without naming a template argument, and its own policy
 /// instantiation for every other cell, which is how a consumer reaches a
-/// partition or a packing axis. Both are branches on the same run-time values,
-/// so a cell's cost includes its own selection, as the run-time tier options'
-/// cost already does.
+/// partition, a packing axis or a division form. Both are branches on the same
+/// run-time values, so a cell's cost includes its own selection, as the run-time
+/// tier options' cost already does.
+///
+/// The run-time tier entry is the default policy's and therefore divides in the
+/// default form, whatever it is handed: it takes no form argument, so a cell at
+/// one of the other two forms would be measured through arithmetic it did not
+/// name. The form is part of the shortcut's own condition for that reason, and a
+/// cell of the default policy's shape at either other form takes its own
+/// instantiation below like any other cell.
 void CellValues(const Option& option, int nmax, double x, double* out) noexcept {
-    if (option.granularity == kDefaultFitGranularity &&
-        option.pack == PackAxis::kArguments)
+    if (option.granularity == kDefaultFitGranularity && option.pack == PackAxis::kArguments &&
+        option.division == kDefaultDivisionForm)
     {
         BoysAllOrdersAtTier(option.tier, option.route, option.scheme, nmax, x, out);
         return;
     }
 
-    CellPolicy(option.route, option.scheme, option.pack, option.granularity, option.tier, nmax, x,
+    CellPolicy(option.route,
+               option.scheme,
+               option.pack,
+               option.granularity,
+               option.division,
+               option.tier,
+               nmax,
+               x,
                out);
 }
 
@@ -3445,6 +3673,7 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
         measurement.scheme = options_[index].scheme;
         measurement.granularity = options_[index].granularity;
         measurement.pack = options_[index].pack;
+        measurement.division = options_[index].division;
         measurement.bound = options_[index].bound;
         measurement.ownBound = options_[index].ownBound;
         measurement.ownLo = options_[index].ownLo;
@@ -4080,10 +4309,11 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
             "of output\n";
     text += "  against the arithmetic. Everything a caller does not choose — the fit route, the "
             "evaluation\n";
-    text += "  scheme, the partition of the fitted regions, the packing axis, and whether a sorted "
-            "array is\n";
-    text += "  declared so that the all-N entry skips its sort — is a way of computing the same "
-            "answer and is\n";
+    text += "  scheme, the partition of the fitted regions, the packing axis, the division form "
+            "the recursion\n";
+    text += "  ends in, and whether a sorted array is declared so that the all-N entry skips its "
+            "sort — is a\n";
+    text += "  way of computing the same answer and is\n";
     text += "  a column inside the class, so those options compete in one ranking rather than "
             "dividing it.\n";
     text += "  Membership is decided by the precision, the rung and the shape, never by comparing "
@@ -4212,6 +4442,7 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
         std::vector<std::string> schemes;
         std::vector<std::string> axes;
         std::vector<std::string> partitions;
+        std::vector<std::string> forms;
 
         for (const EvalSchemeInfo& scheme : BoysEvalSchemes())
         {
@@ -4223,16 +4454,29 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
             axes.push_back(axis.name != nullptr ? axis.name : "(unnamed)");
         }
 
+        for (const DivisionFormInfo& form : BoysDivisionForms())
+        {
+            forms.push_back(form.name != nullptr ? form.name : "(unnamed)");
+        }
+
         for (const FitGranularityInfo& partition : report.granularities)
         {
             partitions.push_back(partition.name);
         }
 
         text += Text("  axes: %zu route(s) (%s) | %zu scheme(s) (%s) | %zu partition(s) (%s) |\n",
-                     routes.size(), Joined(routes).c_str(), schemes.size(),
-                     Joined(schemes).c_str(), partitions.size(), Joined(partitions).c_str());
-        text += Text("        %zu packing axis/axes (%s), each class's rungs counted above\n",
-                     axes.size(), Joined(axes).c_str());
+                     routes.size(),
+                     Joined(routes).c_str(),
+                     schemes.size(),
+                     Joined(schemes).c_str(),
+                     partitions.size(),
+                     Joined(partitions).c_str());
+        text += Text("        %zu packing axis/axes (%s) | %zu division form(s) (%s),\n",
+                     axes.size(),
+                     Joined(axes).c_str(),
+                     forms.size(),
+                     Joined(forms).c_str());
+        text += "        each class's rungs counted above\n";
     }
 
     text += "  a refused cell is refused by the library where it is named, not by this probe: it "
@@ -4817,10 +5061,11 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
         text += "    library's product is missing from this report;\n";
     }
     text += "  * the call shapes other than this workload's all-orders-per-argument one, which the "
-            "five axes\n";
+            "six axes\n";
     text += "    are not crossed with. The all-N grouping and its sorted-argument overload are\n";
     text += "    measured, at their default policy alone, as the all-n classes above: one call per\n";
-    text += "    order run, at the shipped route, scheme, partition and packing axis. Not measured\n";
+    text += "    order run, at the shipped route, scheme, partition, packing axis and division\n";
+    text += "    form. Not measured\n";
     text += "    at all are the library's other entries - the fixed-order call, which returns one\n";
     text += "    order across an array, and the array entry that takes a per-argument order, "
             "together\n";
@@ -4828,7 +5073,8 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
     text += "    outstanding work, not an impossibility. The axes are crossed on every\n";
     text += "    precision class: the routes each class's own lane reports its fits in, the "
             "schemes,\n";
-    text += "    partitions, packing axes and rungs of that lane, one row per served cell.\n";
+    text += "    partitions, packing axes, division forms and rungs of that lane, one row per "
+            "served cell.\n";
 
     return text;
 }

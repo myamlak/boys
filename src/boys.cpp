@@ -567,6 +567,19 @@ std::span<const PackAxisInfo> BoysPackAxes() noexcept {
     return rows;
 }
 
+std::span<const DivisionFormInfo> BoysDivisionForms() noexcept {
+    // Every row is served by every entry: the form is read inside the
+    // recurrence's own step, so naming one selects arithmetic and never an
+    // entry, and there is no combination of the other axes it is missing from.
+    static const std::array<DivisionFormInfo, 3> rows = {{
+        {DivisionForm::kExactDivision, DivisionFormName(DivisionForm::kExactDivision)},
+        {DivisionForm::kPlainReciprocal, DivisionFormName(DivisionForm::kPlainReciprocal)},
+        {DivisionForm::kRefinedReciprocal, DivisionFormName(DivisionForm::kRefinedReciprocal)},
+    }};
+
+    return rows;
+}
+
 std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
     // The rows are the tables' own counts and the certification's own figures,
     // so a regeneration that moved a piece, a degree or a delivered error moves

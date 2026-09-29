@@ -661,16 +661,16 @@ middle of theirs — a ranking that turns on which row the run anchored on.
 
 Options are ranked in classes, and a class is one precision, one accuracy rung — the multiplier an
 option was built at, which the library's own tables report — and one question shape: what the option
-hands back, either one argument's ladder up to that argument's own order or one common ladder over an
-array of arguments at one top order. Every row of a class was built at the same multiplier and
+hands back, either one argument's ladder up to that argument's own order or one common ladder over
+an array of arguments at one top order. Every row of a class was built at the same multiplier and
 answers the same question, so nothing inside one traded accuracy for speed and nothing inside it is
-an answer to something else; the routes, schemes, partitions and packing axes a caller does not
-choose are columns inside the class and compete in one ranking. The default is taken from the
-certified double lane's precision at the library's own full-accuracy multiplier, answering the shape
-this probe's workload asks: a faster row of a relaxed rung, of another precision, or of the other
-shape is a different class and never a default candidate. Within that class the default is the row
-the run's own figures put first, so the name it prints and the table it prints it beside never
-disagree about which option is cheapest.
+an answer to something else; the routes, schemes, partitions, packing axes and division forms a
+caller does not choose are columns inside the class and compete in one ranking. The default is taken
+from the certified double lane's precision at the library's own full-accuracy multiplier, answering
+the shape this probe's workload asks: a faster row of a relaxed rung, of another precision, or of
+the other shape is a different class and never a default candidate. Within that class the default is
+the row the run's own figures put first, so the name it prints and the table it prints it beside
+never disagree about which option is cheapest.
 
 When a class cannot be ordered — a pair whose within-round ratio band straddles one, or too few
 rounds for a band to exist — the run still ends with one combination, and it says how it reached it.

@@ -30,11 +30,11 @@
 /// field that carries it.
 ///
 /// **The whole option space, enumerated from the library.** The fit route, the
-/// evaluation scheme, the partition of the fitted regions and the packing axis
-/// are each a member of a set the library reports (BoysFitRoutes for the double
-/// lane and its carriers, BoysFitRoutesF32 for the single-precision engine,
-/// BoysEvalSchemes, BoysFitGranularities, BoysPackAxes), crossed with the
-/// accuracy rungs the build can name. The probe walks that product once per
+/// evaluation scheme, the partition of the fitted regions, the packing axis and
+/// the division form are each a member of a set the library reports (BoysFitRoutes
+/// for the double lane and its carriers, BoysFitRoutesF32 for the single-precision
+/// engine, BoysEvalSchemes, BoysFitGranularities, BoysPackAxes, BoysDivisionForms),
+/// crossed with the accuracy rungs the build can name. The probe walks that product once per
 /// precision lane, from the lane's own fit table and carriage answer rather than
 /// from a list written beside it, so a member the library gains is measured
 /// without the probe being edited, and no lane is measured at fewer axes than
@@ -60,10 +60,11 @@
 ///
 /// **Everything that only changes how one answer is computed is ranked inside
 /// the class.** A class's rows differ by the fit route they read, the scheme
-/// they sum it with, the partition of the fitted regions and the packing axis
-/// they carry, and by whether a sorted array is declared to the all-N entry so
-/// that it skips the sort — all of them interchangeable bodies for one answer,
-/// so they compete inside the class and never divide it. A class's winner is
+/// they sum it with, the partition of the fitted regions, the packing axis they
+/// carry and the division form their recurrence steps end in, and by whether a
+/// sorted array is declared to the all-N entry so that it skips the sort — all
+/// of them interchangeable bodies for one answer, so they compete inside the
+/// class and never divide it. A class's winner is
 /// therefore the fastest option of that precision, built at that rung, answering
 /// that question on this machine. A row of the class that documents another
 /// figure — the same rung reached with a looser bound — is a member and is
@@ -445,13 +446,15 @@ struct OptionProbeMeasurement {
 
     /// The axes the option instantiates, as the library reports them: the route
     /// whose fits it reads, the scheme it sums them with, the partition of the
-    /// fitted regions it reads, and the packing axis its entry carries. A
-    /// defaulted axis is still printed, so a row states the whole combination
-    /// rather than the part that differs from a default.
+    /// fitted regions it reads, the packing axis its entry carries, and the form
+    /// its recurrence steps divide in. A defaulted axis is still printed, so a row
+    /// states the whole combination rather than the part that differs from a
+    /// default.
     FitRoute route = kDefaultFitRoute;
     EvalScheme scheme = kDefaultEvalScheme; ///< the scheme it sums them with
     FitGranularity granularity = kDefaultFitGranularity; ///< the partition it reads
     PackAxis pack = PackAxis::kArguments; ///< the packing axis its entry carries
+    DivisionForm division = kDefaultDivisionForm; ///< the form its steps divide in
 
     /// The accuracy rung it evaluates at, the second part of its class's key:
     /// two options of one precision at different rungs document different bounds
@@ -719,11 +722,12 @@ struct OptionProbeClass {
 };
 
 /// One cell of the option space this library defines: one combination of the
-/// five axes an evaluation policy carries, and whether this build serves it.
+/// six axes an evaluation policy carries, and whether this build serves it.
 ///
 /// The space is finite and small — two routes by two schemes by two partitions
-/// by two packing axes by the accuracy rungs this build can name — so the probe
-/// enumerates all of it and states a reason for every cell it does not measure.
+/// by two packing axes by the division forms, by the accuracy rungs this build
+/// can name — so the probe enumerates all of it and states a reason for every
+/// cell it does not measure.
 /// A cell that is not served is refused by the library, not by the probe: the
 /// reason is the library's own, and the work it describes is unbuilt rather
 /// than impossible.
@@ -764,6 +768,11 @@ struct OptionProbeCell {
 
     /// The packing axis this cell fixes.
     PackAxis pack = PackAxis::kArguments;
+
+    /// The division form this cell fixes. Every member is served at every cell
+    /// of the other axes, so this one never decides carriage; it is part of the
+    /// cell because it is part of the combination an option runs.
+    DivisionForm division = kDefaultDivisionForm;
 
     /// The accuracy rung this cell fixes.
     AccuracyTier tier = AccuracyTier::kReference;
@@ -1116,9 +1125,9 @@ struct OptionProbeReport {
 /// OptionProbeReport::unoffered instead of being measured under a name that is
 /// not this build's; the relaxed accuracy tiers are found by asking the library
 /// what each tier it can name delivers, so a build serving fewer rungs offers
-/// fewer options; and the four axes a policy carries are walked over the sets
+/// fewer options; and the axes a policy carries are walked over the sets
 /// the library reports — BoysFitRoutes and BoysFitRoutesF32, BoysEvalSchemes,
-/// BoysFitGranularities and BoysPackAxes — crossed with those rungs and taken
+/// BoysFitGranularities, BoysPackAxes and BoysDivisionForms — crossed with those rungs and taken
 /// once per precision lane, so the option space is the library's own, lane by
 /// lane, and the coverage section can account for every cell of it, served or
 /// refused.
