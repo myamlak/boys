@@ -4309,13 +4309,13 @@ void BoysAllOrdersF32AtTier(AccuracyTier tier, int nmax, float x, float* out) no
 // engine branch is the certified F32 path verbatim, so the lanes are
 // bit-unchanged. The half-ULP representation term is m-independent.
 //
-// The policy is the caller's, defaulted to the lane's own: the four axes a
+// The policy is the caller's, defaulted to the lane's own: the five axes a
 // policy carries are the option space's, and every combination this lane's book
 // carries is a policy a consumer can name, so an entry that took no policy would
 // be three quarters of the lane's cells with no way to ask for them. The budget
 // is not one of those axes - it is what makes this lane the half lane - so it is
 // DefaultPolicyFp16's rather than the caller's, and a policy named here is read
-// for its route, scheme, partition and packing axis.
+// for its route, scheme, partition, packing axis and division form.
 
 // The budget a policy named on a half lane has to carry: it is the axis that
 // makes this lane the half lane, so a policy built at the float lane's budget

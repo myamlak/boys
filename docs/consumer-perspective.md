@@ -75,7 +75,7 @@ which orders it may be asked to seed a recursion at.
 ## Choosing inside the lane you picked
 
 Picking a lane is not the whole of the choice. Inside one lane the library offers the product of
-five axes, and each of them is a decision a caller can make:
+six axes, and each of them is a decision a caller can make:
 
 - **the fit route** — the stored fits that serve a region are either the Chebyshev ones the
   certified lanes are defined by, or a rational minimax alternative that holds the same bar by
@@ -86,17 +86,20 @@ five axes, and each of them is a decision a caller can make:
   or more narrowly, into pieces that hold the bar at a lower degree;
 - **the packing axis** — which of a call's values share a vector register: four arguments at one
   order, or four orders at one argument;
+- **the division form** — how each step of the recurrence divides: exactly, by a plain reciprocal,
+  or by a reciprocal refined back to the correctly-rounded quotient, which is bit-identical to
+  dividing and costs two fused multiply-adds to get there;
 - **the accuracy rung** — how far the stored fit is cut for this call, which is what the accuracy
   multiplier names.
 
-**Four of the five are names resolved where the code is written; the fifth is the call's own
-argument.** The route, the scheme, the partition and the packing axis are written into the call
-site, and the rung is the one a caller may need to decide at run time. The split is deliberate. How
+**Five of the six are names resolved where the code is written; the sixth is the call's own
+argument.** The route, the scheme, the partition, the packing axis and the division form are written
+into the call site, and the rung is the one a caller may need to decide at run time. The split is deliberate. How
 much accuracy you can afford may only be known at run time — from the size of the system you were
 handed, or from how many self-consistent-field cycles you are prepared to spend — so the rung has to
 be something you can compute there. Which fits to read and how to sum them is a decision made once,
 while the code is being written, and a call site that resolved it on every call would pay, every
-time, to rediscover what its author already knew. So those four are resolved where they are named
+time, to rediscover what its author already knew. So those five are resolved where they are named
 and nowhere else: there is no combination to look up at the call, no name to match and no registry
 to consult, and a call costs nothing beyond the arithmetic it asked for.
 
@@ -104,7 +107,7 @@ to consult, and a call costs nothing beyond the arithmetic it asked for.
 library draws.** Precision, accuracy rung and the shape of the question are the caller's, because
 they change what comes back: which arithmetic is used, how much error it is allowed, and whether the
 call answers for one order or for a ladder of them, at one argument or across an array of arguments.
-The four structural axes are the library's to default, and each precision has one setting that a
+The five structural axes are the library's to default, and each precision has one setting that a
 call naming nothing receives. A caller who cares about one of them may name it; a caller who does
 not is not asked to.
 

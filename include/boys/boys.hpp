@@ -1016,7 +1016,7 @@ void BoysAllOrdersAtTier(
 /// This is the entry for a caller that makes the two decisions a call site makes
 /// apart: **which combination to evaluate** is a structural choice, written once
 /// when the call is written and resolved there — the policy is a template
-/// argument, so the four axes cost nothing at the call, there is nothing to look
+/// argument, so the five axes cost nothing at the call, there is nothing to look
 /// up and no name to match at run time — while **how much accuracy to buy** is
 /// decided per call, from what the caller knows when the call is made. The two
 /// selections this surface offers apart are \c BoysAllOrders, which names the
