@@ -417,15 +417,21 @@ std::span<const DivisionFormInfo> BoysDivisionForms() noexcept;
 /// answered from another partition's tables, and the row is where those refusals
 /// can be counted from instead of being discovered one compile at a time.
 ///
-/// Both rows are the double lane's tables. The single-precision lanes hold one
+/// Every row describes a table the double lane's entries read. The uniform row
+/// describes a grid rather than a region's cut: its region-A fields are that
+/// grid's intervals, the one degree every order of it is stored at, and the
+/// coefficients it stores, and its region-B fields are zero because the grid is
+/// one table over the whole of the fitted domain rather than a region-A table
+/// beside a region-B seed. The single-precision lanes hold one
 /// coefficient set each, so they take no partition and naming one is refused
 /// where it is named.
 ///
 /// \c delivered is the worst figure the partition's certification measured over
 /// its pieces, and \c bound is the figure its tables are certified against — for
 /// the shipped partition the bar its fits are cut at, for the narrow one the
-/// per-piece round-up its certification publishes. The two are stated apart for
-/// the same reason the contract table's measured column and published column
+/// per-piece round-up its certification publishes, and for the uniform grid the
+/// round-up its own rows publish over the whole table. The two are stated apart
+/// for the same reason the contract table's measured column and published column
 /// are: a figure a sweep found is not the figure a caller may rely on. Both are
 /// figures for the stored fits, measured where a fit is read directly.
 ///

@@ -569,6 +569,157 @@ struct ChebyshevFit {
     };
 };
 
+// The uniform route: one fixed grid over the fitted domain, every order fitted
+// independently, no order built from another.
+//
+// The table is interval-major - [interval][order][coefficient] - so the whole
+// ladder one argument needs is a contiguous block, and each order is summed
+// from its own coefficients by the same FitSum the derived routes read their
+// pieces with. Nothing here recurs. That is the route's point: the derived
+// routes build a ladder upward from a seed, which is a serial dependency chain
+// over the orders, and no amount of instruction-level parallelism shortens it.
+//
+// The grid is fixed rather than derived, so the interval an argument falls in
+// is one multiply and a truncation and not a scan of piece edges. What the
+// route pays for those two is stored coefficients - one grid for all orders
+// rather than a walk that spends pieces where the function needs them - and a
+// floor on the work each order does, since every order carries its own degree
+// where a recursion's tail orders cost a step each.
+//
+// Above kFlatHi the table does not reach and the call falls through to the
+// asymptotic every other route ends in. The join needs no interpolation between
+// the two: kFlatHi is above kX1, so an argument the table does not serve is one
+// the asymptotic already served.
+inline constexpr double kFlatPerUnit = 7.0;
+
+static_assert(detail::kFlatWidth * kFlatPerUnit == 1.0,
+              "the uniform table's grid is addressed by multiplying x by "
+              "kFlatPerUnit and truncating, so that product must be exactly the "
+              "reciprocal of the stored interval width");
+
+template <EvalScheme kScheme>
+struct UniformFit {
+    using Partition = NarrowRegionAPartition;
+
+    static constexpr double kRegionAFitsFrom = detail::kX1;
+
+    // The uniform route reads one fixed grid and nothing else: it has no
+    // piece-indexed fit and no region-B seed. These members exist only because
+    // FitPolicy asks every fit for the whole contract the bodies are written
+    // against, and they refuse at compile time rather than answering, because a
+    // body that reaches one is a body asking this route for a value it does not
+    // have - the reading it would be answered with would come from somewhere
+    // else entirely.
+    //
+    // They delegated to the narrow Chebyshev fit in an earlier revision, with a
+    // comment claiming no body reached them. The all-n entry reaches them: its
+    // region-A body asks the policy for a per-argument value and steps a
+    // recursion downward, so a policy naming this partition was answered from
+    // the narrow fits - certified numbers, from a route the caller never named,
+    // with nothing reporting the substitution. The comment was an absence
+    // asserted rather than measured.
+    //
+    // They cannot refuse at compile time, which is what they ought to do:
+    // FitPolicy asks for them by name, and the concept check instantiates these
+    // bodies, so a static_assert here refuses the route's own path instead of
+    // the bodies that are not served by it. The compile-time refusal therefore
+    // lives at the entries that do not carry the partition, and these answer
+    // with a value no route can produce, so a body that slips past that guard
+    // fails a comparison instead of returning plausible numbers from somewhere
+    // else. Debug builds name the mistake where it happens.
+    static double EvalPiece(std::size_t index, double t) noexcept {
+        assert(!"the uniform fit is not piece-indexed: it is one fixed grid read "
+                        "interval-major. A body reaching here is a body this partition "
+                        "does not serve, and it must refuse the partition where it is named");
+        return std::nan("") + static_cast<double>(index) + t;
+    }
+
+    static double RegionBSeed(double x) noexcept {
+        assert(!"the uniform fit stores no region-B seed: region B is one of the walks "
+                        "this route replaces with a fixed grid, not a region it reads");
+        return std::nan("") + x;
+    }
+
+    template <DivisionForm kForm = kDefaultDivisionForm>
+    struct BandSource {
+        explicit BandSource(double x) noexcept
+        {
+            assert(!"the uniform fit has no band source: it steps no upward recursion "
+                            "from a stored seed");
+            (void)x;
+        }
+
+        double Next(int l, double x) noexcept {
+            assert(!"the uniform fit has no band to step along: every order is read "
+                            "from its own coefficients, so there is no next one to build");
+            return std::nan("") + static_cast<double>(l) + x;
+        }
+    };
+};
+
+// Where an argument sits on the uniform grid: the interval, and the argument
+// mapped into it. One copy, because the ladder and the single order must agree
+// on it to the bit - two spellings of the same index arithmetic would be two
+// chances for them to disagree about which interval an argument falls in, and
+// nothing would report it.
+struct FlatPoint {
+    std::size_t block; ///< first coefficient of this interval's order-0 fit
+    double t;          ///< the argument mapped into [-1, 1) on that interval
+};
+
+inline FlatPoint FlatLocate(double x) noexcept {
+    int iv = static_cast<int>(x * kFlatPerUnit);
+
+    if (iv > detail::kFlatIntervals - 1)
+    {
+        iv = detail::kFlatIntervals - 1;
+    }
+
+    const double u = x * kFlatPerUnit;
+
+    return FlatPoint{static_cast<std::size_t>(iv) *
+                         static_cast<std::size_t>(kMaxBoysOrder + 1) *
+                         static_cast<std::size_t>(detail::kFlatDeg + 1),
+                     2.0 * (u - static_cast<double>(iv)) - 1.0};
+}
+
+/// One order off the uniform table, read from its own coefficients.
+template <typename Policy>
+double UniformOrderAt(const FlatPoint& at, int l) noexcept {
+    const std::size_t base =
+        at.block + static_cast<std::size_t>(l) * static_cast<std::size_t>(detail::kFlatDeg + 1);
+
+    return FitSum<Policy::kScheme, backend::ScalarFp64>(detail::kFlatCoeffs.data() + base,
+                                                        detail::kFlatMonoCoeffs.data() + base,
+                                                        detail::kFlatDeg,
+                                                        at.t);
+}
+
+// One argument's ladder off the uniform table: every order read from its own
+// coefficients, none from another's.
+template <typename Policy>
+void UniformAllOrders(int nmax, double x, double* out) noexcept {
+    const FlatPoint at = FlatLocate(x);
+
+    for (int l = 0; l <= nmax; ++l)
+    {
+        out[l] = UniformOrderAt<Policy>(at, l);
+    }
+}
+
+// One order at one argument, off the same table and the same index.
+//
+// This is where the route is strongest rather than weakest: a call that needs
+// one order pays for one order. The ladder form computes every order it is
+// asked for and cannot know that only one is wanted, which is the cost the
+// option probe measures against the recursing routes - they seed once and step,
+// so their tail orders are nearly free while this one's are not. Reading a
+// single order has no tail to pay for.
+template <typename Policy>
+double UniformSingleOrder(int n, double x) noexcept {
+    return UniformOrderAt<Policy>(FlatLocate(x), n);
+}
+
 // The rational minimax route: a numerator/denominator pair per piece, read by
 // Horner in the same mapped argument, the denominator stored as q_1..q_k with
 // its constant term held at 1 - one fused multiply-add per coefficient and a
@@ -2056,6 +2207,21 @@ void AllOrdersBody(int nmax, double x, double* out) noexcept {
         return;
     }
 
+    // The uniform route answers the whole of its table's domain from the table
+    // and hands everything above it to the asymptotic below, which reaches no
+    // fit: the join is above kX1, so an argument past it satisfies neither of
+    // the two region tests that follow and falls through to the asymptotic by
+    // the tests themselves rather than by a third one written here.
+    if constexpr (Policy::kGranularity == FitGranularity::kUniform)
+    {
+        if (x < detail::kFlatHi)
+        {
+            UniformAllOrders<Policy>(nmax, x, out);
+
+            return;
+        }
+    }
+
     if (x < kX0)
     {
         // The pure per-(n, x) dispatch, driven by the n-indexed threshold
@@ -2158,6 +2324,17 @@ double SingleOrder(int n, double x) noexcept {
         return 1.0 / (2.0 * n + 1.0);
     }
 
+    // The uniform route's own domain, as in AllOrdersBody and for the same
+    // reason: above the join the tests below reach the asymptotic by themselves,
+    // so this is the whole of what the route has to answer for here.
+    if constexpr (Policy::kGranularity == FitGranularity::kUniform)
+    {
+        if (x < detail::kFlatHi)
+        {
+            return UniformSingleOrder<Policy>(n, x);
+        }
+    }
+
     if (x < kX0)
     {
         if (x >= detail::kTierThresholds[static_cast<std::size_t>(n)])
@@ -2226,6 +2403,57 @@ double SingleOrder(int n, double x) noexcept {
 // The per-argument entries do not ask for it, because their bodies take the fit
 // from the policy: they carry either route at either rung, and the rational one
 // through RationalFitAtRung.
+// The uniform partition is carried by the all-orders and single-order bodies,
+// which read its table directly, and by no other body here. Every other body
+// reaches its values through a recursion over the orders - a seed stepped
+// upward, or a piece stepped downward - and the uniform table offers neither:
+// it is fitted per order with no recurrence, which is the point of it.
+//
+// A body without a uniform branch that is handed a uniform policy does not fail
+// to compile on its own: it asks the policy's contract members for values, and
+// those are answered by the narrow fits, so the call returns certified numbers
+// from a partition the caller never named and reports nothing. That is what the
+// all-n entry did. This refuses the combination where it is named, which is the
+// only place the mistake can be answered honestly.
+template <EvalPolicyLike Policy>
+constexpr void RefuseUniformPartition() noexcept
+{
+    static_assert(Policy::kGranularity != FitGranularity::kUniform,
+                  "this body has no uniform branch: it reaches its values through a recursion "
+                  "over the orders, and the uniform table is fitted per order with no "
+                  "recurrence to enter. A policy naming that partition here would be answered "
+                  "by another partition's fits under the uniform name. Either give this body "
+                  "a branch that reads the uniform table, or refuse the partition here - do "
+                  "not leave it to the policy's contract members");
+}
+
+// The uniform partition is served at the full-accuracy multiplier only.
+//
+// Its table is fitted at one degree for every order and for every interval, so
+// a relaxed rung has nothing to cut: no criterion chooses where the truncation
+// costs more than it saves, and there is no per-order effective-degree table to
+// read. The two entries that carry the partition reach it through a branch that
+// answers the whole of the table's domain at m = 1, but their rung paths are
+// written separately, against the routes that recurse - and a uniform policy
+// reaching one of those was answered by the narrow fits through
+// PolicyRegionAValueAtRung, whose only test is the shipped partition. Certified
+// numbers, from a partition the caller never named, with nothing reporting it.
+//
+// Refused here rather than left to the rung bodies, because the rung paths are
+// a second implementation of the same entries and the branch that carries the
+// partition does not cover them. That is the same shape as the all-n defect:
+// a guard that covers one path and not its sibling.
+template <typename Policy, double kAccuracyMultiplier>
+constexpr void RefuseUniformAtRung() noexcept
+{
+    static_assert(Policy::kGranularity != FitGranularity::kUniform || kAccuracyMultiplier == 1.0,
+                  "the uniform partition is served at m = 1 only: its table is fitted at one "
+                  "degree for every order and interval, so a relaxed rung has no criterion to "
+                  "cut it by and no effective-degree table to read. Naming it at a rung would "
+                  "be answered by another partition's fits under the uniform name. Either give "
+                  "the uniform route a rung, or name it at m = 1");
+}
+
 template <EvalPolicyLike Policy>
 constexpr void RequireShippedRoute() noexcept
 {
@@ -2254,6 +2482,8 @@ constexpr void RequireShippedRoute() noexcept
 
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 double BoysSingleImpl(int n, double x) noexcept {
+    RefuseUniformAtRung<Policy, kAccuracyMultiplier>();
+
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
     static_assert(Policy::kPack == PackAxis::kArguments,
@@ -2348,6 +2578,8 @@ void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept;
 
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 void BoysAllOrdersImpl(int nmax, double x, double* out) noexcept {
+    RefuseUniformAtRung<Policy, kAccuracyMultiplier>();
+
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
     assert(nmax >= 0 && nmax <= kMaxBoysOrder);
@@ -2485,6 +2717,8 @@ void BoysAllOrdersImpl(int nmax, double x, double* out) noexcept {
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 void BoysFixedNImpl(
     int n, const double* x, double* out, std::size_t count, std::size_t stride) noexcept {
+    RefuseUniformPartition<Policy>();
+
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
     static_assert(Policy::kPack == PackAxis::kArguments,
@@ -2655,6 +2889,8 @@ void BoysFixedNImpl(
 // family served to every caller.
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 float BoysSingleF32Impl(int n, float x) noexcept {
+    RefuseUniformPartition<Policy>();
+
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
     assert(n >= 0 && n <= kMaxBoysOrder);
@@ -2676,6 +2912,8 @@ float BoysSingleF32Impl(int n, float x) noexcept {
 
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
+    RefuseUniformPartition<Policy>();
+
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
     assert(nmax >= 0 && nmax <= kMaxBoysOrder);
@@ -2857,6 +3095,8 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
 // has on the device.
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 void BoysAllNF32Impl(int nmax, const float* x, float* out, std::size_t count) noexcept {
+    RefuseUniformPartition<Policy>();
+
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
     assert(nmax >= 0 && nmax <= kMaxBoysOrder);
@@ -3273,6 +3513,23 @@ extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
                                          FitGranularity::kNarrow>(int nmax,
                                                                   double x,
                                                                   double* out) noexcept;
+// The uniform grid's cells. The partition names how the fitted intervals are
+// cut and the across-orders lane reads the grid as the one contiguous ladder it
+// is - the coefficients of every order of an interval one after the other, so
+// the fetch that steps an order to the next is a stride as it is on the shipped
+// cover - which is why this partition reaches this axis at all. One route and
+// one rung: the grid is a Chebyshev family read at a fixed cut, so the rational
+// family has no member over it (RouteFit refuses the pair where it is named),
+// and one stored degree for every order and every interval leaves a rung
+// nothing to cut by (RefuseUniformAtRung refuses the policy that names one).
+// The scheme is the axis's own, either of the family's two stored forms.
+extern template void
+BoysAllOrdersPacked<EvalScheme::kSplitClenshaw, 1.0, FitRoute::kChebyshev, FitGranularity::kUniform>(
+    int nmax, double x, double* out) noexcept;
+extern template void
+BoysAllOrdersPacked<EvalScheme::kHorner, 1.0, FitRoute::kChebyshev, FitGranularity::kUniform>(
+    int nmax, double x, double* out) noexcept;
+
 // The single-precision lane's shapes on the same axis: two schemes and two
 // computation budgets at the reference multiplier with either route, and the
 // six relaxed rungs of either route at either scheme. Declared here for the
@@ -3323,16 +3580,90 @@ extern template void BoysAllOrdersPacked<EvalScheme::kHorner,
     BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 16384.0, kBudget) \
     BOYS_F32_ORDERS_PACKED_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 65536.0, kBudget)
 
+// The narrow partition's shapes on this lane, which boys_orders_simd.cpp
+// instantiates and this block declared none of until they were counted: the
+// same four (scheme, route) pairs at the reference rung plus the six relaxed
+// ones, cut against the narrow table. They are declared for the reason the
+// shapes above are - a call site reaching one of them must reach the definition
+// the library already holds rather than instantiating a second copy of the body
+// - and the absence of these declarations was invisible because nothing
+// compared the two lists. tools/check_orders_packed_cells.py now does.
+#define BOYS_F32_ORDERS_PACKED_NARROW(kScheme, kBudget)                                            \
+    extern template void BoysAllOrdersF32Packed<kScheme, 1.0, FitRoute::kChebyshev, kBudget,       \
+                                                FitGranularity::kNarrow>(                          \
+        int nmax, float x, float* out) noexcept;                                                   \
+    extern template void BoysAllOrdersF32Packed<kScheme, 1.0, FitRoute::kRationalMinimax, kBudget, \
+                                                FitGranularity::kNarrow>(                          \
+        int nmax, float x, float* out) noexcept;
+
+#define BOYS_F32_ORDERS_PACKED_NARROW_RUNG(kScheme, kRoute, kMultiplier, kBudget)                  \
+    extern template void BoysAllOrdersF32Packed<kScheme, kMultiplier, kRoute, kBudget,             \
+                                                FitGranularity::kNarrow>(                          \
+        int nmax, float x, float* out) noexcept;
+
+#define BOYS_F32_ORDERS_PACKED_NARROW_RUNGS(kBudget)                                               \
+    BOYS_F32_ORDERS_PACKED_NARROW_RUNG(EvalScheme::kSplitClenshaw, FitRoute::kChebyshev,           \
+                                       64.0, kBudget)                                              \
+    BOYS_F32_ORDERS_PACKED_NARROW_RUNG(EvalScheme::kSplitClenshaw, FitRoute::kChebyshev,           \
+                                       256.0, kBudget)                                             \
+    BOYS_F32_ORDERS_PACKED_NARROW_RUNG(EvalScheme::kSplitClenshaw, FitRoute::kChebyshev,           \
+                                       1024.0, kBudget)                                            \
+    BOYS_F32_ORDERS_PACKED_NARROW_RUNG(EvalScheme::kSplitClenshaw, FitRoute::kChebyshev,           \
+                                       4096.0, kBudget)                                            \
+    BOYS_F32_ORDERS_PACKED_NARROW_RUNG(EvalScheme::kSplitClenshaw, FitRoute::kChebyshev,           \
+                                       16384.0, kBudget)                                           \
+    BOYS_F32_ORDERS_PACKED_NARROW_RUNG(EvalScheme::kSplitClenshaw, FitRoute::kChebyshev,           \
+                                       65536.0, kBudget)                                           \
+    BOYS_F32_ORDERS_PACKED_NARROW_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 64.0, kBudget)   \
+    BOYS_F32_ORDERS_PACKED_NARROW_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 256.0, kBudget)  \
+    BOYS_F32_ORDERS_PACKED_NARROW_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 1024.0, kBudget) \
+    BOYS_F32_ORDERS_PACKED_NARROW_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 4096.0, kBudget) \
+    BOYS_F32_ORDERS_PACKED_NARROW_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 16384.0, kBudget)\
+    BOYS_F32_ORDERS_PACKED_NARROW_RUNG(EvalScheme::kHorner, FitRoute::kChebyshev, 65536.0, kBudget)\
+    BOYS_F32_ORDERS_PACKED_NARROW_RUNG(EvalScheme::kSplitClenshaw, FitRoute::kRationalMinimax,     \
+                                       64.0, kBudget)                                              \
+    BOYS_F32_ORDERS_PACKED_NARROW_RUNG(EvalScheme::kSplitClenshaw, FitRoute::kRationalMinimax,     \
+                                       256.0, kBudget)                                             \
+    BOYS_F32_ORDERS_PACKED_NARROW_RUNG(EvalScheme::kSplitClenshaw, FitRoute::kRationalMinimax,     \
+                                       1024.0, kBudget)                                            \
+    BOYS_F32_ORDERS_PACKED_NARROW_RUNG(EvalScheme::kSplitClenshaw, FitRoute::kRationalMinimax,     \
+                                       4096.0, kBudget)                                            \
+    BOYS_F32_ORDERS_PACKED_NARROW_RUNG(EvalScheme::kSplitClenshaw, FitRoute::kRationalMinimax,     \
+                                       16384.0, kBudget)                                           \
+    BOYS_F32_ORDERS_PACKED_NARROW_RUNG(EvalScheme::kSplitClenshaw, FitRoute::kRationalMinimax,     \
+                                       65536.0, kBudget)                                           \
+    BOYS_F32_ORDERS_PACKED_NARROW_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 64.0,      \
+                                       kBudget)                                                    \
+    BOYS_F32_ORDERS_PACKED_NARROW_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 256.0,     \
+                                       kBudget)                                                    \
+    BOYS_F32_ORDERS_PACKED_NARROW_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 1024.0,    \
+                                       kBudget)                                                    \
+    BOYS_F32_ORDERS_PACKED_NARROW_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 4096.0,    \
+                                       kBudget)                                                    \
+    BOYS_F32_ORDERS_PACKED_NARROW_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 16384.0,   \
+                                       kBudget)                                                    \
+    BOYS_F32_ORDERS_PACKED_NARROW_RUNG(EvalScheme::kHorner, FitRoute::kRationalMinimax, 65536.0,   \
+                                       kBudget)
+
 BOYS_F32_ORDERS_PACKED_REFERENCE(EvalScheme::kSplitClenshaw, BoysBudget::kFloat)
 BOYS_F32_ORDERS_PACKED_REFERENCE(EvalScheme::kSplitClenshaw, BoysBudget::kFp16)
 BOYS_F32_ORDERS_PACKED_REFERENCE(EvalScheme::kHorner, BoysBudget::kFloat)
 BOYS_F32_ORDERS_PACKED_REFERENCE(EvalScheme::kHorner, BoysBudget::kFp16)
 BOYS_F32_ORDERS_PACKED_RUNGS(BoysBudget::kFloat)
 BOYS_F32_ORDERS_PACKED_RUNGS(BoysBudget::kFp16)
+BOYS_F32_ORDERS_PACKED_NARROW(EvalScheme::kSplitClenshaw, BoysBudget::kFloat)
+BOYS_F32_ORDERS_PACKED_NARROW(EvalScheme::kSplitClenshaw, BoysBudget::kFp16)
+BOYS_F32_ORDERS_PACKED_NARROW(EvalScheme::kHorner, BoysBudget::kFloat)
+BOYS_F32_ORDERS_PACKED_NARROW(EvalScheme::kHorner, BoysBudget::kFp16)
+BOYS_F32_ORDERS_PACKED_NARROW_RUNGS(BoysBudget::kFloat)
+BOYS_F32_ORDERS_PACKED_NARROW_RUNGS(BoysBudget::kFp16)
 
 #undef BOYS_F32_ORDERS_PACKED_REFERENCE
 #undef BOYS_F32_ORDERS_PACKED_RUNGS
 #undef BOYS_F32_ORDERS_PACKED_RUNG
+#undef BOYS_F32_ORDERS_PACKED_NARROW
+#undef BOYS_F32_ORDERS_PACKED_NARROW_RUNG
+#undef BOYS_F32_ORDERS_PACKED_NARROW_RUNGS
 
 // ---------------------------------------------------------------------------
 // The all-orders batch over an argument array (BoysAllN)
@@ -3925,6 +4256,8 @@ void BoysAllNImpl(int nmax,
                   double* out,
                   std::size_t count,
                   std::size_t* workspace) noexcept {
+    RefuseUniformPartition<Policy>();
+
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
     assert(nmax >= 0 && nmax <= kMaxBoysOrder);
@@ -4045,6 +4378,8 @@ void BoysAllNSortedImpl(int nmax,
                         const double* x,
                         double* out,
                         std::size_t count) noexcept {
+    RefuseUniformPartition<Policy>();
+
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
     assert(nmax >= 0 && nmax <= kMaxBoysOrder);
@@ -4135,6 +4470,8 @@ void BoysAllNSortedPartitionedImpl(int nmax,
 // an alternating before/after pair with the canary agreeing to 1%.
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 void BoysAllNAtOrdersImpl(const int* n, const double* x, double* out, std::size_t count) noexcept {
+    RefuseUniformPartition<Policy>();
+
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
     assert(count == 0 || n != nullptr);

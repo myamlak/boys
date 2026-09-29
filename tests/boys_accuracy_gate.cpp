@@ -6205,6 +6205,21 @@ int main(int argc, char** argv) {
     // at the bars the lanes already document, so the axis stands on the footing
     // the shipped partition stands on rather than on one of its own.
     //
+    // The two are the derived partitions, and the library ships a third the book
+    // does not hold: the uniform grid, whose row is enumerated by
+    // BoysFitGranularities beside these two and whose cells are measured in the
+    // combination book below at the one route, the one packing axis and the one
+    // rung it is served at. It is not a member here because every row of this
+    // book is swept at every rung of the enumeration and its table is stored at
+    // one degree for every order and every interval - the library refuses a rung
+    // of it where the call is named - and because its stored fits are one table
+    // over the whole of [0, kFlatHi) rather than a region-A cut beside a region-B
+    // seed, so the arm this book's `granStoredFit` reads the two members through
+    // has no third branch to take. Both are work rather than impossibility: the
+    // arms are a body on the kernel's side and a table on this book's, and until
+    // they exist the partition's delivered accuracy is measured where it is
+    // served, by the combination book and by the accuracy suite.
+    //
     // Every entry row is cast over region A or narrower, and that is the
     // difference from the two books above rather than a convenience. An entry
     // row over the whole grid is won by region C at the top order, where no
@@ -10301,6 +10316,33 @@ int main(int argc, char** argv) {
                     o.note.c_str());
     }
 
+    // The members of the granularity axis this book's own slots do not hold. The
+    // book above sweeps two of them, and every one of its rows is asked at every
+    // rung of the tier enumeration - a question the uniform partition has no
+    // second answer to: its table is stored at one degree for every order and
+    // every interval, so it is served at the reference multiplier alone and there
+    // is no rung to cut. It is named here rather than left out of the list above
+    // in silence, and where it was measured is the combination book's: the cross
+    // below enumerates the partition from BoysFitGranularities, measures both of
+    // its cells and counts every cell of it this build refuses.
+    for (const boys::FitGranularityInfo& row : boys::BoysFitGranularities())
+    {
+        if (static_cast<std::size_t>(row.granularity) < kGranMembers)
+        {
+            continue;
+        }
+
+        std::printf("  %-10s %-34s %-4s %-4s %-4s %s\n",
+                    "granularity",
+                    row.name,
+                    "n/a",
+                    "n/a",
+                    "n/a",
+                    "this book's rows are asked at every rung, and this partition is served at "
+                    "the reference multiplier alone: the combination book below measures it, both "
+                    "schemes, on the cross's own partition axis");
+    }
+
     std::printf("  %s\n", std::string(150, '-').c_str());
 
     std::size_t unbackedRefusals = 0;
@@ -10449,6 +10491,29 @@ int main(int argc, char** argv) {
     //   rung        the tiers AccuracyMultiplier answers for, from kReference to
     //               the last member the enumeration declares
     //
+    // The division form is a seventh axis and is not crossed here, and both
+    // halves of that sentence are the point. It is an axis: a policy field, an
+    // arithmetic the library carries three of, an accessor of its own, and the
+    // one axis the option probe crosses that this block did not - so the three
+    // forms were measured for speed by the probe and against no published bound
+    // by anything, which is a cell offered and never checked.
+    //
+    // It is not crossed *here* because nothing about a combination's state
+    // depends on it. DivisionFormInfo carries no coverage fields where
+    // PackAxisInfo and FitGranularityInfo carry them, and its own comment says
+    // why: "there is no cell this axis is refused on". Multiplying this block's
+    // count by three would therefore report three times the library's
+    // outstanding work for one unbuilt table, which is the arithmetic a reader
+    // is entitled to trust.
+    //
+    // What it multiplies instead is the measurement. Every cell below is
+    // evaluated at every form the accessor answers, each form is judged against
+    // the figure the row's own lane publishes, and the delivered figure the row
+    // prints is the worst of the three. A form that leaves the bound fails the
+    // row it belongs to. Where the forms deliver one value the row says that
+    // too, in the counts printed after the cross, so a lane that runs one
+    // arithmetic is reported as running one rather than credited with three.
+    //
     // Every combination is exactly one of three states, and there is no fourth:
     //
     //   certified and published    the library carries it, and this row measured
@@ -10536,6 +10601,7 @@ int main(int argc, char** argv) {
         std::string toleranceReason;
         int worstN = -1;
         double worstX = 0.0;
+        int worstForm = -1; // the division form that delivered the worst value
     };
 
     // The lanes, in the order BoysLaneContracts() reports them. The device lane
@@ -10577,6 +10643,21 @@ int main(int argc, char** argv) {
     const std::size_t combSchemes = boys::BoysEvalSchemes().size();
     const std::size_t combPartitions = boys::BoysFitGranularities().size();
     const std::size_t combAxes = boys::BoysPackAxes().size();
+
+    // The forms the sweep below writes out as policies. The instantiations are
+    // compile-time and the accessor's answer is not, so the list is written once
+    // and reconciled against the accessor where the cross reports: a fourth form
+    // added to BoysDivisionForms() turns that row red instead of leaving the
+    // axis swept at three while the library offers four.
+    constexpr std::size_t kCombForms = 3;
+
+    // The division forms, read off the accessor that names them for the reason
+    // the five axis sizes above are read off theirs: a member added to the axis
+    // moves this number rather than leaving a list written here to drift from
+    // it. It is not a factor of the cross's arithmetic - see the block comment
+    // above - so it arrives in the measurement and not in the count.
+    const std::span<const boys::DivisionFormInfo> combFormRows = boys::BoysDivisionForms();
+    const std::size_t combForms = combFormRows.size();
 
     // The rungs, read off the multiplier the tier enumeration answers with.
     std::vector<boys::AccuracyTier> combTiers;
@@ -10620,6 +10701,11 @@ int main(int argc, char** argv) {
         double bound;
         int worstN;
         double worstX;
+        int worstForm;        // which division form delivered the worst value
+        std::size_t forms;    // the division forms this cell was read at
+        std::size_t moved;    // values a form past the first delivered differently
+        std::size_t compared; // values a form past the first was asked for
+        std::size_t movedByForm[kCombForms]; // the same, one count per form
     };
 
     std::vector<CombCell> combMeasured;
@@ -10633,8 +10719,19 @@ int main(int argc, char** argv) {
         double ceiling = 0.0; // above this magnitude the bound is claimed
         int worstN = -1;
         double worstX = 0.0;
+        int worstForm = -1;       // which division form delivered `worst`
+        std::size_t forms = 0;    // the forms each point of this cell was read at
+        std::size_t moved = 0;    // values a form past the first delivered differently
+        std::size_t compared = 0; // values a form past the first was asked for
 
-        void add(int n, double x, double got, double want, double ulp = 0.0) noexcept
+        // The same count kept per form, in the accessor's order, because which
+        // form moved is the question: the library documents the refined form as
+        // bit-identical to exact division, and a single total cannot say whether
+        // the values that moved were that form's or the plain one's.
+        std::size_t movedByForm[kCombForms] = {};
+
+        void add(int n, double x, double got, double want, double ulp = 0.0,
+                 int form = 0) noexcept
         {
             const double err = std::abs(got - want);
             const double magnitude = std::abs(want);
@@ -10660,6 +10757,40 @@ int main(int argc, char** argv) {
                 worst = err;
                 worstN = n;
                 worstX = x;
+                worstForm = form;
+            }
+        }
+
+        // One (order, argument) as every form the axis carries delivered it.
+        //
+        // The first form is judged and kept as the baseline; each form past it
+        // is judged against the same figure and compared against that baseline.
+        // So the row's delivered figure is the worst over the forms, the cells
+        // it counted are the cells it read times the forms it read them at, and
+        // the pair of counts at the end says how far this lane's arithmetic
+        // moved when the form was changed - which is what tells a lane that runs
+        // three forms from one that runs three names for one form.
+        //
+        // The per-form ulp is the half lane's: its bar carries half a
+        // representable digit of the value the form returned, so the term is the
+        // form's own and not the first form's.
+        void addAtForms(int n, double x, const double* got, std::size_t countForms, double want,
+                        const double* ulp = nullptr) noexcept
+        {
+            forms = countForms;
+            add(n, x, got[0], want, ulp == nullptr ? 0.0 : ulp[0], 0);
+
+            for (std::size_t f = 1; f < countForms; ++f)
+            {
+                add(n, x, got[f], want, ulp == nullptr ? 0.0 : ulp[f],
+                    static_cast<int>(f));
+                ++compared;
+
+                if (got[f] != got[0])
+                {
+                    ++moved;
+                    movedByForm[f] += 1;
+                }
             }
         }
     };
@@ -10674,11 +10805,19 @@ int main(int argc, char** argv) {
                    : std::ldexp(1.0, exponent - 11);
     };
 
-    // The double lane, every rung of one (route, scheme, axis, partition).
+    // The double lane, every rung of one (route, scheme, axis, partition), each
+    // of them read at every division form the axis carries. The three policies
+    // are written out for the reason the rung sequence is: the form is a
+    // template argument of the engine, so a form the sweep names is an
+    // instantiation, and only three of them exist.
     const auto combDoubleRungs = [&]<boys::FitRoute kRoute, boys::EvalScheme kScheme,
                                      boys::PackAxis kAxis, boys::FitGranularity kGran>(int lane) {
-        using Policy =
-            boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFloat, kAxis, kGran>;
+        using PExact = boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFloat, kAxis, kGran,
+                                        boys::DivisionForm::kExactDivision>;
+        using PPlain = boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFloat, kAxis, kGran,
+                                        boys::DivisionForm::kPlainReciprocal>;
+        using PRefined = boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFloat, kAxis, kGran,
+                                          boys::DivisionForm::kRefinedReciprocal>;
         const double laneBound = combLaneRows[static_cast<std::size_t>(lane)].bound;
         const double laneAdd = combLaneRows[static_cast<std::size_t>(lane)].additive;
 
@@ -10688,20 +10827,22 @@ int main(int argc, char** argv) {
                     constexpr double kM =
                         boys::AccuracyMultiplier(static_cast<boys::AccuracyTier>(kRung));
                     CombAccum a;
-                    std::array<double, 33> out{};
+                    std::array<std::array<double, 33>, kCombForms> out{};
 
                     a.bound = kM * laneBound + laneAdd;
 
                     for (std::size_t i = 0; i < count; ++i)
                     {
-                        boys::BoysAllOrders<kM, Policy>(nmax, ref.x[i], out.data());
+                        boys::BoysAllOrders<kM, PExact>(nmax, ref.x[i], out[0].data());
+                        boys::BoysAllOrders<kM, PPlain>(nmax, ref.x[i], out[1].data());
+                        boys::BoysAllOrders<kM, PRefined>(nmax, ref.x[i], out[2].data());
 
                         for (int n = 0; n <= nmax; ++n)
                         {
-                            a.add(n,
-                                  ref.x[i],
-                                  out[static_cast<std::size_t>(n)],
-                                  ref.v[ref.Index(n, i)]);
+                            const std::size_t sn = static_cast<std::size_t>(n);
+                            const double got[kCombForms] = {out[0][sn], out[1][sn], out[2][sn]};
+
+                            a.addAtForms(n, ref.x[i], got, kCombForms, ref.v[ref.Index(n, i)]);
                         }
                     }
 
@@ -10717,22 +10858,103 @@ int main(int argc, char** argv) {
                                             a.worst,
                                             a.bound,
                                             a.worstN,
-                                            a.worstX});
+                                            a.worstX,
+                                            a.worstForm,
+                                            a.forms,
+                                            a.moved,
+                                            a.compared,
+                                            {a.movedByForm[0], a.movedByForm[1],
+                                             a.movedByForm[2]}});
                 }(),
                 0)...};
         }(std::make_index_sequence<7>{});
     };
 
-    // The single and half lanes, every rung of one (budget, route, scheme,
-    // partition, axis): the reference rung against the lane's own figure, and
-    // each rung past it against that rung's multiplier times it. The rung is the
-    // loop's own index because the multiplier is the function's first template
-    // argument and a rung a policy does not carry is an instantiation that does
-    // not exist, so the cells come one at a time.
+    // The uniform partition's cells on the double lane, at the one route, the one
+    // packing axis and the one rung that partition is served at.
+    //
+    // They are read by a lambda of their own rather than by combDoubleRungs
+    // above, and that is the partition's shape and not a convenience: that
+    // lambda asks its policy at every rung of the enumeration, and a uniform
+    // policy at a rung past the reference one is refused where it is named
+    // (RefuseUniformAtRung, boys_impl.hpp), so a rung sequence over this
+    // partition is not an instantiation that exists. The rung here is the
+    // reference multiplier written out, one cell per scheme, which is what the
+    // partition's own row states it is served at.
+    const auto combUniformRung = [&]<boys::EvalScheme kScheme>(int lane) {
+        using PExact = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                        kScheme,
+                                        boys::BoysBudget::kFloat,
+                                        boys::PackAxis::kArguments,
+                                        boys::FitGranularity::kUniform,
+                                        boys::DivisionForm::kExactDivision>;
+        using PPlain = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                        kScheme,
+                                        boys::BoysBudget::kFloat,
+                                        boys::PackAxis::kArguments,
+                                        boys::FitGranularity::kUniform,
+                                        boys::DivisionForm::kPlainReciprocal>;
+        using PRefined = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                          kScheme,
+                                          boys::BoysBudget::kFloat,
+                                          boys::PackAxis::kArguments,
+                                          boys::FitGranularity::kUniform,
+                                          boys::DivisionForm::kRefinedReciprocal>;
+        const double laneBound = combLaneRows[static_cast<std::size_t>(lane)].bound;
+        const double laneAdd = combLaneRows[static_cast<std::size_t>(lane)].additive;
+        CombAccum a;
+        std::array<std::array<double, 33>, kCombForms> out{};
+
+        a.bound = laneBound + laneAdd;
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            boys::BoysAllOrders<boys::kBoysFullAccuracyMultiplier, PExact>(nmax, ref.x[i],
+                                                                          out[0].data());
+            boys::BoysAllOrders<boys::kBoysFullAccuracyMultiplier, PPlain>(nmax, ref.x[i],
+                                                                          out[1].data());
+            boys::BoysAllOrders<boys::kBoysFullAccuracyMultiplier, PRefined>(nmax, ref.x[i],
+                                                                            out[2].data());
+
+            for (int n = 0; n <= nmax; ++n)
+            {
+                const std::size_t sn = static_cast<std::size_t>(n);
+                const double got[kCombForms] = {out[0][sn], out[1][sn], out[2][sn]};
+
+                a.addAtForms(n, ref.x[i], got, kCombForms, ref.v[ref.Index(n, i)]);
+            }
+        }
+
+        combMeasured.push_back({lane,
+                                0,
+                                static_cast<int>(boys::FitRoute::kChebyshev),
+                                static_cast<int>(kScheme),
+                                static_cast<int>(boys::FitGranularity::kUniform),
+                                static_cast<int>(boys::PackAxis::kArguments),
+                                a.cells,
+                                a.below,
+                                a.over,
+                                a.worst,
+                                a.bound,
+                                a.worstN,
+                                a.worstX,
+                                a.worstForm,
+                                a.forms,
+                                a.moved,
+                                a.compared,
+                                {a.movedByForm[0], a.movedByForm[1], a.movedByForm[2]}});
+    };
+
+
     const auto combSingleLane =
         [&]<boys::BoysBudget kBudget, boys::FitRoute kRoute, boys::EvalScheme kScheme,
             boys::PackAxis kAxis, boys::FitGranularity kGran>(int lane) {
-            using Policy = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran>;
+            using PExact = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
+                                            boys::DivisionForm::kExactDivision>;
+            using PPlain = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
+                                            boys::DivisionForm::kPlainReciprocal>;
+            using PRefined = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
+                                              boys::DivisionForm::kRefinedReciprocal>;
             const double laneBound = combLaneRows[static_cast<std::size_t>(lane)].bound;
 
             [&]<std::size_t... kStep>(std::index_sequence<kStep...>) {
@@ -10744,7 +10966,7 @@ int main(int argc, char** argv) {
                                 ? 1.0
                                 : boys::AccuracyMultiplier(static_cast<boys::AccuracyTier>(kRung));
                         CombAccum a;
-                        std::array<float, 33> out{};
+                        std::array<std::array<float, 33>, kCombForms> out{};
 
                         a.bound = kM * laneBound;
                         a.ceiling = static_cast<double>(lane == combHalfLane) * a.bound;
@@ -10753,19 +10975,27 @@ int main(int argc, char** argv) {
                         {
                             const float xf = static_cast<float>(ref.xf[i]);
 
-                            boys::BoysAllOrdersF32<kM, Policy>(nmax, xf, out.data());
+                            boys::BoysAllOrdersF32<kM, PExact>(nmax, xf, out[0].data());
+                            boys::BoysAllOrdersF32<kM, PPlain>(nmax, xf, out[1].data());
+                            boys::BoysAllOrdersF32<kM, PRefined>(nmax, xf, out[2].data());
 
                             for (int n = 0; n <= nmax; ++n)
                             {
-                                const double got =
-                                    static_cast<double>(out[static_cast<std::size_t>(n)]);
-                                const double ulp = a.ceiling > 0.0 ? halfUlp(got) : 0.0;
+                                const std::size_t sn = static_cast<std::size_t>(n);
+                                const double got[kCombForms] = {static_cast<double>(out[0][sn]),
+                                                                static_cast<double>(out[1][sn]),
+                                                                static_cast<double>(out[2][sn])};
+                                const double ulp[kCombForms] = {
+                                    a.ceiling > 0.0 ? halfUlp(got[0]) : 0.0,
+                                    a.ceiling > 0.0 ? halfUlp(got[1]) : 0.0,
+                                    a.ceiling > 0.0 ? halfUlp(got[2]) : 0.0};
 
-                                a.add(n,
-                                      static_cast<double>(xf),
-                                      got,
-                                      ref.vf[ref.Index(n, i)],
-                                      ulp);
+                                a.addAtForms(n,
+                                             static_cast<double>(xf),
+                                             got,
+                                             kCombForms,
+                                             ref.vf[ref.Index(n, i)],
+                                             ulp);
                             }
                         }
 
@@ -10781,7 +11011,13 @@ int main(int argc, char** argv) {
                                                 a.worst,
                                                 a.bound,
                                                 a.worstN,
-                                                a.worstX});
+                                                a.worstX,
+                                                a.worstForm,
+                                                a.forms,
+                                                a.moved,
+                                                a.compared,
+                                                {a.movedByForm[0], a.movedByForm[1],
+                                                 a.movedByForm[2]}});
                     }(),
                     0)...};
             }(std::make_index_sequence<7>{});
@@ -10846,6 +11082,17 @@ int main(int argc, char** argv) {
     combDoubleRungs.template operator()<boys::FitRoute::kRationalMinimax,
                                         boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
                                         boys::FitGranularity::kNarrow>(kLaneDouble);
+
+    // The uniform partition's two cells on the double lane. Every other cell the
+    // cross names at this partition is refused by the library where it is named -
+    // the rational route and the across-orders axis by the tables this partition
+    // does not carry, every rung past the reference multiplier by its being
+    // stored at one degree - and a refused cell is a row of this book with the
+    // library's reason, not a hole in it. What is measured here is the whole of
+    // what is served, which is the two schemes at the one route, the one axis and
+    // the one rung.
+    combUniformRung.template operator()<boys::EvalScheme::kSplitClenshaw>(kLaneDouble);
+    combUniformRung.template operator()<boys::EvalScheme::kHorner>(kLaneDouble);
 
     // The single and half lanes. The reference rung carries every route, scheme,
     // partition and axis on both engine budgets; past it the cells measured here
@@ -11099,6 +11346,7 @@ int main(int argc, char** argv) {
                                 c.bound = cell->bound;
                                 c.worstN = cell->worstN;
                                 c.worstX = cell->worstX;
+                                c.worstForm = cell->worstForm;
                                 c.state = c.over == 0
                                               ? "certified and published"
                                               : "DEFECT: delivers outside its documented bound";
@@ -11426,7 +11674,11 @@ int main(int argc, char** argv) {
     std::printf("\n  the combinations: every combination this library's own tables offer, each "
                 "one either\n  measured against the committed reference at the figure its lane "
                 "publishes, or refused\n  with the library's own reason, or counted as not "
-                "runnable on this host. Nothing is\n  absent and nothing is uncounted\n");
+                "runnable on this host. Nothing is\n  absent and nothing is uncounted. Each "
+                "measured row is read at every division form\n  the axis carries, so its cells "
+                "column counts (order, argument, form) points, its\n  outside column the points "
+                "of those that left the bound, and its delivered figure the\n  worst any form "
+                "delivered - the table after the cross says which forms moved\n");
     std::printf("  %-58s %9s %9s %-13s %-13s %s\n",
                 "combination",
                 "cells",
@@ -11462,13 +11714,16 @@ int main(int argc, char** argv) {
         if (c.over > 0)
         {
             std::printf("  %-58s %zu cell(s) outside %.6g; the worst is n=%d at x=%.6g, "
-                        "delivering %.6g\n",
+                        "delivering %.6g in the %s form\n",
                         c.axes.c_str(),
                         c.over,
                         c.bound,
                         c.worstN,
                         c.worstX,
-                        c.delivered);
+                        c.delivered,
+                        c.worstForm < 0
+                            ? "unknown"
+                            : boys::DivisionFormName(static_cast<boys::DivisionForm>(c.worstForm)));
         }
     }
 
@@ -11558,6 +11813,140 @@ int main(int argc, char** argv) {
                 combToleranceHalfUnasked,
                 combToleranceRefused,
                 combToleranceDisagreeing);
+
+    // The division form, on the cells the cross measured. Every cell above was
+    // read at each form the axis carries, and this is where the sweep says what
+    // it found: the values a form past the first delivered differently from the
+    // first form's at the same order and argument, against the values it was
+    // asked for.
+    //
+    // A row whose count of moved values is zero is a lane the axis selects no
+    // arithmetic on - the names reach one body - and that is a measurement of
+    // this build rather than a claim about the source. It is printed rather than
+    // passed over because a row that swept three forms and found one arithmetic
+    // has not certified three, and a reader comparing this library's forms
+    // against another's is owed the difference.
+    {
+        struct FormRow {
+            int lane = -1;
+            int axis = -1;
+            std::size_t cells = 0;
+            std::size_t forms = 0;
+            std::size_t compared = 0;
+            std::array<std::size_t, kCombForms> moved = {};
+        };
+
+        std::vector<FormRow> formRows;
+
+        for (const CombCell& m : combMeasured)
+        {
+            FormRow* row = nullptr;
+
+            for (FormRow& r : formRows)
+            {
+                if (r.lane == m.lane && r.axis == m.axis)
+                {
+                    row = &r;
+
+                    break;
+                }
+            }
+
+            if (row == nullptr)
+            {
+                formRows.push_back({m.lane, m.axis, 0, 0, 0, {}});
+                row = &formRows.back();
+            }
+
+            row->cells += m.cells;
+            row->forms = std::max(row->forms, m.forms);
+            row->compared += m.compared;
+
+            for (std::size_t f = 0; f < kCombForms; ++f)
+            {
+                row->moved[f] += m.movedByForm[f];
+            }
+        }
+
+        std::size_t formCompared = 0;
+        std::array<std::size_t, kCombForms> formMoved = {};
+
+        for (const FormRow& r : formRows)
+        {
+            formCompared += r.compared;
+
+            for (std::size_t f = 0; f < kCombForms; ++f)
+            {
+                formMoved[f] += r.moved[f];
+            }
+        }
+
+        std::printf("\n  the division form: every cell of the cross above was read at each of the "
+                    "%zu form(s)\n  BoysDivisionForms() answers, each form judged against the "
+                    "figure the row's own\n  lane publishes. The columns after the compared count "
+                    "are the values each form\n  past the first delivered differently from the "
+                    "first form's at the same order\n  and argument, against the values it was "
+                    "asked for. A lane whose column is zero\n  for every form is a lane the axis "
+                    "selects no arithmetic on: its three names reach\n  one body, and one is what "
+                    "it was certified at\n",
+                    combForms);
+        std::printf("    %-27s %-11s %10s %9s %11s", "lane", "axis", "cell(s)", "form(s)",
+                    "compared");
+
+        // The first form is the baseline the others are compared against, so a
+        // column for it would be zero by construction rather than by
+        // measurement. Only the forms past it are printed.
+        for (std::size_t f = 1; f < kCombForms; ++f)
+        {
+            std::printf(" %11s", combFormRows[f].name);
+        }
+
+        std::printf("\n");
+
+        for (const FormRow& r : formRows)
+        {
+            std::printf("    %-27s %-11s %10zu %9zu %11zu",
+                        combLaneRows[static_cast<std::size_t>(r.lane)].name,
+                        boys::PackAxisName(static_cast<boys::PackAxis>(r.axis)),
+                        r.cells,
+                        r.forms,
+                        r.compared);
+
+            for (std::size_t f = 1; f < kCombForms; ++f)
+            {
+                std::printf(" %11zu", r.moved[f]);
+            }
+
+            std::printf("\n");
+        }
+
+        std::printf("    %-27s %-11s %10s %9s %11zu", "total", "", "", "", formCompared);
+
+        for (std::size_t f = 1; f < kCombForms; ++f)
+        {
+            std::printf(" %11zu", formMoved[f]);
+        }
+
+        std::printf("\n");
+
+        // The sweep writes its forms out as policies - the instantiations are
+        // compile-time - and the axis is enumerated by an accessor, which is not.
+        // The two are reconciled here rather than assumed equal: a fourth form
+        // added to BoysDivisionForms() without a fourth policy below would leave
+        // the axis swept at three while the library offers four, and that is a
+        // cell offered and never checked again.
+        if (combForms != kCombForms)
+        {
+            std::printf("\n  DIVISION-FORM SWEEP FAIL: the axis answers %zu form(s) from "
+                        "BoysDivisionForms()\n  and this block writes %zu out as policies, so "
+                        "%zu of them were measured and\n  the rest were offered by the library "
+                        "and covered by no cell here\n",
+                        combForms,
+                        kCombForms,
+                        kCombForms);
+            failed = true;
+        }
+    }
 
     // combAccessorDeliveredShort is reported and not fatal. The two figures it
     // compares are two different measurements of the same quantity: the

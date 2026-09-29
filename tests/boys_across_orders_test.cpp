@@ -552,6 +552,29 @@ using NarrowPerOrderPolicy =
 // library's own mapping from the tier to its multiplier.
 constexpr double kRungMultiplier = boys::AccuracyMultiplier(boys::AccuracyTier::kRelaxed64);
 
+// The uniform partition on the axis: one fixed grid over the whole fitted
+// domain rather than a cut of region A, so its pieces are of one width and
+// every order of a cell is stored at one degree. The axis carries it because
+// the grid is interval-major - every order of one interval lies one stride from
+// the next order's - which is the shape the shipped lane's fetch already steps;
+// what changes is that the interval is one multiply and a truncation rather
+// than a scan of piece edges. It is the reference rung and the Chebyshev route
+// alone: the grid stores one degree for every order and interval, so no rung of
+// it can be cut, and the rational family is a pair per derived piece, which a
+// fixed grid has none of.
+template <boys::EvalScheme kScheme>
+using UniformOrdersPolicy =
+    boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
+                     boys::PackAxis::kOrders, boys::FitGranularity::kUniform>;
+
+// The same partition read one order at a time by the certified scalar single
+// entry, which is the lane the entry's own region-A body has to reproduce and
+// the lane it falls back to past the grid's end.
+template <boys::EvalScheme kScheme>
+using UniformPerOrderPolicy =
+    boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
+                     boys::PackAxis::kArguments, boys::FitGranularity::kUniform>;
+
 } // namespace
 
 // The default policy still names the shipped axis, so a call site that names
@@ -953,6 +976,104 @@ TEST(BoysAcrossOrders, WhereTheNarrowAxisPartsFromThePerOrderLaneTheReferenceIsO
 
     referee.template operator()<boys::EvalScheme::kSplitClenshaw>("split clenshaw");
     referee.template operator()<boys::EvalScheme::kHorner>("horner");
+}
+
+// The uniform grid on the axis: the lane's third table, and the one whose
+// domain is not region A. What is held here is the axis's own claim, exactly
+// and over the whole of that domain - the entry's values are the certified
+// per-order lane's, bit for bit - including the join at the grid's end, past
+// which the entry runs that same per-order lane. The cell's value against the
+// committed reference is not asserted: the figure that would judge it is the
+// entry's documented one for this combination, and the partition's row does not
+// state one yet.
+TEST(BoysAcrossOrders, TheUniformGridOnTheAxisIsThePerOrderLaneBitForBit) {
+    if (!VectorTier())
+    {
+        GTEST_SKIP() << "the AVX2 tier is not available on this target";
+    }
+
+    // Every cell edge of the grid, one interior point of each cell, the edge
+    // approached from below, and the grid's end and its far side.
+    std::vector<double> sweep;
+
+    for (int cell = 0; cell < boys::detail::kFlatIntervals; ++cell)
+    {
+        const double edge =
+            static_cast<double>(cell) / (1.0 / boys::detail::kFlatWidth);
+
+        sweep.push_back(edge);
+        sweep.push_back(edge + 0.5 * boys::detail::kFlatWidth);
+        sweep.push_back(std::nextafter(edge, 0.0));
+    }
+
+    sweep.push_back(0.0);
+    sweep.push_back(std::nextafter(boys::detail::kFlatHi, 0.0));
+    sweep.push_back(boys::detail::kFlatHi);
+    sweep.push_back(boys::detail::kFlatHi + 1.0);
+    sweep.push_back(200.0);
+
+    std::vector<double> packed(static_cast<std::size_t>(kNmax) + 1);
+    std::size_t compared = 0;
+    std::size_t differing = 0;
+    double worst = 0.0;
+
+    const auto sweepScheme = [&]<boys::EvalScheme kScheme>(const char* name) {
+        std::size_t mineCompared = 0;
+        std::size_t mineDiffering = 0;
+        double mineWorst = 0.0;
+
+        for (const double x : sweep)
+        {
+            boys::BoysAllOrders<1.0, UniformOrdersPolicy<kScheme>>(kNmax, x, packed.data());
+
+            for (int l = 0; l <= kNmax; ++l)
+            {
+                const double lane = boys::BoysSingle<1.0, UniformPerOrderPolicy<kScheme>>(l, x);
+                const double delta = std::abs(packed[static_cast<std::size_t>(l)] - lane);
+
+                ++mineCompared;
+                mineWorst = delta > mineWorst ? delta : mineWorst;
+
+                if (!SameBits(packed[static_cast<std::size_t>(l)], lane))
+                {
+                    ++mineDiffering;
+                }
+            }
+        }
+
+        std::printf("  uniform grid, %-16s %zu values, %zu differ | worst from the per-order "
+                    "lane %.3e\n",
+                    name,
+                    mineCompared,
+                    mineDiffering,
+                    mineWorst);
+
+        compared += mineCompared;
+        differing += mineDiffering;
+        worst = mineWorst > worst ? mineWorst : worst;
+    };
+
+    sweepScheme.template operator()<boys::EvalScheme::kSplitClenshaw>("split clenshaw");
+    sweepScheme.template operator()<boys::EvalScheme::kHorner>("horner");
+
+    EXPECT_GT(compared, 0u) << "the sweep measured nothing";
+
+#if defined(BOYS_MULADD_SEPARATE) && BOYS_MULADD_SEPARATE
+    // This build's scalar route is the two-rounding one, so the lane and the
+    // per-order entry are two arithmetics rather than one and what is asserted
+    // is the region's budget: the packed lane names its own instruction and is
+    // one-rounding whatever the build says. The count above still prints, so a
+    // reader sees how far apart the two arithmetics are.
+    static_cast<void>(differing);
+    EXPECT_LE(worst, boys::detail::RegionABudget(boys::detail::BoysRole::kDoubleSingle))
+        << "the uniform grid's cell is outside the single lane's region-A budget against the "
+           "certified per-order lane, worst "
+        << worst << " over " << compared << " values";
+#else
+    EXPECT_EQ(differing, 0u) << "the uniform grid's cell is not the certified scalar lane's value "
+                                "at every order and argument of its domain, worst "
+                             << worst << " over " << compared << " values";
+#endif
 }
 
 // The rung on the axis: a call naming a relaxed multiplier reads the degrees

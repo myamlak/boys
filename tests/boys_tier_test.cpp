@@ -2422,6 +2422,7 @@ bool SameBits(double a, double b) {
 TEST(Combination, TheReplyIsTheTwoAccessorsFiguresAndTheirComparison) {
     std::size_t carried = 0;
     std::size_t refused = 0;
+    std::size_t refusedOutsideTheNarrowerRows = 0;
     std::size_t notTheAccessorsFigures = 0;
     std::size_t notTheComparison = 0;
 
@@ -2433,6 +2434,21 @@ TEST(Combination, TheReplyIsTheTwoAccessorsFiguresAndTheirComparison) {
         if (!guaranteed.available)
         {
             ++refused;
+
+            // Two rows of this revision's space are narrower than their axes, and
+            // every refusal here has to be one of them: the uniform partition,
+            // served on the double lane at one route, one packing axis and one
+            // rung, and the device lane's single-precision lane, whose entries
+            // cover the shipped Chebyshev ladder and the narrow and uniform
+            // partitions of it at the reference multiplier alone. A refusal
+            // naming anything else is a combination the rows do not account for,
+            // and it is counted here rather than accepted because there are
+            // refusals now.
+            if (option.granularity != boys::FitGranularity::kUniform &&
+                option.precision != boys::Precision::kFp32Device)
+            {
+                ++refusedOutsideTheNarrowerRows;
+            }
 
             // A refusal carries no figure, and the reason is the accessor's own
             // sentence rather than a second vocabulary for the same state.
@@ -2470,10 +2486,13 @@ TEST(Combination, TheReplyIsTheTwoAccessorsFiguresAndTheirComparison) {
 
     EXPECT_GT(carried, 0u) << "no combination of this build is carried: nothing was compared";
 
-    // This revision serves the option space whole, so nothing in it is refused
-    // and the refusal path is reached the one way left: by naming a value
-    // outside the enumerations, which names no combination at all. That is what
-    // keeps the path covered rather than merely absent.
+    // One row of the partition axis is served at one route, one packing axis and
+    // one rung only - the uniform grid - so this revision refuses combinations
+    // inside its own space rather than none, and the refusals are required to be
+    // exactly the cells that name that partition. The refusal path is reached
+    // the other way as well, by naming a value outside the enumerations, which
+    // names no combination at all; that is what keeps it covered rather than
+    // merely absent.
     {
         const AccuracyFigure outside =
             boys::BoysAccuracyGuaranteed(boys::Precision::kFp32,
@@ -2485,13 +2504,14 @@ TEST(Combination, TheReplyIsTheTwoAccessorsFiguresAndTheirComparison) {
 
         EXPECT_FALSE(outside.available) << "a value outside the enumerations was carried";
         EXPECT_NE(outside.reason, nullptr) << "a refusal carried no reason";
-
-        if (!outside.available && refused != 0)
-        {
-            ADD_FAILURE() << "a combination of this build was refused: the option space is served "
-                             "whole, and a host counts apart what it cannot run";
-        }
     }
+
+    EXPECT_GT(refused, 0u) << "the uniform partition is served at one route, one axis and one "
+                              "rung, so cells of the space are refused and this block is reached";
+    EXPECT_EQ(refusedOutsideTheNarrowerRows, 0u)
+        << "a combination was refused that names neither the uniform partition nor the device "
+           "lane's single-precision one: every other row of this revision's space is served "
+           "whole, and a host counts apart what it cannot run";
     EXPECT_EQ(notTheAccessorsFigures, 0u)
         << "the tolerance query does not answer the two accessors' own figures";
     EXPECT_EQ(notTheComparison, 0u)
@@ -2650,11 +2670,16 @@ TEST(Combination, ARefusalCarriesNoFigureAndTheAccessorsOwnSentence) {
         }
     });
 
-    // This revision serves the whole option space, so nothing inside it is
-    // refused; the refusal path is covered by the section below, which names a
-    // value outside the enumerations.
-    EXPECT_EQ(refused, 0u) << "a combination of this build was refused: the option space is served "
-                              "whole, and a host counts apart what it cannot run";
+    // The uniform partition is served at one route, one packing axis and one
+    // rung, so the space this build publishes is not served whole and the rows
+    // below are reached by refusals of its cells: the block requires at least one
+    // and the section after it reaches the other kind of refusal, a value outside
+    // the enumerations. What is required of every refusal is the same either way:
+    // no figure, no verdict, and the accessor's own sentence.
+    EXPECT_GT(refused, 0u)
+        << "no combination of this build is refused, so the rows below judged nothing: the "
+           "uniform partition is served at one route, one axis and one rung, and the cells "
+           "outside them are refused";
     EXPECT_EQ(carryingAFigure, 0u) << "a refused combination answered with a figure";
     EXPECT_EQ(carryingAVerdict, 0u) << "a refused combination answered with a verdict";
     EXPECT_EQ(withoutTheAccessorsSentence, 0u)

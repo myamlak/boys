@@ -82,8 +82,10 @@ six axes, and each of them is a decision a caller can make:
   storing different things;
 - **the evaluation scheme** — a fit's coefficients are summed either by the split Clenshaw
   recurrence on its Chebyshev form, or by Horner's rule on the monomial form of the same fit;
-- **the interval partition** — the fitted intervals are cut either as the shipped tables cut them,
-  or more narrowly, into pieces that hold the bar at a lower degree;
+- **the interval partition** — how the fitted intervals are cut: as the shipped tables cut them, or
+  more narrowly, into pieces the proved truncation bound places where the function needs them and
+  that hold the bar at a lower degree, or into a fixed grid of equal cells over the whole fitted
+  domain, every order fitted independently at one degree;
 - **the packing axis** — which of a call's values share a vector register: four arguments at one
   order, or four orders at one argument;
 - **the division form** — how each step of the recurrence divides: exactly, by a plain reciprocal,
@@ -129,9 +131,9 @@ the probe's own runs, and those runs did not separate the rows of either axis: t
 rows of the double lane's full-accuracy all-orders ranking came out closer together than any one of
 them moves between two runs of the same probe, and the settings this library ships are one of those
 three rather than the cheapest of them. That costs nothing in accuracy — the two schemes sum one fit
-and the two partitions cut one fit, each certified to a bound of its own — but it is what the
-default is, and a reader told the default was a measured win would have been told something the
-measurement does not say.
+and the shipped and narrow partitions cut one fit, each certified to a bound of its own — but it is
+what the default is, and a reader told the default was a measured win would have been told something
+the measurement does not say.
 
 **If you have a number to stay under rather than a ranking to read**, the library answers that
 question directly: name a combination and the absolute error your calculation needs, and you get a

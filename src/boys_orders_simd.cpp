@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 
 // --- Architecture guard -----------------------------------------------------
 //
@@ -402,6 +403,77 @@ void OrdersBody(int nmax, double x, double* out, std::size_t stride, Degrees deg
             base + static_cast<std::ptrdiff_t>(l) * orderStride,
             degrees.At(flat, piece.deg),
             t);
+    }
+}
+
+// --- The uniform grid on the orders axis -------------------------------------
+//
+// The grid is interval-major - [interval][order][coefficient] - so one
+// argument's whole ladder is contiguous and the step from one order's
+// coefficients to the next order's is the same stride for every order, every
+// interval and both schemes. That is the stored shape the shipped lane's fetch
+// already rests on; what changes is where the geometry comes from. The shipped
+// body derives its piece, its mapped argument, its degree and its coefficient
+// base from the piece table a criterion cut, and this one reads the same four
+// numbers off the index one multiply and a truncation produce.
+//
+// Nothing recurs, which is the route's point rather than a simplification: each
+// order the vector holds is its own polynomial at the grid's one stored degree,
+// where the derived partitions step a ladder from a seed or down from a fit. So
+// the group reader, the store and the scalar tail are the shipped body's and
+// the two bodies differ in the geometry alone.
+
+// The grid's stored shape is the lane's premise - it is what lets one order's
+// coefficients be reached from the next order's at a stride, and what tells the
+// geometry how many coefficients an order holds - so it is checked here against
+// the table rather than left to a comment. A regenerated grid of another shape
+// is then a build that does not compile rather than a lane reading the wrong
+// coefficients.
+static_assert(std::size(kFlatCoeffs) == static_cast<std::size_t>(kFlatIntervals) *
+                                           static_cast<std::size_t>(kMaxBoysOrder + 1) *
+                                           static_cast<std::size_t>(kFlatDeg + 1),
+              "the uniform grid is addressed as [interval][order][coefficient] with no padding, "
+              "so its stored count is those three counts multiplied");
+static_assert(std::size(kFlatMonoCoeffs) == std::size(kFlatCoeffs),
+              "the grid's two stored forms are parallel - same intervals, same orders, same "
+              "degree - so a scheme picks a table and a summation and changes no geometry");
+static_assert(kFlatDeg >= 4 && kFlatDeg % 2 == 0,
+              "the split Clenshaw recurrence the reference rung sums the grid with is written for "
+              "an even degree of at least four (the generator emits such degrees)");
+
+template <OrdersScheme kScheme, bool kComposed>
+void UniformOrdersBody(int nmax, double x, double* out, std::size_t stride) noexcept {
+    const double* const table =
+        (kScheme == OrdersScheme::kHorner) ? kFlatMonoCoeffs.data() : kFlatCoeffs.data();
+
+    const FlatPoint at = FlatLocate(x);
+    const int orderStride = kFlatDeg + 1;
+    const double* const base = table + at.block;
+
+    const __m128i step = _mm_set_epi32(3 * orderStride, 2 * orderStride, orderStride, 0);
+    const __m256d tv = _mm256_set1_pd(at.t);
+
+    int l = 0;
+
+    if (nmax >= 3)
+    {
+        for (; l + 3 <= nmax; l += 4)
+        {
+            // The four orders' copies of the cell lie one order apart, which is
+            // the stride the fetch steps by; every order is read at the grid's
+            // one stored degree, so the group has no degree to take the largest
+            // of.
+            StoreGroup(out,
+                       l,
+                       stride,
+                       ShippedGroup<kScheme, kComposed>(base, l, orderStride, kFlatDeg, step, tv));
+        }
+    }
+
+    for (; l <= nmax; ++l)
+    {
+        out[static_cast<std::size_t>(l) * stride] = ScalarFit<kScheme>(
+            base + static_cast<std::ptrdiff_t>(l) * orderStride, kFlatDeg, at.t);
     }
 }
 
@@ -1374,26 +1446,45 @@ F32RatGroup BuildF32RatGroup(int l, float x, CutPairs cuts) noexcept {
 
 // The same group over the narrow partition's own cover of region A, whose
 // pieces are cut by the family's own search rather than by the shipped cover's
-// breaks: the lookup and the offsets are the narrow table's, the degrees and
-// the mapped arguments the shipped group's, because a pair is read the same way
-// over either cover. Nothing is cut here - the narrow partition's rungs are the
-// Chebyshev route's, and this route is served there at the reference rung alone
-// - so a piece is read whole and its stored numerator degree is its read one,
-// which is the number the group reader shifts the denominator array by.
-F32RatGroup BuildF32NarrowRatGroup(int l, float x) noexcept {
+// breaks: the lookup and the offsets are the narrow table's, the degrees, the
+// cuts and the mapped arguments the shipped group's, because a pair is read the
+// same way over either cover.
+//
+// The cut is this partition's own: the narrow pairs' coefficients are what the
+// rung's criterion is run over, and the table the scalar lane's rung body reads
+// is the same one (`NarrowRationalRegionAF32Degrees`), so a rung here is the
+// rung the per-order lane answers at rather than the stored fits under a rung's
+// name. An earlier revision read every piece whole and left the rung to the
+// Chebyshev route alone; the instantiation set carried the relaxed rungs
+// anyway, so the lane answered a rung with the reference rung's values and
+// nothing reported it - the packed lane and the certified scalar lane parted on
+// 901 of 2304 values at m = 64 and 2296 of 2304 at m = 65536.
+template <class CutPairs>
+F32RatGroup BuildF32NarrowRatGroup(int l, float x, CutPairs cuts) noexcept {
     F32RatGroup group{{}, {}, {}, {}, {}, 0, 0};
 
     for (int j = 0; j < 8; ++j)
     {
         const f32::RatPiece& piece = FindNarrowRatPieceF32(l + j, x);
+        const std::size_t flat =
+            static_cast<std::size_t>(&piece - f32::kNarrowRatAPiecesF32.data());
 
         group.base[j] = piece.offset;
         group.storednum[j] = piece.numdeg;
-        group.numdeg[j] = piece.numdeg;
-        group.dendeg[j] = piece.dendeg;
+
+        // The cut keeps the low-order terms of both parts, as it does over the
+        // shipped cover: the numerator's array begins at zero, so a lane's top
+        // coefficient is its cut's own, while the denominator's begins at the
+        // piece's FULL numerator, so its top coefficient is the smaller of the
+        // cut and the stored denominator degree.
+        const int numDeg = cuts.Num(flat, piece.numdeg);
+        const int denDeg = cuts.Den(flat, piece.dendeg);
+
+        group.numdeg[j] = numDeg;
+        group.dendeg[j] = denDeg < piece.dendeg ? denDeg : piece.dendeg;
         group.t[j] = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
-        group.numMax = piece.numdeg > group.numMax ? piece.numdeg : group.numMax;
-        group.denMax = piece.dendeg > group.denMax ? piece.dendeg : group.denMax;
+        group.numMax = numDeg > group.numMax ? numDeg : group.numMax;
+        group.denMax = group.dendeg[j] > group.denMax ? group.dendeg[j] : group.denMax;
     }
 
     return group;
@@ -1493,39 +1584,31 @@ void F32RationalBody(int nmax, float x, float* out, CutPairs cuts) noexcept {
 
 // The route's region-A body over the narrow partition: the shipped body above,
 // reading the family's own cover - what changes is which piece table the lanes
-// look their piece up in and which coefficient array the offsets index.
-void F32NarrowRationalBody(int nmax, float x, float* out) noexcept {
+// look their piece up in, which coefficient array the offsets index and which
+// pairs table the rung's cut is read from. The tail is the shipped body's too,
+// at this partition's own table: `RationalPieceF32AtCut` selects the narrow
+// pieces and coefficients by its granularity, so the tail's value is the
+// group reader's for the same lane.
+template <class CutPairs>
+void F32NarrowRationalBody(int nmax, float x, float* out, CutPairs cuts) noexcept {
     int l = 0;
 
     for (; l + 8 <= nmax + 1; l += 8)
     {
-        _mm256_storeu_ps(
-            out + l,
-            F32RationalGroup(BuildF32NarrowRatGroup(l, x), f32::kNarrowRatACoeffsF32.data()));
+        _mm256_storeu_ps(out + l,
+                         F32RationalGroup(BuildF32NarrowRatGroup(l, x, cuts),
+                                          f32::kNarrowRatACoeffsF32.data()));
     }
 
     for (; l <= nmax; ++l)
     {
         const f32::RatPiece& piece = FindNarrowRatPieceF32(l, x);
-        const float* const c = f32::kNarrowRatACoeffsF32.data() + piece.offset;
+        const std::size_t index =
+            static_cast<std::size_t>(&piece - f32::kNarrowRatAPiecesF32.data());
         const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
-        const BroadcastCoefficientsF32 numCoeff{c, 0};
-        const BroadcastCoefficientsF32 denCoeff{c, piece.numdeg + 1};
-        const __m256 tv = _mm256_set1_ps(t);
-        alignas(32) float lanes[8];
 
-        _mm256_store_ps(lanes, HornerGatheredF32(numCoeff, piece.numdeg, tv));
-        float num = lanes[0];
-
-        if (piece.dendeg == 0)
-        {
-            out[l] = num;
-            continue;
-        }
-
-        _mm256_store_ps(lanes, HornerGatheredF32(denCoeff, piece.dendeg - 1, tv));
-        out[l] = num / _mm256_cvtss_f32(
-                           _mm256_fmadd_ps(_mm256_set1_ps(lanes[0]), tv, _mm256_set1_ps(1.0f)));
+        out[l] = RationalPieceF32AtCut<FitGranularity::kNarrow>(
+            index, cuts.Num(index, piece.numdeg), cuts.Den(index, piece.dendeg), t);
     }
 }
 
@@ -1713,8 +1796,9 @@ void BoysAllOrdersF32SimdComposed(
 // last two are what a rung costs here that it does not cost the double lane:
 // the degree table a rung reads is certified against one stored table of one
 // fit family on the one hand, and against a region budget on the other, so a
-// relaxed rung reaches the float lane through the shipped route and scheme at
-// the budget the policy named.
+// relaxed rung reaches the float lane through the route and the scheme the
+// policy names, at the budget it named - all four (scheme, route) pairs on
+// either partition, each cut against the coefficients of the family it names.
 //
 // kF32Composed picks the fetch: the two are the same lane value for value - the
 // lane's test asserts the pair is bit-identical over every scheme and the whole
@@ -1836,7 +1920,14 @@ void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
 
             if constexpr (kRoute == FitRoute::kRationalMinimax)
             {
-                F32NarrowRationalBody(nmax, x, out);
+                // The rung's own pairs, cut from the narrow partition's
+                // coefficients at this rung's multiplier and this role - the
+                // table the scalar lane's rung body reads, so the two answer a
+                // rung with the same values.
+                static constexpr auto kPairsA =
+                    NarrowRationalRegionAF32Degrees<kAccuracyMultiplier, kRole>();
+
+                F32NarrowRationalBody(nmax, x, out, F32RungPairs<decltype(kPairsA)>{kPairsA});
             } else
             {
                 F32NarrowOrdersBody<OrdersSchemeOf(kScheme), kF32Composed>(
@@ -1852,9 +1943,14 @@ void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
 // so that the dispatch in boys_impl.hpp is a branch over code the library
 // already holds rather than a further instantiation per call site.
 //
-// The narrow partition's shapes sit beside them: the same four pairs at the
-// reference rung plus the shipped route and scheme's six relaxed ones, cut
-// against that partition's own table.
+// The narrow partition's shapes sit beside them, and they are the same count:
+// the four (scheme, route) pairs at the reference rung, and those same four at
+// each of the six relaxed rungs, cut against that partition's own table.
+// BOYS_ORDERS_F32_PACKED_NARROW and the two macros under it expand all of them,
+// and tools/check_orders_packed_cells.py is what holds this list and the
+// header's declarations to each other - an earlier revision of this comment
+// said the narrow rungs were the shipped route and scheme's six, which is a
+// quarter of what the macro below expands.
 //
 // A rung is a table of effective degrees cut from the coefficients the named
 // family stores - the shipped route's pieces for the polynomial table, the
@@ -2020,9 +2116,60 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
     assert(x >= 0.0);
     assert(out != nullptr);
 
-    if constexpr (kRoute == FitRoute::kChebyshev &&
-                  kAccuracyMultiplier == kBoysFullAccuracyMultiplier &&
-                  kGranularity == FitGranularity::kShipped)
+    if constexpr (kGranularity == FitGranularity::kUniform)
+    {
+        // The fixed grid, which the lane reads as the one contiguous ladder it
+        // is: the coefficients of every order of one interval sit one after the
+        // other, so the fetch that steps an order to the next order is a stride
+        // here as it is on the shipped cover, and the argument's interval is one
+        // multiply and a truncation rather than a scan of piece edges.
+        //
+        // The partition names how the fitted intervals are cut, not which family
+        // is fitted, so the family is the Chebyshev one and the scheme picks
+        // which of its two stored forms is summed - the same reading the shipped
+        // body takes. The route below is a backstop rather than the refusal: the
+        // rational family has no member over a fixed grid, and RouteFit refuses
+        // that pair where the caller names it, so no call carrying one reaches
+        // this body. The rung is refused where the policy is named
+        // (RefuseUniformAtRung), for the reason the partition's row states: one
+        // stored degree for every order and every interval is no criterion to
+        // cut by, so only the reference reading exists.
+        static_assert(kRoute == FitRoute::kChebyshev,
+                      "the rational family is not carried at the uniform partition (RouteFit), so "
+                      "a policy naming that pair is refused where it is named and none reaches "
+                      "this body");
+        static_assert(kAccuracyMultiplier == kBoysFullAccuracyMultiplier,
+                      "the uniform grid is served at the reference multiplier alone: its table "
+                      "stores one degree for every order and every interval, so no rung of it can "
+                      "be cut (RefuseUniformAtRung refuses the policy that names one)");
+
+        if (x == 0.0)
+        {
+            for (int l = 0; l <= nmax; ++l)
+            {
+                out[l] = 1.0 / (2.0 * l + 1.0);
+            }
+
+            return;
+        }
+
+        // Past the grid - which reaches above kX1, so this is the asymptotic's
+        // own domain - and on a host without the vector tier, the entry is the
+        // certified scalar single lane at the policy the caller named, one order
+        // at a time. That lane reads this partition's own table and its own
+        // domain, so the join at kFlatHi is the grid's end and not a second
+        // approximation's.
+        if (x >= detail::kFlatHi || !BoysAvx2Available())
+        {
+            ScalarOrders<kScheme, kAccuracyMultiplier, kRoute, kGranularity>(nmax, x, out, 1);
+            return;
+        }
+
+        UniformOrdersBody<OrdersSchemeOf(kScheme), true>(nmax, x, out, 1);
+        return;
+    } else if constexpr (kRoute == FitRoute::kChebyshev &&
+                         kAccuracyMultiplier == kBoysFullAccuracyMultiplier &&
+                         kGranularity == FitGranularity::kShipped)
     {
         // The reference rung of the shipped route on the shipped partition is
         // the lane exactly as it shipped: the same body, so the same tables, the
@@ -2171,16 +2318,29 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
     template void BoysAllOrdersPacked<kScheme, 65536.0, FitRoute::kRationalMinimax,                \
                                       FitGranularity::kNarrow>(int, double, double*) noexcept;
 
+// The uniform partition, whose cells are the scheme's alone: the family is the
+// Chebyshev one, because the rational family is a pair per derived piece and a
+// fixed grid has no piece to pair (RouteFit refuses that combination where it is
+// named), and the rung is the reference one, because the grid stores one degree
+// for every order and every interval and so has no criterion to cut by
+// (RefuseUniformAtRung refuses the policy that names one).
+#define BOYS_ORDERS_UNIFORM_INSTANTIATIONS(kScheme)                                                \
+    template void BoysAllOrdersPacked<kScheme, 1.0, FitRoute::kChebyshev,                          \
+                                      FitGranularity::kUniform>(int, double, double*) noexcept;
+
 BOYS_ORDERS_PACKED_INSTANTIATIONS(EvalScheme::kSplitClenshaw)
 BOYS_ORDERS_PACKED_INSTANTIATIONS(EvalScheme::kHorner)
 BOYS_ORDERS_NARROW_INSTANTIATIONS(EvalScheme::kSplitClenshaw)
 BOYS_ORDERS_NARROW_INSTANTIATIONS(EvalScheme::kHorner)
 BOYS_ORDERS_NARROW_RATIONAL_INSTANTIATIONS(EvalScheme::kSplitClenshaw)
 BOYS_ORDERS_NARROW_RATIONAL_INSTANTIATIONS(EvalScheme::kHorner)
+BOYS_ORDERS_UNIFORM_INSTANTIATIONS(EvalScheme::kSplitClenshaw)
+BOYS_ORDERS_UNIFORM_INSTANTIATIONS(EvalScheme::kHorner)
 
 #undef BOYS_ORDERS_PACKED_INSTANTIATIONS
 #undef BOYS_ORDERS_NARROW_INSTANTIATIONS
 #undef BOYS_ORDERS_NARROW_RATIONAL_INSTANTIATIONS
+#undef BOYS_ORDERS_UNIFORM_INSTANTIATIONS
 
 } // namespace boys::detail
 
@@ -2276,8 +2436,11 @@ void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
                                          FitGranularity::kShipped>(int, float, float*) noexcept;
 
 // The narrow partition's shapes, which the axis serves on this target as it does
-// on the vector tier: both routes and both schemes at the reference rung, and
-// the shipped route and scheme's six relaxed rungs.
+// on the vector tier - and it is the same count as there: both routes and both
+// schemes at the reference rung here, and the four (scheme, route) pairs at each
+// of the six relaxed rungs in the macro below. An earlier revision of this
+// comment named the shipped route and scheme's six alone, which is a quarter of
+// what BOYS_ORDERS_F32_PACKED_NARROW_RUNGS expands.
 #define BOYS_ORDERS_F32_PACKED_NARROW(kScheme, kBudget)                                            \
     template void BoysAllOrdersF32Packed<kScheme, 1.0, FitRoute::kChebyshev, kBudget,              \
                                          FitGranularity::kNarrow>(int, float, float*) noexcept;     \
@@ -2436,16 +2599,27 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
     template void BoysAllOrdersPacked<kScheme, 65536.0, FitRoute::kRationalMinimax,                \
                                       FitGranularity::kNarrow>(int, double, double*) noexcept;
 
+// The uniform partition's cells, which the axis serves on this target as it
+// does on the vector tier: the entry here is the certified scalar single lane at
+// the policy the axis names, and that lane reads this partition's own table, so
+// a cell the vector tier serves is a cell this target serves the same way.
+#define BOYS_ORDERS_UNIFORM_INSTANTIATIONS(kScheme)                                                \
+    template void BoysAllOrdersPacked<kScheme, 1.0, FitRoute::kChebyshev,                          \
+                                      FitGranularity::kUniform>(int, double, double*) noexcept;
+
 BOYS_ORDERS_PACKED_INSTANTIATIONS(EvalScheme::kSplitClenshaw)
 BOYS_ORDERS_PACKED_INSTANTIATIONS(EvalScheme::kHorner)
 BOYS_ORDERS_NARROW_INSTANTIATIONS(EvalScheme::kSplitClenshaw)
 BOYS_ORDERS_NARROW_INSTANTIATIONS(EvalScheme::kHorner)
 BOYS_ORDERS_NARROW_RATIONAL_INSTANTIATIONS(EvalScheme::kSplitClenshaw)
 BOYS_ORDERS_NARROW_RATIONAL_INSTANTIATIONS(EvalScheme::kHorner)
+BOYS_ORDERS_UNIFORM_INSTANTIATIONS(EvalScheme::kSplitClenshaw)
+BOYS_ORDERS_UNIFORM_INSTANTIATIONS(EvalScheme::kHorner)
 
 #undef BOYS_ORDERS_PACKED_INSTANTIATIONS
 #undef BOYS_ORDERS_NARROW_INSTANTIATIONS
 #undef BOYS_ORDERS_NARROW_RATIONAL_INSTANTIATIONS
+#undef BOYS_ORDERS_UNIFORM_INSTANTIATIONS
 
 } // namespace boys::detail
 

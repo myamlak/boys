@@ -877,6 +877,100 @@ NARROW_SCHEMES = len(SCHEME_NAMES)
 # table, only how long the walk takes.
 NARROW_WORKERS = 6
 
+# The uniform table's grid. Unlike every other partition here this one is fixed
+# rather than derived: the width is chosen so the interval an argument falls in
+# is one multiply and a truncation, and the degree is then the smallest that
+# holds the bar on that width for every order.
+#
+# THE DEGREE MUST BE EVEN, and that is a constraint of the kernel rather than a
+# preference of this generator. ClenshawSplit's odd part seeds at c[2m-1] and its
+# finalization assumes the m odd coefficients an even degree has, so an odd
+# degree drops its leading odd coefficient: the route then evaluates a different,
+# lower-degree polynomial, at full accuracy. This table was first fitted at
+# degree 7, which is odd, and the route's Clenshaw path asserted in debug and
+# returned those wrong values in release while a published bound for it sat in
+# the header. Every other table here is emitted even, but that was a convention
+# nothing enforced - see the static_assert emitted beside every degree below.
+#
+# Measured delivered error over [0, 35) at order 0, the worst order, on the
+# first interval, the worst interval:
+#
+#   degree 4    8.373e-11     too coarse for the double lane by three orders
+#   degree 6    1.998e-15     clears 1e-14, but with under one order of margin
+#   degree 7    1.110e-16     at the double-precision floor (odd: not readable)
+#   degree 8    at or below the floor, and even
+#
+# The decay is not geometric: 4 -> 6 is a factor of 42 000, 6 -> 7 only 18. So
+# degree 6 is not the cheap option it looks like - it spends the margin the
+# derived partitions are placed to hold - and 8 costs one multiply-add per order
+# over 7 for a fit the lane's own arithmetic cannot distinguish from exact.
+FLAT_DEG = 8
+#
+# kFlatHi is where the table stops and the closed form takes over. It is 35 and
+# not the 30.4 an earlier reading used: the one-term closed form's own error is
+# 4.774e-17 at n=32 and x=35 against 9.271e-15 at 30.4, and two halves each
+# budgeted 1e-14 cannot meet at the lower join.
+FLAT_WIDTH = mpf(1) / 7
+FLAT_HI = mpf(35)
+FLAT_INTERVALS = 245
+
+# The rule the kernel's split Clenshaw summation imposes on every degree it reads,
+# and the check that enforces it where the degrees are published.
+#
+# ClenshawSplit's odd part seeds at c[2m-1] and its finalization assumes the m odd
+# coefficients an even degree has. An odd degree therefore drops its leading odd
+# coefficient, and the route returns a different, lower-degree polynomial - at
+# full accuracy, so nothing about the value looks wrong. The kernel asserts the
+# rule at run time and that assert compiles out under NDEBUG.
+#
+# The uniform table was first fitted at degree 7, which is odd, and the route's
+# Clenshaw path asserted in debug and returned those wrong values in release
+# while a published bound for it sat in the header. Every other table here
+# happened to be emitted even, but that was a convention and no check held it:
+# the generator's own comment claimed "the generator only emits such degrees",
+# which was true until it was not. So each degree constant below carries its own
+# static_assert, emitted beside it, and a generation that breaks the rule fails
+# to compile in every build, host and device alike, rather than shipping a table
+# nothing reads correctly.
+CLENSHAW_DEGREE_RULE = (
+    "a degree the split Clenshaw summation reads must be even: its odd part "
+    "seeds at c[2m-1] and assumes the m odd coefficients an even degree has, so "
+    "an odd degree would drop its leading odd coefficient and evaluate a "
+    "different, lower-degree polynomial accurately"
+)
+
+
+def deg_assert(name):
+    """The check emitted beside a degree constant ClenshawSplit reads."""
+    return (f"static_assert({name} % 2 == 0,\n"
+            f"              \"{CLENSHAW_DEGREE_RULE}\");\n")
+
+
+# The float lane's uniform table stands on the same grid rather than a second
+# one: the width is what makes the interval an argument falls in one multiply and
+# a truncation, and a narrower width for a looser budget would be a second lookup
+# rule bought for nothing. What the lane's budget changes is the degree, and it is
+# placed by the law above - the smallest degree whose first neglected Chebyshev
+# coefficient stays inside the budget on that width.
+#
+# The worst cell is order 0 on the first interval, at every degree: 0 <= t^(2n)
+# <= 1 on the integration range gives |F_n(z)| <= |F_0(z)| for every real z, so
+# order 0 dominates, and F_0's derivative is -int t^2 e^(-x t^2) dt, negative
+# everywhere, so it decreases and the first interval dominates. For a 1e-7 budget
+# that law's own answer is degree 3, at 1.421e-8 there.
+#
+# Degree 3 is not admissible, and that is the kernel's property and not a
+# preference: ClenshawSplit takes its top odd coefficient at c[2m-1] and asserts
+# an even degree of at least 4 (boys_impl.hpp), so a degree-3 fit is not read as a
+# degree-3 fit - the reading measured 2.282e-2 on that cell, with c[1]'s term
+# carrying what c[3]'s should. The smallest admissible degree is 4, whose first
+# neglected coefficient there is 8.289e-11: nearly three orders below the lane's
+# own arithmetic floor, half an ulp of 1 being 5.96e-8, so what the table delivers
+# is the lane's rounding rather than this truncation. Degree 6 delivers the same
+# figure on every cell tried and costs two more coefficients per order and two
+# more multiply-adds per evaluation, which is why the degree stops at 4.
+F32_FLAT_DEG = 4
+
 
 def narrow_region_b():
     """Region B's narrow partition as stored fits, with their measured bound.
@@ -1048,6 +1142,7 @@ def narrow_a_block_lines(narrow_a):
         f"// stores {shipped_stored}, while one evaluation reads kNarrowADeg + 1 = {deg + 1}",
         f"// instead of the shipped pieces' {shipped_degs[0] + 1} to {shipped_degs[-1] + 1}.",
         f"inline constexpr int kNarrowADeg = {deg};",
+        deg_assert("kNarrowADeg"),
         "inline constexpr auto kNarrowAPieces = std::to_array<OrderPiece>({",
     ]
     offset = 0
@@ -1091,6 +1186,122 @@ def narrow_a_block_lines(narrow_a):
     for scheme in range(NARROW_SCHEMES):
         bounds = narrow_a["bounds"][scheme]
         lines.append(f"  {{{scheme}, {deg}, {total}, {total * (deg + 1)}, "
+                     f"{fmt(bounds[0])}, {fmt(bounds[1])}}},")
+    lines.append("});")
+    return lines
+
+
+def flat_order(n):
+    """One order's uniform-interval fits over [0, kFlatHi).
+
+    The grid is fixed rather than derived: every interval is kFlatWidth wide,
+    so locating the interval an argument falls in is one multiply and a
+    truncation, where the derived partitions need a piece scan. That is half of
+    what this table is for; the other half is that every order is fitted
+    independently, so a ladder is 33 independent polynomials and not a
+    recurrence that has to be walked in order.
+    """
+    intervals = []
+    worst = [[0.0, 0.0] for _ in range(NARROW_SCHEMES)]
+    for iv in range(FLAT_INTERVALS):
+        a = iv * FLAT_WIDTH
+        b = a + FLAT_WIDTH
+        cm = cheb_coeffs(n, a, b, FLAT_DEG)
+        cs = [float(c) for c in cm]
+        ms = [float(c) for c in cheb_to_monomial(cm)]
+        intervals.append((float(a), float(b), cs, ms))
+        w = fit_delivered(cs, ms, n, a, b, SCHEME_MEASURE_POINTS)
+        for scheme in range(NARROW_SCHEMES):
+            for route in (0, 1):
+                worst[scheme][route] = max(worst[scheme][route], w[scheme][route])
+    return n, intervals, worst
+
+
+def flat_table():
+    """The uniform table as stored fits, with its measured bound.
+
+    Every order is walked, measured and returned independently, so the pool
+    order cannot reach the result. The bounds are this table's own delivered
+    figures per scheme and multiply-add route, rounded up the way every other
+    table's are.
+    """
+    jobs = list(range(MAX_ORDER + 1))
+    with multiprocessing.get_context("spawn").Pool(min(len(jobs), NARROW_WORKERS)) as pool:
+        out = pool.map(flat_order, jobs)
+    per_order = [intervals for _n, intervals, _w in out]
+    worst = [[0.0, 0.0] for _ in range(NARROW_SCHEMES)]
+    for _n, _intervals, w in out:
+        for scheme in range(NARROW_SCHEMES):
+            for route in (0, 1):
+                worst[scheme][route] = max(worst[scheme][route], w[scheme][route])
+    bounds = [[scheme_bound(worst[s][r]) for r in (0, 1)]
+              for s in range(NARROW_SCHEMES)]
+    return {"orders": per_order, "worst": worst, "bounds": bounds}
+
+
+def flat_block_lines(flat):
+    """The uniform table as the header stores it.
+
+    Interval-major, [interval][order][coefficient], which is the opposite of
+    the derived tables' order-major layout and is the point of this one: an
+    argument's whole ladder is one contiguous block, so the 33 polynomials a
+    batch entry reads for one argument sit in consecutive cache lines instead
+    of 33 rows apart. The order is the inner index and the interval the outer
+    one, so a block is kMaxOrder + 1 rows of FLAT_DEG + 1 coefficients.
+    """
+    per_order = flat["orders"]
+    deg = FLAT_DEG
+    stored = FLAT_INTERVALS * (MAX_ORDER + 1) * (deg + 1)
+    lines = [
+        "// The uniform table: one grid over [0, kFlatHi), every interval the",
+        f"// same width, every order fitted independently at degree {deg}.",
+        "//",
+        "// Two things separate it from the derived partitions, and they are the",
+        "// two the option probe measures. The grid is fixed, so the interval an",
+        "// argument falls in is one multiply and a truncation and not a scan of",
+        "// piece edges. And no order is built from another, so a ladder is a set",
+        "// of independent polynomials: the derived routes recur upward from a",
+        "// seed, which is a serial dependency chain over the orders that no",
+        "// amount of instruction-level parallelism can shorten.",
+        "//",
+        "// What that costs is storage and a floor on the work per order. The",
+        "// derived partitions spend coefficients where the function needs them",
+        "// and recur, so a high order costs one multiply once the seed is paid;",
+        "// here every order pays its own degree. The table is one grid for all",
+        "// orders rather than a per-order walk, which is why it can be read at a",
+        "// fixed stride.",
+        f"inline constexpr int kFlatDeg = {deg};",
+        deg_assert("kFlatDeg"),
+        f"inline constexpr int kFlatIntervals = {FLAT_INTERVALS};",
+        f"inline constexpr double kFlatWidth = {fmt(FLAT_WIDTH)};",
+        f"inline constexpr double kFlatHi = {fmt(FLAT_HI)};",
+    ]
+    for name, column in (("kFlatCoeffs", 2), ("kFlatMonoCoeffs", 3)):
+        values = [fmt(c)
+                  for iv in range(FLAT_INTERVALS)
+                  for n in range(MAX_ORDER + 1)
+                  for c in per_order[n][iv][column]]
+        lines.append(f"inline constexpr auto {name} = std::to_array<double>({{")
+        for i in range(0, len(values), 6):
+            lines.append("  " + ", ".join(values[i:i + 6]) + ",")
+        lines.append("});")
+    lines.append(f"static_assert(std::size(kFlatCoeffs) == {stored} &&\n"
+                 f"                  std::size(kFlatMonoCoeffs) == {stored},\n"
+                 "              \"the uniform table must hold every interval of every order\");")
+    lines.append("")
+    lines.append("// The uniform table's certification rows, in the same form as the")
+    lines.append("// derived partitions': the bound each scheme delivers in each")
+    lines.append("// multiply-add route, worst over the whole table, published as a")
+    lines.append("// power-of-two round-up so it bounds a sweep and not only the one")
+    lines.append("// that measured it. The table is not read through a recurrence, so")
+    lines.append("// there is no seeding gain to bound and the figure is the table's")
+    lines.append("// own measured worst.")
+    lines.append("struct FlatRow { int scheme, deg, intervals, stored;")
+    lines.append("                 double fused, separate; };")
+    lines.append("inline constexpr auto kFlatRows = std::to_array<FlatRow>({")
+    for scheme in range(NARROW_SCHEMES):
+        bounds = flat["bounds"][scheme]
+        lines.append(f"  {{{scheme}, {deg}, {FLAT_INTERVALS}, {stored}, "
                      f"{fmt(bounds[0])}, {fmt(bounds[1])}}},")
     lines.append("});")
     return lines
@@ -1238,6 +1449,7 @@ def narrow_b_block_lines(narrow):
         "// and are partitioned above; their criterion is the gain the batch entry's",
         "// downward recursion applies to them, not this bound alone.",
         f"inline constexpr int kNarrowBDeg = {deg};",
+        deg_assert("kNarrowBDeg"),
         f"inline constexpr int kNarrowBPieces = {len(pieces)};",
     ]
     edges = [fmt(pieces[0][0])] + [fmt(p[1]) for p in pieces]
@@ -2674,6 +2886,81 @@ def narrow_region_b_f32():
             "worst": worst, "bounds": bounds, "at_resolution": at_resolution}
 
 
+# The float lane's uniform table
+# ---------------------------------------------------------------------------
+# The double lane's uniform table at the float lane's budget: the same fixed
+# grid, the same independence of every order, and the same interval-major
+# storage. What is not the same is the arithmetic the fit is judged in, and that
+# is the whole reason this is a second walk rather than a second table.
+#
+# The double lane's figure comes from fit_delivered, which sums the fits in
+# binary64 at the coefficients the table stores. This lane stores binary32 and
+# its entries evaluate in binary32, so a fit placed on a binary64 reading is a
+# fit whose published bound was never taken on the arithmetic its caller's
+# evaluation makes. The figure here is therefore the lane's own instrument,
+# f32_route_delivered: both schemes over both multiply-add routes, the worse of
+# the two kept, on the coefficients as they are stored.
+
+
+def flat_order_f32(n):
+    """One order's uniform-interval fits over [0, kFlatHi), in the lane's width.
+
+    Every order is fitted on its own and read from its own coefficients, exactly
+    as flat_order fits the double lane's: the fit is the interpolation of F_n on
+    the interval at F32_FLAT_DEG, converted to the monomial form once, and the
+    figure is what the stored coefficients deliver in the lane's arithmetic. The
+    grid the figure is read on is the lane's own - F32_NARROW_GRID, the one the
+    lane's narrow fits are read on - so a figure here and a figure there are
+    extremes over the same number of arguments per interval.
+    """
+    intervals = []
+    worst = [[0.0, 0.0], [0.0, 0.0]]
+    for iv in range(FLAT_INTERVALS):
+        a = iv * FLAT_WIDTH
+        b = a + FLAT_WIDTH
+        cm = cheb_coeffs(n, a, b, F32_FLAT_DEG)
+        cs = [float(c) for c in cm]
+        ms = [float(c) for c in cheb_to_monomial(cm)]
+        intervals.append((float(a), float(b), cs, ms))
+        w = f32_route_delivered(cs, ms, n, float(a), float(b), F32_NARROW_GRID)
+        for scheme in range(NARROW_SCHEMES):
+            for route in (0, 1):
+                if w[scheme][route] > worst[scheme][route]:
+                    worst[scheme][route] = w[scheme][route]
+    return n, intervals, worst
+
+
+def _flat_f32_job(n):
+    """One order's uniform fits, in a worker process."""
+    mp.dps = 30  # the fit path's own reference precision; a spawn does not carry it
+    return flat_order_f32(n)
+
+
+def flat_table_f32():
+    """The float lane's uniform table as stored fits, with its measured bound.
+
+    Every order is walked, measured and returned independently, so the pool
+    order cannot reach the result. The bounds are the table's own delivered
+    figures per scheme and multiply-add route, rounded up the way every other
+    table's are. The per-order figures travel back beside the maxima because a
+    maximum that hides its cells hides which order set it, and the orders of this
+    table do not all deliver the same figure.
+    """
+    jobs = list(range(MAX_ORDER + 1))
+    out = run_jobs(_flat_f32_job, jobs)
+    per_order = [intervals for _n, intervals, _w in out]
+    worst = [[0.0, 0.0], [0.0, 0.0]]
+    for _n, _intervals, w in out:
+        for scheme in range(NARROW_SCHEMES):
+            for route in (0, 1):
+                if w[scheme][route] > worst[scheme][route]:
+                    worst[scheme][route] = w[scheme][route]
+    bounds = [[scheme_bound(worst[s][r]) for r in (0, 1)]
+              for s in range(NARROW_SCHEMES)]
+    return {"orders": per_order, "worst": worst, "bounds": bounds,
+            "per_order": {n: w for n, _intervals, w in out}}
+
+
 # The float lane's rational route
 #
 # The double lane's rational construction at the float lane's own target. Two
@@ -3686,6 +3973,7 @@ def narrow_f32_block_lines(f, narrow_a_f32, narrow_b_f32):
             "// are untouched by this and are the same bytes whether or not the\n"
             "// partition is named.\n")
     f.write("inline constexpr int kNarrowADegF32 = " + str(F32_NARROW_DEG) + ";\n")
+    f.write(deg_assert("kNarrowADegF32"))
     narrow_a32 = []
     narrow_a32_mono = []
     narrow_a32_meta = []
@@ -3729,6 +4017,7 @@ def narrow_f32_block_lines(f, narrow_a_f32, narrow_b_f32):
             "// the argument falls in, against the shipped seed's kBDeg + 1 from its\n"
             "// single row.\n")
     f.write("inline constexpr int kNarrowBDegF32 = " + str(F32_NARROW_DEG) + ";\n")
+    f.write(deg_assert("kNarrowBDegF32"))
     nbp = narrow_b_f32["pieces"]
     f.write("inline constexpr int kNarrowBPiecesF32 = " + str(len(nbp)) + ";\n")
     edges = [fmtf(mpf(nbp[0][0]))] + [fmtf(mpf(p[1])) for p in nbp]
@@ -3748,6 +4037,7 @@ def narrow_f32_block_lines(f, narrow_a_f32, narrow_b_f32):
             "                  && std::size(kNarrowBcoeffsF32) == kNarrowBPiecesF32 * (kNarrowBDegF32 + 1)\n"
             "                  && std::size(kNarrowBMonoCoeffsF32) == std::size(kNarrowBcoeffsF32),\n"
             "              \"the narrow partition's pieces must tile [kX0, kX1)\");\n")
+
 
     # What the narrow partition stores and what it delivers, in the lane's own
     # arithmetic at each multiply-add route: the figure a row published for it
@@ -3778,11 +4068,84 @@ def narrow_f32_block_lines(f, narrow_a_f32, narrow_b_f32):
     f.write("});\n")
 
 
+def flat_f32_block_lines(f, flat_f32):
+    """The float lane's uniform table as the header writes it.
+
+    The double table's shape at the lane's own width. Interval-major,
+    [interval][order][coefficient], so an argument's whole ladder is one
+    contiguous block of kMaxOrder + 1 rows of kFlatDegF32 + 1 coefficients each.
+    Every stored coefficient is a binary32 literal and every published figure a
+    binary64 one, the width pair the lane's other tables are written in, and the
+    names carry the lane's F32 suffix, which is how its added tables are spelled
+    beside the shipped ones in the one namespace they share.
+
+    The grid constants are written because they are what the table was fitted on.
+    They are not a locator: the single-precision uniform route has no kernel in
+    this revision, so the mapping an entry will read the table with is that
+    entry's own decision and not something these lines settle.
+    """
+    per_order = flat_f32["orders"]
+    deg = F32_FLAT_DEG
+    stored = FLAT_INTERVALS * (MAX_ORDER + 1) * (deg + 1)
+    f.write("\n// The float lane's uniform table: the double lane's fixed grid over\n"
+            "// [0, kFlatHi), every interval the same width, every order fitted\n"
+            f"// independently at degree {deg}.\n"
+            "//\n"
+            "// The grid is the double table's and not a second one, because the\n"
+            "// width is what makes the interval an argument falls in one multiply\n"
+            "// and a truncation; what the lane's budget changes is the degree.\n"
+            f"// Degree {deg} is the smallest ClenshawSplit reads - it takes its top\n"
+            "// odd coefficient at c[2m-1] and requires an even degree of at least\n"
+            "// 4 - and its first neglected coefficient, 8.289e-11 at its worst\n"
+            "// cell (order 0 on the first interval), is nearly three orders below\n"
+            "// the lane's own arithmetic floor, half an ulp of 1 being 5.96e-8. So\n"
+            "// what this table delivers is the lane's rounding and not its\n"
+            "// truncation, and a higher even degree buys nothing for two more\n"
+            "// coefficients per order.\n"
+            "//\n"
+            "// Layout is the double table's: interval-major,\n"
+            "// [interval][order][coefficient], so an argument's whole ladder is one\n"
+            "// contiguous block instead of 33 rows apart.\n")
+    f.write(f"inline constexpr int kFlatDegF32 = {deg};\n")
+    f.write(deg_assert("kFlatDegF32"))
+    f.write(f"inline constexpr int kFlatIntervalsF32 = {FLAT_INTERVALS};\n")
+    f.write(f"inline constexpr float kFlatWidthF32 = {fmtf(FLAT_WIDTH)};\n")
+    f.write(f"inline constexpr float kFlatHiF32 = {fmtf(FLAT_HI)};\n")
+    for name, column in (("kFlatCoeffsF32", 2), ("kFlatMonoCoeffsF32", 3)):
+        values = [fmtf(c)
+                  for iv in range(FLAT_INTERVALS)
+                  for n in range(MAX_ORDER + 1)
+                  for c in per_order[n][iv][column]]
+        f.write(f"inline constexpr auto {name} = std::to_array<float>({{\n")
+        for i in range(0, len(values), 6):
+            f.write("  " + ", ".join(values[i:i + 6]) + ",\n")
+        f.write("});\n")
+    f.write(f"static_assert(std::size(kFlatCoeffsF32) == {stored} &&\n"
+            f"                  std::size(kFlatMonoCoeffsF32) == {stored},\n"
+            "              \"the float uniform table must hold every interval of every "
+            "order\");\n")
+    f.write("\n// The float uniform table's certification rows, in the same form as\n"
+            "// the double table's and the lane's other rows: the bound each scheme\n"
+            "// delivers in each multiply-add route, worst over the whole table,\n"
+            "// published as a power-of-two round-up so it bounds a sweep and not\n"
+            "// only the one that measured it. The figures were read in the lane's\n"
+            "// own binary32, on the coefficients as stored, with the worse of the\n"
+            "// two multiply-add routes kept - which is the arithmetic the entries\n"
+            "// run and not the binary64 sweep the double lane's fit is judged by.\n"
+            "struct FlatRowF32 { int scheme, deg, intervals, stored;\n"
+            "                    double fused, separate; };\n"
+            "inline constexpr auto kFlatRowsF32 = std::to_array<FlatRowF32>({\n")
+    for scheme in range(NARROW_SCHEMES):
+        bounds = flat_f32["bounds"][scheme]
+        f.write(f"  {{{scheme}, {deg}, {FLAT_INTERVALS}, {stored}, "
+                f"{fmt(bounds[0])}, {fmt(bounds[1])}}},\n")
+    f.write("});\n")
+
 
 def write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32,
-                        narrow_a_f32, narrow_b_f32, narrow_rat_f32):
+                        narrow_a_f32, narrow_b_f32, narrow_rat_f32, flat_f32):
     """The float lane's tables: the shipped lane, the rational route, the narrow
-    partition under both routes."""
+    partition under both routes, the uniform table."""
     f.write("\nnamespace boys::detail::f32 {\n\n")
     all_coeffs = []
     all_mono = []
@@ -3829,6 +4192,7 @@ def write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32,
     f.write("inline constexpr auto kMonoBcoeffs = std::to_array<float>({"
             + ", ".join(fmtf(c) for c in ms) + "});\n")
     f.write(f"inline constexpr int kBDeg = {deg};\n")
+    f.write(deg_assert("kBDeg"))
 
     # The rational route. Its pieces are the family's own dyadic cover of each
     # order's interval rather than the Chebyshev table's breaks, because a
@@ -3943,12 +4307,17 @@ def write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32,
     narrow_f32_block_lines(f, narrow_a_f32, narrow_b_f32)
     narrow_rat_f32_block_lines(f, narrow_rat_f32, narrow_b_f32)
 
+    # The uniform table, beside every derived partition rather than in place of
+    # any of them, as the double lane's is written beside its own.
+    flat_f32_block_lines(f, flat_f32)
+
     f.write("\n}  // namespace boys::detail::f32\n")
 
 
 def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb,
                  scheme_rows, rat_b, rat_a, rat_a_f32, rat_b_f32, narrow, narrow_a,
-                 narrow_rat_a, narrow_rat_b, narrow_a_f32, narrow_b_f32):
+                 narrow_rat_a, narrow_rat_b, narrow_a_f32, narrow_b_f32, flat,
+                 flat_f32):
     with open(path, "w", newline="\n") as f:
         f.write("// Generated by tools/gen_boys_coefficients.py - DO NOT EDIT.\n")
         f.write("// Piecewise Chebyshev (split Clenshaw) fits of F_n(x), region A seeds\n")
@@ -4063,10 +4432,16 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
         f.write("inline constexpr auto kMonoBcoeffs = std::to_array<double>({"
                 + ", ".join(fmt(c) for c in mono) + "});\n")
         f.write(f"inline constexpr int kBDeg = {deg};\n")
+        f.write(deg_assert("kBDeg"))
         f.write("\n")
         # The narrow partitions of the same regions, beside the shipped fits
         # rather than in place of them. See narrow_block_lines.
         for line in narrow_block_lines(narrow_a, narrow, narrow_rat_a, narrow_rat_b):
+            f.write(line + "\n")
+        f.write("\n")
+        # The uniform table, beside every derived partition rather than in
+        # place of any of them. See flat_block_lines.
+        for line in flat_block_lines(flat):
             f.write(line + "\n")
         f.write("\n")
         ext_deg, ext_cs, ext_mono = ext_cheb
@@ -4086,6 +4461,7 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
             f.write("  " + ", ".join(fmt(c) for c in ext_mono[i:i + 6]) + ",\n")
         f.write("});\n")
         f.write(f"inline constexpr int kExtendedBDeg = {ext_deg};\n")
+        f.write(deg_assert("kExtendedBDeg"))
         # The per-order dispatch threshold table: threshold[n] is the
         # certified boundary (rounded up to the next double) of the smallest
         # kmax row that covers the order n (the rows 4/8/16/32), so the
@@ -4195,7 +4571,7 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
         # Float lane.
         narrow_rat_f32 = fit_narrow_rational_f32(narrow_a_f32, narrow_b_f32)
         write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32,
-                        narrow_a_f32, narrow_b_f32, narrow_rat_f32)
+                        narrow_a_f32, narrow_b_f32, narrow_rat_f32, flat_f32)
         f.write("\n/// \\endcond\n")
 
 
@@ -4371,6 +4747,14 @@ def main():
                         help="where --narrow-only writes the block (default a scratch "
                              "name beside the committed header; clang-format must find "
                              "the repo .clang-format, so keep it inside the tree)")
+    parser.add_argument("--f32-flat-only", action="store_true",
+                        help="fit only the float lane's uniform table and print what "
+                             "each order delivers, without fitting the rest of the "
+                             "table; writes its header block to --f32-flat-out when "
+                             "that is given and nothing when it is not")
+    parser.add_argument("--f32-flat-out", default="",
+                        help="where --f32-flat-only writes the table's header block "
+                             "(default: nowhere, the figures are printed instead)")
     parser.add_argument("--derive-target", default="1e-14",
                         help="the target --derive-partition derives against (default the "
                              "quantum-chemistry 1e-14)")
@@ -4440,6 +4824,42 @@ def main():
                   f"{narrow['bounds'][scheme][0]:.6e}")
         return 0
 
+    if args.f32_flat_only:
+        # The float lane's uniform table on its own. A fixed grid and 33
+        # independent walks: nothing else in the generation places it and nothing
+        # else has to run to read what it delivers, so the table and its figure
+        # are taken here without the hours the derived routes and the scheme
+        # sweeps take. Every order's figure is printed rather than only the
+        # maximum, because a maximum hides which order set it - and the orders of
+        # this table are not all the same figure.
+        print(f"fitting the float lane's uniform table (degree {F32_FLAT_DEG}, width "
+              f"{mp.nstr(FLAT_WIDTH, 6)} over [0, {FLAT_HI}], {FLAT_INTERVALS} "
+              f"intervals, {F32_NARROW_GRID + 1} arguments per interval, both "
+              f"multiply-add routes) ...")
+        flat_f32 = flat_table_f32()
+        print("per order, worst |F_n - fit| over the grid in the lane's own arithmetic:")
+        for n in range(MAX_ORDER + 1):
+            w = flat_f32["per_order"][n]
+            print(f"  F{n:>2}: {max(w[0][0], w[0][1], w[1][0], w[1][1]):.6e}   "
+                  f"clenshaw {w[0][0]:.6e} / {w[0][1]:.6e}   "
+                  f"horner {w[1][0]:.6e} / {w[1][1]:.6e}  (fused / separate)")
+        for scheme, name in enumerate(SCHEME_NAMES):
+            for route, route_name in ((0, "fused"), (1, "separate")):
+                order = max(range(MAX_ORDER + 1),
+                            key=lambda n: flat_f32["per_order"][n][scheme][route])
+                print(f"{name:14s} {route_name:8s} worst "
+                      f"{flat_f32['worst'][scheme][route]:.6e} at F{order}, "
+                      f"bound {flat_f32['bounds'][scheme][route]:.6e}")
+        if args.f32_flat_out:
+            os.makedirs(os.path.dirname(args.f32_flat_out) or ".", exist_ok=True)
+            with open(args.f32_flat_out, "w", newline="\n") as f:
+                f.write("#include <array>\n#include <cstddef>\n\n"
+                        "namespace boys::detail::f32 {\n\n")
+                flat_f32_block_lines(f, flat_f32)
+                f.write("\n}  // namespace boys::detail::f32\n")
+            print(f"wrote {args.f32_flat_out}")
+        return 0
+
     print("fitting double lane (weighted region-A seeds, tol 5e-14, deg<=18) ...")
     double_orders = run_jobs(_fit_order_job,
                              [(n, False, False) for n in range(MAX_ORDER + 1)])
@@ -4480,6 +4900,29 @@ def main():
     # arithmetic the kernel runs at both multiply-add routes.
     narrow_rat_b = narrow_region_b_rational(narrow)
     narrow_rat_a = narrow_region_a_rational(narrow_a)
+
+    # The uniform table. Independent of every partition above - it is a fixed
+    # grid and not a derived walk - so it is fitted here rather than anywhere
+    # the derived routes' work would reach it.
+    print(f"fitting the uniform table (degree {FLAT_DEG}, width "
+          f"{mp.nstr(FLAT_WIDTH, 6)} over [0, {FLAT_HI}]) ...")
+    flat = flat_table()
+    for scheme in range(NARROW_SCHEMES):
+        print(f"  {SCHEME_NAMES[scheme]:14s} worst {flat['worst'][scheme][0]:.6e} / "
+              f"{flat['worst'][scheme][1]:.6e} (fused / separate), bound "
+              f"{flat['bounds'][scheme][0]:.6e}")
+
+    # The same table for the float lane: the same grid, its own degree, and its
+    # figure read in the lane's own arithmetic. Beside the double table rather
+    # than instead of it, as the lane's other added fits are.
+    print(f"fitting the float lane's uniform table (degree {F32_FLAT_DEG}, width "
+          f"{mp.nstr(FLAT_WIDTH, 6)} over [0, {FLAT_HI}], the lane's own "
+          f"arithmetic) ...")
+    flat_f32 = flat_table_f32()
+    for scheme in range(NARROW_SCHEMES):
+        print(f"  {SCHEME_NAMES[scheme]:14s} worst {flat_f32['worst'][scheme][0]:.6e} / "
+              f"{flat_f32['worst'][scheme][1]:.6e} (fused / separate), bound "
+              f"{flat_f32['bounds'][scheme][0]:.6e}")
 
     # The rational region-B route, over the interval the Chebyshev region-B fit
     # was just given, so the two are compared on the same interval against the
@@ -4549,7 +4992,8 @@ def main():
             write_header(tmp_header, double_orders, float_orders, b_cheb, b_cheb_f32,
                          (ext_deg, ext_cs, ext_mono), scheme_rows, rat_b, rat_a,
                          rat_a_f32, rat_b_f32, narrow, narrow_a,
-                         narrow_rat_a, narrow_rat_b, narrow_a_f32, narrow_b_f32)
+                         narrow_rat_a, narrow_rat_b, narrow_a_f32, narrow_b_f32, flat,
+                         flat_f32)
             format_header(tmp_header)
             write_reference(tmp_reference)
             ok = True
@@ -4569,7 +5013,8 @@ def main():
     write_header(args.header, double_orders, float_orders, b_cheb, b_cheb_f32,
                  (ext_deg, ext_cs, ext_mono), scheme_rows, rat_b, rat_a,
                  rat_a_f32, rat_b_f32, narrow, narrow_a,
-                 narrow_rat_a, narrow_rat_b, narrow_a_f32, narrow_b_f32)
+                 narrow_rat_a, narrow_rat_b, narrow_a_f32, narrow_b_f32, flat,
+                 flat_f32)
     format_header(args.header)
     print(f"wrote {args.header}")
 

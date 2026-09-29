@@ -16,10 +16,15 @@
 // reachable from outside through the entries that carry the orders axis
 // (PackAxis::kOrders), which dispatch to BoysAllOrdersPacked below.
 //
-// Region A only (argument below kX0), where the per-order piecewise fits are
-// stored. The other two regions evaluate one seed and reach every order from
-// it by recursion, which is one fit for all of them; the fits are the cost
-// this lane exists to spread over a vector.
+// The derived routes' region A only (argument below kX0), where the per-order
+// piecewise fits are stored. The other two regions evaluate one seed and reach
+// every order from it by recursion, which is one fit for all of them; the fits
+// are the cost this lane exists to spread over a vector.
+//
+// The uniform partition is the exception to the interval and not to the shape:
+// its table is one fixed grid over the whole fitted domain rather than a cut of
+// region A, so the lane reads it to that grid's own end, which is above kX0,
+// and falls to the certified scalar lane past it.
 
 #include "boys/backend.hpp"
 

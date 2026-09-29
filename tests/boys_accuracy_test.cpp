@@ -427,6 +427,82 @@ template <double kM> void SweepDoubleBatchHorner() {
     PrintWorsts("double batch, horner", kM, worst);
 }
 
+// The uniform route against the same committed reference at the same bar. It
+// answers from a fixed grid rather than a derived partition and reads every
+// order from its own coefficients rather than from a seed and a recursion, so
+// what this measures is the whole of that route's arithmetic - the interval
+// index, the mapped argument, and the block a ladder is read from - and not the
+// fit alone. The last two are as much a part of the table as its numbers are: a
+// wrong stride reads a correct table wrongly and delivers a wrong value that no
+// check of the coefficients would catch.
+// Both schemes, because the table stores both coefficient forms and only the
+// Horner one was ever swept. That omission is not hypothetical: the uniform
+// table was first fitted at an odd degree, which ClenshawSplit cannot read at
+// all (it asserts an even degree and says so), so the route's Clenshaw path
+// asserted in debug and computed silently wrong values in release while a
+// bound for it sat published. A scheme the table carries but nothing sweeps is
+// a scheme nothing has checked.
+template <double kM, boys::EvalScheme kScheme = boys::EvalScheme::kHorner>
+void SweepDoubleBatchUniform() {
+    using Policy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                    kScheme,
+                                    boys::BoysBudget::kFloat,
+                                    boys::PackAxis::kArguments,
+                                    boys::FitGranularity::kUniform>;
+    RegionWorsts worst;
+    std::vector<double> batch(boys::kMaxBoysOrder + 1);
+
+    for (const ReferenceRow& row : gReference)
+    {
+        boys::BoysAllOrders<kM, Policy>(row.n, row.x, batch.data());
+
+        for (int k = 0; k <= row.n; ++k)
+        {
+            const double reference = gGrid.Value(k, row.x);
+            const double bound = kM * RegionBound(RegionOf(row.x), LaneKind::kDoubleBatch);
+            const double error = std::abs(batch[static_cast<std::size_t>(k)] - reference);
+            EXPECT_LE(error, bound)
+                << "m=" << kM << " uniform batch F" << k << " at x=" << row.x
+                << " got=" << batch[static_cast<std::size_t>(k)] << " want=" << reference;
+            worst.Update(error, row.x);
+        }
+    }
+
+    PrintWorsts(kScheme == boys::EvalScheme::kHorner ? "double batch, uniform horner"
+                                                     : "double batch, uniform clenshaw",
+                kM,
+                worst);
+}
+
+// The uniform route's single-order path, on the same grid and at the same bar.
+// This is the reading where the route is cheapest rather than dearest, and it
+// shares the index arithmetic with the ladder above through one FlatLocate, so
+// what this separates is the order lookup and not the interval lookup.
+template <double kM, boys::EvalScheme kScheme = boys::EvalScheme::kHorner>
+void SweepDoubleSingleUniform() {
+    using Policy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                    kScheme,
+                                    boys::BoysBudget::kFloat,
+                                    boys::PackAxis::kArguments,
+                                    boys::FitGranularity::kUniform>;
+    RegionWorsts worst;
+
+    for (const ReferenceRow& row : gReference)
+    {
+        const double value = boys::BoysSingle<kM, Policy>(row.n, row.x);
+        const double bound = kM * RegionBound(RegionOf(row.x), LaneKind::kDoubleSingle);
+        const double error = std::abs(value - row.value);
+        EXPECT_LE(error, bound) << "m=" << kM << " uniform single n=" << row.n << " x=" << row.x
+                                << " got=" << value << " want=" << row.value;
+        worst.Update(error, row.x);
+    }
+
+    PrintWorsts(kScheme == boys::EvalScheme::kHorner ? "double single, uniform horner"
+                                                     : "double single, uniform clenshaw",
+                kM,
+                worst);
+}
+
 template <double kM> void SweepDoubleSingleHorner() {
     using Policy = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>;
     RegionWorsts worst;
@@ -445,6 +521,10 @@ template <double kM> void SweepDoubleSingleHorner() {
 }
 
 TEST(BoysAccuracyTest, DoubleBatchHornerRungsAgainstTheReferenceGrid) {
+    SweepDoubleBatchUniform<1.0>();
+    SweepDoubleSingleUniform<1.0>();
+    SweepDoubleBatchUniform<1.0, boys::EvalScheme::kSplitClenshaw>();
+    SweepDoubleSingleUniform<1.0, boys::EvalScheme::kSplitClenshaw>();
     SweepDoubleBatchHorner<1.0>();
     SweepDoubleBatchHorner<64.0>();
     SweepDoubleBatchHorner<256.0>();

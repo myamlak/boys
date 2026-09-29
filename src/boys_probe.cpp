@@ -874,9 +874,9 @@ std::vector<AccuracyTier> LaneTiers(Precision lane) {
 /// The name states the cell's own axes and omits the defaults, so a defaulted
 /// route, scheme, partition, axis and division form leave no segment behind. The
 /// partition and the rung share the first segment — `batch` for the shipped
-/// partition at the reference rung, `tier-<m>` for it at a rung, `narrow` for
-/// the other partition — and the precision closes every name, because a name is
-/// only ever read inside its class.
+/// partition at the reference rung, `tier-<m>` for it at a rung, and `narrow` or
+/// `uniform` for either of the other two — and the precision closes every name,
+/// because a name is only ever read inside its class.
 ///
 /// The division form is named only where it is not the one the library's default
 /// policy runs, and that is the one reading of this axis under which the names
@@ -902,7 +902,10 @@ std::string CellName(OptionPrecision precision,
     std::string name = "batch";
     const bool rungNamed = tier != AccuracyTier::kReference;
 
-    if (granularity == FitGranularity::kNarrow)
+    if (granularity == FitGranularity::kUniform)
+    {
+        name = "uniform";
+    } else if (granularity == FitGranularity::kNarrow)
     {
         name = "narrow";
     } else if (rungNamed)
@@ -910,7 +913,10 @@ std::string CellName(OptionPrecision precision,
         name = Text("tier-%g", AccuracyMultiplier(tier));
     }
 
-    if (granularity == FitGranularity::kNarrow && rungNamed)
+    // A named partition carries its rung in the same segment; the shipped one
+    // carries the rung instead of a partition name, because it is the partition
+    // a caller who names nothing gets and so has no name of its own to keep.
+    if (granularity != FitGranularity::kShipped && rungNamed)
     {
         name += Text("-%g", AccuracyMultiplier(tier));
     }
@@ -1433,6 +1439,12 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
     // entry the cell reaches: the run-time tier entry reports it through QueryTier
     // whatever partition it reads. The partition's own figures are recorded beside
     // it, with the interval they hold on.
+    //
+    // The row is the option's own, found by the value it names rather than by
+    // position in the table: every partition of that table certifies its own fits
+    // at a figure for the interval they cover, and a lookup that carried one
+    // partition's figures and left the others at zero would report a cell whose
+    // own tables have a figure as one whose tables have none.
     for (Option& option : options)
     {
         if (option.kind != OptionKind::kFp64Cell)
@@ -1442,16 +1454,13 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
 
         option.bound = TierBound(option.tier);
 
-        if (option.granularity == FitGranularity::kNarrow)
+        for (const FitGranularityInfo& partition : partitions)
         {
-            for (const FitGranularityInfo& partition : partitions)
+            if (partition.granularity == option.granularity)
             {
-                if (partition.granularity == FitGranularity::kNarrow)
-                {
-                    option.ownBound = partition.bound;
-                    option.ownLo = partition.lo;
-                    option.ownHi = partition.hi;
-                }
+                option.ownBound = partition.bound;
+                option.ownLo = partition.lo;
+                option.ownHi = partition.hi;
             }
         }
     }
@@ -1510,10 +1519,78 @@ void CellRung(AccuracyTier tier, int nmax, double x, double* out) noexcept {
     }
 }
 
+/// One uniform-partition cell of the option space, at the one route, packing
+/// axis and rung this build carries that partition at.
+///
+/// The partition is served on one route, one packing axis and one rung, and each
+/// of the three is refused by the library where the call is named: the rational
+/// route at compile time in the fit selector, because its fit is a pair per
+/// derived piece and the grid is fixed; the across-orders axis, because the
+/// packed lane is instantiated over the two derived partitions and over no other
+/// table; and every rung past the reference multiplier, because the table stores
+/// one degree for every order and every interval. So the book this probe
+/// measures from holds no uniform cell but those three, which is why this arm
+/// can name them as constants instead of crossing an axis that has one value
+/// here.
+///
+/// A cell outside them is not one any book of this probe can name - the
+/// enumeration asks \c BoysAccuracyGuaranteed before it registers a cell - and
+/// it stops rather than being evaluated under a combination it did not name.
+/// That is the failure this arm exists to make impossible rather than to answer:
+/// another partition's fits under the uniform name is what the derived
+/// partitions' own lattice did with this value before it was given an arm.
+///
+/// \tparam kDivision the form the cell's recurrence steps divide in
+template <DivisionForm kDivision>
+void CellUniform(FitRoute route,
+                 EvalScheme scheme,
+                 PackAxis pack,
+                 AccuracyTier tier,
+                 int nmax,
+                 double x,
+                 double* out) noexcept {
+    if (route != FitRoute::kChebyshev || pack != PackAxis::kArguments ||
+        tier != AccuracyTier::kReference)
+    {
+        std::fprintf(stderr,
+                     "boys-probe: a uniform-partition cell was named at a route, a packing axis "
+                     "or a rung this partition is not served at (route %d, axis %d, m = %g)\n",
+                     static_cast<int>(route),
+                     static_cast<int>(pack),
+                     AccuracyMultiplier(tier));
+        std::abort();
+    }
+
+    const auto with_scheme = [&]<EvalScheme kScheme>() {
+        using Policy = EvalPolicy<FitRoute::kChebyshev,
+                                  kScheme,
+                                  BoysBudget::kFloat,
+                                  PackAxis::kArguments,
+                                  FitGranularity::kUniform,
+                                  kDivision>;
+        BoysAllOrders<kBoysFullAccuracyMultiplier, Policy>(nmax, x, out);
+    };
+
+    if (scheme == EvalScheme::kHorner)
+    {
+        with_scheme.template operator()<EvalScheme::kHorner>();
+    } else
+    {
+        with_scheme.template operator()<EvalScheme::kSplitClenshaw>();
+    }
+}
+
 /// The same, at one division form named as a compile-time value: the axes other
 /// than the form narrow at run time inside it, and every one of them reaches the
 /// instantiation it names, so a cell is measured through its own policy and never
 /// through another cell's.
+///
+/// The uniform partition is dispatched before the lattice rather than inside it,
+/// and that is the shape the partition's own coverage has: the three axes the
+/// lattice crosses are the three this partition is served on one member of each,
+/// so a lattice arm for it would have to instantiate the combinations the
+/// library refuses - the rational route's policy at compile time, and the packed
+/// lane's nonexistent instantiation - to answer a cell that is never one.
 ///
 /// \tparam kDivision the form this call's cells divide in
 template <DivisionForm kDivision>
@@ -1525,6 +1602,13 @@ void CellFormPolicy(FitRoute route,
                     int nmax,
                     double x,
                     double* out) noexcept {
+    if (granularity == FitGranularity::kUniform)
+    {
+        CellUniform<kDivision>(route, scheme, pack, tier, nmax, x, out);
+
+        return;
+    }
+
     const auto with_partition = [&]<FitRoute kRoute, EvalScheme kScheme, PackAxis kPack>() {
         if (granularity == FitGranularity::kNarrow)
         {
@@ -1667,6 +1751,13 @@ void CellRungSingle(AccuracyTier tier, int nmax, float x, float* out) noexcept {
 /// narrows to the template argument it names, so a cell is measured through its
 /// own policy and never through another cell's.
 ///
+/// The uniform partition has no arm here and no cell: the library refuses it on
+/// these lanes where it is named, so the enumeration registers none of them and
+/// this dispatch is never handed one. It stops rather than reading the shipped
+/// partition's fits under the uniform name if one arrives, which is the shape a
+/// two-member partition test has and the shape the double lane's lattice had
+/// before it was given an arm.
+///
 /// \tparam kDivision the form this call's cells divide in
 template <DivisionForm kDivision>
 void CellFormPolicySingle(BoysBudget budget,
@@ -1678,6 +1769,14 @@ void CellFormPolicySingle(BoysBudget budget,
                           int nmax,
                           float x,
                           float* out) noexcept {
+    if (granularity == FitGranularity::kUniform)
+    {
+        std::fprintf(stderr,
+                     "boys-probe: a uniform-partition cell was named on a single-precision lane, "
+                     "which stores no fit over that grid\n");
+        std::abort();
+    }
+
     const auto with_partition = [&]<BoysBudget kBudget,
                                     FitRoute kRoute,
                                     EvalScheme kScheme,
@@ -4489,13 +4588,36 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
 
     for (const FitGranularityInfo& partition : report.granularities)
     {
-        text += Text("    %-8s rungs=%d axes=%s%d | region A %d piece(s) deg %d (%d stored) | "
-                     "region B %d piece(s) deg %d (%d stored)\n",
-                     partition.name, partition.rungs,
-                     FitGranularityHasAxis(partition, PackAxis::kArguments) ? "arguments+" : "",
-                     FitGranularityHasAxis(partition, PackAxis::kOrders) ? 1 : 0,
-                     partition.regionAPieces, partition.regionADeg, partition.regionAStored,
-                     partition.regionBPieces, partition.regionBDeg, partition.regionBStored);
+        // A partition that stores one table over the whole of the interval it
+        // serves has no region-B seed beside it, and its region-A fields are
+        // that one table's own: printing them under the derived partitions'
+        // labels would report a grid's intervals as region A's pieces and a
+        // table that is not there as a region-B count of zero. The row says
+        // which of the two shapes it is, and the interval it holds on, here
+        // rather than in the prose below.
+        const bool oneTable = partition.regionBPieces == 0 && partition.regionBStored == 0;
+
+        if (oneTable)
+        {
+            text += Text("    %-8s rungs=%d axes=%s%d | one table over x in [%.4g, %.4g): "
+                         "%d interval(s) deg %d (%d stored) | no region-B table of its own\n",
+                         partition.name, partition.rungs,
+                         FitGranularityHasAxis(partition, PackAxis::kArguments) ? "arguments+" : "",
+                         FitGranularityHasAxis(partition, PackAxis::kOrders) ? 1 : 0,
+                         partition.lo, partition.hi, partition.regionAPieces, partition.regionADeg,
+                         partition.regionAStored);
+        }
+        else
+        {
+            text += Text("    %-8s rungs=%d axes=%s%d | region A %d piece(s) deg %d (%d stored) | "
+                         "region B %d piece(s) deg %d (%d stored)\n",
+                         partition.name, partition.rungs,
+                         FitGranularityHasAxis(partition, PackAxis::kArguments) ? "arguments+" : "",
+                         FitGranularityHasAxis(partition, PackAxis::kOrders) ? 1 : 0,
+                         partition.regionAPieces, partition.regionADeg, partition.regionAStored,
+                         partition.regionBPieces, partition.regionBDeg, partition.regionBStored);
+        }
+
         text += Text("             route(s) %s | stored fits: delivered %.3g | bound %.3g, on "
                      "x in [%.4g, %.4g) alone\n",
                      PartitionRouteNames(partition).c_str(), partition.delivered, partition.bound,

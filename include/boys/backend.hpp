@@ -195,11 +195,10 @@ const char* DivisionFormName(DivisionForm form) noexcept;
 /// side — a narrower piece is fewer coefficients to evaluate per call and more
 /// pieces to store and to select between.
 ///
-/// Two partitions are offered rather than a spectrum. Each carries its own
-/// stored counts and its own certified bound, and neither is a rung of the
-/// other: naming one changes the fits that serve the intervals its own report
-/// names, and the shipped partition's coefficients are byte-identical whether
-/// or not the other exists.
+/// Each partition is whole rather than a point on a spectrum. It carries its
+/// own stored counts and its own certified bound, and none is a rung of
+/// another: naming one changes the fits that serve the intervals its own report
+/// names.
 ///
 /// **Narrowing is a trade and not a saving.** A narrower piece is fewer
 /// coefficients to read per evaluation and more pieces to store and to look up
@@ -230,22 +229,32 @@ const char* DivisionFormName(DivisionForm form) noexcept;
 /// arithmetic its lane runs at both multiply-add routes.
 ///
 /// A member the build cannot serve is refused where it is named, with the
-/// reason, rather than answered from the shipped tables: the two partitions'
+/// reason, rather than answered from the shipped tables: the partitions'
 /// coefficients are different fits of the same function over the same
-/// interval, so a silent substitution would return the shipped partition's
-/// values under the other's name. Two refusals remain, each naming the work it
-/// would need: the rational route over the narrow partition on the packing axis,
-/// where the route's region-A pairs cover the shipped per-order pieces and the
-/// packed lane steps one order's coefficients to the next at a fixed stride, so
-/// a packed kernel over the pairs' own narrow pieces is a kernel to write; and
-/// the narrow partition on the single-precision lanes past the reference
-/// multiplier, which hold one coefficient set and one degree table and so have no
-/// narrow rung table to cut. The relaxed rungs and the across-orders packing axis
-/// are otherwise built: a rung of this partition is derived against its own
-/// pieces rather than truncated from the shipped rows, and the packed lane
-/// reaches a per-order cut with a gathered fetch, reading each of the four orders
-/// it holds its own piece and coefficients instead of stepping one piece's
-/// coefficients at a fixed stride.
+/// interval, so a silent substitution would return one partition's values
+/// under another's name, at a certified bound, with nothing reporting it.
+///
+/// Every refusal names the work it would need, and none of them is a
+/// combination that cannot exist - each is a body not yet written. The refusals
+/// are: the rational route over the narrow partition on the packing axis, where
+/// the route's region-A pairs cover the shipped per-order pieces and the packed
+/// lane steps one order's coefficients to the next at a fixed stride, so a
+/// packed kernel over the pairs' own narrow pieces is a kernel to write; the
+/// uniform partition on every entry that has no branch reading the fixed grid,
+/// which is all of them but the all-orders and single-order entries; the
+/// uniform partition at any multiplier but the reference, its table storing one
+/// degree for every order and for every interval, so a rung has no criterion to
+/// cut it by and no per-order effective-degree table to read; and the rational
+/// family at the uniform partition, which has no derived piece for a
+/// numerator/denominator pair to be cut over.
+///
+/// The relaxed rungs and the across-orders packing axis are otherwise built: a
+/// rung of the narrow partition is derived against its own pieces rather than
+/// truncated from the shipped rows, and the packed lane reaches a per-order cut
+/// with a gathered fetch, reading each of the four orders it holds its own
+/// piece and coefficients instead of stepping one piece's coefficients at a
+/// fixed stride. This includes the single-precision lanes, whose narrow rung
+/// tables are derived like the double lane's rather than absent.
 ///
 /// \ingroup boys
 enum class FitGranularity : std::uint8_t {
@@ -258,14 +267,27 @@ enum class FitGranularity : std::uint8_t {
     /// truncation bound gives a piece of that width at the bar the piece is read
     /// under. Fewer coefficients per evaluation, more pieces in the table.
     kNarrow = 1,
+
+    /// A fixed grid over the whole fitted domain rather than a derived one: one
+    /// uniform interval width, every order fitted independently at one degree,
+    /// and no order built from another.
+    ///
+    /// The other two partitions are walks: each places a piece where the proved
+    /// bound says the function needs one, so the pieces are of different widths
+    /// and locating one is a scan of piece edges. This one trades that for a
+    /// grid whose index is one multiply and a truncation, and it trades the
+    /// per-order recursion for independent polynomials. Both are what the
+    /// option probe measures; neither is free, and the table pays for them in
+    /// stored coefficients and in a floor on the work each order does.
+    kUniform = 2,
 };
 
 /// The partition the entries evaluate when the caller names none.
 ///
 /// The narrow one: a call site that names no partition reads the narrow pieces'
-/// coefficients, and naming \c kShipped is how a caller asks for the other
-/// partition. The two cut the same fits, so this value is a choice between two
-/// ways of computing the same answer rather than between two accuracies.
+/// coefficients, and naming another value asks for that partition's. The
+/// derived partitions cut the same fits, so choosing between them is a choice
+/// of arithmetic rather than of accuracy.
 ///
 /// **It is not the cheaper of the two at either setting of the other axis.** On
 /// the host these were last measured on, the narrow partition was 0.3% to 0.8%
@@ -286,8 +308,8 @@ inline constexpr FitGranularity kDefaultFitGranularity = FitGranularity::kNarrow
 ///
 /// \param granularity the partition
 ///
-/// \returns a string literal naming it: "shipped" or "narrow", and "unknown"
-///          for a value outside the enumerators
+/// \returns a string literal naming it: "shipped", "narrow" or "uniform", and
+///          "unknown" for a value outside the enumerators
 ///
 /// A value outside the enumerators - cast in from outside the enum, or named by
 /// a newer header - is answered rather than refused. This function names a
@@ -383,6 +405,14 @@ namespace detail {
 template <EvalScheme kScheme, FitGranularity kGranularity>
 struct ChebyshevFit;
 
+/// The uniform table's fit; see boys_impl.hpp. A family of its own rather than
+/// a third branch of ChebyshevFit, because it is read at a partition that is
+/// not a cut of either derived one: the grid is fixed and the table is laid out
+/// interval-major, so every branch that asks a Chebyshev fit to choose between
+/// two derived partitions has no third answer to give it.
+template <EvalScheme kScheme>
+struct UniformFit;
+
 struct RationalFit;
 
 /// The rational family over the narrow partition; see the specialization below.
@@ -409,6 +439,47 @@ template <EvalScheme kScheme, FitGranularity kGranularity>
 struct RouteFit<FitRoute::kChebyshev, kScheme, kGranularity> {
     /// The Chebyshev coefficients at this scheme.
     using Type = ChebyshevFit<kScheme, kGranularity>;
+};
+
+/// The uniform route: a Chebyshev family read at a fixed grid rather than a
+/// derived partition, so both schemes are defined for it - it holds both stored
+/// forms of its coefficients - and it is selected by the partition axis, which
+/// is where "how the fitted intervals are cut" is decided.
+///
+/// It has no rational member: the rational family is a numerator/denominator
+/// pair per derived piece, and there is no derived piece here - the grid is
+/// fixed rather than derived - so there is no pair to cut. That combination is
+/// refused by the specialization below.
+template <EvalScheme kScheme>
+struct RouteFit<FitRoute::kChebyshev, kScheme, FitGranularity::kUniform> {
+    /// The uniform table's fit.
+    using Type = UniformFit<kScheme>;
+};
+
+/// Always false, and dependent on the scheme so a `static_assert` on it is
+/// evaluated where the specialization below is instantiated rather than where
+/// it is declared.
+template <EvalScheme kScheme>
+inline constexpr bool kRationalFitHasNoUniformPartition = false;
+
+/// The rational family at the uniform partition: a combination this library
+/// does not carry, refused where it is named.
+///
+/// This specialization is doing real work rather than documenting one. Without
+/// it the pair fell to the primary template above, whose assert tests the
+/// *route* alone - so the rational route passed it - and `Type` then resolved to
+/// `ChebyshevFit<kScheme, kUniform>`, which is the narrow partition. A caller
+/// naming the rational route at the uniform partition was answered by a
+/// different family at a different partition, at a certified bound, with
+/// nothing reporting it. An earlier comment here claimed the combination was
+/// refused where it was named; it was not, and nothing said so.
+template <EvalScheme kScheme>
+struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kUniform> {
+    static_assert(kRationalFitHasNoUniformPartition<kScheme>,
+                  "the rational family is not carried at the uniform partition: its fit is a "
+                  "numerator/denominator pair per derived piece, and the uniform grid is fixed "
+                  "rather than derived, so there is no piece to pair. Name the shipped or the "
+                  "narrow partition, or the Chebyshev route at the uniform one");
 };
 
 /// The rational family: one fit under either scheme, because its coefficients

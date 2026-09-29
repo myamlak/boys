@@ -324,11 +324,21 @@ TEST(BoysOrdersF32, ThePackedLaneIsThePerOrderValue) {
         << totals.worstFromTruth << " at x=" << totals.truthAt << " n=" << totals.truthOrder;
 }
 
-// The relaxed rungs, where the lane reads the effective-degree table rather than
-// the whole fit. The rung path is the shipped route and scheme alone, so that is
-// what is swept. The bar is the rung's own: the float lane's documented bar
-// multiplied by the multiplier the rung names, which is what a relaxed rung
-// means - the same fit cut to fewer degrees, at a correspondingly larger error.
+// The relaxed rungs, where the lane reads a table of certified cuts rather than
+// the whole fit: the effective-degree table for the Chebyshev route, the pair
+// table for the rational one, on this lane's default partition. Both routes are
+// swept, which they were not until the rational route's rungs were found to be
+// instantiated while the body read every piece whole. The bar is the rung's own:
+// the float lane's documented bar multiplied by the multiplier the rung names,
+// which is what a relaxed rung means - the same fit cut to fewer degrees, at a
+// correspondingly larger error.
+//
+// The rational route over this lane's default partition is swept with it. It is
+// a rung of its own rather than a cut of the Chebyshev row - the criterion runs
+// over the pairs' coefficients - and the lane carried those rungs in its
+// instantiation set while reading every piece whole, so a rung was answered with
+// the reference rung's values: 901 of 2304 values parted from the per-order lane
+// at m = 64 and 2296 of 2304 at m = 65536, which this sweep is what holds shut.
 TEST(BoysOrdersF32, TheRelaxedRungsAreTheRungsOwnReading) {
     if (!boys::BoysAvx2Available())
     {
@@ -349,6 +359,14 @@ TEST(BoysOrdersF32, TheRelaxedRungsAreTheRungsOwnReading) {
                 Orders<boys::FitRoute::kChebyshev,
                        boys::EvalScheme::kSplitClenshaw,
                        boys::BoysBudget::kFp16>>("cheb/split kFp16 m=65536", totals);
+    SweepPolicy<kRung64,
+                Orders<boys::FitRoute::kRationalMinimax,
+                       boys::EvalScheme::kHorner,
+                       boys::BoysBudget::kFloat>>("rational/horner kFloat m=64", totals);
+    SweepPolicy<kRungMax,
+                Orders<boys::FitRoute::kRationalMinimax,
+                       boys::EvalScheme::kHorner,
+                       boys::BoysBudget::kFloat>>("rational/horner kFloat m=65536", totals);
 
     EXPECT_GT(totals.compared, 0u);
 

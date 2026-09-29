@@ -15,7 +15,11 @@
 //    map and no search of anything at run time anywhere in this file: one arm per
 //    name, resolved where the line is written. A combination this program could
 //    not name would not compile, which is why this is a consumer check and not a
-//    reading;
+//    reading. The one row of the partition axis this file writes no arm for is
+//    served at the reference multiplier alone: it has no rung for a call to pass
+//    and no second spelling to compare against, so it is named in
+//    kUnspelledPartitions with that reason and printed with the census rather
+//    than left out of it;
 //
 //  * every value that comes back is judged twice. It is compared against the
 //    committed 45-digit reference grid within the bound the book states for the
@@ -103,14 +107,40 @@ constexpr std::array<AccuracyTier, 7> kTiers = {
 /// outside the enumeration is one no arm here could spell.
 constexpr int kMaxTierProbe = 32;
 
-/// The four structural axes, each as the two enumerators this file spells. The
-/// tables the library publishes are checked against these before anything is
-/// counted.
+/// The four structural axes, each as the enumerators this file spells an arm
+/// for. The tables the library publishes are checked against these before
+/// anything is counted.
 constexpr std::array<FitRoute, 2> kRoutes = {FitRoute::kChebyshev, FitRoute::kRationalMinimax};
 constexpr std::array<EvalScheme, 2> kSchemes = {EvalScheme::kSplitClenshaw, EvalScheme::kHorner};
 constexpr std::array<FitGranularity, 2> kPartitions = {FitGranularity::kShipped,
                                                        FitGranularity::kNarrow};
 constexpr std::array<PackAxis, 2> kAxes = {PackAxis::kArguments, PackAxis::kOrders};
+
+/// The partitions the library publishes and this file writes no arm for, each
+/// with the reason, because the reason is the whole of what makes the second
+/// list honest rather than a list of the rows that were inconvenient.
+///
+/// An arm here names one cell through the entry whose *rung* is the call's own
+/// argument (\c BoysAllOrdersAtTier and its single-precision sibling) beside the
+/// same cell reached through the compile-time multiplier, and compares the two
+/// bit for bit. The uniform partition has no such entry: its table stores one
+/// degree for every order and every interval, so the rung the entry would take at
+/// run time has no second value to be handed - the library refuses every rung of
+/// it but the reference one where the call is named. Its cell is reached by
+/// naming the multiplier at compile time, which is the other half of every pair
+/// this file compares and not a pair. A partition added to the library that is
+/// not one of these two is caught by the check below rather than swept into the
+/// census.
+struct Unspelled {
+    FitGranularity partition; ///< the row this file writes no arm for
+    const char* why;          ///< why no arm here can name a cell of it
+};
+
+constexpr std::array<Unspelled, 1> kUnspelledPartitions = {{
+    {FitGranularity::kUniform,
+     "its cells are served at the reference multiplier alone, so there is no rung this file's "
+     "named entries could take as the call's own argument and no pair to compare"},
+}};
 
 /// The precision classes this file sweeps: one per name the library publishes a
 /// figure for, with the lane whose book each class's cells are counted in and the
@@ -387,8 +417,12 @@ void AtRung(AccuracyTier tier, Call&& call) noexcept {
 /// The four structural axes of one cell, each narrowed to the value that names
 /// it. The nested lambdas are how this file writes one arm per name without
 /// writing sixteen of them by hand; the innermost arm is the policy a call site
-/// writes. Each level's else arm is the other enumerator and not a default, so a
-/// value that is neither is caught by the table check rather than answered here.
+/// writes. Each level's else arm names the other enumerator it spells and is not
+/// a default, so a value that is neither is caught by the table check rather
+/// than answered here — and for the partition, which is the one axis whose third
+/// member this file has no arm for, it is caught here as well: a value that
+/// reached this call and is not one of the two arms is not a cell of the census
+/// this dispatch may answer from the shipped partition's tables.
 template <typename Call>
 void AtAxes(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity partition,
             Call&& call) {
@@ -396,9 +430,17 @@ void AtAxes(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity par
         if (partition == FitGranularity::kNarrow)
         {
             call.template operator()<kRoute, kScheme, kPack, FitGranularity::kNarrow>();
-        } else
+        } else if (partition == FitGranularity::kShipped)
         {
             call.template operator()<kRoute, kScheme, kPack, FitGranularity::kShipped>();
+        } else
+        {
+            std::printf("boys consumer option space: a cell was named at a partition this file "
+                        "writes no arm for (%d), and answering it from the shipped partition's "
+                        "tables would measure one partition's cell under another's name\n",
+                        static_cast<int>(partition));
+            std::fflush(stdout);
+            std::abort();
         }
     };
 
@@ -725,10 +767,32 @@ void CheckAxes(std::size_t classIndex) {
 
     Require(boys::BoysEvalSchemes().size() == kSchemes.size(),
             "the library publishes one scheme per arm this file writes");
-    Require(boys::BoysFitGranularities().size() == kPartitions.size(),
-            "the library publishes one partition per arm this file writes");
     Require(boys::BoysPackAxes().size() == kAxes.size(),
             "the library publishes one packing axis per arm this file writes");
+
+    // The partitions are checked row by row rather than by count, because the
+    // two lists are not the same kind of list any more: every row the library
+    // publishes is either an arm this file writes or a row named in
+    // kUnspelledPartitions with the reason no arm here can name a cell of it,
+    // and a third kind of row - one this file neither spells nor accounts for -
+    // fails the check instead of quietly leaving the census short of the
+    // library.
+    for (const boys::FitGranularityInfo& row : boys::BoysFitGranularities())
+    {
+        const bool spelled =
+            std::find(kPartitions.begin(), kPartitions.end(), row.granularity) != kPartitions.end();
+        const bool accounted =
+            std::any_of(kUnspelledPartitions.begin(), kUnspelledPartitions.end(),
+                        [granularity = row.granularity](const Unspelled& unspelled) {
+                            return unspelled.partition == granularity;
+                        });
+
+        Require(spelled || accounted,
+                "every published partition is an arm this file writes or a row it accounts for");
+
+        Require(!(spelled && accounted),
+                "no published partition is both an arm this file writes and an accounted row");
+    }
 }
 
 // --- one class's census -----------------------------------------------------
@@ -880,6 +944,23 @@ int main(int argc, char** argv) {
         std::printf("  %-6s %-26s %8zu %8zu %9zu %9zu\n", kClasses[i].name, kClasses[i].entry,
                     census.servedCombinations, census.namedCombinations, census.servedCells,
                     census.namedCells);
+    }
+
+    // The partitions the counts above do not cover, named with the reason, so
+    // that "every cell the book serves is named" is not read as a claim about
+    // cells this file writes no arm for. A row neither counted above nor listed
+    // here failed the table check rather than being dropped from the census.
+    std::printf("\npartitions this file writes no arm for, and why:\n");
+
+    for (const Unspelled& unspelled : kUnspelledPartitions)
+    {
+        for (const boys::FitGranularityInfo& row : boys::BoysFitGranularities())
+        {
+            if (row.granularity == unspelled.partition)
+            {
+                std::printf("  %-8s %s\n", row.name, unspelled.why);
+            }
+        }
     }
 
     std::printf("\nrules:\n");

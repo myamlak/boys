@@ -534,6 +534,8 @@ const char* GranularityName(FitGranularity granularity) noexcept {
         return "shipped";
     case FitGranularity::kNarrow:
         return "narrow";
+    case FitGranularity::kUniform:
+        return "uniform";
     }
 
     return "unknown";
@@ -585,8 +587,16 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
     // so a regeneration that moved a piece, a degree or a delivered error moves
     // the row rather than leaving a number here to drift from it.
     //
-    // Both entries carry the double lane's tables; the single-precision lanes
-    // hold one coefficient set each and take no partition. The shipped row
+    // Every entry carries the double lane's tables; the single-precision lanes
+    // read tables of their own - that engine's pieces, coefficients and rung
+    // tables, cut for its own arithmetic and its own budget - so a row here
+    // describes the double lane and not them: which partitions, routes, axes and
+    // rungs that lane serves is stated by its own carriage where the call is
+    // named. The uniform row's table is the double lane's own grid
+    // (detail::kFlatCoeffs); the single-precision engine's grid
+    // (detail::f32::kFlatCoeffsF32) is the device lane's, and no entry of the
+    // host single-precision lane enters a uniform branch, which is why that
+    // lane's carriage refuses the partition where it is named. The shipped row
     // carries every rung this build can name - the count is the tier
     // enumeration's own - both packing axes, because the across-orders lane is
     // instantiated for every scheme, rung and route over the shipped region-A
@@ -598,17 +608,56 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
     // the orders it holds its own piece and coefficients - and both fit routes,
     // because this partition was cut for the rational route as well: it stores
     // one numerator/denominator pair over each of its pieces, region A's and
-    // region B's alike. The one fact those fields cannot state is stated where
-    // the call is refused: past the reference multiplier the float engine's
-    // across-orders lane over the narrow partition runs the shipped route and
-    // scheme alone, which is a body to write rather than a shape the call cannot
-    // have.
-    static const std::array<FitGranularityInfo, 2> rows = [] {
+    // region B's alike. The one fact these fields state for the double lane's
+    // tables alone is the same axis on the float engine, and there the calls
+    // state it: that engine's narrow partition is instantiated at every rung the
+    // enumeration names, at both schemes and both routes, one entry per cell at
+    // each of the lane's two budgets (the packed lane's narrow rungs,
+    // boys_orders_simd.cpp), and the degree tables those entries read are cut
+    // from that lane's own narrow pieces per role
+    // (boys_effective_degrees.hpp). So a rung of the narrow partition is the
+    // float lane's own table and not the double lane's degrees under a float
+    // name.
+    //
+    // The uniform row states the one route, the one packing axis and the one
+    // rung this build carries that partition at, and each of the three is a
+    // refusal the build makes where the call is named rather than a figure
+    // nothing would catch: the rational route is refused at compile time because
+    // its fit is a numerator/denominator pair per derived piece and the grid is
+    // fixed, the across-orders packing axis has no instantiation over this
+    // partition, and a relaxed rung is refused at compile time because the table
+    // stores one degree for every order and every interval. Its region-A fields
+    // describe the grid rather than a cut of a region: the grid covers
+    // [0, kFlatHi) whole, region A's and region B's arguments alike, and its
+    // intervals are intervals rather than pieces. Its region-B fields are zero
+    // for the same reason and not for want of a figure: there is no second table
+    // here, because above the grid's top edge the call reaches the asymptotic
+    // every route ends in, which reads no fit at all.
+    static const std::array<FitGranularityInfo, 3> rows = [] {
         static constexpr unsigned kBothAxes = (1u << static_cast<unsigned>(PackAxis::kArguments)) |
                                               (1u << static_cast<unsigned>(PackAxis::kOrders));
+        static constexpr unsigned kArgumentsBit =
+            1u << static_cast<unsigned>(PackAxis::kArguments);
         static constexpr unsigned kChebBit = 1u << static_cast<unsigned>(FitRoute::kChebyshev);
         static constexpr unsigned kRatBit =
             1u << static_cast<unsigned>(FitRoute::kRationalMinimax);
+
+        // The uniform table's certification rows describe the table this row's
+        // counts are read from, so the two readings are tied here rather than
+        // left to drift: a regeneration that moved the grid, its degree or its
+        // stored size moves both.
+        static_assert(std::size(detail::kFlatRows) == 2,
+                      "the uniform table is certified one row per evaluation scheme");
+        static_assert(detail::kFlatRows[0].deg == detail::kFlatDeg &&
+                          detail::kFlatRows[1].deg == detail::kFlatDeg &&
+                          detail::kFlatRows[0].intervals == detail::kFlatIntervals &&
+                          detail::kFlatRows[1].intervals == detail::kFlatIntervals &&
+                          detail::kFlatRows[0].stored ==
+                              static_cast<int>(std::size(detail::kFlatCoeffs)) &&
+                          detail::kFlatRows[1].stored ==
+                              static_cast<int>(std::size(detail::kFlatCoeffs)),
+                      "the uniform table's certification rows must describe the table this "
+                      "row's counts are read from");
 
         // A route's own figures over a region, read from the route table rather
         // than restated, so a regeneration moves both readings together.
@@ -715,7 +764,7 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
             fittedHi = 0.0;
         }
 
-        std::array<FitGranularityInfo, 2> built{};
+        std::array<FitGranularityInfo, 3> built{};
 
         built[0].granularity = FitGranularity::kShipped;
         built[0].name = GranularityName(FitGranularity::kShipped);
@@ -762,6 +811,49 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
         built[1].bound = built[1].delivered;
         built[1].lo = fittedLo;
         built[1].hi = fittedHi;
+
+        built[2].granularity = FitGranularity::kUniform;
+        built[2].name = GranularityName(FitGranularity::kUniform);
+        // One route, one packing axis and one rung, each of them the build's own
+        // refusal rather than a figure read from a table: the rational family has
+        // no member over a fixed grid, the across-orders lane has no
+        // instantiation over it, and its table is stored at one degree for every
+        // order and every interval, so no rung of it can be cut. Each refusal is
+        // made where the call is named, so a cell this row does not cover is one
+        // a compile or a link answers rather than one answered by another
+        // partition's tables.
+        built[2].routes = kChebBit;
+        built[2].rungs = 1;
+        built[2].axes = kArgumentsBit;
+        // The grid itself, which is what this partition is where the other two
+        // are walks: the intervals are the grid's cells rather than pieces the
+        // proved bound put where the function needs them, the degree is the one
+        // every order and every cell of it is stored at, and what it stores is
+        // the whole table - one fit per order per interval.
+        built[2].regionAPieces = detail::kFlatIntervals;
+        built[2].regionADeg = detail::kFlatDeg;
+        built[2].regionAStored = static_cast<int>(std::size(detail::kFlatCoeffs));
+        built[2].regionBPieces = 0;
+        built[2].regionBDeg = 0;
+        built[2].regionBStored = 0;
+        // The worse of the table's two evaluation schemes and of its two
+        // multiply-add routes, which is the one figure that holds for a caller
+        // who names a scheme and a route the table stores both of: the
+        // certification's own round-up rather than a number restated here. The
+        // row is one figure for the partition and the delivered figure is the
+        // bound it is certified against, as the narrow row's is and for the same
+        // reason.
+        double uniformWorst = 0.0;
+
+        for (const detail::FlatRow& row : detail::kFlatRows)
+        {
+            uniformWorst = std::max({uniformWorst, row.fused, row.separate});
+        }
+
+        built[2].delivered = uniformWorst;
+        built[2].bound = uniformWorst;
+        built[2].lo = 0.0;
+        built[2].hi = detail::kFlatHi;
 
         return built;
     }();
@@ -810,21 +902,28 @@ struct Carriage {
 // and the bodies below read it - so a narrow rung is served on both axes and
 // on every route and scheme, because the packed lane the orders axis names is
 // the shipped partition's and a narrow policy takes the scalar path instead.
+//
+// The uniform partition is not served on this lane at all: this lane's entries
+// are the shipped route's recurrences, and no entry of it reads a grid. The
+// partition is a row of the host table because the double lane's entries do
+// read one, and a row in that table is not a claim about this lane - which is
+// why the refusal is here rather than left to the enumeration's size.
 Carriage CarriesSingle(FitRoute route,
                        EvalScheme scheme,
                        PackAxis axis,
                        FitGranularity granularity,
                        AccuracyTier tier) noexcept {
-    // Every combination this library names is served on both axes and both
-    // partitions, at every rung. A cut has to be read against the table the
-    // scheme actually sums: the Chebyshev cut under the Horner scheme's monomial
-    // table delivers outside the bound on 1964 of 56694 cells at m = 64. With
-    // the basis carried through, the same combination is a rung of the family
-    // the caller named on either partition, so there is no cell left for this
-    // rule to refuse.
+    // Every combination this library names is served on both axes and on the
+    // two partitions this lane stores, at every rung. A cut has to be read
+    // against the table the scheme actually sums: the Chebyshev cut under the
+    // Horner scheme's monomial table delivers outside the bound on 1964 of 56694
+    // cells at m = 64. With the basis carried through, the same combination is a
+    // rung of the family the caller named on either partition, so there is no
+    // cell of those two left for this rule to refuse.
     //
-    // What it still refuses is a value outside the enumerations, which names no
-    // combination at all rather than one this revision does not carry.
+    // What it refuses is a value outside the enumerations, which names no
+    // combination at all rather than one this revision does not carry, and the
+    // uniform partition, whose row describes a grid no entry of this lane reads.
     const std::size_t r = static_cast<std::size_t>(route);
     const std::size_t s = static_cast<std::size_t>(scheme);
     const std::size_t a = static_cast<std::size_t>(axis);
@@ -841,6 +940,15 @@ Carriage CarriesSingle(FitRoute route,
                 "the enumerations this revision publishes"};
     }
 
+    if (granularity == FitGranularity::kUniform)
+    {
+        return {false,
+                "this lane's bodies reach their values through a recurrence over the orders and "
+                "enter no uniform branch: the row the partition is enumerated by describes the "
+                "double lane's grid, and no entry of this lane reads a grid at all. A caller "
+                "naming it here names a table this lane has no body for"};
+    }
+
     return {true, ""};
 }
 
@@ -852,24 +960,29 @@ Carriage CarriesSingle(FitRoute route,
 // than a list kept here: a value outside it names a multiplier no entry of the
 // lane was compiled for.
 //
-// Both of the lane's partitions are served: the shipped cut of the double
-// lane's fits (BoysCuda::AllOrdersF64 and its siblings) and the narrow one,
-// whose pieces, piecewise region-B seed and per-rung effective degrees the lane
-// holds in its own tables (BoysCuda::AllOrdersF64Narrow). Both of its packing
-// axes are served too: one fit per order inside region A, and one ladder per
-// argument from the top order's fit (BoysCuda::AllOrdersF64Orders, and the two
-// together in BoysCuda::AllOrdersF64NarrowOrders). Both of its schemes are
-// served: the double lane stores the Chebyshev fits in their monomial form as
-// well, one coefficient per Chebyshev coefficient at the same pieces and
-// degrees, and the lane uploads both pools (BoysCuda::AllOrdersF64Mono and its
-// three siblings), so the scheme axis names which table the same body reads.
+// What the lane this rule answers for carries, and it is that lane's own entries
+// this reads rather than the double lane's beside it: Precision::kFp32Device is
+// the device lane's single-precision one, and every entry of it is the float
+// engine's arithmetic.
 //
-// Both of its routes are served: the rational route's piece pairs and region-B
-// seed are uploaded as the tables the Chebyshev route's pieces are, with the
-// same intervals and the same counts, and the bodies evaluate a piece as a
-// numerator/denominator pair. The scheme axis is inert on that route — the pair
-// is stored once and summed by Horner, so both scheme names select one
-// arithmetic and the lane's two rows per shape measure one kernel.
+// The lane carries one fit route and one packing axis: the shipped Chebyshev
+// route's fits, read as a per-argument ladder, which is the shape every one of
+// its fp32 entries has (BoysCuda::SingleF32, BoysCuda::AllOrdersF32 and the rung
+// form each of the two has). The rational family has no member in it and no
+// across-orders entry of it is instantiated, so both are refused below with the
+// work they would take - they are lanes this library carries and this lane does
+// not, which is a body to write and not a combination that cannot exist.
+//
+// Its partitions are three: the shipped one at every rung of the lane's table
+// (BoysCuda::AllOrdersF32AtRung), and the narrow and uniform ones over the float
+// engine's own pieces and grid (BoysCuda::AllOrdersF32Narrow and
+// BoysCuda::AllOrdersF32Uniform, with the monomial form of each beside it), each
+// served at the full-accuracy multiplier alone. That last is the same thing this
+// lane's entries state in their own contracts: the device lane holds no rung
+// table cut from the float lane's pieces, so a relaxed call has no degrees to
+// read. What the scheme axis reaches on which partition is the lane's own table's
+// to state: this function has one scheme field for the whole call, and that
+// table is where the two names are paired with the tables they sum.
 Carriage CarriesDevice(FitRoute route,
                        EvalScheme scheme,
                        PackAxis axis,
@@ -889,6 +1002,34 @@ Carriage CarriesDevice(FitRoute route,
                 "the value named is outside the enumeration this library serves, so it names no "
                 "combination: name a route, a scheme, a packing axis, a partition and a rung from "
                 "the enumerations this revision publishes"};
+    }
+
+    if (route != FitRoute::kChebyshev)
+    {
+        return {false,
+                "this lane carries the shipped Chebyshev route's fits and no member of the "
+                "rational family: its fp32 entries read the Chebyshev route's tables and the "
+                "selector has no rational member over them. The family is a table and a body this "
+                "lane has not been given rather than a combination that cannot exist"};
+    }
+
+    if (axis != PackAxis::kArguments)
+    {
+        return {false,
+                "no across-orders entry of this lane is instantiated over the float engine's "
+                "tables: its packed lane carries four orders of one argument and its fp32 entries "
+                "are per-argument ladders. The axis names a body this lane has not been given "
+                "rather than a shape the call cannot have"};
+    }
+
+    if (granularity != FitGranularity::kShipped && tier != AccuracyTier::kReference)
+    {
+        return {false,
+                "this lane's narrow and uniform fp32 entries are served at the full-accuracy "
+                "multiplier alone: the device lane holds no degree table cut from the float "
+                "engine's own pieces, so a relaxed call over them has no degrees to read. The "
+                "lane's entries state that as unbuilt work rather than as a property of the "
+                "partition"};
     }
 
     if (!DeviceRungServed(AccuracyMultiplier(tier)))
@@ -971,21 +1112,28 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
         if (static_cast<int>(tier) >= row.rungs)
         {
             c.reason =
-                "a relaxed rung reads a stored row at a per-order effective degree, and only the "
-                "shipped row carries such a degree table: the multiplier selects a rung of the "
-                "shipped partition only";
+                "a relaxed rung reads a stored row at a per-order effective degree, and a "
+                "partition whose table is fitted at one degree for every order and every "
+                "interval has neither a criterion to cut it by nor such a table to read: the "
+                "uniform partition is served at the reference multiplier alone, and the build "
+                "refuses a rung of it where the call is named rather than answering it from "
+                "another partition's fits";
         } else if (!FitGranularityHasRoute(row, route))
         {
             c.reason =
-                "the partition's tables do not hold this fit route: the rational minimax route "
-                "carries one numerator/denominator pair over the whole of region B, and a "
-                "partition cut per order has no table for it";
+                "the partition's tables do not hold this fit route: the rational family is a "
+                "numerator/denominator pair over each piece of a partition a criterion derived, "
+                "and the uniform grid is fixed rather than derived, so it has no piece to pair "
+                "and no member of that route over it. The combination is refused where it is "
+                "named, and the member is a fit to derive rather than a shape the call cannot "
+                "have";
         } else if (!FitGranularityHasAxis(row, axis))
         {
             c.reason =
                 "the partition has no kernel for this packing axis: the across-orders packed lane "
-                "steps one order's coefficients to the next order's at a fixed stride, which the "
-                "shipped region-A table has and a partition cut per order does not";
+                "is instantiated over the two derived partitions' own pieces and over no other "
+                "table, so the axis names a kernel the uniform grid has no body for. That body is "
+                "one to write rather than a shape the call cannot have";
         } else
         {
             c.carried = true;

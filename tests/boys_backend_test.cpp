@@ -15,8 +15,12 @@
 #include "boys/boys.hpp"
 
 #include <algorithm>
+#include <array>
+#include <bit>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
+#include <cstdio>
 #include <gtest/gtest.h>
 #include <limits>
 #include <span>
@@ -245,25 +249,133 @@ TEST(BackendTest, ThePackedPairAppearsExactlyWithTheVectorTier) {
 } // namespace
 
 // ---------------------------------------------------------------------------
-// The selection axes on the policy
+// The selection axes on the policy, and the five names the build fixes
 // ---------------------------------------------------------------------------
 // Every axis the entries select is one field of EvalPolicy, and every field has
 // its own default. What the entries do with an axis is their own business; what
 // is pinned here is which member each default names, so that a move of one is a
 // decision this test states rather than a value that follows silently, and that
 // the axes report themselves by name.
+//
+// The engine budget is the library's: it is what a single-precision engine
+// computes at, and no build replaces it. The names an unnamed call resolves to
+// are the BUILD's rather than the library's, which is what
+// boys/boys_build_defaults.hpp exists for: a build that has measured its own
+// machine replaces that header with its own set (that header states what a
+// replacement carries; the CMake option is BOYS_BUILD_DEFAULTS, CONTRIBUTING.md).
+// So the pins below are the shipped names where the shipped header is in force
+// — the configuration every bound in this repository was measured at — and
+// where it is not, they state what has to hold instead.
+//
+// TWO OF THE FIVE AXES ARE READ FROM THAT HEADER TODAY, the fit route and the
+// evaluation scheme, and the pins below cover those two. The packing axis, the
+// division form and the partition follow the same seam and are read by the
+// constants in backend.hpp, so their pins are asserted in the change that makes
+// those constants read this file rather than a literal: asserting them here
+// would be asserting a value no header governs yet.
+static_assert(boys::EvalPolicy<>{}.kBudget == boys::BoysBudget::kFloat,
+              "the default engine budget moved");
+
+#if defined(BOYS_BUILD_DEFAULTS_SHIPPED)
 static_assert(boys::EvalPolicy<>{}.kRoute == boys::FitRoute::kChebyshev,
               "the default fit route moved");
 static_assert(boys::EvalPolicy<>{}.kScheme == boys::EvalScheme::kHorner,
               "the default evaluation scheme moved");
-static_assert(boys::EvalPolicy<>{}.kBudget == boys::BoysBudget::kFloat,
-              "the default engine budget moved");
-static_assert(boys::EvalPolicy<>{}.kGranularity == boys::FitGranularity::kNarrow,
-              "the default partition moved: a call site that names none must read the narrow "
-              "pieces' coefficients");
-static_assert(boys::EvalPolicy<>{}.kDivision == boys::DivisionForm::kRefinedReciprocal,
-              "the default division form moved: it is the form the entries that take no policy "
-              "divide in, and the form the option probe reports an unmarked cell as running");
+
+static_assert(boys::kDefaultFitRoute == boys::FitRoute::kChebyshev,
+              "the default fit route moved: an unnamed call evaluates the Chebyshev fits every "
+              "bound in this repository was measured at");
+static_assert(boys::kDefaultEvalScheme == boys::EvalScheme::kHorner,
+              "the default evaluation scheme moved");
+#else
+// A replacement is in force, and it is read instead of the committed file rather
+// than beside it, so the names it carries are this build's. A replacement that
+// names the shipped set has chosen nothing, and so does a seam that stopped
+// delivering the file — both come out here as the committed values, which is
+// what this refuses.
+constexpr bool kShippedDefaultsInForce =
+    boys::kDefaultFitRoute == boys::FitRoute::kChebyshev &&
+    boys::kDefaultEvalScheme == boys::EvalScheme::kHorner;
+
+static_assert(!kShippedDefaultsInForce,
+              "the defaults header in force names the shipped route and scheme, so this build "
+              "has chosen nothing: point BOYS_BUILD_DEFAULTS at a header that moves at least one "
+              "axis, or unset it to build the shipped configuration");
+
+#if defined(BOYS_BUILD_DEFAULTS_TEST_FIXTURE)
+// The test's own override (tests/build_defaults_tuned.hpp), pinned by value so
+// that a configure which set the option and delivered some other header is a
+// failure here rather than a green run of some other build's choices.
+static_assert(boys::kDefaultFitRoute == boys::FitRoute::kChebyshev,
+              "the fixture's fit route is not in force");
+static_assert(boys::kDefaultEvalScheme == boys::EvalScheme::kSplitClenshaw,
+              "the fixture's evaluation scheme is not in force");
+#endif
+#endif
+
+// The unnamed call is the build's policy, and the values it hands back are the
+// shipped policy's only where the shipped header is in force. The comparison is
+// made through the entry a caller writes — BoysAllOrders with no template
+// argument against the same entry called at the shipped policy explicitly, over
+// the domain's regions — so what is measured is what a call site gets and not
+// what a constant holds, and it prints the count it moved rather than a
+// checkmark.
+TEST(BackendTest, TheUnnamedCallIsTheDefaultThisBuildWasCompiledWith) {
+    using boys::BoysAllOrders;
+    using Shipped = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                     boys::EvalScheme::kHorner,
+                                     boys::BoysBudget::kFloat,
+                                     boys::PackAxis::kArguments,
+                                     boys::FitGranularity::kNarrow,
+                                     boys::DivisionForm::kRefinedReciprocal>;
+
+    // Arguments across the domain's regions, at orders that span the ladder: 0
+    // is the seed every higher order is reached from, and kMaxBoysOrder is the
+    // widest call the entries serve.
+    constexpr int kOrders[] = {0, 1, 4, 12, boys::kMaxBoysOrder};
+    constexpr double kArguments[] = {0.0, 1e-12, 1e-3, 0.5, 1.0, 3.0, 11.9, 12.0, 60.0, 120.0};
+
+    std::size_t moved = 0;
+    std::size_t cells = 0;
+
+    for (const int nmax : kOrders) {
+        for (const double x : kArguments) {
+            std::array<double, boys::kMaxBoysOrder + 1> built{};
+            std::array<double, boys::kMaxBoysOrder + 1> shipped{};
+
+            BoysAllOrders(nmax, x, built.data());
+            BoysAllOrders<boys::kBoysFullAccuracyMultiplier, Shipped>(nmax, x, shipped.data());
+
+            for (int order = 0; order <= nmax; ++order) {
+                ++cells;
+
+                if (std::bit_cast<std::uint64_t>(built[order]) !=
+                    std::bit_cast<std::uint64_t>(shipped[order])) {
+                    ++moved;
+                }
+            }
+        }
+    }
+
+    std::printf("boys: this build's default policy is %s the shipped policy type; the unnamed "
+                "call and the shipped policy's call differ in %zu of %zu values\n",
+                std::is_same_v<boys::DefaultPolicyFp64, Shipped> ? "the same as" : "different from",
+                moved,
+                cells);
+
+#if defined(BOYS_BUILD_DEFAULTS_SHIPPED)
+    // One call under this header, so a value that differs here is a translation
+    // unit and a library instantiation that did not resolve the same defaults.
+    EXPECT_EQ(moved, 0u) << "the committed defaults header is in force, so an unnamed call is the "
+                            "shipped policy's call and no value may differ";
+#elif defined(BOYS_BUILD_DEFAULTS_TEST_FIXTURE)
+    // The fixture moves the scheme, so the values are not the shipped ones: the
+    // count above is measured rather than expected, and this is the pin that
+    // says an unnamed call follows the build's header.
+    EXPECT_GT(moved, 0u) << "the fixture moves the scheme, so an unnamed call cannot hand back "
+                            "the shipped policy's values";
+#endif
+}
 
 // Naming the narrow partition is answered from its own tables; the combinations
 // that have no narrow table are refused where they are named rather than
@@ -278,6 +390,154 @@ TEST(BackendTest, ThePartitionNamesRoundTrip) {
     EXPECT_STREQ(boys::GranularityName(boys::FitGranularity::kNarrow), "narrow");
     EXPECT_STRNE(boys::GranularityName(boys::FitGranularity::kShipped),
                  boys::GranularityName(boys::FitGranularity::kNarrow));
+
+    // A partition this build serves is a row of the enumeration that says which
+    // partitions exist: a name for a partition the enumeration does not carry is
+    // a route a report cannot print and a caller cannot find, and the value it
+    // prints instead is "unknown", which is the name of no partition at all.
+    EXPECT_STREQ(boys::GranularityName(boys::FitGranularity::kUniform), "uniform");
+    EXPECT_STRNE(boys::GranularityName(boys::FitGranularity::kUniform), "unknown");
+}
+
+// The uniform partition is one of the rows of that table and not a value the
+// header names on the side, and what the row declares is checked against what
+// the build answers, member by member.
+//
+// The check that matters is the last one, and it is made by calling the entry
+// rather than by reading the row: a partition served by another partition's
+// tables is the defect the row's own fields cannot show, because the fields
+// would be the ones the substitution was made to satisfy. This build has
+// refused that shape once already, at the fit selector (backend.hpp,
+// RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kUniform>, whose
+// first version was answered by the narrow partition), so what is pinned here is
+// that the uniform kernel is the uniform one and not a second name for the
+// narrow fits.
+TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
+    const std::span<const boys::FitGranularityInfo> rows = boys::BoysFitGranularities();
+
+    ASSERT_GE(rows.size(), 3u) << "the enumeration does not carry the uniform partition";
+
+    const boys::FitGranularityInfo* uniform = nullptr;
+
+    for (std::size_t i = 0; i < rows.size(); ++i)
+    {
+        EXPECT_EQ(static_cast<std::size_t>(rows[i].granularity), i)
+            << "the rows are not in enumerator order, which is the order a report reads them in";
+
+        if (rows[i].granularity == boys::FitGranularity::kUniform)
+        {
+            uniform = &rows[i];
+        }
+    }
+
+    ASSERT_NE(uniform, nullptr) << "the uniform partition names no row of the enumeration";
+    EXPECT_STREQ(uniform->name, boys::GranularityName(boys::FitGranularity::kUniform));
+    EXPECT_STRNE(uniform->name, "unknown");
+
+    // One route, one packing axis and one rung, as the row states them.
+    EXPECT_TRUE(boys::FitGranularityHasRoute(*uniform, boys::FitRoute::kChebyshev));
+    EXPECT_FALSE(boys::FitGranularityHasRoute(*uniform, boys::FitRoute::kRationalMinimax));
+    EXPECT_TRUE(boys::FitGranularityHasAxis(*uniform, boys::PackAxis::kArguments));
+    EXPECT_FALSE(boys::FitGranularityHasAxis(*uniform, boys::PackAxis::kOrders));
+    EXPECT_EQ(uniform->rungs, 1) << "the uniform table is stored at one degree and takes no rung";
+
+    // The row's fields against the accessor that answers a caller, over every
+    // combination of the other axes: a combination the accessor serves and the
+    // row does not claim is a claim the row is missing, and one the row claims
+    // and the accessor refuses is a route or an axis the build does not have.
+    std::size_t served = 0;
+
+    for (const boys::FitRouteInfo& route : boys::BoysFitRoutes())
+    {
+        for (const boys::EvalSchemeInfo& scheme : boys::BoysEvalSchemes())
+        {
+            for (const boys::PackAxisInfo& axis : boys::BoysPackAxes())
+            {
+                for (int raw = 0; raw <= static_cast<int>(boys::AccuracyTier::kRelaxed65536);
+                     ++raw)
+                {
+                    const boys::AccuracyFigure figure = boys::BoysAccuracyGuaranteed(
+                        boys::Precision::kFp64, route.route, scheme.scheme, axis.axis,
+                        boys::FitGranularity::kUniform, static_cast<boys::AccuracyTier>(raw));
+                    const bool claimed =
+                        boys::FitGranularityHasRoute(*uniform, route.route) &&
+                        boys::FitGranularityHasAxis(*uniform, axis.axis) && raw < uniform->rungs;
+
+                    EXPECT_EQ(figure.available, claimed)
+                        << "the uniform row says " << (claimed ? "served" : "refused")
+                        << " at route " << static_cast<int>(route.route) << ", scheme "
+                        << static_cast<int>(scheme.scheme) << ", axis "
+                        << static_cast<int>(axis.axis) << ", m = "
+                        << boys::AccuracyMultiplier(static_cast<boys::AccuracyTier>(raw))
+                        << " and the accessor answers " << (figure.available ? "served" : "no")
+                        << ": " << figure.reason;
+
+                    if (figure.available)
+                    {
+                        ++served;
+                        EXPECT_GT(figure.value, 0.0) << "a served combination carries no figure";
+                        EXPECT_NE(figure.source[0], '\0')
+                            << "a served combination does not say where its figure comes from";
+                        EXPECT_EQ(figure.reason[0], '\0')
+                            << "a served combination carries the reason of a refusal: "
+                            << figure.reason;
+                    }
+                    else
+                    {
+                        EXPECT_NE(figure.reason[0], '\0')
+                            << "a refused combination is refused without a reason";
+                    }
+                }
+            }
+        }
+    }
+
+    EXPECT_EQ(served, 4u)
+        << "the partition is served at the reference rung on the arguments axis and the "
+           "Chebyshev route alone: two evaluation schemes over the two rows the route table names "
+           "that route by - one per region - and nothing else";
+
+    // And the entry the row claims runs, reads its own table, and is not the
+    // narrow partition's under another name.
+    constexpr int kNmax = boys::kMaxBoysOrder;
+    constexpr std::array<double, 7> kArguments = {0.5, 1.0, 2.0, 6.0, 12.0, 24.0, 34.0};
+
+    using UniformPolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                           boys::EvalScheme::kHorner,
+                                           boys::BoysBudget::kFloat,
+                                           boys::PackAxis::kArguments,
+                                           boys::FitGranularity::kUniform>;
+    using NarrowPolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                          boys::EvalScheme::kHorner,
+                                          boys::BoysBudget::kFloat,
+                                          boys::PackAxis::kArguments,
+                                          boys::FitGranularity::kNarrow>;
+
+    std::array<double, kNmax + 1> values{};
+    std::array<double, kNmax + 1> narrow{};
+    std::size_t moved = 0;
+
+    for (const double x : kArguments)
+    {
+        boys::BoysAllOrders<1.0, UniformPolicy>(kNmax, x, values.data());
+        boys::BoysAllOrders<1.0, NarrowPolicy>(kNmax, x, narrow.data());
+
+        for (int n = 0; n <= kNmax; ++n)
+        {
+            EXPECT_TRUE(std::isfinite(values[static_cast<std::size_t>(n)]))
+                << "the uniform entry returned " << values[static_cast<std::size_t>(n)]
+                << " at n = " << n << ", x = " << x;
+
+            moved += values[static_cast<std::size_t>(n)] != narrow[static_cast<std::size_t>(n)]
+                         ? 1u
+                         : 0u;
+        }
+    }
+
+    EXPECT_GT(moved, 0u)
+        << "every value of the uniform entry is the narrow partition's bit for bit, over "
+        << kArguments.size() << " arguments and " << (kNmax + 1)
+        << " orders: a uniform policy is being answered from another partition's tables";
 }
 
 // The division forms report themselves the way the other axes do: one row per

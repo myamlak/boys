@@ -1641,6 +1641,69 @@ TEST(ProbeTest, TheDivisionFormAxisIsEnumeratedAndRanked) {
            "reports, so the axis is carried and not compared";
 }
 
+// A partition the library serves is a cell of the space this probe enumerates,
+// measured and reported under its own name, and the cells of it the library
+// refuses are refused with the library's reason rather than by the probe.
+//
+// The uniform partition is the one this test is about, and it is the axis's
+// third member: a probe that read its space from the library and then answered
+// this value with the shipped partition's tables would report a uniform row
+// whose numbers are another partition's, which is the failure the row's own
+// fields cannot show.
+TEST(ProbeTest, TheUniformPartitionIsEnumeratedAndMeasured) {
+    const OptionProbeReport report = boys::RunOptionProbe(OneRound());
+
+    const boys::FitGranularityInfo* uniform = nullptr;
+
+    for (const boys::FitGranularityInfo& partition : report.granularities) {
+        if (partition.granularity == boys::FitGranularity::kUniform) {
+            uniform = &partition;
+        }
+    }
+
+    ASSERT_NE(uniform, nullptr) << "this build's partition table carries no uniform partition";
+
+    for (const std::string name : {"uniform-fp64", "uniform-horner-fp64"}) {
+        const OptionProbeMeasurement* measured = Find(report, name);
+
+        ASSERT_NE(measured, nullptr) << name << " is a cell of the option space the library "
+                                                 "serves and the probe measured nothing for it";
+        EXPECT_EQ(measured->granularity, boys::FitGranularity::kUniform) << name;
+
+        // The row's own figures, which are the grid's and not an entry's: the
+        // option's whole-domain figure is the lane's and is a different promise.
+        EXPECT_DOUBLE_EQ(measured->ownBound, uniform->bound) << name;
+        EXPECT_DOUBLE_EQ(measured->ownLo, uniform->lo) << name;
+        EXPECT_DOUBLE_EQ(measured->ownHi, uniform->hi) << name;
+        EXPECT_GT(measured->ownBound, 0.0)
+            << name << " carries no figure for the partition's own tables";
+        EXPECT_LT(measured->ownBound, measured->bound)
+            << name << " carries the partition's own figure as one covering the whole line";
+    }
+
+    // And the cells of that partition this build refuses are refused with the
+    // library's own sentence: a cell answered "outside the enumeration" would be
+    // the probe saying the partition is not one of the options, which is the
+    // report this test exists to keep from coming back.
+    std::size_t refusedUniform = 0;
+
+    for (const boys::OptionProbeCell& cell : report.cells) {
+        if (cell.granularity != boys::FitGranularity::kUniform || cell.served) {
+            continue;
+        }
+
+        ++refusedUniform;
+        EXPECT_EQ(cell.reason.find("outside the enumeration"), std::string::npos)
+            << cell.name << " is refused as a value outside the enumeration, which is what this "
+                            "partition was before it was a row of it; the reason is: "
+            << cell.reason;
+    }
+
+    EXPECT_GT(refusedUniform, 0u)
+        << "every uniform cell of this build's space was served, so the partition's refusals "
+           "are not exercised";
+}
+
 // A name that is a cell of the space this build refuses is answered with the
 // library's own reason: it is unbuilt work, counted, and kept apart from both a
 // misspelling and an option this build measured.
