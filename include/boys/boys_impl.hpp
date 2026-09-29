@@ -1524,6 +1524,23 @@ inline double PolicyRegionAValueAtRung(int order, double x) noexcept {
     return ChebyshevValueWithDegrees<Policy::kScheme, Policy::kGranularity>(order, x, kDegrees);
 }
 
+// Region A at a rung for the cells a route's selector does not answer: the
+// partition's own per-order fit, read at the degrees the rung certifies, which
+// is the shipped lane's value for that cell. A rung changes the degrees a fit
+// is read at and not which fit answers a cell, so these cells move with the
+// multiplier like every other. The reference multiplier reads the stored fits
+// verbatim, which is what keeps the m = 1 bodies the ones they were.
+template <EvalPolicyLike Policy, double kAccuracyMultiplier, BoysRole kRole>
+inline double PartitionRegionAValueAtRung(int order, double x) noexcept {
+    if constexpr (kAccuracyMultiplier == 1.0)
+    {
+        return PolicyRegionAValue<Policy>(order, x);
+    } else
+    {
+        return PolicyRegionAValueAtRung<Policy, kAccuracyMultiplier, kRole>(order, x);
+    }
+}
+
 template <EvalPolicyLike Policy, double kAccuracyMultiplier, BoysRole kRole>
 inline double PolicyRegionBSeedAtRung(double x, int order) noexcept {
     static constexpr auto kDegrees = RegionBDegreeTableOf<kAccuracyMultiplier, Policy, kRole>();
@@ -2192,7 +2209,9 @@ float SingleOrderF32Body(int n, float x) noexcept {
 // one (see RationalFitAtRung); everything else about the body - the zero
 // argument, the region split, the per-order rule, the domains - is the same
 // under either, which is why the rung is a parameter here and not a second body.
-template <EvalPolicyLike Policy, typename Fit = typename Policy::Fit>
+template <EvalPolicyLike Policy,
+          typename Fit = typename Policy::Fit,
+          double kAccuracyMultiplier = 1.0>
 void AllOrdersBody(int nmax, double x, double* out) noexcept {
     static_assert(FitPolicy<Fit>,
                   "the fit a policy names must satisfy the contract the bodies are written "
@@ -2264,13 +2283,17 @@ void AllOrdersBody(int nmax, double x, double* out) noexcept {
 
             for (int l = served + 1; l <= nmax; ++l)
             {
-                out[l] = PolicyRegionAValue<Policy>(l, x);
+                out[l] = PartitionRegionAValueAtRung<Policy, kAccuracyMultiplier,
+                                                     BoysRole::kDoubleSingle>(l, x);
             }
 
             return;
         }
 
-        double f = PolicyRegionAValue<Policy>(nmax, x);
+        // Seeds the downward recursion, so its error is the batch's: the degree
+        // is the batch role's, as it is in the Chebyshev rung's own batch body.
+        double f = PartitionRegionAValueAtRung<Policy, kAccuracyMultiplier,
+                                               BoysRole::kDoubleBatch>(nmax, x);
         out[nmax] = f;
         const double expx = 0.5 * std::exp(-x);
 
@@ -2312,7 +2335,9 @@ void AllOrdersBody(int nmax, double x, double* out) noexcept {
 
 // One order at one argument, in the policy's family and scheme. The fit is
 // overridden by the relaxed rung as it is in AllOrdersBody, for the same reason.
-template <EvalPolicyLike Policy, typename Fit = typename Policy::Fit>
+template <EvalPolicyLike Policy,
+          typename Fit = typename Policy::Fit,
+          double kAccuracyMultiplier = 1.0>
 double SingleOrder(int n, double x) noexcept {
     static_assert(FitPolicy<Fit>,
                   "the fit a policy names must satisfy the contract the bodies are written "
@@ -2355,7 +2380,8 @@ double SingleOrder(int n, double x) noexcept {
             return f;
         }
 
-        return PolicyRegionAValue<Policy>(n, x);
+        return PartitionRegionAValueAtRung<Policy, kAccuracyMultiplier, BoysRole::kDoubleSingle>(
+            n, x);
     }
 
     if (x < kX1)
@@ -2513,7 +2539,8 @@ double BoysSingleImpl(int n, double x) noexcept {
         // with the narrow partition reads the narrow pieces at the narrow pairs
         // rather than the shipped pairs under the narrow partition's name.
         return SingleOrder<Policy,
-                           RationalRouteFitAtRung<kAccuracyMultiplier, Policy::kGranularity>>(n, x);
+                           RationalRouteFitAtRung<kAccuracyMultiplier, Policy::kGranularity>,
+                           kAccuracyMultiplier>(n, x);
     } else
     {
         RequireShippedRoute<Policy>();
@@ -2618,8 +2645,8 @@ void BoysAllOrdersImpl(int nmax, double x, double* out) noexcept {
         //
         // Each partition carries its own pairs, as it does on the single-order
         // entry above, so the rung cuts the pair the policy's partition stores.
-        AllOrdersBody<Policy, RationalRouteFitAtRung<kAccuracyMultiplier, Policy::kGranularity>>(
-            nmax, x, out);
+        AllOrdersBody<Policy, RationalRouteFitAtRung<kAccuracyMultiplier, Policy::kGranularity>,
+                      kAccuracyMultiplier>(nmax, x, out);
     } else
     {
         static_assert(Policy::kRoute == FitRoute::kChebyshev,
