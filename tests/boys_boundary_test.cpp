@@ -172,35 +172,30 @@ bool PassesThreshold(int kmax, double x) {
 // higher, which passes. It is resolution-limited by construction, and
 // the resolution travels with the pin (ThresholdRow::resolution).
 //
-// The two-phase sweep is ILL-CONDITIONED, not merely coarse: its value is a
-// lattice draw, not a property of the function, because it reports the first
-// point of a CONTIGUOUS PASS RUN at a coarse step. The failure set is a sparse
-// mixture, so a pass run ends wherever the lattice happens to cross a failure
-// band, and a coarser lattice stops earlier. MEASURED on one fixed machine
-// (glibc x86_64, gcc 15.2, same libm, same function): moving ONLY the sweep
-// start by 1e-4 moved the kmax = 4 cell over 0.3157..0.4010 - a 27.0% spread,
-// larger than the whole 20% band - and kmax = 8 over 1.3317..1.5121 (13.6%).
-// That is why glibc-aarch64's 0.361 (21.9%, red) needs no platform theory: it
-// is an ordinary draw of this machine's own spread (offsets 0.0002/0.0005 give
-// 0.3582/0.3605 here).
+// The two-phase sweep it replaces is ILL-CONDITIONED, not merely coarse: its
+// value is a lattice draw, not a property of the function, because it reports
+// the first point of a CONTIGUOUS PASS RUN at a coarse step and the failure set
+// is a sparse mixture. MEASURED on one fixed machine (glibc x86_64, gcc 15.2,
+// same libm, same function): moving ONLY the sweep start by 1e-4 moved the
+// kmax = 4 cell over 0.3157..0.4010 - a 27.0% spread, larger than the whole 20%
+// band - and kmax = 8 over 1.3317..1.5121 (13.6%). That is why glibc-aarch64's
+// 0.361 (21.9%, red) needs no platform theory: it is an ordinary draw of this
+// machine's own spread.
 //
 // Bisection to a fixed tolerance was tried and REJECTED as the fix: the pass
 // predicate is not monotone over the transition (the amplified seed rounding
 // oscillates through the 5e-14 line; 402-3351 alternations per band at 1e-4),
 // so there is no crossing to bisect to. MEASURED: bisection over the same
-// lattice-phase sweep gave a 15.85% spread with deviations -26%..-13.5% - the
-// same distribution as the sweep it would have replaced. It moves the failure;
-// it does not fix it.
+// lattice-phase sweep gave a 15.85% spread, the same distribution as the sweep
+// it would have replaced.
 //
 // Reporting a FAILING point instead is what makes the value a property of the
 // function: no run of samples is required to pass, only that one sample lies
-// outside the window. MEASURED stability of THIS measurement (the scan from the
-// sweep start; 12 lattice variants each - steps 1e-4/1.3e-4/7e-5/5e-5 x starts
-// 12.0/12.0+1e-7/12.0+1e-3, glibc x86_64): the value spreads 6.1% / 3.8% / 2.3%
-// / 0.5% of the cell for kmax = 4/8/16/32, with deviations from the recorded
-// cells of -12.3%..-6.2% / -7.2%..-3.4% / -0.5%..+1.7% / -0.4%..+0.1%. Worst
-// deviation over all 48 draws: -12.3%, inside the band with ~8 points of
-// margin (the two-phase draw reds this same machine's kmax = 4 at -31.7%).
+// outside the window. MEASURED stability of THIS measurement (12 lattice
+// variants each - steps 1e-4/1.3e-4/7e-5/5e-5 x starts 12.0/12.0+1e-7/
+// 12.0+1e-3, glibc x86_64): the value spreads 6.1% / 3.8% / 2.3% / 0.5% of the
+// cell for kmax = 4/8/16/32, worst deviation over all 48 draws -12.3%, inside
+// the band with ~8 points of margin.
 struct FailureTop {
     bool startPasses = false; // the sweep start is inside the 5e-14 window
     bool found = false; // a failing sample exists above the sweep floor
@@ -248,61 +243,48 @@ FailureTop MeasureFailureTop(int kmax) {
     return result;
 }
 
-// Boundary rows: per kmax, x0Measured (the asserted pin - the
-// first failing sample of the 0.0001 descending sweep, within
-// kMeasuredTolerance), x0Recorded (the same measurement), and the published
-// formula ([VikhamarSandberg2026] eq. 25/13 - literature
-// input, hardcoded, not measured). Margins = formula / x0 are computed
-// ratios in the test, not asserted independently.
+// Boundary rows: per kmax, x0Measured (the asserted pin - the first failing
+// sample of the 0.0001 descending sweep, within kMeasuredTolerance), and the
+// published formula ([VikhamarSandberg2026] eq. 25/13 - literature input,
+// hardcoded, not measured). Margins = formula / x0 are computed ratios in the
+// test, not asserted independently.
 //
-// THREE MEASUREMENTS OF THE SAME QUANTITY, and why the pin is the third.
-// (1) A coarse x*1.02 geometric grid (first passing grid point) gave 0.244 /
-// 0.754 / 3.82 / 9.70. The recursion error is NOT monotone over the transition
-// (the amplified seed rounding error oscillates through the 5e-14 line
-// hundreds of times), so the coarse grid skipped over failure bands and its
-// cells are grid artifacts.
-// (2) A fine two-phase sweep (0.01 then 0.001 steps) measured 0.393 / 1.484 /
-// 4.150 / 9.866 on MSVC (fresh builds draw 0.401 / 1.435 for kmax = 4 / 8).
-// It reports the first point of a contiguous PASS RUN at a coarse step, so a
-// pass run ends wherever the lattice happens to cross a failure band:
-// failing 1e-4 samples sit above those cells
-// (+17.7%/+10.3%/+2.1%/+1.9% for kmax = 4/8/16/32), with 402-3351
-// pass/fail alternations per band.
-// (3) THIS PIN: the cells are first-failure-at-resolution values
-// - the first failing samples of the 0.0001 descending sweep (0.4625/1.6373/
-// 4.2367/10.0492 - the x0Recorded column below), with
-// the passing sample one 1e-4 step above each (0.4626/1.6374/
-// 4.2368/10.0493). They are explicitly resolution-limited, not a
-// stability threshold. 1e-5 scans over the
+// THE PIN IS THE THIRD OF THREE MEASUREMENTS OF THE SAME QUANTITY. (1) A coarse
+// x*1.02 geometric grid (first passing grid point) gave 0.244 / 0.754 / 3.82 /
+// 9.70. The recursion error is NOT monotone over the transition, so the coarse
+// grid skipped over failure bands and its cells are grid artifacts. (2) A fine
+// two-phase sweep (0.01 then 0.001 steps) measured 0.393 / 1.484 / 4.150 / 9.866
+// on MSVC; it reports the first point of a contiguous PASS RUN, so failing 1e-4
+// samples sit above those cells (+17.7%/+10.3%/+2.1%/+1.9% for kmax =
+// 4/8/16/32), with 402-3351 pass/fail alternations per band. (3) THIS PIN: the
+// first failing samples of the 0.0001 descending sweep (0.4625/1.6373/4.2367/
+// 10.0492 - the x0Measured column below), with the passing sample one 1e-4 step
+// above each (0.4626/1.6374/4.2368/10.0493). They are explicitly
+// resolution-limited, not a stability threshold; 1e-5 scans over the
 // envelope-top neighborhoods extend the largest failing samples to
 // ~0.4625/1.64959/4.29768/10.05917.
 //
 // WHY THE FAILURE TOP, AND NOT THE PASS-RUN DRAW. A draw is not reproducible
-// across machines. MEASURED on one fixed machine,
-// holding libm and function still and moving only the lattice: the
-// two-phase draw spreads 27.0% at kmax = 4 (0.3157..0.4010) and 13.6% at
-// kmax = 8, while the failure top spreads 4.4% and 1.2%. The draw is what
-// reddened the linux-arm64 leg (0.361 = 21.9%), and 0.361 sits inside the
-// draw's own 27% spread measured on x86_64, so it was never evidence about
-// aarch64. The pins
-// below guard the failure-top cells with the same ±20% band: the
-// two-phase measurement is a coarser (0.001) lattice draw of the same
-// oscillating envelope, reproduced beside them, and the band absorbs both the
-// libm roundings and the resolution difference while still failing on a broken
+// across machines: holding libm and function still and moving only the lattice,
+// the two-phase draw spreads 27.0% at kmax = 4 and 13.6% at kmax = 8, while the
+// failure top spreads 4.4% and 1.2%. The draw is what reddened the linux-arm64
+// leg (0.361 = 21.9%), and 0.361 sits inside the draw's own 27% spread measured
+// on x86_64, so it was never evidence about aarch64. The pins below guard the
+// failure-top cells with the same ±20% band, which absorbs both the libm
+// roundings and the resolution difference while still failing on a broken
 // seed/step/reference.
 struct ThresholdRow {
     int kmax;
     double x0Measured;
-    double x0Recorded;
     double formula;
-    double resolution; // the step of the sweep that produced x0Measured/x0Recorded
+    double resolution; // the step of the sweep that produced x0Measured
 };
 
 const std::array<ThresholdRow, 4> kThresholdRows = {
-    ThresholdRow{4, 0.4625, 0.4625, 1.60, kMeasurementResolution},
-    ThresholdRow{8, 1.6373, 1.6373, 3.07, kMeasurementResolution},
-    ThresholdRow{16, 4.2367, 4.2367, 6.01, kMeasurementResolution},
-    ThresholdRow{32, 10.0492, 10.0492, 11.9, kMeasurementResolution},
+    ThresholdRow{4, 0.4625, 1.60, kMeasurementResolution},
+    ThresholdRow{8, 1.6373, 3.07, kMeasurementResolution},
+    ThresholdRow{16, 4.2367, 6.01, kMeasurementResolution},
+    ThresholdRow{32, 10.0492, 11.9, kMeasurementResolution},
 };
 
 // The committed reference grid (tools/gen_boys_coefficients.py, 45-digit
@@ -374,17 +356,16 @@ TEST(BoysBoundaryTest, ErfSeededUpwardRecursionThresholds) {
         EXPECT_LE(relativeDeviation, kMeasuredTolerance)
             << "kmax=" << row.kmax << ": measured failure top x0 = " << top.x << " at resolution "
             << row.resolution << " vs pinned " << row.x0Measured;
-        const double recordedDeviation = std::abs(top.x - row.x0Recorded) / row.x0Recorded;
         std::printf("BoysBoundary kmax=%2d: failure top x0 = %.6f at resolution %.0e, pinned %.4f, "
                     "formula %.2f ([VikhamarSandberg2026] eq. 25/13), margin %.1fx, deviation "
                     "vs pinned %.2e\n",
                     row.kmax,
                     top.x,
                     row.resolution,
-                    row.x0Recorded,
+                    row.x0Measured,
                     row.formula,
                     row.formula / top.x,
-                    recordedDeviation);
+                    relativeDeviation);
     }
 }
 
