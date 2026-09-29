@@ -184,6 +184,63 @@ else()
     message(STATUS "boys: scalar multiply-add route = fused (one rounding)")
 endif()
 
+# --- What an unnamed call resolves to ----------------------------------------
+# The five choices a call site that names no policy gets — the fit route, the
+# evaluation scheme, the packing axis, the division form and the fit granularity
+# — are compile-time values, read through include/boys/boys_build_defaults.hpp,
+# whose committed file carries the shipped choices. This option points a build
+# at a header carrying its own five, and the build then compiles those choices
+# into every entry that names none. Nothing is paid for this at run time and
+# nothing is dispatched: the choice was a template argument before and is one
+# still, so the compiler resolves exactly the call it resolved before, at the
+# values this build named.
+#
+# What such a header carries is stated in that header's own comment: the five
+# names, and the machine, the date and the option probe's own figures beside
+# them, because a choice made there is a measurement taken on one host and a
+# reader has to be able to tell a tuned build from a shipped one.
+#
+# NOT IN THIS TREE: the step that WRITES such a header. Running boys-option-probe
+# at configure time, reading the ranking it reports and emitting the header with
+# this host's figures is what this option exists to be written through, and it is
+# deliberately absent rather than stubbed: the option below takes a header the
+# build already has, and the message says which header is in force. A
+# cross-compiling configure cannot run the probe on the machine it is compiling
+# for at all, so it stays on the committed header and says so here.
+set(BOYS_BUILD_DEFAULTS "" CACHE FILEPATH
+    "Header carrying this build's default fit route, scheme, packing axis, \
+division form and fit granularity; empty builds the shipped choices")
+
+if (BOYS_BUILD_DEFAULTS)
+    if (NOT EXISTS "${BOYS_BUILD_DEFAULTS}")
+        message(FATAL_ERROR "boys: BOYS_BUILD_DEFAULTS names "
+            "\"${BOYS_BUILD_DEFAULTS}\", which does not exist.")
+    endif()
+
+    # Copied under the name the headers include, into a directory that comes
+    # BEFORE include/ on the search path: the compiler then reads it as
+    # boys/boys_build_defaults.hpp and never reaches the committed file. The
+    # copy is a configure_file dependency, so editing the header reconfigures
+    # the build instead of leaving a stale copy behind.
+    set(BOYS_BUILD_DEFAULTS_DIR "${CMAKE_CURRENT_BINARY_DIR}/boys-build-defaults")
+    configure_file("${BOYS_BUILD_DEFAULTS}"
+        "${BOYS_BUILD_DEFAULTS_DIR}/boys/boys_build_defaults.hpp" COPYONLY)
+    target_include_directories(boys BEFORE PUBLIC "${BOYS_BUILD_DEFAULTS_DIR}")
+    # PUBLIC, so every target that links this one inherits it: a translation unit
+    # that reaches the committed header instead of the replacement says which
+    # build it is in and refuses to compile, rather than resolving one default
+    # while the library's own instantiations resolve another.
+    target_compile_definitions(boys PUBLIC BOYS_BUILD_DEFAULTS_REPLACED=1)
+    message(STATUS "boys: build defaults = ${BOYS_BUILD_DEFAULTS} — the five choices an "
+        "unnamed call resolves to are that header's, and they are a measurement on the machine "
+        "it was taken on.")
+elseif (CMAKE_CROSSCOMPILING)
+    message(STATUS "boys: build defaults = the committed header (the shipped choices); this is "
+        "a cross-compiling configure, which cannot measure the machine it compiles for.")
+else()
+    message(STATUS "boys: build defaults = the committed header (the shipped choices)")
+endif()
+
 # --- What this target does with a bare product-plus-add ----------------------
 # Whether `a * b + c` written bare rounds once or twice follows from the target
 # and the flags rather than from the source, and it is not a detail: it decides
@@ -931,6 +988,14 @@ if (BUILD_CUDA)
     target_include_directories(boys-cuda
         PUBLIC include ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
         PRIVATE src)
+    if (BOYS_BUILD_DEFAULTS_DIR)
+        # The device lane's option rows read the same five choices
+        # (boys_cuda_options.hpp), so a build that replaces the defaults header
+        # replaces it on both sides of the device boundary: the host and the
+        # device lane then name one default and not two.
+        target_include_directories(boys-cuda BEFORE PUBLIC "${BOYS_BUILD_DEFAULTS_DIR}")
+        target_compile_definitions(boys-cuda PUBLIC BOYS_BUILD_DEFAULTS_REPLACED=1)
+    endif()
     target_compile_definitions(boys-cuda PUBLIC BoysFp16=1)
     # Stated because this target links nothing that carries a standard into it:
     # without it the host TU compiles at the compiler's default (C++14 on

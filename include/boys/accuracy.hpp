@@ -12,6 +12,8 @@
 /// stay free of the library's C++23 ones, and defining the axes here is what
 /// lets one name describe an option on both sides of the device boundary.
 
+#include "boys/boys_build_defaults.hpp"
+
 #include <cstdint>
 
 namespace boys {
@@ -57,7 +59,12 @@ enum class FitRoute : int {
 };
 
 /// The route the entries evaluate when the caller names none.
-inline constexpr FitRoute kDefaultFitRoute = FitRoute::kChebyshev;
+///
+/// The value is the build's rather than this header's: it is
+/// \c BOYS_BUILD_DEFAULT_FIT_ROUTE, from `boys/boys_build_defaults.hpp`, whose
+/// committed file carries \c FitRoute::kChebyshev and which a build that has
+/// measured its own machine replaces with its own choice.
+inline constexpr FitRoute kDefaultFitRoute = BOYS_BUILD_DEFAULT_FIT_ROUTE;
 
 /// Which summation a stored fit is evaluated by.
 ///
@@ -96,6 +103,12 @@ enum class EvalScheme : std::uint8_t {
 
 /// The scheme the entries evaluate in when the caller names none.
 ///
+/// The value is the build's rather than this header's: it is
+/// \c BOYS_BUILD_DEFAULT_EVAL_SCHEME, from `boys/boys_build_defaults.hpp`, whose
+/// committed file carries \c EvalScheme::kHorner and which a build that has
+/// measured its own machine replaces with its own choice. The paragraphs below
+/// are why that shipped choice is the one it is.
+///
 /// Horner's rule: a call site that names no scheme is compiled as the entry
 /// naming \c kHorner, and naming \c kSplitClenshaw is how a caller asks for the
 /// other summation. The two sum one fit, so this value is a choice between two
@@ -114,6 +127,6 @@ enum class EvalScheme : std::uint8_t {
 /// tied rows. A caller who wants this ranking on their own machine runs the
 /// option probe (boys_probe.hpp), which measures it there and names the pairs it
 /// could and could not separate.
-inline constexpr EvalScheme kDefaultEvalScheme = EvalScheme::kHorner;
+inline constexpr EvalScheme kDefaultEvalScheme = BOYS_BUILD_DEFAULT_EVAL_SCHEME;
 
 } // namespace boys
