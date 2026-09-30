@@ -603,6 +603,15 @@ constexpr bool DeviceEntryServedAtRung(DeviceEntry entry, double multiplier) noe
             return DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32Uniform, multiplier);
         case DeviceEntry::kDeviceAllOrdersF32UniformHorner:
             return DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32UniformHorner, multiplier);
+        // The sentinel one past the last row this report defines, and not a row
+        // a call can name, so no rung axis is owed for it. It is named here
+        // rather than left to a default arm: a default would swallow the next
+        // enumerator as quietly as it swallows this one, and the check below
+        // exists so that a row with no stated rung axis cannot compile.
+        // gcc's -Wswitch wants every enumerator named whether or not a default
+        // is present, which is how this came to light; MSVC's does not.
+        case DeviceEntry::kCount:
+            break;
     }
 
     // An enumerator no arm above names, which the check below turns into a
