@@ -1395,11 +1395,6 @@ TEST(DeviceProbe, EveryCellTheReportRefusesIsRefusedByTheEntryThatOwnsTheRow) {
     // rung of it is worth are the accuracy gate's and the consumer sweep's, both
     // of which follow the space and are not guarded on the multiplier.
     const std::vector<RefusingRow> refuses = {
-        {boys::DeviceEntry::kAllOrdersF32Narrow, outF32.data(),
-         [](double m, const int* n, const double* x, void* out, std::size_t count) {
-             return boys::BoysCuda::AllOrdersF32NarrowAtRung(m, n, x, static_cast<float*>(out),
-                                                             count, nullptr);
-         }},
         {boys::DeviceEntry::kAllOrdersF32NarrowMono, outF32.data(),
          [](double m, const int* n, const double* x, void* out, std::size_t count) {
              return boys::BoysCuda::AllOrdersF32NarrowMonoAtRung(m, n, x, static_cast<float*>(out),
@@ -1425,14 +1420,9 @@ TEST(DeviceProbe, EveryCellTheReportRefusesIsRefusedByTheEntryThatOwnsTheRow) {
              return boys::BoysCuda::AllOrdersF32NarrowRatHornerAtRung(
                  m, n, x, static_cast<float*>(out), count, nullptr);
          }},
-        // The same two tables on the packing axis's other side: the cell a rung
-        // of them refuses is the cell the row above refuses, because the missing
+        // The same tables on the packing axis's other side: the cell a rung of
+        // them refuses is the cell the row above refuses, because the missing
         // cut is the table's and not the body's.
-        {boys::DeviceEntry::kAllOrdersF32NarrowOrders, outF32.data(),
-         [](double m, const int* n, const double* x, void* out, std::size_t count) {
-             return boys::BoysCuda::AllOrdersF32NarrowOrdersAtRung(
-                 m, n, x, static_cast<float*>(out), count, nullptr);
-         }},
         {boys::DeviceEntry::kAllOrdersF32NarrowOrdersMono, outF32.data(),
          [](double m, const int* n, const double* x, void* out, std::size_t count) {
              return boys::BoysCuda::AllOrdersF32NarrowOrdersMonoAtRung(

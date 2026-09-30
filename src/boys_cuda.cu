@@ -231,6 +231,17 @@ __device__ int dNarrowRatBDenDeg32[detail::f32::kNarrowRatBPiecesCountF32];
 __device__ int dNarrowDegEff[kNarrowPiecesTotal];
 __device__ int dNarrowBDegEff[detail::kNarrowBPieces * (detail::kMaxOrder + 1)];
 
+// The float lane's own cut of the same rung, region B. Region A needs no table
+// beside it: the float lane's region-A seed is the double lane's, which is what
+// the seed lane argument of DeviceAllOrdersF32 is, so the pieces a rung cuts on
+// the float lane are this lane's region-B pieces and those alone.
+//
+// It is a table of its own and not a second reader of the double lane's: the
+// float lane's region B is 218 pieces at degree 6 against the double lane's 311
+// at degree 10, so a cut derived over the double lane's coefficients is a cut of
+// a fit this lane does not read.
+__device__ int dNarrowBDegEff32[detail::f32::kNarrowBPiecesF32 * (detail::kMaxOrder + 1)];
+
 // ---------------------------------------------------------------------------
 // the monomial scheme's stored form, on this lane
 // ---------------------------------------------------------------------------
@@ -803,6 +814,32 @@ struct Lane32Narrow {
         return detail::DeviceClenshawSplit32(
             dNarrowBCoeffs32 + piece * (detail::f32::kNarrowBDegF32 + 1),
             detail::f32::kNarrowBDegF32,
+            t);
+    }
+};
+
+// The same lane at a rung: the stored coefficients, read at the degree that
+// rung's cut left. It is the float lane's counterpart of Lane64Narrow<true> and
+// it exists for the same reason — a rung's arithmetic is the stored fit read
+// short, and a call asking for a rung must not be answered with the stored
+// degree. Region A is not here: this lane's region-A seed is the double lane's
+// (Lane64Narrow), so the cut this object reads is region B's alone.
+struct Lane32NarrowRelaxed {
+    __device__ __forceinline__ float BSeed(float x, int) const {
+        int piece = 0;
+
+        while (piece + 1 < detail::f32::kNarrowBPiecesF32 && x >= dNarrowBEdges32[piece + 1])
+        {
+            ++piece;
+        }
+
+        const float a = dNarrowBEdges32[piece];
+        const float b = dNarrowBEdges32[piece + 1];
+        const float t = 2.0f * (x - a) / (b - a) - 1.0f;
+
+        return detail::DeviceClenshawSplit32(
+            dNarrowBCoeffs32 + piece * (detail::f32::kNarrowBDegF32 + 1),
+            dNarrowBDegEff32[piece * (detail::kMaxOrder + 1)],
             t);
     }
 };
@@ -2057,6 +2094,42 @@ __global__ void BoysAllOrdersF32OrdersRatKernel(const int* n,
     DeviceOrdersBody32(Lane64RatFull{}, Lane32Rat{}, n[i], static_cast<float>(x[i]), out, count, i);
 }
 
+// The narrow partition at a rung, both axes. Region A is the double lane's
+// narrow cut through the per-order seed lane and region B this lane's own cut
+// (Lane32NarrowRelaxed), which is the pair the rung's table holds.
+__global__ void BoysAllOrdersF32NarrowKernelEff(const int* n,
+                                                const double* __restrict__ x,
+                                                float* __restrict__ out,
+                                                size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    detail::DeviceAllOrdersF32(Lane64Narrow<true>{},
+                               Lane32NarrowRelaxed{},
+                               n[i],
+                               static_cast<float>(x[i]),
+                               [&](int l, float v) { out[l * count + i] = v; });
+}
+
+__global__ void BoysAllOrdersF32NarrowOrdersKernelEff(const int* n,
+                                                      const double* __restrict__ x,
+                                                      float* __restrict__ out,
+                                                      size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DeviceOrdersBody32(Lane64Narrow<true>{}, Lane32NarrowRelaxed{}, n[i],
+                       static_cast<float>(x[i]), out, count, i);
+}
+
 __global__ void BoysAllOrdersF32NarrowOrdersRatKernel(const int* n,
                                                       const double* __restrict__ x,
                                                       float* __restrict__ out,
@@ -2995,6 +3068,23 @@ extern "C" int BoysCudaLaunchAllOrdersF32OrdersEff(
     return static_cast<int>(cudaGetLastError());
 }
 
+// The narrow partition's rung, on both axes. One launcher each and no lane
+// argument: what selects the rung is which degree table the host made resident,
+// which is the same statement the shipped partition's pair makes.
+extern "C" int BoysCudaLaunchAllOrdersF32NarrowEff(
+    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    BoysAllOrdersF32NarrowKernelEff
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF32NarrowOrdersEff(
+    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    BoysAllOrdersF32NarrowOrdersKernelEff
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
 extern "C" int BoysCudaLaunchAllOrdersF32NarrowOrders(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
     BoysAllOrdersF32NarrowOrdersKernel
@@ -3151,6 +3241,7 @@ extern "C" int BoysCudaUploadEffTables(double m,
                                        const int* degB,
                                        const int* narrowA,
                                        const int* narrowB,
+                                       const int* narrowB32,
                                        const int* monoA,
                                        const int* monoB,
                                        const int* narrowMonoA,
@@ -3251,11 +3342,18 @@ extern "C" int BoysCudaUploadEffTables(double m,
         return 2;
     }
 
-    // The narrow partition's cut for the same rung: one table, no lane axis.
+    // The narrow partition's cut for the same rung: one table per lane, no lane
+    // axis. The float lane's region B is the second of them, and the two are
+    // different tables rather than one read twice: the lanes' pieces, their
+    // degrees and their coefficients are each their own (see the symbols above).
     if (cudaMemcpyToSymbol(dNarrowDegEff, narrowA, kNarrowPiecesTotal * sizeof(int)) != cudaSuccess ||
         cudaMemcpyToSymbol(dNarrowBDegEff,
                            narrowB,
                            detail::kNarrowBPieces * (detail::kMaxOrder + 1) * sizeof(int)) !=
+            cudaSuccess ||
+        cudaMemcpyToSymbol(dNarrowBDegEff32,
+                           narrowB32,
+                           detail::f32::kNarrowBPiecesF32 * (detail::kMaxOrder + 1) * sizeof(int)) !=
             cudaSuccess)
     {
         return 2;

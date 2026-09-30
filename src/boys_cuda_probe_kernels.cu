@@ -667,6 +667,9 @@ int BoysCudaLaunchAllOrdersF32NarrowOrdersMono(
 int BoysCudaLaunchAllOrdersF32OrdersRat(const int*, const double*, float*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF32NarrowOrdersRat(
     const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32NarrowEff(const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32NarrowOrdersEff(
+    const int*, const double*, float*, std::size_t, void*);
 int BoysCudaLaunchAllNF32(int, const double*, float*, std::size_t, void*);
 int BoysCudaLaunchSingleF64(const int*, const double*, double*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF64(const int*, const double*, double*, std::size_t, void*);
@@ -871,16 +874,12 @@ int LaunchLaunched(ProbeEntry entry,
         // no rung table for it, and the refusal the entry makes is the refusal
         // this files rather than a figure under a rung the entry does not serve.
         case ProbeEntry::kAllOrdersF32Narrow:
-            if (relaxed)
-            {
-                return 1;
-            }
-
-            BoysCudaLaunchAllOrdersF32Narrow(n,
-                                             x,
-                                             static_cast<float*>(out),
-                                             count,
-                                             stream);
+            // This partition's cut is held — region B's float degrees beside the
+            // double lane's region-A cut — so the row answers at every rung and
+            // the two arms are the two forms of it.
+            (relaxed ? BoysCudaLaunchAllOrdersF32NarrowEff
+                     : BoysCudaLaunchAllOrdersF32Narrow)(n, x,
+                             static_cast<float*>(out), count, stream);
             break;
         case ProbeEntry::kAllOrdersF32NarrowMono:
             if (relaxed)
@@ -898,16 +897,10 @@ int LaunchLaunched(ProbeEntry entry,
         // same rungs: the missing cut is the table's and the row that reads it
         // on either axis is served where its twin is and nowhere else.
         case ProbeEntry::kAllOrdersF32NarrowOrders:
-            if (relaxed)
-            {
-                return 1;
-            }
-
-            BoysCudaLaunchAllOrdersF32NarrowOrders(n,
-                                                   x,
-                                                   static_cast<float*>(out),
-                                                   count,
-                                                   stream);
+            // The same two tables on the packing axis's other side.
+            (relaxed ? BoysCudaLaunchAllOrdersF32NarrowOrdersEff
+                     : BoysCudaLaunchAllOrdersF32NarrowOrders)(n, x,
+                             static_cast<float*>(out), count, stream);
             break;
         case ProbeEntry::kAllOrdersF32NarrowOrdersMono:
             if (relaxed)

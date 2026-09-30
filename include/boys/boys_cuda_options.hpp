@@ -463,16 +463,16 @@ constexpr bool DeviceEntryServedAtRung(DeviceEntry entry, double multiplier) noe
         // the one rung it serves is the reference multiplier. The reason is
         // above, per partition and per route, and is not a property of the row
         // that names it.
-        case DeviceEntry::kAllOrdersF32Narrow:
         case DeviceEntry::kAllOrdersF32NarrowMono:
         case DeviceEntry::kAllOrdersF32Rat:
         case DeviceEntry::kAllOrdersF32RatHorner:
         case DeviceEntry::kAllOrdersF32NarrowRat:
         case DeviceEntry::kAllOrdersF32NarrowRatHorner:
-        // The float lane's orders rows on those same two tables: the cut a rung
-        // would read is a cut of the table, so the row that reads it on the other
-        // axis is served at the same rungs and no others.
-        case DeviceEntry::kAllOrdersF32NarrowOrders:
+        // The float lane's orders rows on the rational route and on the narrow
+        // monomial table: the cut a rung would read is a cut of the table, so the
+        // row that reads it on the other axis is served at the same rungs and no
+        // others. The narrow Chebyshev pair is not here — its cut this lane
+        // derives, uploads and reads, so both of its rows fall to the arm below.
         case DeviceEntry::kAllOrdersF32NarrowOrdersMono:
         case DeviceEntry::kAllOrdersF32OrdersRat:
         case DeviceEntry::kAllOrdersF32OrdersRatHorner:
@@ -508,6 +508,13 @@ constexpr bool DeviceEntryServedAtRung(DeviceEntry entry, double multiplier) noe
         // order where its per-argument twin reads the recurrence, so the two are
         // served at the same rungs and the cut is the table's.
         case DeviceEntry::kAllOrdersF32Orders:
+        // The float lane's narrow Chebyshev partition, whose rung cut this lane
+        // derives, uploads and reads: region B's own float degrees
+        // (FillNarrowF32Lane) beside the double lane's region-A cut the same
+        // upload carries. Its orders row reads the same two tables and is served
+        // at the same rungs.
+        case DeviceEntry::kAllOrdersF32Narrow:
+        case DeviceEntry::kAllOrdersF32NarrowOrders:
         case DeviceEntry::kAllOrdersF16:
         case DeviceEntry::kAllNF64:
         case DeviceEntry::kAllNF32:

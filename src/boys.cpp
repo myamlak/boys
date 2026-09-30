@@ -1098,18 +1098,22 @@ Carriage CarriesSingle(FitRoute route,
 // region-B seed, and the rung it answers at is its own row's statement,
 // DeviceEntryServedAtRung.
 //
-// A relaxed rung is refused on every partition but the shipped one and the
-// uniform grid, for the reason the lane's entries state in their own contracts:
-// the device lane holds no degree table cut from the float lane's own pieces or
-// from its rational pairs, so a relaxed call over the narrow partition or over
-// either rational member has no degrees to read — and that is a statement about
-// the *table*, so it refuses the cell on either packing axis, which is why the
-// axis is not tested here. The uniform grid is not one of those: its table is
-// stored at a degree per interval and no rung's criterion has a cut to make of
-// it, so every rung of it is the route's own arithmetic and the lane
-// instantiates all twelve. The shipped partition's rung is the float batch
-// lane's own cut of the float Chebyshev table, which this lane derives, uploads
-// and reads.
+// A relaxed rung reaches three of the four tables this lane stores. The shipped
+// partition's rung is the float batch lane's own cut of the float Chebyshev
+// table, and the narrow partition's Chebyshev member's is the float lane's own
+// region-B cut beside the double lane's region-A one; both are derived,
+// uploaded and read here, and both are served at every rung on either packing
+// axis. The uniform grid is not one of them for the opposite reason: its table
+// is stored at a degree per interval and no rung's criterion has a cut to make
+// of it, so every rung of it is the route's own arithmetic and the lane
+// instantiates all twelve.
+//
+// What a relaxed rung does not reach is the narrow partition's monomial member
+// and either rational member: the device lane holds no degree table cut from
+// the float lane's narrow pieces in the monomial basis, and none cut from its
+// rational pairs. A relaxed call over those has no degrees to read — and that
+// is a statement about the *table*, so it refuses the cell on either packing
+// axis, which is why the axis is not tested here.
 //
 // What the scheme axis reaches on which partition is the lane's own table's to
 // state: this function has one scheme field for the whole call, and that table is
@@ -1159,13 +1163,22 @@ Carriage CarriesDevice(FitRoute route,
                 "as unbuilt work rather than as a property of the route"};
     }
 
-    if (granularity == FitGranularity::kNarrow && tier != AccuracyTier::kReference)
+    // The narrow partition's Chebyshev member is served at every rung and is not
+    // tested here: this lane derives, uploads and reads that rung's cut of the
+    // float lane's own region-B pieces (FillNarrowF32Lane, Lane32NarrowRelaxed),
+    // beside the double lane's region-A cut, which is the seed every float body
+    // takes. What remains refused on the partition is its monomial member, whose
+    // cut of the same rung is a cut of the other basis's table and is not held
+    // here.
+    if (granularity == FitGranularity::kNarrow && scheme == EvalScheme::kHorner &&
+        tier != AccuracyTier::kReference)
     {
         return {false,
-                "this lane's narrow fp32 entries are served at the full-accuracy multiplier "
-                "alone: the device lane holds no rung table cut from the float lane's own pieces, "
-                "so a relaxed call over them has no degrees to read. The lane's entries state that "
-                "as unbuilt work rather than as a property of the partition"};
+                "this lane's narrow fp32 entries in the monomial basis are served at the "
+                "full-accuracy multiplier alone: the device lane holds no rung table cut from the "
+                "float lane's narrow pieces in that basis, so a relaxed call over them has no "
+                "degrees to read. The lane's entries state that as unbuilt work rather than as a "
+                "property of the partition"};
     }
 
     if (!DeviceRungServed(AccuracyMultiplier(tier)))

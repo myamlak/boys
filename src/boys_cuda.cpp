@@ -26,6 +26,7 @@ int BoysCudaUploadEffTables(double m,
                             const int* degB,
                             const int* narrowA,
                             const int* narrowB,
+                            const int* narrowB32,
                             const int* monoA,
                             const int* monoB,
                             const int* narrowMonoA,
@@ -60,6 +61,10 @@ int BoysCudaLaunchAllOrdersF32Orders(
 int BoysCudaLaunchAllOrdersF32OrdersEff(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32NarrowOrders(
+    const int* n, const double* x, float* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF32NarrowEff(
+    const int* n, const double* x, float* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF32NarrowOrdersEff(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32NarrowOrdersMono(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
@@ -228,6 +233,14 @@ constexpr int kNarrowFlatB = detail::kNarrowBPieces * (kEffMaxOrder + 1);
 std::array<int, kNarrowFlatPieces> gNarrowDegA{};
 std::array<int, kNarrowFlatB> gNarrowDegB{};
 
+// The float lane's own cut of that rung, region B alone. The float lane's
+// region-A seed is the double lane's piece table — that is what the seed lane
+// argument of the shared body is — so the rung cuts that lane's region A and
+// this lane's is its region B: a different fit, over the float lane's 218
+// pieces at degree 6 rather than the double lane's 311 at degree 10.
+constexpr int kNarrowFlatB32 = detail::f32::kNarrowBPiecesF32 * (kEffMaxOrder + 1);
+std::array<int, kNarrowFlatB32> gNarrowDegB32{};
+
 // The monomial scheme's cut of the same rung, over the same pieces. Region A is
 // order-major as the CUDA lane's cDegEff axis is — the derivation is flat over
 // the pieces, and the lane reads it by (order, pieceInOrder) — and region B is
@@ -287,6 +300,21 @@ template <double kAccuracyMultiplier> void FillNarrowLane() {
     for (int k = 0; k < kNarrowFlatB; ++k)
     {
         gNarrowDegB[static_cast<std::size_t>(k)] = kDegreesB[static_cast<std::size_t>(k)];
+    }
+}
+
+// The same partition's cut for the float lane, region B alone and for the
+// reason the table above states: this lane's region-A seed is the double
+// lane's, so the degrees a rung cuts for this lane are its region-B pieces'.
+// The role is the float batch's, which is the shape the entries carrying the
+// partition have.
+template <double kAccuracyMultiplier> void FillNarrowF32Lane() {
+    static constexpr auto kDegreesB =
+        detail::NarrowRegionBDegrees<kAccuracyMultiplier, detail::BoysRole::kF32Batch>();
+
+    for (int k = 0; k < kNarrowFlatB32; ++k)
+    {
+        gNarrowDegB32[static_cast<std::size_t>(k)] = kDegreesB[static_cast<std::size_t>(k)];
     }
 }
 
@@ -429,6 +457,7 @@ template <double kAccuracyMultiplier> BoysStatus EnsureEffTables() {
         FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Fp16Single, false>(4);
         FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Fp16Batch, true>(5);
         FillNarrowLane<kAccuracyMultiplier>();
+        FillNarrowF32Lane<kAccuracyMultiplier>();
         FillMonoLane<kAccuracyMultiplier>();
         FillNarrowMonoLane<kAccuracyMultiplier>();
         FillRatLane<kAccuracyMultiplier>();
@@ -441,6 +470,7 @@ template <double kAccuracyMultiplier> BoysStatus EnsureEffTables() {
                                                  gEffDegB.data(),
                                                  gNarrowDegA.data(),
                                                  gNarrowDegB.data(),
+                                                 gNarrowDegB32.data(),
                                                  gMonoDegA.data(),
                                                  gMonoDegB.data(),
                                                  gNarrowMonoDegA.data(),
@@ -1728,13 +1758,12 @@ BoysStatus BoysCuda::AllOrdersF32UniformHornerAtRung(
 template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF32Narrow(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    // The lane's narrow partition is stored at one degree per piece, and the cut
-    // a rung of it would read is derived for the float lane's pieces
-    // (boys_effective_degrees.hpp, NarrowRegionBDegrees) but is not uploaded or
-    // read by this lane: it derives the double role's cut alone (FillNarrowLane).
-    // A call at another rung would have to be answered by degrees no kernel here
-    // holds, so the entry serves the reference multiplier and the rest is owed
-    // work — deriving, uploading and reading that cut.
+    // The lane's narrow partition has a cut to make at a rung, and this lane
+    // holds it: region B's degrees are the float lane's own
+    // (NarrowRegionBDegrees over the float pieces, FillNarrowF32Lane) and are
+    // resident from the rung's own upload. Region A needs no table beside them
+    // because this lane's region-A seed is the double lane's, whose cut the same
+    // upload carries.
     static_assert(DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32Narrow, kAccuracyMultiplier),
                   "this entry does not serve the rung this instantiation names: which rungs it "
                   "serves is DeviceEntryServedAtRung (boys_cuda_options.hpp)");
@@ -1744,15 +1773,33 @@ BoysStatus BoysCuda::AllOrdersF32Narrow(
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF32Narrow, n, x, out, count, stream);
+    if constexpr (kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
+    {
+        return RunLaunch(BoysCudaLaunchAllOrdersF32Narrow, n, x, out, count, stream);
+    } else
+    {
+        const auto status = EnsureEffTables<kAccuracyMultiplier>();
+
+        if (status != BoysStatus::kSuccess)
+        {
+            return status;
+        }
+
+        return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowEff, n, x, out, count, stream);
+    }
 }
 
 
 BoysStatus BoysCuda::AllOrdersF32NarrowAtRung(
     double multiplier, const int* n, const double* x, float* out, std::size_t count,
     void* stream) {
-    return RungServedByEntry(DeviceEntry::kAllOrdersF32Narrow, multiplier,
-                             BoysCudaLaunchAllOrdersF32Narrow, n, x, out, count, stream);
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF32Narrow,
+                        BoysCudaLaunchAllOrdersF32NarrowEff, n, x, out, count, stream);
 }
 
 
@@ -1961,15 +2008,35 @@ BoysStatus BoysCuda::AllOrdersF32NarrowOrders(
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowOrders, n, x, out, count, stream);
+    // The same two tables its per-argument twin reads, on the other axis: the
+    // rung is a property of the stored fit and not of the reading.
+    if constexpr (kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
+    {
+        return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowOrders, n, x, out, count, stream);
+    } else
+    {
+        const auto status = EnsureEffTables<kAccuracyMultiplier>();
+
+        if (status != BoysStatus::kSuccess)
+        {
+            return status;
+        }
+
+        return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowOrdersEff, n, x, out, count, stream);
+    }
 }
 
 
 BoysStatus BoysCuda::AllOrdersF32NarrowOrdersAtRung(
     double multiplier, const int* n, const double* x, float* out, std::size_t count,
     void* stream) {
-    return RungServedByEntry(DeviceEntry::kAllOrdersF32NarrowOrders, multiplier,
-                             BoysCudaLaunchAllOrdersF32NarrowOrders, n, x, out, count, stream);
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF32NarrowOrders,
+                        BoysCudaLaunchAllOrdersF32NarrowOrdersEff, n, x, out, count, stream);
 }
 
 
@@ -3010,6 +3077,54 @@ template BoysStatus BoysCuda::AllOrdersF32OrdersUniform<1e8>(
 template BoysStatus BoysCuda::AllOrdersF32OrdersUniformHorner<1e8>(
     const int*, const double*, float*, std::size_t, void*);
 
+// The narrow partition's two rows, whose rung cut this lane now derives,
+// uploads and reads: the eleven relaxed instantiations each, beside the
+// reference one in the block above.
+template BoysStatus BoysCuda::AllOrdersF32Narrow<2.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32NarrowOrders<2.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32Narrow<10.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32NarrowOrders<10.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32Narrow<64.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32NarrowOrders<64.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32Narrow<100.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32NarrowOrders<100.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32Narrow<256.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32NarrowOrders<256.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32Narrow<1024.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32NarrowOrders<1024.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32Narrow<4096.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32NarrowOrders<4096.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32Narrow<1e4>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32NarrowOrders<1e4>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32Narrow<16384.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32NarrowOrders<16384.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32Narrow<65536.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32NarrowOrders<65536.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32Narrow<1e8>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32NarrowOrders<1e8>(
+    const int*, const double*, float*, std::size_t, void*);
+
 // The handle for each rung the lane serves, kDeviceRungs (boys_cuda_options.hpp)
 // — one instantiation per rung, the same list the entries above are compiled at,
 // because the rung a handle is filled at is the rung its entries then read. m = 1
@@ -3221,13 +3336,16 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
     // The grid's two rows serve every rung of this lane, because no rung's
     // criterion cuts a table stored at one degree per order and interval: the
     // rung's arithmetic is that one degree, and what a rung of it does not buy is
-    // less work. The narrow partition's two are served at the full-accuracy
-    // multiplier only, and that is a different kind of statement: its rung cut is
-    // one this lane does not derive, upload or read — the derivation for the
-    // float lane's pieces exists, and building that cut into this lane is owed
-    // work rather than a property of the partition. Each row's own entry states
-    // which of the two it is, and the rung mask the report carries is read from
-    // that statement and not listed here.
+    // less work. The narrow partition's Chebyshev row carries every rung: its cut
+    // is the float lane's own region-B degrees, which this lane derives
+    // (NarrowRegionBDegrees over the float pieces, FillNarrowF32Lane), uploads
+    // and reads (Lane32NarrowRelaxed), beside the double lane's region-A cut the
+    // same upload carries. Its monomial row is served at the full-accuracy
+    // multiplier alone, and that is a different kind of statement: the monomial
+    // basis's cut of that rung is one this lane does not derive, upload or read,
+    // and building it in is owed work rather than a property of the partition.
+    // Each row's own entry states which of the two it is, and the rung mask the
+    // report carries is read from that statement and not listed here.
     {DeviceEntry::kAllOrdersF32Narrow, "all-orders-fp32-narrow",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kPartition, RegionBExp::kAccurate,
