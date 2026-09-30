@@ -213,10 +213,12 @@ A stored fit is a polynomial over one interval, and the interval's width is the 
 the truncation bound carries the half-width as roughly `(h / 2d)^d`, so **halving a piece buys about
 `2^d`**, while raising the degree at a fixed width buys far less, because the optimal ellipse
 parameter falls as the degree rises and partly cancels the gain. **Splitting is the design move;
-more degree is not.** The library offers two partitions and no spectrum between them, and the narrow
-one is the default: a call site that names no partition reads the pieces cut to the proved bound, and
-`FitGranularity::kShipped` is how a caller asks for the committed table by name. The two cut one fit,
-so the move is a choice of table and not of accuracy.
+more degree is not.** The library offers three partitions and no spectrum between them. The narrow one
+is the default: a call site that names no partition reads the pieces cut to the proved bound, and
+`FitGranularity::kShipped` is how a caller asks for the committed table by name. Beside those two,
+`FitGranularity::kUniform` is a grid of one fixed width with each interval fitted at its own degree,
+chosen so that a call locates its piece by a multiply rather than a search. All three cut one fit, so
+the move is a choice of table and not of accuracy.
 
 **What narrower pieces buy, and what they cost.** They cut the number of coefficients an evaluation
 reads, not the size of the table: a narrower piece needs a lower degree, and there are more of them.
@@ -418,9 +420,10 @@ figures: the shipped cover of region A delivers 2.46e-14 and the narrow pieces 2
 shipped seed of region B delivers 4.46e-14 and the five narrow seed pieces 4.12448e-14, and the batch
 entry read through the narrow route lands at 5e-14 against the batch lane's 5.5e-14. The block is
 counted apart from the lane book and from the scheme rows, and those read what they read before it
-existed: 39 of 39 claims, 44 of 44 scheme rows, and the combinations book 336 certified and published
-of 448 with none refused. What does move is the option space, which reads 36 of 36 members supported,
-bounded and reachable: the two partitions are two of them, each measured over 2819824 cells at both
+existed: 39 of 39 claims and 44 of 44 scheme rows at the revision of that run, whose combinations book
+then read 336 certified and published of 448 with none refused — **the space has since grown a third
+partition and its own book is the current one**. What does move is the option space, which reads 36 of
+36 members supported, bounded and reachable: the piecewise partitions are two of them, each measured over 2819824 cells at both
 schemes with 1543999 of them reading differently under the other partition and none over the bar its
 row is judged at. The block reports its own carrying fraction, 4125493 of 5710087 cells (72.2%), as
 the cells able to discriminate; the other 1584594 carry a bound at least as large as the value
@@ -1314,7 +1317,7 @@ fits. A caller evaluating there should expect that, and should not read the 5.5e
 
 The lanes above are one axis of six. A call is a lane, a fit route, an evaluation scheme, an
 interval partition, a packing axis and an accuracy multiplier, and the library offers the product of
-all six: **2 routes × 2 schemes × 2 partitions × 2 axes × 7 rungs, in 4 lanes — 448 combinations.**
+all six: **2 routes × 2 schemes × 3 partitions × 2 axes × 7 rungs, in 4 lanes — 672 combinations.**
 Each axis's own section above states what that axis changes. This one states the two figures a
 combination has, how a program asks the library for each of them, how a program asks whether a
 combination meets the error it needs, and which members of the space this revision does not carry.
@@ -1373,13 +1376,13 @@ table reads `fp64, chebyshev, split-clenshaw, shipped, orders, m = 64 | 56694 ce
 figure at all, only the library's own reason.
 The block's own last lines, from a run of the gate on this tree:
 
-    COMBINATIONS: 344 of 672 member(s) of the option space are certified and published
-                  270 refused with the library's own reason and owed
+    COMBINATIONS: 424 of 672 member(s) of the option space are certified and published
+                  108 refused with the library's own reason and owed
                   1 call-site limit(s) name unbuilt work and are owed the same way
-                  34 not runnable on this host, counted apart and not against the library
-                  24 offered and covered by no cell of this block
+                  140 not runnable on this host, counted apart and not against the library
+                  0 offered and covered by no cell of this block
                   0 delivering outside the bound its lane publishes
-    the arithmetic: 344 + 270 + 34 + 24 + 0 = 672
+    the arithmetic: 424 + 108 + 140 + 0 + 0 = 672
                    the space read off the tables a second way: 672 member(s) over 4 lane(s),
                    a route axis of 2 2 2 2 route(s), 2 scheme(s), 3 partition(s),
                    2 axis(es), 7 rung(s)
@@ -1387,15 +1390,19 @@ The block's own last lines, from a run of the gate on this tree:
 There are three states and no fourth: certified and published, refused with the library's own reason
 and owed, or not runnable on this host. **A combination the library offers and no row measures lands
 in the fourth count and fails the run**, so a hole cannot go quiet; one that runs and delivers outside
-the bound its lane publishes lands in the fifth and fails it the same way. **The run above fails on
-that fourth count**: the 24 are members of the space with no measured row of their own, and the
-gate's own sentence for them is that each is a table, a body or a probe rather than a combination
-that cannot exist.
+the bound its lane publishes lands in the fifth and fails it the same way. **The run above reads zero
+in both**, which is the state this book is held to: every member the accessor offers is either
+measured by a row or counted under the two books that are not the library's to answer for.
 
-The 34 that are not certified here are the CUDA lane's: this host has no CUDA build, so the gate
+The 140 that are not certified here are the CUDA lane's: this host has no CUDA build, so the gate
 counts them apart rather than against the library rather than pretending they were measured.
 Building the gate in a CUDA configuration measures them on the card, and the figures are that card's,
 as every device figure is.
+
+The 108 owed rows are one combination and one reason: **the rational route over the uniform grid**,
+whose member is a fit this revision has not derived. The gate keeps them under *refused with the
+library's own reason* rather than under any other book, and the library refuses them where they are
+named rather than answering from the grid's Chebyshev member.
 
 ### The bound the accessor guarantees beside the figure it was measured to deliver
 

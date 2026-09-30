@@ -261,28 +261,25 @@ document can answer it for you. It has to be measured where it will run.
 const boys::OptionProbeReport report = boys::RunOptionProbe(options);
 ```
 
-    measured 1346 options on 12 logical processors
+    measured 1694 options on 12 logical processors
 
-    fp64 m=1 all-orders - 48 options ranked
-      fastest: batch-pack-orders-horner-exact-division-fp64 at 97.59 ns/argument
-      the run could not separate 9 of them from the leader
-        narrow-horner-plain-reciprocal-fp64
-        narrow-horner-exact-division-fp64
-        batch-pack-orders-horner-fp64
-        batch-fp64
-        batch-pack-orders-horner-plain-reciprocal-fp64
-        narrow-plain-reciprocal-fp64
-        narrow-horner-fp64
-        batch-horner-plain-reciprocal-fp64
-        batch-exact-division-fp64
+    fp64 m=1 all-orders - 72 options ranked
+      fastest: uniform-pack-orders-horner-plain-reciprocal-fp64 at 47.99 ns/argument
+      the run could not separate 1 of them from the leader
+        uniform-pack-orders-horner-fp64
 
-    recommended here: batch-pack-orders-horner-exact-division-fp64
+    recommended here: uniform-pack-orders-horner-plain-reciprocal-fp64
 
-**The important line is the third one, not the second.** Of the 48 options in that group the run could
-not place 9 behind the leader, so the "fastest" row is one of ten that are effectively tied — which is
+**The important line is the third one, not the second.** Of the 72 options in that group the run could
+not place 1 behind the leader, so the "fastest" row is one of two that are effectively tied — which is
 the real answer, and the probe says so rather than inventing a winner from a timing difference too
 small to measure. Read the result as *a group at the top and a tail behind it*. Being on the leader is
 worth little; being well behind the group is worth fixing.
+
+**Every figure in that transcript is a property of this host and this run**: the nanosecond figures
+are wall-clock measurements, which options tie follows from them, and the headline counts follow the
+build. What carries to your machine is the shape of the answer — a leader, a tied group, and a tail —
+not the numbers in it.
 
 That distinction is also why these figures should not be copied. On the machine that wrote this page
 the same program was run several times while other work was going on, and the leader — and the length

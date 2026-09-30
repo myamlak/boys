@@ -292,10 +292,10 @@ held to 1.5e-7 above, and the fast option's looser bound is not covered by the 3
 
 The lanes above are one axis of six. A call is a lane, a fit route, an evaluation scheme, an interval
 partition, a packing axis and an accuracy multiplier, and the library offers the product of all six:
-2 routes × 2 schemes × 2 partitions × 2 axes × 7 rungs, in 4 lanes — **448 combinations: 336 are
-certified and published, 112 cannot run on a host without a CUDA device, and none are refused or
-deliver outside the bound their lane publishes** (the gate command below prints those counts and the
-arithmetic between them). `BoysAccuracyGuaranteed(...)` returns the bound a
+2 routes × 2 schemes × 3 partitions × 2 axes × 7 rungs, in 4 lanes — **672 combinations: 424 are
+certified and published, 108 are refused with the library's own reason and owed, 140 cannot run on a
+host without a CUDA device, and none deliver outside the bound their lane publishes** (the gate
+command below prints those counts and the arithmetic between them). `BoysAccuracyGuaranteed(...)` returns the bound a
 combination carries — its lane's figure times the rung, plus the lane's own additive term where it
 documents one — and `BoysAccuracyDelivered(...)` returns the figure it was measured to deliver,
 which is the one to rank two combinations by. They are different questions, and the `reading` field
@@ -305,15 +305,15 @@ number.
 
 **Choosing a combination is a name, and choosing a rung is an argument.** The four structural axes —
 route, scheme, partition, packing axis — are the fields of an `EvalPolicy`, so a combination is a type
-the call site writes once and the compiler resolves where it is written: 4 lanes × 16 axis
-combinations, **64 combinations, each reachable as a name**. Naming one costs nothing at the call —
+the call site writes once and the compiler resolves where it is written: 4 lanes × 24 axis
+combinations, **96 combinations, each reachable as a name**. Naming one costs nothing at the call —
 there is no table to look a combination up in, no string to match and no search at run time, which is
 why those four axes are not call arguments. The fifth choice, the accuracy rung, is the one a caller
 may want to make per call, and that one is the call's own argument: `BoysAllOrdersAtTier<Policy>(tier,
 nmax, x, out)` on the double lane, with `BoysAllOrdersF32AtTier`, `BoysAllOrdersF16AtTier` and
 `BoysAllOrdersBf16AtTier` beside it, takes the policy that names the combination and the rung as a
 value. Every combination a lane's book carries can be written that way and every rung the lane serves
-is honoured — those 64 axis combinations at the 7 rungs and the 4 lanes are the 448 combinations
+is honoured — those 96 axis combinations at the 7 rungs and the 4 lanes are the 672 combinations
 above, all of them named and all of them evaluated by `tests/consumer_option_space.cpp`, which prints
 the counts per precision. A rung this build
 does not serve evaluates at the reference multiplier, which is never coarser than the rung that was
@@ -560,16 +560,24 @@ How narrowly the fitted domain is cut into pieces is the fifth field of `EvalPol
 choice with a price on each side. A narrower piece needs a lower degree to hold the same bound —
 halving a piece buys about `2^d` in the truncation, so **splitting is the lever and more degree is
 not** — and the cost is that a table of narrow pieces stores more in total and needs a piece lookup
-per call. Two partitions are offered and no spectrum between them: `FitGranularity::kShipped`, the
-committed table the library has always carried, and `FitGranularity::kNarrow`, a partition of region
-A and of region B derived from the proved truncation bound below rather than placed by sampling —
-which is the default, and the one a call site that names no partition reads.
-`tools/gen_boys_coefficients.py --derive-partition` prints the design law's answer.
+per call. Three partitions are offered and no spectrum between them. `FitGranularity::kShipped` is the
+committed table the library has always carried. `FitGranularity::kNarrow` is a partition of region A
+and of region B derived from the proved truncation bound below rather than placed by sampling, and it
+is the default — the one a call site that names no partition reads. `FitGranularity::kUniform` is the
+grid: one width for every interval, each interval fitted at its own degree, which is what lets a call
+locate its piece by a multiply where the other two need a search.
+`tools/gen_boys_coefficients.py --derive-partition` prints the design law's answer for all three.
 
 | partition | stored coefficients | stored rows | read per evaluation |
 | --- | --- | --- | --- |
 | `FitGranularity::kShipped` | 1339 | 67 | 19 to 21 |
 | `FitGranularity::kNarrow` | 3476 | 316 | 11 |
+
+The grid is a third structure rather than a third row of that table: one width for every interval —
+245 of them — with each interval fitted at its own degree, the double lane's held to degree 8 and the
+float lane's to degree 4, so the coefficients a call reads are that interval's degree and not a
+column of a partition-wide count. `tools/gen_boys_coefficients.py --derive-partition` prints its
+ladder and the degrees it chose.
 
 **Narrowing is a trade and not a saving.** The coefficients an evaluation reads fall from 19–21 to 11
 on the default route and to 6–9 on the rational one, while the table a consumer carries grows from
@@ -628,22 +636,24 @@ interval the entry runs region C's asymptotic form, which no partition replaces,
 one of these figures against a wider range would be matching the fitted tables' promise to an error
 that is not theirs.
 
-**Where a combination has no narrow table or kernel it is refused where it is named**, with the
-reason, rather than answered from the shipped table. The rational minimax route has a narrow fit
-over both regions, and the single-precision lanes serve narrow tables on both their routes. What
-remains has a narrower reason
-than a missing route or a missing lane, and each is a static assertion naming the table or the kernel
-it would need: the rational route over the narrow partition on the across-orders packing axis, whose
-lane steps one order's coefficients to the next at a fixed stride; the narrow partition on the
-single-precision lanes past the reference multiplier, which hold one coefficient set and one degree
-table; the same limit on the rational route's own rung table, which is derived from the shipped
-pairs; and the single-precision lanes' across-orders packed entry, which names no partition at all.
-Each is therefore unbuilt work rather than an impossible combination. The two partitions are
-different fits of the same function over the same interval, so a substitution would return the
-shipped values under the narrow partition's name. The relaxed rungs `m > 1` and the orders axis are
-otherwise built: a rung of the narrow partition is cut by a criterion measured against its own pieces
-rather than against the shipped rows, and the packed lane reaches a per-order cut by fetching each
-order's own piece.
+**Where a combination has no table or kernel it is refused where it is named**, with the reason,
+rather than answered from another partition's fits. The rational minimax route has a narrow fit over
+both regions and a fit over the shipped partition's; the single-precision lanes serve narrow tables on
+both their routes; every partition's rungs are cut from that partition's own pieces, on either packing
+axis, and the across-orders entries reach a per-order cut by fetching each order's own piece.
+
+**What remains refused is one thing, and it is a fit this revision has not derived.** The rational
+route over the uniform grid has no member: the grid's intervals are fixed by its width law rather than
+cut by a criterion, so a rational pair over them is a fit to derive over the grid's own cells rather
+than a table to cut or a kernel to write. It is refused on every lane — at the relaxed rungs on the
+double lane, and at every rung on the single-precision and device lanes — as unbuilt work rather than
+as an impossible combination, which is why the gate counts those cells under *refused and owed* and
+not under any of its other four books. **Deriving that member is the one piece of work this option
+space is owed**, and it is the only reason any combination of the 672 is not served.
+
+The partitions are different fits of the same function over the same interval, so a substitution
+would return one partition's values under another's name — which is why the library refuses rather
+than falling back, and why the packed lane carries the basis through rather than reusing a cut.
 
 The proved bound is what the partition is derived from, and it needs no sampling: for this function
 `|F_n(z)| ≤ F_n(Re z)` holds exactly, so the max modulus on a Bernstein ellipse is at most its value
