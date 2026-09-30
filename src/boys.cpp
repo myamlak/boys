@@ -948,28 +948,8 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
     // reasoned - the numbers, the cells they were measured at and the grid are
     // in the rows below.
     static const std::array<LaneContractInfo, 4> rows = {{
-        {Precision::kFp64, "fp64", 5.5e-14, 0.0,
-         "throughout, every region and every division form. Over the accuracy gate's own reference "
-         "grid at the reference multiplier - 56694 cells per form - the plain reciprocal leaves "
-         "region A, region B and region C where exact division has them and moves the extended "
-         "band's worst from 3.21618e-15 to 6.72923e-15, inside the 3e-14 that region publishes, and "
-         "the refined reciprocal is bit-identical to exact division in all 56694 cells. No form of "
-         "the axis leaves a bar this lane publishes, so this lane's figure carries no form "
-         "dimension: the three members agree on every figure that has one"},
-        {Precision::kFp32, "fp32", 1.5e-7, 0.0,
-         "throughout, every region, under exact division and under the refined reciprocal, which is "
-         "bit-identical to it in all 56694 cells of the accuracy gate's own reference grid at the "
-         "reference multiplier. **The plain reciprocal's figure beside it is 1.75140e-07**, measured "
-         "at n = 0, x = 9.74054909 on that grid and the worst of the two cells which that form puts "
-         "outside this row's 1.5e-7 - the other is x = 7, at 1.55469e-07. Both cells are that form's "
-         "alone: at them the lane's exact and refined forms deliver 3.67355e-09 and 3.62601e-08, "
-         "and their own worst over the whole grid is 1.08354e-07, inside the base. The figure the "
-         "axis governs is the ladder's division by the argument, and the plain form's figure is "
-         "larger because the same ladder rounds twice per step rather than once; that form does not "
-         "govern this lane's downward ladder at this revision, whose divisor is the step constant "
-         "rather than the argument, so the lane as served is inside 1.5e-7 under every form and the "
-         "row's base figure is met by all three. Serving the form there takes the figure above the "
-         "base and is a measurement with this number, not an edit"},
+        {Precision::kFp64, "fp64", 5.5e-14, 0.0, "throughout, every region"},
+        {Precision::kFp32, "fp32", 1.5e-7, 0.0, "throughout, every region"},
         {Precision::kFp16, "fp16", 1.5e-7, 0.0,
          "the single-precision lane's own figure, plus half of the last representable digit of the "
          "returned value and claimed only where the value exceeds the sum. The half lane computes "
