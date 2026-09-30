@@ -676,6 +676,44 @@ void RunProbe(const Reference& ref, int n, double x)
         const boys::Bf16 xb = boys::Bf16(xf);
         std::array<boys::F16, 33> out16{};
         std::array<boys::Bf16, 33> outb{};
+        // The division-form control for code.half_simd_budget. That row compares
+        // the 8-wide half-I/O bodies against the certified scalar half entry, and
+        // the two differ at an argument the half format rounds to infinity: the
+        // bodies form a plain reciprocal and answer zero, the scalar entry runs
+        // the float engine, whose step divides through the form the policy names.
+        // Naming each form here separates a formula from the entry that reaches
+        // it - if the answer at an infinite divisor were the engine's rather than
+        // the form's, all three rows would agree, and they do not.
+        {
+            using PExact = boys::EvalPolicy<boys::kDefaultFitRoute,
+                                            boys::kDefaultEvalScheme,
+                                            boys::BoysBudget::kFloat,
+                                            boys::kDefaultPackAxis,
+                                            boys::kDefaultFitGranularity,
+                                            boys::DivisionForm::kExactDivision>;
+            using PPlain = boys::EvalPolicy<boys::kDefaultFitRoute,
+                                            boys::kDefaultEvalScheme,
+                                            boys::BoysBudget::kFloat,
+                                            boys::kDefaultPackAxis,
+                                            boys::kDefaultFitGranularity,
+                                            boys::DivisionForm::kPlainReciprocal>;
+            using PRefined = boys::EvalPolicy<boys::kDefaultFitRoute,
+                                              boys::kDefaultEvalScheme,
+                                              boys::BoysBudget::kFloat,
+                                              boys::kDefaultPackAxis,
+                                              boys::kDefaultFitGranularity,
+                                              boys::DivisionForm::kRefinedReciprocal>;
+            const float inf = std::numeric_limits<float>::infinity();
+            row("BoysSingleF32 exact division [inf]",
+                static_cast<double>(boys::BoysSingleF32<1.0, PExact>(n, inf)),
+                ref16);
+            row("BoysSingleF32 plain reciprocal [inf]",
+                static_cast<double>(boys::BoysSingleF32<1.0, PPlain>(n, inf)),
+                ref16);
+            row("BoysSingleF32 refined reciprocal [inf]",
+                static_cast<double>(boys::BoysSingleF32<1.0, PRefined>(n, inf)),
+                ref16);
+        }
         row("BoysSingleF16",
             static_cast<double>(static_cast<float>(boys::BoysSingleF16(n, x16))),
             ref16);
@@ -1302,6 +1340,7 @@ int main(int argc, char** argv) {
     std::string reference = std::string(BoysDataDir) + "/boys_accuracy_gate_reference.csv";
     bool perOrder = false;
     bool strict = false;
+    bool driftDump = false;
     int probeN = -1;
     double probeX = 0.0;
 
@@ -1315,6 +1354,9 @@ int main(int argc, char** argv) {
         } else if (arg == "--strict")
         {
             strict = true;
+        } else if (arg == "--half-drift-dump")
+        {
+            driftDump = true;
         } else if (arg == "--probe" && i + 2 < argc)
         {
             probeN = std::atoi(argv[++i]);
@@ -3721,6 +3763,39 @@ int main(int argc, char** argv) {
     int driftScalarZeroN = -1;
     std::size_t driftUnforgivenZero = 0; // a path returns zero above its bound
     double driftUnforgivenRef = 0.0;
+    // The aggregate above says a cell has exactly one path out of bound but not
+    // which one, and the two sides are not the same finding: the body being out
+    // is the kernel's error, the scalar being out is the certified entry's. They
+    // are counted apart, per side and per (region, format), because a side that
+    // is out in one region only is a different object from one that is out
+    // everywhere.
+    std::size_t driftSimdOut = 0;   // the body outside its bound, the scalar inside
+    std::size_t driftScalarOut = 0; // the scalar outside its bound, the body inside
+    std::array<std::size_t, 6> driftSimdOutCell{};   // [region * 2 + isBf16]
+    std::array<std::size_t, 6> driftScalarOutCell{};
+    // What the out-of-bound return actually is, per side. "Outside the bound"
+    // covers two different returns: a number the bound is too tight for, and a
+    // value that is not a number at all, which no bound can hold. The second is
+    // the one this row has fired on, so it is counted rather than left to be
+    // inferred from a worst-excess of zero, and the argument each set sits at is
+    // counted too, because a set that sits where a format rounds its argument
+    // away is a different finding from one spread over the domain.
+    std::size_t driftSimdOutNaN = 0;
+    std::size_t driftScalarOutNaN = 0;
+    std::size_t driftSimdOutInfArg = 0;    // half argument is not a finite half
+    std::size_t driftScalarOutInfArg = 0;
+    std::size_t driftSimdOutRefZero = 0;   // reference is exactly zero there
+    std::size_t driftScalarOutRefZero = 0;
+    double driftSimdOutRatio = 0.0; // the largest the offending side went over
+    double driftScalarOutRatio = 0.0;
+    double driftSimdOutX = 0.0;     // the largest argument of each side's set
+    double driftScalarOutX = 0.0;
+    int driftSimdOutN = -1;
+    int driftScalarOutN = -1;
+    int driftSimdOutRegion = -1;
+    int driftScalarOutRegion = -1;
+    bool driftSimdOutBf16 = false;
+    bool driftScalarOutBf16 = false;
 #endif // BOYS_GATE_FP16
 
     // ---- the 8-wide half-I/O region kernels --------------------------------
@@ -3906,6 +3981,103 @@ int main(int argc, char** argv) {
                     if (simdIn != scalarIn)
                     {
                         ++driftOneSideOut;
+
+                        const std::size_t sideSlot =
+                            static_cast<std::size_t>(region) * 2 + (isBf16 ? 1 : 0);
+                        const double halfArg =
+                            isBf16 ? static_cast<double>(static_cast<float>(xb[j]))
+                                   : static_cast<double>(static_cast<float>(x16[j]));
+
+                        if (!simdIn)
+                        {
+                            ++driftSimdOut;
+                            ++driftSimdOutCell[sideSlot];
+
+                            if (!std::isfinite(got))
+                            {
+                                ++driftSimdOutNaN;
+                            }
+
+                            if (!std::isfinite(halfArg))
+                            {
+                                ++driftSimdOutInfArg;
+                            }
+
+                            if (want == 0.0)
+                            {
+                                ++driftSimdOutRefZero;
+                            }
+
+                            const double ratio =
+                                std::abs(got - want) / HalfBound(got, mantissa, minExp);
+
+                            if (ratio > driftSimdOutRatio)
+                            {
+                                driftSimdOutRatio = ratio;
+                                driftSimdOutRegion = region;
+                                driftSimdOutBf16 = isBf16;
+                            }
+
+                            if (ref.x[i] > driftSimdOutX)
+                            {
+                                driftSimdOutX = ref.x[i];
+                                driftSimdOutN = order;
+                            }
+                        } else
+                        {
+                            ++driftScalarOut;
+                            ++driftScalarOutCell[sideSlot];
+
+                            if (!std::isfinite(scalar))
+                            {
+                                ++driftScalarOutNaN;
+                            }
+
+                            if (!std::isfinite(halfArg))
+                            {
+                                ++driftScalarOutInfArg;
+                            }
+
+                            if (want == 0.0)
+                            {
+                                ++driftScalarOutRefZero;
+                            }
+
+                            const double ratio =
+                                std::abs(scalar - want) / HalfBound(scalar, mantissa, minExp);
+
+                            if (ratio > driftScalarOutRatio)
+                            {
+                                driftScalarOutRatio = ratio;
+                                driftScalarOutRegion = region;
+                                driftScalarOutBf16 = isBf16;
+                            }
+
+                            if (ref.x[i] > driftScalarOutX)
+                            {
+                                driftScalarOutX = ref.x[i];
+                                driftScalarOutN = order;
+                            }
+                        }
+
+                        if (driftDump)
+                        {
+                            std::printf("  drift-one-side-out %s region %d n=%d x=%.17g got=%.9g "
+                                        "scalar=%.9g ref=%.9g |got-ref|=%.6g bound(got)=%.6g "
+                                        "|scalar-ref|=%.6g bound(scalar)=%.6g %s\n",
+                                        isBf16 ? "bf16" : "fp16",
+                                        region,
+                                        order,
+                                        ref.x[i],
+                                        got,
+                                        scalar,
+                                        want,
+                                        std::abs(got - want),
+                                        HalfBound(got, mantissa, minExp),
+                                        std::abs(scalar - want),
+                                        HalfBound(scalar, mantissa, minExp),
+                                        !simdIn ? "BODY-OUT" : "SCALAR-OUT");
+                        }
                     }
                 }
             }
@@ -7719,9 +7891,23 @@ int main(int argc, char** argv) {
             "the largest argument of each being x=%.6g (n=%d) and x=%.6g (n=%d) - and every "
             "one of them is a cell where the bound is looser than the value, so the zero is "
             "the format's floor and not a lost value, which is why they are counted apart "
-            "from the contract test. Before the region-B kernel was changed the body returned "
-            "0 at (n=32, x=11.944741727643702) where the scalar returned 5.96046e-08 and the "
-            "reference is 1.53979e-07, and that cell was in the binding domain",
+            "from the contract test. Which side those cells put outside its bound, which the "
+            "aggregate does not say: %zu have the body outside and the scalar inside (A fp16 "
+            "%zu, A bf16 %zu, B fp16 %zu, B bf16 %zu, C fp16 %zu, C bf16 %zu), the furthest "
+            "over %.4g of its own bound, in region %d on %s, and %zu have the scalar outside "
+            "and the body inside (A fp16 %zu, A bf16 %zu, B fp16 %zu, B bf16 %zu, C fp16 %zu, "
+            "C bf16 %zu), the furthest over %.4g, in region %d on %s; the largest argument of "
+            "each set is x=%.6g (n=%d) and x=%.6g (n=%d). What the out-of-bound return is, "
+            "which is the difference between a tight bound and no value at all: of the body's "
+            "set %zu returned a value that is not a number, %zu sit at a half argument that is "
+            "not a finite half and %zu at a cell whose reference is exactly zero; of the "
+            "scalar's set %zu returned a value that is not a number, %zu sit at a half "
+            "argument that is not a finite half and %zu at a cell whose reference is exactly "
+            "zero. The body's set is empty at this revision and the scalar's is not, so on "
+            "every cell this row fails on the 8-wide body returns the reference's own value "
+            "and the return outside the bound is the certified scalar entry's - which is what "
+            "makes this row's subject and this row's evidence different objects, and is why "
+            "the side is printed here rather than left in the aggregate",
             driftCells,
             driftUlp,
             driftOrder,
@@ -7734,7 +7920,37 @@ int main(int argc, char** argv) {
             driftSimdZeroX,
             driftSimdZeroN,
             driftScalarZeroX,
-            driftScalarZeroN));
+            driftScalarZeroN,
+            driftSimdOut,
+            driftSimdOutCell[0],
+            driftSimdOutCell[1],
+            driftSimdOutCell[2],
+            driftSimdOutCell[3],
+            driftSimdOutCell[4],
+            driftSimdOutCell[5],
+            driftSimdOutRatio,
+            driftSimdOutRegion,
+            driftSimdOutBf16 ? "bf16" : "fp16",
+            driftScalarOut,
+            driftScalarOutCell[0],
+            driftScalarOutCell[1],
+            driftScalarOutCell[2],
+            driftScalarOutCell[3],
+            driftScalarOutCell[4],
+            driftScalarOutCell[5],
+            driftScalarOutRatio,
+            driftScalarOutRegion,
+            driftScalarOutBf16 ? "bf16" : "fp16",
+            driftSimdOutX,
+            driftSimdOutN,
+            driftScalarOutX,
+            driftScalarOutN,
+            driftSimdOutNaN,
+            driftSimdOutInfArg,
+            driftSimdOutRefZero,
+            driftScalarOutNaN,
+            driftScalarOutInfArg,
+            driftScalarOutRefZero));
 #else
         Verdict::NotCarried,
         // The seam is the reason here and not the target: with it closed this
@@ -10317,14 +10533,16 @@ int main(int argc, char** argv) {
     }
 
     // The members of the granularity axis this book's own slots do not hold. The
-    // book above sweeps two of them, and every one of its rows is asked at every
-    // rung of the tier enumeration - a question the uniform partition has no
-    // second answer to: its table is stored at one degree for every order and
-    // every interval, so it is served at the reference multiplier alone and there
-    // is no rung to cut. It is named here rather than left out of the list above
-    // in silence, and where it was measured is the combination book's: the cross
-    // below enumerates the partition from BoysFitGranularities, measures both of
-    // its cells and counts every cell of it this build refuses.
+    // book above sweeps the shipped and narrow partitions, and their rows are
+    // asked at every rung of the tier enumeration. The uniform partition is not
+    // one of those slots and is named here rather than left out of the list
+    // above in silence: its rows divide, and the division is the members' rather
+    // than the partition's - the Chebyshev member is served at every rung, its
+    // degree being the one the criterion reaches at every multiplier, and the
+    // rational member at the reference rung alone, its pairs being stored and
+    // admissible at every multiplier with no entry reading them at a rung yet.
+    // Both are measured in the cross below, which enumerates the partition from
+    // BoysFitGranularities and counts every cell of it this build refuses.
     for (const boys::FitGranularityInfo& row : boys::BoysFitGranularities())
     {
         if (static_cast<std::size_t>(row.granularity) < kGranMembers)
@@ -10338,9 +10556,11 @@ int main(int argc, char** argv) {
                     "n/a",
                     "n/a",
                     "n/a",
-                    "this book's rows are asked at every rung, and this partition is served at "
-                    "the reference multiplier alone: the combination book below measures it, both "
-                    "schemes, on the cross's own partition axis");
+                    "this book's rows are asked at every rung, and this partition's members "
+                    "divide over the rung rather than the partition: the Chebyshev member is "
+                    "served at every one of them and the rational member at the reference rung "
+                    "alone. The combination book below measures both, at both schemes, on the "
+                    "cross's own partition axis");
     }
 
     std::printf("  %s\n", std::string(150, '-').c_str());
@@ -10870,34 +11090,46 @@ int main(int argc, char** argv) {
         }(std::make_index_sequence<7>{});
     };
 
-    // The uniform partition's cells on the double lane, at the one route, the one
-    // packing axis and the one rung that partition is served at.
+    // The rational member's cells on the uniform partition of the double lane,
+    // at the two schemes and the two packing axes, at the one rung that member
+    // is served at.
     //
     // They are read by a lambda of their own rather than by combDoubleRungs
-    // above, and that is the partition's shape and not a convenience: that
-    // lambda asks its policy at every rung of the enumeration, and a uniform
-    // policy at a rung past the reference one is refused where it is named
-    // (RefuseUniformAtRung, boys_impl.hpp), so a rung sequence over this
-    // partition is not an instantiation that exists. The rung here is the
-    // reference multiplier written out, one cell per scheme, which is what the
-    // partition's own row states it is served at.
-    const auto combUniformRung = [&]<boys::EvalScheme kScheme>(int lane) {
-        using PExact = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+    // above, and what decides that is the member and not the partition: that
+    // lambda asks its policy at every rung of the enumeration, and a rational
+    // policy over this partition at a rung past the reference one is refused
+    // where it is named (RefuseUniformAtRung, boys_impl.hpp) - the member's
+    // pairs are admissible at every multiplier and no entry reads them at a rung
+    // yet - so a rung sequence over this member is not an instantiation that
+    // exists. The rung here is the reference multiplier written out, one cell
+    // per (scheme, axis). The Chebyshev member's cells are the same partition's
+    // and are NOT read here: they are served at every rung, and they are
+    // measured by combDoubleRungs above with the other rows of the rung sweep.
+    //
+    // The route and the axis are template parameters for the reason they are in
+    // combDoubleRungs: the row this records has to name the cell it measured,
+    // and the entry reaches both through the policy. The rational member's
+    // across-orders cell is served by the scalar orders lane rather than by the
+    // packed body - its rows are per interval and have no stride - so the two
+    // axes are two rows over one call and not two bodies.
+    const auto combUniformRung = [&]<boys::FitRoute kRoute, boys::EvalScheme kScheme,
+                                     boys::PackAxis kAxis>(int lane) {
+        using PExact = boys::EvalPolicy<kRoute,
                                         kScheme,
                                         boys::BoysBudget::kFloat,
-                                        boys::PackAxis::kArguments,
+                                        kAxis,
                                         boys::FitGranularity::kUniform,
                                         boys::DivisionForm::kExactDivision>;
-        using PPlain = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+        using PPlain = boys::EvalPolicy<kRoute,
                                         kScheme,
                                         boys::BoysBudget::kFloat,
-                                        boys::PackAxis::kArguments,
+                                        kAxis,
                                         boys::FitGranularity::kUniform,
                                         boys::DivisionForm::kPlainReciprocal>;
-        using PRefined = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+        using PRefined = boys::EvalPolicy<kRoute,
                                           kScheme,
                                           boys::BoysBudget::kFloat,
-                                          boys::PackAxis::kArguments,
+                                          kAxis,
                                           boys::FitGranularity::kUniform,
                                           boys::DivisionForm::kRefinedReciprocal>;
         const double laneBound = combLaneRows[static_cast<std::size_t>(lane)].bound;
@@ -10927,10 +11159,10 @@ int main(int argc, char** argv) {
 
         combMeasured.push_back({lane,
                                 0,
-                                static_cast<int>(boys::FitRoute::kChebyshev),
+                                static_cast<int>(kRoute),
                                 static_cast<int>(kScheme),
                                 static_cast<int>(boys::FitGranularity::kUniform),
-                                static_cast<int>(boys::PackAxis::kArguments),
+                                static_cast<int>(kAxis),
                                 a.cells,
                                 a.below,
                                 a.over,
@@ -11083,16 +11315,43 @@ int main(int argc, char** argv) {
                                         boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
                                         boys::FitGranularity::kNarrow>(kLaneDouble);
 
-    // The uniform partition's two cells on the double lane. Every other cell the
-    // cross names at this partition is refused by the library where it is named -
-    // the rational route and the across-orders axis by the tables this partition
-    // does not carry, every rung past the reference multiplier by its being
-    // stored at one degree - and a refused cell is a row of this book with the
-    // library's reason, not a hole in it. What is measured here is the whole of
-    // what is served, which is the two schemes at the one route, the one axis and
-    // the one rung.
-    combUniformRung.template operator()<boys::EvalScheme::kSplitClenshaw>(kLaneDouble);
-    combUniformRung.template operator()<boys::EvalScheme::kHorner>(kLaneDouble);
+    // The uniform partition on the Chebyshev route: every rung of the
+    // enumeration, over both schemes and both axes, which is what the
+    // partition's own row now states it serves. The rung of this partition is
+    // the reference reading rather than a cut of it - the criterion that would
+    // cut the row reaches the full degree at every multiplier, so the stored
+    // degree is admissible at each of them - and the rows below are therefore
+    // read the way the shipped and narrow partitions' rows are: through the
+    // entry at each rung of the enumeration.
+    combDoubleRungs.template operator()<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
+                                        boys::PackAxis::kArguments,
+                                        boys::FitGranularity::kUniform>(kLaneDouble);
+    combDoubleRungs.template operator()<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner,
+                                        boys::PackAxis::kArguments,
+                                        boys::FitGranularity::kUniform>(kLaneDouble);
+    combDoubleRungs.template operator()<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
+                                        boys::PackAxis::kOrders,
+                                        boys::FitGranularity::kUniform>(kLaneDouble);
+    combDoubleRungs.template operator()<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner,
+                                        boys::PackAxis::kOrders,
+                                        boys::FitGranularity::kUniform>(kLaneDouble);
+
+    // The uniform partition on the rational route: the reference rung alone,
+    // which is the one the partition's row offers for it. The member's pairs are
+    // stored per interval and are admissible at every multiplier by the same
+    // reading the Chebyshev member's degree is, and no entry reads them at a
+    // rung yet - so the rung cells are refused where they are named and this book
+    // carries them as the owed work they are rather than as holes.
+    combUniformRung.template operator()<boys::FitRoute::kRationalMinimax,
+                                        boys::EvalScheme::kSplitClenshaw,
+                                        boys::PackAxis::kArguments>(kLaneDouble);
+    combUniformRung.template operator()<boys::FitRoute::kRationalMinimax, boys::EvalScheme::kHorner,
+                                        boys::PackAxis::kArguments>(kLaneDouble);
+    combUniformRung.template operator()<boys::FitRoute::kRationalMinimax,
+                                        boys::EvalScheme::kSplitClenshaw,
+                                        boys::PackAxis::kOrders>(kLaneDouble);
+    combUniformRung.template operator()<boys::FitRoute::kRationalMinimax, boys::EvalScheme::kHorner,
+                                        boys::PackAxis::kOrders>(kLaneDouble);
 
     // The single and half lanes. The reference rung carries every route, scheme,
     // partition and axis on both engine budgets; past it the cells measured here
@@ -11102,7 +11361,9 @@ int main(int argc, char** argv) {
     // arguments axis, whose rung fits the named family's own degree table. The
     // three shapes per budget that are left - a non-shipped route or scheme on
     // the narrow partition's across-orders axis - are measured at the reference
-    // rung alone, which is where the lane certifies the whole of them.
+    // rung alone, which is where the lane certifies the whole of them. The
+    // uniform grid is the one partition read at every rung on both lanes rather
+    // than at the reference rung alone, and the rows below state its reason.
     combSingleLane.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kChebyshev,
                                        boys::EvalScheme::kSplitClenshaw,
                                        boys::PackAxis::kArguments,
@@ -11219,6 +11480,56 @@ int main(int argc, char** argv) {
                                             boys::FitRoute::kRationalMinimax,
                                             boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
                                             boys::FitGranularity::kNarrow>(combHalfLane);
+
+    // The uniform grid on the single and half lanes. It is the one partition of
+    // the three these lanes read that the rows above leave unread on them -
+    // every call above is on the shipped partition or on the narrow one - and
+    // it is what the accessor has begun to offer: both lanes' carriage rule
+    // serves the grid's Chebyshev member at every rung and on both axes
+    // (CarriesSingle, src/boys.cpp, whose only refusal on this partition is the
+    // rational member neither lane's grid has been fitted with). So the cells
+    // this block was leaving unmeasured are the two schemes times the two axes
+    // times the seven rungs, on each of the two lanes; each is read here through
+    // the entry the shipped and narrow partitions' rows are read through, over
+    // the same committed grid and against the same per-lane figure.
+    //
+    // The seven rungs of a cell here are seven readings of one body and not
+    // seven bodies. The grid's table is stored at a degree per interval and the
+    // multiplier is not read on it: the single-precision entries select the
+    // reference body for this partition at every multiplier
+    // (BoysAllOrdersF32Impl, boys_impl.hpp, the branch that serves this
+    // partition uncut), and the double lane's rows above are read the same way.
+    // The seven rows are written out one per rung rather than collapsed to one
+    // with six marked covered, because the cell the cross looks for is the whole
+    // tuple: a count that came out right because a row was recorded for a rung
+    // nothing called is the failure this block exists to find, and it would be
+    // invisible in the number it produced.
+    combSingleLane.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kChebyshev,
+                                       boys::EvalScheme::kSplitClenshaw,
+                                       boys::PackAxis::kArguments,
+                                       boys::FitGranularity::kUniform>(kLaneSingle);
+    combSingleLane.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kChebyshev,
+                                       boys::EvalScheme::kHorner, boys::PackAxis::kArguments,
+                                       boys::FitGranularity::kUniform>(kLaneSingle);
+    combSingleLane.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kChebyshev,
+                                       boys::EvalScheme::kSplitClenshaw, boys::PackAxis::kOrders,
+                                       boys::FitGranularity::kUniform>(kLaneSingle);
+    combSingleLane.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kChebyshev,
+                                       boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
+                                       boys::FitGranularity::kUniform>(kLaneSingle);
+    combSingleLane.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kChebyshev,
+                                       boys::EvalScheme::kSplitClenshaw,
+                                       boys::PackAxis::kArguments,
+                                       boys::FitGranularity::kUniform>(combHalfLane);
+    combSingleLane.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kChebyshev,
+                                       boys::EvalScheme::kHorner, boys::PackAxis::kArguments,
+                                       boys::FitGranularity::kUniform>(combHalfLane);
+    combSingleLane.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kChebyshev,
+                                       boys::EvalScheme::kSplitClenshaw, boys::PackAxis::kOrders,
+                                       boys::FitGranularity::kUniform>(combHalfLane);
+    combSingleLane.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kChebyshev,
+                                       boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
+                                       boys::FitGranularity::kUniform>(combHalfLane);
 
     // ---- the cross, judged against what the accessor answers ----------------
     std::vector<Combination> combinations;

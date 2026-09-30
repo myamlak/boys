@@ -920,6 +920,63 @@ std::vector<double> MeasureDeviceRow(const Reference& ref,
     return out;
 }
 
+// The single-precision launched rows, measured the way this lane's other float
+// entries are: against the reference's own float column and at the float lane's
+// bound, which is the figure the row documents. The fp64 sibling above cannot
+// certify one of these — its bound is the double batch lane's and its comparison
+// is against the fp64 host lane — and a row measured at another precision's bar
+// is a claim about arithmetic that row does not run.
+//
+// One claim, the row's own: the name comes from the report's row for the entry,
+// so a name this gate invented could not pass the coverage check at the end of
+// this file, and a row the report carries is either certified here or counted
+// there.
+template <double kMultiplier>
+void MeasureDeviceRowF32(const Reference& ref,
+                         const Grid& grid,
+                         boys::DeviceEntry entry,
+                         const char* rung,
+                         boys::BoysStatus (*launch)(const int*,
+                                                    const double*,
+                                                    float*,
+                                                    std::size_t,
+                                                    void*)) {
+    const std::string name = Label(DeviceRow(entry).name, rung);
+    const double bound = kMultiplier * kBoundFloat;
+    const int row = AddClaim(name.c_str(), "A..C", bound);
+    const std::size_t count = ref.count;
+    const int nmax = boys::kMaxBoysOrder;
+    const std::size_t cells = grid.cells;
+
+    // The launch is the fp64 sibling's, one lane down: `count` arguments and a
+    // ladder for each, so the output holds `count * (kMaxBoysOrder + 1)` values.
+    // The cell count is the size of that output and is not the batch size — a
+    // launch handed the cells as its count would ask every element for a whole
+    // ladder over a buffer sized for one value each, which is the out-of-bounds
+    // write this helper originally made.
+    DevBuf<int> dN(count);
+    DevBuf<double> dX(count);
+    DevBuf<float> dOut(cells);
+    const std::vector<int> tops(count, boys::kMaxBoysOrder);
+    dN.Upload(tops);
+    dX.Upload(grid.x);
+    CheckLaunch(launch(dN.get(), dX.get(), dOut.get(), count, nullptr), name.c_str());
+    std::vector<float> out(cells);
+    dOut.Download(out);
+    Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+
+    for (int n = 0; n <= nmax; ++n)
+    {
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const std::size_t e = ref.Index(n, i);
+            const auto [got, unrepresentable] = Widen(out[e]);
+
+            Measure(row, n, ref.xf[i], got, ref.vf[e], ref.decadeF[e], bound, unrepresentable);
+        }
+    }
+}
+
 template <double kMultiplier>
 void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung) {
     const std::string rungWord = std::string(" m=") + (rung == nullptr ? "1" : rung);
@@ -1100,6 +1157,192 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
         rung,
         rungWord,
         &boys::BoysCuda::AllOrdersF64NarrowOrdersRat<kMultiplier>);
+
+    // The uniform route's rows, at every rung the lane serves. Its table is
+    // stored at one degree for every order and every interval, so no rung's
+    // criterion cuts it: every rung's arithmetic is the route's one degree, the
+    // row's bound at a rung is its own figure times m, and the entry serves every
+    // rung of the lane. That is the same statement the library makes in
+    // DeviceEntryServedAtRung, and it is why there is no guard around this block.
+    //
+    // So a rung's cell of this route is measured here like any other row's, and
+    // the figure says what a rung of it is worth: the route has no shorter fit to
+    // read, so the rung buys no less work, and the bound is what a caller of a
+    // rung of it reads. A rung this gate skipped would be a rung the report
+    // offers and no measurement covers.
+    //
+    // Every row of the route is measured, including the two that name the
+    // packing axis and run the kernel of the scheme they carry: a row of the
+    // report is certified by this gate or it is not, and a name that reached no
+    // measurement would be a row the chooser reads and the certifier skips.
+    {
+        const std::vector<double> uniformOut = MeasureDeviceRow<kMultiplier>(
+            ref,
+            grid,
+            boys::DeviceEntry::kAllOrdersF64Uniform,
+            rung,
+            rungWord,
+            &boys::BoysCuda::AllOrdersF64Uniform<kMultiplier>);
+        const std::vector<double> uniformHornerOut = MeasureDeviceRow<kMultiplier>(
+            ref,
+            grid,
+            boys::DeviceEntry::kAllOrdersF64UniformHorner,
+            rung,
+            rungWord,
+            &boys::BoysCuda::AllOrdersF64UniformHorner<kMultiplier>);
+        const std::vector<double> ordersUniformOut = MeasureDeviceRow<kMultiplier>(
+            ref,
+            grid,
+            boys::DeviceEntry::kAllOrdersF64OrdersUniform,
+            rung,
+            rungWord,
+            &boys::BoysCuda::AllOrdersF64OrdersUniform<kMultiplier>);
+        const std::vector<double> ordersUniformHornerOut = MeasureDeviceRow<kMultiplier>(
+            ref,
+            grid,
+            boys::DeviceEntry::kAllOrdersF64OrdersUniformHorner,
+            rung,
+            rungWord,
+            &boys::BoysCuda::AllOrdersF64OrdersUniformHorner<kMultiplier>);
+        (void)uniformOut;
+        (void)uniformHornerOut;
+        (void)ordersUniformOut;
+        (void)ordersUniformHornerOut;
+    }
+
+    // The float lane's grid, which is the uniform route at that lane's precision
+    // and is served at every rung for the reason the double lane's is: its table
+    // is stored at one degree for every order and every interval, so every rung's
+    // arithmetic is that one degree and the entry serves every rung.
+    MeasureDeviceRowF32<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF32Uniform,
+        rung,
+        &boys::BoysCuda::AllOrdersF32Uniform<kMultiplier>);
+    MeasureDeviceRowF32<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF32UniformHorner,
+        rung,
+        &boys::BoysCuda::AllOrdersF32UniformHorner<kMultiplier>);
+
+    // The float lane's other packing axis, on the two tables whose rung this
+    // lane holds: the shipped partition's own cut of the float Chebyshev table,
+    // and the uniform grid, whose rows are the per-argument rows' kernels and
+    // whose one degree per interval no rung's criterion cuts. Each is measured
+    // at the bound the float lane documents, over the whole committed grid, like
+    // every other row here.
+    MeasureDeviceRowF32<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF32Orders,
+        rung,
+        &boys::BoysCuda::AllOrdersF32Orders<kMultiplier>);
+    MeasureDeviceRowF32<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF32OrdersUniform,
+        rung,
+        &boys::BoysCuda::AllOrdersF32OrdersUniform<kMultiplier>);
+    MeasureDeviceRowF32<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF32OrdersUniformHorner,
+        rung,
+        &boys::BoysCuda::AllOrdersF32OrdersUniformHorner<kMultiplier>);
+
+    // The float lane's own partition and its rational route, each served at m = 1
+    // and for a reason of its own: the partition because no rung table for the
+    // float lane's pieces exists in this lane, and the rational route because the
+    // float lane's rational pairs have no rung cut here either — the region-A
+    // half could be cut from the double lane's table and the region-B half
+    // cannot, and a body cut on one side of it and not the other is a cut nobody
+    // derived. Both reasons are the rows' own, stated where the rows are, and
+    // every row is measured here at the bound the float lane documents.
+    if constexpr (kMultiplier == boys::kBoysFullAccuracyMultiplier)
+    {
+        MeasureDeviceRowF32<1.0>(
+            ref,
+            grid,
+            boys::DeviceEntry::kAllOrdersF32Narrow,
+            rung,
+            &boys::BoysCuda::AllOrdersF32Narrow<1.0>);
+        MeasureDeviceRowF32<1.0>(
+            ref,
+            grid,
+            boys::DeviceEntry::kAllOrdersF32NarrowMono,
+            rung,
+            &boys::BoysCuda::AllOrdersF32NarrowMono<1.0>);
+        // The rational route's two partitions, each named twice because the
+        // route's pair is stored in one form: the two scheme names of a
+        // partition reach one kernel and the row's own scheme says which name
+        // reached it, as the double lane's rational pairs do.
+        MeasureDeviceRowF32<1.0>(
+            ref,
+            grid,
+            boys::DeviceEntry::kAllOrdersF32Rat,
+            rung,
+            &boys::BoysCuda::AllOrdersF32Rat<1.0>);
+        MeasureDeviceRowF32<1.0>(
+            ref,
+            grid,
+            boys::DeviceEntry::kAllOrdersF32RatHorner,
+            rung,
+            &boys::BoysCuda::AllOrdersF32RatHorner<1.0>);
+        MeasureDeviceRowF32<1.0>(
+            ref,
+            grid,
+            boys::DeviceEntry::kAllOrdersF32NarrowRat,
+            rung,
+            &boys::BoysCuda::AllOrdersF32NarrowRat<1.0>);
+        MeasureDeviceRowF32<1.0>(
+            ref,
+            grid,
+            boys::DeviceEntry::kAllOrdersF32NarrowRatHorner,
+            rung,
+            &boys::BoysCuda::AllOrdersF32NarrowRatHorner<1.0>);
+        // The same two tables and the same route on the packing axis's other
+        // side, at the same one rung and for the same reason: the missing cut is
+        // the table's, so the row that reads that table on either axis is served
+        // where its twin is and nowhere else.
+        MeasureDeviceRowF32<1.0>(
+            ref,
+            grid,
+            boys::DeviceEntry::kAllOrdersF32NarrowOrders,
+            rung,
+            &boys::BoysCuda::AllOrdersF32NarrowOrders<1.0>);
+        MeasureDeviceRowF32<1.0>(
+            ref,
+            grid,
+            boys::DeviceEntry::kAllOrdersF32NarrowOrdersMono,
+            rung,
+            &boys::BoysCuda::AllOrdersF32NarrowOrdersMono<1.0>);
+        MeasureDeviceRowF32<1.0>(
+            ref,
+            grid,
+            boys::DeviceEntry::kAllOrdersF32OrdersRat,
+            rung,
+            &boys::BoysCuda::AllOrdersF32OrdersRat<1.0>);
+        MeasureDeviceRowF32<1.0>(
+            ref,
+            grid,
+            boys::DeviceEntry::kAllOrdersF32OrdersRatHorner,
+            rung,
+            &boys::BoysCuda::AllOrdersF32OrdersRatHorner<1.0>);
+        MeasureDeviceRowF32<1.0>(
+            ref,
+            grid,
+            boys::DeviceEntry::kAllOrdersF32NarrowOrdersRat,
+            rung,
+            &boys::BoysCuda::AllOrdersF32NarrowOrdersRat<1.0>);
+        MeasureDeviceRowF32<1.0>(
+            ref,
+            grid,
+            boys::DeviceEntry::kAllOrdersF32NarrowOrdersRatHorner,
+            rung,
+            &boys::BoysCuda::AllOrdersF32NarrowOrdersRatHorner<1.0>);
+    }
 
     if constexpr (kMultiplier == boys::kBoysFullAccuracyMultiplier)
     {
@@ -1777,6 +2020,28 @@ struct DeviceSlots {
     int orders16 = -1;
     int allN16 = -1;
     int each16 = -1;
+
+    // The partition and route axes of the ladder shape. The float lane's narrow
+    // and rational rows are served at m = 1 alone — their launched rows refuse
+    // the other eleven rungs and `DeviceEntryServedAtRung` reads the refusal
+    // from the launched row — so those four slots are filled at that rung and
+    // are -1 at every other, where the row has no cell in this build.
+    int narrow64 = -1;
+    int narrowMono64 = -1;
+    int rat64 = -1;
+    int ratHorner64 = -1;
+    int narrowRat64 = -1;
+    int narrowRatHorner64 = -1;
+    int uniform64 = -1;
+    int uniformHorner64 = -1;
+    int narrow32 = -1;
+    int narrowMono32 = -1;
+    int rat32 = -1;
+    int ratHorner32 = -1;
+    int narrowRat32 = -1;
+    int narrowRatHorner32 = -1;
+    int uniform32 = -1;
+    int uniformHorner32 = -1;
 };
 
 // The rows one rung's device cells are measured into, at that rung's bound:
@@ -1817,6 +2082,95 @@ DeviceSlots DeviceClaimSet(const char* rung, double multiplier) {
     slots.orders16 = AddClaim(orders16.c_str(), "A..C", multiplier * kBoundHalfRow);
     slots.allN16 = AddClaim(allN16.c_str(), "A..C", multiplier * kBoundHalfRow);
     slots.each16 = AddClaim(each16.c_str(), "A..C", multiplier * kBoundHalfRow);
+
+    // The partition and route axes reached in the caller's kernel. Each row's
+    // name, precision and bound are its launched row's above, because the
+    // arithmetic is the same arithmetic: the two rows differ in how a caller
+    // reaches it, which is what the coverage check at the end of this file reads
+    // and what makes each of these a row the chooser sees and the certifier
+    // claims.
+    //
+    // The double lane's rows, and the float lane's grid, are served at every
+    // rung and are claimed at every rung: the grid is stored at one degree for
+    // every order and every interval, so no rung's criterion cuts it and the
+    // rung a call names is answered by the grid's own coefficients. The float
+    // lane's narrow and rational rows are claimed at m = 1 alone: this build
+    // holds no rung cut of those tables, their entries refuse any other
+    // multiplier with kMultiplierNotResident, and a claim at a rung the call
+    // cannot be made at would be this file asserting a figure over cells nothing
+    // ran. Which of the two a row is reads off the row's own entry
+    // (DeviceEntryServedAtRung), so the claim set and the space's rung mask
+    // cannot come apart here.
+    slots.narrow64 = AddClaim(
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64Narrow).name, rung).c_str(),
+        "A..C",
+        multiplier * kBoundDoubleBatch);
+    slots.narrowMono64 = AddClaim(
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64NarrowMono).name, rung).c_str(),
+        "A..C",
+        multiplier * kBoundDoubleBatch);
+    slots.rat64 =
+        AddClaim(Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64Rat).name, rung).c_str(),
+                 "A..C",
+                 multiplier * kBoundDoubleBatch);
+    slots.ratHorner64 = AddClaim(
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64RatHorner).name, rung).c_str(),
+        "A..C",
+        multiplier * kBoundDoubleBatch);
+    slots.narrowRat64 = AddClaim(
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64NarrowRat).name, rung).c_str(),
+        "A..C",
+        multiplier * kBoundDoubleBatch);
+    slots.narrowRatHorner64 = AddClaim(
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64NarrowRatHorner).name, rung).c_str(),
+        "A..C",
+        multiplier * kBoundDoubleBatch);
+    slots.uniform64 = AddClaim(
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64Uniform).name, rung).c_str(),
+        "A..C",
+        multiplier * kBoundDoubleBatch);
+    slots.uniformHorner64 = AddClaim(
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64UniformHorner).name, rung).c_str(),
+        "A..C",
+        multiplier * kBoundDoubleBatch);
+    slots.uniform32 = AddClaim(
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32Uniform).name, rung).c_str(),
+        "A..C",
+        multiplier * kBoundFloat);
+    slots.uniformHorner32 = AddClaim(
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32UniformHorner).name, rung).c_str(),
+        "A..C",
+        multiplier * kBoundFloat);
+
+    if (multiplier == boys::kBoysFullAccuracyMultiplier)
+    {
+        slots.narrow32 = AddClaim(
+            Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32Narrow).name, rung).c_str(),
+            "A..C",
+            multiplier * kBoundFloat);
+        slots.narrowMono32 = AddClaim(
+            Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowMono).name, rung).c_str(),
+            "A..C",
+            multiplier * kBoundFloat);
+        slots.rat32 =
+            AddClaim(Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32Rat).name, rung).c_str(),
+                     "A..C",
+                     multiplier * kBoundFloat);
+        slots.ratHorner32 = AddClaim(
+            Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32RatHorner).name, rung).c_str(),
+            "A..C",
+            multiplier * kBoundFloat);
+        slots.narrowRat32 = AddClaim(
+            Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowRat).name, rung).c_str(),
+            "A..C",
+            multiplier * kBoundFloat);
+        slots.narrowRatHorner32 = AddClaim(
+            Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowRatHorner).name, rung)
+                .c_str(),
+            "A..C",
+            multiplier * kBoundFloat);
+    }
+
     return slots;
 }
 
@@ -1964,6 +2318,200 @@ void AgreeRungFamily(const std::string& what,
             Disagree(what, e, l, ref.x[i], static_cast<double>(device[deviceSlot]),
                      static_cast<double>(batch[batchSlot]));
         }
+    }
+
+    RungAgreements().push_back(agreement);
+}
+
+// One device-callable row of the ladder shape, measured at one rung: the entry
+// called inside the consumer's kernel over the grid, its cells compared with the
+// reference at the row's own bound, and its values compared bit for bit with the
+// launched row of the same option at the same rung.
+//
+// The two comparisons are two statements and neither implies the other. The
+// bound is what a caller of the row is promised, and it is the claim the report
+// carries. The bit-for-bit comparison is what the header claims for a
+// device-callable entry — one arithmetic reached two ways, the same degree
+// tables read through the handle instead of through a __constant__ symbol —
+// which no bound can state, because a bound admits a difference and this is an
+// identity. A divergence stops the gate at the cell it was found at.
+//
+// The rung is a compile-time argument because the launched row's launcher takes
+// it as one: the two sides of the comparison are the same rung of the same
+// arithmetic, which is the whole of what makes the comparison mean anything.
+template <double kMultiplier>
+void MeasureDeviceLadder64(
+    const Reference& ref,
+    const Grid& grid,
+    const boys::BoysDeviceTables& tables,
+    int slot,
+    const char* rung,
+    const char* name,
+    int (*demo)(const boys::BoysDeviceTables*,
+                const int*,
+                const double*,
+                const double*,
+                double*,
+                std::size_t,
+                int,
+                int*,
+                double),
+    boys::BoysStatus (*launch)(const int*, const double*, double*, std::size_t, void*)) {
+    const std::size_t count = ref.count;
+    const int nmax = boys::kMaxBoysOrder;
+    const std::size_t cells = grid.cells;
+    const std::size_t family = cells * (static_cast<std::size_t>(nmax) + 1);
+    DevBuf<int> dN(cells);
+    DevBuf<double> dRho(cells);
+    DevBuf<double> dD2(cells);
+    DevBuf<double> dOut(family);
+    DevBuf<int> dStatus(cells);
+    dN.Upload(grid.n);
+    dRho.Upload(grid.rho);
+    dD2.Upload(grid.d2);
+    dOut.Upload(std::vector<double>(family, 0.0));
+    dStatus.Upload(std::vector<int>(cells, -1));
+    CheckDemo(demo(&tables,
+                   dN.get(),
+                   dRho.get(),
+                   dD2.get(),
+                   dOut.get(),
+                   cells,
+                   nmax + 1,
+                   dStatus.get(),
+                   kMultiplier),
+              name);
+    std::vector<double> out(family);
+    std::vector<int> status(cells);
+    dOut.Download(out);
+    dStatus.Download(status);
+    Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+    ExpectStatus(status, cells, BoysDeviceDemoStatusSuccess(), name);
+
+    for (int n = 0; n <= nmax; ++n)
+    {
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const std::size_t e = ref.Index(n, i);
+            const double got = out[FamilySlot(e, n)];
+            Measure(slot,
+                    n,
+                    ref.x[i],
+                    got,
+                    ref.v[e],
+                    ref.decade[e],
+                    Claims()[static_cast<std::size_t>(slot)].baseBound,
+                    Unrepresentable(got, -1022));
+        }
+    }
+
+    RungAgreement agreement;
+    agreement.what =
+        ShapeLabel((std::string(name) + " and its launched row").c_str(), rung);
+    DevBuf<int> dNb(count);
+    DevBuf<double> dXb(count);
+    DevBuf<double> dOutb(cells);
+    dXb.Upload(grid.x);
+    std::vector<double> batch(cells);
+
+    for (int top = 0; top <= nmax; ++top)
+    {
+        dNb.Upload(std::vector<int>(count, top));
+        CheckLaunch(launch(dNb.get(), dXb.get(), dOutb.get(), count, nullptr), name);
+        dOutb.Download(batch);
+        Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+        AgreeRungOrder(agreement, out, batch, ref.x, top);
+    }
+
+    RungAgreements().push_back(agreement);
+}
+
+// The float lane's half of the same measurement. The reference is that lane's
+// own column — the entry evaluates the argument the thread formed and rounded,
+// so a wider reference would be measuring the rounding and not the fit — and the
+// bound is the float lane's, which is the figure the row documents.
+template <double kMultiplier>
+void MeasureDeviceLadder32(
+    const Reference& ref,
+    const Grid& grid,
+    const boys::BoysDeviceTables& tables,
+    int slot,
+    const char* rung,
+    const char* name,
+    int (*demo)(const boys::BoysDeviceTables*,
+                const int*,
+                const double*,
+                const double*,
+                float*,
+                std::size_t,
+                int,
+                int*,
+                double),
+    boys::BoysStatus (*launch)(const int*, const double*, float*, std::size_t, void*)) {
+    const std::size_t count = ref.count;
+    const int nmax = boys::kMaxBoysOrder;
+    const std::size_t cells = grid.cells;
+    const std::size_t family = cells * (static_cast<std::size_t>(nmax) + 1);
+    DevBuf<int> dN(cells);
+    DevBuf<double> dRho(cells);
+    DevBuf<double> dD2(cells);
+    DevBuf<float> dOut(family);
+    DevBuf<int> dStatus(cells);
+    dN.Upload(grid.n);
+    dRho.Upload(grid.rho);
+    dD2.Upload(grid.d2);
+    dOut.Upload(std::vector<float>(family, 0.0f));
+    dStatus.Upload(std::vector<int>(cells, -1));
+    CheckDemo(demo(&tables,
+                   dN.get(),
+                   dRho.get(),
+                   dD2.get(),
+                   dOut.get(),
+                   cells,
+                   nmax + 1,
+                   dStatus.get(),
+                   kMultiplier),
+              name);
+    std::vector<float> out(family);
+    std::vector<int> status(cells);
+    dOut.Download(out);
+    dStatus.Download(status);
+    Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+    ExpectStatus(status, cells, BoysDeviceDemoStatusSuccess(), name);
+
+    for (int n = 0; n <= nmax; ++n)
+    {
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const std::size_t e = ref.Index(n, i);
+            const auto [got, unrepresentable] = Widen(out[FamilySlot(e, n)]);
+            Measure(slot,
+                    n,
+                    ref.xf[i],
+                    got,
+                    ref.vf[e],
+                    ref.decadeF[e],
+                    Claims()[static_cast<std::size_t>(slot)].baseBound,
+                    unrepresentable);
+        }
+    }
+
+    RungAgreement agreement;
+    agreement.what =
+        ShapeLabel((std::string(name) + " and its launched row").c_str(), rung);
+    DevBuf<int> dNb(count);
+    DevBuf<double> dXb(count);
+    DevBuf<float> dOutb(cells);
+    dXb.Upload(grid.x);
+    std::vector<float> batch(cells);
+
+    for (int top = 0; top <= nmax; ++top)
+    {
+        dNb.Upload(std::vector<int>(count, top));
+        CheckLaunch(launch(dNb.get(), dXb.get(), dOutb.get(), count, nullptr), name);
+        dOutb.Download(batch);
+        Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+        AgreeRungOrder(agreement, out, batch, ref.x, top);
     }
 
     RungAgreements().push_back(agreement);
@@ -2698,6 +3246,166 @@ void SweepDevice(const Reference& ref,
         NoteNotCarried(slots.each16);
 #endif // BOYS_CUDA_GATE_FP16
     }
+
+    // The partition and route axes reached in the caller's kernel, at this rung.
+    // Each is measured the way the shapes above are: over the grid, against the
+    // reference at the row's own bound, and bit for bit against the launched row
+    // of the same option — one arithmetic, two ways to reach it.
+    //
+    // The double lane's eight rows and the float lane's two grid rows are served
+    // at the rung the handle carries, whatever rung that is. The float lane's six
+    // narrow and rational rows are served at m = 1 alone: this build holds no
+    // rung cut of those tables, and their entries — like their launched rows —
+    // refuse every other multiplier rather than answer from a cut of another
+    // rung. That is why the block below is guarded instead of run: a call at a
+    // rung the row does not hold returns kMultiplierNotResident, which is a
+    // refusal this file would report as a failure rather than as the refusal it
+    // is.
+    MeasureDeviceLadder64<kMultiplier>(ref,
+                                       grid,
+                                       tables,
+                                       slots.narrow64,
+                                       rung,
+                                       DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64Narrow).name,
+                                       &BoysDeviceDemoLadder64Narrow,
+                                       &boys::BoysCuda::AllOrdersF64Narrow<kMultiplier>);
+    MeasureDeviceLadder64<kMultiplier>(
+        ref,
+        grid,
+        tables,
+        slots.narrowMono64,
+        rung,
+        DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64NarrowMono).name,
+        &BoysDeviceDemoLadder64NarrowMono,
+        &boys::BoysCuda::AllOrdersF64NarrowMono<kMultiplier>);
+    MeasureDeviceLadder64<kMultiplier>(ref,
+                                       grid,
+                                       tables,
+                                       slots.rat64,
+                                       rung,
+                                       DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64Rat).name,
+                                       &BoysDeviceDemoLadder64Rat,
+                                       &boys::BoysCuda::AllOrdersF64Rat<kMultiplier>);
+    MeasureDeviceLadder64<kMultiplier>(
+        ref,
+        grid,
+        tables,
+        slots.ratHorner64,
+        rung,
+        DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64RatHorner).name,
+        &BoysDeviceDemoLadder64RatHorner,
+        &boys::BoysCuda::AllOrdersF64Rat<kMultiplier>);
+    MeasureDeviceLadder64<kMultiplier>(
+        ref,
+        grid,
+        tables,
+        slots.narrowRat64,
+        rung,
+        DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64NarrowRat).name,
+        &BoysDeviceDemoLadder64NarrowRat,
+        &boys::BoysCuda::AllOrdersF64NarrowRat<kMultiplier>);
+    MeasureDeviceLadder64<kMultiplier>(
+        ref,
+        grid,
+        tables,
+        slots.narrowRatHorner64,
+        rung,
+        DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64NarrowRatHorner).name,
+        &BoysDeviceDemoLadder64NarrowRatHorner,
+        &boys::BoysCuda::AllOrdersF64NarrowRat<kMultiplier>);
+    MeasureDeviceLadder64<kMultiplier>(ref,
+                                       grid,
+                                       tables,
+                                       slots.uniform64,
+                                       rung,
+                                       DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64Uniform).name,
+                                       &BoysDeviceDemoLadder64Uniform,
+                                       &boys::BoysCuda::AllOrdersF64Uniform<kMultiplier>);
+    MeasureDeviceLadder64<kMultiplier>(
+        ref,
+        grid,
+        tables,
+        slots.uniformHorner64,
+        rung,
+        DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64UniformHorner).name,
+        &BoysDeviceDemoLadder64UniformHorner,
+        &boys::BoysCuda::AllOrdersF64UniformHorner<kMultiplier>);
+    MeasureDeviceLadder32<kMultiplier>(
+        ref,
+        grid,
+        tables,
+        slots.uniform32,
+        rung,
+        DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32Uniform).name,
+        &BoysDeviceDemoLadder32Uniform,
+        &boys::BoysCuda::AllOrdersF32Uniform<kMultiplier>);
+    MeasureDeviceLadder32<kMultiplier>(
+        ref,
+        grid,
+        tables,
+        slots.uniformHorner32,
+        rung,
+        DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32UniformHorner).name,
+        &BoysDeviceDemoLadder32UniformHorner,
+        &boys::BoysCuda::AllOrdersF32UniformHorner<kMultiplier>);
+
+    if constexpr (kMultiplier == boys::kBoysFullAccuracyMultiplier)
+    {
+        MeasureDeviceLadder32<1.0>(
+            ref,
+            grid,
+            tables,
+            slots.narrow32,
+            rung,
+            DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32Narrow).name,
+            &BoysDeviceDemoLadder32Narrow,
+            &boys::BoysCuda::AllOrdersF32Narrow<1.0>);
+        MeasureDeviceLadder32<1.0>(
+            ref,
+            grid,
+            tables,
+            slots.narrowMono32,
+            rung,
+            DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowMono).name,
+            &BoysDeviceDemoLadder32NarrowMono,
+            &boys::BoysCuda::AllOrdersF32NarrowMono<1.0>);
+        MeasureDeviceLadder32<1.0>(
+            ref,
+            grid,
+            tables,
+            slots.rat32,
+            rung,
+            DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32Rat).name,
+            &BoysDeviceDemoLadder32Rat,
+            &boys::BoysCuda::AllOrdersF32Rat<1.0>);
+        MeasureDeviceLadder32<1.0>(
+            ref,
+            grid,
+            tables,
+            slots.ratHorner32,
+            rung,
+            DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32RatHorner).name,
+            &BoysDeviceDemoLadder32RatHorner,
+            &boys::BoysCuda::AllOrdersF32RatHorner<1.0>);
+        MeasureDeviceLadder32<1.0>(
+            ref,
+            grid,
+            tables,
+            slots.narrowRat32,
+            rung,
+            DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowRat).name,
+            &BoysDeviceDemoLadder32NarrowRat,
+            &boys::BoysCuda::AllOrdersF32NarrowRat<1.0>);
+        MeasureDeviceLadder32<1.0>(
+            ref,
+            grid,
+            tables,
+            slots.narrowRatHorner32,
+            rung,
+            DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowRatHorner).name,
+            &BoysDeviceDemoLadder32NarrowRatHorner,
+            &boys::BoysCuda::AllOrdersF32NarrowRatHorner<1.0>);
+    }
 }
 
 // One rung's fp64 entries on the 45-digit grid. The cells are measured into the
@@ -3408,6 +4116,107 @@ void CheckRungCalls(const boys::BoysDeviceTables& tables,
                                               multiplier);
               });
 #endif // BoysFp16
+
+    // The partition and route axes reached in the caller's kernel, probed for
+    // the same two statements as the shapes above: a rung that is not the one
+    // the handle was made resident for is refused with kMultiplierNotResident
+    // and writes nothing, and m = 1 is served because it reads the handle's own
+    // tables and never the resident rung's. The rows are a table per precision
+    // and not sixteen call sites, so a row of this group that is not probed can
+    // be seen to be missing.
+    struct LadderRow64 {
+        const char* what;
+        int (*demo)(const boys::BoysDeviceTables*,
+                    const int*,
+                    const double*,
+                    const double*,
+                    double*,
+                    std::size_t,
+                    int,
+                    int*,
+                    double);
+    };
+
+    const LadderRow64 rows64[] = {
+        {"BoysDeviceAllOrdersF64Narrow", &BoysDeviceDemoLadder64Narrow},
+        {"BoysDeviceAllOrdersF64NarrowMono", &BoysDeviceDemoLadder64NarrowMono},
+        {"BoysDeviceAllOrdersF64Rat", &BoysDeviceDemoLadder64Rat},
+        {"BoysDeviceAllOrdersF64RatHorner", &BoysDeviceDemoLadder64RatHorner},
+        {"BoysDeviceAllOrdersF64NarrowRat", &BoysDeviceDemoLadder64NarrowRat},
+        {"BoysDeviceAllOrdersF64NarrowRatHorner", &BoysDeviceDemoLadder64NarrowRatHorner},
+        {"BoysDeviceAllOrdersF64Uniform", &BoysDeviceDemoLadder64Uniform},
+        {"BoysDeviceAllOrdersF64UniformHorner", &BoysDeviceDemoLadder64UniformHorner},
+    };
+
+    for (const LadderRow64& row : rows64)
+    {
+        ProbeOnce(label,
+                  row.what,
+                  count,
+                  family,
+                  sentinel,
+                  want,
+                  wrote,
+                  tally,
+                  [&](double* out, int* status) {
+                      return row.demo(&tables,
+                                      dN.get(),
+                                      dRho.get(),
+                                      dD2.get(),
+                                      out,
+                                      count,
+                                      nmax + 1,
+                                      status,
+                                      multiplier);
+                  });
+    }
+
+    struct LadderRow32 {
+        const char* what;
+        int (*demo)(const boys::BoysDeviceTables*,
+                    const int*,
+                    const double*,
+                    const double*,
+                    float*,
+                    std::size_t,
+                    int,
+                    int*,
+                    double);
+    };
+
+    const LadderRow32 rows32[] = {
+        {"BoysDeviceAllOrdersF32Narrow", &BoysDeviceDemoLadder32Narrow},
+        {"BoysDeviceAllOrdersF32NarrowMono", &BoysDeviceDemoLadder32NarrowMono},
+        {"BoysDeviceAllOrdersF32Rat", &BoysDeviceDemoLadder32Rat},
+        {"BoysDeviceAllOrdersF32RatHorner", &BoysDeviceDemoLadder32RatHorner},
+        {"BoysDeviceAllOrdersF32NarrowRat", &BoysDeviceDemoLadder32NarrowRat},
+        {"BoysDeviceAllOrdersF32NarrowRatHorner", &BoysDeviceDemoLadder32NarrowRatHorner},
+        {"BoysDeviceAllOrdersF32Uniform", &BoysDeviceDemoLadder32Uniform},
+        {"BoysDeviceAllOrdersF32UniformHorner", &BoysDeviceDemoLadder32UniformHorner},
+    };
+
+    for (const LadderRow32& row : rows32)
+    {
+        ProbeOnce(label,
+                  row.what,
+                  count,
+                  family,
+                  0.0f,
+                  want,
+                  wrote,
+                  tally,
+                  [&](float* out, int* status) {
+                      return row.demo(&tables,
+                                      dN.get(),
+                                      dRho.get(),
+                                      dD2.get(),
+                                      out,
+                                      count,
+                                      nmax + 1,
+                                      status,
+                                      multiplier);
+                  });
+    }
 }
 
 // One rung of the device-callable entries: the handle filled at that rung, the

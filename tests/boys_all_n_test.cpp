@@ -3,26 +3,10 @@
 // done internally - the batch shape a shell-quartet consumer needs.
 //
 // The entry's documented bound is the double batch lane's per-region budget
-// (m * 5.5e-14 everywhere), the bound the per-argument BoysAllOrders call
-// meets, and the suite pins both sides of it over the committed reference grid:
-// the grid sweep at every sampled multiplier, and the difference against the
-// per-argument path. The paths the scalar bodies serve (the zero path, region B,
-// region C) hold that difference at exactly zero - the entry calls the
-// per-argument path's own bodies; the region-A path is served by the region-A
-// lane at m = 1 on an AVX2 host, below the band within that lane's own 1e-15 and
-// inside the band within the entry's bound, and the suite reports the observed
-// maxima both ways.
-//
-// The sorted overload's declaration is exercised as a merging overload too: the
-// same argument set shuffled and passed to the unsorted entry, against the
-// sorted entry's own result, with the observed difference reported - the
-// grouping is a performance promise, so equal values are not claimed bitwise
-// where a lane's tail can serve a run of a different length.
-//
-// The sampled-m instantiations compile from the internal headers, like the rest
-// of the accuracy suite; the m = 1 call sites below route to the library's
-// certified instantiation (extern-template surface in boys.hpp, explicit
-// instantiation in boys.cpp).
+// (m * 5.5e-14 everywhere), the bound the per-argument BoysAllOrders call meets.
+// The suite pins it over the committed reference grid at every sampled
+// multiplier, and pins the difference against the per-argument path, both
+// reported as observed maxima.
 
 #include "boys/boys.hpp"
 #include "boys/boys_coefficients.hpp"
@@ -62,15 +46,13 @@ constexpr double kBatchBound = 5.5e-14;
 // The lanes' budget on the paths they serve (the region-A lane's 1e-15).
 constexpr double kGroupedBudget = 1e-15;
 
-// The extended band's own bar. x < x0 is not one interval: region A carries the
-// tight bar above and the band a looser one, and the two are documented
-// separately because the band's arithmetic is a different fit.
+// The band's own bar. x < x0 is not one interval: region A carries the tight bar
+// above and the band this one, because the band's arithmetic is a different fit.
 constexpr double kBandBudget = 3e-14;
 
-// The order at which region A stops being the region-A lane's run: at and below
-// it the entry hands a homogeneous run to the lane, above it the lane's
-// per-order cost outweighs the scalar body's single seed and downward
-// recursion. The lane route is what this suite's low-order cases exercise.
+// The order at and below which the entry hands a homogeneous region-A run to the
+// region-A lane: above it the lane's per-order cost outweighs the scalar body's
+// single seed and downward recursion.
 constexpr int kLaneMaxOrder = 4;
 
 struct ReferenceRow {
@@ -79,9 +61,8 @@ struct ReferenceRow {
     double value;
 };
 
-// The committed reference grid (tools/gen_boys_coefficients.py, 45-digit
-// mpmath values of F_n at the double in each row's x column) - the same
-// loader as the other suites.
+// The committed reference grid: 45-digit mpmath values of F_n at the double in
+// each row's x column, the same loader as the other suites.
 std::vector<ReferenceRow> LoadReference() {
     const std::string path = std::string(BoysDataDir) + "/boys_reference.csv";
     std::ifstream file(path);
@@ -147,9 +128,8 @@ Grid BuildGrid() {
 
 const Grid gGrid = BuildGrid();
 
-// The entry's sub-regions, for the reported worsts: the band split is the
-// m = 1 dispatch's own, and x = kX0 belongs to region B (the region-A test is
-// strict) while x = kX1 belongs to region C.
+// The entry's sub-regions, for the reported worsts: x = kX0 belongs to region B
+// and x = kX1 to region C, because the region-A and region-B tests are strict.
 enum class Sub : std::uint8_t { kZero, kA, kBand, kB, kC };
 
 Sub SubOf(double x) {
@@ -180,15 +160,11 @@ Sub SubOf(double x) {
 //
 // At m > 1 no lane is entered: both sides are relaxed scalar bodies, each
 // documented at m * 5.5e-14 against the true value, so the difference between
-// them is held to the sum of the two.
-//
-// At m = 1 the entry calls the per-argument path's own bodies for every path
-// except region A below the crossover order kLaneMaxOrder, where it hands the
-// run to the region-A lane; on every other path the difference is exactly zero.
-// On the lane route region A is the lane's, below the band within that lane's
-// own 1e-15 and inside the band within the entry's 5.5e-14 - the lane evaluates
-// the argument rather than the band's scalar body, and the lane's own 1e-15 does
-// not hold over the band.
+// them is held to the sum of the two. At m = 1 the entry calls the per-argument
+// path's own bodies on every path except region A below kLaneMaxOrder, where a
+// lane serves it: the difference is exactly zero everywhere else, and on the
+// lane route it is that lane's own 1e-15 below the band and the entry's 5.5e-14
+// over it - the lane evaluates the argument, not the band's scalar body.
 double DifferenceBudget(double x, double m, int nmax = boys::kMaxBoysOrder) {
     if (m != 1.0)
     {
@@ -347,8 +323,8 @@ void CheckAgainstPerArgument(const Grid& grid,
         const std::size_t i = ArgumentIndex(grid, row.x, shuffled);
         double want[boys::kMaxBoysOrder + 1];
 
-        // The per-argument path at the batch's own order: region A's body seeds
-        // at nmax and recurses down, so the batch's F_k for k < nmax is the
+        // The per-argument path at the batch's own order: region A's body seeds at
+        // nmax and recurses down, so the batch's F_k for k < nmax is the
         // recurrence's, not the one a per-order call at nmax = k walks.
         BoysAllOrders<kM>(nmax, row.x, want);
         const double diff =
@@ -427,10 +403,9 @@ TEST(BoysAllNTest, DifferenceFromThePerArgumentPathAtSampledMultipliers) {
 }
 
 // The purity contract: the values depend on the arguments and nmax alone, with
-// no state carried between calls. Three different shapes are run in sequence and
-// then again, and each array's second result must equal its first, bit for bit -
-// a cache or scratch buffer shared across calls would show up here as an
-// argument set's value changing with what the previous call looked like.
+// no state carried between calls. Each of three different shapes is run twice,
+// and an array's second result must equal its first, bit for bit - a scratch
+// buffer shared across calls would show up here.
 TEST(BoysAllNTest, RepeatedCallsWithDifferentShapesAreBitIdentical) {
     const std::vector<double> gridSorted = RunEntry<1.0>(gGrid, false, true);
     const std::vector<double> gridShuffled = RunEntry<1.0>(gGrid, true, false);
@@ -443,9 +418,8 @@ TEST(BoysAllNTest, RepeatedCallsWithDifferentShapesAreBitIdentical) {
 
 // The lane route. A batch at or below kLaneMaxOrder hands its region-A runs to
 // the region-A lane, so this is the shape that serves them: it is held to the
-// lane's budgets rather than to bit-identity, with the crossover order's two
-// sides both covered - kLaneMaxOrder on the lane, the order above it on the
-// scalar body, which must be exact.
+// lane's budgets rather than to bit-identity, and both sides of the crossover
+// are covered - kLaneMaxOrder on the lane, the order above it exact on the body.
 TEST(BoysAllNTest, LaneRouteHoldsTheLaneBudgetAndItsNeighbourIsExact) {
     for (const int nmax : {0, 1, kLaneMaxOrder, kLaneMaxOrder + 1})
     {
@@ -456,14 +430,12 @@ TEST(BoysAllNTest, LaneRouteHoldsTheLaneBudgetAndItsNeighbourIsExact) {
     }
 }
 
-// The lane route's chunking. The grouped kernel stages a fixed number of
-// arguments at a time, so a region-A run that is not a whole number of chunks
-// takes that loop round more than once, with a short chunk last and the lane's
-// own scalar tail inside every chunk. The committed grid's region-A run is
-// shorter than one chunk, so these lengths are what cover the boundaries: the
-// chunk size less one, the chunk size, one past it, and a run of several chunks.
-// Every argument is inside region A below the band, so the whole array is one
-// run of one path.
+// The lane route's chunking: the grouped kernel stages a fixed number of
+// arguments at a time, so a run that is not a whole number of chunks takes that
+// loop round more than once, with a short chunk last and the lane's own scalar
+// tail inside every chunk. The committed grid's region-A run is shorter than one
+// chunk, so these lengths are what cover the boundaries. Every argument is inside
+// region A below the band, so the array is one run of one path.
 TEST(BoysAllNTest, LaneRouteChunkBoundariesOverALongRun) {
     constexpr int kNmax = kLaneMaxOrder;
 
@@ -507,11 +479,10 @@ TEST(BoysAllNTest, LaneRouteChunkBoundariesOverALongRun) {
 }
 
 // The grouping is a performance promise: the entry's value for an argument does
-// not depend on the argument's position in the input array, so the same set in
-// shuffled order and in ascending order agree per argument, and the observed
-// maximum is reported rather than assumed to be zero - the lane's own last
-// count % 4 values are scalar, so a value can change with the position it is
-// served at, by no more than the serving body's own bound.
+// not depend on its position in the input array, so the same set shuffled and
+// ascending agrees per argument. The maximum is reported, not assumed zero: the
+// lane serves its last count % 4 values scalar, so a value can change with the
+// position it is served at, by no more than the serving body's own bound.
 TEST(BoysAllNTest, ShuffledAndAscendingAgreeWithinTheLaneBudget) {
     const std::size_t count = gGrid.xs.size();
     const std::vector<double> ascending = RunEntry<1.0>(gGrid, false, true);
@@ -543,9 +514,9 @@ TEST(BoysAllNTest, ShuffledAndAscendingAgreeWithinTheLaneBudget) {
     EXPECT_LE(worst, kBatchBound);
 }
 
-// The region boundaries of the dispatch, exact: x = 0, the band edge, x0 and
-// x1 as the grid's own boundary rows, and their immediate neighbours - the
-// argument that must fall on the far side of each comparison.
+// The region boundaries of the dispatch, exact: x = 0, the band edge, x0 and x1
+// as the grid's own boundary rows, and their immediate neighbours - the argument
+// that must fall on the far side of each comparison.
 TEST(BoysAllNTest, ExactBoundaryArgumentsMatchThePerArgumentPath) {
     const double bandEdge = kTierThresholds[0];
     const std::array<double, 8> xs = {
@@ -664,7 +635,7 @@ TEST(BoysAllNTest, CallerWorkspaceIsEquivalentAndRespected) {
 }
 
 // The mapped-m surface: the relaxed bodies are the per-argument entry's, so a
-// workspace call and an internal-allocation call agree bit for bit at every
+// workspace call and an internal-allocation call agree bit for bit, at every
 // sampled multiplier on both argument orders.
 TEST(BoysAllNTest, WorkspaceEquivalenceAtSampledMultipliers) {
     ForEachSampledMultiplier([]<double kM>() {
@@ -691,12 +662,11 @@ TEST(BoysAllNTest, WorkspaceEquivalenceAtSampledMultipliers) {
 // ---------------------------------------------------------------------------
 // The plane entry's call shape has both wide dimensions: an argument's whole
 // order vector (out[k * count + i] is F_k(x[i])) and an order's whole argument
-// array. A packed lane keeps four doubles in a register, so which of the two it
-// holds is the packing axis, and this entry carries both. The axis reaches the
-// per-argument path, whose body is the all-orders entry's own, so what the
-// tests below hold is that the surface and that path are the same code - and
-// that the region grouping, which exists to feed the arguments-axis lane, is
-// not taken when the axis named packs orders instead.
+// array. A packed lane holds four doubles, so which of the two it packs is the
+// axis, and this entry carries both. The axis reaches the per-argument path,
+// whose body is the all-orders entry's own, so the tests below hold that the
+// surface and that path are the same code, and that the region grouping, which
+// exists to feed the arguments-axis lane, is not taken here.
 
 namespace {
 
@@ -795,7 +765,7 @@ TEST(BoysAllNTest, OrdersAxisIsThePerArgumentEntryBitForBit) {
 }
 
 // Past the packed lane's own interval the axis runs the certified scalar single
-// lane one order at a time, and that is asserted exactly rather than against a
+// lane one order at a time. That is asserted exactly rather than against a
 // tolerance: the fallback's whole claim is that its values are that lane's.
 TEST(BoysAllNTest, OrdersAxisIsDefinedPastItsOwnDomain) {
     const std::vector<double> xs = {0.0, kX0, kX0 + 1e-9, 20.0, kX1, 31.0, 200.0};
@@ -824,10 +794,9 @@ TEST(BoysAllNTest, OrdersAxisIsDefinedPastItsOwnDomain) {
 
 // The axis is reachable: naming it changes the values a caller receives in
 // region A, which is the whole of what the option is. The two answers differ
-// because the shipped entry reaches most region-A orders by a recursion from
-// the batch seed where this axis evaluates each order's own fit - and both are
-// inside the entry's own bound, so what moves is which of two certified values
-// a caller gets.
+// because the shipped entry reaches most region-A orders by a recursion from the
+// batch seed where this axis evaluates each order's own fit, and both are inside
+// the entry's bound - so what moves is which certified value a caller gets.
 TEST(BoysAllNTest, OrdersAxisChangesTheRegionAValuesAndStaysInsideTheBound) {
     const int nmax = boys::kMaxBoysOrder;
     const std::size_t count = gGrid.xs.size();
@@ -857,9 +826,8 @@ TEST(BoysAllNTest, OrdersAxisChangesTheRegionAValuesAndStaysInsideTheBound) {
 
         // Both values are certified, so the axis's own error is measured here
         // rather than assumed: against the committed reference, at the bar the
-        // argument's own sub-region carries. x < x0 is not one interval - region
-        // A and the extended band sit inside it under different bars - so the
-        // worst is kept per sub-region and each is held to its own.
+        // argument's own sub-region carries - region A and the extended band sit
+        // inside x < x0 under different bars, so the worst is kept per sub-region.
         const double error = std::abs(axes[slot] - row.value);
 
         if (SubOf(row.x) == Sub::kBand)
@@ -883,9 +851,8 @@ TEST(BoysAllNTest, OrdersAxisChangesTheRegionAValuesAndStaysInsideTheBound) {
 }
 
 // The region grouping is the arguments axis's and is not taken here: the same
-// arguments shuffled, in ascending order, and through the sorted overload all
-// return the same planes, because an orders-axis call evaluates each argument
-// on its own and has nothing to group.
+// arguments shuffled and ascending return the same planes, because an orders-axis
+// call evaluates each argument on its own and has nothing to group.
 TEST(BoysAllNTest, OrdersAxisTakesNoRegionGrouping) {
     const std::size_t count = gGrid.xs.size();
     const int nmax = boys::kMaxBoysOrder;
@@ -915,12 +882,11 @@ TEST(BoysAllNTest, OrdersAxisTakesNoRegionGrouping) {
     EXPECT_EQ(differingShuffled, 0u) << "the axis's values moved with the argument order";
 }
 
-// The route is carried on this entry too, and by the same shape the orders axis
+// The route is carried on this entry too, by the same shape the orders axis
 // takes: the per-argument path, whose body is the all-orders entry's own. So a
 // plane call naming the rational route returns that entry's planes under the
-// route, bit for bit - and the route's values differ from the shipped ones over
-// the intervals its rows cover, which is what makes the carriage a measurement
-// rather than a sentence about the surface.
+// route, bit for bit - and those differ from the shipped ones over the intervals
+// its rows cover, which makes the carriage a measurement and not a sentence.
 TEST(BoysAllNTest, TheRationalRouteIsCarriedAndIsThePerArgumentEntry) {
     const int nmax = boys::kMaxBoysOrder;
     const std::size_t count = gGrid.xs.size();

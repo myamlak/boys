@@ -1,24 +1,15 @@
-// Consumer check: are the lane templates' definitions reachable from the
-// public headers alone, with no library on the link line?
+// Consumer check: are the lane templates' definitions reachable from the public
+// headers alone, with no library on the link line?
 //
-// The library pre-instantiates the default multiplier and the sampled rungs,
-// so a consumer that names one of those can link against the library's copy
-// whatever the header does. Every other multiplier is compiled at the call
-// site, and that only works while the definition is in the header the
-// declaration ships in: a definition that lives in a .cpp file is a link error
-// for every value except the ones the library exports. This check is the
-// consumer for those values, and its whole meaning is what it does NOT link:
-// the target links nothing, and it names multipliers the library does not
-// pre-instantiate. If the library ever reaches its link line the check still
-// compiles and still runs - and proves nothing - so the build asserts that the
-// link line is empty (CMakeLists.txt) rather than trusting it here.
+// The library pre-instantiates the default multiplier and the sampled rungs, so
+// only a multiplier outside that set proves anything: this target links nothing
+// (CMakeLists.txt asserts the empty link line rather than trusting it here) and
+// names two the library does not export. If the library ever reached the link
+// line the check would still compile and still run, and would prove nothing.
 //
-// It judges values the same way the umbrella consumer does: the committed
-// 45-digit grid is the reference, and every returned value is compared with
-// the bound its entry documents. The oracle here is the double lane at the
-// multiplier this file names, since the certified m = 1 lane is one of the
-// pre-instantiated ones - so the bound a composed comparison carries includes
-// the oracle's own figure, and the rule's name says so.
+// Values are judged against the committed 45-digit grid, with the double lane at
+// the multiplier this file names as the oracle — so a bound a composed
+// comparison carries includes the oracle's own figure, as the rule's name says.
 //
 // Run:  cmake --build <build> --target boys-consumer-header-only
 //       <build>/boys-consumer-header-only
@@ -35,10 +26,8 @@
 #include <string>
 #include <vector>
 
-// The library's private src/ directory is deliberately NOT on this file's
-// include path. Prove it here rather than assume it: each name below resolves
-// only if a directory holding that file is on the include path, and those files
-// are the library's sources.
+// The library's private src/ is deliberately not on this file's include path;
+// each name below resolves only if a directory holding that file is on it.
 #if __has_include("boys.cpp") ||                                                                   \
                   __has_include("boys_simd.cpp") ||                                                \
                                 __has_include("boys_transform.cpp") ||                             \
@@ -237,8 +226,7 @@ double BatchBound(double m) {
     return m * 5.5e-14;
 }
 
-// The ULP of a representation at a magnitude: the half-ULP ceilings below are
-// its only callers, so it arrives and leaves with the lane they belong to.
+// The ULP of a representation at a magnitude, for the half-ULP ceilings below.
 #if BoysFp16
 double QuantumOf(double v, int significandBits) {
     if (v == 0.0)
@@ -253,8 +241,7 @@ double QuantumOf(double v, int significandBits) {
 #endif // BoysFp16
 
 // The fp16/bf16 I/O lane's own ceilings: m * 1e-7 of the certified float engine
-// plus one half-ULP of the representation. They belong to the lane, so they
-// arrive and leave with it (see CheckHalfIo below).
+// plus one half-ULP of the representation.
 #if BoysFp16
 double F16IoBound(double returned, double m) {
     return m * 1e-7 + 0.5 * QuantumOf(returned, 10);
@@ -270,8 +257,8 @@ double ProductBound(boys::ProductMode mode, double m) {
 }
 
 /// The multipliers this check names. Neither is one the library pre-instantiates
-/// - m = 1, 64, 256, 1024, 4096, 16384 and 65536 are - so every instantiation
-/// below is compiled here, from the headers, and must link with no library.
+/// (m = 1, 64, 256, 1024, 4096, 16384 and 65536 are), so every instantiation
+/// below must link from the headers alone.
 constexpr double kFirst = 3.0;
 constexpr double kSecond = 100.0;
 constexpr double kOracleBound = kFirst * 5.5e-14;
@@ -453,10 +440,9 @@ void CheckFloatLane(const std::vector<Cell>& cells) {
     Covered("boys::BoysAllOrdersF32<m>");
 }
 
-// The fp16 and bf16 I/O lanes, which the BoysFp16 seam declares. A consumer
-// that builds this tree with the seam closed has no such entry to name, so the
-// check is compiled with the entries it measures and main prints the lane as
-// one this build does not carry rather than dropping it in silence.
+// The fp16/bf16 I/O lanes the BoysFp16 seam declares. A build with the seam
+// closed has no such entry to name, so main reports the lane as one this build
+// does not carry rather than dropping it in silence.
 #if BoysFp16
 void CheckHalfIo(const std::vector<Cell>& cells) {
     Rule& f16Single = NewRule("BoysSingleF16<m = 3> (cells above its bound, no library)");
@@ -665,8 +651,7 @@ int main(int argc, char** argv) {
 #if BoysFp16
     CheckHalfIo(cells);
 #else
-    // Stated, not skipped: the lane is one this build does not carry, and a
-    // reader of this report is told so beside the lanes that were checked.
+    // Stated rather than skipped: this build does not carry the lane.
     std::printf("  %-56s not carried by this build (BoysFp16 = 0)\n",
                 "fp16/bf16 lanes (not checked)");
 #endif

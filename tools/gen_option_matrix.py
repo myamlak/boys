@@ -16,24 +16,11 @@ account for is a hard error ("teach this script about it"), so an axis a lane
 extends cannot land with CI silently still measuring the old set, and a
 configuration cannot name a member the library does not serve.
 
-WHY THE MATRIX IS OVER TWO AXES AND NOT SIX. The option space has six axes, and
-a configuration is a point in it; the matrix is built over the axes a BUILD
-realises, and the rest are recorded on every configuration rather than swept.
-`device` and `route` are the realised pair: the host is the runner and toolchain
-a tree is built in, and the multiply-add route is a property of the build rather
-than of the source, so the tree that exercises the other route has to be built.
-The other four are carried, and that is a fact about this revision rather than an
-omission: `BoysFitRoutes()`, `BoysEvalSchemes()` and the backend table report
-every member of `precision`, `family`, `evaluation` and `granularity` in a single
-build, and the accuracy gate judges all of them in the one run it makes. Nothing
-in the library - no CMake option, no compile definition, no gate flag - selects
-one member of those four, so an entry per member would build the same tree twice
-and assert nothing the other entry had not. Each configuration therefore records
-the four as the members in force, and sweeping them becomes worthwhile exactly
-when one of them acquires a build-time selection; a lane that adds one gives it a
-realisation in this table and the axis becomes realised with it. The members of
-all six axes are derived from the library either way, so a member added to a
-carried axis reaches this file (and CI) by regeneration, with no workflow edit.
+The matrix is built over the axes a BUILD realises, `device` and `route`; the
+other four are carried on every configuration rather than swept, since no CMake
+option, compile definition or gate flag selects one member of them, so an entry
+per member would build the same tree twice and assert nothing. Sweeping a
+carried axis becomes worthwhile exactly when it gains a build-time selection.
 
 Usage:
     python tools/gen_option_matrix.py            # rewrite the option matrix
@@ -57,31 +44,26 @@ MATRIX_JSON = REPO / ".github" / "option-matrix.json"
 
 FORMAT = "boys.option-matrix/1"
 
-# The multiply-add route is the one axis a build selects, and this is the
-# option that selects it. It is named here rather than read out of the
-# workflow because the workflow is what consumes this file; that the option
-# exists and defines the macro the headers read is checked against
-# CMakeLists.txt below, so the name cannot go stale unnoticed.
+# The option that selects the multiply-add route - the one axis a build
+# selects. That it exists and defines a macro the headers read is checked
+# against CMakeLists.txt below, so the name cannot go stale unnoticed.
 ROUTE_OPTION = "BOYS_MULADD_SEPARATE"
 
 # The hosts the option matrix configures on: the x86_64 legs this repository
 # already runs, where the AVX2 tier is present and the gate's lane book is
 # therefore judged at the cell count it is certified at. Each is checked
-# against ci.yml's own legs - a host no leg builds on is a hard error.
-# The compiler is named on the configure line rather than through CC/CXX: the
-# matrix carries hosts with and without a compiler to name, and an empty CC in
-# the environment is a different thing from no CC at all.
+# against ci.yml's own legs - a host no leg builds on is a hard error. The
+# compiler is named on the configure line rather than through CC/CXX, an empty
+# CC in the environment being a different thing from no CC at all.
 #
-# `contract_guard` is what keeps a separate-route configuration from being
-# vacuous, and it is the reason the two routes are two configurations rather
-# than two names for one. The route in force is MEASURED, not declared:
-# backend.hpp's RouteInForce() evaluates a bare `a * b + c` against the fused
-# step and reports the fused route when the two agree, so on a build that
-# contracts, BOYS_MULADD_SEPARATE=ON delivers the fused arithmetic and the
-# entry would judge nothing. The guard states the property instead of
-# inheriting it from the absence of an architecture flag, which is what it
-# currently rests on and what a later global -march or /arch would take away.
-# Every configuration that selects the separate route carries its host's guard.
+# `contract_guard` keeps a separate-route configuration from being vacuous: the
+# route in force is MEASURED, not declared -- backend.hpp's RouteInForce()
+# evaluates a bare `a * b + c` against the fused step and reports the fused
+# route when the two agree -- so on a contracting build BOYS_MULADD_SEPARATE=ON
+# would deliver fused arithmetic and the entry would judge nothing. Every
+# configuration that selects the separate route carries its host's guard; MSVC
+# needs none, contracting only under /fp:fast or an explicit /fp:contract while
+# this tree builds at /fp:precise.
 HOSTS = (
     {"member": "linux-gcc", "runner": "ubuntu-latest", "toolchain": "gcc",
      "compiler": "-DCMAKE_CXX_COMPILER=g++", "generator": "",
@@ -134,10 +116,8 @@ def read(path):
 def enum_members(path, name):
     """The enumerators of `enum class <name>` in one header.
 
-    A member is an identifier followed by `=`, `,` or the closing brace, which
-    is what an enumerator of this tree's spelling always is. A header that
-    stops carrying the declaration is a hard error rather than an empty set: a
-    silent zero here would drop the whole axis.
+    A header that stops carrying the declaration is a hard error rather than an
+    empty set: a silent zero here would drop the whole axis.
     """
     text = read(path)
     match = re.search(
@@ -169,9 +149,8 @@ def kebab(name):
 def backend_names():
     """The arithmetic backend names the reports print, from their sources.
 
-    The scalar pair's name is chosen in the template by the value type and the
-    packed pair's is a literal; both spellings are read, so the two halves of
-    the report's own table are the source rather than a copy of it.
+    The scalar pair's name is chosen in a template and the packed pair's is a
+    literal, so both sources are read rather than a copy of the table.
     """
     names = set(re.findall(r'"(scalar-fp\d+|avx2-fp\d+)"', read(BACKEND_HPP)))
     names |= set(re.findall(r'"(scalar-fp\d+|avx2-fp\d+)"', read(SIMD_BACKEND_HPP)))
@@ -185,8 +164,8 @@ def backend_names():
 def route_option():
     """The option that selects the multiply-add route, checked in CMakeLists.
 
-    The option has to exist, and has to define a macro the headers read, or the
-    matrix would build a tree that reports the route it was not asked for.
+    It has to exist and define a macro the headers read, or the matrix would
+    build a tree that reports the route it was not asked for.
     """
     text = read(CMAKELISTS)
     if not re.search(r"option\(\s*" + re.escape(ROUTE_OPTION) + r"\b", text):
@@ -203,9 +182,8 @@ def ci_legs():
     """Every CI leg of the workflow as (check name, runner, AVX2 tier).
 
     A leg records the tier it is held to as a matrix value where it has one and
-    as the literal its configure step passes where it does not, and both
-    spellings mean the same thing here. A leg asserted present is what a host
-    is checked against; the runner's name alone decides nothing.
+    as the literal its configure step passes where it does not, both spellings
+    meaning the same thing here.
     """
     try:
         import yaml
@@ -240,10 +218,9 @@ def ci_legs():
 def host_members():
     """The device axis's members, each checked against the workflow.
 
-    A host is legal here only if the workflow already builds a leg on its
-    runner whose dispatch assertion expects the AVX2 tier present: the lane
-    book's cell count is a property of that tier, and an option-matrix job
-    belongs on a host this repository has already shown runs it.
+    A host is legal here only if the workflow builds a leg on its runner whose
+    dispatch assertion expects the AVX2 tier present: the lane book's cell count
+    is a property of that tier.
     """
     legs = ci_legs()
     members = []
@@ -282,10 +259,9 @@ def axis_members():
 def configurations(members):
     """The allowed configurations: each host at each multiply-add route.
 
-    The two build axes are the ones a configuration selects; the carried axes
-    are in force in every build and the gate judges them in the same run, so
-    they are recorded as the members they are rather than varied into jobs that
-    would build the same tree twice.
+    The carried axes are in force in every build, so they are recorded as the
+    members they are rather than varied into jobs that would build the same tree
+    twice.
     """
     route_option_name = route_option()
     out = []
@@ -340,7 +316,7 @@ def check_accounted(data, members):
 
     This is the direction that makes the file derived rather than transcribed:
     an axis a lane extends fails here until the table accounts for the new
-    member, so a member cannot land while CI still measures the old set.
+    member.
     """
     recorded = {axis["key"]: axis["members"] for axis in data["axes"]}
     for key, exposed in members.items():
@@ -374,10 +350,9 @@ def main():
     args = parser.parse_args()
 
     if args.emit:
-        # From the committed file, not from a fresh derivation: the workflow
-        # expands what is committed, and --check on the build legs is what
-        # proves that file is what this revision generates. It also keeps the
-        # scheduling job free of every dependency the derivation has.
+        # From the committed file, not a fresh derivation: the workflow expands
+        # what is committed, and --check on the build legs proves that file is
+        # what this revision generates.
         if not MATRIX_JSON.exists():
             raise SystemExit(f"gen_option_matrix: {MATRIX_JSON} is missing")
         committed = json.loads(MATRIX_JSON.read_text(encoding="utf-8"))

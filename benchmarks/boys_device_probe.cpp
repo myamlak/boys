@@ -1,15 +1,9 @@
 // The device option probe's driver: it parses arguments, calls the library
-// entry, and prints what came back.
+// entry, and prints what came back. There is no measurement in this file —
+// every number printed came out of that call, including the card's own name.
 //
-// There is no measurement in this file. boys::RunDeviceOptionProbe is the
-// surface — it takes the device selector and returns the data — and this tool
-// exists so that a person can get the same report at a terminal without writing
-// a program first. Every number it prints came out of that call, including the
-// card's own name.
-//
-// The exit status is 0 whether or not a winner was named: a refusal is one of
-// this probe's results, not a failure of it. A status that is not kSuccess is
-// reported and exits 1, because nothing was measured at all.
+// The exit status is 0 whether or not a winner was named; a status that is not
+// kSuccess is reported and exits 1, because nothing was measured at all.
 #include "boys/boys_cuda_probe.hpp"
 
 #include <cstddef>

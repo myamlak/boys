@@ -5,40 +5,24 @@
 //
 //   boys::BoysCuda::AllOrdersF64AtRung(m, n, x, out, count, stream);
 //
-// and names one of the twelve rungs of `boys::kDeviceRungs` in `m`, where a
-// caller that had fixed the rung where the call is written would write
+// and names one of the rungs of `boys::kDeviceRungs` in `m`, where a caller that
+// had fixed the rung where the call is written would write
 // `boys::BoysCuda::AllOrdersF64<4096.0>(...)`. There is no switch over the rungs
-// at the call site, no table of entry names and no run-time search: the
-// combination is the entry's name and the rung is the call's own argument.
+// at the call site and no run-time search: the combination is the entry's name
+// and the rung is the call's own argument.
 //
-// What this file checks, and against what:
-//
-//  * the book. `BoysDeviceOptions()` is the lane's own report of the options it
-//    serves, and it is read here rather than retyped: its launched rows are the
-//    served combinations, and every launched row this build serves is required
-//    to have a rung-argument name. The census below is counted from that book,
-//    per precision, as combinations served and combinations named, and as cells
-//    served and cells named and evaluated.
-//
-//  * the rung it was handed. Every cell is evaluated twice — once through the
-//    rung-argument sibling and once through the same entry's compile-time
-//    spelling at that rung — and the two values are compared bit for bit. A
-//    sibling that accepted a rung and answered at another would differ here; the
-//    count of cells where the rung moved the value is printed beside the count
-//    of comparisons, so the comparison is visible as one that could have failed.
-//
-//  * the bound that cell carries. Every value is judged against the committed
-//    45-digit reference grid at the figure the book states for its own row at
-//    the rung it ran at — the row's documented bound, scaled by the rung, plus
-//    the term the row's own form adds.
-//
-//  * the refusal, on the card. The device-callable entry is the one that reads
-//    the resident rung, so it is the one that can refuse it; the other half of
-//    this check (tests/consumer_cuda_rungs.cu) runs it inside a kernel at the
-//    resident rung and at one that is not resident, and this half prints what
-//    came back for each. An AtRung call that makes the rung it names resident
-//    leaves that rule standing; one that answered at whatever was resident
-//    instead would not, and that is what the check is for.
+// What this file checks, and against what: **the book**, `BoysDeviceOptions()`,
+// the lane's own report of what it serves, read here rather than retyped and
+// counted per precision; **the rung it was handed**, every cell evaluated both
+// through the rung-argument sibling and through the same entry's compile-time
+// spelling at that rung and compared bit for bit - a row the library carries at
+// fewer rungs than the table holds has one such pair per cell and the refusal
+// at the rest, which the rung-argument call must answer and which is counted
+// with the cells the row names; **the bound that cell carries**,
+// judged against the committed 45-digit reference grid at the figure the book
+// states for its own row at the rung it ran at; and **the refusal, on the card**,
+// whose other half runs the device-callable entry in a kernel at a resident and a
+// non-resident rung (tests/consumer_cuda_rungs.cu).
 //
 // Run:  cmake --build <build> --config Release --target boys-consumer-cuda-rungs
 //       <build>/Release/boys-consumer-cuda-rungs
@@ -323,8 +307,18 @@ bool SameBits(Kind kind, const unsigned char* left, const unsigned char* right, 
 
 // --- the tags: one per entry, named where a caller writes it ----------------
 
+/// A tag carries the name a caller writes and the entry that name is a call of,
+/// beside the two spellings of one rung. The entry is carried because a row's
+/// rungs are a property of its entry and not of the caller (the library answers
+/// for them in DeviceEntryServedAtRung), and the tag is the one place the rung has
+/// to be known before the call exists.
+///
+/// A tag names one entry even where two rows of the book name one arithmetic: the
+/// Rat pair's scheme axis is inert, so both rows are swept through the one entry
+/// its tag carries.
 struct SingleF64Tag {
     static constexpr const char* kEntry = "SingleF64";
+    static constexpr boys::DeviceEntry kDeviceEntry = boys::DeviceEntry::kSingleF64;
     static boys::BoysStatus AtRung(double m, const Batch& b, void* out) {
         return boys::BoysCuda::SingleF64AtRung(m, b.n, static_cast<const double*>(b.x),
                                                static_cast<double*>(out), b.count, b.stream);
@@ -337,6 +331,7 @@ struct SingleF64Tag {
 
 struct AllOrdersF64Tag {
     static constexpr const char* kEntry = "AllOrdersF64";
+    static constexpr boys::DeviceEntry kDeviceEntry = boys::DeviceEntry::kAllOrdersF64;
     static boys::BoysStatus AtRung(double m, const Batch& b, void* out) {
         return boys::BoysCuda::AllOrdersF64AtRung(m, b.n, static_cast<const double*>(b.x),
                                                   static_cast<double*>(out), b.count, b.stream);
@@ -349,6 +344,7 @@ struct AllOrdersF64Tag {
 
 struct AllNF64Tag {
     static constexpr const char* kEntry = "AllNF64";
+    static constexpr boys::DeviceEntry kDeviceEntry = boys::DeviceEntry::kAllNF64;
     static boys::BoysStatus AtRung(double m, const Batch& b, void* out) {
         return boys::BoysCuda::AllNF64AtRung(m, b.nmax, static_cast<const double*>(b.x),
                                              static_cast<double*>(out), b.count, b.stream);
@@ -361,6 +357,7 @@ struct AllNF64Tag {
 
 struct AllOrdersF32Tag {
     static constexpr const char* kEntry = "AllOrdersF32";
+    static constexpr boys::DeviceEntry kDeviceEntry = boys::DeviceEntry::kAllOrdersF32;
     static boys::BoysStatus AtRung(double m, const Batch& b, void* out) {
         return boys::BoysCuda::AllOrdersF32AtRung(m, b.n, static_cast<const double*>(b.x),
                                                   static_cast<float*>(out), b.count, b.stream);
@@ -373,6 +370,7 @@ struct AllOrdersF32Tag {
 
 struct AllNF32Tag {
     static constexpr const char* kEntry = "AllNF32";
+    static constexpr boys::DeviceEntry kDeviceEntry = boys::DeviceEntry::kAllNF32;
     static boys::BoysStatus AtRung(double m, const Batch& b, void* out) {
         return boys::BoysCuda::AllNF32AtRung(m, b.nmax, static_cast<const double*>(b.x),
                                              static_cast<float*>(out), b.count, b.stream);
@@ -385,6 +383,7 @@ struct AllNF32Tag {
 
 struct SingleF32AccurateTag {
     static constexpr const char* kEntry = "SingleF32<kAccurate>";
+    static constexpr boys::DeviceEntry kDeviceEntry = boys::DeviceEntry::kSingleF32;
     static boys::BoysStatus AtRung(double m, const Batch& b, void* out) {
         return boys::BoysCuda::SingleF32AtRung<boys::RegionBExp::kAccurate>(
             m, b.n, static_cast<const double*>(b.x), static_cast<float*>(out), b.count, b.stream);
@@ -397,6 +396,7 @@ struct SingleF32AccurateTag {
 
 struct SingleF32FastTag {
     static constexpr const char* kEntry = "SingleF32<kFast>";
+    static constexpr boys::DeviceEntry kDeviceEntry = boys::DeviceEntry::kSingleF32Fast;
     static boys::BoysStatus AtRung(double m, const Batch& b, void* out) {
         return boys::BoysCuda::SingleF32AtRung<boys::RegionBExp::kFast>(
             m, b.n, static_cast<const double*>(b.x), static_cast<float*>(out), b.count, b.stream);
@@ -407,11 +407,13 @@ struct SingleF32FastTag {
     }
 };
 
-/// The eleven siblings of AllOrdersF64 that carry the four structural axes: one
-/// tag each, and the same two spellings of one rung.
+/// The double lane's rows of this shape — the structural axes' siblings of
+/// AllOrdersF64 and the uniform route's four — one tag each, and the same two
+/// spellings of one rung.
 #define BOYS_CONSUMER_F64_AXIS_TAG(Tag, Entry)                                                  \
     struct Tag {                                                                                \
         static constexpr const char* kEntry = #Entry;                                           \
+        static constexpr boys::DeviceEntry kDeviceEntry = boys::DeviceEntry::k##Entry;          \
         static boys::BoysStatus AtRung(double m, const Batch& b, void* out) {                   \
             return boys::BoysCuda::Entry##AtRung(m, b.n, static_cast<const double*>(b.x),       \
                                                  static_cast<double*>(out), b.count, b.stream); \
@@ -420,6 +422,22 @@ struct SingleF32FastTag {
             return boys::BoysCuda::Entry<M>(b.n, static_cast<const double*>(b.x),               \
                                             static_cast<double*>(out), b.count, b.stream);       \
         }                                                                                       \
+    };
+
+/// The lane's siblings of the same shape whose output is the float lane's: the
+/// two spellings of one rung over one entry, and the entry it is a call of.
+#define BOYS_CONSUMER_F32_AXIS_TAG(Tag, Entry)                                                 \
+    struct Tag {                                                                               \
+        static constexpr const char* kEntry = #Entry;                                          \
+        static constexpr boys::DeviceEntry kDeviceEntry = boys::DeviceEntry::k##Entry;         \
+        static boys::BoysStatus AtRung(double m, const Batch& b, void* out) {                  \
+            return boys::BoysCuda::Entry##AtRung(m, b.n, static_cast<const double*>(b.x),      \
+                                                 static_cast<float*>(out), b.count, b.stream); \
+        }                                                                                      \
+        template <double M> static boys::BoysStatus CompileTime(const Batch& b, void* out) {   \
+            return boys::BoysCuda::Entry<M>(b.n, static_cast<const double*>(b.x),              \
+                                            static_cast<float*>(out), b.count, b.stream);      \
+        }                                                                                      \
     };
 
 BOYS_CONSUMER_F64_AXIS_TAG(AllOrdersF64NarrowTag, AllOrdersF64Narrow)
@@ -433,12 +451,37 @@ BOYS_CONSUMER_F64_AXIS_TAG(AllOrdersF64RatTag, AllOrdersF64Rat)
 BOYS_CONSUMER_F64_AXIS_TAG(AllOrdersF64OrdersRatTag, AllOrdersF64OrdersRat)
 BOYS_CONSUMER_F64_AXIS_TAG(AllOrdersF64NarrowRatTag, AllOrdersF64NarrowRat)
 BOYS_CONSUMER_F64_AXIS_TAG(AllOrdersF64NarrowOrdersRatTag, AllOrdersF64NarrowOrdersRat)
+BOYS_CONSUMER_F64_AXIS_TAG(AllOrdersF64UniformTag, AllOrdersF64Uniform)
+BOYS_CONSUMER_F64_AXIS_TAG(AllOrdersF64UniformHornerTag, AllOrdersF64UniformHorner)
+BOYS_CONSUMER_F64_AXIS_TAG(AllOrdersF64OrdersUniformTag, AllOrdersF64OrdersUniform)
+BOYS_CONSUMER_F64_AXIS_TAG(AllOrdersF64OrdersUniformHornerTag, AllOrdersF64OrdersUniformHorner)
+
+BOYS_CONSUMER_F32_AXIS_TAG(AllOrdersF32NarrowTag, AllOrdersF32Narrow)
+BOYS_CONSUMER_F32_AXIS_TAG(AllOrdersF32NarrowMonoTag, AllOrdersF32NarrowMono)
+BOYS_CONSUMER_F32_AXIS_TAG(AllOrdersF32RatTag, AllOrdersF32Rat)
+BOYS_CONSUMER_F32_AXIS_TAG(AllOrdersF32NarrowRatTag, AllOrdersF32NarrowRat)
+BOYS_CONSUMER_F32_AXIS_TAG(AllOrdersF32UniformTag, AllOrdersF32Uniform)
+BOYS_CONSUMER_F32_AXIS_TAG(AllOrdersF32UniformHornerTag, AllOrdersF32UniformHorner)
+
+// The same lane's other packing axis, one tag per row of it.
+BOYS_CONSUMER_F32_AXIS_TAG(AllOrdersF32OrdersTag, AllOrdersF32Orders)
+BOYS_CONSUMER_F32_AXIS_TAG(AllOrdersF32NarrowOrdersTag, AllOrdersF32NarrowOrders)
+BOYS_CONSUMER_F32_AXIS_TAG(AllOrdersF32NarrowOrdersMonoTag, AllOrdersF32NarrowOrdersMono)
+BOYS_CONSUMER_F32_AXIS_TAG(AllOrdersF32OrdersRatTag, AllOrdersF32OrdersRat)
+BOYS_CONSUMER_F32_AXIS_TAG(AllOrdersF32OrdersRatHornerTag, AllOrdersF32OrdersRatHorner)
+BOYS_CONSUMER_F32_AXIS_TAG(AllOrdersF32NarrowOrdersRatTag, AllOrdersF32NarrowOrdersRat)
+BOYS_CONSUMER_F32_AXIS_TAG(AllOrdersF32NarrowOrdersRatHornerTag,
+                           AllOrdersF32NarrowOrdersRatHorner)
+BOYS_CONSUMER_F32_AXIS_TAG(AllOrdersF32OrdersUniformTag, AllOrdersF32OrdersUniform)
+BOYS_CONSUMER_F32_AXIS_TAG(AllOrdersF32OrdersUniformHornerTag, AllOrdersF32OrdersUniformHorner)
 
 #undef BOYS_CONSUMER_F64_AXIS_TAG
+#undef BOYS_CONSUMER_F32_AXIS_TAG
 
 #if BoysFp16
 struct SingleF16Tag {
     static constexpr const char* kEntry = "SingleF16";
+    static constexpr boys::DeviceEntry kDeviceEntry = boys::DeviceEntry::kSingleF16;
     static boys::BoysStatus AtRung(double m, const Batch& b, void* out) {
         return boys::BoysCuda::SingleF16AtRung(m, b.n, static_cast<const boys::F16*>(b.x),
                                                static_cast<boys::F16*>(out), b.count, b.stream);
@@ -451,6 +494,7 @@ struct SingleF16Tag {
 
 struct AllOrdersF16Tag {
     static constexpr const char* kEntry = "AllOrdersF16";
+    static constexpr boys::DeviceEntry kDeviceEntry = boys::DeviceEntry::kAllOrdersF16;
     static boys::BoysStatus AtRung(double m, const Batch& b, void* out) {
         return boys::BoysCuda::AllOrdersF16AtRung(m, b.n, static_cast<const boys::F16*>(b.x),
                                                   static_cast<boys::F16*>(out), b.count, b.stream);
@@ -463,6 +507,7 @@ struct AllOrdersF16Tag {
 
 struct AllNF16Tag {
     static constexpr const char* kEntry = "AllNF16";
+    static constexpr boys::DeviceEntry kDeviceEntry = boys::DeviceEntry::kAllNF16;
     static boys::BoysStatus AtRung(double m, const Batch& b, void* out) {
         return boys::BoysCuda::AllNF16AtRung(m, b.nmax, static_cast<const boys::F16*>(b.x),
                                              static_cast<boys::F16*>(out), b.count, b.stream);
@@ -477,37 +522,55 @@ struct AllNF16Tag {
 // --- one arm per rung -------------------------------------------------------
 
 /// The twelve arms a tag is reached through, in the order of the library's own
-/// rung table. A call names the entry and the rung, and this is where the rung
-/// becomes the compile-time spelling the sibling is one call of: the switch an
-/// `AtRung` body carries, written on the other side of the call so that the two
+/// rung table: this is where the rung becomes the compile-time spelling the
+/// sibling is one call of, written on the other side of the call so that the two
 /// can be compared cell for cell.
+///
+/// An entry this lane carries at the reference multiplier alone has no spelling
+/// at another rung - its own template refuses the multiplier where the call would
+/// be written - so there is no arm to take. The library's answer decides which of
+/// the two this is, so a rung an entry starts serving is swept without an edit
+/// here.
+template <typename Tag, double M> boys::BoysStatus SpellAt(const Batch& b, void* out) {
+    if constexpr (boys::DeviceEntryServedAtRung(Tag::kDeviceEntry, M))
+    {
+        return Tag::template CompileTime<M>(b, out);
+    } else
+    {
+        // The sweep does not take this arm: a rung the row's entry does not
+        // serve is asked of the rung-argument call alone, because that is the
+        // only spelling of it that exists.
+        return boys::BoysStatus::kInvalidArgument;
+    }
+}
+
 template <typename Tag> boys::BoysStatus CompileTimeAt(int rung, const Batch& b, void* out) {
     switch (rung)
     {
     case 0:
-        return Tag::template CompileTime<boys::kBoysFullAccuracyMultiplier>(b, out);
+        return SpellAt<Tag, boys::kBoysFullAccuracyMultiplier>(b, out);
     case 1:
-        return Tag::template CompileTime<2.0>(b, out);
+        return SpellAt<Tag, 2.0>(b, out);
     case 2:
-        return Tag::template CompileTime<10.0>(b, out);
+        return SpellAt<Tag, 10.0>(b, out);
     case 3:
-        return Tag::template CompileTime<64.0>(b, out);
+        return SpellAt<Tag, 64.0>(b, out);
     case 4:
-        return Tag::template CompileTime<100.0>(b, out);
+        return SpellAt<Tag, 100.0>(b, out);
     case 5:
-        return Tag::template CompileTime<256.0>(b, out);
+        return SpellAt<Tag, 256.0>(b, out);
     case 6:
-        return Tag::template CompileTime<1024.0>(b, out);
+        return SpellAt<Tag, 1024.0>(b, out);
     case 7:
-        return Tag::template CompileTime<4096.0>(b, out);
+        return SpellAt<Tag, 4096.0>(b, out);
     case 8:
-        return Tag::template CompileTime<1e4>(b, out);
+        return SpellAt<Tag, 1e4>(b, out);
     case 9:
-        return Tag::template CompileTime<16384.0>(b, out);
+        return SpellAt<Tag, 16384.0>(b, out);
     case 10:
-        return Tag::template CompileTime<65536.0>(b, out);
+        return SpellAt<Tag, 65536.0>(b, out);
     case 11:
-        return Tag::template CompileTime<1e8>(b, out);
+        return SpellAt<Tag, 1e8>(b, out);
     default:
         return boys::BoysStatus::kInvalidArgument;
     }
@@ -559,6 +622,14 @@ Row MakeRow(boys::DeviceEntry entry,
 /// one. The Rat rows come in pairs — the scheme axis is inert on that route, so
 /// both scheme names select one arithmetic and one entry — and each row is one
 /// option of the book and is swept as one.
+///
+/// The rungs a row is swept at are its entry's, not this table's: the four
+/// uniform-route rows and the float lane's narrow and rational rows are carried
+/// at the reference multiplier alone, so each of them is swept at that one rung
+/// and its other rungs are the refusal. Which rows those are is read from the
+/// library (DeviceEntryServedAtRung) in the sweep, so a row this table lists and
+/// the library starts serving at more rungs is swept at them without an edit
+/// here.
 const std::vector<Row>& Rows() {
     static const std::vector<Row> rows = [] {
         using boys::DeviceEntry;
@@ -616,6 +687,18 @@ const std::vector<Row>& Rows() {
         built.push_back(MakeRow<AllOrdersF64NarrowOrdersRatTag>(
             DeviceEntry::kAllOrdersF64NarrowOrdersRatHorner, kFp64, DeviceOptionShape::kAllOrders,
             Kind::kDouble));
+        built.push_back(MakeRow<AllOrdersF64UniformTag>(DeviceEntry::kAllOrdersF64Uniform, kFp64,
+                                                        DeviceOptionShape::kAllOrders,
+                                                        Kind::kDouble));
+        built.push_back(MakeRow<AllOrdersF64UniformHornerTag>(
+            DeviceEntry::kAllOrdersF64UniformHorner, kFp64, DeviceOptionShape::kAllOrders,
+            Kind::kDouble));
+        built.push_back(MakeRow<AllOrdersF64OrdersUniformTag>(
+            DeviceEntry::kAllOrdersF64OrdersUniform, kFp64, DeviceOptionShape::kAllOrders,
+            Kind::kDouble));
+        built.push_back(MakeRow<AllOrdersF64OrdersUniformHornerTag>(
+            DeviceEntry::kAllOrdersF64OrdersUniformHorner, kFp64, DeviceOptionShape::kAllOrders,
+            Kind::kDouble));
         built.push_back(MakeRow<AllNF64Tag>(DeviceEntry::kAllNF64, kFp64,
                                             DeviceOptionShape::kAllN, Kind::kDouble));
 
@@ -625,6 +708,60 @@ const std::vector<Row>& Rows() {
                                                   DeviceOptionShape::kSingle, Kind::kFloat));
         built.push_back(MakeRow<AllOrdersF32Tag>(DeviceEntry::kAllOrdersF32, kFp32,
                                                  DeviceOptionShape::kAllOrders, Kind::kFloat));
+        built.push_back(MakeRow<AllOrdersF32NarrowTag>(
+            DeviceEntry::kAllOrdersF32Narrow, kFp32, DeviceOptionShape::kAllOrders,
+            Kind::kFloat));
+        built.push_back(MakeRow<AllOrdersF32NarrowMonoTag>(
+            DeviceEntry::kAllOrdersF32NarrowMono, kFp32, DeviceOptionShape::kAllOrders,
+            Kind::kFloat));
+        built.push_back(MakeRow<AllOrdersF32RatTag>(
+            DeviceEntry::kAllOrdersF32Rat, kFp32, DeviceOptionShape::kAllOrders, Kind::kFloat));
+        built.push_back(MakeRow<AllOrdersF32RatTag>(
+            DeviceEntry::kAllOrdersF32RatHorner, kFp32, DeviceOptionShape::kAllOrders,
+            Kind::kFloat));
+        built.push_back(MakeRow<AllOrdersF32NarrowRatTag>(
+            DeviceEntry::kAllOrdersF32NarrowRat, kFp32, DeviceOptionShape::kAllOrders,
+            Kind::kFloat));
+        built.push_back(MakeRow<AllOrdersF32NarrowRatTag>(
+            DeviceEntry::kAllOrdersF32NarrowRatHorner, kFp32, DeviceOptionShape::kAllOrders,
+            Kind::kFloat));
+        built.push_back(MakeRow<AllOrdersF32UniformTag>(
+            DeviceEntry::kAllOrdersF32Uniform, kFp32, DeviceOptionShape::kAllOrders,
+            Kind::kFloat));
+        built.push_back(MakeRow<AllOrdersF32UniformHornerTag>(
+            DeviceEntry::kAllOrdersF32UniformHorner, kFp32, DeviceOptionShape::kAllOrders,
+            Kind::kFloat));
+        // The float lane's orders axis, in the row order of the book: the shapes
+        // of the two piecewise partitions and of the route beside the two of the
+        // grid, which are the per-argument rows' kernels and are named here
+        // because the cell is the book's and this table is one row per cell the
+        // book serves.
+        built.push_back(MakeRow<AllOrdersF32OrdersTag>(
+            DeviceEntry::kAllOrdersF32Orders, kFp32, DeviceOptionShape::kAllOrders, Kind::kFloat));
+        built.push_back(MakeRow<AllOrdersF32NarrowOrdersTag>(
+            DeviceEntry::kAllOrdersF32NarrowOrders, kFp32, DeviceOptionShape::kAllOrders,
+            Kind::kFloat));
+        built.push_back(MakeRow<AllOrdersF32NarrowOrdersMonoTag>(
+            DeviceEntry::kAllOrdersF32NarrowOrdersMono, kFp32, DeviceOptionShape::kAllOrders,
+            Kind::kFloat));
+        built.push_back(MakeRow<AllOrdersF32OrdersRatTag>(
+            DeviceEntry::kAllOrdersF32OrdersRat, kFp32, DeviceOptionShape::kAllOrders,
+            Kind::kFloat));
+        built.push_back(MakeRow<AllOrdersF32OrdersRatTag>(
+            DeviceEntry::kAllOrdersF32OrdersRatHorner, kFp32, DeviceOptionShape::kAllOrders,
+            Kind::kFloat));
+        built.push_back(MakeRow<AllOrdersF32NarrowOrdersRatTag>(
+            DeviceEntry::kAllOrdersF32NarrowOrdersRat, kFp32, DeviceOptionShape::kAllOrders,
+            Kind::kFloat));
+        built.push_back(MakeRow<AllOrdersF32NarrowOrdersRatTag>(
+            DeviceEntry::kAllOrdersF32NarrowOrdersRatHorner, kFp32, DeviceOptionShape::kAllOrders,
+            Kind::kFloat));
+        built.push_back(MakeRow<AllOrdersF32OrdersUniformTag>(
+            DeviceEntry::kAllOrdersF32OrdersUniform, kFp32, DeviceOptionShape::kAllOrders,
+            Kind::kFloat));
+        built.push_back(MakeRow<AllOrdersF32OrdersUniformHornerTag>(
+            DeviceEntry::kAllOrdersF32OrdersUniformHorner, kFp32, DeviceOptionShape::kAllOrders,
+            Kind::kFloat));
         built.push_back(MakeRow<AllNF32Tag>(DeviceEntry::kAllNF32, kFp32,
                                             DeviceOptionShape::kAllN, Kind::kFloat));
 
@@ -672,15 +809,12 @@ const boys::DeviceOptionInfo* BookRow(boys::DeviceEntry entry) {
 
 // --- one row's sweep --------------------------------------------------------
 
-/// What a row's sweep compares, built once per row: the output slot each
-/// compared value lives in, the reference value there, and the (order, argument)
-/// pair it belongs to so that a failing cell can name itself, and the launch the
-/// row's own shape takes.
-///
-/// The ladder and the uniform-order shape both write `out[k * count + i]`, so
-/// both are swept over the arguments at one top order: the whole ladder at every
-/// swept argument. The single-order shape writes one value per element, so it is
-/// swept over the grid's own cells, each element carrying its own order.
+/// What a row's sweep compares, built once per row: the output slot each compared
+/// value lives in, the reference value there, the (order, argument) pair it
+/// belongs to so a failing cell can name itself, and the launch the row's own
+/// shape takes. The ladder and the uniform-order shape both write
+/// `out[k * count + i]` and are swept over the arguments at one top order; the
+/// single-order shape writes one value per element, over the grid's own cells.
 struct Sweep {
     std::vector<std::size_t> outIndex;
     std::vector<double> reference;
@@ -761,7 +895,10 @@ struct Census {
 /// Sweeps one row over every rung of the lane's table and folds the result into
 /// the census: whether the rung the call was handed is the rung the same cell is
 /// spelled at, and whether the value that came back is inside the figure the
-/// book states for that cell.
+/// book states for that cell. A rung the row's entry is not served at is the
+/// third outcome and is folded in as itself: the rung-argument call must refuse
+/// it and write nothing, and there is no second spelling of it to compare
+/// against, so the row carries one rung and eleven refusals.
 void SweepRow(const Row& row, const Grid& source, Census& census) {
     const Sweep sweep = MakeSweep(source, row.shape);
 
@@ -803,6 +940,7 @@ void SweepRow(const Row& row, const Grid& source, Census& census) {
     std::vector<unsigned char> referenceRung;
 
     std::size_t moved = 0;
+    std::size_t served = 0;
     double worst = 0.0;
     std::size_t worstN = 0;
     double worstX = 0.0;
@@ -810,6 +948,33 @@ void SweepRow(const Row& row, const Grid& source, Census& census) {
     for (std::size_t rung = 0; rung < boys::kDeviceRungs.size(); ++rung)
     {
         const double multiplier = boys::kDeviceRungs[rung];
+
+        // The rungs this row is swept at are its entry's and not this file's
+        // list: an entry carried at fewer rungs than the lane's table holds says
+        // so in its own contract, and the library answers for it here. A rung an
+        // entry does not serve has no compile-time spelling to compare against —
+        // its own template refuses the multiplier where the call would be written
+        // — so what the rung-argument call must answer there is the refusal.
+        if (!boys::DeviceEntryServedAtRung(row.entry, multiplier))
+        {
+            produced.Fill(0xCD);
+
+            const boys::BoysStatus named = row.atRung(multiplier, batch, produced.get());
+
+            Check(cudaStreamSynchronize(nullptr), "cudaStreamSynchronize");
+            produced.Download(hostProduced);
+
+            Require(named == boys::BoysStatus::kInvalidArgument,
+                    "a rung the row's entry does not serve is refused with kInvalidArgument");
+            Require(std::all_of(hostProduced.begin(), hostProduced.end(),
+                                [](unsigned char byte) { return byte == 0xCD; }),
+                    "a refused rung launches nothing and writes nothing");
+            ++census.namedCells;
+            continue;
+        }
+
+        ++served;
+
         const double bound = BoundAt(*BookRow(row.entry), multiplier);
 
         produced.Fill(0xCD);
@@ -857,10 +1022,8 @@ void SweepRow(const Row& row, const Grid& source, Census& census) {
 
             const double got = Widen(row.kind, hostProduced.data(), slot);
 
-            // The bound this cell carries: the row's own figure at this rung,
-            // plus the half lane's own quantum where the row is a half one — the
-            // term that row's form adds beside the bound because it is a
-            // property of the returned value rather than of the call.
+            // The bound this cell carries: the row's own figure at this rung, plus
+            // the half lane's quantum where the row is a half one.
             const double figure = bound + (row.kind == Kind::kHalf ? HalfUlp(got) : 0.0);
             const double error = std::fabs(got - sweep.reference[i]);
 
@@ -895,10 +1058,15 @@ void SweepRow(const Row& row, const Grid& source, Census& census) {
 
     census.moved += moved;
 
-    const std::size_t swept = sweep.outIndex.size() * boys::kDeviceRungs.size();
+    // The count is of the pairs the sweep judged, so a row swept at one rung
+    // states the one rung's worth and not the table's twelve; the refusals it
+    // carries instead are counted where they belong, the cells named.
+    const std::size_t swept = sweep.outIndex.size() * served;
+    const std::size_t refused = boys::kDeviceRungs.size() - served;
 
-    std::printf("  %-30s %-5s %8zu values judged, worst %.4g of the bound (n=%zu, x=%.6g)%s\n",
+    std::printf("  %-30s %-5s %8zu values judged, worst %.4g of the bound (n=%zu, x=%.6g)%s%s\n",
                 row.entryName, PrecisionName(row.precision), swept, worst, worstN, worstX,
+                refused == 0 ? "" : "  [served at the rungs its entry carries; the rest refused]",
                 moved == 0 ? "  [no cell moved between the rungs]" : "");
 }
 

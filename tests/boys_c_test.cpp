@@ -27,21 +27,15 @@ constexpr int kSampleOrders[] = {0, 1, 2, 3, 7, 16, 31, 32};
 // supported order and argument, so a negative marker says "not written".
 constexpr double kUnwritten = -1.0;
 
-// The rungs this file sweeps, ascending. The list is spelled out because a rung
-// is a template argument at a case here and a template argument cannot be read
-// out of a table; it is the library's accuracy-rung vocabulary and not a list of
-// this file's own, so the check below holds it against the table the library
-// reads. A rung the library serves and this list does not hold would be a rung
-// no sweep of this file exercises, and one this list holds and the library does
-// not would not link.
+// The rungs this file sweeps, ascending. Spelled out because a rung is a
+// template argument at a case here and cannot be read out of a table; the
+// assertion below holds the list to the library's own vocabulary.
 constexpr double kRungs[] = {
     1.0, 2.0, 10.0, 64.0, 100.0, 256.0, 1024.0, 4096.0, 1e4, 16384.0, 65536.0, 1e8};
 
 // Whether the twelve above are the device lane's kDeviceRungs
-// (boys_cuda_options.hpp), element by element and in order. That table is what
-// the library's accuracy accessors answer the device lane out of, and the C
-// surface's multiplier entries and the C++ tiers dispatch over the same twelve,
-// so the three name one vocabulary rather than one each.
+// (boys_cuda_options.hpp), element by element and in order — the table the C
+// surface's multiplier entries and the C++ tiers dispatch over.
 constexpr bool RungsAreTheLibrarysSet() noexcept {
     if (std::size(kRungs) != boys::kDeviceRungs.size())
     {
@@ -93,11 +87,9 @@ TEST(BoysCTest, FloatMatchesCppLane) {
     }
 }
 
-// The multiplier dispatch is exact over the library's rung vocabulary; each
-// relaxed entry must be bit-identical to the direct C++ instantiation at that
-// m. The status is asserted as well as the value: a rung the vocabulary names
-// and the dispatch does not answer at is a rung this surface rejects, and the
-// message says which.
+// The dispatch is exact over the rung vocabulary: each relaxed entry must be
+// bit-identical to the direct C++ instantiation at that m, and must return the
+// success code — a rung the vocabulary names and the dispatch refuses is a bug.
 template <double kM> void CheckMultiplierLane(int n, double x) {
     double viaC = 0.0;
     ASSERT_EQ(BoysDoubleWithMultiplier(kM, n, x, &viaC), BOYS_SUCCESS)
@@ -157,11 +149,9 @@ TEST(BoysCTest, FloatMultiplierDispatchMatchesCpp) {
     }
 }
 
-// The table itself, walked as data. The sweeps above name their rungs one at a
-// time because a rung is a template argument there and one cannot be read out of
-// a table; this one reads the table, so a rung added to the vocabulary — and to
+// The table itself, walked as data, so a rung added to the vocabulary — and to
 // the library — without its case in the C surface's dispatch is a refusal here
-// rather than a rung the two spellings above would both have missed.
+// rather than a rung every template-argument sweep above would have missed.
 TEST(BoysCTest, ServesEveryRungOfTheVocabulary) {
     for (const double m : kRungs)
     {
@@ -255,13 +245,10 @@ TEST(BoysCTest, DoubleBatchAtOrdersMatchesCppPerElement) {
     for (std::size_t i = 0; i < count; ++i)
     {
         // The reference is this argument's OWN top order, which is what the
-        // batch entry documents: each column is run at its argument's own order,
-        // and out[k * count + i] is bit for bit what BoysAllOrders(tops[i],
-        // xs[i]) writes at out[k]. The batch's nmax is not that reference: below
-        // the first tier threshold an all-orders body seeds the downward
-        // recursion once at the order it is called with, so a column read at a
-        // larger order carries that order's recurrence in every cell beneath it
-        // rather than the value this entry writes.
+        // entry documents: out[k * count + i] is bit for bit what
+        // BoysAllOrders(tops[i], xs[i]) writes at k. The batch's nmax is not it
+        // — an all-orders body below the first tier threshold seeds its downward
+        // recursion at the order it is called with.
         std::vector<double> row(static_cast<std::size_t>(tops[i]) + 1);
         boys::BoysAllOrders(tops[i], xs[i], row.data());
 
@@ -364,9 +351,8 @@ TEST(BoysCTest, RejectsUnsupportedMultipliers) {
     // Argument validation precedes the multiplier dispatch.
     EXPECT_EQ(BoysDoubleWithMultiplier(1.5, -1, 0.5, &value), BOYS_ERROR_INVALID_ARGUMENT);
 
-    // Exact equality, so a value the vocabulary does not hold is refused even
-    // when it sits between two rungs it does hold: the ends of the set are
-    // edges like any other value outside it.
+    // Exact equality: a value the vocabulary does not hold is refused, whether
+    // it sits between two rungs or outside the set's ends.
     const double kBetweenRungs[] = {
         0.999, 1.5, 3.0, 32.0, 128.0, 512.0, 2048.0, 8192.0, 32768.0, 1e5, 1e6, 1e9};
 

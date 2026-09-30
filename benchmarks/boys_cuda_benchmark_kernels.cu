@@ -1,9 +1,8 @@
 // GPU competitor kernels of the benchmark suite: the erf-F0 and the
-// Tsuji-style gridded-LUT lanes, compiled by nvcc. Mirrors the
-// boys split (boys_cuda.cpp / boys_cuda.cu): the host translation
-// unit includes only the extern "C" seam in
-// boys_cuda_benchmark_kernels.hpp (nvcc TUs compile at
-// CMAKE_CUDA_STANDARD 20, so C++23 headers must not reach them).
+// Tsuji-style gridded-LUT lanes. nvcc TUs compile at CMAKE_CUDA_STANDARD 20, so
+// C++23 headers must not reach them: this file includes only CUDA and libm, and
+// reaches the host through the extern "C" seam of the companion header.
+
 #include <cuda_runtime.h>
 #include <math.h>
 #include <stddef.h>
@@ -12,10 +11,9 @@ namespace {
 
 constexpr double kHalfSqrtPi = 0.886226925452758014;
 
-// Tsuji-style LUT geometry ([Tsuji2025]): 1025 grid points over
-// x in [0, 32] at step 2^-5, degree-5 Taylor corrections, and a
-// semi-infinite boundary x < a*n + b above which the pure asymptotic series
-// is used.
+// Tsuji-style LUT geometry ([Tsuji2025]): 1025 grid points over x in [0, 32] at
+// step 2^-5, degree-5 Taylor corrections, and the asymptotic series above the
+// boundary x < a*n + b.
 constexpr double kLutInterval = 0.03125;
 constexpr int kLutXiCount = 1025;
 constexpr int kLutKmax = 5;
@@ -44,10 +42,7 @@ __global__ void BoysErfF64Kernel(const int* n, const double* x, double* out, siz
         out[i] = 1.0 / (2.0 * nn + 1.0);
         return;
     }
-    // The erf-F0 seed in rsqrt form. The
-    // boundary-adjacent worst (n = 32 near the asserted x = 10 domain edge)
-    // is the recursion's own turning-point rounding, not the seed's — the
-    // self-check's asserted domain carries the headroom.
+    // The erf-F0 seed in rsqrt form.
     double f = kHalfSqrtPi * rsqrt(xx) * erf(sqrt(xx));
     const double expx = exp(-xx);
     const double inv2x = 0.5 / xx;
@@ -112,10 +107,9 @@ __global__ void BoysLutF64Kernel(const int* n, const double* x, double* out, siz
 
 } // namespace
 
-// The host seam (boys_cuda_benchmark_kernels.hpp). Return codes are
-// cudaError_t values (0 = success) so the host TU can report failures with
-// cudaGetErrorString; launch errors surface on the host's sync, so the
-// launch functions return 0 unconditionally.
+// Return codes are cudaError_t values, 0 = success, so the host TU reports a
+// failure with cudaGetErrorString. Launch errors surface on the host's sync, so
+// the launch functions return 0 unconditionally.
 extern "C" {
 
 int BoysBenchSetDevice(int device) {

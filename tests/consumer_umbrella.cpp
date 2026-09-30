@@ -2910,10 +2910,13 @@ void CheckOptionAccuracy(Report& report) {
         }
     }
 
-    // This revision serves the whole option space, so the cross refuses nothing.
-    // The refusal example the check below needs is therefore a value outside the
-    // enumerations, which names no combination at all; a single-precision lane
-    // is used because that is the carriage that checks the enumerations.
+    // The cross refuses combinations, because the uniform partition is served at
+    // one route, one packing axis and one rung and its other cells are refused
+    // where they are named: the first refusal the walk reaches is the example
+    // printed below. The fallback is for a revision that serves the whole of the
+    // space, and what it names then is a value outside the enumerations, which
+    // names no combination at all; a single-precision lane is used because that
+    // is the carriage that checks the enumerations.
     if (!haveRefused)
     {
         refusedPrecision = boys::Precision::kFp32;

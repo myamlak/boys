@@ -16,10 +16,12 @@
 //    name, resolved where the line is written. A combination this program could
 //    not name would not compile, which is why this is a consumer check and not a
 //    reading. The one row of the partition axis this file writes no arm for is
-//    served at the reference multiplier alone: it has no rung for a call to pass
-//    and no second spelling to compare against, so it is named in
-//    kUnspelledPartitions with that reason and printed with the census rather
-//    than left out of it;
+//    served at every rung on one of its two routes and at the reference rung on
+//    the other: an arm here names a partition and not a member of one, so it
+//    would have to name the route whose rungs the library refuses beside the one
+//    whose rungs it serves, and the refused one is not an instantiation that
+//    exists. It is named in kUnspelledPartitions with that reason and printed
+//    with the census rather than left out of it;
 //
 //  * every value that comes back is judged twice. It is compared against the
 //    committed 45-digit reference grid within the bound the book states for the
@@ -138,8 +140,10 @@ struct Unspelled {
 
 constexpr std::array<Unspelled, 1> kUnspelledPartitions = {{
     {FitGranularity::kUniform,
-     "its cells are served at the reference multiplier alone, so there is no rung this file's "
-     "named entries could take as the call's own argument and no pair to compare"},
+     "its two routes' rungs do not agree: the Chebyshev member is served at every rung and the "
+     "rational member at the reference rung alone, and an arm here names the partition rather "
+     "than a member of it, so no arm could reach the served rungs without naming the refused "
+     "ones - which is not an instantiation that exists"},
 }};
 
 /// The precision classes this file sweeps: one per name the library publishes a

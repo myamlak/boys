@@ -1,11 +1,7 @@
-// The F16/Bf16 conversion contract (boys/f16.hpp):
-// round-to-nearest-even float -> half on the I/O boundary, verified bit by
-// bit against the IEEE-754 binary16 / bfloat16 rounding rules. The cases
-// cover every branch of FloatToHalf (Inf/NaN quieting, the 65520 RNE
-// overflow threshold, normal rounding, the 2^-25 zero-threshold tie, the
-// subnormal carry into 0x0400) and the RNE bit trick of FloatToBf16. The
-// assertions go through detail::F16Bits / F16FromBits so the same table
-// runs on the MSVC wrapper path and the stdfloat path (GCC/Clang CI).
+// The F16/Bf16 conversion contract: round-to-nearest-even float -> half on the
+// I/O boundary, verified bit by bit against the IEEE-754 binary16 / bfloat16
+// rounding rules. The assertions go through detail::F16Bits / F16FromBits so the
+// same table runs on the MSVC wrapper path and the stdfloat path (GCC/Clang CI).
 
 #include "boys/f16.hpp"
 

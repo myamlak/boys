@@ -410,8 +410,9 @@ TEST(BackendTest, ThePartitionNamesRoundTrip) {
 // refused that shape once already, at the fit selector (backend.hpp,
 // RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kUniform>, whose
 // first version was answered by the narrow partition), so what is pinned here is
-// that the uniform kernel is the uniform one and not a second name for the
-// narrow fits.
+// that each of the two members the row now claims is the one it names and not a
+// second name for the narrow fits - once for the Chebyshev member, and once for
+// the rational one.
 TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
     const std::span<const boys::FitGranularityInfo> rows = boys::BoysFitGranularities();
 
@@ -434,17 +435,28 @@ TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
     EXPECT_STREQ(uniform->name, boys::GranularityName(boys::FitGranularity::kUniform));
     EXPECT_STRNE(uniform->name, "unknown");
 
-    // One route, one packing axis and one rung, as the row states them.
+    // Both routes, both packing axes and every rung of the enumeration, as the
+    // row states them.
     EXPECT_TRUE(boys::FitGranularityHasRoute(*uniform, boys::FitRoute::kChebyshev));
-    EXPECT_FALSE(boys::FitGranularityHasRoute(*uniform, boys::FitRoute::kRationalMinimax));
+    EXPECT_TRUE(boys::FitGranularityHasRoute(*uniform, boys::FitRoute::kRationalMinimax));
     EXPECT_TRUE(boys::FitGranularityHasAxis(*uniform, boys::PackAxis::kArguments));
-    EXPECT_FALSE(boys::FitGranularityHasAxis(*uniform, boys::PackAxis::kOrders));
-    EXPECT_EQ(uniform->rungs, 1) << "the uniform table is stored at one degree and takes no rung";
+    EXPECT_TRUE(boys::FitGranularityHasAxis(*uniform, boys::PackAxis::kOrders));
+    EXPECT_EQ(uniform->rungs, static_cast<int>(boys::AccuracyTier::kRelaxed65536) + 1)
+        << "a rung of the uniform partition is the stored cells read uncut, so the row claims "
+           "every rung the enumeration names";
 
     // The row's fields against the accessor that answers a caller, over every
     // combination of the other axes: a combination the accessor serves and the
     // row does not claim is a claim the row is missing, and one the row claims
     // and the accessor refuses is a route or an axis the build does not have.
+    //
+    // The rung count is read per route and not off the row alone, because the
+    // row cannot state it: `rungs` is one number for the partition, and the
+    // partition serves every rung of the Chebyshev member - a rung of it is the
+    // stored cells read uncut - while the rational member's rung is not wired
+    // and is refused by the carrier (boys.cpp). So the Chebyshev route's claim
+    // is the row's rung count and the rational route's is the reference rung
+    // alone, which is the finer rule the test holds the accessor to.
     std::size_t served = 0;
 
     for (const boys::FitRouteInfo& route : boys::BoysFitRoutes())
@@ -459,9 +471,12 @@ TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
                     const boys::AccuracyFigure figure = boys::BoysAccuracyGuaranteed(
                         boys::Precision::kFp64, route.route, scheme.scheme, axis.axis,
                         boys::FitGranularity::kUniform, static_cast<boys::AccuracyTier>(raw));
+                    const int rungs = route.route == boys::FitRoute::kRationalMinimax
+                                          ? 1
+                                          : uniform->rungs;
                     const bool claimed =
                         boys::FitGranularityHasRoute(*uniform, route.route) &&
-                        boys::FitGranularityHasAxis(*uniform, axis.axis) && raw < uniform->rungs;
+                        boys::FitGranularityHasAxis(*uniform, axis.axis) && raw < rungs;
 
                     EXPECT_EQ(figure.available, claimed)
                         << "the uniform row says " << (claimed ? "served" : "refused")
@@ -492,10 +507,12 @@ TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
         }
     }
 
-    EXPECT_EQ(served, 4u)
-        << "the partition is served at the reference rung on the arguments axis and the "
-           "Chebyshev route alone: two evaluation schemes over the two rows the route table names "
-           "that route by - one per region - and nothing else";
+    EXPECT_EQ(served, 64u)
+        << "the partition is served at every rung of the Chebyshev route and the reference rung "
+           "of the rational one, over both packing axes: two evaluation schemes over the four "
+           "rows the route table names the two routes by - one per region each - over the two "
+           "axes the row carries and over 7 + 1 rungs, which is 2 x 2 x 4 x 8 = 64, and nothing "
+           "else";
 
     // And the entry the row claims runs, reads its own table, and is not the
     // narrow partition's under another name.
@@ -538,6 +555,53 @@ TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
         << "every value of the uniform entry is the narrow partition's bit for bit, over "
         << kArguments.size() << " arguments and " << (kNmax + 1)
         << " orders: a uniform policy is being answered from another partition's tables";
+
+    // The same check for the route this build added to the row, because the
+    // substitution it would catch is the one the rational member over the grid
+    // makes possible: its pairs are per interval and the narrow member's are per
+    // narrow piece, so an entry that answered a uniform rational policy from the
+    // narrow pairs would return certified numbers under the grid's name. The two
+    // members are the same family read over different partitions, so this is the
+    // comparison that separates them where two distant families would part for
+    // reasons that say nothing about the partition.
+    using UniformRatPolicy = boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+                                              boys::EvalScheme::kHorner,
+                                              boys::BoysBudget::kFloat,
+                                              boys::PackAxis::kArguments,
+                                              boys::FitGranularity::kUniform>;
+    using NarrowRatPolicy = boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+                                             boys::EvalScheme::kHorner,
+                                             boys::BoysBudget::kFloat,
+                                             boys::PackAxis::kArguments,
+                                             boys::FitGranularity::kNarrow>;
+
+    std::array<double, kNmax + 1> rational{};
+    std::array<double, kNmax + 1> narrowRational{};
+    std::size_t movedRational = 0;
+
+    for (const double x : kArguments)
+    {
+        boys::BoysAllOrders<1.0, UniformRatPolicy>(kNmax, x, rational.data());
+        boys::BoysAllOrders<1.0, NarrowRatPolicy>(kNmax, x, narrowRational.data());
+
+        for (int n = 0; n <= kNmax; ++n)
+        {
+            EXPECT_TRUE(std::isfinite(rational[static_cast<std::size_t>(n)]))
+                << "the uniform rational entry returned " << rational[static_cast<std::size_t>(n)]
+                << " at n = " << n << ", x = " << x;
+
+            movedRational +=
+                rational[static_cast<std::size_t>(n)] != narrowRational[static_cast<std::size_t>(n)]
+                    ? 1u
+                    : 0u;
+        }
+    }
+
+    EXPECT_GT(movedRational, 0u)
+        << "every value of the uniform rational entry is the narrow partition's bit for bit, over "
+        << kArguments.size() << " arguments and " << (kNmax + 1)
+        << " orders: the grid's rational member is being answered from the narrow partition's "
+           "pairs";
 }
 
 // The division forms report themselves the way the other axes do: one row per
@@ -567,4 +631,151 @@ TEST(BackendTest, TheDivisionFormAxisNamesItsMembers) {
     }
 
     EXPECT_TRUE(carriesDefault) << "the default form is not one of the rows this build reports";
+}
+
+// What each division form actually governs, measured rather than read off the
+// source. Three claims are asserted here and each is a claim the axis's own
+// documentation makes:
+//
+//  - the refined form is bit-identical to exact division, at every order and
+//    every argument, on both lanes. That is the claim the default form rests on
+//    - every published per-region figure is stated for the exact arithmetic, and
+//    the refined form has to deliver those values to carry that figure;
+//  - the plain form reaches the downward ladder, whose divisor is the step's
+//    constant rather than the argument. Before the constant's reciprocal was a
+//    table, a caller naming the plain form was served exact division there and
+//    nothing reported it. A zero count here is that substitution back again;
+//  - the plain form does NOT reach the single-precision lane's downward ladder.
+//    That lane's figure is one number for every form, and the plain form's
+//    reciprocal at that step takes it outside that number; the axis's
+//    documentation names the carve-out, and this is what holds it. The lane's
+//    upward ladders do take the form, which the fourth count shows - so the two
+//    together separate "the form is not applied on this lane" from "the form is
+//    not applied on this ladder".
+//
+// The counts are printed because a count is the measurement; the assertions are
+// on relations between them and not on the values.
+TEST(BackendTest, TheDivisionFormReachesTheLaddersItDocuments) {
+    using boys::BoysAllOrders;
+    using boys::BoysAllOrdersF32;
+    using boys::DivisionForm;
+    using boys::EvalPolicy;
+
+    constexpr auto kRoute = boys::kDefaultFitRoute;
+    constexpr auto kScheme = boys::kDefaultEvalScheme;
+    constexpr auto kBudget = boys::BoysBudget::kFloat;
+    constexpr auto kPack = boys::kDefaultPackAxis;
+    constexpr auto kGran = boys::kDefaultFitGranularity;
+
+    using DExact = EvalPolicy<kRoute, kScheme, kBudget, kPack, kGran, DivisionForm::kExactDivision>;
+    using DPlain = EvalPolicy<kRoute, kScheme, kBudget, kPack, kGran, DivisionForm::kPlainReciprocal>;
+    using DRefined =
+        EvalPolicy<kRoute, kScheme, kBudget, kPack, kGran, DivisionForm::kRefinedReciprocal>;
+
+    // Arguments below each lane's kX0, where the downward recursion runs, and
+    // above it, where the upward ladders do. The largest downward argument is the
+    // cell of the accuracy gate's own grid where the plain form's reciprocal
+    // leaves the float lane's figure, so the carve-out is asserted where it was
+    // found rather than at a convenient point.
+    constexpr double kDown[] = {0.01, 0.1, 0.5, 1.0, 2.0, 5.0, 7.0, 9.74054909, 11.5};
+    constexpr double kUp[] = {12.0, 15.0, 20.0, 28.9, 29.0, 40.0, 60.0, 120.0};
+    constexpr int kNmax = boys::kMaxBoysOrder;
+
+    std::size_t refinedMoved = 0;
+    std::size_t doubleDownMoved = 0;
+    std::size_t doubleUpMoved = 0;
+    std::size_t floatDownMoved = 0;
+    std::size_t floatUpMoved = 0;
+    std::size_t cells = 0;
+
+    std::array<double, kNmax + 1> dExact{};
+    std::array<double, kNmax + 1> dPlain{};
+    std::array<double, kNmax + 1> dRefined{};
+    std::array<float, kNmax + 1> fExact{};
+    std::array<float, kNmax + 1> fPlain{};
+    std::array<float, kNmax + 1> fRefined{};
+
+    const auto sweepDouble = [&](double x, bool downward) {
+        BoysAllOrders<boys::kBoysFullAccuracyMultiplier, DExact>(kNmax, x, dExact.data());
+        BoysAllOrders<boys::kBoysFullAccuracyMultiplier, DPlain>(kNmax, x, dPlain.data());
+        BoysAllOrders<boys::kBoysFullAccuracyMultiplier, DRefined>(kNmax, x, dRefined.data());
+
+        for (int n = 0; n <= kNmax; ++n) {
+            const std::size_t sn = static_cast<std::size_t>(n);
+            ++cells;
+
+            if (std::bit_cast<std::uint64_t>(dRefined[sn]) !=
+                std::bit_cast<std::uint64_t>(dExact[sn])) {
+                ++refinedMoved;
+            }
+
+            if (std::bit_cast<std::uint64_t>(dPlain[sn]) !=
+                std::bit_cast<std::uint64_t>(dExact[sn])) {
+                (downward ? doubleDownMoved : doubleUpMoved) += 1;
+            }
+        }
+    };
+
+    const auto sweepFloat = [&](float x, bool downward) {
+        BoysAllOrdersF32<boys::kBoysFullAccuracyMultiplier, DExact>(kNmax, x, fExact.data());
+        BoysAllOrdersF32<boys::kBoysFullAccuracyMultiplier, DPlain>(kNmax, x, fPlain.data());
+        BoysAllOrdersF32<boys::kBoysFullAccuracyMultiplier, DRefined>(kNmax, x, fRefined.data());
+
+        for (int n = 0; n <= kNmax; ++n) {
+            const std::size_t sn = static_cast<std::size_t>(n);
+            ++cells;
+
+            if (std::bit_cast<std::uint32_t>(fRefined[sn]) !=
+                std::bit_cast<std::uint32_t>(fExact[sn])) {
+                ++refinedMoved;
+            }
+
+            if (std::bit_cast<std::uint32_t>(fPlain[sn]) !=
+                std::bit_cast<std::uint32_t>(fExact[sn])) {
+                (downward ? floatDownMoved : floatUpMoved) += 1;
+            }
+        }
+    };
+
+    for (const double x : kDown) {
+        sweepDouble(x, true);
+        sweepFloat(static_cast<float>(x), true);
+    }
+
+    for (const double x : kUp) {
+        sweepDouble(x, false);
+        sweepFloat(static_cast<float>(x), false);
+    }
+
+    std::printf("boys: the division form over %zu cell(s) per pair - refined against exact moved "
+                "%zu;\n  the plain form against exact moved %zu in the double lane's downward "
+                "ladder and %zu\n  in its upward ones, %zu in the single lane's downward ladder "
+                "and %zu in its upward ones\n",
+                cells,
+                refinedMoved,
+                doubleDownMoved,
+                doubleUpMoved,
+                floatDownMoved,
+                floatUpMoved);
+
+    EXPECT_EQ(refinedMoved, 0u)
+        << "the refined form is documented as bit-identical to exact division, and it is not";
+
+    EXPECT_GT(doubleDownMoved, 0u)
+        << "the plain form reaches no cell of the double lane's downward ladder, whose divisor is "
+           "the step's constant: a caller naming it is served exact division there and nothing "
+           "reports it";
+
+    EXPECT_GT(doubleUpMoved, 0u) << "the plain form reaches no cell of the double lane's upward "
+                                    "ladders, so the axis selects no arithmetic there";
+
+    EXPECT_EQ(floatDownMoved, 0u)
+        << "the plain form has reached the single lane's downward ladder, which the axis's "
+           "documentation says it does not - and does not because serving it there takes the "
+           "ladder outside the 1.5e-7 the lane publishes. Removing this carve-out is a "
+           "measurement and not an edit: the lane's figure has to gain a form dimension first";
+
+    EXPECT_GT(floatUpMoved, 0u)
+        << "the plain form reaches no cell of the single lane either, so the two counts above "
+           "would both be zero for want of an axis rather than for a carve-out";
 }

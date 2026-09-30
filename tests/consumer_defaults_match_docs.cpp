@@ -1,20 +1,9 @@
-// The documented default, checked against the constant that implements it.
+// The default policy table of docs/lane-contract.md, read back against the four
+// `DefaultPolicy*` constants it describes.
 //
-// Three independent reviews of this library found the same hole, and one of them
-// demonstrated it: set `kDefaultFitGranularity` to `kShipped` — a real, different,
-// still-certified combination — and every gate in this tree stays green. The
-// accuracy gate checks bounds, and a different certified partition meets its own
-// bound too; `boys-consumer-defaults` checks that the named policy and the unnamed
-// one are the same call, which is true whatever the constant holds. So the table
-// in `docs/lane-contract.md` that tells a reader what "the default" is can stop
-// describing the library, and nothing would say so.
-//
-// This reads that table and compares it to the four `DefaultPolicy*` aliases' own
-// fields. The table stays hand-written, because it is prose a reader reads; this is
-// what keeps it from drifting away from the code it describes.
-//
-// The failure it is sized to catch is a silent one: a changed default that every
-// other check accepts, and a document that goes on describing the old one.
+// A changed default is still a certified combination meeting its own bound, so no
+// accuracy gate would notice it; this comparison is what keeps that table from
+// describing a library that no longer exists.
 
 #include "boys/boys.hpp"
 
@@ -28,9 +17,8 @@ namespace {
 
 int gFailures = 0;
 
-// One cell of a markdown table row, trimmed, with the code-span backticks a
-// table cell may carry removed: `boys::DefaultPolicyFp64` and the bare name are
-// the same name to a reader and must be the same name here.
+// One cell of a markdown table row, trimmed, with the code-span backticks it may
+// carry removed: `boys::DefaultPolicyFp64` and the bare name are one name here.
 std::string Trim(const std::string& s) {
     const std::size_t first = s.find_first_not_of(" \t\r\n");
 
@@ -67,10 +55,8 @@ std::vector<std::string> SplitRow(const std::string& line) {
     return cells;
 }
 
-// The four axes this table states, by the word the document uses for each. The
-// map lives here rather than in the library because the words are the document's
-// vocabulary, not the code's: a reader meets "chebyshev" and "narrow", and these
-// are what those words mean.
+// Each axis is matched by the word the document uses for it, which is why these
+// maps live here and not in the library: a reader meets "chebyshev" and "narrow".
 bool RouteFrom(const std::string& word, boys::FitRoute& out) {
     if (word == "chebyshev") {
         out = boys::FitRoute::kChebyshev;
@@ -196,8 +182,7 @@ int main() {
         return 1;
     }
 
-    // The table's header, which is how the block is found without pinning a line
-    // number that any edit above it would move.
+    // How the block is found: by this header, not by a line number an edit above would move.
     const std::string kHeader = "| Precision | Name | Fit route | Scheme | Granularity |";
     std::string line;
     bool in_table = false;

@@ -2437,13 +2437,13 @@ TEST(Combination, TheReplyIsTheTwoAccessorsFiguresAndTheirComparison) {
 
             // Two rows of this revision's space are narrower than their axes, and
             // every refusal here has to be one of them: the uniform partition,
-            // served on the double lane at one route, one packing axis and one
-            // rung, and the device lane's single-precision lane, whose entries
-            // cover the shipped Chebyshev ladder and the narrow and uniform
-            // partitions of it at the reference multiplier alone. A refusal
-            // naming anything else is a combination the rows do not account for,
-            // and it is counted here rather than accepted because there are
-            // refusals now.
+            // whose every rung the Chebyshev member's entries serve and whose
+            // rational member's rung the carrier refuses, and the device lane's
+            // single-precision lane, whose entries cover the shipped Chebyshev
+            // ladder and the narrow and uniform partitions of it at the reference
+            // multiplier alone. A refusal naming anything else is a combination
+            // the rows do not account for, and it is counted here rather than
+            // accepted because there are refusals now.
             if (option.granularity != boys::FitGranularity::kUniform &&
                 option.precision != boys::Precision::kFp32Device)
             {

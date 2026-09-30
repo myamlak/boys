@@ -2,20 +2,9 @@
 // machine and prints what it found, including whether it found enough to name
 // one.
 //
-// One process, one run: the probe warms up, calibrates its load instrument,
-// takes the passes, refines the options a class left tied, and reports. The
-// exit status is 0 whether or not a default was named — a refusal is one of this
-// tool's results, not a failure of it — so a script that wants the verdict reads
-// it from the text.
-//
-// The knobs move the workload to the caller's own shape (--count, --nmax,
-// --xrange), the protocol to the machine's own patience (--passes, --rounds,
-// --bg, --cal, --canary-spread), the refinement to the caller's own patience
-// (--refine-runs, --refine-factor), and the measured set to the caller's own
-// shortlist (--only, repeatable). Every value that was in force is printed in
-// the report, so a figure is never read without the protocol that produced it,
-// and a name that is no option of this library is printed as such rather than
-// silently measuring nothing.
+// The exit status is 0 whether or not a default was named — a refusal is one of
+// this tool's results, not a failure of it — so a script that wants the verdict
+// reads it from the text.
 #include "boys/boys_probe.hpp"
 
 #include <array>
@@ -187,8 +176,7 @@ int main(int argc, char** argv) {
                                                                        : "CANNOT DETERMINE");
 
     // The default and how it was reached, on one line a script can read: a
-    // majority winner and an arbitrary pick among equals are different answers,
-    // and the caller is told which one this is before reading the report.
+    // majority winner and a pick among equals are different answers.
     std::printf("default %s | reached by %s\n", report.recommended.c_str(),
                 boys::OptionProbeDefaultHowName(report.defaultHow).c_str());
 

@@ -564,3 +564,115 @@ TEST(BoysOrdersF32, EveryGroupTailIsThePerOrderValue) {
     EXPECT_LE(worstFromTruth, kF32Bar)
         << "a partial last group is outside the float lane's documented bar";
 }
+
+namespace {
+
+// The single-order entry at one scheme and one partition, at the arguments the
+// uniform partition's own domain ends inside of.
+template <boys::EvalScheme kScheme, boys::FitGranularity kGranularity>
+using SingleF32 =
+    boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
+                     boys::PackAxis::kArguments, kGranularity, boys::DivisionForm::kExactDivision>;
+
+// What one rung of the uniform partition answers, over the band between the
+// grid's join and kX1, read two ways: against the same policy's reference
+// reading, and against the shipped policy's reference reading.
+template <double kM, boys::EvalScheme kScheme>
+void UniformRungSweep(std::size_t& compared,
+                      std::size_t& moved,
+                      std::size_t& fromReference,
+                      float& movedAt,
+                      int& movedOrder) {
+    using Uniform = SingleF32<kScheme, boys::FitGranularity::kUniform>;
+    using Shipped = SingleF32<kScheme, boys::FitGranularity::kShipped>;
+
+    const float lo = boys::detail::f32::kFlatHiF32;
+    const float hi = static_cast<float>(boys::detail::kX1);
+
+    for (int step = 0; step <= 64; ++step)
+    {
+        const float x = lo + (hi - lo) * (static_cast<float>(step) / 64.0f);
+
+        for (int n = 0; n <= 8; ++n)
+        {
+            const float reference = boys::BoysSingleF32<1.0, Uniform>(n, x);
+            const float got = boys::BoysSingleF32<kM, Uniform>(n, x);
+            const float shipped = boys::BoysSingleF32<1.0, Shipped>(n, x);
+
+            ++compared;
+
+            if (got != reference)
+            {
+                ++moved;
+                movedAt = x;
+                movedOrder = n;
+            }
+
+            if (got != shipped)
+            {
+                ++fromReference;
+            }
+        }
+    }
+}
+
+} // namespace
+
+// The uniform partition's answer does not read the multiplier.
+//
+// The partition's cells are the grid's, stored at the degrees the derivation
+// fitted them at, so a rung of it is the reference reading and not a cut of one:
+// the criterion that would cut it scans the dropped tail to the first degree
+// that fits the rung's budget, and the full degree's tail is zero, so the scan
+// reaches it at every multiplier. Above the grid's join the table does not reach
+// and the entry's region path answers, and it must answer with the partition it
+// answers with at m = 1 - because the alternative is the rung body's fit, which
+// resolves every partition but the shipped one to the NARROW pieces
+// (ChebyshevFit32AtRung). A uniform policy reaching that body was answered by
+// the narrow member's region-B seed bit for bit over the whole of
+// [kFlatHiF32, kX1), where the same argument at m = 1 returned the shipped
+// member's value: certified numbers, from a partition the caller never named,
+// with nothing reporting it.
+//
+// So the test is stated on values rather than on a table, and it is the
+// invariant the partition's own shape gives: raising the multiplier changes
+// nothing about what a uniform policy returns, anywhere in its domain. The
+// second reading is the one that names the substitution, and it is a second
+// reading of the same values rather than a second test.
+TEST(BoysOrdersF32, TheUniformPartitionsAnswerDoesNotReadTheMultiplier) {
+    std::size_t compared = 0;
+    std::size_t moved = 0;
+    std::size_t fromReference = 0;
+    float movedAt = 0.0f;
+    int movedOrder = -1;
+
+    const auto sweep = [&]<double kM>(int) {
+        UniformRungSweep<kM, boys::EvalScheme::kSplitClenshaw>(
+            compared, moved, fromReference, movedAt, movedOrder);
+        UniformRungSweep<kM, boys::EvalScheme::kHorner>(compared, moved, fromReference, movedAt,
+                                                        movedOrder);
+    };
+
+    sweep.template operator()<64.0>(0);
+    sweep.template operator()<256.0>(0);
+    sweep.template operator()<1024.0>(0);
+    sweep.template operator()<4096.0>(0);
+    sweep.template operator()<16384.0>(0);
+    sweep.template operator()<65536.0>(0);
+
+    std::printf("  uniform partition over [kFlatHiF32, kX1): %zu values, %zu read the multiplier, "
+                "%zu differ from the shipped member's reference value\n",
+                compared,
+                moved,
+                fromReference);
+
+    EXPECT_GT(compared, 0u);
+
+    EXPECT_EQ(moved, 0u)
+        << "the uniform partition's value changed with the multiplier at x=" << movedAt
+        << " n=" << movedOrder << ": a rung reached a partition the caller did not name";
+
+    EXPECT_EQ(fromReference, 0u)
+        << "the uniform partition's value past the grid's join is not the member the reference "
+           "multiplier reads there";
+}

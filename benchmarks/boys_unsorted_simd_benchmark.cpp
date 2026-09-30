@@ -1,21 +1,13 @@
-// The unsorted-SIMD lane: the mixed per-vector kernel that evaluates all
-// three region paths (A piecewise Chebyshev, B F0-Chebyshev + upward with a
-// gathered e^{-x} table, C pure asymptotic) and blends per lane — the cost of
-// the unsorted input stream the engine actually faces, against the
-// region-sorted lanes of the companion sorted benchmark.
+// The unsorted-SIMD lane: one kernel evaluating all three region paths per vector
+// (A piecewise Chebyshev, B F0-Chebyshev + upward from a gathered e^{-x} table,
+// C pure asymptotic) and blending them per lane — the cost of the unsorted input
+// stream, against the region-sorted lanes of the companion sorted benchmark.
 //
-// It runs on the shipped coefficient tables (boys::detail::
-// kPieces / kPieceStart / kCoeffs / kBcoeffs / kBDeg / kX0 / kX1) and follows
-// the shipped kernel's ExpTable convention: rows padded to 8 doubles, grid
-// index pre-shifted by 3 before the scale-8 gather. A copy that skipped that
-// shift reads the wrong rows and returns garbage over the whole array, so
-// --self-check pins the values against BoysSingle rather than assuming it.
-// The scalar tail uses the certified BoysSingle<double> reference.
-//
-// Custom main(): --self-check runs the verifier (max |out - BoysSingle(8,
-// x)| over the benchmark inputs, budget 5.5e-14) and exits; the default
-// mode runs the measurement protocol (warmup + 3 passes, min/median/max,
-// median = the cell the run reports).
+// It runs on the shipped coefficient tables and follows the shipped kernel's
+// ExpTable convention: rows padded to 8 doubles, grid index pre-shifted by 3
+// before the scale-8 gather. A copy that skipped that shift reads the wrong rows
+// and returns garbage over the whole array, so --self-check pins the values
+// against BoysSingle rather than assuming it.
 #include "boys/boys.hpp"
 #include "boys/boys_coefficients.hpp"
 
@@ -39,20 +31,12 @@ constexpr double kHalfSqrtPi = 0.886226925452758014;
 
 // e^{-x} on [0, 30]: a degree-4 Taylor table, one row per grid abscissa
 // x_i = i * kStep, rows padded to 8 doubles so the gathers can use the legal
-// scale 8. Mirrors the shipped kernel construction (the ~192 KB gather table
-// the footprint figures in tests/boys_test.cpp cite).
+// scale 8.
 //
-// A row holds the quartic Taylor polynomial of e^{-x} at x_i, written in the
-// monomial basis of the ABSOLUTE argument x so that Eval4 is a plain Horner
-// chain. Split e^{-x} = e^{-x_i} e^{-h} at h = x - x_i and expand the binomial
-// powers of h = x - x_i; the coefficient of x^k is
-//
-//     a_k = e^{-x_i} * (-1)^k * S_{4-k} / k!,   S_m = sum_{j=0..m} x_i^j / j!.
-//
-// The row stores (-1)^k a_k = e^{-x_i} S_{4-k} / k!, i.e. the alternating sign
-// is folded into the table and taken back out by the sign pattern of Eval4's
-// FMA chain. Elementary Taylor expansion of the exponential; the table seeds
-// the Boys kernel [Boys1950].
+// A row holds the quartic Taylor polynomial of e^{-x} at x_i in the monomial
+// basis of the ABSOLUTE argument x, so that Eval4 is a plain Horner chain. The
+// alternating sign that basis carries is folded into the stored coefficients and
+// taken back out by the sign pattern of Eval4's FMA chain.
 class ExpTable {
 public:
     static constexpr double kStep = 0.01;
@@ -65,8 +49,7 @@ public:
             const double x = i * kStep;
             const double decay = std::exp(-x);
 
-            // partialSum[m] = sum_{j=0..m} x^j / j!, built upward on the
-            // running term x^j / j! (one multiply-and-divide per step).
+            // partialSum[m] = sum_{j=0..m} x^j / j!
             double term = 1.0;
             double running = 1.0;
             double partialSum[kDegree + 1];
@@ -90,13 +73,12 @@ public:
         }
     }
 
-    // The stored coefficients are the ALTERNATING-sign monomial form of the
-    // Taylor sum sum_k (z - x)^k / k! (each power's sign folded into its
-    // stored value): evaluate c4*x^4 - c3*x^3 + c2*x^2 - c1*x + c0.
+    // The stored coefficients are the ALTERNATING-sign monomial form: evaluate
+    // c4*x^4 - c3*x^3 + c2*x^2 - c1*x + c0.
     __m256d Eval4(__m256d x) const noexcept {
         __m128i index = _mm256_cvtpd_epi32(_mm256_mul_pd(x, _mm256_set1_pd(1.0 / kStep)));
         index = _mm_min_epi32(index, _mm_set1_epi32(kNumPoints));
-        // Rows are 8 doubles apart; the grid index pre-shifts by 3 so the
+        // Rows are 8 doubles apart: the grid index pre-shifts by 3 so the
         // scale-8 gather lands on the row address.
         index = _mm_slli_epi32(index, 3);
         __m256d c0 = _mm256_i32gather_pd(&_coefficients[0][0], index, 8);
@@ -167,9 +149,8 @@ __m256d Clenshaw4Split(const boys::detail::OrderPiece& piece, __m256d xv) {
     return _mm256_fmadd_pd(t, odd, even);
 }
 
-// The unsorted variant: all three paths computed per vector, blended per
-// lane. Measures the divergence penalty vs. the sorted region-specialized
-// lanes of the companion sorted benchmark.
+// The unsorted variant: all three paths computed per vector, blended per lane.
+// Measures the divergence penalty against the region-specialized lanes.
 void ChebSimdMixed(
     int n, const double* x, double* out, std::size_t count, const ExpTable& expTable) {
     using namespace boys::detail;
@@ -295,8 +276,7 @@ double MaxAbsError(const double* out, const double* x, std::size_t count, double
 int main(int argc, char** argv) {
     const bool selfCheck = argc > 1 && std::strcmp(argv[1], "--self-check") == 0;
 
-    // The unsorted workload: x uniform in [0, 40], rng(46),
-    // order 8 for the whole array.
+    // The unsorted workload: x uniform in [0, 40], rng(46), order 8 throughout.
     std::mt19937_64 rng(46);
     std::uniform_real_distribution<double> xd(0.0, 40.0);
     std::vector<double> x(kInputCount);
@@ -337,9 +317,8 @@ int main(int argc, char** argv) {
 
     std::sort(passes.begin(), passes.end());
     const double median = passes[1];
-    // count/median is items per millisecond = 1e3 items/s; the /1e3 below is
-    // what makes the printed value the unit its field names (Mvals/s), at the
-    // three decimals this driver's rows carry.
+    // count/median is items per millisecond, i.e. 1e3 items/s; the /1e3 below
+    // makes the printed value the unit its field names (Mvals/s).
     std::printf(
         "kernel: cheb-simd-unsorted-n8 | workload: uniform-x40-n8 | count: %zu | passes: %d | "
         "min_ms: %.3f | median_ms: %.3f | max_ms: %.3f | median_Mvals_per_s: %.3f\n",
