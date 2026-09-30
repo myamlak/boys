@@ -464,6 +464,31 @@ jobs:
         if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_doc_arithmetic.py --strict
+      # The lane rows' `source` members are what the example programs print,
+      # and the documents quote them: in a `(from ...)` beside a figure, in a
+      # `[...]` in a column, and in the `bound: ...` cell of a lane-contract
+      # row. A field that grows while a document keeps the text it used to
+      # carry leaves the document describing output the programs no longer
+      # produce, and until this step nothing read the two against each other.
+      # The fp64 and fp32 rows were edited into 583- and 1123-character
+      # rationale paragraphs while docs/getting-started.md kept the
+      # 24-character sentence those rows had said, so the examples printed a
+      # wall into a table column and the documents were quietly wrong about
+      # what they print - caught then by a lane that happened to capture the
+      # programs' output, not by a gate.
+      #
+      # This step fails the leg on a run that is the beginning of a source
+      # string and stops there, and prints every other run it read as one it
+      # makes no claim about: the same brackets hold the documents'
+      # cross-reference labels and the same cells hold their own prose, so a
+      # check that reported those would be reporting its own reader. It reads
+      # the documents and src/boys.cpp and nothing else - no build, no
+      # compiler, no network - so it is scoped to one combination like the
+      # gates above it.
+      - name: Docs (the runs the prose quotes)
+        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_doc_transcripts.py --check
       - name: Docs (zero-warning Doxygen gate)
         if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: cmake --build build --target boys-docs
