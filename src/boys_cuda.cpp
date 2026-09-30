@@ -51,6 +51,10 @@ int BoysCudaLaunchAllOrdersF32Uniform(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32UniformHorner(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF32UniformRat(
+    const int* n, const double* x, float* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64UniformRat(
+    const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32Narrow(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32NarrowMono(
@@ -811,6 +815,24 @@ BoysStatus BoysCuda::DeviceTables(BoysDeviceTables* out) {
     tables.flatOffsets = static_cast<const int*>(tail[kBoysDeviceTablesTailFlatGrid + 1]);
     tables.flatDegs32 = static_cast<const int*>(tail[kBoysDeviceTablesTailFlatGrid + 2]);
     tables.flatOffsets32 = static_cast<const int*>(tail[kBoysDeviceTablesTailFlatGrid + 3]);
+
+    // The same two grids on their rational route, out of the two groups appended
+    // after that one: the pool and the four columns one row is addressed with.
+    // They are handed over together for the reason the Chebyshev grid's are — the
+    // pool alone is a table no reader can step, because this route's stride is
+    // the interval's own stored count and not a constant of the grid — and the
+    // readiness test of that route is what a handle missing one of them fails.
+    tables.flatRatCoeffs = static_cast<const double*>(tail[kBoysDeviceTablesTailRatGrid]);
+    tables.flatRatNumDeg = static_cast<const int*>(tail[kBoysDeviceTablesTailRatGrid + 1]);
+    tables.flatRatDenDeg = static_cast<const int*>(tail[kBoysDeviceTablesTailRatGrid + 2]);
+    tables.flatRatStored = static_cast<const int*>(tail[kBoysDeviceTablesTailRatGrid + 3]);
+    tables.flatRatOffsets = static_cast<const int*>(tail[kBoysDeviceTablesTailRatGrid + 4]);
+
+    tables.flatRatCoeffs32 = static_cast<const float*>(tail[kBoysDeviceTablesTailRatGrid32]);
+    tables.flatRatNumDeg32 = static_cast<const int*>(tail[kBoysDeviceTablesTailRatGrid32 + 1]);
+    tables.flatRatDenDeg32 = static_cast<const int*>(tail[kBoysDeviceTablesTailRatGrid32 + 2]);
+    tables.flatRatStored32 = static_cast<const int*>(tail[kBoysDeviceTablesTailRatGrid32 + 3]);
+    tables.flatRatOffsets32 = static_cast<const int*>(tail[kBoysDeviceTablesTailRatGrid32 + 4]);
 
     *out = tables;
     return BoysStatus::kSuccess;
@@ -1839,6 +1861,108 @@ BoysStatus BoysCuda::AllOrdersF32UniformHornerAtRung(
 }
 
 
+// The grid's rational member, whose contract is the entry above's with one thing
+// different: the table it reads is one numerator/denominator pair per interval
+// rather than one polynomial per interval, so the launch below is a kernel of its
+// own and not the Chebyshev one. Everything else is the uniform route's shape -
+// no rung's criterion cuts this table either, so every rung is served, the rung
+// branch queues the same launcher, and the entry passed twice to RungServedByEntry
+// is that statement rather than an oversight.
+template <double kAccuracyMultiplier>
+BoysStatus BoysCuda::AllOrdersF32UniformRat(
+    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    static_assert(DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32UniformRat, kAccuracyMultiplier),
+                  "this entry does not serve the rung this instantiation names: which rungs it "
+                  "serves is DeviceEntryServedAtRung (boys_cuda_options.hpp)");
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    if constexpr (kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
+    {
+        return RunLaunch(BoysCudaLaunchAllOrdersF32UniformRat, n, x, out, count, stream);
+    } else
+    {
+        return LaunchEffRung<kAccuracyMultiplier>(BoysCudaLaunchAllOrdersF32UniformRat, n, x, out,
+                                                  count, stream);
+    }
+}
+
+BoysStatus BoysCuda::AllOrdersF32UniformRatAtRung(
+    double multiplier, const int* n, const double* x, float* out, std::size_t count,
+    void* stream) {
+    return RungServedByEntry(DeviceEntry::kAllOrdersF32UniformRat, multiplier,
+                             BoysCudaLaunchAllOrdersF32UniformRat, n, x, out, count, stream);
+}
+
+template <double kAccuracyMultiplier>
+BoysStatus BoysCuda::AllOrdersF32UniformRatHorner(
+    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    static_assert(
+        DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32UniformRatHorner, kAccuracyMultiplier),
+        "this entry does not serve the rung this instantiation names: which rungs it serves is "
+        "DeviceEntryServedAtRung (boys_cuda_options.hpp)");
+
+    return AllOrdersF32UniformRat<kAccuracyMultiplier>(n, x, out, count, stream);
+}
+
+BoysStatus BoysCuda::AllOrdersF32UniformRatHornerAtRung(
+    double multiplier, const int* n, const double* x, float* out, std::size_t count,
+    void* stream) {
+    return RungServedByEntry(DeviceEntry::kAllOrdersF32UniformRatHorner, multiplier,
+                             BoysCudaLaunchAllOrdersF32UniformRat, n, x, out, count, stream);
+}
+
+template <double kAccuracyMultiplier>
+BoysStatus BoysCuda::AllOrdersF64UniformRat(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    static_assert(DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF64UniformRat, kAccuracyMultiplier),
+                  "this entry does not serve the rung this instantiation names: which rungs it "
+                  "serves is DeviceEntryServedAtRung (boys_cuda_options.hpp)");
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    if constexpr (kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
+    {
+        return RunLaunch(BoysCudaLaunchAllOrdersF64UniformRat, n, x, out, count, stream);
+    } else
+    {
+        return LaunchEffRung<kAccuracyMultiplier>(BoysCudaLaunchAllOrdersF64UniformRat, n, x, out,
+                                                  count, stream);
+    }
+}
+
+BoysStatus BoysCuda::AllOrdersF64UniformRatAtRung(
+    double multiplier, const int* n, const double* x, double* out, std::size_t count,
+    void* stream) {
+    return RungServedByEntry(DeviceEntry::kAllOrdersF64UniformRat, multiplier,
+                             BoysCudaLaunchAllOrdersF64UniformRat, n, x, out, count, stream);
+}
+
+template <double kAccuracyMultiplier>
+BoysStatus BoysCuda::AllOrdersF64UniformRatHorner(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    static_assert(
+        DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF64UniformRatHorner, kAccuracyMultiplier),
+        "this entry does not serve the rung this instantiation names: which rungs it serves is "
+        "DeviceEntryServedAtRung (boys_cuda_options.hpp)");
+
+    return AllOrdersF64UniformRat<kAccuracyMultiplier>(n, x, out, count, stream);
+}
+
+BoysStatus BoysCuda::AllOrdersF64UniformRatHornerAtRung(
+    double multiplier, const int* n, const double* x, double* out, std::size_t count,
+    void* stream) {
+    return RungServedByEntry(DeviceEntry::kAllOrdersF64UniformRatHorner, multiplier,
+                             BoysCudaLaunchAllOrdersF64UniformRat, n, x, out, count, stream);
+}
+
+
 template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF32Narrow(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
@@ -2566,6 +2690,16 @@ template BoysStatus BoysCuda::AllOrdersF32Uniform<1.0>(
     const int*, const double*, float*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF32UniformHorner<1.0>(
     const int*, const double*, float*, std::size_t, void*);
+// The grid's rational member on both lanes, whose rungs are the rungs above
+// (boys_cuda_options.hpp, DeviceEntryServedAtRung).
+template BoysStatus BoysCuda::AllOrdersF32UniformRat<1.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32UniformRatHorner<1.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64UniformRat<1.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64UniformRatHorner<1.0>(
+    const int*, const double*, double*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF32Narrow<1.0>(
     const int*, const double*, float*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF32NarrowMono<1.0>(
@@ -3173,6 +3307,99 @@ template BoysStatus BoysCuda::AllOrdersF32Uniform<65536.0>(
 template BoysStatus BoysCuda::AllOrdersF32Uniform<1e8>(
     const int*, const double*, float*, std::size_t, void*);
 
+// The grid's rational member at the same eleven rungs, on both lanes. It carries
+// all of them for the reason the rows above do: no rung's criterion cuts this
+// table either, so every one of them reads the stored pairs uncut and the same
+// launcher runs.
+template BoysStatus BoysCuda::AllOrdersF32UniformRat<2.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32UniformRat<10.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32UniformRat<64.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32UniformRat<100.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32UniformRat<256.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32UniformRat<1024.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32UniformRat<4096.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32UniformRat<1e4>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32UniformRat<16384.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32UniformRat<65536.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32UniformRat<1e8>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32UniformRatHorner<2.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32UniformRatHorner<10.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32UniformRatHorner<64.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32UniformRatHorner<100.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32UniformRatHorner<256.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32UniformRatHorner<1024.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32UniformRatHorner<4096.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32UniformRatHorner<1e4>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32UniformRatHorner<16384.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32UniformRatHorner<65536.0>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF32UniformRatHorner<1e8>(
+    const int*, const double*, float*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64UniformRat<2.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64UniformRat<10.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64UniformRat<64.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64UniformRat<100.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64UniformRat<256.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64UniformRat<1024.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64UniformRat<4096.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64UniformRat<1e4>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64UniformRat<16384.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64UniformRat<65536.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64UniformRat<1e8>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64UniformRatHorner<2.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64UniformRatHorner<10.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64UniformRatHorner<64.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64UniformRatHorner<100.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64UniformRatHorner<256.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64UniformRatHorner<1024.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64UniformRatHorner<4096.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64UniformRatHorner<1e4>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64UniformRatHorner<16384.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64UniformRatHorner<65536.0>(
+    const int*, const double*, double*, std::size_t, void*);
+template BoysStatus BoysCuda::AllOrdersF64UniformRatHorner<1e8>(
+    const int*, const double*, double*, std::size_t, void*);
+
 template BoysStatus BoysCuda::AllOrdersF32UniformHorner<2.0>(
     const int*, const double*, float*, std::size_t, void*);
 template BoysStatus BoysCuda::AllOrdersF32UniformHorner<10.0>(
@@ -3749,6 +3976,34 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme, RegionBExp::kAccurate,
      BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kHorner},
 
+    // The same grid on its RATIONAL route, the four rows the enumerators above
+    // name. The pair is stored in the monomial form the family is stored in
+    // everywhere, so both scheme names reach one arithmetic and each pair below
+    // runs one kernel. The bound is the double batch lane's for the reason the
+    // Chebyshev grid's rows state, and the axis is the route: the partition is
+    // already named by the rows above it, so what these add is the family of fit
+    // over the grid.
+    {DeviceEntry::kAllOrdersF64UniformRat, "all-orders-fp64-uniform-rat",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kSplitClenshaw,
+     FitRoute::kRationalMinimax},
+    {DeviceEntry::kAllOrdersF64UniformRatHorner, "all-orders-fp64-uniform-rat-horner",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kHorner,
+     FitRoute::kRationalMinimax},
+    {DeviceEntry::kAllOrdersF64OrdersUniformRat, "all-orders-fp64-orders-uniform-rat",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kSplitClenshaw,
+     FitRoute::kRationalMinimax},
+    {DeviceEntry::kAllOrdersF64OrdersUniformRatHorner, "all-orders-fp64-orders-uniform-rat-horner",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kHorner,
+     FitRoute::kRationalMinimax},
+
     // The float lane's own partition and its own grid, which the device lane had
     // no row for. Both are the lane's tables and not a re-cut of the double
     // lane's: the narrow pieces are the float lane's 218 at degree 6 against the
@@ -3783,6 +4038,7 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme, RegionBExp::kAccurate,
      BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr, EvalScheme::kHorner},
 
+
     // The float lane's rational route, one pair of rows per partition. The route
     // is a family and not a basis, so its pair is stored in one form and both
     // scheme names reach the one arithmetic — the pair is a numerator and a
@@ -3807,6 +4063,20 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
      BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr, EvalScheme::kSplitClenshaw,
      FitRoute::kRationalMinimax},
     {DeviceEntry::kAllOrdersF32NarrowRatHorner, "all-orders-fp32-narrow-rat-horner",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr, EvalScheme::kHorner,
+     FitRoute::kRationalMinimax},
+    // The grid on the rational route, the float lane's own member over its own
+    // intervals. The bound is this lane's, as the piecewise rational rows' is and
+    // for the same reason: the member is certified in this lane's arithmetic
+    // against this lane's bar.
+    {DeviceEntry::kAllOrdersF32UniformRat, "all-orders-fp32-uniform-rat",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr, EvalScheme::kSplitClenshaw,
+     FitRoute::kRationalMinimax},
+    {DeviceEntry::kAllOrdersF32UniformRatHorner, "all-orders-fp32-uniform-rat-horner",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
      BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr, EvalScheme::kHorner,
@@ -3860,6 +4130,21 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme, RegionBExp::kAccurate,
      BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr, EvalScheme::kHorner},
+
+    // The same two rows on the lane's other packing axis, which for this route
+    // has one member: the grid's rows are stored per interval at the interval's
+    // own pair, so no gather has a stride to step and the two rows run the
+    // per-argument kernel.
+    {DeviceEntry::kAllOrdersF32OrdersUniformRat, "all-orders-fp32-orders-uniform-rat",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr, EvalScheme::kSplitClenshaw,
+     FitRoute::kRationalMinimax},
+    {DeviceEntry::kAllOrdersF32OrdersUniformRatHorner, "all-orders-fp32-orders-uniform-rat-horner",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr, EvalScheme::kHorner,
+     FitRoute::kRationalMinimax},
 
     {DeviceEntry::kAllNF64, "all-n-fp64", DeviceOptionGroup::kLaunched,
      DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllN, DeviceOptionQuestion::kAllN,
@@ -3982,6 +4267,21 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
      RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr,
      EvalScheme::kHorner},
 
+    // The grid's rational member, in the caller's own kernel. Every launched row
+    // of this lane has a device-callable twin, and this one's is the same body:
+    // the entry reads the handle's pointers and the reader behind it is the one
+    // the launched kernel runs.
+    {DeviceEntry::kDeviceAllOrdersF64UniformRat, "device-all-orders-fp64-uniform-rat",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
+     DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute,
+     RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr,
+     EvalScheme::kSplitClenshaw, FitRoute::kRationalMinimax},
+    {DeviceEntry::kDeviceAllOrdersF64UniformRatHorner, "device-all-orders-fp64-uniform-rat-horner",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
+     DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute,
+     RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr,
+     EvalScheme::kHorner, FitRoute::kRationalMinimax},
+
     {DeviceEntry::kDeviceAllOrdersF32Narrow, "device-all-orders-fp32-narrow",
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp32,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kPartition,
@@ -4022,6 +4322,17 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme,
      RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr,
      EvalScheme::kHorner},
+
+    {DeviceEntry::kDeviceAllOrdersF32UniformRat, "device-all-orders-fp32-uniform-rat",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp32,
+     DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute,
+     RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr,
+     EvalScheme::kSplitClenshaw, FitRoute::kRationalMinimax},
+    {DeviceEntry::kDeviceAllOrdersF32UniformRatHorner, "device-all-orders-fp32-uniform-rat-horner",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp32,
+     DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute,
+     RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr,
+     EvalScheme::kHorner, FitRoute::kRationalMinimax},
 };
 
 // The report's contract, checked at compile time: one row per DeviceEntry and

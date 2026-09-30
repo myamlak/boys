@@ -1350,16 +1350,18 @@ struct RationalFitNarrowAtRung {
 //
 // The uniform partition is neither of the two. Its member stores one pair per
 // interval and no per-order effective-degree column, so a rung of it has no
-// pair to cut, and the entries refuse one where the policy is named
-// (RefuseUniformAtRung, which refuses this and only this of the partition's
-// cells). This template refuses it as well, and names a fit only for the two
-// partitions it was written for: the conditional that stood here read every
+// pair to cut - and it needs none: the pairs are admissible at every multiplier
+// by the same reading the Chebyshev member's degree is, and the entries select
+// the reference body for this partition at every multiplier rather than a rung
+// path, so this template is never asked for a uniform policy and never reaches
+// a substitution. This template refuses one anyway, and names a fit only for the
+// two partitions it was written for: the conditional that stood here read every
 // partition but the shipped one as the narrow one, so a uniform rung reaching it
 // would have been answered by the narrow member's pairs under the grid's name -
 // the substitution the partition's route axis exists to make impossible rather
 // than to answer. The barrier is this template's and not the entry guard's: a
-// revision that wires the member's rung relaxes that guard, and the resolution
-// would then be silent.
+// revision that wired the member's rung down this path would resolve it
+// silently, and this is where that is refused.
 template <double kAccuracyMultiplier, FitGranularity kGranularity>
 struct RationalRouteFitAtRung {
     static_assert(kGranularity == FitGranularity::kShipped ||
@@ -1654,31 +1656,165 @@ inline FlatPointF32 FlatLocateF32(float x) noexcept {
                         2.0f * (u - static_cast<float>(iv)) - 1.0f};
 }
 
-/// One order off the float uniform table, read from that order's own cell and
-/// summed at that cell's own degree.
-template <EvalScheme kScheme>
-float UniformOrderAtF32(const FlatPointF32& at, int l) noexcept {
-    const int deg = detail::f32::kFlatDegsF32[at.iv];
-    const std::size_t base =
-        at.block + static_cast<std::size_t>(l) * static_cast<std::size_t>(deg + 1);
+// The rational member over the FLOAT lane's uniform grid: one numerator/
+// denominator pair per interval of the same grid, fitted over that interval's
+// own cell and read at the mapped argument FlatLocateF32 builds for it, in the
+// stored form RationalFit32 and RationalFitNarrow read their rows with - the
+// numerator ascending, then the denominator's q_1..q_k with q_0 held at 1, so a
+// caller sums the numerator by Horner, sums the denominator, and divides once.
+//
+// The double member's shape at this lane's tables, and a fit of its own rather
+// than a reading of that one: the double lane's pairs are stored in binary64
+// over the double grid's cells, and this lane stores binary32 over its own - a
+// different width, a different interval count and different cells. What the
+// member brings to the partition is the pairs, one per interval, and it is one
+// fit under either scheme for the reason the shipped and narrow members of the
+// family are: its coefficients are a monomial numerator and denominator with no
+// Chebyshev form to sum.
+//
+// The three members the grid does not serve refuse exactly as
+// RationalFitUniform's do, for the reason stated there.
+struct RationalFitUniformF32 {
+    using Partition = NarrowRegionAPartition;
 
-    return FitSum<kScheme, backend::ScalarFp32>(detail::f32::kFlatCoeffsF32.data() + base,
-                                                detail::f32::kFlatMonoCoeffsF32.data() + base,
-                                                deg,
-                                                at.t);
+    static constexpr double kRegionAFitsFrom = detail::kX1;
+
+    static float EvalPiece(std::size_t index, float t) noexcept {
+        assert(!"the float uniform grid's rational member is not piece-indexed: it is "
+                        "one pair per interval, reached through the interval's own "
+                        "offset. A body reaching here is a body this partition does not "
+                        "serve, and it must refuse the partition where it is named");
+        return std::nanf("") + static_cast<float>(index) + t;
+    }
+
+    static float RegionBSeed(float x, int /*order*/) noexcept {
+        assert(!"the float uniform grid's rational member stores no region-B seed: "
+                        "region B is one of the walks this route replaces with a fixed "
+                        "grid, not a region it reads");
+        return std::nanf("") + x;
+    }
+
+    template <DivisionForm kForm = kDefaultDivisionForm>
+    struct BandSource {
+        explicit BandSource(float x) noexcept
+        {
+            assert(!"the float uniform grid's rational member has no band source: every "
+                            "order is read from its own pair, so there is no seed to step "
+                            "from");
+            (void)x;
+        }
+
+        float Next(int l, float x) noexcept {
+            assert(!"the float uniform grid's rational member has no band to step along: "
+                            "every order is read from its own pair, so there is no next "
+                            "one to build");
+            return std::nanf("") + static_cast<float>(l) + x;
+        }
+    };
+};
+
+// Every interval's pair is checked against the read rule here rather than
+// assumed from it, on the double member's reading: a row is reached at
+// offsets[iv] + l * stored[iv], with the numerator's m + 1 coefficients and the
+// denominator's k after them, so a stored count that is not m + 1 + k, a pair
+// with no denominator term to divide by, or a block that is not one row per
+// order reads a neighbouring interval's coefficients as though they were this
+// one's - and nothing downstream would report it.
+constexpr bool FlatRatPairsCarriedF32() noexcept
+{
+    for (std::size_t iv = 0;
+         iv < static_cast<std::size_t>(detail::f32::kFlatRatIntervalsF32);
+         ++iv)
+    {
+        const int m = detail::f32::kFlatRatNumDegF32[iv];
+        const int k = detail::f32::kFlatRatDenDegF32[iv];
+
+        if (m < 1 || k < 1 || detail::f32::kFlatRatStoredF32[iv] != m + 1 + k ||
+            detail::f32::kFlatRatOffsetsF32[iv + 1] -
+                    detail::f32::kFlatRatOffsetsF32[iv] !=
+                (kMaxBoysOrder + 1) * detail::f32::kFlatRatStoredF32[iv])
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static_assert(FlatRatPairsCarriedF32(),
+              "the float rational member over the uniform grid must carry, at every "
+              "interval, a numerator, a denominator with a non-constant term and one row "
+              "per order at the stride its stored count states: the reader reaches a row "
+              "at offset + order * stored, so anything else reads another interval's "
+              "pair");
+
+/// One order off the float grid's rational member: this interval's row at this
+/// order, read by the same steps RationalFit32::EvalOrder reads a shipped
+/// piece's row with - the numerator by Horner, then the denominator's q_1..q_k
+/// with its constant term held at 1, then one division - in the lane's own
+/// width, which is the arithmetic the pairs were fitted and certified in.
+inline float RationalUniformOrderAtF32(const FlatPointF32& at, int l) noexcept {
+    const std::size_t stored =
+        static_cast<std::size_t>(detail::f32::kFlatRatStoredF32[at.iv]);
+    const float* c = detail::f32::kFlatRatCoeffsF32.data() +
+                     static_cast<std::size_t>(detail::f32::kFlatRatOffsetsF32[at.iv]) +
+                     static_cast<std::size_t>(l) * stored;
+    const int m = detail::f32::kFlatRatNumDegF32[at.iv];
+    const int k = detail::f32::kFlatRatDenDegF32[at.iv];
+    float num = c[m];
+
+    for (int j = m - 1; j >= 0; --j)
+    {
+        num = backend::ScalarFp32::MulAdd(num, at.t, c[j]);
+    }
+
+    float den = c[m + k];
+
+    for (int j = k - 1; j >= 1; --j)
+    {
+        den = backend::ScalarFp32::MulAdd(den, at.t, c[m + j]);
+    }
+
+    return num / backend::ScalarFp32::MulAdd(den, at.t, 1.0f);
+}
+
+/// One order off the float uniform grid, at the route the policy names: the
+/// Chebyshev member's cell, summed at that cell's own degree, or the rational
+/// member's pair, read at that interval's own degrees. The two are reached
+/// through one `FlatPointF32` - the interval the argument fell in and the mapped
+/// argument into it are the locator's, and each member finds its own rows
+/// through them - so the dispatch is the whole of the difference.
+template <typename Policy>
+float UniformOrderAtF32(const FlatPointF32& at, int l) noexcept {
+    if constexpr (Policy::kRoute == FitRoute::kRationalMinimax)
+    {
+        return RationalUniformOrderAtF32(at, l);
+    }
+    else
+    {
+        const int deg = detail::f32::kFlatDegsF32[at.iv];
+        const std::size_t base =
+            at.block + static_cast<std::size_t>(l) * static_cast<std::size_t>(deg + 1);
+
+        return FitSum<Policy::kScheme, backend::ScalarFp32>(
+            detail::f32::kFlatCoeffsF32.data() + base,
+            detail::f32::kFlatMonoCoeffsF32.data() + base,
+            deg,
+            at.t);
+    }
 }
 
 /// One argument's ladder off the float uniform table: every order read from its
 /// own coefficients, none from another's, so a lane of the across-orders packed
 /// entry carries the per-order value the arguments axis carries - which is the
 /// identity that entry's own suite asserts.
-template <EvalScheme kScheme>
+template <typename Policy>
 void UniformAllOrdersF32(int nmax, float x, float* out) noexcept {
     const FlatPointF32 at = FlatLocateF32(x);
 
     for (int l = 0; l <= nmax; ++l)
     {
-        out[l] = UniformOrderAtF32<kScheme>(at, l);
+        out[l] = UniformOrderAtF32<Policy>(at, l);
     }
 }
 
@@ -1687,9 +1823,9 @@ void UniformAllOrdersF32(int nmax, float x, float* out) noexcept {
 /// This is where the route is strongest rather than weakest: a call that needs
 /// one order pays for one order, and the ladder form above cannot know that only
 /// one is wanted.
-template <EvalScheme kScheme>
+template <typename Policy>
 float UniformSingleOrderF32(int n, float x) noexcept {
-    return UniformOrderAtF32<kScheme>(FlatLocateF32(x), n);
+    return UniformOrderAtF32<Policy>(FlatLocateF32(x), n);
 }
 
 // Float-lane region-B seed; see RegionBSeed.
@@ -2895,69 +3031,16 @@ constexpr void RefuseUniformPartition() noexcept
                   "a branch that reads the uniform table, or refuse the partition here - do "
                   "not leave it to the policy's contract members");
 }
-
-// The single-precision lanes have no rational member over the uniform grid.
-//
-// Their uniform grid is a fit of their own arithmetic, stored beside the double
-// lane's and read at its own degrees; the rational pairs this library fits over
-// intervals are the double lane's, and a rational member over the float grid is
-// a second fit rather than a reading of the first. The float family selector
-// does not say so on its own: RationalFit32 falls through to the *shipped*
-// rational member's cover for a policy naming the grid, which is a different
-// partition's fits answering under the uniform name with nothing reporting it -
-// the defect this guard exists to make impossible rather than to answer.
-//
-// The double lane's rational member over its own grid is stored and this guard
-// does not reach it: it is called from the float entries alone, and the double
-// entries read their member through the route dispatch in UniformOrderAt. The
-// float member is a fit to derive over the float grid's own cells - the
-// generator's rational ladder is parameterized by lane and this lane's table is
-// not emitted - and it is not a shape the call cannot have.
-template <EvalPolicyLike Policy>
-constexpr void RefuseUniformRoute() noexcept
-{
-    static_assert(Policy::kGranularity != FitGranularity::kUniform ||
-                      Policy::kRoute == FitRoute::kChebyshev,
-                  "the single-precision lanes have no rational member over their uniform grid: "
-                  "the rational pairs over the grid's intervals are the double lane's, fitted in "
-                  "its arithmetic, and this lane's grid is a fit of its own. Name the Chebyshev "
-                  "route at this partition on this lane, or the shipped or narrow partition at "
-                  "this route");
-}
-
-// The uniform partition is served at every rung, by the route's own coefficients
-// rather than by a cut of them.
-//
-// The criterion that cuts a stored row to a rung's degree scans the dropped
-// coefficients' tail and takes the first degree whose tail fits the rung's
-// budget. The full degree's tail is zero, so the scan always reaches it
-// (boys_effective_degrees.hpp): the full degree is admissible at every
-// multiplier, and a rung of this partition is the stored reading rather than a
-// thinner one. The partition is fitted at one degree for every order and for
-// every interval, so there is no shorter fit to read and the rung buys the
-// caller the same value it named at m = 1. The device lane's rows state the same
-// thing from its own side, and serve every rung of the route for it
-// (DeviceEntryServedAtRung).
-//
-// What a rung of this partition cannot be is a reading of another partition. The
-// entries' rung paths are a second implementation of the same bodies, written
-// against the routes that recurse, so a uniform policy reaching one of them was
-// answered by the narrow fits through PolicyRegionAValueAtRung, whose only test
-// is the shipped partition - certified numbers, from a partition the caller
-// never named, with nothing reporting it. The entries therefore select the
-// reference body for this partition at every multiplier and reach no rung path
-// at all, and the only rung left to refuse is the one whose entry is not wired.
-template <typename Policy, double kAccuracyMultiplier>
-constexpr void RefuseUniformAtRung() noexcept
-{
-    static_assert(Policy::kGranularity != FitGranularity::kUniform ||
-                      Policy::kRoute != FitRoute::kRationalMinimax || kAccuracyMultiplier == 1.0,
-                  "a rung of the uniform partition's rational member is not wired: the member's "
-                  "pairs are stored one per interval and are admissible at every multiplier by "
-                  "the same reading the Chebyshev member's degree is, and no entry reads them at "
-                  "a rung yet. Name the Chebyshev route at this partition, or this route at a "
-                  "partition whose rung is wired, until the member's rung is");
-}
+// The rational member over the uniform grid is a fit of this lane's own and it
+// is stored (see RationalFitUniformF32 above), so the float family selector's
+// fall-through no longer reaches a policy naming it: UniformOrderAtF32
+// dispatches on the route and reads the pairs this lane's grid carries. What
+// that selector WOULD do is still the reason the member is a fit of its own and
+// not a reading of the double lane's - RationalFit32 resolves the grid to the
+// shipped rational member's cover, a different partition's fits under the
+// uniform name - and the dispatch is where that is now refused by construction
+// rather than by a guard: a uniform policy never reaches FloatRouteFit on the
+// arguments below the grid's join, and the dispatch above it reads the member.
 
 template <EvalPolicyLike Policy>
 constexpr void RequireShippedRoute() noexcept
@@ -2987,8 +3070,6 @@ constexpr void RequireShippedRoute() noexcept
 
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 double BoysSingleImpl(int n, double x) noexcept {
-    RefuseUniformAtRung<Policy, kAccuracyMultiplier>();
-
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
     static_assert(Policy::kPack == PackAxis::kArguments,
@@ -3004,10 +3085,14 @@ double BoysSingleImpl(int n, double x) noexcept {
     // full-accuracy call pays for.
     //
     // The uniform partition is selected here at every multiplier and not only at
-    // the reference one, for the reason RefuseUniformAtRung states: its rung is
-    // the reference reading, so the rung paths below are what it must not reach.
-    // The body it lands on carries the partition's own branch, so the grid
-    // answers below its join and the region tests answer above it.
+    // the reference one: its cells are stored at the degrees the grid derived
+    // them at, so a rung of it is the reference reading and not a thinner one,
+    // and the rung paths below are what it must not reach. That holds for both
+    // members of the partition - the Chebyshev member's degree and the rational
+    // member's pairs are admissible at every multiplier alike - and RationalRouteFitAtRung
+    // refuses a uniform policy rather than resolving one. The body it lands on
+    // carries the partition's own branch, so the grid answers below its join and
+    // the region tests answer above it.
     if constexpr (kAccuracyMultiplier == 1.0 ||
                   Policy::kGranularity == FitGranularity::kUniform)
     {
@@ -3093,8 +3178,6 @@ void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept;
 
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 void BoysAllOrdersImpl(int nmax, double x, double* out) noexcept {
-    RefuseUniformAtRung<Policy, kAccuracyMultiplier>();
-
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
     assert(nmax >= 0 && nmax <= kMaxBoysOrder);
@@ -3417,8 +3500,6 @@ void BoysFixedNImpl(
 // family served to every caller.
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 float BoysSingleF32Impl(int n, float x) noexcept {
-    RefuseUniformRoute<Policy>();
-
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
     // The orders axis is refused here on the same reading as the double
@@ -3480,7 +3561,7 @@ float BoysSingleF32Impl(int n, float x) noexcept {
                 return 1.0f / (2.0f * static_cast<float>(n) + 1.0f);
             }
 
-            return UniformSingleOrderF32<Policy::kScheme>(n, x);
+            return UniformSingleOrderF32<Policy>(n, x);
         }
     }
 
@@ -3503,8 +3584,6 @@ float BoysSingleF32Impl(int n, float x) noexcept {
 
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
-    RefuseUniformRoute<Policy>();
-
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
     assert(nmax >= 0 && nmax <= kMaxBoysOrder);
@@ -3545,7 +3624,7 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
                 return;
             }
 
-            UniformAllOrdersF32<Policy::kScheme>(nmax, x, out);
+            UniformAllOrdersF32<Policy>(nmax, x, out);
 
             return;
         }
@@ -3754,8 +3833,6 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
 // has on the device.
 template <double kAccuracyMultiplier, EvalPolicyLike Policy>
 void BoysAllNF32Impl(int nmax, const float* x, float* out, std::size_t count) noexcept {
-    RefuseUniformRoute<Policy>();
-
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
     assert(nmax >= 0 && nmax <= kMaxBoysOrder);
@@ -3934,11 +4011,11 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept;
 
 // The uniform partition on the Chebyshev route, at every rung this lane names:
 // the grid's cells are stored at the degrees the derivation fitted them at and
-// the criterion that would cut them reaches the full degree at every multiplier
-// (RefuseUniformAtRung states the reading), so a rung of this partition is the
-// reference reading rather than a second, shorter one. The cells are therefore
-// the same seven the shipped and narrow partitions are declared at, and a caller
-// naming one reaches the library's own body rather than a copy of it.
+// the criterion that would cut them reaches the full degree at every multiplier,
+// so a rung of this partition is the reference reading rather than a second,
+// shorter one. The cells are therefore the same seven the shipped and narrow
+// partitions are declared at, and a caller naming one reaches the library's own
+// body rather than a copy of it.
 #define BOYS_ORD_UNIFORM(kScheme, kForm)                    \
     BOYS_ORD_EXTERN(kScheme, 1.0, FitRoute::kChebyshev, FitGranularity::kUniform, kForm)            \
     BOYS_ORD_EXTERN(kScheme, 64.0, FitRoute::kChebyshev, FitGranularity::kUniform, kForm)           \
@@ -3948,17 +4025,22 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept;
     BOYS_ORD_EXTERN(kScheme, 16384.0, FitRoute::kChebyshev, FitGranularity::kUniform, kForm)        \
     BOYS_ORD_EXTERN(kScheme, 65536.0, FitRoute::kChebyshev, FitGranularity::kUniform, kForm)
 
-// The uniform partition on the rational route: the same one multiplier, because
-// the member stores one pair per interval and no rung's criterion has a column
-// to cut. The body delegates this route's call to the scalar orders lane, and
-// the declaration is here for the reason every one above it is - so a call site
-// naming the cell reaches the definition the library holds rather than making a
-// second copy of the delegation. One rung and not seven: the member's pairs are
-// admissible at every multiplier by the same reading the Chebyshev member's
-// degree is, and no entry reads them at a rung yet, so the cell is refused where
-// it is named (RefuseUniformAtRung) and nothing is instantiated for it.
-#define BOYS_ORD_UNIFORM_RAT(kScheme, kForm)                \
-    BOYS_ORD_EXTERN(kScheme, 1.0, FitRoute::kRationalMinimax, FitGranularity::kUniform, kForm)
+// The uniform partition on the rational route: the same seven rungs, for the
+// same reading. The member stores one pair per interval and no rung's criterion
+// has a column to cut, so a relaxed multiplier is served the stored pairs uncut
+// - a saving left on the table rather than a value missing. The body delegates
+// this route's call to the scalar orders lane, and the declarations are here for
+// the reason every one above them is: so a call site naming a cell reaches the
+// definition the library holds rather than making a second copy of the
+// delegation.
+#define BOYS_ORD_UNIFORM_RAT(kScheme, kForm)                                                    \
+    BOYS_ORD_EXTERN(kScheme, 1.0, FitRoute::kRationalMinimax, FitGranularity::kUniform, kForm)   \
+    BOYS_ORD_EXTERN(kScheme, 64.0, FitRoute::kRationalMinimax, FitGranularity::kUniform, kForm)  \
+    BOYS_ORD_EXTERN(kScheme, 256.0, FitRoute::kRationalMinimax, FitGranularity::kUniform, kForm) \
+    BOYS_ORD_EXTERN(kScheme, 1024.0, FitRoute::kRationalMinimax, FitGranularity::kUniform, kForm) \
+    BOYS_ORD_EXTERN(kScheme, 4096.0, FitRoute::kRationalMinimax, FitGranularity::kUniform, kForm) \
+    BOYS_ORD_EXTERN(kScheme, 16384.0, FitRoute::kRationalMinimax, FitGranularity::kUniform, kForm) \
+    BOYS_ORD_EXTERN(kScheme, 65536.0, FitRoute::kRationalMinimax, FitGranularity::kUniform, kForm)
 
 BOYS_ORD_SHIPPED(EvalScheme::kSplitClenshaw, DivisionForm::kExactDivision)
 BOYS_ORD_SHIPPED(EvalScheme::kSplitClenshaw, DivisionForm::kPlainReciprocal)
@@ -4126,15 +4208,25 @@ BOYS_ORD_UNIFORM_RAT(EvalScheme::kHorner, DivisionForm::kRefinedReciprocal)
 // both name. Declared here for the reason every block above is: a call site
 // naming one of them must reach the definition the library already holds.
 //
-// The route is the Chebyshev one alone. The rational pairs this library fits
-// over intervals are the double lane's, and this lane's grid is a fit of its own
-// arithmetic, so a rational member over it is a second fit - the double lane's
-// own grid carries one, declared above this block, and this lane's carries none.
-// The combination is refused where the policy names it (RefuseUniformRoute) and
-// no cell of it exists for this list to name.
+// Both routes are carried. The rational member over this lane's grid is a fit
+// of the lane's own arithmetic rather than the double lane's pairs under the
+// uniform name, and it is stored beside the Chebyshev member it shares the grid
+// with, so the combination is a cell of this list like any other.
 #define BOYS_F32_ORDERS_PACKED_UNIFORM_RUNG(kScheme, kMultiplier, kBudget, kForm)                  \
     extern template void BoysAllOrdersF32Packed<kScheme, kMultiplier, FitRoute::kChebyshev,        \
                                                 kBudget, FitGranularity::kUniform, kForm>(         \
+        int nmax, float x, float* out) noexcept;
+
+// The same cells on the rational route, whose member over this lane's grid is
+// stored beside the Chebyshev one and whose relaxed multipliers are the stored
+// pairs uncut. The body delegates this route's call to the scalar orders lane,
+// and the declarations are here so a call site naming a cell reaches the
+// definition the library holds rather than making a second copy of the
+// delegation.
+#define BOYS_F32_ORDERS_PACKED_UNIFORM_RATIONAL_RUNG(kScheme, kMultiplier, kBudget, kForm)         \
+    extern template void BoysAllOrdersF32Packed<kScheme, kMultiplier,                              \
+                                                FitRoute::kRationalMinimax, kBudget,               \
+                                                FitGranularity::kUniform, kForm>(                  \
         int nmax, float x, float* out) noexcept;
 
 #define BOYS_F32_ORDERS_PACKED_UNIFORM(kScheme, kBudget, kForm)                                    \
@@ -4144,7 +4236,14 @@ BOYS_ORD_UNIFORM_RAT(EvalScheme::kHorner, DivisionForm::kRefinedReciprocal)
     BOYS_F32_ORDERS_PACKED_UNIFORM_RUNG(kScheme, 1024.0, kBudget, kForm)                           \
     BOYS_F32_ORDERS_PACKED_UNIFORM_RUNG(kScheme, 4096.0, kBudget, kForm)                           \
     BOYS_F32_ORDERS_PACKED_UNIFORM_RUNG(kScheme, 16384.0, kBudget, kForm)                          \
-    BOYS_F32_ORDERS_PACKED_UNIFORM_RUNG(kScheme, 65536.0, kBudget, kForm)
+    BOYS_F32_ORDERS_PACKED_UNIFORM_RUNG(kScheme, 65536.0, kBudget, kForm)                        \
+    BOYS_F32_ORDERS_PACKED_UNIFORM_RATIONAL_RUNG(kScheme, 1.0, kBudget, kForm)                     \
+    BOYS_F32_ORDERS_PACKED_UNIFORM_RATIONAL_RUNG(kScheme, 64.0, kBudget, kForm)                    \
+    BOYS_F32_ORDERS_PACKED_UNIFORM_RATIONAL_RUNG(kScheme, 256.0, kBudget, kForm)                   \
+    BOYS_F32_ORDERS_PACKED_UNIFORM_RATIONAL_RUNG(kScheme, 1024.0, kBudget, kForm)                  \
+    BOYS_F32_ORDERS_PACKED_UNIFORM_RATIONAL_RUNG(kScheme, 4096.0, kBudget, kForm)                  \
+    BOYS_F32_ORDERS_PACKED_UNIFORM_RATIONAL_RUNG(kScheme, 16384.0, kBudget, kForm)                 \
+    BOYS_F32_ORDERS_PACKED_UNIFORM_RATIONAL_RUNG(kScheme, 65536.0, kBudget, kForm)
 
 BOYS_F32_ORDERS_PACKED_REFERENCE(EvalScheme::kSplitClenshaw, BoysBudget::kFloat,                    \
                                  DivisionForm::kExactDivision)
@@ -4236,6 +4335,7 @@ BOYS_F32_ORDERS_PACKED_UNIFORM(EvalScheme::kHorner, BoysBudget::kFp16,          
 #undef BOYS_F32_ORDERS_PACKED_NARROW_RUNGS
 #undef BOYS_F32_ORDERS_PACKED_UNIFORM
 #undef BOYS_F32_ORDERS_PACKED_UNIFORM_RUNG
+#undef BOYS_F32_ORDERS_PACKED_UNIFORM_RATIONAL_RUNG
 
 // ---------------------------------------------------------------------------
 // The all-orders batch over an argument array (BoysAllN)

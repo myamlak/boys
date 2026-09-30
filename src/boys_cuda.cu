@@ -370,6 +370,34 @@ constexpr int kFlatCellOffsetsF32 = static_cast<int>(std::size(detail::f32::kFla
 __device__ int dFlatDegsF32[kFlatCellsF32];
 __device__ int dFlatOffsetsF32[kFlatCellOffsetsF32];
 
+// The same two grids on their rational route. The pool and the four per-interval
+// columns are one image, as the Chebyshev grid's are: a reader handed the pairs
+// without the degrees, the stored counts or the block starts would address a row
+// at a length the table does not have, which is the substitution the readiness
+// test below refuses. The pool's rows are intervals here and not orders, and its
+// stride is the interval's own stored count, so the four columns are named
+// rather than derived.
+constexpr int kFlatRatPool = static_cast<int>(std::size(detail::kFlatRatCoeffs));
+__device__ double dFlatRatCoeffs[kFlatRatPool];
+
+constexpr int kFlatRatCells = static_cast<int>(std::size(detail::kFlatRatNumDeg));
+constexpr int kFlatRatCellOffsets = static_cast<int>(std::size(detail::kFlatRatOffsets));
+__device__ int dFlatRatNumDeg[kFlatRatCells];
+__device__ int dFlatRatDenDeg[kFlatRatCells];
+__device__ int dFlatRatStored[kFlatRatCells];
+__device__ int dFlatRatOffsets[kFlatRatCellOffsets];
+
+constexpr int kFlatRatPoolF32 = static_cast<int>(std::size(detail::f32::kFlatRatCoeffsF32));
+__device__ float dFlatRatCoeffsF32[kFlatRatPoolF32];
+
+constexpr int kFlatRatCellsF32 = static_cast<int>(std::size(detail::f32::kFlatRatNumDegF32));
+constexpr int kFlatRatCellOffsetsF32 =
+    static_cast<int>(std::size(detail::f32::kFlatRatOffsetsF32));
+__device__ int dFlatRatNumDegF32[kFlatRatCellsF32];
+__device__ int dFlatRatDenDegF32[kFlatRatCellsF32];
+__device__ int dFlatRatStoredF32[kFlatRatCellsF32];
+__device__ int dFlatRatOffsetsF32[kFlatRatCellOffsetsF32];
+
 // The rungs' cuts, one table per region-A reading; region B's is one pair either
 // way, so the two readings share it. A cell is the pair a cut leaves — the
 // numerator's degree then the denominator's — which is why every table here has
@@ -1334,6 +1362,37 @@ __global__ void BoysAllOrdersF64FlatKernel(const int* n,
                                               });
 }
 
+// The same grid on its rational route. The structure is the kernel above — one
+// thread per argument, the whole ladder to that argument's own order, the
+// output order-major — and what differs is the table it steps: one numerator/
+// denominator pair per interval, addressed at the interval's own stored count,
+// so the kernel closes over the pool and the four per-interval columns instead
+// of the two pools and the two.
+//
+// No form parameter: the route is a family and not a basis, so both scheme names
+// a caller may use reach this one kernel, exactly as the lane's shipped and
+// narrow rational pairs do.
+__global__ void BoysAllOrdersF64FlatRatKernel(const int* n,
+                                              const double* x,
+                                              double* out,
+                                              size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    double* o = out + i;
+
+    detail::DeviceAllOrdersF64FlatRat(dFlatRatCoeffs, dFlatRatNumDeg, dFlatRatDenDeg,
+                                      dFlatRatStored, dFlatRatOffsets, n[i], x[i],
+                                      [&](int, double v) {
+                                          *o = v;
+                                          o += count;
+                                      });
+}
+
 // ---------------------------------------------------------------------------
 // the float lane's uniform route
 // ---------------------------------------------------------------------------
@@ -1371,6 +1430,31 @@ __global__ void BoysAllOrdersF32FlatKernel(const int* n,
                                                   *o = v;
                                                   o += count;
                                               });
+}
+
+// The float lane's grid on its rational route, the double kernel above at this
+// lane's grid, tables and arithmetic, and with no form parameter for the same
+// reason.
+__global__ void BoysAllOrdersF32FlatRatKernel(const int* n,
+                                              const double* x,
+                                              float* out,
+                                              size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    float* o = out + i;
+
+    detail::DeviceAllOrdersF32FlatRat(dFlatRatCoeffsF32, dFlatRatNumDegF32, dFlatRatDenDegF32,
+                                      dFlatRatStoredF32, dFlatRatOffsetsF32, n[i],
+                                      static_cast<float>(x[i]),
+                                      [&](int, float v) {
+                                          *o = v;
+                                          o += count;
+                                      });
 }
 
 // ---------------------------------------------------------------------------
@@ -2885,6 +2969,44 @@ extern "C" int BoysCudaUploadTables() {
         return 2;
     }
 
+    // The two grids' rational route, uploaded as the same kind of one image and
+    // for the same reason: the pool and its four per-interval columns are read by
+    // one body, and a reader given the pool without them would address a row at
+    // another interval's length.
+    if (cudaMemcpyToSymbol(dFlatRatCoeffs,
+                           detail::kFlatRatCoeffs.data(),
+                           sizeof(detail::kFlatRatCoeffs)) != cudaSuccess ||
+        cudaMemcpyToSymbol(dFlatRatNumDeg,
+                           detail::kFlatRatNumDeg.data(),
+                           sizeof(detail::kFlatRatNumDeg)) != cudaSuccess ||
+        cudaMemcpyToSymbol(dFlatRatDenDeg,
+                           detail::kFlatRatDenDeg.data(),
+                           sizeof(detail::kFlatRatDenDeg)) != cudaSuccess ||
+        cudaMemcpyToSymbol(dFlatRatStored,
+                           detail::kFlatRatStored.data(),
+                           sizeof(detail::kFlatRatStored)) != cudaSuccess ||
+        cudaMemcpyToSymbol(dFlatRatOffsets,
+                           detail::kFlatRatOffsets.data(),
+                           sizeof(detail::kFlatRatOffsets)) != cudaSuccess ||
+        cudaMemcpyToSymbol(dFlatRatCoeffsF32,
+                           detail::f32::kFlatRatCoeffsF32.data(),
+                           sizeof(detail::f32::kFlatRatCoeffsF32)) != cudaSuccess ||
+        cudaMemcpyToSymbol(dFlatRatNumDegF32,
+                           detail::f32::kFlatRatNumDegF32.data(),
+                           sizeof(detail::f32::kFlatRatNumDegF32)) != cudaSuccess ||
+        cudaMemcpyToSymbol(dFlatRatDenDegF32,
+                           detail::f32::kFlatRatDenDegF32.data(),
+                           sizeof(detail::f32::kFlatRatDenDegF32)) != cudaSuccess ||
+        cudaMemcpyToSymbol(dFlatRatStoredF32,
+                           detail::f32::kFlatRatStoredF32.data(),
+                           sizeof(detail::f32::kFlatRatStoredF32)) != cudaSuccess ||
+        cudaMemcpyToSymbol(dFlatRatOffsetsF32,
+                           detail::f32::kFlatRatOffsetsF32.data(),
+                           sizeof(detail::f32::kFlatRatOffsetsF32)) != cudaSuccess)
+    {
+        return 2;
+    }
+
     // The cudaMemcpyToSymbol calls above are asynchronous (default stream);
     // sync before the guard flips so a concurrent launch on a non-default
     // stream can never read partially uploaded constant tables.
@@ -3064,7 +3186,13 @@ const void* const kTableAddressSymbols[] = {&dPieceStart,      &dOffset,
                               &dNarrowBDegEff32, &dNarrowMonoBDegEff32,
                               &dRatBDeg32,       &dNarrowRatBDeg32,
                               &dFlatDegs,        &dFlatOffsets,
-                              &dFlatDegsF32,     &dFlatOffsetsF32};
+                              &dFlatDegsF32,     &dFlatOffsetsF32,
+                              &dFlatRatCoeffs,   &dFlatRatNumDeg,
+                              &dFlatRatDenDeg,   &dFlatRatStored,
+                              &dFlatRatOffsets,
+                              &dFlatRatCoeffsF32, &dFlatRatNumDegF32,
+                              &dFlatRatDenDegF32, &dFlatRatStoredF32,
+                              &dFlatRatOffsetsF32};
 constexpr int kTableAddressCount =
     static_cast<int>(sizeof(kTableAddressSymbols) / sizeof(kTableAddressSymbols[0]));
 
@@ -3204,6 +3332,14 @@ extern "C" int BoysCudaLaunchAllOrdersF32Uniform(
 extern "C" int BoysCudaLaunchAllOrdersF32UniformHorner(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
     BoysAllOrdersF32FlatKernel<true>
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+// The float lane's grid on the same route, one launcher for the reason above.
+extern "C" int BoysCudaLaunchAllOrdersF32UniformRat(
+    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    BoysAllOrdersF32FlatRatKernel
         <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
     return static_cast<int>(cudaGetLastError());
 }
@@ -3393,6 +3529,17 @@ extern "C" int BoysCudaLaunchAllOrdersF64Uniform(
 extern "C" int BoysCudaLaunchAllOrdersF64UniformHorner(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
     BoysAllOrdersF64FlatKernel<true>
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+// The grid's rational route, one launcher and not two: the pair is stored in one
+// form, so both scheme names a caller may use reach it, which is what the comment
+// above calls the arithmetic. The orders-axis rows of that route are this same
+// launch, because the route's packing axis has no second member to run.
+extern "C" int BoysCudaLaunchAllOrdersF64UniformRat(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    BoysAllOrdersF64FlatRatKernel
         <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
     return static_cast<int>(cudaGetLastError());
 }

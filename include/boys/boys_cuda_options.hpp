@@ -69,6 +69,10 @@ enum class DeviceEntry : int {
     kAllOrdersF64UniformHorner, ///< BoysCuda::AllOrdersF64UniformHorner at kHorner, launched
     kAllOrdersF64OrdersUniform, ///< BoysCuda::AllOrdersF64OrdersUniform at kSplitClenshaw, launched
     kAllOrdersF64OrdersUniformHorner, ///< BoysCuda::AllOrdersF64OrdersUniformHorner at kHorner, launched
+    kAllOrdersF64UniformRat, ///< BoysCuda::AllOrdersF64UniformRat at EvalScheme::kSplitClenshaw, launched
+    kAllOrdersF64UniformRatHorner, ///< BoysCuda::AllOrdersF64UniformRatHorner at kHorner, launched
+    kAllOrdersF64OrdersUniformRat, ///< BoysCuda::AllOrdersF64OrdersUniformRat at kSplitClenshaw
+    kAllOrdersF64OrdersUniformRatHorner, ///< BoysCuda::AllOrdersF64OrdersUniformRatHorner at kHorner
 
     kAllOrdersF32Narrow, ///< BoysCuda::AllOrdersF32Narrow at EvalScheme::kSplitClenshaw, launched
     kAllOrdersF32NarrowMono, ///< BoysCuda::AllOrdersF32NarrowMono at kHorner, launched
@@ -86,6 +90,13 @@ enum class DeviceEntry : int {
     kAllOrdersF32RatHorner, ///< BoysCuda::AllOrdersF32RatHorner at kHorner, launched
     kAllOrdersF32NarrowRat, ///< BoysCuda::AllOrdersF32NarrowRat at kSplitClenshaw, launched
     kAllOrdersF32NarrowRatHorner, ///< BoysCuda::AllOrdersF32NarrowRatHorner at kHorner, launched
+    /// The rational route over the uniform grid: the same family and the same
+    /// two names per pair as the rows above, over the grid's intervals instead
+    /// of a derived partition's pieces. The pair is stored in the monomial form
+    /// the family is stored in everywhere, so neither scheme name reaches a
+    /// second arithmetic and the two rows run one kernel.
+    kAllOrdersF32UniformRat, ///< BoysCuda::AllOrdersF32UniformRat at kSplitClenshaw, launched
+    kAllOrdersF32UniformRatHorner, ///< BoysCuda::AllOrdersF32UniformRatHorner at kHorner, launched
 
     /// The float lane's other packing axis: the counterpart of each row above
     /// that carries a packing axis's choice, over the same stored table and at
@@ -105,9 +116,12 @@ enum class DeviceEntry : int {
     /// The shipped partition's row is one row for both scheme names, exactly as
     /// \c kAllOrdersF32 is: this lane stores that partition once, in the
     /// Chebyshev basis, and the scheme axis names which of the lane's two stored
-    /// forms a body sums. The uniform grid's two are its per-argument rows'
+    /// forms a body sums. The uniform grid's are its per-argument rows'
     /// kernels, for the reason those rows state — the grid's cells carry their
     /// own degree and block start, so the route's packing axis has one member.
+    /// That holds for the grid's rational member as well: its rows are stored
+    /// per interval at the interval's own pair and stored count, so this
+    /// route's packing axis has one member too.
     kAllOrdersF32Orders, ///< BoysCuda::AllOrdersF32Orders, launched
     kAllOrdersF32NarrowOrders, ///< BoysCuda::AllOrdersF32NarrowOrders, launched
     kAllOrdersF32NarrowOrdersMono, ///< BoysCuda::AllOrdersF32NarrowOrdersMono, launched
@@ -117,6 +131,8 @@ enum class DeviceEntry : int {
     kAllOrdersF32NarrowOrdersRatHorner, ///< BoysCuda::AllOrdersF32NarrowOrdersRatHorner at kHorner
     kAllOrdersF32OrdersUniform, ///< BoysCuda::AllOrdersF32OrdersUniform, launched
     kAllOrdersF32OrdersUniformHorner, ///< BoysCuda::AllOrdersF32OrdersUniformHorner, launched
+    kAllOrdersF32OrdersUniformRat, ///< BoysCuda::AllOrdersF32OrdersUniformRat, launched
+    kAllOrdersF32OrdersUniformRatHorner, ///< BoysCuda::AllOrdersF32OrdersUniformRatHorner
 
     kAllNF64, ///< BoysCuda::AllNF64, launched
     kAllNF32, ///< BoysCuda::AllNF32, launched
@@ -155,6 +171,8 @@ enum class DeviceEntry : int {
     kDeviceAllOrdersF64NarrowRatHorner, ///< BoysDeviceAllOrdersF64NarrowRatHorner, in-kernel
     kDeviceAllOrdersF64Uniform, ///< BoysDeviceAllOrdersF64Uniform, inside the caller's kernel
     kDeviceAllOrdersF64UniformHorner, ///< BoysDeviceAllOrdersF64UniformHorner, in-kernel
+    kDeviceAllOrdersF64UniformRat, ///< BoysDeviceAllOrdersF64UniformRat, inside the caller's kernel
+    kDeviceAllOrdersF64UniformRatHorner, ///< BoysDeviceAllOrdersF64UniformRatHorner, in-kernel
 
     kDeviceAllOrdersF32Narrow, ///< BoysDeviceAllOrdersF32Narrow, inside the caller's kernel
     kDeviceAllOrdersF32NarrowMono, ///< BoysDeviceAllOrdersF32NarrowMono, in-kernel
@@ -164,6 +182,8 @@ enum class DeviceEntry : int {
     kDeviceAllOrdersF32NarrowRatHorner, ///< BoysDeviceAllOrdersF32NarrowRatHorner, in-kernel
     kDeviceAllOrdersF32Uniform, ///< BoysDeviceAllOrdersF32Uniform, inside the caller's kernel
     kDeviceAllOrdersF32UniformHorner, ///< BoysDeviceAllOrdersF32UniformHorner, in-kernel
+    kDeviceAllOrdersF32UniformRat, ///< BoysDeviceAllOrdersF32UniformRat, inside the caller's kernel
+    kDeviceAllOrdersF32UniformRatHorner, ///< BoysDeviceAllOrdersF32UniformRatHorner, in-kernel
 
     kCount, ///< rows this report defines; one past the last
 };
@@ -475,20 +495,38 @@ constexpr bool DeviceEntryServedAtRung(DeviceEntry entry, double multiplier) noe
         case DeviceEntry::kAllOrdersF32NarrowOrdersRat:
         case DeviceEntry::kAllOrdersF32NarrowOrdersRatHorner:
 
-        // The uniform route's six rows, which are no exception: the route's
-        // table has no cut to make, so every rung's own arithmetic *is* the
-        // route's, and every rung of it is served. The reason is above, per
+        // The uniform route's twelve rows, which are no exception: the route's
+        // tables have no cut to make, so every rung's own arithmetic *is* the
+        // route's, and every rung of either is served. The reason is above, per
         // route, and it is why these fall through to the arm below. The float
         // lane's two orders rows of that route are the same table and the same
         // reason.
+        //
+        // The grid's RATIONAL member is here and not with the rational rows
+        // above, and that is the one place this switch does not group by route
+        // alone: the rows above are refused at a rung because the piecewise
+        // rational route derives, uploads and reads a per-rung cut, while this
+        // one has no rung axis at all - it stores one pair per interval and no
+        // per-order effective-degree column, which the host row states as well
+        // (src/boys.cpp, where kUniformRatReadDeg is folded into the one
+        // regionADeg of the uniform row). So a rung of it is the route's own
+        // arithmetic, exactly as a rung of the grid's Chebyshev member is.
         case DeviceEntry::kAllOrdersF64Uniform:
         case DeviceEntry::kAllOrdersF64UniformHorner:
         case DeviceEntry::kAllOrdersF64OrdersUniform:
         case DeviceEntry::kAllOrdersF64OrdersUniformHorner:
+        case DeviceEntry::kAllOrdersF64UniformRat:
+        case DeviceEntry::kAllOrdersF64UniformRatHorner:
+        case DeviceEntry::kAllOrdersF64OrdersUniformRat:
+        case DeviceEntry::kAllOrdersF64OrdersUniformRatHorner:
         case DeviceEntry::kAllOrdersF32Uniform:
         case DeviceEntry::kAllOrdersF32UniformHorner:
         case DeviceEntry::kAllOrdersF32OrdersUniform:
         case DeviceEntry::kAllOrdersF32OrdersUniformHorner:
+        case DeviceEntry::kAllOrdersF32UniformRat:
+        case DeviceEntry::kAllOrdersF32UniformRatHorner:
+        case DeviceEntry::kAllOrdersF32OrdersUniformRat:
+        case DeviceEntry::kAllOrdersF32OrdersUniformRatHorner:
 
         // Everything else of the surface, which is the lane's rungs and no fewer
         // of them, and — at this revision — everything there is: every arm above
@@ -582,6 +620,11 @@ constexpr bool DeviceEntryServedAtRung(DeviceEntry entry, double multiplier) noe
             return DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF64Uniform, multiplier);
         case DeviceEntry::kDeviceAllOrdersF64UniformHorner:
             return DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF64UniformHorner, multiplier);
+        case DeviceEntry::kDeviceAllOrdersF64UniformRat:
+            return DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF64UniformRat, multiplier);
+        case DeviceEntry::kDeviceAllOrdersF64UniformRatHorner:
+            return DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF64UniformRatHorner,
+                                           multiplier);
         case DeviceEntry::kDeviceAllOrdersF32Narrow:
             return DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32Narrow, multiplier);
         case DeviceEntry::kDeviceAllOrdersF32NarrowMono:
@@ -598,6 +641,11 @@ constexpr bool DeviceEntryServedAtRung(DeviceEntry entry, double multiplier) noe
             return DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32Uniform, multiplier);
         case DeviceEntry::kDeviceAllOrdersF32UniformHorner:
             return DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32UniformHorner, multiplier);
+        case DeviceEntry::kDeviceAllOrdersF32UniformRat:
+            return DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32UniformRat, multiplier);
+        case DeviceEntry::kDeviceAllOrdersF32UniformRatHorner:
+            return DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32UniformRatHorner,
+                                           multiplier);
         // The sentinel one past the last row this report defines, and not a row
         // a call can name, so no rung axis is owed for it. It is named here
         // rather than left to a default arm: a default would swallow the next
@@ -729,6 +777,18 @@ constexpr const char* DevicePartitionName(DeviceEntry entry) noexcept {
         case DeviceEntry::kDeviceAllOrdersF64UniformHorner:
         case DeviceEntry::kDeviceAllOrdersF32Uniform:
         case DeviceEntry::kDeviceAllOrdersF32UniformHorner:
+        case DeviceEntry::kAllOrdersF64UniformRat:
+        case DeviceEntry::kAllOrdersF64UniformRatHorner:
+        case DeviceEntry::kAllOrdersF64OrdersUniformRat:
+        case DeviceEntry::kAllOrdersF64OrdersUniformRatHorner:
+        case DeviceEntry::kAllOrdersF32UniformRat:
+        case DeviceEntry::kAllOrdersF32UniformRatHorner:
+        case DeviceEntry::kAllOrdersF32OrdersUniformRat:
+        case DeviceEntry::kAllOrdersF32OrdersUniformRatHorner:
+        case DeviceEntry::kDeviceAllOrdersF64UniformRat:
+        case DeviceEntry::kDeviceAllOrdersF64UniformRatHorner:
+        case DeviceEntry::kDeviceAllOrdersF32UniformRat:
+        case DeviceEntry::kDeviceAllOrdersF32UniformRatHorner:
             return "uniform";
 
         // The narrow partition, whose pieces are cut per order: the rows of the

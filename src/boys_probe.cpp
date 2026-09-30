@@ -1855,10 +1855,10 @@ void CellRungSingle(AccuracyTier tier, int nmax, float x, float* out) noexcept {
 /// relaxed multiplier reads the same table, so serving one is a saving left on
 /// the table and not a value missing - but no book of this probe names one,
 /// because \c CarriesSingle answers the whole partition unserved on this lane.
-/// The rational route has no member over the *float* grid at all: the pairs this
-/// library fits over intervals are the double lane's, and this lane's grid is a
-/// fit of its own arithmetic. The pair is refused at the policy
-/// (RefuseUniformRoute), so no cell naming it reaches here, and this stops
+/// The rational route has a member over the *float* grid of its own: one
+/// numerator/denominator pair per interval, stored in this lane's width and read
+/// through the route dispatch in UniformOrderAtF32. Where a cell naming it
+/// reaches here the body takes it; where a probe book does not, this stops
 /// rather than reading another family's fits under the uniform name.
 ///
 /// The budget is an axis of its own on this side and not a route or a rung: the

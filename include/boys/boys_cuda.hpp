@@ -1322,6 +1322,80 @@ public:
         double multiplier, const int* n, const double* x, float* out, std::size_t count,
         void* stream);
 
+    /// F_0(x[i])..F_n(x[i]) in fp32 off the uniform grid's RATIONAL member.
+    ///
+    /// The grid is the same one \c AllOrdersF32Uniform reads — the lane's own,
+    /// one table of equal intervals over [0, kFlatHiF32) — and the route over it
+    /// is the rational family: one numerator/denominator pair per interval, fitted
+    /// in this lane's arithmetic and certified against this lane's bar, where the
+    /// entry above sums the Chebyshev member's cell. The partition is not a second
+    /// one: a caller naming this row and a caller naming that one are read at the
+    /// same intervals, located by the same map.
+    ///
+    /// Every rung of the lane is served, for the reason the entry above states:
+    /// the member stores one pair per interval and no per-order effective-degree
+    /// column, so no rung's criterion has anything to cut, and a rung of it is the
+    /// route's own arithmetic rather than a thinner one.
+    ///
+    /// The pair is stored in monomial form and read by Horner, so neither scheme
+    /// name a caller may use reaches a second arithmetic and this row's Horner
+    /// twin runs the same kernel. Both names are rows of the report, because a
+    /// caller who named a scheme named a call.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+    static BoysStatus AllOrdersF32UniformRat(
+        const int* n, const double* x, float* out, std::size_t count, void* stream);
+
+    /// \c AllOrdersF32UniformRat at a rung named in the call, with the contract
+    /// of \c AllOrdersF32UniformHornerAtRung: every rung of \c kDeviceRungs is
+    /// served, a call at one makes that rung resident and queues the same kernel,
+    /// and a multiplier that is not a rung of the lane is refused.
+    static BoysStatus AllOrdersF32UniformRatAtRung(
+        double multiplier, const int* n, const double* x, float* out, std::size_t count,
+        void* stream);
+
+    /// \c AllOrdersF32UniformRat under the Horner scheme name. A forwarder and
+    /// not a second row over a second table: the rational member is stored in one
+    /// form, so both scheme names reach one arithmetic — the same relation the
+    /// lane's shipped and narrow rational pairs stand in.
+    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+    static BoysStatus AllOrdersF32UniformRatHorner(
+        const int* n, const double* x, float* out, std::size_t count, void* stream);
+
+    /// \c AllOrdersF32UniformRatHorner at a rung named in the call.
+    static BoysStatus AllOrdersF32UniformRatHornerAtRung(
+        double multiplier, const int* n, const double* x, float* out, std::size_t count,
+        void* stream);
+
+    /// The same four on the double lane's grid, whose rational member is the
+    /// double lane's own pair per interval over that lane's intervals. The
+    /// contract, the rungs and the Horner relation are the float lane's above.
+    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+    static BoysStatus AllOrdersF64UniformRat(
+        const int* n, const double* x, double* out, std::size_t count, void* stream);
+
+    /// \c AllOrdersF64UniformRat at a rung named in the call.
+    static BoysStatus AllOrdersF64UniformRatAtRung(
+        double multiplier, const int* n, const double* x, double* out, std::size_t count,
+        void* stream);
+
+    /// \c AllOrdersF64UniformRat under the Horner scheme name.
+    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+    static BoysStatus AllOrdersF64UniformRatHorner(
+        const int* n, const double* x, double* out, std::size_t count, void* stream);
+
+    /// \c AllOrdersF64UniformRatHorner at a rung named in the call.
+    static BoysStatus AllOrdersF64UniformRatHornerAtRung(
+        double multiplier, const int* n, const double* x, double* out, std::size_t count,
+        void* stream);
+
     /// F_0(x[i])..F_n(x[i]) in fp32 off the float lane's rational route: region
     /// A's seed is read from the double lane's rational pair over the shipped
     /// partition — the same family and the same partition the double route's own

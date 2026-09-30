@@ -679,6 +679,86 @@ __device__ __forceinline__ void DeviceAllOrdersF64Flat(const double* cheb,
     }
 }
 
+// The double lane's uniform grid on its RATIONAL route: one numerator/
+// denominator pair per interval of the same grid, read at the same mapped
+// argument DeviceAllOrdersF64Flat builds and at the interval's own pair, in the
+// stored form DeviceRatSum reads - the numerator ascending, then the
+// denominator's q_1..q_k with q_0 held at 1.
+//
+// A body of its own rather than a mode of the Chebyshev one above, for the
+// reason the two host readers are two: the two routes store different things,
+// and an interval's block is addressed at the interval's own pair and its own
+// stored count instead of at one degree. The locate is the one above, spelled
+// again because the two bodies are two routes over one table and a shared
+// helper would be a third spelling of the same index arithmetic in the one
+// place it must not be - the double lane's own host reader states the same
+// hazard (boys_impl.hpp, FlatLocate).
+//
+// The four per-interval tables are the emitter's (tools/gen_boys_coefficients.py,
+// flat_rat_block_lines): the numerator's degree, the denominator's, the stored
+// count of one row, and where the interval's block starts. A reader that assumed
+// one stride for the whole table would read a neighbouring interval's pair, and
+// no check of the coefficients alone would report it.
+//
+// The summation is DeviceRatSum, which is the same two Horner sums and the same
+// held denominator constant the host reader performs - so a device row and a
+// host row of this route are one reading of one stored form, and the figures the
+// host gate certifies are the figures this entry delivers.
+template <typename Store>
+__device__ __forceinline__ void DeviceAllOrdersF64FlatRat(const double* rat,
+                                                          const int* numDegs,
+                                                          const int* denDegs,
+                                                          const int* storeds,
+                                                          const int* offsets,
+                                                          int order,
+                                                          double xx,
+                                                          Store store) {
+    if (xx >= kFlatHi)
+    {
+        double f = kHalfSqrtPi * rsqrt(xx);
+
+#pragma unroll 4
+        for (int l = 0; l <= order; ++l)
+        {
+            store(l, f);
+            f = (l + 0.5) * f / xx;
+        }
+
+        return;
+    }
+
+    constexpr double kPerUnit = 1.0 / kFlatWidth;
+    static_assert(kFlatWidth * kPerUnit == 1.0,
+                  "the uniform grid's index factor must be the reciprocal of its stored width: "
+                  "the locate is one multiply by this factor and a truncation, so a width whose "
+                  "reciprocal does not round back reads the table one interval off its cell");
+    static_assert(kPerUnit * kFlatHi == static_cast<double>(kFlatIntervals),
+                  "the uniform grid must reach kFlatHi in kFlatIntervals intervals");
+
+    const double u = xx * kPerUnit;
+    int iv = static_cast<int>(u);
+
+    if (iv > kFlatIntervals - 1)
+    {
+        iv = kFlatIntervals - 1;
+    }
+
+    const double t = 2.0 * (u - static_cast<double>(iv)) - 1.0;
+
+    const int m = numDegs[iv];
+    const int k = denDegs[iv];
+    const int stored = storeds[iv];
+    const double* interval = rat + static_cast<std::size_t>(offsets[iv]);
+
+#pragma unroll 4
+    for (int l = 0; l <= order; ++l)
+    {
+        const double* c = interval + static_cast<std::size_t>(l) * static_cast<std::size_t>(stored);
+
+        store(l, DeviceRatSum(c, m, c + m + 1, k, t));
+    }
+}
+
 // The float lane's uniform ladder. The mapped argument is this lane's own
 // spelling and not the double body's: the double lane maps x by the exact
 // product x * kPerUnit truncated, which is the grid's own boundary and is exact
@@ -756,6 +836,69 @@ __device__ __forceinline__ void DeviceAllOrdersF32Flat(const float* cheb,
         {
             store(l, DeviceClenshawSplit32(c, deg, t));
         }
+    }
+}
+
+// The float lane's uniform grid on its RATIONAL route: the double body above at
+// this lane's width, its own grid, its own tables and DeviceRatSum32. Every
+// figure the host gate certifies for this member was measured on the mapping
+// this locate builds (tools/gen_boys_coefficients.py, f32_map), at BOTH
+// multiply-add routes, so this body's fused-only reading is inside what was
+// certified rather than beside it.
+template <typename Store>
+__device__ __forceinline__ void DeviceAllOrdersF32FlatRat(const float* rat,
+                                                          const int* numDegs,
+                                                          const int* denDegs,
+                                                          const int* storeds,
+                                                          const int* offsets,
+                                                          int order,
+                                                          float xx,
+                                                          Store store) {
+    if (xx >= f32::kFlatHiF32)
+    {
+        float f = static_cast<float>(kHalfSqrtPi) * rsqrtf(xx);
+
+#pragma unroll 4
+        for (int l = 0; l <= order; ++l)
+        {
+            store(l, f);
+            f = (l + 0.5f) * f / xx;
+        }
+
+        return;
+    }
+
+    constexpr float kPerUnit = 1.0f / f32::kFlatWidthF32;
+    static_assert(f32::kFlatWidthF32 * kPerUnit == 1.0f,
+                  "the float lane's index factor must be the reciprocal of its stored width: "
+                  "the locate is one multiply by this factor and a truncation, so a width whose "
+                  "reciprocal does not round back reads the table one interval off its cell");
+    static_assert(kPerUnit * f32::kFlatHiF32 == static_cast<float>(f32::kFlatIntervalsF32),
+                  "the float lane's uniform grid must reach kFlatHi in kFlatIntervals intervals");
+
+    const float u = xx * kPerUnit;
+    int iv = static_cast<int>(u);
+
+    if (iv > f32::kFlatIntervalsF32 - 1)
+    {
+        iv = f32::kFlatIntervalsF32 - 1;
+    }
+
+    const float a = static_cast<float>(iv) / kPerUnit;
+    const float b = static_cast<float>(iv + 1) / kPerUnit;
+    const float t = 2.0f * (xx - a) / (b - a) - 1.0f;
+
+    const int m = numDegs[iv];
+    const int k = denDegs[iv];
+    const int stored = storeds[iv];
+    const float* interval = rat + static_cast<std::size_t>(offsets[iv]);
+
+#pragma unroll 4
+    for (int l = 0; l <= order; ++l)
+    {
+        const float* c = interval + static_cast<std::size_t>(l) * static_cast<std::size_t>(stored);
+
+        store(l, DeviceRatSum32(c, m, c + m + 1, k, t));
     }
 }
 

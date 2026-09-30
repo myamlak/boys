@@ -350,6 +350,49 @@ struct BoysDeviceTables {
     /// [interval + 1] the float grid's first coefficient per interval, the same
     /// layout and the same closing count as \c flatOffsets above.
     const int* flatOffsets32 = nullptr;
+
+    /// The same two grids on their RATIONAL route: one numerator/denominator
+    /// pair per interval, read by the route's own entries
+    /// (BoysDeviceAllOrdersF64UniformRat and its float counterpart).
+    ///
+    /// The stored form is the lane's own rational storage, the one the shipped
+    /// and narrow rational routes already read (DeviceRatSum): the numerator's
+    /// coefficients ascending, then the denominator's q_1..q_k with q_0 held at
+    /// 1. The interval's block is interval-major at the interval's own stored
+    /// count, which is its pair plus the held constant term, so the numerator of
+    /// order \c l in interval \c iv begins at
+    ///
+    ///   flatRatCoeffs[flatRatOffsets[iv] + l * flatRatStored[iv]]
+    ///
+    /// and the denominator begins \c flatRatNumDeg[iv] + 1 coefficients later.
+    /// Four per-interval columns address one row — the two degrees, the stored
+    /// count and the block's start — and they are read from the same uploaded
+    /// image as the coefficients, for the reason the Chebyshev grid's two are: a
+    /// reader that held any of them fixed would sum a neighbouring interval's
+    /// pair, and no check of the coefficients alone would report it. This table
+    /// has no single stride either, which is exactly why the stored count is one
+    /// of the columns and not a constant of the grid.
+    const double* flatRatCoeffs = nullptr; ///< the double lane's numerator/denominator blocks
+    /// [interval] the two degrees of that interval's pair and the count one row
+    /// stores, which is numDeg + 1 + denDeg.
+    const int* flatRatNumDeg = nullptr;
+    const int* flatRatDenDeg = nullptr;
+    const int* flatRatStored = nullptr;
+    /// [interval + 1] the interval's first coefficient; the last entry is the
+    /// pool's stored count, so a block never runs past the end of the table.
+    const int* flatRatOffsets = nullptr;
+
+    /// The float lane's own grid on the same route, which is a fit of that
+    /// lane's arithmetic over that lane's intervals and is never read in the
+    /// double lane's place: its pairs, its degrees and its stored counts are the
+    /// double lane's only by coincidence.
+    const float* flatRatCoeffs32 = nullptr;
+    /// The four per-interval columns of the float grid, the same layout and the
+    /// same meaning as the double grid's above.
+    const int* flatRatNumDeg32 = nullptr;
+    const int* flatRatDenDeg32 = nullptr;
+    const int* flatRatStored32 = nullptr;
+    const int* flatRatOffsets32 = nullptr;
 };
 
 /// The number of addresses the handle's tail export writes: one for every symbol
@@ -359,15 +402,25 @@ struct BoysDeviceTables {
 /// status layer, which sizes its array with it, and asserted in the device image
 /// against the order's own length, so a table added to either end without the
 /// other is a compile error rather than an address written past an array.
-inline constexpr int kBoysDeviceTablesTailCount = 58;
+inline constexpr int kBoysDeviceTablesTailCount = 68;
 
-/// The tail export's four slots for the uniform grid's per-interval tables, in
-/// the order (double degrees, double offsets, float degrees, float offsets).
-/// They are the order's last four: a group added to that order is appended to
-/// its end, so the group these four belong to sits after every group that came
-/// before it. The device image puts the same four there and asserts the tail's
-/// length, so a group appended without them is a compile error rather than a
-/// slot read as the wrong table.
-inline constexpr int kBoysDeviceTablesTailFlatGrid = kBoysDeviceTablesTailCount - 4;
+/// The tail export's four slots for the uniform grid's per-interval tables on
+/// its Chebyshev route, in the order (double degrees, double offsets, float
+/// degrees, float offsets). They are no longer the order's last four — the
+/// rational route's two groups were appended after them — and they are named
+/// from the end of those groups so the three cannot drift: a group appended
+/// without re-cutting these constants reads the wrong slots, and the device
+/// image's own assert on the tail's length is what makes that a compile error.
+inline constexpr int kBoysDeviceTablesTailFlatGrid = kBoysDeviceTablesTailCount - 14;
+
+/// The tail export's five slots for the double lane's uniform grid on its
+/// RATIONAL route, in the order (the pool, numDeg, denDeg, stored, offsets).
+/// They are appended after the Chebyshev grid's group, as the append-only rule
+/// requires, so a slot a caller's build already reads keeps its index.
+inline constexpr int kBoysDeviceTablesTailRatGrid = kBoysDeviceTablesTailCount - 10;
+
+/// The tail export's five slots for the float lane's grid on the same route,
+/// the same five in the same order, appended after the double lane's.
+inline constexpr int kBoysDeviceTablesTailRatGrid32 = kBoysDeviceTablesTailCount - 5;
 
 } // namespace boys

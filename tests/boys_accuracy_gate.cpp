@@ -11090,94 +11090,6 @@ int main(int argc, char** argv) {
         }(std::make_index_sequence<7>{});
     };
 
-    // The rational member's cells on the uniform partition of the double lane,
-    // at the two schemes and the two packing axes, at the one rung that member
-    // is served at.
-    //
-    // They are read by a lambda of their own rather than by combDoubleRungs
-    // above, and what decides that is the member and not the partition: that
-    // lambda asks its policy at every rung of the enumeration, and a rational
-    // policy over this partition at a rung past the reference one is refused
-    // where it is named (RefuseUniformAtRung, boys_impl.hpp) - the member's
-    // pairs are admissible at every multiplier and no entry reads them at a rung
-    // yet - so a rung sequence over this member is not an instantiation that
-    // exists. The rung here is the reference multiplier written out, one cell
-    // per (scheme, axis). The Chebyshev member's cells are the same partition's
-    // and are NOT read here: they are served at every rung, and they are
-    // measured by combDoubleRungs above with the other rows of the rung sweep.
-    //
-    // The route and the axis are template parameters for the reason they are in
-    // combDoubleRungs: the row this records has to name the cell it measured,
-    // and the entry reaches both through the policy. The rational member's
-    // across-orders cell is served by the scalar orders lane rather than by the
-    // packed body - its rows are per interval and have no stride - so the two
-    // axes are two rows over one call and not two bodies.
-    const auto combUniformRung = [&]<boys::FitRoute kRoute, boys::EvalScheme kScheme,
-                                     boys::PackAxis kAxis>(int lane) {
-        using PExact = boys::EvalPolicy<kRoute,
-                                        kScheme,
-                                        boys::BoysBudget::kFloat,
-                                        kAxis,
-                                        boys::FitGranularity::kUniform,
-                                        boys::DivisionForm::kExactDivision>;
-        using PPlain = boys::EvalPolicy<kRoute,
-                                        kScheme,
-                                        boys::BoysBudget::kFloat,
-                                        kAxis,
-                                        boys::FitGranularity::kUniform,
-                                        boys::DivisionForm::kPlainReciprocal>;
-        using PRefined = boys::EvalPolicy<kRoute,
-                                          kScheme,
-                                          boys::BoysBudget::kFloat,
-                                          kAxis,
-                                          boys::FitGranularity::kUniform,
-                                          boys::DivisionForm::kRefinedReciprocal>;
-        const double laneBound = combLaneRows[static_cast<std::size_t>(lane)].bound;
-        const double laneAdd = combLaneRows[static_cast<std::size_t>(lane)].additive;
-        CombAccum a;
-        std::array<std::array<double, 33>, kCombForms> out{};
-
-        a.bound = laneBound + laneAdd;
-
-        for (std::size_t i = 0; i < count; ++i)
-        {
-            boys::BoysAllOrders<boys::kBoysFullAccuracyMultiplier, PExact>(nmax, ref.x[i],
-                                                                          out[0].data());
-            boys::BoysAllOrders<boys::kBoysFullAccuracyMultiplier, PPlain>(nmax, ref.x[i],
-                                                                          out[1].data());
-            boys::BoysAllOrders<boys::kBoysFullAccuracyMultiplier, PRefined>(nmax, ref.x[i],
-                                                                            out[2].data());
-
-            for (int n = 0; n <= nmax; ++n)
-            {
-                const std::size_t sn = static_cast<std::size_t>(n);
-                const double got[kCombForms] = {out[0][sn], out[1][sn], out[2][sn]};
-
-                a.addAtForms(n, ref.x[i], got, kCombForms, ref.v[ref.Index(n, i)]);
-            }
-        }
-
-        combMeasured.push_back({lane,
-                                0,
-                                static_cast<int>(kRoute),
-                                static_cast<int>(kScheme),
-                                static_cast<int>(boys::FitGranularity::kUniform),
-                                static_cast<int>(kAxis),
-                                a.cells,
-                                a.below,
-                                a.over,
-                                a.worst,
-                                a.bound,
-                                a.worstN,
-                                a.worstX,
-                                a.worstForm,
-                                a.forms,
-                                a.moved,
-                                a.compared,
-                                {a.movedByForm[0], a.movedByForm[1], a.movedByForm[2]}});
-    };
-
-
     const auto combSingleLane =
         [&]<boys::BoysBudget kBudget, boys::FitRoute kRoute, boys::EvalScheme kScheme,
             boys::PackAxis kAxis, boys::FitGranularity kGran>(int lane) {
@@ -11336,22 +11248,32 @@ int main(int argc, char** argv) {
                                         boys::PackAxis::kOrders,
                                         boys::FitGranularity::kUniform>(kLaneDouble);
 
-    // The uniform partition on the rational route: the reference rung alone,
-    // which is the one the partition's row offers for it. The member's pairs are
-    // stored per interval and are admissible at every multiplier by the same
-    // reading the Chebyshev member's degree is, and no entry reads them at a
-    // rung yet - so the rung cells are refused where they are named and this book
-    // carries them as the owed work they are rather than as holes.
-    combUniformRung.template operator()<boys::FitRoute::kRationalMinimax,
+    // The uniform partition on the rational route: every rung of the
+    // enumeration, on both schemes and both axes, which is what the partition's
+    // row states it serves. The member's pairs are stored one per interval and
+    // are admissible at every multiplier by the same reading the Chebyshev
+    // member's degree is - there is no per-order effective-degree table to cut -
+    // and the entries select the reference body for this partition at every
+    // multiplier, so a rung of this route is the route's own arithmetic rather
+    // than a cut of it. The seven rows per (scheme, axis) are written out one
+    // per rung rather than collapsed to one with six marked covered, for the
+    // reason the single lanes' rows state: the cell the cross looks for is the
+    // whole tuple, and a count that came out right because a row was recorded for
+    // a rung nothing called is the failure this block exists to find.
+    combDoubleRungs.template operator()<boys::FitRoute::kRationalMinimax,
                                         boys::EvalScheme::kSplitClenshaw,
-                                        boys::PackAxis::kArguments>(kLaneDouble);
-    combUniformRung.template operator()<boys::FitRoute::kRationalMinimax, boys::EvalScheme::kHorner,
-                                        boys::PackAxis::kArguments>(kLaneDouble);
-    combUniformRung.template operator()<boys::FitRoute::kRationalMinimax,
+                                        boys::PackAxis::kArguments,
+                                        boys::FitGranularity::kUniform>(kLaneDouble);
+    combDoubleRungs.template operator()<boys::FitRoute::kRationalMinimax, boys::EvalScheme::kHorner,
+                                        boys::PackAxis::kArguments,
+                                        boys::FitGranularity::kUniform>(kLaneDouble);
+    combDoubleRungs.template operator()<boys::FitRoute::kRationalMinimax,
                                         boys::EvalScheme::kSplitClenshaw,
-                                        boys::PackAxis::kOrders>(kLaneDouble);
-    combUniformRung.template operator()<boys::FitRoute::kRationalMinimax, boys::EvalScheme::kHorner,
-                                        boys::PackAxis::kOrders>(kLaneDouble);
+                                        boys::PackAxis::kOrders,
+                                        boys::FitGranularity::kUniform>(kLaneDouble);
+    combDoubleRungs.template operator()<boys::FitRoute::kRationalMinimax, boys::EvalScheme::kHorner,
+                                        boys::PackAxis::kOrders,
+                                        boys::FitGranularity::kUniform>(kLaneDouble);
 
     // The single and half lanes. The reference rung carries every route, scheme,
     // partition and axis on both engine budgets; past it the cells measured here
@@ -11528,6 +11450,54 @@ int main(int argc, char** argv) {
                                        boys::EvalScheme::kSplitClenshaw, boys::PackAxis::kOrders,
                                        boys::FitGranularity::kUniform>(combHalfLane);
     combSingleLane.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kChebyshev,
+                                       boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
+                                       boys::FitGranularity::kUniform>(combHalfLane);
+
+    // The grid on the rational route, on those same two lanes. The member is a
+    // fit of this lane's own - one numerator/denominator pair per interval of
+    // this lane's grid, stored in this lane's width and certified in its
+    // arithmetic (kFlatRatCoeffsF32, tools/gen_boys_coefficients.py) - and the
+    // entries read it through the route dispatch in UniformOrderAtF32, so the
+    // cells below are the same shape of reading as the Chebyshev grid's above:
+    // seven rungs of one body, on both schemes and both axes. Read at the
+    // lane's own per-value figure, which is what the route is certified
+    // against, and against the committed reference grid.
+    combSingleLane.template operator()<boys::BoysBudget::kFloat,
+                                       boys::FitRoute::kRationalMinimax,
+                                       boys::EvalScheme::kSplitClenshaw,
+                                       boys::PackAxis::kArguments,
+                                       boys::FitGranularity::kUniform>(kLaneSingle);
+    combSingleLane.template operator()<boys::BoysBudget::kFloat,
+                                       boys::FitRoute::kRationalMinimax,
+                                       boys::EvalScheme::kHorner,
+                                       boys::PackAxis::kArguments,
+                                       boys::FitGranularity::kUniform>(kLaneSingle);
+    combSingleLane.template operator()<boys::BoysBudget::kFloat,
+                                       boys::FitRoute::kRationalMinimax,
+                                       boys::EvalScheme::kSplitClenshaw,
+                                       boys::PackAxis::kOrders,
+                                       boys::FitGranularity::kUniform>(kLaneSingle);
+    combSingleLane.template operator()<boys::BoysBudget::kFloat,
+                                       boys::FitRoute::kRationalMinimax,
+                                       boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
+                                       boys::FitGranularity::kUniform>(kLaneSingle);
+    combSingleLane.template operator()<boys::BoysBudget::kFp16,
+                                       boys::FitRoute::kRationalMinimax,
+                                       boys::EvalScheme::kSplitClenshaw,
+                                       boys::PackAxis::kArguments,
+                                       boys::FitGranularity::kUniform>(combHalfLane);
+    combSingleLane.template operator()<boys::BoysBudget::kFp16,
+                                       boys::FitRoute::kRationalMinimax,
+                                       boys::EvalScheme::kHorner,
+                                       boys::PackAxis::kArguments,
+                                       boys::FitGranularity::kUniform>(combHalfLane);
+    combSingleLane.template operator()<boys::BoysBudget::kFp16,
+                                       boys::FitRoute::kRationalMinimax,
+                                       boys::EvalScheme::kSplitClenshaw,
+                                       boys::PackAxis::kOrders,
+                                       boys::FitGranularity::kUniform>(combHalfLane);
+    combSingleLane.template operator()<boys::BoysBudget::kFp16,
+                                       boys::FitRoute::kRationalMinimax,
                                        boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
                                        boys::FitGranularity::kUniform>(combHalfLane);
 

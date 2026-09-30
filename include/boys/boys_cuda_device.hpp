@@ -275,6 +275,33 @@ __device__ __forceinline__ BoysDeviceStatus DeviceFlatReady32(const BoysDeviceTa
                : BoysDeviceStatus::kSuccess;
 }
 
+// The same test for the grid's RATIONAL route, which reads five pointers and not
+// three: the pool and the four per-interval columns one row is addressed with.
+// The columns are part of the test and not a separate one for the reason the
+// Chebyshev grid's two are — a body takes the numerator's degree, the
+// denominator's and the block's start before it touches a coefficient, so a
+// handle carrying the pool alone is read at another interval's length — and the
+// count is a column here rather than a constant of the grid, which is why one
+// more of them is named than the monomial twin's.
+__device__ __forceinline__ BoysDeviceStatus DeviceFlatRatReady(const BoysDeviceTables& tables) {
+    return tables.flatRatCoeffs == nullptr || tables.flatRatNumDeg == nullptr ||
+                   tables.flatRatDenDeg == nullptr || tables.flatRatStored == nullptr ||
+                   tables.flatRatOffsets == nullptr
+               ? BoysDeviceStatus::kTablesNotReady
+               : BoysDeviceStatus::kSuccess;
+}
+
+/// The float lane's own test on the same route, on its own lane's pointers, for
+/// the reason DeviceFlatReady32 gives against DeviceFlatReady.
+__device__ __forceinline__ BoysDeviceStatus DeviceFlatRatReady32(
+    const BoysDeviceTables& tables) {
+    return tables.flatRatCoeffs32 == nullptr || tables.flatRatNumDeg32 == nullptr ||
+                   tables.flatRatDenDeg32 == nullptr || tables.flatRatStored32 == nullptr ||
+                   tables.flatRatOffsets32 == nullptr
+               ? BoysDeviceStatus::kTablesNotReady
+               : BoysDeviceStatus::kSuccess;
+}
+
 __device__ __forceinline__ bool DeviceOrderValid(int order) {
     return order >= 0 && order <= kMaxBoysOrder;
 }
@@ -1180,6 +1207,78 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64UniformHorner(
     return BoysDeviceStatus::kSuccess;
 }
 
+/// F_0(x)..F_n(x) from the uniform grid's RATIONAL member, inside the caller's
+/// kernel.
+///
+/// The double lane's member over the same grid the two entries above read: one
+/// numerator/denominator pair per interval, summed by DeviceRatSum. The route is
+/// a family and not a basis, so there is one stored form and the Horner entry
+/// below is a forwarder to this one rather than a second arithmetic.
+///
+/// The pair is one per interval and its stored count is the interval's own, so
+/// the read takes four per-interval columns beside the pool, which
+/// DeviceFlatRatReady tests before any coefficient is touched.
+///
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
+/// \param capacity   the caller's out capacity, which must be >= order + 1
+/// \param multiplier the rung, which this route reads no degree of
+/// \return kSuccess, or a refusal naming the argument that was not servable
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF64UniformRat(const BoysDeviceTables& tables,
+                                                             int order,
+                                                             double x,
+                                                             double* out,
+                                                             int capacity,
+                                                             double multiplier =
+                                                                 kBoysFullAccuracyMultiplier) {
+    const BoysDeviceStatus ready = detail::DeviceFlatRatReady(tables);
+
+    if (ready != BoysDeviceStatus::kSuccess)
+    {
+        return ready;
+    }
+
+    if (!detail::DeviceOrderValid(order))
+    {
+        return BoysDeviceStatus::kOrderOutOfRange;
+    }
+
+    if (capacity < order + 1)
+    {
+        return BoysDeviceStatus::kCapacityTooSmall;
+    }
+
+    const BoysDeviceStatus rung = detail::DeviceResidentRung(tables, multiplier);
+
+    if (rung != BoysDeviceStatus::kSuccess)
+    {
+        return rung;
+    }
+
+    detail::DeviceAllOrdersF64FlatRat(tables.flatRatCoeffs, tables.flatRatNumDeg,
+                                      tables.flatRatDenDeg, tables.flatRatStored,
+                                      tables.flatRatOffsets, order, x,
+                                      [&](int l, double v) { out[l] = v; });
+    return BoysDeviceStatus::kSuccess;
+}
+
+/// The same values under the Horner scheme name, inside the caller's kernel.
+///
+/// A forwarder and not a second body, for the reason its float counterpart
+/// gives: the rational member is stored in one form, so both scheme names reach
+/// one arithmetic.
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF64UniformRatHorner(
+    const BoysDeviceTables& tables,
+    int order,
+    double x,
+    double* out,
+    int capacity,
+    double multiplier = kBoysFullAccuracyMultiplier) {
+    return BoysDeviceAllOrdersF64UniformRat(tables, order, x, out, capacity, multiplier);
+}
+
 /// F_n(x) in single precision, inside the caller's kernel.
 ///
 /// The float lane's bound is the one the f32 batch entries document; this
@@ -1535,6 +1634,87 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformHorner(
                                          tables.flatDegs32, tables.flatOffsets32, order, x,
                                          [&](int l, float v) { out[l] = v; });
     return BoysDeviceStatus::kSuccess;
+}
+
+/// F_0(x)..F_n(x) from the uniform grid's RATIONAL member, inside the caller's
+/// kernel.
+///
+/// One numerator/denominator pair per interval of the same grid the two entries
+/// above read, summed by the two Horner sums and the division the lane's shipped
+/// and narrow rational routes are summed by (DeviceRatSum32). The route is a
+/// family and not a basis, so there is one stored form and the Horner entry
+/// below is a forwarder to this one rather than a second arithmetic.
+///
+/// The pair is one per interval and its stored count is the interval's own, so
+/// the read takes four per-interval columns beside the pool; a handle missing
+/// any of them is refused before a coefficient is touched, which is what
+/// DeviceFlatRatReady32 tests. Everything above the grid's join is the same
+/// one-term asymptotic and the same upward recurrence every uniform entry runs,
+/// so the bound this entry carries over the whole of x >= 0 is that row's.
+///
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
+/// \param capacity   the caller's out capacity, which must be >= order + 1
+/// \param multiplier the rung, which this route reads no degree of
+/// \return kSuccess, or a refusal naming the argument that was not servable
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformRat(const BoysDeviceTables& tables,
+                                                             int order,
+                                                             float x,
+                                                             float* out,
+                                                             int capacity,
+                                                             double multiplier =
+                                                                 kBoysFullAccuracyMultiplier) {
+    const BoysDeviceStatus ready = detail::DeviceFlatRatReady32(tables);
+
+    if (ready != BoysDeviceStatus::kSuccess)
+    {
+        return ready;
+    }
+
+    if (!detail::DeviceOrderValid(order))
+    {
+        return BoysDeviceStatus::kOrderOutOfRange;
+    }
+
+    if (capacity < order + 1)
+    {
+        return BoysDeviceStatus::kCapacityTooSmall;
+    }
+
+    // The rung is not read as a degree - this member stores one pair per interval
+    // and no per-order effective-degree column, so every rung's own arithmetic is
+    // the route's - but it is still checked, because a multiplier the lane holds
+    // no rung for is not an argument this entry can be asked at.
+    const BoysDeviceStatus rung = detail::DeviceResidentRung(tables, multiplier);
+
+    if (rung != BoysDeviceStatus::kSuccess)
+    {
+        return rung;
+    }
+
+    detail::DeviceAllOrdersF32FlatRat(tables.flatRatCoeffs32, tables.flatRatNumDeg32,
+                                      tables.flatRatDenDeg32, tables.flatRatStored32,
+                                      tables.flatRatOffsets32, order, x,
+                                      [&](int l, float v) { out[l] = v; });
+    return BoysDeviceStatus::kSuccess;
+}
+
+/// The same values under the Horner scheme name, inside the caller's kernel.
+///
+/// A forwarder and not a second body: the rational member is stored in one form,
+/// so both scheme names a caller may use reach one arithmetic - the same relation
+/// the lane's shipped and narrow rational pairs stand in. Contract, bound and
+/// refusals are BoysDeviceAllOrdersF32UniformRat's.
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformRatHorner(
+    const BoysDeviceTables& tables,
+    int order,
+    float x,
+    float* out,
+    int capacity,
+    double multiplier = kBoysFullAccuracyMultiplier) {
+    return BoysDeviceAllOrdersF32UniformRat(tables, order, x, out, capacity, multiplier);
 }
 
 #if BoysFp16

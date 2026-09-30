@@ -1022,9 +1022,14 @@ Carriage CarriesSingle(FitRoute route,
     // either.
     //
     // What it refuses is a value outside the enumerations, which names no
-    // combination at all rather than one this revision does not carry, and the
-    // rational route over the grid, whose pairs are a fit to derive over this
-    // lane's own grid rather than a shape the call cannot have.
+    // combination at all rather than one this revision does not carry. The
+    // rational route over the grid is no longer one of those: the member is
+    // fitted over this lane's own grid and emitted beside the Chebyshev one
+    // (kFlatRatCoeffsF32, tools/gen_boys_coefficients.py), and the entries read
+    // it through the route dispatch in UniformOrderAtF32 -- below the grid's
+    // join on the arguments and orders axes alike, and on the across-orders
+    // packed lane by handing its ladder to the scalar one. So every cell of
+    // this lane's route, partition, scheme, axis and rung axes is served here.
     const std::size_t r = static_cast<std::size_t>(route);
     const std::size_t s = static_cast<std::size_t>(scheme);
     const std::size_t a = static_cast<std::size_t>(axis);
@@ -1039,18 +1044,6 @@ Carriage CarriesSingle(FitRoute route,
                 "the value named is outside the enumeration this library serves, so it names no "
                 "combination: name a route, a scheme, a packing axis, a partition and a rung from "
                 "the enumerations this revision publishes"};
-    }
-
-    if (granularity == FitGranularity::kUniform && route == FitRoute::kRationalMinimax)
-    {
-        return {false,
-                "this lane has no rational member over the uniform grid: its entries read the "
-                "grid's Chebyshev table, and each refuses a policy naming that route at this "
-                "partition where the call is named rather than answering it from the Chebyshev "
-                "member. The pairs over the grid's intervals are the double lane's, fitted in its "
-                "arithmetic, and this lane's grid is a fit of its own whose table is not emitted. "
-                "A caller naming this combination names a member this lane has not been given "
-                "rather than a shape the call cannot have"};
     }
 
     return {true, ""};
@@ -1087,8 +1080,7 @@ Carriage CarriesSingle(FitRoute route,
 //   * the uniform partition carries the Chebyshev member at every rung
 //     (AllOrdersF32Uniform and AllOrdersF32UniformHorner) and no rational member,
 //     which is the one route-partition pair of this lane that no entry of it
-//     answers: the grid's intervals are fixed by the width law rather than cut by
-//     a criterion, and no pair over them is stored here.
+//     answers: the member is stored and no entry of this lane reads it.
 //
 // Both packing axes are carried, and they are carried on the same tables: the
 // per-argument ladder every one of those entries has, and the orders reading of
@@ -1112,9 +1104,9 @@ Carriage CarriesSingle(FitRoute route,
 // of them.
 //
 // So the multiplier refuses no cell of this lane any more, and no arm below tests
-// it. What the lane still refuses is a route over a partition the family has no
-// member of — the grid's rational member above — and that is a statement about
-// which fits were derived rather than about a rung.
+// it. What the lane still refuses is a route over a partition no entry of it
+// reads — the grid's rational member above — and that is a statement about
+// which entries were built rather than about a rung.
 //
 // What the scheme axis reaches on which partition is the lane's own table's to
 // state: this function has one scheme field for the whole call, and that table is
@@ -1140,15 +1132,15 @@ Carriage CarriesDevice(FitRoute route,
                 "the enumerations this revision publishes"};
     }
 
-    if (route == FitRoute::kRationalMinimax && granularity == FitGranularity::kUniform)
-    {
-        return {false,
-                "the grid carries no member of the rational family: the family is a "
-                "numerator/denominator pair over each piece of a partition a criterion derived, "
-                "and the grid's intervals are fixed by its width law rather than cut by one, so no "
-                "pair over them is stored in this lane. The member is a fit to derive and emit "
-                "rather than a shape the call cannot have"};
-    }
+    // The uniform grid's rational member is a row of this lane now, on both
+    // precisions: the member is fitted over each lane's own grid, emitted beside
+    // the Chebyshev one (tools/gen_boys_coefficients.py), uploaded to the device
+    // face and read by entries of its own (BoysDeviceAllOrdersF64UniformRat and
+    // its float counterpart, the kernels behind BoysCuda::AllOrdersF64UniformRat
+    // and its float counterpart). So no arm here refuses it, and the rungs are
+    // the route's own arithmetic rather than a cut: DeviceEntryServedAtRung
+    // answers every rung of those rows, for the reason the Chebyshev member of
+    // the same grid does.
 
     // The rungs are the entries' own and every one of them is served, so no arm
     // below tests the multiplier: the table that would refuse a rung is the one
@@ -1232,24 +1224,14 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
 
         const FitGranularityInfo& row = partitions[p];
 
-        // The uniform partition's rational member is the one rung this build still
-        // refuses on a rung's account, and the refusal is the entries' and not the
-        // table's: the member's pairs are stored one per interval and are
-        // admissible at every multiplier by the same reading the row's rung count
-        // states, and no entry reads them at a rung yet. It is answered here, in
-        // the carrier, because it is a limit finer than the row can state - the
-        // row says which routes the partition holds and how many rungs it serves,
-        // and it cannot say that one route's rung is wired and the other's is not.
-        if (row.granularity == FitGranularity::kUniform &&
-            route == FitRoute::kRationalMinimax && tier != AccuracyTier::kReference)
-        {
-            c.reason =
-                "the uniform partition's rational member is stored and admissible at every "
-                "multiplier, and its rung is not wired: the table holds one numerator/"
-                "denominator pair per interval and no per-order effective-degree table, and "
-                "every entry of this lane refuses a policy naming that pair at a rung. The "
-                "cells are unbuilt work and not a property of the rung or of the partition";
-        } else if (static_cast<int>(tier) >= row.rungs)
+        // The uniform partition's rational member is no longer a rung this carrier
+        // refuses. Its pairs are stored one per interval and are admissible at
+        // every multiplier by the same reading the Chebyshev member's degree is -
+        // there is no per-order effective-degree table to cut, and the entries
+        // select the reference body for this partition at every multiplier
+        // (boys_impl.hpp, BoysSingleImpl), so a rung of it is the route's own
+        // arithmetic rather than a cut of it. The row's own rung count covers it.
+        if (static_cast<int>(tier) >= row.rungs)
         {
             c.reason =
                 "a relaxed rung reads a stored row at a per-order effective degree, and this "

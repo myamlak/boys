@@ -715,6 +715,8 @@ BOYS_DEVICE_DEMO_LADDER(64NarrowRat, double, BoysDeviceAllOrdersF64NarrowRat)
 BOYS_DEVICE_DEMO_LADDER(64NarrowRatHorner, double, BoysDeviceAllOrdersF64NarrowRatHorner)
 BOYS_DEVICE_DEMO_LADDER(64Uniform, double, BoysDeviceAllOrdersF64Uniform)
 BOYS_DEVICE_DEMO_LADDER(64UniformHorner, double, BoysDeviceAllOrdersF64UniformHorner)
+BOYS_DEVICE_DEMO_LADDER(64UniformRat, double, BoysDeviceAllOrdersF64UniformRat)
+BOYS_DEVICE_DEMO_LADDER(64UniformRatHorner, double, BoysDeviceAllOrdersF64UniformRatHorner)
 
 BOYS_DEVICE_DEMO_LADDER(32Narrow, float, BoysDeviceAllOrdersF32Narrow)
 BOYS_DEVICE_DEMO_LADDER(32NarrowMono, float, BoysDeviceAllOrdersF32NarrowMono)
@@ -724,6 +726,8 @@ BOYS_DEVICE_DEMO_LADDER(32NarrowRat, float, BoysDeviceAllOrdersF32NarrowRat)
 BOYS_DEVICE_DEMO_LADDER(32NarrowRatHorner, float, BoysDeviceAllOrdersF32NarrowRatHorner)
 BOYS_DEVICE_DEMO_LADDER(32Uniform, float, BoysDeviceAllOrdersF32Uniform)
 BOYS_DEVICE_DEMO_LADDER(32UniformHorner, float, BoysDeviceAllOrdersF32UniformHorner)
+BOYS_DEVICE_DEMO_LADDER(32UniformRat, float, BoysDeviceAllOrdersF32UniformRat)
+BOYS_DEVICE_DEMO_LADDER(32UniformRatHorner, float, BoysDeviceAllOrdersF32UniformRatHorner)
 
 #undef BOYS_DEVICE_DEMO_LADDER
 
