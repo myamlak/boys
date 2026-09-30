@@ -450,14 +450,16 @@ TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
     // row does not claim is a claim the row is missing, and one the row claims
     // and the accessor refuses is a route or an axis the build does not have.
     //
-    // The rung count is read per route and not off the row alone, because the
-    // row cannot state it: `rungs` is one number for the partition, and the
-    // partition serves every rung of the Chebyshev member - a rung of it is the
-    // stored cells read uncut - while the rational member's rung is not wired
-    // and is refused by the carrier (boys.cpp). So the Chebyshev route's claim
-    // is the row's rung count and the rational route's is the reference rung
-    // alone, which is the finer rule the test holds the accessor to.
+    // The rung count is the row's, for either route. It used to be read per
+    // route - the rational member's claim was the reference rung alone, because
+    // its rung was not wired and the carrier refused it - and both members are
+    // served at every rung now: a rung of this partition is the stored cells
+    // read uncut, and the rational member's pairs are stored and read at every
+    // multiplier by the same reading. So the finer rule this test held the
+    // accessor to is gone because the distinction it drew is gone, and the
+    // claim is the row's own rung count for both routes alike.
     std::size_t served = 0;
+    std::size_t claimedCount = 0;
 
     for (const boys::FitRouteInfo& route : boys::BoysFitRoutes())
     {
@@ -471,12 +473,9 @@ TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
                     const boys::AccuracyFigure figure = boys::BoysAccuracyGuaranteed(
                         boys::Precision::kFp64, route.route, scheme.scheme, axis.axis,
                         boys::FitGranularity::kUniform, static_cast<boys::AccuracyTier>(raw));
-                    const int rungs = route.route == boys::FitRoute::kRationalMinimax
-                                          ? 1
-                                          : uniform->rungs;
                     const bool claimed =
                         boys::FitGranularityHasRoute(*uniform, route.route) &&
-                        boys::FitGranularityHasAxis(*uniform, axis.axis) && raw < rungs;
+                        boys::FitGranularityHasAxis(*uniform, axis.axis) && raw < uniform->rungs;
 
                     EXPECT_EQ(figure.available, claimed)
                         << "the uniform row says " << (claimed ? "served" : "refused")
@@ -486,6 +485,11 @@ TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
                         << boys::AccuracyMultiplier(static_cast<boys::AccuracyTier>(raw))
                         << " and the accessor answers " << (figure.available ? "served" : "no")
                         << ": " << figure.reason;
+
+                    if (claimed)
+                    {
+                        ++claimedCount;
+                    }
 
                     if (figure.available)
                     {
@@ -507,12 +511,18 @@ TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
         }
     }
 
-    EXPECT_EQ(served, 64u)
-        << "the partition is served at every rung of the Chebyshev route and the reference rung "
-           "of the rational one, over both packing axes: two evaluation schemes over the four "
-           "rows the route table names the two routes by - one per region each - over the two "
-           "axes the row carries and over 7 + 1 rungs, which is 2 x 2 x 4 x 8 = 64, and nothing "
-           "else";
+    // The count is held to the rows' own claim rather than to a literal. It was
+    // a literal - 64 - and it went stale the moment the rational member's rungs
+    // were served, which is the failure mode a number written down beside a
+    // changing space always has. What the literal stood for is the equality
+    // below: the accessor serves every combination the rows claim and no
+    // combination they do not, over the whole cross. `claimed` is computed from
+    // the row's own declarations, and the rows' rungs, routes and axes are
+    // asserted above it, so this is the same claim without the snapshot.
+    EXPECT_GT(claimedCount, 0u) << "the uniform row claims nothing at all";
+    EXPECT_EQ(served, claimedCount)
+        << "the accessor and the uniform row disagree over the cross: the rows claim "
+        << claimedCount << " combination(s) and the accessor serves " << served;
 
     // And the entry the row claims runs, reads its own table, and is not the
     // narrow partition's under another name.

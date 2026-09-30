@@ -2506,8 +2506,16 @@ TEST(Combination, TheReplyIsTheTwoAccessorsFiguresAndTheirComparison) {
         EXPECT_NE(outside.reason, nullptr) << "a refusal carried no reason";
     }
 
-    EXPECT_GT(refused, 0u) << "the uniform partition is served at one route, one axis and one "
-                              "rung, so cells of the space are refused and this block is reached";
+    // This build refuses nothing: the member the uniform grid did not carry is
+    // derived and read at every rung on every lane, so the cells that used to be
+    // refused here are served and the rows below would judge nothing. A revision
+    // that refuses a cell again reaches them, and this states which state the
+    // build is in rather than passing on an empty set.
+    if (refused == 0u) {
+        GTEST_SKIP() << "no combination of this build is refused, so the refusal rows below would "
+                        "judge nothing: the uniform partition serves both its members at every "
+                        "rung, and a host counts apart only what it cannot run";
+    }
     EXPECT_EQ(refusedOutsideTheNarrowerRows, 0u)
         << "a combination was refused that names neither the uniform partition nor the device "
            "lane's single-precision one: every other row of this revision's space is served "
@@ -2670,16 +2678,18 @@ TEST(Combination, ARefusalCarriesNoFigureAndTheAccessorsOwnSentence) {
         }
     });
 
-    // The uniform partition is served at one route, one packing axis and one
-    // rung, so the space this build publishes is not served whole and the rows
-    // below are reached by refusals of its cells: the block requires at least one
-    // and the section after it reaches the other kind of refusal, a value outside
-    // the enumerations. What is required of every refusal is the same either way:
-    // no figure, no verdict, and the accessor's own sentence.
-    EXPECT_GT(refused, 0u)
-        << "no combination of this build is refused, so the rows below judged nothing: the "
-           "uniform partition is served at one route, one axis and one rung, and the cells "
-           "outside them are refused";
+    // The rows below are reached by refusals, and this build has none: both
+    // members of the uniform partition are served at every rung, and every other
+    // row of the space is served whole. The block used to require at least one
+    // refusal; it now states the state the build is in, and a revision that
+    // refuses a cell again reaches the rows. What is required of every refusal is
+    // the same either way: no figure, no verdict, and the accessor's own
+    // sentence.
+    if (refused == 0u) {
+        GTEST_SKIP() << "no combination of this build is refused, so the rows below would judge "
+                        "nothing: the uniform partition serves both its members at every rung, "
+                        "and a host counts apart only what it cannot run";
+    }
     EXPECT_EQ(carryingAFigure, 0u) << "a refused combination answered with a figure";
     EXPECT_EQ(carryingAVerdict, 0u) << "a refused combination answered with a verdict";
     EXPECT_EQ(withoutTheAccessorsSentence, 0u)

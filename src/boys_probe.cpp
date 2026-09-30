@@ -1606,18 +1606,15 @@ void CellUniform(FitRoute route,
                  int nmax,
                  double x,
                  double* out) noexcept {
-    if (route == FitRoute::kRationalMinimax && tier != AccuracyTier::kReference)
-    {
-        std::fprintf(stderr,
-                     "boys-probe: the uniform partition's rational member was named at a rung "
-                     "this revision has no entry for (route %d, axis %d, m = %g); the member's "
-                     "rung is unbuilt work and not a shape the call cannot have\n",
-                     static_cast<int>(route),
-                     static_cast<int>(pack),
-                     AccuracyMultiplier(tier));
-        std::abort();
-    }
-
+    // The rational member's rung is served like every other cell's: the library
+    // derives the member over the grid's own intervals, stores its pairs and
+    // reads them at any multiplier, so there is no second path here and no arm
+    // to stop on. It was the one cell of this partition a build did not answer,
+    // and this file stopped rather than evaluating it under a rung it had not
+    // named - the failure that arm existed to make impossible. **The arm is gone
+    // because the state it guarded is gone**, and a cell named here is now
+    // evaluated at the rung the book named rather than at the reference one.
+    //
     // The axis the book names is the axis the cell is measured at: the across-orders
     // packed lane carries the uniform grid as well, so a cell named on either axis
     // is evaluated through a policy naming that axis and never through the other.
@@ -1625,27 +1622,16 @@ void CellUniform(FitRoute route,
     // members are stored in one partition and the entry dispatches on the route
     // it is handed rather than on a second branch here.
     //
-    // The rung is the ladder the other two partitions' cells take for the
-    // Chebyshev member, so it is CellRung's and not a second switch written here
-    // - one spelling of the six multipliers for the whole probe, which is what
-    // keeps a rung from being read off one partition and served to another. The
-    // rational member's rung is not wired, and its entry refuses the policy at
-    // any other multiplier with a static assert while the policy is being
-    // formed: the arm below is therefore instantiated at the reference rung
-    // alone rather than through that ladder, or the refusal would be this file's
-    // build failure instead of the library's answer about a cell.
+    // The rung is the ladder every partition's cells take, so it is CellRung's
+    // and not a second switch written here - one spelling of the six multipliers
+    // for the whole probe, which is what keeps a rung from being read off one
+    // partition and served to another. Both members of this partition go through
+    // it. The rational member's rung was once refused by a static assert in the
+    // policy, which is why this lambda used to name the reference multiplier
+    // directly for that route; the assertion is gone with the work it named, and
+    // a cell named at a rung is now evaluated at that rung.
     const auto with_axis = [&]<FitRoute kRoute, EvalScheme kScheme, PackAxis kPack>() {
-        if constexpr (kRoute == FitRoute::kRationalMinimax)
-        {
-            using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFloat, kPack,
-                                      FitGranularity::kUniform, kDivision>;
-            BoysAllOrders<kBoysFullAccuracyMultiplier, Policy>(nmax, x, out);
-        }
-        else
-        {
-            CellRung<kRoute, kScheme, kPack, FitGranularity::kUniform, kDivision>(tier, nmax, x,
-                                                                                 out);
-        }
+        CellRung<kRoute, kScheme, kPack, FitGranularity::kUniform, kDivision>(tier, nmax, x, out);
     };
 
     const auto with_pack = [&]<FitRoute kRoute, EvalScheme kScheme>() {
@@ -1857,9 +1843,11 @@ void CellRungSingle(AccuracyTier tier, int nmax, float x, float* out) noexcept {
 /// because \c CarriesSingle answers the whole partition unserved on this lane.
 /// The rational route has a member over the *float* grid of its own: one
 /// numerator/denominator pair per interval, stored in this lane's width and read
-/// through the route dispatch in UniformOrderAtF32. Where a cell naming it
-/// reaches here the body takes it; where a probe book does not, this stops
-/// rather than reading another family's fits under the uniform name.
+/// through the route dispatch in UniformOrderAtF32. A cell naming it is
+/// evaluated through that dispatch like any other cell of the partition, on both
+/// budgets and at every rung; the route reaches the policy rather than being
+/// read off the cell here, which is what keeps a cell named on one family from
+/// being answered by another's fits.
 ///
 /// The budget is an axis of its own on this side and not a route or a rung: the
 /// fp16 class runs the same engine at its own region-B boundary, so a cell of
@@ -1876,19 +1864,15 @@ void CellUniformSingle(BoysBudget budget,
                        int nmax,
                        float x,
                        float* out) noexcept {
-    if (route != FitRoute::kChebyshev)
-    {
-        std::fprintf(stderr,
-                     "boys-probe: a uniform-partition cell was named on the rational route, "
-                     "which has no member over this lane's fixed grid: the pair is refused "
-                     "where the policy names it, so no cell of the book is one and this stops "
-                     "rather than reading another family's fits under the uniform name\n");
-        std::abort();
-    }
-
-    const auto with_budget = [&]<BoysBudget kBudget>() {
+    // Both routes of the uniform partition are served here and neither is an arm:
+    // the rational member is a pair per interval of this lane's own grid, stored
+    // in its width and read through the route dispatch in UniformOrderAtF32, so a
+    // cell naming it is evaluated like any other and not stopped. The arm this
+    // replaces stopped on the rational route *because the member was not stored
+    // then*, and that is what changed.
+    const auto with_budget = [&]<FitRoute kRoute, BoysBudget kBudget>() {
         const auto with_pack = [&]<PackAxis kPack, EvalScheme kScheme>() {
-            using Policy = EvalPolicy<FitRoute::kChebyshev, kScheme, kBudget, kPack,
+            using Policy = EvalPolicy<kRoute, kScheme, kBudget, kPack,
                                       FitGranularity::kUniform, kDivision>;
 
             switch (tier)
@@ -1936,12 +1920,24 @@ void CellUniformSingle(BoysBudget budget,
         }
     };
 
-    if (budget == BoysBudget::kFp16)
+    if (route == FitRoute::kRationalMinimax)
     {
-        with_budget.template operator()<BoysBudget::kFp16>();
+        if (budget == BoysBudget::kFp16)
+        {
+            with_budget.template operator()<FitRoute::kRationalMinimax, BoysBudget::kFp16>();
+        } else
+        {
+            with_budget.template operator()<FitRoute::kRationalMinimax, BoysBudget::kFloat>();
+        }
     } else
     {
-        with_budget.template operator()<BoysBudget::kFloat>();
+        if (budget == BoysBudget::kFp16)
+        {
+            with_budget.template operator()<FitRoute::kChebyshev, BoysBudget::kFp16>();
+        } else
+        {
+            with_budget.template operator()<FitRoute::kChebyshev, BoysBudget::kFloat>();
+        }
     }
 }
 
