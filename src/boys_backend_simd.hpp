@@ -6,11 +6,10 @@
 // surface, so the packed backends are named here and reported through
 // boys::backend::BoysBackends rather than declared in include/boys/backend.hpp.
 //
-// Both packed backends are contraction-free by construction: every multiply,
-// add and fused step names its instruction, so no setting of the contraction
-// flag changes what they compute. What Contracts() reports for them is
-// therefore whether a kernel that wrote a bare product-plus-add in this
-// arithmetic would fuse — which is a fact about the build, and is measured.
+// Both are contraction-free by construction: every step names its instruction,
+// so no setting of the contraction flag changes what they compute. What
+// Contracts() reports for them is the separate question of whether a bare
+// product-plus-add in this arithmetic would fuse.
 
 #include "boys/backend.hpp"
 
@@ -45,9 +44,8 @@ struct Avx2Fp64 {
         return _mm256_fmadd_pd(a, b, c);
     }
 
-    /// `a * b - c` with two roundings: the fused step with a zero addend
-    /// rounds the product and nothing else, and the subtraction rounds after
-    /// it. See the scalar backend for why the bare form will not do.
+    /// `a * b - c` with two roundings: the fused step with a zero addend rounds
+    /// the product and nothing else, and the subtraction rounds after it.
     static Packed MulSub(Packed a, Packed b, Packed c) noexcept {
         return _mm256_sub_pd(_mm256_fmadd_pd(a, b, _mm256_setzero_pd()), c);
     }
@@ -89,10 +87,8 @@ struct Avx2Fp32 {
     static bool Contracts() noexcept;
 };
 
-// Whether a bare product-plus-add in this arithmetic would fuse is a property
-// of the value type, the target and the flags, not of the width: the same
-// measurement answers for the packed backend and for the scalar backend of
-// the same precision.
+// A bare product-plus-add fuses by value type, target and flags, not by width:
+// the same measurement answers for both backends of one precision.
 inline bool Avx2Fp64::Contracts() noexcept {
     return detail::MeasureContraction<double>();
 }

@@ -2,16 +2,13 @@
 
 /// \file
 /// What a caller hands the CUDA lane's entries: the handle the device-callable
-/// Boys entries read (boys_cuda_device.hpp), the one arithmetic option the
-/// single entries of that lane take, and the lanes the handle's relaxed degree
-/// tables are cut into.
+/// Boys entries read, the one arithmetic option the single entries of that lane
+/// take, and the lanes the handle's relaxed degree tables are cut into.
 ///
-/// Kept free of CUDA runtime headers, so the C++ side of the CUDA lane
-/// (boys_cuda.hpp) can name these types in a signature without dragging a CUDA
-/// build requirement onto a plain translation unit, and kept free of this
-/// library's implementation headers, so that a device translation unit that
-/// includes boys_cuda_device.hpp compiles the coefficient tables it needs and
-/// not the CPU lane's C++23 implementation.
+/// Kept free of CUDA runtime headers, so the C++ side of the CUDA lane can name
+/// these types in a signature without a CUDA build requirement, and free of this
+/// library's implementation headers, so that a device translation unit compiles
+/// the coefficient tables it needs and not the CPU lane's C++23 implementation.
 
 #include "boys/accuracy.hpp"
 
@@ -31,10 +28,14 @@ namespace boys {
 /// holding it everywhere else, and the instrument that predicts that is that
 /// factor, not the ulp count at one argument.
 ///
+/// Both hold their bounds in every region; what separates them is the bound and
+/// not a counted cost, the exponential being evaluated once per element outside
+/// the order loop.
+///
 ///  - \c kAccurate is the library routine, and is the arithmetic the f32 batch
 ///    entries already run: at m = 1 a single and a batch evaluation of the same
-///    (n, x) return the same bits outside region A. Its relative error is flat
-///    at 2 ulp, so its bound is the lane's, m * 1.5e-7, in every region.
+///    (n, x) return the same bits outside region A. Its relative error is flat at
+///    2 ulp, so its bound is the lane's, m * 1.5e-7, in every region.
 ///  - \c kFast is the hardware approximation with its argument-scaling residual
 ///    removed. The approximation evaluates 2^fl(y log2 e), so the one rounding
 ///    of that product is what grows its error with |y|; the residual
@@ -45,46 +46,19 @@ namespace boys {
 ///    lane's budget — which the condition number derives and the device gate's
 ///    sweep confirms (5.0e-8 measured at m = 1).
 ///
-/// **What the ulp count alone would have missed.** Without the correction the
-/// approximation carries (2 + floor(1.16 |x|)) ulp: fifteen at the region-B
-/// boundary, thirty-five at its far end. Multiplying by the amplification
-/// factor gives 2.30e-7 at n = 32 at the boundary, 1.53 times the lane's whole
-/// bound, and a failing band out to x = 12.07 at that order. Measured: 2.57e-7
-/// at the same argument, and three cells over the bound at m = 1. A returned
-/// value there also carries the opposite sign to the function — at
-/// x = 11.899847984313965, n = 32, the approximation returns
-/// -9.6178212061204249e-08 where F_32(x) = +1.6072968370095873e-07. That sign
-/// consequence is an inference from the magnitude bound plus the eventual
-/// domination of the unwanted solution, and it holds only where that solution
-/// has the opposite sign to the wanted one; the corrected form returns the
-/// value's sign, and the device gate's audit reports zero wrong-sign cells for
-/// it at m = 1.
+/// The bare approximation is not offered at any multiplier: its failing band is
+/// interior to region B, which a caller cannot name a sub-range of.
 ///
-/// The bare approximation is not offered at any multiplier. Its failing band is
-/// interior to region B — a caller cannot name a piece of a region — so there
-/// is no certified sub-range to restrict it to. With the correction, both
-/// options hold their bounds in every region.
-///
-/// What separates the two is then the bound and not a counted cost: the
-/// corrected form's kernel is the same size statically as the accurate one (944
-/// instructions against 944 at m = 1, 976 against 976 on the relaxed lane), and
-/// the exponential is evaluated once per element, outside the order loop. No
-/// speed is claimed for either option, and the accurate one carries the tighter
-/// bound of the two.
-///
-/// One name serves both lanes that take the option — the batch entry
-/// BoysCuda::SingleF32, where it is a run-time argument of a multi-element
-/// call, and the device entry BoysDeviceSingleF32, where it is a template
-/// argument, because there the choice replaces an arithmetic inside the
-/// caller's own kernel rather than branching within one.
+/// One name serves both lanes that take the option: the batch entry
+/// BoysCuda::SingleF32 (a run-time argument) and the device entry
+/// BoysDeviceSingleF32 (a template argument).
 ///
 /// \ingroup boys
 enum class RegionBExp : int {
     /// expf: the library routine, the batch bodies' arithmetic, 2 ulp.
     kAccurate = 0,
     /// The hardware approximation with its argument-scaling residual removed.
-    /// Pair it with the bound SingleF32 documents for it, and not with the
-    /// lane's.
+    /// Read it with the bound SingleF32 documents for it, not with the lane's.
     kFast,
 };
 
@@ -92,32 +66,23 @@ enum class RegionBExp : int {
 /// call site names none, which is the option whose bound is the lane's own:
 /// \c RegionBExp::kAccurate, the library routine the f32 batch bodies run.
 ///
-/// A caller who names no exponential gets this name; naming it explicitly is
-/// the same instantiation and no second arithmetic.
-///
 /// The other axis of the device lane's default is its accuracy multiplier,
 /// \c kBoysFullAccuracyMultiplier, the same name the CPU entries default to.
 /// The two are the whole of what "the device lane's default" selects.
 ///
-/// Neither default was chosen against a measurement — see the per-precision
-/// defaults in docs/lane-contract.md for what that means and what changes when
-/// one is set from a timing.
-///
 /// \ingroup boys
 inline constexpr RegionBExp kDefaultRegionBExp = RegionBExp::kAccurate;
 
-/// The six degree tables an entry can read.
+/// The six degree tables an entry can read, in the order the handle's relaxed
+/// degree arrays hold them.
 ///
 /// Relaxation is a property of a lane and not of a precision: two lanes of one
 /// precision carry different seed-error amplifications, so the same multiplier
-/// buys them different effective degrees, and the region-A and region-B tables
-/// of each are cut separately. This names the six, in the order the handle's
-/// relaxed degree arrays hold them.
+/// buys them different effective degrees and each lane's region-A and region-B
+/// tables are cut separately.
 ///
-/// It is a naming of that layout and not a choice a caller makes. An entry
-/// reads the table of the lane it serves, and the lane is a property of the
-/// entry: no call takes one of these as an argument, and a caller reaches the
-/// arithmetic of a different lane by calling a different entry.
+/// It is a naming of that layout and not a choice a caller makes: an entry reads
+/// the table of the lane it serves, and no lane is a parameter of any call.
 ///
 /// \ingroup boys
 enum class BoysDeviceLane : int {
@@ -132,9 +97,8 @@ enum class BoysDeviceLane : int {
     /// table, and neither path amplifies the seed.
     kF32Single,
     /// The three float family entries: as kF64Batch, except that region A is
-    /// still the double piece table — the region-A seed is computed in double
-    /// whatever precision the entry returns — and region B is the float piece
-    /// table's order-0 entry.
+    /// still the double piece table, and region B the float piece table's
+    /// order-0 entry.
     kF32Batch,
     /// The fp16 single entry: as kF32Single, under the fp16 lane's budget.
     kF16Single,
@@ -143,55 +107,37 @@ enum class BoysDeviceLane : int {
     kF16Batch,
 };
 
-/// The tables a device-callable entry reads (boys_cuda_device.hpp).
+/// The tables a device-callable entry reads.
 ///
 /// Plain data — device pointers and three degrees — and the same for every
-/// precision: one handle serves the double, float and fp16 entries, and it is
-/// the caller's to copy around, since it owns nothing. Fill it with
-/// BoysCuda::DeviceTables, then pass it by value into a kernel and hand it to
-/// an entry; a kernel parameter lives in the constant bank, so the handle
-/// itself costs no global memory traffic. The tables it points at are the
-/// library's: they live as long as the process does, and they are read-only.
+/// precision: one handle serves the double, float and fp16 entries, and it is the
+/// caller's to copy around, since it owns nothing. Fill it with
+/// BoysCuda::DeviceTables, then pass it by value into a kernel and hand it to an
+/// entry; a kernel parameter lives in the constant bank, so the handle itself
+/// costs no global memory traffic. The tables it points at are the library's:
+/// they live as long as the process does, and they are read-only.
 ///
-/// A handle names the device that was current when it was filled, as every
-/// other entry of the CUDA lane names the current device. A caller that runs on
-/// more than one device fills one handle per device.
+/// A handle names the device that was current when it was filled, as every other
+/// entry of the CUDA lane names the current device. A caller that runs on more
+/// than one device fills one handle per device.
 ///
-/// The fields are not a layout a caller writes to or reads from: the entries
-/// read them, and their names are here so that a reader of a kernel signature
-/// can see what the argument is. Only the library fills a handle.
+/// The fields are not a layout a caller writes to or reads from: the entries read
+/// them, and their names are here so that a reader of a kernel signature can see
+/// what the argument is.
 ///
-/// **Two rungs, not one.** The full-accuracy degree tables are the handle's own
-/// fields and are resident from the first upload. The relaxed degree tables are
-/// a second set, resident for one multiplier at a time — the one the last
-/// BoysCuda::DeviceTables call named, on the same per-(device, m) upload the
-/// batch entries share — and the entries report a rung they have no tables for
-/// rather than running the full-accuracy arithmetic under a relaxed name. What
-/// the two arrays below hold is where those tables are; which rung they hold is
-/// library state, and relaxedRung is the address of it, so an entry reads the
-/// resident rung rather than a value copied into the handle when it was filled.
-/// That is what makes a retired handle report itself: filling a handle for a
-/// rung does not disturb any other handle, but it does retire the rung the
-/// previous one named, and every entry asked for that rung then says so instead
-/// of reading tables that have since been overwritten.
-///
-/// The full-accuracy tables are not in that image and are never retired: a call
-/// that names m = 1 leaves whatever relaxed rung is resident in place, because
-/// it has nothing to make resident.
-///
-/// The price of the second set is device memory and not constant-bank space:
-/// the six region-A tables are 582 ints and the six region-B tables 198, so
-/// 3120 bytes of the device's global memory stand behind the three fields
-/// below, plus the eight bytes of the resident-rung scalar relaxedRung points
-/// at, once for the whole process. The handle itself grows by thirteen
-/// pointers — 104 bytes, from 128 to 232 — because the relaxed tables are
-/// addressed once per call rather than held inline.
+/// The full-accuracy degree tables are the handle's own fields and are resident
+/// from the first upload. The relaxed degree tables are a second set, resident for
+/// one multiplier at a time — the one the last BoysCuda::DeviceTables call named —
+/// and an entry reads the resident rung through \c relaxedRung rather than a
+/// value copied into the handle when it was filled. So filling a handle for a
+/// rung retires the rung the previous one named, and an entry asked for a retired
+/// rung says so instead of reading tables that have since been overwritten. A
+/// call that names m = 1 retires nothing.
 ///
 /// \ingroup boys
 struct BoysDeviceTables {
     /// The double lane's piece index base per order: order \c n's pieces are
-    /// the entries \c n and \c n+1 of this array, so order \c n has
-    /// \c pieceStart[n+1] - \c pieceStart[n] pieces. kMaxOrder + 2 entries.
+    /// entries \c n and \c n+1 of this array. kMaxOrder + 2 entries.
     const int* pieceStart = nullptr;
     const double* pieceA = nullptr; ///< [piece] the piece's lower edge
     const double* pieceB = nullptr; ///< [piece] the piece's upper edge
@@ -218,17 +164,191 @@ struct BoysDeviceTables {
     /// read per call. Zero when no relaxed rung has been made resident; the
     /// library owns the value and no caller writes it.
     const double* relaxedRung = nullptr;
-    /// [lane] The relaxed region-A effective degrees, in the indexing the table
-    /// above uses: piece \c p of order \c n is the entry
+    /// [lane] The relaxed region-A effective degrees, in the indexing the piece
+    /// tables above use: piece \c p of order \c n is the entry
     /// \c pieceStart[n] + \c p, and the lane's own piece-start table is the one
-    /// its region-A seed reads its coefficients with. Indexed by
-    /// BoysDeviceLane.
+    /// its region-A seed reads its coefficients with. Indexed by BoysDeviceLane.
     const int* relaxedDegA[6] = {};
-    /// [lane] The relaxed region-B effective degrees, kMaxBoysOrder + 1 per
-    /// lane, indexed by BoysDeviceLane. The single lanes read the entry for the
-    /// order the recursion has reached and the batch lanes the order-0 entry,
-    /// for the reason their region-B bounds state.
+    /// [lane] The relaxed region-B effective degrees, kMaxBoysOrder + 1 per lane,
+    /// indexed by BoysDeviceLane. The single lanes read the entry for the order the
+    /// recursion has reached and the batch lanes the order-0 entry.
     const int* relaxedDegB[6] = {};
+
+    /// The uniform route's table: one grid of equal intervals over
+    /// [0, kFlatHi), every order fitted on its own inside its interval's block.
+    /// The route the CPU lane names \c FitGranularity::kUniform is this table,
+    /// and it is the whole of what an entry taking it reads — the interval an
+    /// argument falls in and the join above which the table stops are
+    /// compile-time facts of the grid, and the two per-interval tables that
+    /// address a cell are carried beside the coefficients below.
+    ///
+    /// The two pointers of a lane are the two stored forms of that one fit:
+    /// the Chebyshev blocks, which the split Clenshaw sums, and the monomial
+    /// ones, which Horner sums. They are two rows of one table and not two
+    /// arithmetics, so an entry that named the wrong one would sum the other
+    /// half of the table. Each lane's rows are indexed by that lane's own
+    /// degrees and offsets, which is why those tables are carried per lane.
+    const double* flatCoeffs = nullptr;     ///< the double lane's Chebyshev blocks
+    const double* flatMonoCoeffs = nullptr; ///< the double lane's monomial blocks
+    const float* flatCoeffs32 = nullptr;    ///< the float lane's Chebyshev blocks
+    const float* flatMonoCoeffs32 = nullptr; ///< the float lane's monomial blocks
+
+    /// The narrow partition's tables, in the double lane. The partition is a
+    /// second cut of the same domain, whose pieces are cut per order: order
+    /// \c n's pieces are entries \c n and \c n+1 of \c narrowPieceStart, so a
+    /// piece index is the partition's own and the argument alone does not name
+    /// one. Region A's pieces carry the fit of their order's F_n directly, as
+    /// the shipped partition's do; region B's seed is piecewise, which is why it
+    /// carries its own edge table rather than the two edges of one fit.
+    ///
+    /// The degree fields hold the partition's own cut of a rung, on the one
+    /// shape its tables have: a stored degree per piece for region A, and one
+    /// degree per piece and per order for region B, whose seed's degree is read
+    /// at the order the calling lane has reached.
+    const int* narrowPieceStart = nullptr;
+    /// [piece] the index of the piece's first coefficient in \c narrowCoeffs
+    const int* narrowPieceOffset = nullptr;
+    const double* narrowPieceA = nullptr; ///< [piece] the piece's lower edge
+    const double* narrowPieceB = nullptr; ///< [piece] the piece's upper edge
+    const int* narrowStoredDeg = nullptr; ///< [piece] the piece's stored degree
+    const double* narrowCoeffs = nullptr;     ///< region A, Chebyshev form
+    const double* narrowMonoCoeffs = nullptr; ///< region A, monomial form
+    /// [piece] region B's piece edges, one more than there are pieces
+    const double* narrowBEdges = nullptr;
+    const double* narrowBCoeffs = nullptr;     ///< region B's seed, Chebyshev form
+    const double* narrowBMonoCoeffs = nullptr; ///< region B's seed, monomial form
+    /// [piece] region A's relaxed degree for the resident rung
+    const int* narrowRelaxedDegA = nullptr;
+    /// [piece * (kMaxBoysOrder + 1) + order] region B's relaxed degrees, the
+    /// degree of the piece's seed fit at that order
+    const int* narrowRelaxedDegB = nullptr;
+    /// [piece] the monomial form of region A's relaxed degree
+    const int* narrowMonoRelaxedDegA = nullptr;
+    /// [piece * (kMaxBoysOrder + 1) + order], the monomial form of region B's
+    const int* narrowMonoRelaxedDegB = nullptr;
+
+    /// The same partition one lane down. Its region B is the float lane's own
+    /// piecewise seed; its region A is the double lane's narrow pieces above,
+    /// which is the one seed lane the float entries seed from. No relaxed degree
+    /// is carried beside it: the float lane's narrow tables have a rung cut this
+    /// build does not hold, so an entry of that partition answers at m = 1 and
+    /// names the rung it refuses.
+    const int* narrowPieceStart32 = nullptr;
+    /// [piece] the index of the piece's first coefficient in \c narrowCoeffs32
+    const int* narrowPieceOffset32 = nullptr;
+    const float* narrowPieceA32 = nullptr; ///< [piece] the piece's lower edge
+    const float* narrowPieceB32 = nullptr; ///< [piece] the piece's upper edge
+    const int* narrowStoredDeg32 = nullptr; ///< [piece] the piece's stored degree
+    const float* narrowCoeffs32 = nullptr;     ///< region A, Chebyshev form
+    const float* narrowMonoCoeffs32 = nullptr; ///< region A, monomial form
+    /// [piece] region B's piece edges, one more than there are pieces
+    const float* narrowBEdges32 = nullptr;
+    const float* narrowBCoeffs32 = nullptr;     ///< region B's seed, Chebyshev
+    const float* narrowBMonoCoeffs32 = nullptr; ///< region B's seed, monomial
+
+    /// The rational route's tables on the shipped partition, double lane: the
+    /// same pieces as the piece tables above, with each piece stored as a
+    /// numerator and a denominator summed apart and divided once.
+    ///
+    /// The route's degree tables come in pairs — the numerator's degree then
+    /// the denominator's — and at two resolutions: \c ratNumDeg and
+    /// \c ratDenDeg hold the degrees the table was stored at, and \c ratSeedDeg
+    /// the resident rung's cut of the reading the entry that consumes it makes,
+    /// which is the reading of the ladder shape every device-callable entry of
+    /// this lane carries. Every one of them is read at the flat piece index
+    /// \c pieceStart[order] + \c piece.
+    ///
+    /// \c ratBNum and \c ratBDen are region B's single seed pair, read whole at
+    /// every order, and \c ratRelaxedDegB its degrees at the resident rung.
+    const double* ratCoeffs = nullptr; ///< the numerator and denominator pool
+    /// [piece] the numerator's first coefficient in \c ratCoeffs
+    const int* ratOffset = nullptr;
+    /// [piece] the denominator's first coefficient in \c ratCoeffs
+    const int* ratDenOffset = nullptr;
+    const int* ratNumDeg = nullptr; ///< [piece] the stored numerator degree
+    const int* ratDenDeg = nullptr; ///< [piece] the stored denominator degree
+    /// [2 * piece] the resident rung's cut of the seed's own reading
+    const int* ratSeedDeg = nullptr;
+    const double* ratBNum = nullptr; ///< region B's seed numerator
+    const double* ratBDen = nullptr; ///< region B's seed denominator
+    /// [2] region B's seed degrees at the resident rung: numerator, denominator
+    const int* ratRelaxedDegB = nullptr;
+    const float* ratBNum32 = nullptr; ///< region B's seed numerator, float lane
+    const float* ratBDen32 = nullptr; ///< region B's seed denominator, float lane
+
+    /// The rational route on the narrow partition, double lane: the narrow
+    /// pieces above, each stored as a pair. Region A's metadata is one table per
+    /// attribute here, as the partition's other tables are, and region B's seed
+    /// is a piecewise pair whose denominator sits above its numerator in
+    /// \c narrowRatBCoeffs.
+    const double* narrowRatCoeffs = nullptr;
+    const int* narrowRatOffset = nullptr;   ///< [piece] numerator's first index
+    const int* narrowRatDenOffset = nullptr; ///< [piece] denominator's first index
+    const int* narrowRatNumDeg = nullptr;   ///< [piece] the stored numerator degree
+    const int* narrowRatDenDeg = nullptr;   ///< [piece] the stored denominator degree
+    /// [2 * piece] the resident rung's cut of the seed's own reading
+    const int* narrowRatSeedDeg = nullptr;
+    const double* narrowRatBCoeffs = nullptr; ///< region B's numerator and denominator
+    /// [piece] the piece's first coefficient in \c narrowRatBCoeffs
+    const int* narrowRatBOffset = nullptr;
+    const int* narrowRatBStoredNumDeg = nullptr; ///< [piece] the stored numerator degree
+    const int* narrowRatBDenDeg = nullptr;       ///< [piece] the stored denominator degree
+    /// [2 * piece] region B's degrees at the resident rung
+    const int* narrowRatRelaxedDegB = nullptr;
+
+    /// The rational route on the narrow partition one lane down: region B's
+    /// piecewise pair in the float lane's own pieces, over the double lane's
+    /// narrow pair above. Served at m = 1, as the partition's float tables are.
+    const float* narrowRatBCoeffs32 = nullptr;
+    /// [piece] the piece's first coefficient in \c narrowRatBCoeffs32
+    const int* narrowRatBOffset32 = nullptr;
+    const int* narrowRatBStoredNumDeg32 = nullptr; ///< [piece] numerator degree
+    const int* narrowRatBDenDeg32 = nullptr;       ///< [piece] denominator degree
+
+    /// The uniform grid's cells, one entry per interval, read by the route's
+    /// own entries (BoysDeviceAllOrdersF64Uniform and its float counterpart).
+    ///
+    /// The grid's intervals do not all carry the same degree — each was given
+    /// the smallest its own truncation bound holds it to, so a cell near the
+    /// join needs less than one near the origin — and the table is stored
+    /// interval-major with each interval's block holding (its degree + 1)
+    /// coefficients per order. So the coefficient of order \c l and term
+    /// \c k in interval \c iv is
+    ///
+    ///   flatCoeffs[flatOffsets[iv] + l * (flatDegs[iv] + 1) + k]
+    ///
+    /// and a reader needs both tables to address one cell: neither the degree
+    /// nor the block's start is a constant of the grid, and a reader that held
+    /// either fixed would sum a neighbouring cell's polynomial. Both are read
+    /// from the same uploaded image as the coefficients, so the handle cannot
+    /// carry one without the others.
+    const int* flatDegs = nullptr; ///< [interval] that interval's own degree
+    /// [interval + 1] the interval's first coefficient; the last entry is the
+    /// pool's stored count, so a block never runs past the end of the table.
+    const int* flatOffsets = nullptr;
+    /// The float lane's own grid, which is derived from that lane's bound,
+    /// format and read cap: its degrees and its offsets are the double lane's
+    /// only by coincidence and are never read in its place.
+    const int* flatDegs32 = nullptr;
+    const int* flatOffsets32 = nullptr;
 };
+
+/// The number of addresses the handle's tail export writes: one for every symbol
+/// the order carries after the first twenty-one, in that order. It is a count of
+/// symbols and not of fields — one of these symbols fills an array of degree
+/// pointers — and the two exports are the two halves of one order. Read by the
+/// status layer, which sizes its array with it, and asserted in the device image
+/// against the order's own length, so a table added to either end without the
+/// other is a compile error rather than an address written past an array.
+inline constexpr int kBoysDeviceTablesTailCount = 54;
+
+/// The tail export's four slots for the uniform grid's per-interval tables, in
+/// the order (double degrees, double offsets, float degrees, float offsets).
+/// They are the order's last four: a group added to that order is appended to
+/// its end, so the group these four belong to sits after every group that came
+/// before it. The device image puts the same four there and asserts the tail's
+/// length, so a group appended without them is a compile error rather than a
+/// slot read as the wrong table.
+inline constexpr int kBoysDeviceTablesTailFlatGrid = kBoysDeviceTablesTailCount - 4;
 
 } // namespace boys

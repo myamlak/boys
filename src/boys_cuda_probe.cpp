@@ -37,6 +37,7 @@
 #include "boys_cuda_probe_entries.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -626,7 +627,7 @@ std::string AxisName(const DeviceOptionInfo& option) {
             return Text("region-B:%s",
                         option.regionBExp == RegionBExp::kFast ? "fast" : "accurate");
         case DeviceOptionAxis::kPartition:
-            return "partition:narrow";
+            return Text("partition:%s", DevicePartitionName(option.entry));
         case DeviceOptionAxis::kPacking:
             return "packing:per-order";
         case DeviceOptionAxis::kScheme:
@@ -2490,6 +2491,28 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
         }
     }
 
+    /// Whether a row is one its entry is offered at. The space answers this per
+    /// (entry, rung) — DeviceEntryServedAtRung — and a row it says no to is not
+    /// timed at all: an entry whose rung axis is empty is not a row of that
+    /// rung's class, and asking it for a figure there would put one arithmetic
+    /// under another rung's name. The row stays in the table, because the table
+    /// is the space, and it is counted as not offered rather than as not
+    /// measured, which is a different fact and has a different cause.
+    const auto offered = [&](std::size_t index) {
+        return DeviceEntryServedAtRung(entries[rows[index].entry].entry,
+                                       kProbeRungs[rows[index].rung].multiplier);
+    };
+
+    std::size_t notOffered = 0;
+
+    for (std::size_t index = 0; index < rows.size(); ++index)
+    {
+        if (!offered(index))
+        {
+            ++notOffered;
+        }
+    }
+
     for (std::size_t index = 0; index < rows.size(); ++index)
     {
         const EntryInfo& info = entries[rows[index].entry];
@@ -2499,6 +2522,7 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
         measurement.name = info.name;
         measurement.precision = info.precision;
         measurement.entryIndex = rows[index].entry;
+        measurement.entry = info.entry;
         measurement.rung = rung.multiplier;
         measurement.rungName = rung.name;
         measurement.shape = info.shape;
@@ -2612,6 +2636,15 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
 
         for (std::size_t e = 0; e < entries.size(); ++e)
         {
+            // A row this rung does not hold is not warmed up either: the entry
+            // refuses the call by contract, and reading that refusal as the
+            // device failing to run this build's kernels would abort a run over
+            // an answer the library gives on purpose.
+            if (!DeviceEntryServedAtRung(entries[e].entry, base.multiplier))
+            {
+                continue;
+            }
+
             // Both counts: the pair count is a different grid, and the first launch
             // on a grid pays the card's one-time cost for it as much as the first
             // launch on the run's count does.
@@ -2827,6 +2860,16 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
             {
                 const std::size_t index = visit[block.first + local];
                 const EntryInfo& info = entries[rows[index].entry];
+
+                // A row this rung does not hold is skipped rather than timed and
+                // refused: as in the warm-up, the refusal is the library's answer
+                // and not the device's, and no figure is owed at a rung the entry
+                // does not serve. The cell stays infinite, which is what the fold
+                // reads as a round the row was not measured in.
+                if (!offered(index))
+                {
+                    continue;
+                }
 
                 // The row's own two readings, in this round and at both counts,
                 // timed adjacently so that both sit under one clock and one workload
@@ -3688,6 +3731,47 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
 // The text.
 // ---------------------------------------------------------------------------
 
+/// How much of the lane's rung axis a row of the space is served at, as the
+/// table's own column prints it: \c "12/12" for a row every rung holds, \c "1/12"
+/// for one a single rung holds, \c "0/12" for a row this build does not serve at
+/// all.
+///
+/// A count and not the rungs themselves, which the table has no room for at
+/// twelve of them; the rungs behind a count below the whole are named under the
+/// table, where a reader checking one row has them in one place.
+std::string RungCoverage(const DeviceOptionInfo& option) {
+    return Text("%zu/%zu",
+                static_cast<std::size_t>(std::popcount(option.servedRungs)),
+                kDeviceRungCount);
+}
+
+/// The rungs a mask holds, as the report spells the lane's rungs, in the order
+/// of the lane's own table; empty where the mask holds none.
+///
+/// The names are the probe's (\c kProbeRungs), which the library's own rung
+/// table is checked against at compile time above, so a rung printed here is the
+/// rung a class key of this report names.
+std::string RungNames(DeviceRungMask mask) {
+    std::string names;
+
+    for (std::size_t i = 0; i < std::size(kProbeRungs); ++i)
+    {
+        if ((mask & (DeviceRungMask{1} << i)) == 0)
+        {
+            continue;
+        }
+
+        if (!names.empty())
+        {
+            names += ", ";
+        }
+
+        names += Text("m = %s", kProbeRungs[i].name);
+    }
+
+    return names;
+}
+
 /// The library's report of its device option space, row by row, with the row
 /// this probe carries for each beside it.
 ///
@@ -3699,18 +3783,43 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
 /// actually carried — the measurement table's own names, in its own order — so
 /// the comparison is against the report this run printed and not against a
 /// second reading of the same source.
-void AppendOptionSpace(std::string& text, const std::vector<std::string>& probeRows) {
+/// \param probeRows     the entries the run carried a figure for
+/// \param emptyRows     the offered cells that produced no figure
+void AppendOptionSpace(std::string& text,
+                       const std::vector<std::string>& probeRows,
+                       std::size_t emptyRows) {
     const std::span<const DeviceOptionInfo> space = BoysDeviceOptions();
     std::size_t served = 0;
     std::size_t refused = 0;
     std::size_t launched = 0;
     std::size_t inKernel = 0;
+    std::size_t cells = 0;
+    std::size_t refusedCells = 0;
+    std::size_t unbuiltCells = 0;
 
     for (const DeviceOptionInfo& option : space)
     {
         (option.built ? served : refused) += 1;
         (option.group == DeviceOptionGroup::kLaunched ? launched : inKernel) += 1;
+
+        // The cells of the space: one per (row, rung) the lane serves, counted
+        // from the row's own mask. The run's own grid is not where this can be
+        // counted — it holds a place for the rungs of a row this build serves
+        // and none at all for a row it does not, so a build with a closed seam
+        // would leave that row's cells out of the count rather than counting
+        // them as refused.
+        const std::size_t held = static_cast<std::size_t>(std::popcount(option.servedRungs));
+
+        cells += kDeviceRungCount;
+        refusedCells += kDeviceRungCount - held;
+
+        if (!option.built)
+        {
+            unbuiltCells += kDeviceRungCount;
+        }
     }
+
+    const std::size_t servedCells = cells - refusedCells;
 
     text += "\n\nthe option space - the library's own report of it, and the row this run carries "
             "for each\n";
@@ -3730,8 +3839,20 @@ void AppendOptionSpace(std::string& text, const std::vector<std::string>& probeR
                      space.size(), launched, inKernel, served, refused, probeRows.size());
     }
 
+    text += Text("  The space is those rows at the %zu rung(s) the lane serves: %zu cell(s), %zu "
+                 "this build\n  serves and %zu it refuses — %zu at a rung the row's own axis does "
+                 "not hold\n  (DeviceEntryServedAtRung) and %zu because the build does not serve "
+                 "the row at all. Of the\n  cells it serves, %zu produced no figure here.\n",
+                 kDeviceRungCount,
+                 cells,
+                 servedCells,
+                 refusedCells,
+                 refusedCells - unbuiltCells,
+                 unbuiltCells,
+                 emptyRows);
+
     text += "  report row                 probe row                  group     precision  shape    "
-            "   question    axis          lane        bound     documented form\n";
+            "   question    axis          rungs     lane        bound     documented form\n";
 
     for (const DeviceOptionInfo& option : space)
     {
@@ -3752,7 +3873,7 @@ void AppendOptionSpace(std::string& text, const std::vector<std::string>& probeR
             carriedRows == 0 ? std::string("not measured on this run")
                              : Text("%s at %zu rung(s)", option.name, carriedRows);
 
-        text += Text("  %-26s %-26s %-9s %-10s %-11s %-11s %-13s %-11s %-9.2g %s\n",
+        text += Text("  %-26s %-26s %-9s %-10s %-11s %-11s %-13s %-9s %-11s %-9.2g %s\n",
                      option.name,
                      carried.c_str(),
                      GroupName(option.group),
@@ -3760,9 +3881,45 @@ void AppendOptionSpace(std::string& text, const std::vector<std::string>& probeR
                      ShapeName(option.shape),
                      QuestionName(option.question),
                      AxisName(option).c_str(),
+                     RungCoverage(option).c_str(),
                      LaneName(option.lane),
                      option.bound,
                      option.boundForm);
+    }
+
+    // The rows that hold part of the lane's rung axis, named rung by rung. The
+    // column above says how many rungs a row is served at and this says which:
+    // a count below the whole is not an answer about the rungs it leaves out,
+    // and which they are is what a caller placing the row needs. A row served at
+    // the whole axis is not repeated here, the column having said so.
+    std::size_t partialRows = 0;
+    std::string partialNames;
+
+    for (const DeviceOptionInfo& option : space)
+    {
+        if (option.servedRungs == kEveryDeviceRung)
+        {
+            continue;
+        }
+
+        ++partialRows;
+
+        const std::string rungs = RungNames(option.servedRungs);
+
+        partialNames += Text("    %-34s %s\n",
+                             option.name,
+                             rungs.empty() ? "no rung: this build does not serve the row"
+                                           : rungs.c_str());
+    }
+
+    if (partialRows > 0)
+    {
+        text += Text("\n  %zu row(s) hold less than the whole of that axis, and the rungs each of "
+                     "them holds\n  are named here. A rung a row does not name is a call this "
+                     "library refuses rather than\n  one it answers at another rung's tables, so a "
+                     "cell it leaves out is owed work and not\n  a cell this run passed over:\n",
+                     partialRows);
+        text += partialNames;
     }
 
     // The other direction: a row this run carries that the library's report does
@@ -3849,9 +4006,10 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
 
         // The space is a fact about the option the entry names and not about
         // this host, so it is stated even when no figure could be taken: a
-        // reader of a failed run learns which options exist and which this
-        // build refuses, and what is missing is the measurement.
-        AppendOptionSpace(text, std::vector<std::string>());
+        // reader of a failed run learns which options exist, which this build
+        // refuses and which cells of the space they are, and what is missing is
+        // the measurement.
+        AppendOptionSpace(text, std::vector<std::string>(), 0);
         return text;
     }
 
@@ -4907,10 +5065,44 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
 
         for (const DeviceProbeMeasurement& measurement : report.measurements)
         {
+            // The rows this run has a figure for, and not every row of the space
+            // it holds a place for: the table is one row per (entry, rung), so a
+            // row the entry was never offered at, or one that was offered and
+            // produced nothing, is a place and not a measurement. The appendix
+            // counts what it names — 'row(s) measured here', 'at N rung(s)' — and
+            // a count that included the empty places would say a run carried an
+            // entry it never timed.
+            if (!measurement.measured)
+            {
+                continue;
+            }
+
             probeRows.push_back(measurement.name);
         }
 
-        AppendOptionSpace(text, probeRows);
+        // The cells this run offered and got no figure from, which is a different
+        // fact from a cell the space does not offer: the first was offered and
+        // produced nothing, the second is refused by the library's own contract.
+        // The second is counted where the rows are — each row of the space states
+        // the rungs it is served at, and the appendix counts the cells from those
+        // — rather than counted a second time from this run's grid, which holds a
+        // place only for the rungs of a row the build serves.
+        std::size_t emptyRows = 0;
+
+        for (const DeviceProbeMeasurement& measurement : report.measurements)
+        {
+            if (measurement.measured)
+            {
+                continue;
+            }
+
+            if (DeviceEntryServedAtRung(measurement.entry, measurement.rung))
+            {
+                ++emptyRows;
+            }
+        }
+
+        AppendOptionSpace(text, probeRows, emptyRows);
     }
 
     // The rungs a run could not make resident, if any: a refusal with a reason and

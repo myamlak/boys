@@ -15,37 +15,18 @@
 // intrinsics and CMake compiles this TU with /arch:AVX2 (MSVC) or
 // -mavx2 -mfma -mf16c (GCC/Clang). Everything below the #if is that tier.
 //
-// BOYS_SIMD_X86 answers one question — does this TU compile the vector tier?
-// — and there are two ways to reach that answer, in this order:
+// BOYS_SIMD_X86 answers one question - does this TU compile the vector tier?
+// CMake derives it from a configure-time probe and states it on the `boys`
+// target; when nobody states it the guard detects it from the same two
+// predefines, which is the case for a consumer compiling this source itself.
 //
-//   1. The build states it. CMakeLists.txt derives it from a configure-time
-//      compiler probe (check_cxx_source_compiles) and defines it on the
-//      `boys` target, so the flag set and this guard are one decision rather
-//      than two that can drift apart. An explicit answer, 1 or 0, is final.
-//   2. Nobody states it, so the guard detects it from the compiler's own
-//      predefines — the two macros the CMakeLists probe asks about. This is
-//      the case for a consumer that compiles this source into a target of its
-//      own instead of linking `boys` (a consumer target does exactly
-//      that), and it is why such a consumer needs no macro of its own. It is
-//      detection, not a guess: the two spellings below are the whole x86_64
-//      question, answered by the compiler that is doing the compiling.
-//      Detection answers the architecture question only — a consumer that
-//      compiles this TU itself still owns the AVX2/FMA/F16C flag set.
+// Unstated and not x86_64 is an #error rather than a quiet 0: this TU cannot
+// tell a real non-x86 target from an x86 target whose predefines it has not
+// been taught, and answering 0 on an x86_64 target would compile the intrinsics
+// out, soft-skip every SIMD test and leave CI green.
 //
-// Anything neither stated nor x86_64 is an ERROR rather than a quiet 0. This
-// TU cannot tell a genuine non-x86 target from an x86 target whose predefines
-// it has not been taught, and the failure this guard exists to prevent is a
-// vector tier that goes silently dead: on a target that IS x86_64, answering
-// 0 would compile the intrinsics out, leave every SIMD correctness test
-// soft-skipping, and leave CI green. A build that knows it is not x86_64 says
-// so — CMakeLists.txt does, on the same probe — and gets the scalar lanes.
-//
-// On a non-x86 target the same twelve entry points and BoysAvx2Available()
-// below are defined against the certified scalar lanes instead: same
-// signatures, same contracts, same numerics as the scalar tails the x86
-// entries already run for their last count % 4 elements — the vector engine
-// is absent, the results are not. BoysAvx2Available() reports false there,
-// and the CI legs assert that per architecture.
+// On a non-x86 target the same entry points are defined against the certified
+// scalar lanes instead - same signatures, same contracts, same numerics.
 #ifdef BOYS_SIMD_X86
 
 // The build answered; nothing to detect.
@@ -63,9 +44,7 @@
 
 #endif
 
-// The packed arithmetic backends this TU's kernels are written against; see
-// the headers for why they are named here rather than in include/boys/ and for
-// why this unit, and not another, answers for their contraction.
+// The packed arithmetic backends this TU's kernels are written against.
 #include "boys_backend_registry.hpp"
 #include "boys_backend_simd.hpp"
 
@@ -80,26 +59,17 @@
 #endif
 
 // AVX2 region-sorted lanes. The engine pattern (region-first): partition the
-// arguments by region FIRST so every
-// 4-lane vector is homogeneous; the unsorted variant pays a measured 2.3x
-// divergence penalty.
+// arguments by region FIRST so every 4-lane vector is homogeneous; the unsorted
+// variant pays a measured 2.3x divergence penalty.
 //
-// Callers must check BoysAvx2Available() before invoking these; the
-// translation unit is compiled with /arch:AVX2 and the kernels are FMA
-// chains, so the predicate requires the FMA feature bit as well.
+// Callers must check BoysAvx2Available() before invoking these; the kernels are
+// FMA chains, so the predicate requires the FMA feature bit as well.
 //
-// Accuracy-multiplier treatment: every region entry is a
-// template on kAccuracyMultiplier, compiled twice under if constexpr — the
-// m = 1 branch is the full-accuracy body verbatim (the bit-identity pin; the
-// only m = 1 differences are the scalar tails calling the templated scalar
-// entries at m = 1, which resolve to the same functions); the relaxed
-// branch passes the per-piece / per-order effective degrees into the
-// degree-parameterized Clenshaw variants (the loop-bound load shape is
-// unchanged — only the degree constant source differs). The relaxed
-// region-B exp-Taylor table is untouched (its error 1.83e-17 sits ~2700x
-// below the 5e-14 target and is m-independent). The default m = 1
-// instantiations of the region entries live at the bottom of this TU (the
-// extern-template declarations in boys.hpp).
+// Every region entry is a template on kAccuracyMultiplier, compiled twice under
+// if constexpr: the m = 1 branch is the full-accuracy body verbatim (the
+// bit-identity pin), the relaxed branch passes the per-piece / per-order
+// effective degrees into the degree-parameterized Clenshaw variants. The
+// default m = 1 instantiations live at the bottom of this TU.
 
 namespace boys::detail {
 namespace {
@@ -110,11 +80,8 @@ using detail::kX1;
 constexpr double kHalfSqrtPi = 0.886226925452758014;
 
 // CPUID + OSXSAVE detection of the AVX2 + FMA scope (the F64/F32 lanes'
-// engine). FMA belongs to the scope, it is not an optional extra: this
-// translation unit is compiled with /arch:AVX2 (MSVC) or -mavx2 -mfma
-// (GCC/Clang) and its kernels are FMA chains (the split-Clenshaw recurrences,
-// the region-B upward recursion, the e^{-x} Horner), so a processor that has
-// AVX2 without FMA would be dispatched into an unimplemented instruction.
+// engine). FMA belongs to the scope, it is not an optional extra: a processor
+// with AVX2 but no FMA would be dispatched into an unimplemented instruction.
 bool DetectAvx2() noexcept {
 #ifdef _MSC_VER
     int cpuInfo[4] = {};
@@ -126,9 +93,8 @@ bool DetectAvx2() noexcept {
     const bool avx2 = (cpuInfo[1] & (1u << 5)) != 0;
     return osXsave && fma && avx2;
 #else
-    // GCC/Clang builds: the kernel enables the AVX XCR0 state whenever
-    // the CPU supports it, so the leaf-1 feature bits are authoritative (the
-    // same check the MSVC branch performs).
+    // GCC/Clang builds: the kernel enables the AVX XCR0 state whenever the CPU
+    // supports it, so the leaf-1 feature bits are authoritative.
     unsigned int eax = 0, ebx = 0, ecx = 0, edx = 0;
 
     if (__get_cpuid(1, &eax, &ebx, &ecx, &edx) == 0)
@@ -157,20 +123,16 @@ bool DetectAvx2() noexcept {
 // ---------------------------------------------------------------------------
 // e^{-x} on [0, 30]: a degree-4 Taylor table, one row per grid abscissa
 // x_i = i * kStep, rows padded to 8 doubles so the gathers can use the legal
-// scale 8. On [x0, x1] the measured worst absolute error is 1.83e-17
-// (x ~= 11.99) - still ~2700x below the 5e-14 target.
+// scale 8. Worst absolute error 1.83e-17.
 //
-// A row holds the quartic Taylor polynomial of e^{-x} at x_i, written in the
-// monomial basis of the ABSOLUTE argument x so that Eval4 is a plain Horner
-// chain. Split e^{-x} = e^{-x_i} e^{-h} at h = x - x_i and expand the binomial
-// powers of h = x - x_i; the coefficient of x^k is
+// A row holds the quartic Taylor polynomial of e^{-x} at x_i in the monomial
+// basis of the ABSOLUTE argument x, so Eval4 is a plain Horner chain: splitting
+// e^{-x} = e^{-x_i} e^{-h} at h = x - x_i gives, for the coefficient of x^k,
 //
 //     a_k = e^{-x_i} * (-1)^k * S_{4-k} / k!,   S_m = sum_{j=0..m} x_i^j / j!.
 //
-// The row stores (-1)^k a_k = e^{-x_i} S_{4-k} / k!, i.e. the alternating sign
-// is folded into the table and taken back out by the sign pattern of Eval4's
-// FMA chain. Elementary Taylor expansion of the exponential; the table seeds
-// the Boys kernel [Boys1950].
+// The row stores (-1)^k a_k, i.e. the alternating sign is folded into the table
+// and taken back out by the sign pattern of Eval4's FMA chain.
 // ---------------------------------------------------------------------------
 class ExpTable {
 public:
@@ -211,17 +173,15 @@ public:
     __m256d Eval4(__m256d x) const noexcept {
         __m128i index = _mm256_cvtpd_epi32(_mm256_mul_pd(x, _mm256_set1_pd(1.0 / kStep)));
         index = _mm_min_epi32(index, _mm_set1_epi32(kNumPoints));
-        // Rows are 8 doubles apart; gather indices are double offsets, so the
-        // grid index scales by 8 (scale 8 bytes x index = row address).
+        // Rows are 8 doubles apart: a grid index scaled by 8 is a row address.
         index = _mm_slli_epi32(index, 3);
         __m256d c0 = _mm256_i32gather_pd(&_coefficients[0][0], index, 8);
         __m256d c1 = _mm256_i32gather_pd(&_coefficients[0][1], index, 8);
         __m256d c2 = _mm256_i32gather_pd(&_coefficients[0][2], index, 8);
         __m256d c3 = _mm256_i32gather_pd(&_coefficients[0][3], index, 8);
         __m256d c4 = _mm256_i32gather_pd(&_coefficients[0][4], index, 8);
-        // The stored coefficients are the ALTERNATING-sign monomial form of
-        // the Taylor sum sum_k (z - x)^k / k!: evaluate
-        // c4*x^4 - c3*x^3 + c2*x^2 - c1*x + c0 (the stored coefficient order).
+        // The stored coefficients carry the alternating sign: evaluate
+        // c4*x^4 - c3*x^3 + c2*x^2 - c1*x + c0.
         __m256d result = _mm256_fmsub_pd(c4, x, c3);
         result = _mm256_fmadd_pd(result, x, c2);
         result = _mm256_fmsub_pd(result, x, c1);
@@ -233,15 +193,14 @@ private:
     double _coefficients[kNumPoints + 1][8]{};
 };
 
-// Split Clenshaw (even/odd), packed, half-depth FMA chains. See boys.cpp for
-// the scalar derivation; T_{2j+1}(t) = t * D_j(v) with the D recurrence.
+// Split Clenshaw (even/odd), packed, half-depth FMA chains:
+// T_{2j+1}(t) = t * D_j(v) with the D recurrence.
 //
 // One body for every packed width and precision: which multiply-add a step
 // uses, and how many roundings it makes, is the backend's, and the body below
-// is written once against it. What stays here is the mapped argument, which is
-// the packed lanes' own form - the interval reached with a single fused step
-// rather than the scalar lanes' two - because that is a choice of the lane
-// rather than of the width.
+// is written once against it. What stays here is the mapped argument, in the
+// packed lanes' own form - the interval reached with a single fused step rather
+// than the scalar lanes' two.
 template <backend::ArithmeticBackend B, typename Piece>
 typename B::Packed RegionAClenshaw(const typename B::Value* c,
                                    const Piece& piece,
@@ -255,9 +214,8 @@ typename B::Packed RegionAClenshaw(const typename B::Value* c,
 }
 
 // The region-B seed, at a compile-time degree where kDeg >= 0 and at the
-// caller's where it is not. The compile-time form is the m = 1 entry's: the
-// constant bound is what lets MSVC unroll the odd/even recurrences and inline
-// the kernel into the RegionB loop, which is the full-accuracy code shape.
+// caller's where it is not. The constant bound is what lets MSVC unroll the
+// odd/even recurrences and inline the kernel into the RegionB loop.
 template <backend::ArithmeticBackend B, int kDeg>
 typename B::Packed RegionBClenshaw(const typename B::Value* c,
                                    int deg,
@@ -271,7 +229,7 @@ typename B::Packed RegionBClenshaw(const typename B::Value* c,
     return ClenshawSplit<B>(c, d, t);
 }
 
-// 4-wide split Clenshaw for one piece; even deg >= 4 only (see boys.cpp).
+// 4-wide split Clenshaw for one piece; even deg >= 4 only.
 inline __m256d Clenshaw4SplitDeg(const detail::OrderPiece& piece, int deg, __m256d xv) noexcept {
     return RegionAClenshaw<backend::Avx2Fp64>(detail::kCoeffs.data(), piece, deg, xv);
 }
@@ -287,14 +245,11 @@ inline __m256d ClenshawB4(__m256d xv) noexcept {
 }
 
 // 4-wide region-B F0 seed at a runtime degree, for the relaxed RegionB loop
-// only; the data-dependent loop is not inlined, which is the documented
-// relaxed-path cost.
+// only; the data-dependent loop is not inlined.
 //
-// The library instantiates the SIMD region entry points at m = 1 only (the
-// relaxed set is compiled for the scalar entries in boys_c.cpp), so in this
-// TU that caller sits in the discarded arm of an `if constexpr` and GCC/Clang
-// see a defined-but-unused internal function; a relaxed SIMD instantiation
-// would use it.
+// The library instantiates the SIMD region entries at m = 1 only, so in this TU
+// that caller sits in the discarded arm of an `if constexpr` and GCC/Clang see
+// a defined-but-unused internal function; a relaxed instantiation would use it.
 [[maybe_unused]] inline __m256d ClenshawB4Deg(int deg, __m256d xv) noexcept {
     return RegionBClenshaw<backend::Avx2Fp64, -1>(detail::kBcoeffs.data(), deg, xv);
 }
@@ -457,13 +412,11 @@ void BoysRegionCSimd(int n, const double* x, double* out, std::size_t count) noe
 
 #if BoysFp16
 // ---------------------------------------------------------------------------
-// fp16 / bf16 lanes, AVX2 scope (8 lanes; the fp32 engine, F16C/bit-trick
-// I/O). Same region-partitioned engine pattern as the F64 lanes above; the
-// lanes are the certified mixed-precision extension (fp16 I/O around the
-// certified fp32 fits of detail::f32). The relaxed branches use the fp16
+// fp16 / bf16 lanes, AVX2 scope (8 lanes; the fp32 engine, F16C/bit-trick I/O).
+// Same region-partitioned engine pattern as the F64 lanes above, around the
+// certified fp32 fits of detail::f32. The relaxed branches use the fp16
 // computation budget (1e-7) with the F32 piece tables.
 // ---------------------------------------------------------------------------
-// CPUID detection of the F16C feature bit (the fp16 lane's conversions).
 bool DetectF16c() noexcept {
 #ifdef _MSC_VER
     int cpuInfo[4] = {};
@@ -482,8 +435,8 @@ bool DetectF16c() noexcept {
 }
 
 // 8-wide fp32 Clenshaw over one piece, at the given degree: the float
-// instantiation of the same body the double lane runs (same even/odd split,
-// FMA chains - the generator only emits even degrees, see boys.cpp).
+// instantiation of the same body the double lane runs. The generator only emits
+// even degrees.
 inline __m256 Clenshaw8SplitF32Deg(const detail::f32::OrderPiece& piece,
                                    int deg,
                                    __m256 xv) noexcept {
@@ -507,9 +460,7 @@ inline __m256 ClenshawB8F32(__m256 xv) noexcept {
         detail::f32::kBcoeffs.data(), deg, xv);
 }
 
-// e^{-x} for 8 floats from the double Taylor table (two 4-wide evaluations):
-// the table error 1.83e-17 is far below the certified 1.5e-7 float budget
-// after the float conversion.
+// e^{-x} for 8 floats from the double Taylor table (two 4-wide evaluations).
 __m256 Eval8Exp(const ExpTable& table, __m256 xv) noexcept {
     const __m256d lo = _mm256_cvtps_pd(_mm256_castps256_ps128(xv));
     const __m256d hi = _mm256_cvtps_pd(_mm256_extractf128_ps(xv, 1));
@@ -519,11 +470,9 @@ __m256 Eval8Exp(const ExpTable& table, __m256 xv) noexcept {
 }
 
 // Per-half-type I/O: F16C load/store for fp16, the RNE bit trick for bf16
-// (no AVX-512_BF16 in the AVX2 scope). The loads/stores round-trip through a
-// uint16_t buffer (memcpy) instead of reinterpreting the half pointers: the
-// lane works identically whether HalfT is a stdfloat alias or the
-// self-contained F16/Bf16 wrapper (f16.hpp), and the compiler folds the
-// memcpy into the same vector load/store.
+// (no AVX-512_BF16 in the AVX2 scope). The memcpy round-trip through a
+// uint16_t buffer works whether HalfT is a stdfloat alias or the self-contained
+// F16/Bf16 wrapper, and the compiler folds it into the same vector load/store.
 struct F16Lane {
     using HalfT = F16;
 
@@ -566,10 +515,9 @@ struct Bf16Lane {
         __m256i bits = _mm256_castps_si256(v);
         const __m256i lsb = _mm256_and_si256(_mm256_srli_epi32(bits, 16), _mm256_set1_epi32(1));
         bits = _mm256_add_epi32(_mm256_add_epi32(bits, _mm256_set1_epi32(0x7fff)), lsb);
-        // The 256-bit packus takes the low 128 of each operand, so a single
-        // 8-wide operand would duplicate elements 0-3 and drop elements 4-7.
-        // Split the shifted words into the two 128-bit halves and use the
-        // 128-bit pack, which assembles {lo0-3, hi4-7}.
+        // The 256-bit packus takes the low 128 of each operand, so an 8-wide
+        // operand would duplicate elements 0-3 and drop 4-7; the 128-bit pack
+        // of the two halves assembles {lo0-3, hi4-7}.
         const __m256i hi = _mm256_srli_epi32(bits, 16);
         const __m128i packed =
             _mm_packus_epi32(_mm256_castsi256_si128(hi), _mm256_extracti128_si256(hi, 1));
@@ -586,12 +534,10 @@ struct Bf16Lane {
     }
 };
 
-// Region-partitioned 8-wide kernels shared by the fp16 and bf16 lanes.
-// The scalar tails call the half-lane scalar entries, and the vector bodies
-// hold the same documented bound as those entries (they are not bit-identical
-// to them: the bodies run the fp32 fit at full degree where the scalar lane
-// truncates it, so the two differ by quanta of the half format, never by a
-// value the bound cannot absorb).
+// Region-partitioned 8-wide kernels shared by the fp16 and bf16 lanes. Their
+// scalar tails call the half-lane scalar entries; the vector bodies hold the
+// same documented bound as those entries but are not bit-identical to them (the
+// bodies run the fp32 fit at full degree where the scalar lane truncates it).
 template <typename Lane, double kAccuracyMultiplier>
 void RegionASimdHalf(int n,
                      const typename Lane::HalfT* x,
@@ -670,11 +616,9 @@ void RegionBSimdHalf(int n,
             {
                 // Divide by x rather than multiply by the rounded 1/x: the
                 // upward recurrence amplifies a relative perturbation by
-                // ((l + 1/2)/x) per step, and past l = x that factor exceeds
-                // one, so the reciprocal's 6e-8 rounding compounds to tens of
-                // per cent at the highest orders (measured at n = 32,
-                // x = 11.9453: 2.5e-8 by multiplication, 8.4e-8 by division,
-                // against 1.539e-7 exact). The certified scalar lane divides.
+                // ((l + 1/2)/x) per step, so past l = x that factor exceeds one
+                // and the reciprocal's 6e-8 rounding compounds to tens of per
+                // cent at the highest orders. The certified scalar lane divides.
                 f = _mm256_div_ps(
                     _mm256_fmadd_ps(_mm256_set1_ps(static_cast<float>(l) + 0.5f),
                                     f,
@@ -746,8 +690,8 @@ void RegionCSimdHalf(int n,
     }
 }
 
-// F16C is implied by AVX2 on every shipping x86 CPU; the CPUID check below
-// is defensive and routes to the certified scalar lane if it ever fires.
+// F16C is implied by AVX2 on every shipping x86 CPU; this check is defensive
+// and routes to the certified scalar lane if it ever fires.
 bool F16cAvailable() noexcept {
     static const bool available = DetectF16c();
     return available;
@@ -882,15 +826,12 @@ void BoysRegionCSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
 
 // ---------------------------------------------------------------------------
 // Non-x86 targets: the same entry points, defined against the certified scalar
-// lanes. The vector engine does not exist here, so BoysAvx2Available() is
-// false and no entry asserts it; the region contract (inputs partitioned by
-// region) is still a *sufficient* precondition, it is simply not required —
-// the scalar lanes accept any argument >= 0.
-//
-// The bodies mirror, element for element, the scalar tails the x86 entries run
-// for their last count % 4 elements (see the #if branch above), so a caller
-// gets the same numbers it would get from the x86 entry on a machine without
-// AVX2. Region B keeps its transposed layout out[l * count + i].
+// lanes. The vector engine does not exist here, so BoysAvx2Available() is false
+// and no entry asserts it; the region contract stays a sufficient precondition,
+// just not a required one. The bodies mirror, element for element, the scalar
+// tails the x86 entries run for their last count % 4 elements, so a caller gets
+// the same numbers it would from the x86 entry; region B keeps its transposed
+// layout out[l * count + i].
 // ---------------------------------------------------------------------------
 namespace boys::detail {
 
@@ -1067,11 +1008,10 @@ template void BoysRegionCSimdBf16<kBoysFullAccuracyMultiplier>(int n,
 
 } // namespace boys::detail
 
-// The packed half of the backend table. The flags that separate this unit from
-// the rest of the library are also what makes its contraction answer different
-// from the scalar one, so this entry is measured here and not there; the pair
-// is listed only where the tier is both compiled in and available at run time,
-// because the probe executes the instructions it measures.
+// The packed half of the backend table. This unit's flags are what make its
+// contraction answer different from the scalar one, so the pair is measured
+// here; it is listed only where the tier is both compiled in and available at
+// run time, because the probe executes the instructions it measures.
 namespace boys::backend {
 namespace detail {
 

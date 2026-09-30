@@ -19,150 +19,29 @@
 ///
 /// Region A's double table is two bands that every order shares, so one band's
 /// fits are a coefficient matrix \c C of shape (orders × degrees) and the basis
-/// is a matrix \c T of shape (degrees × batch); the lane evaluates
-/// \c F = C·T. The recursion between orders is a chain, not a product, and is
-/// neither used nor changed here.
+/// is a matrix \c T of shape (degrees × batch); the lane evaluates \c F = C·T.
 ///
 /// **This is an alternative lane, not a replacement.** No existing entry, path,
-/// region boundary, table or bound changes because this lane exists; a caller
-/// that does not name it pays nothing for it.
+/// region boundary, table or bound changes because this lane exists.
 ///
-/// ## The arithmetic modes
+/// **What is verified on this machine is the arithmetic, not the hardware.** The
+/// modes below \c kFp64 evaluate a *model* of an fp32 accumulator, which is not
+/// what a card's fused sum does. The two split modes' floor is 1.28 to 1.30 times
+/// the float lane's 1.5e-7, so they miss that lane's budget at \c m = 1 and carry
+/// it from \c m = 2.
 ///
-/// A mode names three separate facts, and the measurements behind the bounds
-/// below show they really are separate: the format each operand is rounded to,
-/// the format the products are accumulated in, and the order the products are
-/// reduced in.
-///
-/// | Mode | Operand | Accumulate | Products | Reduction |
-/// |---|---|---|---|---|
-/// | \c kFp64 | fp64 | fp64 | 1 | pairwise, degree high to low |
-/// | \c kTf32x3 | fp32, carried as 2 tf32 parts | fp32 | 3 | pairwise, degree high to low |
-/// | \c kBf16x6 | fp32, carried as 3 bf16 parts | fp32 | 6 | pairwise, degree high to low |
-/// | \c kTf32 | tf32 | fp32 | 1 | pairwise, degree high to low |
-/// | \c kBf16 | bf16 | fp32 | 1 | pairwise, degree high to low |
-/// | \c kFp16 | fp16 | fp32 | 1 | pairwise, degree high to low |
-///
-/// **The accumulate format is the binding choice of the two formats.** With an
-/// fp32 accumulator no operand precision reaches the double lane: splitting an
-/// fp64 operand into tf32 parts gives the identical error at two parts through
-/// six. Reaching the double lane's region A needs an fp64 accumulator, that is
-/// an fp64 tensor core; no split reaches it.
-///
-/// **The reduction order is a property of the layout, not of the card.**
-/// Permuting the columns of \c C and the rows of \c T by the same permutation
-/// leaves the product unchanged, so the order the degree loop runs in, and
-/// whether the degrees of one pass are summed in one running total or pairwise,
-/// are the software's to choose. They are worth choosing: from the same
-/// coefficients at the same formats, running the degrees from the constant term
-/// up into one running total costs three times the error at fp64 (3.331e-16
-/// against 1.110e-16) and more than three times at \c kBf16x6's format
-/// (5.913e-07 against 1.946e-07). The kernel's order is the one these bounds
-/// are measured in.
-///
-/// **No speed is claimed for any mode.** A machine with no tensor core can test
-/// a mode's precision, and that is what was verified. What the modes buy is
-/// that a card whose arithmetic is one of them can be used without a redesign
-/// of this lane.
-///
-/// ## The bounds
-///
-/// With \c m the accuracy multiplier, over region A - both bands, every order
-/// 0..32, every argument of the band - the delivered error is at most
-///
-/// | Mode | Bound | Delivered, worst over region A | Certification |
-/// |---|---|---|---|
-/// | \c kFp64 | \c m·1e-15 | 1.110e-16 | certified |
-/// | \c kTf32x3 | \c m·1e-15 + 2.5e-7 | 1.916e-07 | uncertified |
-/// | \c kBf16x6 | \c m·1e-15 + 2.5e-7 | 1.946e-07 | uncertified |
-/// | \c kTf32 | \c m·1e-15 + 5e-4 | 4.4184e-04 | uncertified |
-/// | \c kBf16 | \c m·1e-15 + 3e-3 | 2.7893e-03 | uncertified |
-/// | \c kFp16 | \c m·1e-15 + 5e-4 | 4.4184e-04 | uncertified |
-///
-/// **The certification column is not a quality ranking and the bounds are not
-/// comparable across it.** Every row is measured; the column says what the
-/// measurement was of. The fp64 row's bound is a measurement of an ordinary
-/// IEEE double sum, which is the arithmetic the row names, so a caller may hold
-/// a result to it. The other five are arithmetic on a *model* of an fp32
-/// accumulator, and a card's fused sum is not that model, so their bounds are
-/// claims about the model and never about a card. `BoysProductModes` reports
-/// each mode's class so a caller can act on the distinction without reading
-/// this table.
-///
-/// The delivered figures are the worst found, against the committed 45-digit
-/// reference grid and against a 200000-point sweep of the lower band's left
-/// end, where these modes are worst. The 200000 is that sweep's own size and
-/// not the size of the suite's: the dense-sweep test in the tree runs 20000
-/// points of the same form, which is a coarser instrument and reports a
-/// correspondingly lower worst, so its printed number and the figures above
-/// are not the same measurement and the difference is the grid rather than
-/// the lane. The \c kFp64 figure is the fitted polynomial's own truncation:
-/// the product adds nothing measurable to what the coefficients already cost,
-/// and it is the same figure the shipped split Clenshaw delivers. The two
-/// split-mode figures are their format's floor. The sweep is what found them -
-/// the grid alone samples 1.24e-07 and 1.37e-07 at those modes and understates
-/// the worst by about 1.5 times.
-///
-/// **The multiplier does not move the ceiling, and for the two split modes it
-/// does not move the bound either.** A mode's floor is its format's, which no
-/// multiplier changes. The fit term \c (m−1)·1e-15 cannot reach 1.9e-07 until
-/// \c m is about 1.9e8, four orders past the largest multiplier the rest of
-/// this surface samples, so for \c kTf32x3 and \c kBf16x6 the bound is the
-/// floor up to there and the fit term past it. For \c kFp64 the floor is
-/// 1.11e-16, below the budget's own 1e-15, so its bound is the double single
-/// lane's \c m·1e-15 at every \c m, and the multiplier is live from \c m = 2
-/// upward as it is on every other lane.
-///
-/// **The two split modes miss the float lane's budget at \c m = 1 and carry it
-/// from \c m = 2.** Their floor is 1.28 to 1.30 times the float lane's 1.5e-7,
-/// so a caller who needs 1.5e-7 at \c m = 1 has the float or the double lane.
-/// The float lane's budget scales with \c m while a format's floor does not, so
-/// at \c m = 2 that lane's contract is 3e-7 and both modes are inside it with
-/// about a third of it to spare. That is the whole of what these two modes
-/// offer: a float-lane-grade result from a card that has no fp64 arithmetic, at
-/// a bound 1.3 times looser than the float lane's at the same \c m.
-///
-/// **These two bounds are an idealisation, and the accumulate format is what
-/// makes them one.** The models here accumulate fp32 with round-to-nearest and
-/// a full roll-over, which is what an IEEE fp32 addition does and is not what a
-/// tensor core's fused sum does: those truncate the addends and align them with
-/// a limited number of extra bits, so an fp32-accumulate card's delivered error
-/// can be worse than any figure here, in the direction that matters. The
-/// idealisation therefore cannot be used to argue a mode in; it can only
-/// overstate how good one is, and hardware is the only way to settle an
-/// fp32-accumulate row. The \c kFp64 row is a claim about an fp64 accumulator,
-/// which no machine here has either, but an fp64 accumulator is a far narrower
-/// assumption than an fp32 tensor core's: it is an ordinary IEEE double sum.
-/// **What is verified on this machine is the arithmetic, not the hardware.**
-///
-/// ## The domain, and the recursion the lane does not run
-///
-/// The lane returns every order's own fit, so nothing is amplified and the
-/// bound above is per (order, argument) over the whole band. That is the direct
-/// reading, and it is what a caller of this entry gets.
-///
-/// A caller who takes one order's value and feeds it to the shipped downward
-/// recursion instead is held to a tighter requirement, because that recursion
-/// carries order N's error up to order 0 with gain \c w(N,x), the ratio of the
-/// orders' magnitudes. The seed must then be accurate to the budget divided by
-/// \c w(N,x), and \c w is not monotone: it peaks at the order nearest \c x -
-/// 1.04e5 at order 12 at the band's right end - and is 1 at order 32 for every
-/// argument of region A. So the orders a mode may seed at are not an interval:
-/// at the band's right end \c kFp64 may seed at orders 0..2 and 25..32 and
-/// nowhere between, and at smaller arguments the admissible set widens. The two
-/// split modes may seed at no order at all, because their floor exceeds the
-/// whole budget divided by \c w wherever \c w is 1; a caller who wants the
-/// recursion wants \c kFp64.
+/// A caller who feeds one order's value to the shipped downward recursion
+/// instead is held to a tighter requirement: that recursion carries order N's
+/// error up to order 0 with gain \c w(N,x), so the seed must be accurate to the
+/// budget divided by \c w(N,x), and \c w peaks at 1.04e5 (order 12, the band's
+/// right end). At that end \c kFp64 may seed at orders 0..2 and 25..32 and
+/// nowhere between; the two split modes may seed at no order at all.
 ///
 /// ## What the lane does not do
 ///
 /// It does not evaluate regions B or C, and it does not evaluate the extended
-/// band; it takes region-A arguments only. It does not use the recursion
-/// between orders. It carries the double lane's coefficient table and no second
-/// table: a mode below fp64 reuses that table at the fp32 precision its
-/// operands carry, which is what the bounds above are measured against. A table
-/// fitted at a narrower precision is a further table and a further lane, not a
-/// mode here.
+/// band; it takes region-A arguments only. It does not use the recursion between
+/// orders. It carries the double lane's coefficient table and no second table.
 
 namespace boys {
 
@@ -170,8 +49,7 @@ namespace boys {
 /// over. \c kA1 is the lower interval, \c kA2 the upper one; they are adjacent
 /// with no gap.
 ///
-/// The bands are the table's own, and the entry asserts membership: an argument
-/// outside the named band is outside the lane.
+/// An argument outside the named band is outside the lane.
 ///
 /// \ingroup boys
 enum class RegionABand : int {
@@ -191,10 +69,6 @@ inline constexpr double kRegionA1Edge = 5.94992407605424223;
 inline constexpr double kRegionAEnd = 11.899848152108484;
 
 /// The arithmetic mode of the region-A transform, as a compile-time parameter.
-///
-/// A mode's bound is a statement about an arithmetic, so each mode is reported
-/// with its certification (BoysProductModes) as well as with its bound; see
-/// ModeCertification for what the two classes mean.
 ///
 /// \ingroup boys
 enum class ProductMode : int {
@@ -217,13 +91,8 @@ enum class ProductMode : int {
     kFp16,
 };
 
-/// What a mode's bound is a measurement of.
-///
-/// The distinction is not a quality ranking: both classes are measured, and
-/// neither is a guess. A card's fused sum truncates and aligns its addends,
-/// which the models behind the uncertified modes do not do, so an uncertified
-/// bound can be wrong in the direction that matters and only hardware can
-/// settle it.
+/// What a mode's bound is a measurement of. **Not a quality ranking**: both
+/// classes are measured.
 ///
 /// \ingroup boys
 enum class ModeCertification : std::uint8_t {
@@ -253,9 +122,7 @@ struct ProductModeInfo {
 };
 
 /// The region-A transform's arithmetic modes this build carries, one row each,
-/// with the bound and the certification of each, so a caller can ask what the
-/// modes are and which of their bounds a card is held to without reading the
-/// kernel.
+/// with the bound and the certification of each.
 ///
 /// The rows are in the enumeration's order. A row's bound over region A at
 /// multiplier \c m is `m * fitTerm + floor`.
@@ -269,14 +136,10 @@ std::span<const ProductModeInfo> BoysProductModes() noexcept;
 /// as one matrix product per band in the named mode's arithmetic.
 ///
 /// The arguments are one band's: the caller states which, and every argument
-/// must lie in it. The band is the product's precondition rather than a
-/// convenience - the coefficient matrix is the band's, so a batch that mixes
-/// the bands is two calls, and the caller who has both knows it. A caller whose
-/// arguments are not grouped by band gets nothing from passing them anyway: the
-/// entry does not sort, group, classify or fall back.
+/// must lie in it. The coefficient matrix is the band's, so a batch that mixes
+/// the bands is two calls; the entry does not sort, group, classify or fall back.
 ///
-/// A caller can check the precondition without knowing the tables: the bands
-/// are published as kRegionA1Edge and kRegionAEnd, and membership is
+/// A caller can check the precondition without knowing the tables: membership is
 /// \c x < kRegionA1Edge for kA1 and \c kRegionA1Edge <= x < kRegionAEnd for kA2.
 ///
 /// Layout: order-major planes, out[k * count + i] = F_k(x[i]) - all F_0
@@ -284,10 +147,9 @@ std::span<const ProductModeInfo> BoysProductModes() noexcept;
 /// on the rest of this surface uses. The output holds count * (nmax + 1)
 /// doubles.
 ///
-/// Accuracy: the named mode's own bound, as in the file preamble. It is a
-/// per-(order, argument) bound over the whole band, not an average and not a
-/// typical case, and the two split modes' bounds are an idealisation of an
-/// fp32 tensor core's accumulator - read that paragraph before relying on them.
+/// Accuracy: the named mode's own bound, a per-(order, argument) bound over the
+/// whole band. The modes below \c kFp64 are an idealisation of an fp32 tensor
+/// core's accumulator.
 ///
 /// Threading: single-threaded and pure, like every entry in this library. The
 /// entry allocates nothing and touches no shared state.
@@ -296,9 +158,8 @@ std::span<const ProductModeInfo> BoysProductModes() noexcept;
 ///                             evaluated in; see ProductMode
 /// \tparam kAccuracyMultiplier see BoysSingle. The multiplier truncates the
 ///                             band's fits to a width every order in the band
-///                             admits, a-priori and never tuned. It is inert
-///                             for the two split modes across the documented
-///                             range and live for kFp64; see the preamble.
+///                             admits. It is inert for the two split modes
+///                             across the documented range and live for kFp64.
 /// \param band  which band every argument of the call lies in
 /// \param nmax  highest order, 0..kMaxBoysOrder
 /// \param x     array of count arguments, each inside `band`
@@ -317,11 +178,9 @@ void BoysRegionAProduct(RegionABand band,
                         std::size_t count) noexcept;
 
 /// \cond
-// Hidden from the API reference: each of these is an instantiation of the
-// entry declared above at the default multiplier, not an entry of its own.
-// They are what the default call sites link against instead of compiling the
-// kernel again in their own translation unit; a caller that names any other
-// multiplier compiles the rung it asks for from the definition below.
+// Explicit instantiations of the entry above at the default multiplier, hidden
+// from the API reference: a default call site links against these instead of
+// compiling the kernel in its own translation unit.
 extern template void BoysRegionAProduct<ProductMode::kFp64, kBoysFullAccuracyMultiplier>(
     RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
 extern template void BoysRegionAProduct<ProductMode::kTf32x3, kBoysFullAccuracyMultiplier>(
@@ -359,18 +218,15 @@ inline double RoundSignificand(double v, int bits) noexcept {
 /// float-representable by construction. `Split` fills the operand's parts in
 /// the carry format, each part itself rounded to the operand format; `Combine`
 /// is one reduction step, rounded once into the accumulate format.
-///
-/// A further mode is a further policy and one enumerator; no call site changes.
 template <int kOperandBitsIn, int kCarryBitsIn, int kPartsIn, typename AccumulateIn>
 struct ProductPolicy {
     static constexpr int kOperandBits = kOperandBitsIn;
     static constexpr int kCarryBits = kCarryBitsIn;
     static constexpr int kParts = kPartsIn;
 
-    /// The mode's accumulate format. It carries the operand parts as well as
-    /// the running total, because a mode's operand format is narrower than its
-    /// accumulate format by construction: the parts of a split value are
-    /// representable in the accumulate format exactly.
+    /// The mode's accumulate format. A mode's operand format is narrower than
+    /// its accumulate format by construction, so the parts are representable in
+    /// it exactly.
     using Value = AccumulateIn;
 
     /// The operand's parts: the carry format first, then the operand format.
@@ -416,22 +272,14 @@ using Bf16Policy = ProductPolicy<8, 24, 1, float>;
 
 /// One fp16 operand, one product, fp32 accumulate.
 ///
-/// This is the same arithmetic as Tf32Policy over region A, and the
-/// measurement in tools_tc/compare.py says so: both formats carry an 11-bit
-/// significand, the band's operands and basis values are all well inside
-/// binary16's exponent range, so the two round every product identically and
-/// their measured floors agree to every digit the sweep resolves. They are
-/// distinct names because a card's two instructions are distinct, and the name
-/// is what tells a report which one ran; a caller choosing between them on this
-/// lane is choosing an instruction, not a precision.
+/// The same arithmetic as Tf32Policy over region A: both formats carry an
+/// 11-bit significand and the band's values are well inside binary16's exponent
+/// range, so every product rounds identically. The distinct name is what tells
+/// a report which card instruction ran, not a distinct precision.
 using Fp16Policy = ProductPolicy<11, 24, 1, float>;
 
-/// The policy of a mode enumerator.
-///
-/// The primary template is the refusal, not a default: a mode the specializations
-/// below do not name has no policy. A mode that fell through to another mode's
-/// policy would be evaluated in arithmetic it does not name and would be held to
-/// a bound its own row does not state.
+/// The policy of a mode enumerator. The primary template is the refusal, not a
+/// default: a mode the specializations below do not name has no policy.
 template <ProductMode kMode> struct PolicyOf {
     static_assert(kMode == ProductMode::kFp64 || kMode == ProductMode::kTf32x3 ||
                       kMode == ProductMode::kBf16x6,
@@ -487,9 +335,8 @@ template <int kIndex> constexpr std::size_t BandOffset(int order) noexcept {
                                         .offset);
 }
 
-/// Region A's double table is two bands shared by all orders - that is what
-/// makes its per-order fits one coefficient matrix per band, and so what makes
-/// this lane a product at all.
+/// Region A's double table is two bands every order shares, which is what makes
+/// one band's per-order fits a single coefficient matrix.
 constexpr bool SharedBandTable() noexcept {
     const OrderPiece& first = kPieces[static_cast<std::size_t>(kPieceStart[0])];
     const OrderPiece& second = kPieces[static_cast<std::size_t>(kPieceStart[0] + 1)];
@@ -528,16 +375,13 @@ inline constexpr int kMaxBandDegree = BandOf<0>().degree > BandOf<1>().degree
                                           ? BandOf<0>().degree
                                           : BandOf<1>().degree;
 
-/// The band's degree at a multiplier. Unlike the per-order relaxed lanes, one
-/// product carries every order at one width, so the width is the widest
-/// truncation every order admits: the smallest d' for which the dropped tail of
-/// EVERY order in the band is within the relaxation budget. The amplification
-/// is one - this lane returns each order's own fit directly, so no seed error
-/// re-enters a recursion to be amplified.
+/// The band's degree at a multiplier. One product carries every order at one
+/// width, so the width is the smallest d' for which the dropped tail of every
+/// order in the band is within the relaxation budget. Amplification is one: the
+/// lane returns each order's own fit, so no seed error re-enters a recursion.
 ///
 /// The scan walks the same evaluation domain as the shipped degree tables
-/// (0, 1, 2, then even degrees), so a relaxed product relaxes to a degree the
-/// rest of the library also uses.
+/// (0, 1, 2, then even degrees).
 template <int kIndex> constexpr int BandDegreeAtMultiplier(double m) noexcept {
     constexpr BandSpec spec = BandOf<kIndex>();
 
@@ -568,9 +412,8 @@ template <int kIndex> constexpr int BandDegreeAtMultiplier(double m) noexcept {
 // ---------------------------------------------------------------------------
 // The product
 // ---------------------------------------------------------------------------
-/// The batch tile. The result does not depend on it - every (order, argument)
-/// pair owns its accumulator and no accumulator is ever split across tiles - so
-/// it is a working-set decision only: it bounds the stack the entry uses.
+/// The batch tile. The result does not depend on it - no accumulator is ever
+/// split across tiles - so it bounds only the stack the entry uses.
 inline constexpr std::size_t kProductTile = 32;
 
 /// The product for one band: out[k * count + i] = F_k(x[i]), every argument in
@@ -628,10 +471,9 @@ void RegionAProductBand(int nmax, const double* x, double* out, std::size_t coun
     {
         const std::size_t n = std::min(kProductTile, count - base);
 
-        // The basis matrix's operand parts, and the mapped arguments the
-        // recurrence runs on. The recurrence itself is always fp64 - it is the
-        // reference the shipped split Clenshaw evaluates - and only its values
-        // are rounded to the mode's operand format on the way into the product.
+        // The basis matrix's operand parts and the mapped arguments. The
+        // recurrence below is always fp64; only its values are rounded to the
+        // mode's operand format.
         Value basis[kParts][kWidth][kProductTile];
         double mapped[kProductTile];
         double lower[kProductTile];
@@ -652,8 +494,7 @@ void RegionAProductBand(int nmax, const double* x, double* out, std::size_t coun
             }
         }
 
-        // The second Chebyshev value exists only when the width has one; at a
-        // width of 1 the whole block is discarded rather than branched over.
+        // A width of 1 has no second Chebyshev value.
         if constexpr (kWidth > 1)
         {
             for (std::size_t s = 0; s < n; ++s)
@@ -673,11 +514,9 @@ void RegionAProductBand(int nmax, const double* x, double* out, std::size_t coun
         {
             for (std::size_t s = 0; s < n; ++s)
             {
-                // Two roundings, stated by the arithmetic rather than left to
-                // the build: MulSub rounds the product and then the
-                // difference whatever the target contracts. The delivered
-                // figure this lane publishes is the one the recurrence is
-                // evaluated at, and it is not the fused one.
+                // MulSub rounds the product and then the difference whatever
+                // the target contracts: the two roundings this lane's delivered
+                // figure is measured at, not the fused one.
                 const double next =
                     backend::ScalarFp64::MulSub(2.0 * mapped[s], upper[s], lower[s]);
                 lower[s] = upper[s];
@@ -724,12 +563,8 @@ void RegionAProductBand(int nmax, const double* x, double* out, std::size_t coun
                 }
 
                 // ... and reduced by pairwise summation: the low coefficients
-                // are summed among themselves before any of them meets the
-                // scale of the high ones, so they never fall below the running
-                // total's last bit. This is the second half of what the degree
-                // loop's direction starts: at the same formats, the other
-                // direction and a single running total cost up to three times
-                // the error.
+                // sum among themselves before any of them meets the scale of the
+                // high ones.
                 for (int width = kWidth; width > 1; width = (width + 1) / 2)
                 {
                     for (int k = 0; 2 * k + 1 < width; ++k)

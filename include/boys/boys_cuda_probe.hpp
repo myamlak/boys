@@ -222,6 +222,7 @@
 /// \ingroup boys
 
 #include "boys/boys.hpp"
+#include "boys/boys_cuda_options.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -573,6 +574,14 @@ struct DeviceProbeMeasurement {
     /// what the library says it is — are read through it rather than looked up by
     /// name.
     std::size_t entryIndex = 0;
+
+    /// The entry itself, where \c entryIndex is its position in this run's own
+    /// list. A reader needs the entry and not only its index, because whether the
+    /// option space offers an entry at a rung is a property of the entry
+    /// (DeviceEntryServedAtRung, boys_cuda_options.hpp): a row with no figure is
+    /// told apart from a row that was never offered by judging it against that,
+    /// and the two are different facts about a report.
+    DeviceEntry entry = DeviceEntry::kSingleF64;
 
     /// The accuracy rung this row was measured at: the multiplier m, one of
     /// kDeviceRungs (boys_cuda_options.hpp), which is the axis this report's

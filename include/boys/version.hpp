@@ -3,12 +3,10 @@
 /// \file
 /// The library's version, as a caller can query it.
 ///
-/// The number itself is written down in one place, `project(boys VERSION ...)`
-/// in the top-level CMakeLists.txt; this header carries it to a caller who did
-/// not build through CMake, or who needs to check at run time which release it
-/// linked against. A test compiled against the CMake value asserts the two
-/// agree, so a release that bumps one and not the other fails its own build
-/// rather than shipping two answers.
+/// The number is written down once, in `project(boys VERSION ...)` in the
+/// top-level CMakeLists.txt; this header carries it to a caller who did not
+/// build through CMake, or who checks at run time which release it linked
+/// against. A test asserts the two agree.
 
 namespace boys {
 
@@ -28,9 +26,8 @@ inline constexpr const char* kVersionString = "3.0.0";
 /// The library's version, as a caller queries it.
 ///
 /// \returns the version as a string, "MAJOR.MINOR.PATCH" — the same value
-/// \c kVersionString holds, so it needs no allocation and stays valid for the
-/// life of the program. The three numbers it is built from are separately
-/// readable as \c kVersionMajor, \c kVersionMinor and \c kVersionPatch.
+///          \c kVersionString holds, so it needs no allocation and stays valid
+///          for the life of the program
 inline constexpr const char* VersionString() noexcept
 {
     return kVersionString;

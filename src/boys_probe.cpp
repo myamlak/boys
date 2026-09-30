@@ -41,6 +41,8 @@ const char* PrecisionName(OptionPrecision precision) noexcept {
         return "fp16";
     case OptionPrecision::kBf16:
         return "bf16";
+    case OptionPrecision::kFp32Device:
+        return "fp32-device";
     }
 
     return "unknown";
@@ -370,9 +372,16 @@ constexpr double kFigureQuantile = 0.5;
 /// observation twice.
 constexpr std::size_t kMinimumPairedRounds = 4;
 
-/// The precision classes this probe enumerates an option space for, in the order
-/// it walks them: the double lane first, because that is the lane the library's
-/// own default is defined in and the one every other is judged against.
+/// The precision classes this probe measures, in the order it walks them: the
+/// double lane first, because that is the lane the library's own default is
+/// defined in and the one every other is judged against, and the three remaining
+/// host lanes after it.
+///
+/// The device lane's single precision is not one of them, and its book is
+/// enumerated and counted beside theirs rather than left out of the report: its
+/// entries need a CUDA device, so no cell of that class can be run here, and a
+/// class dropped from every count would be a class whose refusals nothing in
+/// this report accounts for.
 constexpr OptionPrecision kCellPrecisions[] = {OptionPrecision::kFp64, OptionPrecision::kFp32,
                                                OptionPrecision::kFp16, OptionPrecision::kBf16};
 
@@ -395,7 +404,9 @@ constexpr OptionProbeShape kWorkloadShape = OptionProbeShape::kAllOrders;
 /// The two half formats are one lane at one budget in the library: its entries
 /// are declared once, under the fp16 name, and the bf16 entries are that engine
 /// with the other format's store. Both classes are enumerated from the fp16
-/// lane.
+/// lane. The device lane's single precision is a lane of its own rather than a
+/// second class of the host's float lane: its entries are the device's, and it
+/// carries its own figure.
 ///
 /// \param precision the class
 ///
@@ -408,6 +419,8 @@ constexpr Precision LaneOf(OptionPrecision precision) noexcept {
     case OptionPrecision::kFp16:
     case OptionPrecision::kBf16:
         return Precision::kFp16;
+    case OptionPrecision::kFp32Device:
+        return Precision::kFp32Device;
     case OptionPrecision::kFp64:
         break;
     }
@@ -418,6 +431,11 @@ constexpr Precision LaneOf(OptionPrecision precision) noexcept {
 /// The route table a lane's cells are enumerated from: the double lane's own fit
 /// table, or the single-precision engine's, which is the table the float and half
 /// lanes' fits are reported in. Read from the library rather than restated here.
+///
+/// The device lane's cells are enumerated from the double lane's table: that is
+/// the table the device lane's single-precision entries read their own region-A
+/// fits from, and it is the table the library's own reading of a device
+/// combination resolves routes in.
 std::span<const FitRouteInfo> LaneRoutes(Precision lane) noexcept {
     return (lane == Precision::kFp32 || lane == Precision::kFp16) ? BoysFitRoutesF32()
                                                                   : BoysFitRoutes();
@@ -749,13 +767,15 @@ double TierBound(AccuracyTier tier) {
 /// The figure one row of one precision at one rung is judged against, read from
 /// the library.
 ///
-/// The three lanes document three different figures and none substitutes for
-/// another: the double lane's is the error its batch entry can reach at that
-/// rung over the whole domain, the single-precision lane's is its own row of
-/// \c BoysLaneContracts times the rung's multiplier, and the half lanes' is the
+/// The lanes document different figures and none substitutes for another: the
+/// double lane's is the error its batch entry can reach at that rung over the
+/// whole domain, the single-precision lane's is its own row of
+/// \c BoysLaneContracts times the rung's multiplier, the half lanes' is the
 /// engine budget's base times the multiplier plus the largest half of a
-/// representable digit their returns can carry. The lane is an argument here
-/// because a row judged against another lane's figure is worse than no row.
+/// representable digit their returns can carry, and the device lane's is its own
+/// row of that table times the multiplier plus the term its row states beside
+/// the base. The lane is an argument here because a row judged against another
+/// lane's figure is worse than no row.
 ///
 /// \param precision   the class the row is ranked in
 /// \param route       the row's fit route
@@ -790,6 +810,28 @@ double LaneCellBound(OptionPrecision precision,
         // arithmetic that answer is formed from, so a cell that somehow reached
         // here is judged at its lane's figure rather than at a zero.
         return multiplier * BoysLaneContracts()[static_cast<std::size_t>(Precision::kFp32)].bound;
+    }
+
+    case OptionPrecision::kFp32Device:
+    {
+        const AccuracyFigure figure = BoysAccuracyGuaranteed(Precision::kFp32Device, route, scheme,
+                                                             axis, granularity, tier);
+
+        if (figure.available)
+        {
+            return figure.value;
+        }
+
+        // Unreachable for the same reason the float lane's fallback is: a cell is
+        // enumerated only where the call above answers a figure, and no cell of
+        // this class becomes a row at all. The fallback is the device lane's own
+        // row and not the double lane's figure, which is what the arm below
+        // returns: a row of this lane judged against another lane's arithmetic
+        // would state a promise no device entry makes.
+        const LaneContractInfo& row =
+            BoysLaneContracts()[static_cast<std::size_t>(Precision::kFp32Device)];
+
+        return multiplier * row.bound + row.additive;
     }
 
     case OptionPrecision::kFp16:
@@ -952,11 +994,11 @@ std::string CellName(OptionPrecision precision,
 ///
 /// Every lane has one row for the cell that names no axis at all — the shipped
 /// partition on the arguments axis at the shipped route and scheme, at the
-/// reference rung — and on the double and float lanes that row is named in the
-/// cells' own grammar, so the cell and the row carry one name. The half lanes'
-/// rows are named for the format boundary they cross, \c f16-io and \c bf16-io:
-/// those entries are the single-precision engine with a store on either side, and
-/// they take no policy argument for a caller to name.
+/// reference rung — and on the double, float and device lanes that row is named
+/// in the cells' own grammar, so the cell and the row carry one name. The half
+/// lanes' rows are named for the format boundary they cross, \c f16-io and
+/// \c bf16-io: those entries are the single-precision engine with a store on
+/// either side, and they take no policy argument for a caller to name.
 ///
 /// The name is read by the coverage and by the option book, so a served cell is
 /// measured under the name the report prints for it.
@@ -969,6 +1011,8 @@ std::string LaneShapeName(OptionPrecision precision) {
     {
     case OptionPrecision::kFp32:
         return "batch-fp32";
+    case OptionPrecision::kFp32Device:
+        return "batch-fp32-device";
     case OptionPrecision::kFp16:
         return "f16-io";
     case OptionPrecision::kBf16:
@@ -1218,6 +1262,12 @@ std::vector<OptionProbeCell> EnumerateCells(OptionPrecision precision) {
 /// the table cannot give an arithmetic to is reported as not offered, and the
 /// half-precision lanes are behind the BoysFp16 seam that declares them, so a
 /// build whose seam is closed reports them through notCarried.
+///
+/// The cells handed in are the ones this machine measures, and no others: the
+/// device lane's book is enumerated beside this one and never reaches here,
+/// because a row's body is chosen by the row's axes, so a row of that class
+/// would be run by another lane's arithmetic and reported under the device
+/// lane's name.
 std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table,
                                      std::span<const FitGranularityInfo> partitions,
                                      const std::vector<OptionProbeCell>& cells,
@@ -1351,10 +1401,10 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
     notCarried.push_back(LaneShapeName(OptionPrecision::kBf16));
 #endif
 
-    // Every served cell of every precision becomes an option, under the cell's
-    // own name, except the one cell per precision the shape rows above already
-    // carry: the shipped partition on the arguments axis at the shipped route and
-    // scheme. On the double lane that is the cell of every rung, whose `tier-<m>`
+    // Every served cell of the classes handed in becomes an option, under the
+    // cell's own name, except the one cell per precision the shape rows above
+    // already carry: the shipped partition on the arguments axis at the shipped
+    // route and scheme. On the double lane that is the cell of every rung, whose `tier-<m>`
     // readings are the rows the walk below adds; on the narrower lanes it is the
     // reference rung alone, which is the one cell their named rows measure — the
     // rungs above it are cells of the same book like any other and are added here
@@ -1519,16 +1569,26 @@ void CellRung(AccuracyTier tier, int nmax, double x, double* out) noexcept {
     }
 }
 
-/// One uniform-partition cell of the option space, at the route and the rung
-/// this build carries that partition at, on either packing axis.
+/// One uniform-partition cell of the option space, at either route, at any rung
+/// the partition's row claims and on either packing axis.
 ///
-/// The partition is served on one route and one rung, and each is refused by the
-/// library where the call is named: the rational route at compile time in the fit
-/// selector, because its fit is a pair per derived piece and the grid is fixed;
-/// and every rung past the reference multiplier, because the table stores one
-/// degree for every order and every interval. Both packing axes are served - the
-/// across-orders packed lane carries the grid as well as the arguments axis does -
-/// so the axis is read off the cell rather than assumed.
+/// Both routes are served and the table stores both members: a Chebyshev fit per
+/// order per interval and, beside it, one numerator/denominator pair per
+/// interval. Both packing axes are served as well - the across-orders packed
+/// lane carries the Chebyshev member as the arguments axis does, and hands the
+/// rational member's rows to the scalar orders lane, which has no stride to step
+/// - so both the route and the axis are read off the cell rather than assumed.
+///
+/// The rung reaches the entry as its first template argument, through
+/// \c CellRung below, which is where the six relaxed multipliers are spelled: a
+/// rung of this partition is the stored cells read uncut - the criterion that
+/// cuts a row to a degree reaches the full degree at every multiplier - so the
+/// Chebyshev member's cells exist at every one of them and the row claims all
+/// seven. The rational member's rung is the one cell of the partition this build
+/// does not answer: its pairs are stored and admissible at every multiplier by
+/// the same reading, and no entry reads them at a rung yet, so the library
+/// refuses it where the policy is named. A book of this probe can name the
+/// Chebyshev member's rung and not the rational one's.
 ///
 /// A cell outside them is not one any book of this probe can name - the
 /// enumeration asks \c BoysAccuracyGuaranteed before it registers a cell - and
@@ -1546,12 +1606,12 @@ void CellUniform(FitRoute route,
                  int nmax,
                  double x,
                  double* out) noexcept {
-    if (route != FitRoute::kChebyshev || tier != AccuracyTier::kReference)
+    if (route == FitRoute::kRationalMinimax && tier != AccuracyTier::kReference)
     {
         std::fprintf(stderr,
-                     "boys-probe: a uniform-partition cell was named at a route or a rung this "
-                     "revision has no member for (route %d, axis %d, m = %g); both are owed work "
-                     "and neither is a shape the call cannot have\n",
+                     "boys-probe: the uniform partition's rational member was named at a rung "
+                     "this revision has no entry for (route %d, axis %d, m = %g); the member's "
+                     "rung is unbuilt work and not a shape the call cannot have\n",
                      static_cast<int>(route),
                      static_cast<int>(pack),
                      AccuracyMultiplier(tier));
@@ -1561,27 +1621,59 @@ void CellUniform(FitRoute route,
     // The axis the book names is the axis the cell is measured at: the across-orders
     // packed lane carries the uniform grid as well, so a cell named on either axis
     // is evaluated through a policy naming that axis and never through the other.
-    const auto with_scheme = [&]<EvalScheme kScheme>() {
-        if (pack == PackAxis::kOrders)
+    // The route reaches the entry the same way, through the policy: the two
+    // members are stored in one partition and the entry dispatches on the route
+    // it is handed rather than on a second branch here.
+    //
+    // The rung is the ladder the other two partitions' cells take for the
+    // Chebyshev member, so it is CellRung's and not a second switch written here
+    // - one spelling of the six multipliers for the whole probe, which is what
+    // keeps a rung from being read off one partition and served to another. The
+    // rational member's rung is not wired, and its entry refuses the policy at
+    // any other multiplier with a static assert while the policy is being
+    // formed: the arm below is therefore instantiated at the reference rung
+    // alone rather than through that ladder, or the refusal would be this file's
+    // build failure instead of the library's answer about a cell.
+    const auto with_axis = [&]<FitRoute kRoute, EvalScheme kScheme, PackAxis kPack>() {
+        if constexpr (kRoute == FitRoute::kRationalMinimax)
         {
-            using Policy = EvalPolicy<FitRoute::kChebyshev, kScheme, BoysBudget::kFloat,
-                                      PackAxis::kOrders, FitGranularity::kUniform, kDivision>;
+            using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFloat, kPack,
+                                      FitGranularity::kUniform, kDivision>;
             BoysAllOrders<kBoysFullAccuracyMultiplier, Policy>(nmax, x, out);
         }
         else
         {
-            using Policy = EvalPolicy<FitRoute::kChebyshev, kScheme, BoysBudget::kFloat,
-                                      PackAxis::kArguments, FitGranularity::kUniform, kDivision>;
-            BoysAllOrders<kBoysFullAccuracyMultiplier, Policy>(nmax, x, out);
+            CellRung<kRoute, kScheme, kPack, FitGranularity::kUniform, kDivision>(tier, nmax, x,
+                                                                                 out);
         }
     };
 
-    if (scheme == EvalScheme::kHorner)
+    const auto with_pack = [&]<FitRoute kRoute, EvalScheme kScheme>() {
+        if (pack == PackAxis::kOrders)
+        {
+            with_axis.template operator()<kRoute, kScheme, PackAxis::kOrders>();
+        } else
+        {
+            with_axis.template operator()<kRoute, kScheme, PackAxis::kArguments>();
+        }
+    };
+
+    const auto with_scheme = [&]<FitRoute kRoute>() {
+        if (scheme == EvalScheme::kHorner)
+        {
+            with_pack.template operator()<kRoute, EvalScheme::kHorner>();
+        } else
+        {
+            with_pack.template operator()<kRoute, EvalScheme::kSplitClenshaw>();
+        }
+    };
+
+    if (route == FitRoute::kRationalMinimax)
     {
-        with_scheme.template operator()<EvalScheme::kHorner>();
+        with_scheme.template operator()<FitRoute::kRationalMinimax>();
     } else
     {
-        with_scheme.template operator()<EvalScheme::kSplitClenshaw>();
+        with_scheme.template operator()<FitRoute::kChebyshev>();
     }
 }
 
@@ -1592,10 +1684,12 @@ void CellUniform(FitRoute route,
 ///
 /// The uniform partition is dispatched before the lattice rather than inside it,
 /// and that is the shape the partition's own coverage has: the three axes the
-/// lattice crosses are the three this partition is served on one member of each,
-/// so a lattice arm for it would have to instantiate the combinations the
-/// library refuses - the rational route's policy at compile time, and the packed
-/// lane's nonexistent instantiation - to answer a cell that is never one.
+/// lattice crosses are the three this partition is served on one member of each
+/// - one rung, the reference multiplier - so a lattice arm for it would have to
+/// instantiate that partition's six relaxed rungs to answer cells that are never
+/// any: a rung of it is refused by the library where the call is named. The
+/// route and the axis the lattice would have crossed are not among them, and
+/// \c CellUniform carries both.
 ///
 /// \tparam kDivision the form this call's cells divide in
 template <DivisionForm kDivision>
@@ -1752,16 +1846,112 @@ void CellRungSingle(AccuracyTier tier, int nmax, float x, float* out) noexcept {
     }
 }
 
+/// A single-precision uniform-partition cell.
+///
+/// This arm refuses every relaxed rung past the reference one and the rational
+/// route, and it refuses them for this lane's own reasons rather than the double
+/// lane's arm's. The rung is refused by the accessor rather than by the entry:
+/// the cells are stored at the degrees the derivation fitted them at and a
+/// relaxed multiplier reads the same table, so serving one is a saving left on
+/// the table and not a value missing - but no book of this probe names one,
+/// because \c CarriesSingle answers the whole partition unserved on this lane.
+/// The rational route has no member over the *float* grid at all: the pairs this
+/// library fits over intervals are the double lane's, and this lane's grid is a
+/// fit of its own arithmetic. The pair is refused at the policy
+/// (RefuseUniformRoute), so no cell naming it reaches here, and this stops
+/// rather than reading another family's fits under the uniform name.
+///
+/// The budget is an axis of its own on this side and not a route or a rung: the
+/// fp16 class runs the same engine at its own region-B boundary, so a cell of
+/// either class is evaluated through a policy naming its own budget and never
+/// through the other's.
+///
+/// \tparam kDivision the form the cell's recurrence steps divide in
+template <DivisionForm kDivision>
+void CellUniformSingle(BoysBudget budget,
+                       FitRoute route,
+                       EvalScheme scheme,
+                       PackAxis pack,
+                       AccuracyTier tier,
+                       int nmax,
+                       float x,
+                       float* out) noexcept {
+    if (route != FitRoute::kChebyshev)
+    {
+        std::fprintf(stderr,
+                     "boys-probe: a uniform-partition cell was named on the rational route, "
+                     "which has no member over this lane's fixed grid: the pair is refused "
+                     "where the policy names it, so no cell of the book is one and this stops "
+                     "rather than reading another family's fits under the uniform name\n");
+        std::abort();
+    }
+
+    const auto with_budget = [&]<BoysBudget kBudget>() {
+        const auto with_pack = [&]<PackAxis kPack, EvalScheme kScheme>() {
+            using Policy = EvalPolicy<FitRoute::kChebyshev, kScheme, kBudget, kPack,
+                                      FitGranularity::kUniform, kDivision>;
+
+            switch (tier)
+            {
+            case AccuracyTier::kRelaxed64:
+                BoysAllOrdersF32<64.0, Policy>(nmax, x, out);
+                return;
+            case AccuracyTier::kRelaxed256:
+                BoysAllOrdersF32<256.0, Policy>(nmax, x, out);
+                return;
+            case AccuracyTier::kRelaxed1024:
+                BoysAllOrdersF32<1024.0, Policy>(nmax, x, out);
+                return;
+            case AccuracyTier::kRelaxed4096:
+                BoysAllOrdersF32<4096.0, Policy>(nmax, x, out);
+                return;
+            case AccuracyTier::kRelaxed16384:
+                BoysAllOrdersF32<16384.0, Policy>(nmax, x, out);
+                return;
+            case AccuracyTier::kRelaxed65536:
+                BoysAllOrdersF32<65536.0, Policy>(nmax, x, out);
+                return;
+            default:
+                BoysAllOrdersF32<kBoysFullAccuracyMultiplier, Policy>(nmax, x, out);
+                return;
+            }
+        };
+
+        const auto with_scheme = [&]<EvalScheme kScheme>() {
+            if (pack == PackAxis::kOrders)
+            {
+                with_pack.template operator()<PackAxis::kOrders, kScheme>();
+            } else
+            {
+                with_pack.template operator()<PackAxis::kArguments, kScheme>();
+            }
+        };
+
+        if (scheme == EvalScheme::kHorner)
+        {
+            with_scheme.template operator()<EvalScheme::kHorner>();
+        } else
+        {
+            with_scheme.template operator()<EvalScheme::kSplitClenshaw>();
+        }
+    };
+
+    if (budget == BoysBudget::kFp16)
+    {
+        with_budget.template operator()<BoysBudget::kFp16>();
+    } else
+    {
+        with_budget.template operator()<BoysBudget::kFloat>();
+    }
+}
+
 /// The same, with the budget and the division form as two further axes: each
 /// narrows to the template argument it names, so a cell is measured through its
 /// own policy and never through another cell's.
 ///
-/// The uniform partition has no arm here and no cell: the library refuses it on
-/// these lanes where it is named, so the enumeration registers none of them and
-/// this dispatch is never handed one. It stops rather than reading the shipped
-/// partition's fits under the uniform name if one arrives, which is the shape a
-/// two-member partition test has and the shape the double lane's lattice had
-/// before it was given an arm.
+/// The uniform partition reaches its own arm above rather than the lattice
+/// below: this lane carries the grid on one route, and the arm is where that
+/// route and the axes this lane holds it on are read.
 ///
 /// \tparam kDivision the form this call's cells divide in
 template <DivisionForm kDivision>
@@ -1776,10 +1966,9 @@ void CellFormPolicySingle(BoysBudget budget,
                           float* out) noexcept {
     if (granularity == FitGranularity::kUniform)
     {
-        std::fprintf(stderr,
-                     "boys-probe: a uniform-partition cell was named on a single-precision lane, "
-                     "which stores no fit over that grid\n");
-        std::abort();
+        CellUniformSingle<kDivision>(budget, route, scheme, pack, tier, nmax, x, out);
+
+        return;
     }
 
     const auto with_partition = [&]<BoysBudget kBudget,
@@ -1981,6 +2170,20 @@ void VisitValues(const Workload& work, Buffers& buffers, const Option& option, V
         // measured on the argument it was actually asked about: the float lane's
         // entries take a float, and the half lanes' take a half and return one.
         float values[kMaxBoysOrder + 1];
+
+        // The device lane has no host body at all. The option book is enumerated
+        // over the classes this machine measures, so no row of that class exists;
+        // were one to reach here it would be run by one of the bodies below and
+        // its figures reported as the device lane's arithmetic, which is a
+        // substitution this stops rather than makes.
+        if (option.precision == OptionPrecision::kFp32Device)
+        {
+            std::fprintf(stderr,
+                         "boys-probe: %s names the device lane's single precision, which this "
+                         "machine has no entry to run\n",
+                         option.name.c_str());
+            std::abort();
+        }
 
         for (std::size_t i = 0; i < work.x.size(); ++i)
         {
@@ -3552,8 +3755,14 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
 
     // The coverage book is built before the selection is applied, so a narrowed
     // run accounts for every cell of the library's option space just as a full one
-    // does. The classes are the same list the cells and the options are enumerated
-    // over.
+    // does.
+    //
+    // The device lane's book is enumerated beside the measured classes' and kept
+    // out of them. A refusal of that lane is work the library owes, so it belongs
+    // in the account; no cell of it can be run here, because an entry of that lane
+    // is a call on a CUDA device, and a row of it would be timed by another
+    // class's body and reported as that lane's arithmetic. The report counts and
+    // lists it in its own block, and no cell of it reaches the option book below.
     std::vector<OptionProbeCell> cells;
 
     for (const OptionPrecision precision : kCellPrecisions)
@@ -3563,8 +3772,15 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
     }
 
     report.cells = cells;
-    std::vector<Option> options_ = EnumerateOptions(report.backends, report.granularities,
-                                                    cells, report.unoffered, report.notCarried);
+
+    // The device lane's book, enumerated the same way and carried apart from the
+    // cells above. It is counted so that the space this library has is the space
+    // the report accounts for, and it is measured nowhere, so it is not handed to
+    // the option book: every cell in that vector becomes a timed row.
+    report.deviceCells = EnumerateCells(OptionPrecision::kFp32Device);
+
+    std::vector<Option> options_ = EnumerateOptions(report.backends, report.granularities, cells,
+                                                    report.unoffered, report.notCarried);
 
     // A caller who names a set is answered about that set, so the set is narrowed
     // before anything is measured rather than filtered out of the report
@@ -4391,11 +4607,10 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
     text += "  probe orders inside\n";
     text += "  A class is the set of options that are alternatives for one need a caller has: one "
             "precision\n";
-    text += "  (fp64, fp32, fp16 or bf16), one rung of the accuracy axis (the multiplier an option "
-            "was built\n";
-    text += "  at, m = 1, 64, 256 and so on), and one question shape — what the option hands back. "
-            "The two\n";
-    text += "  shapes here are:\n";
+    text += "  (fp64, fp32, fp16 or bf16), one rung of the accuracy axis (the\n";
+    text += "  multiplier an option was built at, m = 1, 64, 256 and so on), and one question shape — "
+            "what the\n";
+    text += "  option hands back. The two shapes here are:\n";
 
     // The list is read from the shapes the probe walks and the questions are the
     // statements those shapes carry, so the headings here and the class keys
@@ -4496,11 +4711,12 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
         }
     }
 
-    // The coverage: the library's own option space, every cell of it, so a
-    // combination this build does not carry is counted and given the library's
-    // reason rather than being absent from the report. One book per precision,
+    // The coverage: the library's own option space, so a combination this build
+    // does not carry is counted and given the library's reason rather than being
+    // absent from the report. One book per precision class this machine measures,
     // because the lanes do not answer alike: the counts are per class, and the
-    // total is their sum.
+    // total is their sum. The device lane's book is counted in the block below
+    // them and kept out of these, because no cell of it is measured.
     std::size_t served = 0;
     std::size_t refused = 0;
 
@@ -4511,7 +4727,7 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
 
     text += Text("\n\nthe option space — the axes this library reports, every cell of their "
                  "product at every\n");
-    text += Text("  precision this probe enumerates, and what this build does with each: %zu "
+    text += Text("  precision this build measures, and what this build does with each: %zu "
                  "served + %zu\n",
                  served, refused);
     text += Text("  refused = %zu cells over %zu precision class(es)\n", report.cells.size(),
@@ -4537,6 +4753,60 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
         text += Text("    %-4s (lane %s): %zu served + %zu refused = %zu cells, %zu rung(s)\n",
                      PrecisionName(precision), laneName, laneServed, laneRefused,
                      laneServed + laneRefused, LaneTiers(LaneOf(precision)).size());
+    }
+
+    {
+        // The device lane's book, counted beside the classes above and measured
+        // nowhere. It is enumerated and counted like theirs, because a refusal of
+        // that lane is work the library owes, and no cell of it can be run here:
+        // an entry of that lane is a call on a CUDA device and this is the host
+        // build. The block says both things in its own words, so its served count
+        // cannot be read as a count of rows this probe ran.
+        std::size_t deviceServed = 0;
+        std::size_t reasonWidth = 0;
+
+        for (const OptionProbeCell& cell : report.deviceCells)
+        {
+            if (cell.served)
+            {
+                deviceServed += 1;
+            } else
+            {
+                reasonWidth = std::max(reasonWidth, cell.name.size());
+            }
+        }
+
+        const std::size_t deviceRefused = report.deviceCells.size() - deviceServed;
+        const std::size_t deviceLane =
+            static_cast<std::size_t>(LaneOf(OptionPrecision::kFp32Device));
+        const std::span<const LaneContractInfo> lanes = BoysLaneContracts();
+        const char* deviceLaneName = deviceLane < lanes.size() ? lanes[deviceLane].name : "unknown";
+
+        text += Text("    %-4s (lane %s): %zu served + %zu refused = %zu cells, %zu rung(s), "
+                     "counted here\n",
+                     PrecisionName(OptionPrecision::kFp32Device), deviceLaneName, deviceServed,
+                     deviceRefused, report.deviceCells.size(),
+                     LaneTiers(LaneOf(OptionPrecision::kFp32Device)).size());
+        text += Text("      and not measured: the %zu served cells of this book are what this "
+                     "library\n",
+                     deviceServed);
+        text += "      serves for that lane, and none of them was run, because an entry of it is a\n";
+        text += "      call on a CUDA device and this is the host build. That lane's refusals are\n";
+        text += "      unbuilt work of the same kind as any other class's:\n";
+
+        if (deviceRefused > 0)
+        {
+            text += Text("      refused cells (%zu), each with the library's reason:\n",
+                         deviceRefused);
+
+            for (const OptionProbeCell& cell : report.deviceCells)
+            {
+                if (!cell.served)
+                {
+                    text += WrappedReason(cell.name, cell.reason, reasonWidth);
+                }
+            }
+        }
     }
 
     {
@@ -5200,8 +5470,8 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
     text += "    outstanding work, not an impossibility. The axes are crossed on every\n";
     text += "    precision class: the routes each class's own lane reports its fits in, the "
             "schemes,\n";
-    text += "    partitions, packing axes, division forms and rungs of that lane, one row per "
-            "served cell.\n";
+    text += "    partitions, packing axes, division forms and rungs of that lane, one row per\n";
+    text += "    served cell of a class this machine can run.\n";
 
     return text;
 }

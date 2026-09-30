@@ -252,6 +252,56 @@ struct Dev16 {
 };
 #endif // BoysFp16
 
+// The partition and route axes of the ladder shape, one policy per entry.
+//
+// Each is the all-orders ladder the policies above reach, over another
+// partition, another route or the other stored form of the one it is already on;
+// only that member is written, because that is the shape these entries have — a
+// kernel instantiated at another shape with one of them does not compile, which
+// is what says so.
+//
+// One policy per entry rather than one per axis, because the two names a pair
+// carries are two entries and two rows of the space: measuring one of them would
+// leave the other reported as a row this run carried no figure for.
+#define BOYS_PROBE_LADDER_POLICY(NAME, VALUE, ENTRY) \
+    struct NAME { \
+        using Value = VALUE; \
+ \
+        static __device__ __forceinline__ BoysDeviceStatus AllOrders( \
+            const BoysDeviceTables& tables, \
+            int order, \
+            VALUE arg, \
+            VALUE* out, \
+            int capacity, \
+            double multiplier) { \
+            return ENTRY(tables, order, arg, out, capacity, multiplier); \
+        } \
+ \
+        static __device__ __forceinline__ VALUE Cheap(VALUE x, int l) { \
+            return x * static_cast<VALUE>(l + 1); \
+        } \
+    };
+
+BOYS_PROBE_LADDER_POLICY(Dev64Narrow, double, BoysDeviceAllOrdersF64Narrow)
+BOYS_PROBE_LADDER_POLICY(Dev64NarrowMono, double, BoysDeviceAllOrdersF64NarrowMono)
+BOYS_PROBE_LADDER_POLICY(Dev64Rat, double, BoysDeviceAllOrdersF64Rat)
+BOYS_PROBE_LADDER_POLICY(Dev64RatHorner, double, BoysDeviceAllOrdersF64RatHorner)
+BOYS_PROBE_LADDER_POLICY(Dev64NarrowRat, double, BoysDeviceAllOrdersF64NarrowRat)
+BOYS_PROBE_LADDER_POLICY(Dev64NarrowRatHorner, double, BoysDeviceAllOrdersF64NarrowRatHorner)
+BOYS_PROBE_LADDER_POLICY(Dev64Uniform, double, BoysDeviceAllOrdersF64Uniform)
+BOYS_PROBE_LADDER_POLICY(Dev64UniformHorner, double, BoysDeviceAllOrdersF64UniformHorner)
+
+BOYS_PROBE_LADDER_POLICY(Dev32Narrow, float, BoysDeviceAllOrdersF32Narrow)
+BOYS_PROBE_LADDER_POLICY(Dev32NarrowMono, float, BoysDeviceAllOrdersF32NarrowMono)
+BOYS_PROBE_LADDER_POLICY(Dev32Rat, float, BoysDeviceAllOrdersF32Rat)
+BOYS_PROBE_LADDER_POLICY(Dev32RatHorner, float, BoysDeviceAllOrdersF32RatHorner)
+BOYS_PROBE_LADDER_POLICY(Dev32NarrowRat, float, BoysDeviceAllOrdersF32NarrowRat)
+BOYS_PROBE_LADDER_POLICY(Dev32NarrowRatHorner, float, BoysDeviceAllOrdersF32NarrowRatHorner)
+BOYS_PROBE_LADDER_POLICY(Dev32Uniform, float, BoysDeviceAllOrdersF32Uniform)
+BOYS_PROBE_LADDER_POLICY(Dev32UniformHorner, float, BoysDeviceAllOrdersF32UniformHorner)
+
+#undef BOYS_PROBE_LADDER_POLICY
+
 /// The four shapes, as a template parameter. Every shape writes its whole
 /// output, and the removed-call half writes the same slots with the same
 /// traffic, so the subtraction cancels the stores and leaves the arithmetic -
@@ -429,6 +479,57 @@ int LaunchInKernel(ProbeEntry entry,
             // have touched the parameter.
             (void)xh;
 #endif // BoysFp16
+            // The partition and route axes of the ladder shape, one arm per
+            // entry. Their argument array is the one their lane reads, as it is
+            // above: the double lane's is xd and the float lane's is xf.
+            case ProbeEntry::kDeviceAllOrdersF64Narrow:
+                BOYS_PROBE_LAUNCH(Dev64Narrow, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowMono:
+                BOYS_PROBE_LAUNCH(Dev64NarrowMono, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64Rat:
+                BOYS_PROBE_LAUNCH(Dev64Rat, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64RatHorner:
+                BOYS_PROBE_LAUNCH(Dev64RatHorner, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowRat:
+                BOYS_PROBE_LAUNCH(Dev64NarrowRat, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowRatHorner:
+                BOYS_PROBE_LAUNCH(Dev64NarrowRatHorner, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64Uniform:
+                BOYS_PROBE_LAUNCH(Dev64Uniform, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64UniformHorner:
+                BOYS_PROBE_LAUNCH(Dev64UniformHorner, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32Narrow:
+                BOYS_PROBE_LAUNCH(Dev32Narrow, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowMono:
+                BOYS_PROBE_LAUNCH(Dev32NarrowMono, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32Rat:
+                BOYS_PROBE_LAUNCH(Dev32Rat, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32RatHorner:
+                BOYS_PROBE_LAUNCH(Dev32RatHorner, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowRat:
+                BOYS_PROBE_LAUNCH(Dev32NarrowRat, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowRatHorner:
+                BOYS_PROBE_LAUNCH(Dev32NarrowRatHorner, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32Uniform:
+                BOYS_PROBE_LAUNCH(Dev32Uniform, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32UniformHorner:
+                BOYS_PROBE_LAUNCH(Dev32UniformHorner, float, kAllOrders, xf);
+                break;
             default:
                 return 1;
         }
@@ -478,6 +579,57 @@ int LaunchInKernel(ProbeEntry entry,
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16, __half, kEachOrder, xh);
                 break;
 #endif // BoysFp16
+            // The removed-call half of the sixteen arms above: the same kernel
+            // with the entry left out, which is the other side of the
+            // subtraction.
+            case ProbeEntry::kDeviceAllOrdersF64Narrow:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64Narrow, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowMono:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64NarrowMono, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64Rat:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64Rat, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64RatHorner:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64RatHorner, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowRat:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64NarrowRat, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowRatHorner:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64NarrowRatHorner, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64Uniform:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64Uniform, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64UniformHorner:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64UniformHorner, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32Narrow:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32Narrow, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowMono:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32NarrowMono, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32Rat:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32Rat, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32RatHorner:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32RatHorner, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowRat:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32NarrowRat, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowRatHorner:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32NarrowRatHorner, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32Uniform:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32Uniform, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32UniformHorner:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32UniformHorner, float, kAllOrders, xf);
+                break;
             default:
                 return 1;
         }
@@ -497,6 +649,24 @@ extern "C" {
 int BoysCudaLaunchSingleF32(const int*, const double*, float*, std::size_t, void*);
 int BoysCudaLaunchSingleF32Fast(const int*, const double*, float*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF32(const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32Narrow(const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32NarrowMono(const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32Uniform(const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32UniformHorner(
+    const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32Rat(const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32NarrowRat(const int*, const double*, float*, std::size_t, void*);
+// The float lane's other packing axis, whose rows this file arms below. The
+// grid's two orders rows need no launcher of their own: they launch the two
+// declared above.
+int BoysCudaLaunchAllOrdersF32Orders(const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32OrdersEff(const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32NarrowOrders(const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32NarrowOrdersMono(
+    const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32OrdersRat(const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32NarrowOrdersRat(
+    const int*, const double*, float*, std::size_t, void*);
 int BoysCudaLaunchAllNF32(int, const double*, float*, std::size_t, void*);
 int BoysCudaLaunchSingleF64(const int*, const double*, double*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF64(const int*, const double*, double*, std::size_t, void*);
@@ -512,6 +682,9 @@ int BoysCudaLaunchAllOrdersF64Rat(const int*, const double*, double*, std::size_
 int BoysCudaLaunchAllOrdersF64OrdersRat(const int*, const double*, double*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF64NarrowRat(const int*, const double*, double*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF64NarrowOrdersRat(
+    const int*, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF64Uniform(const int*, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF64UniformHorner(
     const int*, const double*, double*, std::size_t, void*);
 int BoysCudaLaunchAllNF64(int, const double*, double*, std::size_t, void*);
 #if BoysFp16
@@ -655,9 +828,207 @@ int LaunchLaunched(ProbeEntry entry,
                      : BoysCudaLaunchAllOrdersF64NarrowOrdersRat)(n, x,
                              static_cast<double*>(out), count, stream);
             break;
+        // The uniform route's four rows, and the one route of this lane whose
+        // rung axis is empty rather than occupied: its table is stored at one
+        // degree for every order and every interval, so no rung's criterion has
+        // a cut to make of it and there is no relaxed launcher to name. The
+        // probe therefore measures each of them at m = 1 and takes no figure at
+        // the rungs above, which is what their rows report — a reading this run
+        // did not take rather than full-accuracy arithmetic filed under a
+        // relaxed name.
+        //
+        // The four names are two launchers: the scheme axis is a real choice on
+        // this route (the Chebyshev image against the monomial one) and the
+        // packing axis is the route's own single reading, so the pair of rows
+        // naming it launches the kernel of the scheme it carries — the same
+        // arms the fit route's pairs have, for the same reason.
+        case ProbeEntry::kAllOrdersF64Uniform:
+        case ProbeEntry::kAllOrdersF64OrdersUniform:
+            // Every rung of this route runs this launcher: the table is stored at
+            // one degree for every order and every interval, so there is no
+            // shorter image of it to read at a relaxed one and the route's
+            // arithmetic is the same at all twelve. The row says so
+            // (DeviceEntryServedAtRung) and the entry answers so, and the figure
+            // this files under a rung is the route's own at that rung.
+            BoysCudaLaunchAllOrdersF64Uniform(n,
+                                              x,
+                                              static_cast<double*>(out),
+                                              count,
+                                              stream);
+            break;
+        case ProbeEntry::kAllOrdersF64UniformHorner:
+        case ProbeEntry::kAllOrdersF64OrdersUniformHorner:
+            // The other form of the same table, at the same contract: the degree
+            // is a property of the stored fit and not of the basis it is summed
+            // in, so a rung of it is this launcher too.
+            BoysCudaLaunchAllOrdersF64UniformHorner(n,
+                                                    x,
+                                                    static_cast<double*>(out),
+                                                    count,
+                                                    stream);
+            break;
+        // The float lane's own partition, served at m = 1 only: this lane carries
+        // no rung table for it, and the refusal the entry makes is the refusal
+        // this files rather than a figure under a rung the entry does not serve.
+        case ProbeEntry::kAllOrdersF32Narrow:
+            if (relaxed)
+            {
+                return 1;
+            }
+
+            BoysCudaLaunchAllOrdersF32Narrow(n,
+                                             x,
+                                             static_cast<float*>(out),
+                                             count,
+                                             stream);
+            break;
+        case ProbeEntry::kAllOrdersF32NarrowMono:
+            if (relaxed)
+            {
+                return 1;
+            }
+
+            BoysCudaLaunchAllOrdersF32NarrowMono(n,
+                                                 x,
+                                                 static_cast<float*>(out),
+                                                 count,
+                                                 stream);
+            break;
+        // The same partition on the packing axis's other side, refused at the
+        // same rungs: the missing cut is the table's and the row that reads it
+        // on either axis is served where its twin is and nowhere else.
+        case ProbeEntry::kAllOrdersF32NarrowOrders:
+            if (relaxed)
+            {
+                return 1;
+            }
+
+            BoysCudaLaunchAllOrdersF32NarrowOrders(n,
+                                                   x,
+                                                   static_cast<float*>(out),
+                                                   count,
+                                                   stream);
+            break;
+        case ProbeEntry::kAllOrdersF32NarrowOrdersMono:
+            if (relaxed)
+            {
+                return 1;
+            }
+
+            BoysCudaLaunchAllOrdersF32NarrowOrdersMono(n,
+                                                       x,
+                                                       static_cast<float*>(out),
+                                                       count,
+                                                       stream);
+            break;
+        // The float lane's grid, which is the uniform route at that lane's width
+        // and serves every rung for the reason the double lane's four do: one
+        // degree for every order and every interval, so no rung has a cut to make
+        // of it and every rung of it runs this launcher.
+        case ProbeEntry::kAllOrdersF32Uniform:
+            BoysCudaLaunchAllOrdersF32Uniform(n,
+                                              x,
+                                              static_cast<float*>(out),
+                                              count,
+                                              stream);
+            break;
+        case ProbeEntry::kAllOrdersF32UniformHorner:
+            // The other form of that grid, at the same contract.
+            BoysCudaLaunchAllOrdersF32UniformHorner(n,
+                                                    x,
+                                                    static_cast<float*>(out),
+                                                    count,
+                                                    stream);
+            break;
+        // The grid's two orders rows, which are those rows' kernels: the route's
+        // packing axis has one member, so a rung of either is this launcher's and
+        // no second arithmetic is timed under a second name.
+        case ProbeEntry::kAllOrdersF32OrdersUniform:
+            BoysCudaLaunchAllOrdersF32Uniform(n,
+                                              x,
+                                              static_cast<float*>(out),
+                                              count,
+                                              stream);
+            break;
+        case ProbeEntry::kAllOrdersF32OrdersUniformHorner:
+            BoysCudaLaunchAllOrdersF32UniformHorner(n,
+                                                    x,
+                                                    static_cast<float*>(out),
+                                                    count,
+                                                    stream);
+            break;
+        // The float lane's rational route, whose two scheme names reach one
+        // launcher each: a pair of rows per partition, one kernel per partition.
+        // A relaxed rung is refused here for the reason the entry refuses it —
+        // no float rational cut is held by this lane — so the probe is told the
+        // same answer the call site is.
+        case ProbeEntry::kAllOrdersF32Rat:
+        case ProbeEntry::kAllOrdersF32RatHorner:
+            if (relaxed)
+            {
+                return 1;
+            }
+
+            BoysCudaLaunchAllOrdersF32Rat(n,
+                                          x,
+                                          static_cast<float*>(out),
+                                          count,
+                                          stream);
+            break;
+        case ProbeEntry::kAllOrdersF32NarrowRat:
+        case ProbeEntry::kAllOrdersF32NarrowRatHorner:
+            if (relaxed)
+            {
+                return 1;
+            }
+
+            BoysCudaLaunchAllOrdersF32NarrowRat(n,
+                                                x,
+                                                static_cast<float*>(out),
+                                                count,
+                                                stream);
+            break;
+        // The route's two pairs on the other packing axis, refused at a relaxed
+        // rung for the reason their per-argument twins are: the float lane's
+        // region-B pairs have no rung cut here.
+        case ProbeEntry::kAllOrdersF32OrdersRat:
+        case ProbeEntry::kAllOrdersF32OrdersRatHorner:
+            if (relaxed)
+            {
+                return 1;
+            }
+
+            BoysCudaLaunchAllOrdersF32OrdersRat(n,
+                                                x,
+                                                static_cast<float*>(out),
+                                                count,
+                                                stream);
+            break;
+        case ProbeEntry::kAllOrdersF32NarrowOrdersRat:
+        case ProbeEntry::kAllOrdersF32NarrowOrdersRatHorner:
+            if (relaxed)
+            {
+                return 1;
+            }
+
+            BoysCudaLaunchAllOrdersF32NarrowOrdersRat(n,
+                                                      x,
+                                                      static_cast<float*>(out),
+                                                      count,
+                                                      stream);
+            break;
         case ProbeEntry::kAllOrdersF32:
             (relaxed ? BoysCudaLaunchAllOrdersF32Eff
                      : BoysCudaLaunchAllOrdersF32)(n, x,
+                             static_cast<float*>(out), count, stream);
+            break;
+        // The float lane's other packing axis, one arm per row of it. These are
+        // separate arms and not a fall-through: the entry the row names is which
+        // kernel runs, and an entry this switch does not name is refused below
+        // rather than measured as whichever arm happens to sit nearest.
+        case ProbeEntry::kAllOrdersF32Orders:
+            (relaxed ? BoysCudaLaunchAllOrdersF32OrdersEff
+                     : BoysCudaLaunchAllOrdersF32Orders)(n, x,
                              static_cast<float*>(out), count, stream);
             break;
         case ProbeEntry::kAllNF64:

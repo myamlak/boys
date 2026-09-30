@@ -184,6 +184,24 @@ __device__ __forceinline__ double DeviceHornerMono(const double* c, int deg, dou
     return acc;
 }
 
+// The float lanes' form of the same summation, the way DeviceClenshawSplit32 is
+// the float lanes' split Clenshaw: one walk, in the lane's own arithmetic and
+// with the same fused step, so a float piece's two forms are summed the way the
+// two certified rows of their table were measured (kNarrowARowsF32,
+// kFlatRowsF32, boys_coefficients.hpp). The double helper above is not it: it
+// would read a float table through a double pointer and sum a double polynomial,
+// which is a different arithmetic and a different rounding.
+__device__ __forceinline__ float DeviceHornerMono32(const float* c, int deg, float t) {
+    float acc = c[deg];
+
+    for (int j = deg - 1; j >= 0; --j)
+    {
+        acc = __fmaf_rn(acc, t, c[j]);
+    }
+
+    return acc;
+}
+
 // The rational route's summation: a piece is a numerator and a denominator, both
 // stored ascending, both summed by Horner, divided once. The denominator's
 // constant term is held at one, so its own sum ends in a multiply-add against
@@ -220,15 +238,58 @@ __device__ __forceinline__ double DeviceRatSum(const double* num,
     return numerator / __fma_rn(denominator, t, 1.0);
 }
 
+// The float lanes' form of that summation, walked in the float lanes'
+// arithmetic the way DeviceClenshawSplit32 is their form of the split Clenshaw:
+// the same two Horner sums, the same held denominator constant, the same one
+// division, with every step fused. It is the kernel's reading of the same
+// stored form, so an entry that reached it and the host lane's own float
+// rational reading sum the same numbers the same way and their figures are
+// comparable.
+//
+// The two coefficient blocks are the caller's to place: the float lane's
+// shipped region-B seed stores its numerator and denominator in two arrays and
+// its narrow partition stores them in one pool with the denominator above the
+// numerator, and both are named by a pointer rather than computed here.
+__device__ __forceinline__ float DeviceRatSum32(const float* num,
+                                                int numDeg,
+                                                const float* den,
+                                                int denDeg,
+                                                float t) {
+    float numerator = num[numDeg];
+
+    for (int j = numDeg - 1; j >= 0; --j)
+    {
+        numerator = __fmaf_rn(numerator, t, num[j]);
+    }
+
+    if (denDeg == 0)
+    {
+        return numerator;
+    }
+
+    float denominator = den[denDeg - 1];
+
+    for (int j = denDeg - 2; j >= 0; --j)
+    {
+        denominator = __fmaf_rn(denominator, t, den[j]);
+    }
+
+    return numerator / __fmaf_rn(denominator, t, 1.0f);
+}
+
 // Which basis a lane's coefficients are stored in. A lane that reads the
-// monomial pool carries a kMonomial member and one that reads the Chebyshev
-// pool does not, so the scheme axis is this trait and the summation below it,
-// and every body above stays one body per (precision, shape).
+// monomial pool states so with a kMonomial member, and the trait reads its
+// value rather than its presence: a form that shares its geometry with the
+// other form of the same table states false here, and the bodies below then
+// take the Chebyshev arm, which is the pool that form reads. So the scheme axis
+// is this trait and the summation below it, and every body above stays one body
+// per (precision, shape).
 template <typename Lane, typename = void>
 struct LaneMonomial : std::false_type {};
 
 template <typename Lane>
-struct LaneMonomial<Lane, std::void_t<decltype(Lane::kMonomial)>> : std::true_type {};
+struct LaneMonomial<Lane, std::void_t<decltype(Lane::kMonomial)>>
+    : std::bool_constant<Lane::kMonomial> {};
 
 // A lane whose pieces are rational pairs rather than polynomials: it carries a
 // kRational member and names its two coefficient blocks and their two degrees in
@@ -239,7 +300,8 @@ template <typename Lane, typename = void>
 struct LaneRational : std::false_type {};
 
 template <typename Lane>
-struct LaneRational<Lane, std::void_t<decltype(Lane::kRational)>> : std::true_type {};
+struct LaneRational<Lane, std::void_t<decltype(Lane::kRational)>>
+    : std::bool_constant<Lane::kRational> {};
 
 template <typename Lane>
 __device__ __forceinline__ double DevicePieceSum(const Lane& lane,
@@ -515,6 +577,185 @@ __device__ __forceinline__ void DeviceAllOrdersF32(
     {
         f = (l - 0.5f) * f / xx;
         store(l, f);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// every order at one argument, from one uniform grid
+// ---------------------------------------------------------------------------
+
+// The route whose fit is one table of equal intervals over [0, kFlatHi)
+// rather than pieces cut where the function needs them: every order's block
+// sits at a fixed offset inside its interval's, so the interval an argument
+// falls in is one multiply and a truncation and the degree is a property of
+// the stored table rather than of the argument. The geometry is compile-time,
+// which is why these bodies take the two coefficient pools and nothing else —
+// there are no per-interval edges or degrees to supply, so a lane object would
+// be a pair of pointers with no behaviour behind it.
+//
+// The pools are the two stored forms of one fit, and kMonomial selects the
+// reader and nothing else, exactly as a lane's own kMonomial member does: the
+// index arithmetic, the join at kFlatHi and the asymptotic arm above it are
+// one spelling for both forms, so the two cannot come to disagree about which
+// interval an argument falls in or where the table stops.
+//
+// Above kFlatHi no fit reaches and the call falls to the one-term asymptotic
+// and its own upward recurrence — the arm region C runs elsewhere, read from
+// the same prefactor and stepping by the same (l + 1/2)/x. The join needs no
+// interpolation between the two: kFlatHi is above kX1, so an argument the
+// table does not serve is one the asymptotic already served.
+
+// The uniform route's ladder, in double.
+template <bool kMonomial, typename Store>
+__device__ __forceinline__ void DeviceAllOrdersF64Flat(const double* cheb,
+                                                       const double* mono,
+                                                       const int* degs,
+                                                       const int* offsets,
+                                                       int order,
+                                                       double xx,
+                                                       Store store) {
+    if (xx >= kFlatHi)
+    {
+        double f = kHalfSqrtPi * rsqrt(xx);
+
+#pragma unroll 4
+        for (int l = 0; l <= order; ++l)
+        {
+            store(l, f);
+            f = (l + 0.5) * f / xx;
+        }
+
+        return;
+    }
+
+    // The interval index is the argument times the reciprocal of the stored
+    // interval width, truncated, so the product is the interval's own boundary
+    // and not a rounding of it: the reciprocal is exact here, and the two
+    // assertions below hold the factor and the grid to the stored width rather
+    // than restating either. The clamp is unreachable below the join and is
+    // kept as the guard the host's own spelling of this map keeps.
+    constexpr double kPerUnit = 1.0 / kFlatWidth;
+    static_assert(kFlatWidth * kPerUnit == 1.0,
+                  "the uniform grid's index factor must be the reciprocal of its stored width: "
+                  "the locate is one multiply by this factor and a truncation, so a width whose "
+                  "reciprocal does not round back reads the table one interval off its cell");
+    static_assert(kPerUnit * kFlatHi == static_cast<double>(kFlatIntervals),
+                  "the uniform grid must reach kFlatHi in kFlatIntervals intervals");
+
+    const double u = xx * kPerUnit;
+    int iv = static_cast<int>(u);
+
+    if (iv > kFlatIntervals - 1)
+    {
+        iv = kFlatIntervals - 1;
+    }
+
+    const double t = 2.0 * (u - static_cast<double>(iv)) - 1.0;
+
+    // The interval's own block, at the interval's own degree. Both are read
+    // per interval because the grid's cells do not all carry the same count:
+    // each was given the smallest admissible even degree its own truncation
+    // bound holds it to, so an interval's block is (its degree + 1)
+    // coefficients per order and the table has no stride a reader could
+    // assume. A reader that assumed one would sum a neighbouring cell's
+    // polynomial and no check of the coefficients alone would report it.
+    const int deg = degs[iv];
+    const double* interval = (kMonomial ? mono : cheb) + static_cast<std::size_t>(offsets[iv]);
+
+#pragma unroll 4
+    for (int l = 0; l <= order; ++l)
+    {
+        const double* c =
+            interval + static_cast<std::size_t>(l) * static_cast<std::size_t>(deg + 1);
+
+        if constexpr (kMonomial)
+        {
+            store(l, DeviceHornerMono(c, deg, t));
+        }
+        else
+        {
+            store(l, DeviceClenshawSplit(c, deg, t));
+        }
+    }
+}
+
+// The float lane's uniform ladder. The mapped argument is this lane's own
+// spelling and not the double body's: the double lane maps x by the exact
+// product x * kPerUnit truncated, which is the grid's own boundary and is exact
+// in its arithmetic, while the float lane maps by 2 (x - a)/(b - a) - 1 with a
+// and b the interval's own edges. That is the map the lane's fits were read at
+// when they were measured (tools/gen_boys_coefficients.py, f32_map) and the map
+// its narrow pieces are read with (boys_impl.hpp, ChebyshevValueF32): one map
+// for the lane. The edges are the grid's own boundaries as the generator
+// fitted on them (tools/gen_boys_coefficients.py, flat_order_f32: a = iv *
+// width, b = a + width) and not a scan of stored edges, so the interval an
+// argument is mapped inside is the one the fit was measured in.
+template <bool kMonomial, typename Store>
+__device__ __forceinline__ void DeviceAllOrdersF32Flat(const float* cheb,
+                                                       const float* mono,
+                                                       const int* degs,
+                                                       const int* offsets,
+                                                       int order,
+                                                       float xx,
+                                                       Store store) {
+    if (xx >= f32::kFlatHiF32)
+    {
+        float f = static_cast<float>(kHalfSqrtPi) * rsqrtf(xx);
+
+#pragma unroll 4
+        for (int l = 0; l <= order; ++l)
+        {
+            store(l, f);
+            f = (l + 0.5f) * f / xx;
+        }
+
+        return;
+    }
+
+    // The lane's own factor, and the host lane's spelling of it: the width's
+    // reciprocal, which the locate multiplies by, and which the grid's own
+    // identity below is written against. The two are one requirement, and
+    // boys_impl.hpp asserts the same product from the host side.
+    constexpr float kPerUnit = 1.0f / f32::kFlatWidthF32;
+    static_assert(f32::kFlatWidthF32 * kPerUnit == 1.0f,
+                  "the float lane's index factor must be the reciprocal of its stored width: "
+                  "the locate is one multiply by this factor and a truncation, so a width whose "
+                  "reciprocal does not round back reads the table one interval off its cell");
+    static_assert(kPerUnit * f32::kFlatHiF32 == static_cast<float>(f32::kFlatIntervalsF32),
+                  "the float lane's uniform grid must reach kFlatHi in kFlatIntervals intervals");
+
+    const float u = xx * kPerUnit;
+    int iv = static_cast<int>(u);
+
+    if (iv > f32::kFlatIntervalsF32 - 1)
+    {
+        iv = f32::kFlatIntervalsF32 - 1;
+    }
+
+    const float a = static_cast<float>(iv) / kPerUnit;
+    const float b = static_cast<float>(iv + 1) / kPerUnit;
+    const float t = 2.0f * (xx - a) / (b - a) - 1.0f;
+
+    // The interval's own block at the interval's own degree, as the double
+    // body reads it and for the same reason: this lane's cells carry their own
+    // degrees too, so there is no stride to read them with.
+    const int deg = degs[iv];
+    const float* interval = (kMonomial ? mono : cheb) + static_cast<std::size_t>(offsets[iv]);
+
+#pragma unroll 4
+    for (int l = 0; l <= order; ++l)
+    {
+        const float* c =
+            interval + static_cast<std::size_t>(l) * static_cast<std::size_t>(deg + 1);
+
+        if constexpr (kMonomial)
+        {
+            store(l, DeviceHornerMono32(c, deg, t));
+        }
+        else
+        {
+            store(l, DeviceClenshawSplit32(c, deg, t));
+        }
     }
 }
 

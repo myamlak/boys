@@ -124,13 +124,44 @@ const char* PackAxisName(PackAxis axis) noexcept;
 
 /// How the recursion's per-order division is performed.
 ///
-/// Every one of this library's recurrences is a dependent chain of one step per
-/// order, and each step ends in one of these. They are different arithmetic and
-/// not three spellings of one: a quotient is correctly rounded, and a product by
-/// a rounded reciprocal rounds twice, so the plain form may differ from the
-/// exact one by an ulp per step and a ladder of them accumulates that; the
-/// refined form is the plain one carried back to the exact one's rounding by a
-/// fused multiply-add, at the price of two dependent operations per step.
+/// A ladder step divides in region B and in region C, and each of those ends in
+/// one of these. They are different arithmetic and not three spellings of one: a
+/// quotient is correctly rounded, and a product by a rounded reciprocal rounds
+/// twice, so the plain form may differ from the exact one by an ulp per step and
+/// a ladder of them accumulates that; the refined form is the plain one carried
+/// back to the exact one's rounding by a fused multiply-add, at the price of two
+/// dependent operations per step.
+///
+/// **Which divisions a form governs.** A step divides either by the argument or
+/// by the step's constant `l + 1/2`, and a form governs both. The argument's
+/// reciprocal is formed once per call and multiplied through the ladder, which is
+/// the division the caller named the axis for. The constant's is the downward
+/// ladder's, and its reciprocal is a compile-time table rather than a value
+/// formed at the step: `l + 1/2` is exact, so a reciprocal computed from `l` would
+/// be a division there, and a form whose whole point is not to divide would
+/// divide once per order anyway. The divisions that are not a step of a chain are
+/// outside the axis — the zero argument's `1/(2n+1)`, a piece's affine map — and
+/// not because a form was declined for them: they are closed formulas rather than
+/// a recurrence, no form shortens them, and the exact form is what they are.
+///
+/// **The single-precision lane's downward ladder is the one division outside it.**
+/// That lane keeps exact division there whichever form is named. The reason is a
+/// measurement and not a preference: the lane publishes one figure for every form
+/// — the accuracy accessor has no form-keyed bound — and over the accuracy gate's
+/// own reference grid at the reference multiplier the plain form's reciprocal at
+/// that step would take the ladder outside that figure at two cells, both at
+/// order 0: x = 9.74054909, where it delivers 1.7514e-07 against the lane's
+/// 1.5e-7, and x = 7, where it delivers 1.5547e-07. Both cells are that form's
+/// alone - at them the lane's exact and refined forms deliver 3.6736e-09 and
+/// 3.626e-08, and their own worst over the grid is 1.0835e-07, at n = 0,
+/// x = 11.1509647, inside the figure. So the form is not available on that
+/// ladder rather than served outside the figure it publishes, and a caller
+/// naming it there is answered by exact division; the figure has to gain a form
+/// dimension before the form can be. Every other division on that lane takes the
+/// form, and the double lane's downward ladder takes it with room to spare: the
+/// plain form's worst cell over the grid's arguments below kX0 is 6.7292e-15
+/// where exact division's is 3.2162e-15, and that cell lies in the band, which
+/// publishes 3e-14.
 ///
 /// **Which of the three is cheapest is a property of the host and not of this
 /// library.** A processor whose division is a multi-instruction sequence pays
@@ -143,11 +174,13 @@ const char* PackAxisName(PackAxis axis) noexcept;
 ///
 /// \ingroup boys
 enum class DivisionForm : std::uint8_t {
-    /// One division per order: the form the recurrences are written in.
+    /// One division per step: the form the recurrences are written in.
     kExactDivision = 0,
 
-    /// One division per argument and one product per order: the argument's
-    /// reciprocal, formed once and multiplied through the ladder.
+    /// One reciprocal per divisor and one product per step: the argument's
+    /// reciprocal, formed once and multiplied through the ladder, and the step
+    /// constant's, read from a compile-time table and multiplied the same way.
+    /// Not the single-precision lane's downward ladder; see above.
     kPlainReciprocal = 1,
 
     /// The plain form with the correctly rounded quotient recovered from it, by
@@ -235,18 +268,10 @@ const char* DivisionFormName(DivisionForm form) noexcept;
 /// under another's name, at a certified bound, with nothing reporting it.
 ///
 /// Every refusal names the work it would need, and none of them is a
-/// combination that cannot exist - each is a body not yet written. The refusals
-/// are: the rational route over the narrow partition on the packing axis, where
-/// the route's region-A pairs cover the shipped per-order pieces and the packed
-/// lane steps one order's coefficients to the next at a fixed stride, so a
-/// packed kernel over the pairs' own narrow pieces is a kernel to write; the
-/// uniform partition on every entry that has no branch reading the fixed grid,
-/// which is all of them but the all-orders and single-order entries; the
-/// uniform partition at any multiplier but the reference, its table storing one
-/// degree for every order and for every interval, so a rung has no criterion to
-/// cut it by and no per-order effective-degree table to read; and the rational
-/// family at the uniform partition, which has no derived piece for a
-/// numerator/denominator pair to be cut over.
+/// combination that cannot exist - each is a body, a table or a fit not yet
+/// written. What a lane refuses is a member of a partition it has not stored or a
+/// rung its tables do not admit, and each is refused where the call names it
+/// rather than answered from another partition's fits.
 ///
 /// The relaxed rungs and the across-orders packing axis are otherwise built: a
 /// rung of the narrow partition is derived against its own pieces rather than
@@ -413,6 +438,54 @@ struct ChebyshevFit;
 template <EvalScheme kScheme>
 struct UniformFit;
 
+/// The rational member over the uniform grid; defined in boys_impl.hpp beside
+/// the table it reads.
+///
+/// It exists because the grid's cells are intervals. The rational family fits a
+/// numerator/denominator pair over an interval and a partition's pieces are
+/// what it cuts, so a fixed grid is a partition its fits can be cut over exactly
+/// as the shipped and narrow pieces are, and the specialization of \c RouteFit
+/// below is what names this member. It is one fit under either scheme for the
+/// reason the other two members of the family are: its coefficients are a
+/// monomial numerator and denominator with no Chebyshev form to sum.
+///
+/// **What it hands a caller.** One pair per interval of the grid the Chebyshev
+/// member is read at, fitted over that interval's own cell and read at the
+/// mapped argument the grid's own locator builds for it - \c FlatPoint's \c t,
+/// `2 (x * kFlatPerUnit - iv) - 1`, the same double both members are read at, so
+/// one lookup addresses them. The numerator's coefficients are stored first and
+/// the denominator's `q_1..q_k` after them with its constant term held at 1 -
+/// the stored form the shipped and narrow members of this family read their own
+/// rows with - so a caller sums the numerator by Horner, sums the denominator,
+/// and divides once.
+///
+/// **The degree is the pair's own, and the table has no single one.** An
+/// interval stores `m + 1 + k` doubles for each of the `kMaxBoysOrder + 1`
+/// orders, with `m` and `k` its own and read off the table's per-interval degree
+/// columns; its rows start at its own offset and step by its own stored count.
+/// A caller therefore reaches an interval's rows through the interval, never
+/// through one stride for the whole member. The cover is the grid's - the
+/// intervals the locator spans, and nothing above them.
+///
+/// The four arrays that carry the layout are the emitter's: a per-interval
+/// numerator degree, denominator degree, stored count and offset beside the
+/// coefficients, in the shape the Chebyshev member's own grid block has and
+/// written by the same generation.
+///
+/// **It models FitPolicy, and the members the grid does not serve refuse.**
+/// \c Partition names the same \c RegionAPartition model \c UniformFit names,
+/// because the concept asks every fit for one and this member's values are read
+/// from the grid rather than from any piece of it. \c EvalPiece, \c RegionBSeed
+/// and \c BandSource answer with a value no route can produce rather than with
+/// another partition's fits, exactly as \c UniformFit's do: they complete the
+/// contract, and a body that reaches one is a body this partition does not
+/// serve, which refuses the partition where it is named. The contract is checked
+/// where the fit is read and not here - the bodies default their fit parameter
+/// to the policy's own and assert \c FitPolicy on it at the top, outside every
+/// branch - so a member that does not model the concept fails at the entry
+/// rather than inside a recurrence.
+struct RationalFitUniform;
+
 struct RationalFit;
 
 /// The rational family over the narrow partition; see the specialization below.
@@ -446,40 +519,41 @@ struct RouteFit<FitRoute::kChebyshev, kScheme, kGranularity> {
 /// forms of its coefficients - and it is selected by the partition axis, which
 /// is where "how the fitted intervals are cut" is decided.
 ///
-/// It has no rational member: the rational family is a numerator/denominator
-/// pair per derived piece, and there is no derived piece here - the grid is
-/// fixed rather than derived - so there is no pair to cut. That combination is
-/// refused by the specialization below.
+/// The rational route's member over the same grid is a family of its own and not
+/// a mode of this one: the two store different things, and it is the
+/// specialization below that names it.
 template <EvalScheme kScheme>
 struct RouteFit<FitRoute::kChebyshev, kScheme, FitGranularity::kUniform> {
     /// The uniform table's fit.
     using Type = UniformFit<kScheme>;
 };
 
-/// Always false, and dependent on the scheme so a `static_assert` on it is
-/// evaluated where the specialization below is instantiated rather than where
-/// it is declared.
-template <EvalScheme kScheme>
-inline constexpr bool kRationalFitHasNoUniformPartition = false;
-
-/// The rational family at the uniform partition: a combination this library
-/// does not carry, refused where it is named.
+/// The rational family at the uniform partition: the grid's cells are intervals
+/// like any other partition's pieces, and this member is one numerator/
+/// denominator pair fitted over each of them, in the same stored form the
+/// shipped and narrow members use. It is one fit under either scheme for the
+/// reason those are: its coefficients are a monomial numerator and denominator
+/// with no Chebyshev form to sum.
 ///
-/// This specialization is doing real work rather than documenting one. Without
-/// it the pair fell to the primary template above, whose assert tests the
-/// *route* alone - so the rational route passed it - and `Type` then resolved to
-/// `ChebyshevFit<kScheme, kUniform>`, which is the narrow partition. A caller
-/// naming the rational route at the uniform partition was answered by a
-/// different family at a different partition, at a certified bound, with
-/// nothing reporting it. An earlier comment here claimed the combination was
-/// refused where it was named; it was not, and nothing said so.
+/// This specialization carries the combination rather than falling to the
+/// primary template above, whose `Type` is the Chebyshev family at whatever
+/// granularity was named: without it a caller naming this route over the grid
+/// would be answered by the Chebyshev member over the grid, at a certified
+/// bound, under the rational route's name, with nothing reporting it. What the
+/// member must provide is stated on \c RationalFitUniform above.
+///
+/// The grid's rung is refused where a policy names one - the table stores one
+/// pair per interval and no per-order effective degree, so a relaxed rung has
+/// nothing to cut by. Giving this member one is a fit to derive rather than a
+/// switch to flip: the rung bodies resolve their fit through
+/// \c detail::RationalRouteFitAtRung, whose conditional reads every partition
+/// but the shipped one as the narrow one, so a uniform rung reaching it would
+/// be answered by the narrow member's pairs under the grid's name - the
+/// substitution this declaration is here to make impossible.
 template <EvalScheme kScheme>
 struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kUniform> {
-    static_assert(kRationalFitHasNoUniformPartition<kScheme>,
-                  "the rational family is not carried at the uniform partition: its fit is a "
-                  "numerator/denominator pair per derived piece, and the uniform grid is fixed "
-                  "rather than derived, so there is no piece to pair. Name the shipped or the "
-                  "narrow partition, or the Chebyshev route at the uniform one");
+    /// The single rational member over the grid, one pair per interval.
+    using Type = RationalFitUniform;
 };
 
 /// The rational family: one fit under either scheme, because its coefficients
@@ -528,16 +602,17 @@ struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kNarrow> {
 /// value that is not an option fails.
 ///
 /// The one error the axes carry beyond a route outside the enumeration is a
-/// combination the build cannot serve - a partition on the packing axis whose kernel reads
-/// the shipped pieces' shape from order to order, where the route's pairs have no
-/// per-order table of their own - and each is refused where it is named rather than at a
-/// kernel, because the partitions are different fits of the same function over the same
-/// interval and a fallback would return the shipped values under the other partition's
-/// name. The single-precision lanes carry one more: their narrow partition is served at
-/// the reference multiplier and refused past it, where the rung reads the one degree
-/// table this lane stores. The rungs are not among them on the double lane: a relaxed
-/// rung cuts a stored fit's own coefficients, so the rung is derived per partition at
-/// compile time and every rung of every combination above is served there.
+/// combination the build cannot serve - a member of a partition whose fits it does not
+/// hold, or a rung whose table it has not derived - and each is refused where it is
+/// named rather than at a kernel, because the partitions are different fits of the same
+/// function over the same interval and a fallback would return one partition's values
+/// under another's name. The single-precision lanes are not an exception to that:
+/// their narrow partition's rung tables are derived like the double lane's - over
+/// the narrow pieces' own degrees,
+/// and, on the rational route, over the route's own pairs of those pieces - so a relaxed
+/// rung of either family is a call those lanes answer as the double lane answers it. A
+/// relaxed rung cuts a stored fit's own coefficients, so the rung is derived per partition
+/// at compile time rather than truncated from a shipped row.
 ///
 /// \tparam kFitRoute      the fit route; \c FitRoute::kChebyshev by default
 /// \tparam kEvalScheme    the scheme the fit's coefficients are summed in;
