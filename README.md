@@ -292,10 +292,10 @@ held to 1.5e-7 above, and the fast option's looser bound is not covered by the 3
 
 The lanes above are one axis of six. A call is a lane, a fit route, an evaluation scheme, an interval
 partition, a packing axis and an accuracy multiplier, and the library offers the product of all six:
-2 routes × 2 schemes × 3 partitions × 2 axes × 7 rungs, in 4 lanes — **672 combinations: 424 are
-certified and published, 108 are refused with the library's own reason and owed, 140 cannot run on a
-host without a CUDA device, and none deliver outside the bound their lane publishes** (the gate
-command below prints those counts and the arithmetic between them). `BoysAccuracyGuaranteed(...)` returns the bound a
+2 routes × 2 schemes × 3 partitions × 2 axes × 7 rungs, in 4 lanes — **672 combinations: 504 are
+certified and published, none are refused, 168 cannot run on a host without a CUDA device, and none
+deliver outside the bound their lane publishes** (the gate command below prints those counts and the
+arithmetic between them). `BoysAccuracyGuaranteed(...)` returns the bound a
 combination carries — its lane's figure times the rung, plus the lane's own additive term where it
 documents one — and `BoysAccuracyDelivered(...)` returns the figure it was measured to deliver,
 which is the one to rank two combinations by. They are different questions, and the `reading` field
@@ -642,14 +642,17 @@ both regions and a fit over the shipped partition's; the single-precision lanes 
 both their routes; every partition's rungs are cut from that partition's own pieces, on either packing
 axis, and the across-orders entries reach a per-order cut by fetching each order's own piece.
 
-**What remains refused is one thing, and it is a fit this revision has not derived.** The rational
-route over the uniform grid has no member: the grid's intervals are fixed by its width law rather than
-cut by a criterion, so a rational pair over them is a fit to derive over the grid's own cells rather
-than a table to cut or a kernel to write. It is refused on every lane — at the relaxed rungs on the
-double lane, and at every rung on the single-precision and device lanes — as unbuilt work rather than
-as an impossible combination, which is why the gate counts those cells under *refused and owed* and
-not under any of its other four books. **Deriving that member is the one piece of work this option
-space is owed**, and it is the only reason any combination of the 672 is not served.
+**Nothing is refused.** The rational route over the uniform grid was the last member this space was
+owed — the grid's intervals are fixed by its width law rather than cut by a criterion, so a rational
+pair over them was a fit to derive over the grid's own cells rather than a table to cut — and it is
+now derived, emitted and served on every lane: at the relaxed rungs on the double lane, and at every
+rung on the single-precision and device lanes. **Every combination the library offers is therefore
+either certified and published or a device cell a host without a CUDA device cannot run**, which is
+the whole of the gate's arithmetic: 504 certified, none refused, 168 not runnable here.
+
+A member that a *future* revision had not derived would still be refused where it is named, with the
+reason, rather than answered from another partition's fits — which is what the refusals this library
+carries used to say before each of them was served.
 
 The partitions are different fits of the same function over the same interval, so a substitution
 would return one partition's values under another's name — which is why the library refuses rather

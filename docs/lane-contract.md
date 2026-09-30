@@ -1376,13 +1376,12 @@ table reads `fp64, chebyshev, split-clenshaw, shipped, orders, m = 64 | 56694 ce
 figure at all, only the library's own reason.
 The block's own last lines, from a run of the gate on this tree:
 
-    COMBINATIONS: 424 of 672 member(s) of the option space are certified and published
-                  108 refused with the library's own reason and owed
-                  1 call-site limit(s) name unbuilt work and are owed the same way
-                  140 not runnable on this host, counted apart and not against the library
+    COMBINATIONS: 504 of 672 member(s) of the option space are certified and published
+                  0 refused with the library's own reason and owed
+                  168 not runnable on this host, counted apart and not against the library
                   0 offered and covered by no cell of this block
                   0 delivering outside the bound its lane publishes
-    the arithmetic: 424 + 108 + 140 + 0 + 0 = 672
+    the arithmetic: 504 + 0 + 168 + 0 + 0 = 672
                    the space read off the tables a second way: 672 member(s) over 4 lane(s),
                    a route axis of 2 2 2 2 route(s), 2 scheme(s), 3 partition(s),
                    2 axis(es), 7 rung(s)
@@ -1394,15 +1393,18 @@ the bound its lane publishes lands in the fifth and fails it the same way. **The
 in both**, which is the state this book is held to: every member the accessor offers is either
 measured by a row or counted under the two books that are not the library's to answer for.
 
-The 140 that are not certified here are the CUDA lane's: this host has no CUDA build, so the gate
+The 168 that are not certified here are the CUDA lane's: this host has no CUDA build, so the gate
 counts them apart rather than against the library rather than pretending they were measured.
 Building the gate in a CUDA configuration measures them on the card, and the figures are that card's,
 as every device figure is.
 
-The 108 owed rows are one combination and one reason: **the rational route over the uniform grid**,
-whose member is a fit this revision has not derived. The gate keeps them under *refused with the
-library's own reason* rather than under any other book, and the library refuses them where they are
-named rather than answering from the grid's Chebyshev member.
+**The owed book reads zero, and that is the state the space is held to.** The last member it carried
+was **the rational route over the uniform grid** — a fit to derive over the grid's own intervals, since
+they are fixed by a width law rather than cut by a criterion — and it is now derived, emitted and
+served on the host and the device alike, at every rung on every lane. A member a later revision has
+not derived would still be refused where it is named, with the reason, rather than answered from
+another partition's fits; there is simply none at this revision, which is why the arithmetic above is
+`504 + 0 + 168`.
 
 ### The bound the accessor guarantees beside the figure it was measured to deliver
 

@@ -261,18 +261,19 @@ document can answer it for you. It has to be measured where it will run.
 const boys::OptionProbeReport report = boys::RunOptionProbe(options);
 ```
 
-    measured 1694 options on 12 logical processors
+    measured 2018 options on 12 logical processors
 
     fp64 m=1 all-orders - 72 options ranked
-      fastest: uniform-pack-orders-horner-plain-reciprocal-fp64 at 47.99 ns/argument
-      the run could not separate 1 of them from the leader
+      fastest: uniform-pack-orders-horner-exact-division-fp64 at 44.54 ns/argument
+      the run could not separate 2 of them from the leader
+        uniform-pack-orders-horner-plain-reciprocal-fp64
         uniform-pack-orders-horner-fp64
 
-    recommended here: uniform-pack-orders-horner-plain-reciprocal-fp64
+    recommended here: uniform-pack-orders-horner-exact-division-fp64
 
 **The important line is the third one, not the second.** Of the 72 options in that group the run could
-not place 1 behind the leader, so the "fastest" row is one of two that are effectively tied — which is
-the real answer, and the probe says so rather than inventing a winner from a timing difference too
+not place 2 behind the leader, so the "fastest" row is one of three that are effectively tied — which
+is the real answer, and the probe says so rather than inventing a winner from a timing difference too
 small to measure. Read the result as *a group at the top and a tail behind it*. Being on the leader is
 worth little; being well behind the group is worth fixing.
 
