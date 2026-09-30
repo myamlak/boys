@@ -412,24 +412,29 @@ constexpr DeviceRungMask DeviceRungBit(double multiplier) noexcept {
 /// route whose table has no cut to make, and the row's bound is what states the
 /// accuracy a rung of it delivers.
 ///
-/// The float lane's narrow partition, and the rational route at that lane's
-/// precision, are the kind above, and their reason is unbuilt work rather than
-/// an empty axis: their tables *have* a cut to make per rung, and this lane
-/// does not hold it. The derivation that cuts a stored fit to a rung's criterion
-/// exists for the float lane's pieces (boys_effective_degrees.hpp derives the
-/// float lane's narrow region A and region B cuts per role) and for its rational
-/// pairs, but this lane derives and uploads the double role's cut alone and no
-/// kernel of it reads either a float narrow degree or a float rational pair's
+/// The float lane's narrow partition is a table with a cut to make per rung,
+/// and this lane makes it — in both of the forms the partition is stored in:
+/// the rung's cut is the float lane's own region-B degrees in the basis the row
+/// sums (FillNarrowF32Lane, FillNarrowMonoF32Lane) beside the double lane's
+/// region-A cut, and this lane derives, uploads and reads both. Its four rows
+/// are therefore served at every rung and fall through to the arm below.
+///
+/// The rational route at that lane's precision is the exception the opening
+/// paragraph names, and its reason is unbuilt work rather than an empty axis:
+/// its table *has* a cut to make per rung, and this lane does not hold it. The
+/// derivation exists (boys_effective_degrees.hpp derives the float lane's
+/// rational region-B pairs per partition), but this lane derives and uploads the
+/// double role's cut alone and no kernel of it reads a float rational pair's
 /// cut. A relaxed call would have to be answered by degrees no kernel here
 /// holds, so it is refused — and the work that would lift the refusal is
 /// deriving, uploading and reading that cut.
 ///
-/// The rational route's four rows are refused for that same reason rather than
-/// for the double lane's route's. A relaxed call of theirs would cut region A
-/// from the double lane's rational cut, which *is* held here — the float lanes
-/// seed region A from the double lane's pair — but region B is the float lane's
-/// own pair, whose cut is not, and a body cut on one side and not the other is a
-/// cut nobody derived. The two partitions' pairs of rows are refused together
+/// The rational route's four rows are refused for that reason rather than for
+/// the double lane's route's. A relaxed call of theirs would cut region A from
+/// the double lane's rational cut, which *is* held here — the float lanes seed
+/// region A from the double lane's pair — but region B is the float lane's own
+/// pair, whose cut is not, and a body cut on one side and not the other is a cut
+/// nobody derived. The two partitions' pairs of rows are refused together
 /// because the missing table is the float lane's region-B pairs on either of
 /// them.
 ///
@@ -463,17 +468,15 @@ constexpr bool DeviceEntryServedAtRung(DeviceEntry entry, double multiplier) noe
         // the one rung it serves is the reference multiplier. The reason is
         // above, per partition and per route, and is not a property of the row
         // that names it.
-        case DeviceEntry::kAllOrdersF32NarrowMono:
         case DeviceEntry::kAllOrdersF32Rat:
         case DeviceEntry::kAllOrdersF32RatHorner:
         case DeviceEntry::kAllOrdersF32NarrowRat:
         case DeviceEntry::kAllOrdersF32NarrowRatHorner:
-        // The float lane's orders rows on the rational route and on the narrow
-        // monomial table: the cut a rung would read is a cut of the table, so the
-        // row that reads it on the other axis is served at the same rungs and no
-        // others. The narrow Chebyshev pair is not here — its cut this lane
-        // derives, uploads and reads, so both of its rows fall to the arm below.
-        case DeviceEntry::kAllOrdersF32NarrowOrdersMono:
+        // The float lane's orders rows on the rational route: the cut a rung
+        // would read is a cut of the table, so the row that reads it on the
+        // other axis is served at the same rungs and no others. The narrow
+        // partition's four rows are not here — their cuts this lane derives,
+        // uploads and reads, one per basis, so they fall to the arm below.
         case DeviceEntry::kAllOrdersF32OrdersRat:
         case DeviceEntry::kAllOrdersF32OrdersRatHorner:
         case DeviceEntry::kAllOrdersF32NarrowOrdersRat:
@@ -508,13 +511,16 @@ constexpr bool DeviceEntryServedAtRung(DeviceEntry entry, double multiplier) noe
         // order where its per-argument twin reads the recurrence, so the two are
         // served at the same rungs and the cut is the table's.
         case DeviceEntry::kAllOrdersF32Orders:
-        // The float lane's narrow Chebyshev partition, whose rung cut this lane
-        // derives, uploads and reads: region B's own float degrees
-        // (FillNarrowF32Lane) beside the double lane's region-A cut the same
-        // upload carries. Its orders row reads the same two tables and is served
-        // at the same rungs.
+        // The float lane's narrow partition, whose rung cut this lane derives,
+        // uploads and reads in each of the two forms the partition is stored in:
+        // region B's own float degrees (FillNarrowF32Lane, FillNarrowMonoF32Lane)
+        // beside the double lane's region-A cut the same upload carries. The
+        // four rows are the partition's two bases on the two packing axes, and
+        // each basis's cut is the table the row's scheme sums.
         case DeviceEntry::kAllOrdersF32Narrow:
+        case DeviceEntry::kAllOrdersF32NarrowMono:
         case DeviceEntry::kAllOrdersF32NarrowOrders:
+        case DeviceEntry::kAllOrdersF32NarrowOrdersMono:
         case DeviceEntry::kAllOrdersF16:
         case DeviceEntry::kAllNF64:
         case DeviceEntry::kAllNF32:

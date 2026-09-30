@@ -1252,10 +1252,11 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
         rung,
         &boys::BoysCuda::AllOrdersF32OrdersUniformHorner<kMultiplier>);
 
-    // The float lane's narrow partition carries every rung on both axes, and its
-    // cut is the float lane's own region-B degrees beside the double lane's
-    // region-A cut, so each of its two rows is measured here at every rung of the
-    // lane's table like the entries above.
+    // The float lane's narrow partition carries every rung on both axes, in each
+    // of the two forms it is stored in, and each form's cut is the float lane's
+    // own region-B degrees in that form beside the double lane's region-A cut,
+    // so each of its four rows is measured here at every rung of the lane's table
+    // like the entries above.
     MeasureDeviceRowF32<kMultiplier>(
         ref,
         grid,
@@ -1265,26 +1266,30 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
     MeasureDeviceRowF32<kMultiplier>(
         ref,
         grid,
+        boys::DeviceEntry::kAllOrdersF32NarrowMono,
+        rung,
+        &boys::BoysCuda::AllOrdersF32NarrowMono<kMultiplier>);
+    MeasureDeviceRowF32<kMultiplier>(
+        ref,
+        grid,
         boys::DeviceEntry::kAllOrdersF32NarrowOrders,
         rung,
         &boys::BoysCuda::AllOrdersF32NarrowOrders<kMultiplier>);
+    MeasureDeviceRowF32<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF32NarrowOrdersMono,
+        rung,
+        &boys::BoysCuda::AllOrdersF32NarrowOrdersMono<kMultiplier>);
 
-    // The rows of that lane served at m = 1 alone, each for a reason of its own:
-    // the narrow monomial form, whose rung cut this lane does not derive, upload
-    // or read, and the rational route, whose float region-B pairs have no rung
-    // cut here either — the region-A half could be cut from the double lane's
-    // table and the region-B half cannot, and a body cut on one side of it and
-    // not the other is a cut nobody derived. Both reasons are the rows' own,
-    // stated where the rows are, and every row is measured here at the bound the
-    // float lane documents.
+    // The rows of that lane served at m = 1 alone, for the reason the rational
+    // route's own rows state: its float region-B pairs have no rung cut here —
+    // the region-A half could be cut from the double lane's table and the
+    // region-B half cannot, and a body cut on one side of it and not the other is
+    // a cut nobody derived. Every row is measured here at the bound the float lane
+    // documents.
     if constexpr (kMultiplier == boys::kBoysFullAccuracyMultiplier)
     {
-        MeasureDeviceRowF32<1.0>(
-            ref,
-            grid,
-            boys::DeviceEntry::kAllOrdersF32NarrowMono,
-            rung,
-            &boys::BoysCuda::AllOrdersF32NarrowMono<1.0>);
         // The rational route's two partitions, each named twice because the
         // route's pair is stored in one form: the two scheme names of a
         // partition reach one kernel and the row's own scheme says which name
@@ -1317,12 +1322,6 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
         // the same one rung and for the same reason: the missing cut is the
         // table's, so the row that reads that table on either axis is served
         // where its twin is and nowhere else.
-        MeasureDeviceRowF32<1.0>(
-            ref,
-            grid,
-            boys::DeviceEntry::kAllOrdersF32NarrowOrdersMono,
-            rung,
-            &boys::BoysCuda::AllOrdersF32NarrowOrdersMono<1.0>);
         MeasureDeviceRowF32<1.0>(
             ref,
             grid,

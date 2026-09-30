@@ -670,6 +670,9 @@ int BoysCudaLaunchAllOrdersF32NarrowOrdersRat(
 int BoysCudaLaunchAllOrdersF32NarrowEff(const int*, const double*, float*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF32NarrowOrdersEff(
     const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32NarrowMonoEff(const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32NarrowOrdersMonoEff(
+    const int*, const double*, float*, std::size_t, void*);
 int BoysCudaLaunchAllNF32(int, const double*, float*, std::size_t, void*);
 int BoysCudaLaunchSingleF64(const int*, const double*, double*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF64(const int*, const double*, double*, std::size_t, void*);
@@ -870,9 +873,10 @@ int LaunchLaunched(ProbeEntry entry,
                                                     count,
                                                     stream);
             break;
-        // The float lane's own partition, served at m = 1 only: this lane carries
-        // no rung table for it, and the refusal the entry makes is the refusal
-        // this files rather than a figure under a rung the entry does not serve.
+        // The float lane's own partition, both of whose bases this lane holds a
+        // rung cut for: the arms below are the two forms of each row and not a
+        // refusal, because the degree tables a rung reads are resident under the
+        // row's own name.
         case ProbeEntry::kAllOrdersF32Narrow:
             // This partition's cut is held — region B's float degrees beside the
             // double lane's region-A cut — so the row answers at every rung and
@@ -882,20 +886,16 @@ int LaunchLaunched(ProbeEntry entry,
                              static_cast<float*>(out), count, stream);
             break;
         case ProbeEntry::kAllOrdersF32NarrowMono:
-            if (relaxed)
-            {
-                return 1;
-            }
-
-            BoysCudaLaunchAllOrdersF32NarrowMono(n,
-                                                 x,
-                                                 static_cast<float*>(out),
-                                                 count,
-                                                 stream);
+            // The same partition in the other basis, whose cut is a table of
+            // that basis's own and is held as well — so this row answers at
+            // every rung too and the two arms are the two forms of it.
+            (relaxed ? BoysCudaLaunchAllOrdersF32NarrowMonoEff
+                     : BoysCudaLaunchAllOrdersF32NarrowMono)(n, x,
+                             static_cast<float*>(out), count, stream);
             break;
-        // The same partition on the packing axis's other side, refused at the
-        // same rungs: the missing cut is the table's and the row that reads it
-        // on either axis is served where its twin is and nowhere else.
+        // The same partition on the packing axis's other side, at the same
+        // rungs: the cut is the table's and the row that reads it on either axis
+        // is served where its twin is and nowhere else.
         case ProbeEntry::kAllOrdersF32NarrowOrders:
             // The same two tables on the packing axis's other side.
             (relaxed ? BoysCudaLaunchAllOrdersF32NarrowOrdersEff
@@ -903,16 +903,10 @@ int LaunchLaunched(ProbeEntry entry,
                              static_cast<float*>(out), count, stream);
             break;
         case ProbeEntry::kAllOrdersF32NarrowOrdersMono:
-            if (relaxed)
-            {
-                return 1;
-            }
-
-            BoysCudaLaunchAllOrdersF32NarrowOrdersMono(n,
-                                                       x,
-                                                       static_cast<float*>(out),
-                                                       count,
-                                                       stream);
+            // The same two tables on the packing axis's other side.
+            (relaxed ? BoysCudaLaunchAllOrdersF32NarrowOrdersMonoEff
+                     : BoysCudaLaunchAllOrdersF32NarrowOrdersMono)(n, x,
+                             static_cast<float*>(out), count, stream);
             break;
         // The float lane's grid, which is the uniform route at that lane's width
         // and serves every rung for the reason the double lane's four do: one

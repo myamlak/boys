@@ -1663,12 +1663,13 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderF16(const BoysDeviceTables& table
 // The rung a call names is matched against the one BoysCuda::DeviceTables made
 // resident, as everywhere in this header. The double lane's narrow and rational
 // tables are cut per rung and this build holds every cut of them, so those
-// entries answer at every rung of the lane. The float lane's narrow and rational
-// tables have a cut this build does not derive or hold — it derives and uploads
-// the double role's cut alone — so an entry over them answers at the
-// full-accuracy multiplier and names the rung it refuses; the launched rows of
-// those partitions refuse the same rungs for the same reason, which is work this
-// build owes and not a property of the tables.
+// entries answer at every rung of the lane. The float lane's rational tables
+// have no rung cut here at all, and its narrow tables' cuts are read by the
+// launched rows that hold them rather than by this handle, which carries the
+// double lane's narrow degrees alone: an entry over the float lane's narrow or
+// rational tables therefore answers at the full-accuracy multiplier and names
+// the rung it refuses. The launched rows of that lane's narrow partition answer
+// at every rung, so the refusal is the handle's to lift and not the table's.
 
 /// F_0(x)..F_n(x) in double precision from the narrow partition, inside the
 /// caller's kernel.
@@ -1735,9 +1736,26 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Narrow(const BoysDeviceTables&
 /// and an entry that read the other form's coefficients would sum the half of
 /// the table that fit was not stored in.
 ///
-/// The parameters, the preconditions and the statuses are those of
-/// BoysDeviceAllOrdersF64Narrow, and the bound is the same one: the two forms
-/// are two summations of one fit, and the lane's bound is over the route.
+/// The bound is the one BoysDeviceAllOrdersF64Narrow states: the two forms are
+/// two summations of one fit, and the lane's bound is over the route.
+///
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
+/// \param capacity   the number of values \c out holds
+/// \param multiplier the accuracy multiplier, m >= 1.0, matched exactly against
+///        the rung BoysCuda::DeviceTables made resident. The bound delivered is
+///        m times the double batch lane's, which is the bound the launched row
+///        of this partition documents.
+///
+/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
+/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
+///      kCapacityTooSmall and writes nothing.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange, kCapacityTooSmall or kMultiplierNotResident otherwise, in
+/// every case without writing.
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowMono(
     const BoysDeviceTables& tables,
     int order,
@@ -1850,9 +1868,26 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64RatHorner(
 /// pair as well. Both of the route's readings are cut on this partition, and
 /// this entry makes the ladder's, as BoysDeviceAllOrdersF64Rat does.
 ///
-/// The parameters, the preconditions and the statuses are those of
-/// BoysDeviceAllOrdersF64Rat, and the bound is the double batch lane's at the
-/// rung named.
+/// The bound is the double batch lane's at the rung named, as
+/// BoysDeviceAllOrdersF64Rat states it.
+///
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
+/// \param capacity   the number of values \c out holds
+/// \param multiplier the accuracy multiplier, m >= 1.0, matched exactly against
+///        the rung BoysCuda::DeviceTables made resident. The bound delivered is
+///        m times the double batch lane's, which is the bound the launched row
+///        of this route documents.
+///
+/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
+/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
+///      kCapacityTooSmall and writes nothing.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange, kCapacityTooSmall or kMultiplierNotResident otherwise, in
+/// every case without writing.
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowRat(
     const BoysDeviceTables& tables,
     int order,
@@ -1973,8 +2008,23 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Narrow(const BoysDeviceTables&
 /// both region A and the float lane's region-B seed read from the monomial form
 /// of their pools and summed by Horner.
 ///
-/// The parameters, the preconditions, the rung and the statuses are those of
-/// BoysDeviceAllOrdersF32Narrow.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
+/// \param capacity   the number of values \c out holds
+/// \param multiplier the accuracy multiplier, with the rung axis
+///        BoysDeviceAllOrdersF32Narrow states: this entry's float region-B pool
+///        is that row's other form, so the multipliers it is served at are its
+///        row's and no others
+///
+/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
+/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
+///      kCapacityTooSmall and writes nothing.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange, kCapacityTooSmall or kMultiplierNotResident otherwise, in
+/// every case without writing.
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowMono(
     const BoysDeviceTables& tables,
     int order,
@@ -2106,8 +2156,27 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32RatHorner(
 /// lane's narrow pairs in region A and the float lane's piecewise pair in
 /// region B.
 ///
-/// The parameters, the preconditions, the rung and the statuses are those of
-/// BoysDeviceAllOrdersF32Rat.
+/// The rung is the one BoysDeviceAllOrdersF32Rat states: this route's float lane
+/// has a region-B pair whose rung cut this build does not hold, so m = 1 is the
+/// only multiplier served here and any other is refused with
+/// kMultiplierNotResident.
+///
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
+/// \param capacity   the number of values \c out holds
+/// \param multiplier the accuracy multiplier, with the rung axis stated above.
+///        The bound delivered is the float batch lane's, which is the bound the
+///        launched row of this route documents.
+///
+/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
+/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
+///      kCapacityTooSmall and writes nothing.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange, kCapacityTooSmall or kMultiplierNotResident otherwise, in
+/// every case without writing.
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowRat(
     const BoysDeviceTables& tables,
     int order,

@@ -162,15 +162,14 @@ __device__ double dNarrowBCoeffs[detail::kNarrowBPieces * (detail::kNarrowBDeg +
 // ones its entries read. Both are in global memory for the reason the double
 // lane's is: the reads are per-thread piece lookups and not a uniform broadcast.
 //
-// No rung table is carried beside these. The derivation that cuts a stored fit
-// to a rung's criterion exists for the float lane's pieces as well as the double
-// lane's (boys_effective_degrees.hpp derives both from the f32 narrow tables,
-// per role), but this lane derives and uploads the double role's cut alone
-// (FillNarrowLane, boys_cuda.cpp) and no kernel here reads a float narrow degree.
-// The entries carrying this partition are therefore served at the full-accuracy
-// multiplier until that cut is derived, uploaded and read
-// (DeviceEntryServedAtRung, boys_cuda_options.hpp). It is unbuilt work, owed and
-// countable, and not a property of the partition.
+// The rung's cut of this partition is one table per basis, carried beside the
+// stored pool and derived over it: this lane's region-B degrees in the
+// Chebyshev form and in the monomial one (FillNarrowF32Lane,
+// FillNarrowMonoF32Lane, boys_cuda.cpp). Region A carries none of its own here
+// because this lane's region-A seed is the double lane's, whose cut the same
+// upload carries. So the entries reading this partition are served at every
+// rung of the lane in both of the bases it sums in (DeviceEntryServedAtRung,
+// boys_cuda_options.hpp).
 constexpr int kNarrowPiecesTotal32 =
     detail::f32::kNarrowAPieceStartF32[detail::kMaxOrder + 1];
 constexpr int kNarrowCoeffsTotal32 =
@@ -201,12 +200,11 @@ __device__ float dNarrowBMonoCoeffs32[kNarrowBCoeffsTotal32];
 // denominator above the STORED numerator's position — the reading
 // DeviceRatSum32 and the host's RationalSeedNarrowF32AtCut share.
 //
-// No rung table is carried beside these, for the reason the float lane's narrow
-// Chebyshev pieces above carry none: the double role's cut is the one this lane
-// derives and uploads, and neither the float lane's narrow degrees nor its
-// rational pairs' cuts are derived, uploaded or read here. The entries carrying
-// the rational route at the float lane's precision are therefore served at the
-// full-accuracy multiplier until that cut is derived, uploaded and read
+// No rung table is carried beside these: the double role's cut is the one this
+// lane derives and uploads, and the float lane's rational pairs' cuts are not
+// derived, uploaded or read here. The entries carrying the rational route at
+// the float lane's precision are therefore served at the full-accuracy
+// multiplier until that cut is derived, uploaded and read
 // (DeviceEntryServedAtRung, boys_cuda_options.hpp). It is unbuilt work, owed and
 // countable, and not a property of the route.
 __device__ float dRatBnum32[detail::f32::kRatBnumDeg + 1];
@@ -236,11 +234,20 @@ __device__ int dNarrowBDegEff[detail::kNarrowBPieces * (detail::kMaxOrder + 1)];
 // the seed lane argument of DeviceAllOrdersF32 is, so the pieces a rung cuts on
 // the float lane are this lane's region-B pieces and those alone.
 //
-// It is a table of its own and not a second reader of the double lane's: the
-// float lane's region B is 218 pieces at degree 6 against the double lane's 311
-// at degree 10, so a cut derived over the double lane's coefficients is a cut of
-// a fit this lane does not read.
+// It is a table of its own and not a second reader of the double lane's: this
+// lane's region B is 4 pieces at degree 6 against the double lane's 5 at degree
+// 10, so a cut derived over the double lane's coefficients is a cut of a fit
+// this lane does not read.
 __device__ int dNarrowBDegEff32[detail::f32::kNarrowBPiecesF32 * (detail::kMaxOrder + 1)];
+
+// The other basis's cut of the same rung, over the same float pieces and the
+// same region-B edges. It is a table of its own rather than a second reader of
+// the one above: the two bases are two stored forms of one fit, and a degree
+// the Chebyshev form's coefficients certify is the degree of a polynomial the
+// monomial form's coefficients do not sum — the tail a rung drops is read from
+// the coefficients the kernel reads, which is what NarrowRegionBDegrees'
+// TailBasis argument is.
+__device__ int dNarrowMonoBDegEff32[detail::f32::kNarrowBPiecesF32 * (detail::kMaxOrder + 1)];
 
 // ---------------------------------------------------------------------------
 // the monomial scheme's stored form, on this lane
@@ -769,10 +776,11 @@ template <bool kRelaxed> struct Lane64NarrowMono {
 // ---------------------------------------------------------------------------
 // the float lane's narrow partition
 // ---------------------------------------------------------------------------
-// The same shape of lane one lane down, over the float lane's own pieces. Its
-// degrees are the ones the partition was stored at: no rung table is carried
-// beside this partition (see the symbol block), so a lane here has no relaxed
-// member to read and its stored degree is the degree it evaluates at.
+// The same shape of lane one lane down, over the float lane's own pieces. Each
+// pair of lanes comes in the two forms a rung has, as the double lane's do: the
+// stored form reads the degrees the partition was stored at, which no rung's
+// upload touches, and the relaxed form reads the rung's own cut of region B
+// (the symbol block above carries both bases').
 //
 // The lanes come in the same pair the double lane's do. The Chebyshev one reads
 // the float narrow pool and sums each piece by a split Clenshaw; the monomial
@@ -840,6 +848,33 @@ struct Lane32NarrowRelaxed {
         return detail::DeviceClenshawSplit32(
             dNarrowBCoeffs32 + piece * (detail::f32::kNarrowBDegF32 + 1),
             dNarrowBDegEff32[piece * (detail::kMaxOrder + 1)],
+            t);
+    }
+};
+
+// The other form of that rung: the monomial pool's coefficients read at the
+// cut derived over those coefficients. The kMonomial member is what tells the
+// shared bodies to sum by Horner, exactly as it does on the stored lanes, and
+// the table it reads is the monomial one — a rung of the monomial form is a cut
+// of that form's tail and not of the other's.
+struct Lane32NarrowMonoRelaxed {
+    static constexpr bool kMonomial = true;
+
+    __device__ __forceinline__ float BSeed(float x, int) const {
+        int piece = 0;
+
+        while (piece + 1 < detail::f32::kNarrowBPiecesF32 && x >= dNarrowBEdges32[piece + 1])
+        {
+            ++piece;
+        }
+
+        const float a = dNarrowBEdges32[piece];
+        const float b = dNarrowBEdges32[piece + 1];
+        const float t = 2.0f * (x - a) / (b - a) - 1.0f;
+
+        return detail::DeviceHornerMono32(
+            dNarrowBMonoCoeffs32 + piece * (detail::f32::kNarrowBDegF32 + 1),
+            dNarrowMonoBDegEff32[piece * (detail::kMaxOrder + 1)],
             t);
     }
 };
@@ -2000,13 +2035,13 @@ __global__ void BoysAllNF16KernelEff(int nmax,
 // reading of the same stored fits and not a new fit.
 //
 // The shipped partition's rung is the float batch's own cut, which this lane
-// derives, uploads and reads, so its row has the two forms a rung has. The
-// narrow partition's and the rational route's rows are served at the
+// derives, uploads and reads, so its row has the two forms a rung has, and the
+// narrow partition's pair has them too, one per basis (the kernels beside the
+// per-argument ones above). The rational route's rows are served at the
 // full-accuracy multiplier alone, for the reason their per-argument siblings
-// state: this lane holds no rung cut of the float lane's narrow pieces or of
-// its rational pairs, and a rung kernel here would have to read one. A rung
-// those rows do not serve is refused at the entry and is never answered from
-// the stored table.
+// state: this lane holds no rung cut of the float lane's rational pairs, and a
+// rung kernel here would have to read one. A rung those rows do not serve is
+// refused at the entry and is never answered from the stored table.
 template <typename SeedLane, typename Lane>
 __device__ __forceinline__ void DeviceOrdersBody32(
     const SeedLane& seedLane, const Lane& lane, int order, float xx, float* out, size_t count,
@@ -2127,6 +2162,44 @@ __global__ void BoysAllOrdersF32NarrowOrdersKernelEff(const int* n,
     }
 
     DeviceOrdersBody32(Lane64Narrow<true>{}, Lane32NarrowRelaxed{}, n[i],
+                       static_cast<float>(x[i]), out, count, i);
+}
+
+// The same partition's rung in the monomial basis, on both axes: the other
+// form of the seed lane and the other form's cut of region B. The two are one
+// pair — the basis a lane sums in and the table its degree was cut from — and
+// nothing here reads the Chebyshev pair, so a Horner call at a rung is answered
+// by the monomial coefficients this entry reads at the stored degree too.
+__global__ void BoysAllOrdersF32NarrowMonoKernelEff(const int* n,
+                                                    const double* __restrict__ x,
+                                                    float* __restrict__ out,
+                                                    size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    detail::DeviceAllOrdersF32(Lane64NarrowMono<true>{},
+                               Lane32NarrowMonoRelaxed{},
+                               n[i],
+                               static_cast<float>(x[i]),
+                               [&](int l, float v) { out[l * count + i] = v; });
+}
+
+__global__ void BoysAllOrdersF32NarrowOrdersMonoKernelEff(const int* n,
+                                                          const double* __restrict__ x,
+                                                          float* __restrict__ out,
+                                                          size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DeviceOrdersBody32(Lane64NarrowMono<true>{}, Lane32NarrowMonoRelaxed{}, n[i],
                        static_cast<float>(x[i]), out, count, i);
 }
 
@@ -2395,8 +2468,8 @@ extern "C" int BoysCudaUploadTables() {
         // them. It is not a cut and no rung moves it: the cells carry the
         // degrees the grid's own cell law placed them at, a rung's degree table
         // says nothing about it, and there is no relaxed image of it to make
-        // resident. An entry of this route is served at the full-accuracy
-        // multiplier only.
+        // resident. An entry of this route is therefore served at every rung,
+        // and by this pool at each of them.
         //
         // The coefficients and the two tables are one image: a reader given the
         // coefficients and a stale degree would sum a cell's block at another
@@ -2675,8 +2748,8 @@ extern "C" int BoysCudaUploadTables() {
 
     // The float lane's uniform table, both forms of every fit, copied as the
     // header stores them and for the reason the double lane's is copied: it is
-    // not a cut, no rung moves it, and an entry of the route is served at the
-    // full-accuracy multiplier only.
+    // not a cut and no rung moves it, so an entry of the route is served at
+    // every rung, by this pool at each of them.
     if (cudaMemcpyToSymbol(dFlatCoeffsF32,
                            detail::f32::kFlatCoeffsF32.data(),
                            sizeof(detail::f32::kFlatCoeffsF32)) != cudaSuccess ||
@@ -3047,13 +3120,13 @@ extern "C" int BoysCudaLaunchAllOrdersF32NarrowRat(
 }
 
 // The float lane's orders axis: the same launches the rows above make, one per
-// kernel of that axis. The shipped partition's row has the two forms a rung has,
-// so its pair is here; the narrow partition's and the rational route's rows serve
-// the full-accuracy multiplier alone and have the one launcher each, exactly as
-// their per-argument siblings do. The uniform grid's two orders rows need no
-// launcher of their own: the grid is stored at one degree per order and interval,
-// so its packing axis has one member and those rows launch
-// BoysCudaLaunchAllOrdersF32Uniform and its Horner twin.
+// kernel of that axis. The shipped partition's row and the narrow partition's
+// two have the two forms a rung has, so their pairs are here; the rational
+// route's rows serve the full-accuracy multiplier alone and have the one
+// launcher each, exactly as their per-argument siblings do. The uniform grid's
+// two orders rows need no launcher of their own: the grid is stored at one
+// degree per order and interval, so its packing axis has one member and those
+// rows launch BoysCudaLaunchAllOrdersF32Uniform and its Horner twin.
 extern "C" int BoysCudaLaunchAllOrdersF32Orders(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
     BoysAllOrdersF32OrdersKernel<<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
@@ -3068,9 +3141,11 @@ extern "C" int BoysCudaLaunchAllOrdersF32OrdersEff(
     return static_cast<int>(cudaGetLastError());
 }
 
-// The narrow partition's rung, on both axes. One launcher each and no lane
-// argument: what selects the rung is which degree table the host made resident,
-// which is the same statement the shipped partition's pair makes.
+// The narrow partition's rung in the Chebyshev basis, on both axes. One
+// launcher each and no lane argument: what selects the rung is which degree
+// table the host made resident, which is the same statement the shipped
+// partition's pair makes. The other basis has a pair of its own below, for the
+// reason it has a table of its own.
 extern "C" int BoysCudaLaunchAllOrdersF32NarrowEff(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
     BoysAllOrdersF32NarrowKernelEff
@@ -3081,6 +3156,24 @@ extern "C" int BoysCudaLaunchAllOrdersF32NarrowEff(
 extern "C" int BoysCudaLaunchAllOrdersF32NarrowOrdersEff(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
     BoysAllOrdersF32NarrowOrdersKernelEff
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+// The same partition's rung in the monomial basis, on both axes. The rung is
+// selected by the monomial degree table the host made resident rather than by a
+// lane argument here, and the two forms are two launchers because the kernel
+// each runs reads a different pool's degrees.
+extern "C" int BoysCudaLaunchAllOrdersF32NarrowMonoEff(
+    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    BoysAllOrdersF32NarrowMonoKernelEff
+        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF32NarrowOrdersMonoEff(
+    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    BoysAllOrdersF32NarrowOrdersMonoKernelEff
         <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
     return static_cast<int>(cudaGetLastError());
 }
@@ -3228,7 +3321,9 @@ extern "C" int BoysCudaEffTablesResident(double m) {
 // the new shipped tables beside the old monomial ones. monoA layout:
 // [order][pieceInOrder] ((kMaxOrder + 1) x kMaxPieces); monoB layout: [order]
 // (kMaxOrder + 1); narrowMonoA: flat over the narrow partition's rows;
-// narrowMonoB: [piece][order], as the Chebyshev narrow region-B table is.
+// narrowMonoB: [piece][order], as the Chebyshev narrow region-B table is;
+// narrowB32 / narrowMonoB32: the same layouts again, over the float lane's own
+// pieces and one per basis, which is the split the symbols above state.
 //
 // The fit route's cuts travel the same way and for the same reason, two ints
 // per cell — the numerator's cut degree then the denominator's. ratSeedA:
@@ -3246,6 +3341,7 @@ extern "C" int BoysCudaUploadEffTables(double m,
                                        const int* monoB,
                                        const int* narrowMonoA,
                                        const int* narrowMonoB,
+                                       const int* narrowMonoB32,
                                        const int* ratSeedA,
                                        const int* ratOrdA,
                                        const int* ratB,
@@ -3359,7 +3455,11 @@ extern "C" int BoysCudaUploadEffTables(double m,
         return 2;
     }
 
-    // The monomial scheme's cut of the same rung, in the same four shapes.
+    // The monomial scheme's cut of the same rung, in the same shapes, plus the
+    // float lane's narrow region B — the one table of this family whose region-A
+    // counterpart is absent for the reason the symbol block states: the float
+    // lanes seed region A from the double lane's pieces, whichever basis they
+    // sum in.
     if (cudaMemcpyToSymbol(dMonoDegEff,
                            monoA,
                            (detail::kMaxOrder + 1) * kMaxPieces * sizeof(int)) != cudaSuccess ||
@@ -3370,6 +3470,10 @@ extern "C" int BoysCudaUploadEffTables(double m,
         cudaMemcpyToSymbol(dNarrowMonoBDegEff,
                            narrowMonoB,
                            detail::kNarrowBPieces * (detail::kMaxOrder + 1) * sizeof(int)) !=
+            cudaSuccess ||
+        cudaMemcpyToSymbol(dNarrowMonoBDegEff32,
+                           narrowMonoB32,
+                           detail::f32::kNarrowBPiecesF32 * (detail::kMaxOrder + 1) * sizeof(int)) !=
             cudaSuccess)
     {
         return 2;

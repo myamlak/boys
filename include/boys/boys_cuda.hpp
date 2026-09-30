@@ -1145,20 +1145,18 @@ public:
     /// seed lane at all — and the region-B seed is the float lane's own. So this
     /// entry is the float lane's narrow route and not a mixture of two lanes'.
     ///
-    /// **This entry is served at the full-accuracy multiplier only, and that is
-    /// unbuilt work rather than a property of the partition.** The derivation
-    /// that cuts a stored fit to a rung's criterion exists for this lane's
-    /// pieces — boys_effective_degrees.hpp derives the float lane's narrow region
-    /// A and region B cuts per role — but nothing in the device lane derives it,
-    /// uploads it or reads it: the relaxed tables the device's kernels hold are
-    /// the double role's, filled by FillNarrowLane (boys_cuda.cpp). A relaxed
-    /// call here would have to be answered by degrees no kernel of this lane has,
-    /// which is why it is refused and not answered; the rung argument below is
-    /// where the refusal is visible and where the work is counted.
+    /// **This entry serves every rung of \c kDeviceRungs, and a rung of it is
+    /// this lane's own cut of the partition.** The region-B degrees a rung
+    /// leaves are derived over the float lane's pieces (NarrowRegionBDegrees at
+    /// the float batch role, FillNarrowF32Lane in boys_cuda.cpp), uploaded with
+    /// the rung's other tables and read by the rung's kernel
+    /// (Lane32NarrowRelaxed). Region A needs no table beside them: this lane's
+    /// region-A seed is the double lane's piece table, whose rung cut the same
+    /// upload carries. So a call at a rung reads the stored fit short — less
+    /// work than the reference call, at the figure that row states.
     ///
-    /// \tparam kAccuracyMultiplier the multiplier this entry serves, which is
-    ///   \c kBoysFullAccuracyMultiplier and no other; any other value is a
-    ///   compile-time error rather than a second arithmetic
+    /// \tparam kAccuracyMultiplier the rung this instantiation is, one of
+    ///   \c kDeviceRungs, for the reason above
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
     /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
@@ -1170,11 +1168,9 @@ public:
     static BoysStatus AllOrdersF32Narrow(
         const int* n, const double* x, float* out, std::size_t count, void* stream);
 
-    /// \c AllOrdersF32Narrow at a rung named in the call.
-    ///
-    /// \c kBoysFullAccuracyMultiplier is the only rung this entry serves, for
-    /// the reason its own contract states; every other rung of \c kDeviceRungs
-    /// is refused rather than answered by another rung's arithmetic.
+    /// \c AllOrdersF32Narrow at a rung named in the call, with the contract of
+    /// \c AllOrdersF32AtRung: a rung the entry serves is answered by that rung's
+    /// own arithmetic, and every rung of \c kDeviceRungs is one of them.
     ///
     /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs
     /// \param n      device array of orders, 0..kMaxBoysOrder
@@ -1194,19 +1190,22 @@ public:
     /// The same partition with the other summation: every piece of region A and
     /// region B is read from the monomial form of its own fit and summed by
     /// Horner, where \c AllOrdersF32Narrow sums the Chebyshev form by a split
-    /// Clenshaw. Shape, layout, arguments and the multiplier are that entry's.
+    /// Clenshaw. Shape, layout, arguments and the rungs are that entry's.
     ///
     /// The two forms are one partition stored twice — the two rows of
     /// kNarrowARowsF32 and kNarrowBRowsF32 (boys_coefficients.hpp) — and each
-    /// form's delivered accuracy on it is its own certified row.
+    /// form's delivered accuracy on it is its own certified row, which is also
+    /// why each has a rung cut of its own: the rung's degrees are read from the
+    /// coefficients the row sums (NarrowRegionBDegrees at TailBasis::kMonomial,
+    /// FillNarrowMonoF32Lane), so a degree cut from the Chebyshev form's tail is
+    /// not this entry's to read.
     ///
-    /// **This entry is served at the full-accuracy multiplier only**, for the
-    /// reason \c AllOrdersF32Narrow states: the degree is a property of the
-    /// stored table and not of the basis it is summed in, and no rung table for
-    /// these pieces exists in this lane.
+    /// **This entry serves every rung of \c kDeviceRungs**, for the reason
+    /// \c AllOrdersF32Narrow states: the cut is this lane's own, in this basis as
+    /// in that one.
     ///
-    /// \tparam kAccuracyMultiplier the multiplier this entry serves, which is
-    ///   \c kBoysFullAccuracyMultiplier and no other
+    /// \tparam kAccuracyMultiplier the rung this instantiation is, one of
+    ///   \c kDeviceRungs, for the reason above
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
     /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
@@ -1551,8 +1550,8 @@ public:
         void* stream);
 
     /// \c AllOrdersF32Orders on the narrow partition, with the contract of
-    /// \c AllOrdersF32Narrow: the partition's pieces one fit per order, served at
-    /// the full-accuracy multiplier alone for the reason the entry above states.
+    /// \c AllOrdersF32Narrow: the partition's pieces one fit per order, and the
+    /// same rungs — the cut a rung reads is the table's and not the reading's.
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF32NarrowOrders(
         const int* n, const double* x, float* out, std::size_t count, void* stream);
@@ -1564,7 +1563,7 @@ public:
         void* stream);
 
     /// \c AllOrdersF32NarrowOrders in the monomial basis, with the contract of
-    /// \c AllOrdersF32NarrowMono and the same one rung.
+    /// \c AllOrdersF32NarrowMono and the same rungs.
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF32NarrowOrdersMono(
         const int* n, const double* x, float* out, std::size_t count, void* stream);

@@ -1395,11 +1395,6 @@ TEST(DeviceProbe, EveryCellTheReportRefusesIsRefusedByTheEntryThatOwnsTheRow) {
     // rung of it is worth are the accuracy gate's and the consumer sweep's, both
     // of which follow the space and are not guarded on the multiplier.
     const std::vector<RefusingRow> refuses = {
-        {boys::DeviceEntry::kAllOrdersF32NarrowMono, outF32.data(),
-         [](double m, const int* n, const double* x, void* out, std::size_t count) {
-             return boys::BoysCuda::AllOrdersF32NarrowMonoAtRung(m, n, x, static_cast<float*>(out),
-                                                                 count, nullptr);
-         }},
         {boys::DeviceEntry::kAllOrdersF32Rat, outF32.data(),
          [](double m, const int* n, const double* x, void* out, std::size_t count) {
              return boys::BoysCuda::AllOrdersF32RatAtRung(m, n, x, static_cast<float*>(out), count,
@@ -1423,11 +1418,6 @@ TEST(DeviceProbe, EveryCellTheReportRefusesIsRefusedByTheEntryThatOwnsTheRow) {
         // The same tables on the packing axis's other side: the cell a rung of
         // them refuses is the cell the row above refuses, because the missing
         // cut is the table's and not the body's.
-        {boys::DeviceEntry::kAllOrdersF32NarrowOrdersMono, outF32.data(),
-         [](double m, const int* n, const double* x, void* out, std::size_t count) {
-             return boys::BoysCuda::AllOrdersF32NarrowOrdersMonoAtRung(
-                 m, n, x, static_cast<float*>(out), count, nullptr);
-         }},
         {boys::DeviceEntry::kAllOrdersF32OrdersRat, outF32.data(),
          [](double m, const int* n, const double* x, void* out, std::size_t count) {
              return boys::BoysCuda::AllOrdersF32OrdersRatAtRung(
@@ -1474,9 +1464,10 @@ TEST(DeviceProbe, EveryCellTheReportRefusesIsRefusedByTheEntryThatOwnsTheRow) {
         //
         // What is checked here is the shape of this build's refusals: a partial
         // device-callable row is one whose tables have no rung cut — the float
-        // lane's narrow partition and its rational route — so a partial row of
-        // the double lane, whose every rung cut this build derives, uploads and
-        // reads, is a finding rather than a property of the row.
+        // lane's rational route alone, now that the narrow partition's two bases
+        // are cut here — so a partial row of the double lane, whose every rung
+        // cut this build derives, uploads and reads, is a finding rather than a
+        // property of the row.
         if (row.group == boys::DeviceOptionGroup::kDeviceCallable)
         {
             ++devicePartial;
