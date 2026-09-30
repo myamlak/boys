@@ -4933,8 +4933,480 @@ def flat_f32_block_lines(f, flat_f32):
     f.write("});\n")
 
 
+# ---------------------------------------------------------------------------
+# The rational member over the FLOAT lane's uniform grid.
+#
+# The double lane's construction at the float lane's own grid, bar and
+# arithmetic, and a second walk rather than a second reading of the first
+# table for the reason the float uniform table beside it is: the double lane's
+# pairs are stored in binary64 and are read on the double lane's intervals, and
+# this lane's grid has a different width, a different interval count and
+# different cells. A pair over one grid is not a pair over the other.
+#
+# What differs from the double walk, and what forces each difference:
+#
+# - The acceptance is the LANE's own bar and it is read on the SAME view the
+#   figure is published from. The double member sets its acceptance at half the
+#   bound its cells are held to, and the margin that buys is what lets it accept
+#   on its fitting grid and publish a figure measured on another: the two views
+#   agree to well inside the margin, so which one the acceptance was read on
+#   cannot change the answer. This lane has no such margin. Half its cells'
+#   bound (5e-8) is below what its own binary32 arithmetic delivers at the
+#   values F_0 reaches on the first cells - the numerator's Horner sum, the
+#   denominator's and the division round - and the first-holding entry on
+#   interval 1 is 9.75e-8 on the fitting grid against 1.17e-7 on the cell's own
+#   half-step view, a gap of a fifth. So the acceptance here is the lane's
+#   published bar (F32_RAT_BOUND, which is the bar the lane's own rational
+#   route states: "the target IS the lane's published bound, so the criterion
+#   and the promise are the same sentence") and it is read on the points the
+#   promise is read on - the cell's half-step grid, the lane's acceptance grid
+#   and the accuracy gate's own cells. A pair is accepted exactly where it is
+#   certified, which is what removes the gap rather than spending a margin on
+#   it.
+# - The mapped argument is the FLOAT locator's, not an exact mapping. The
+#   kernel maps x to t in binary32 - one multiply by the width's reciprocal,
+#   one truncation, one multiply-add - so the argument a cell is read at is a
+#   rounding of the exact one, and a pair fitted on the exact mapping would be
+#   fitted on arguments the kernel does not produce. f32_map is that mapping
+#   transcribed, and every point here is taken through it.
+# - The arguments are float-representable for the same reason: the table is
+#   read at a binary32 x, so a fit made at an argument the format cannot hold
+#   is a fit made between two of the readings it will be judged on.
+# - The certification view carries the accuracy gate's own cells as well as
+#   the cell's own grid. This lane's narrow rational route was found over the
+#   bar at one cell of the gate's under the separate multiply-add route, on a
+#   piece that held on its own fit grid - which is why that route reads the
+#   gate's cells, and this member answers to the same gate over the same
+#   domain, so it reads them too (f32_rat_read_points is that instrument).
+#
+# The bar is a raise and not a relaxation. An interval no ladder entry holds is
+# a RuntimeError naming the interval and the bar, because a member emitted with
+# a cell above the bar its route is certified against would publish a figure
+# the lane does not stand behind.
+FLAT_RAT_F32_ACCEPT = F32_RAT_BOUND
+# The cell's fitting grid: the points the exchange solves on. The figure the
+# member publishes is NOT read here - it is read on flat_rat_f32_view below,
+# which is the acceptance's own view, because on this lane the two do not agree
+# to within any margin the bar could leave.
+FLAT_RAT_F32_GRID = 200
+FLAT_RAT_F32_ITERS = FLAT_RAT_ITERS
+# How many stored floats above the first ladder entry that holds the walk
+# considers before it settles, on the reading flat_rat_pick gives.
+FLAT_RAT_F32_WINDOW = FLAT_RAT_WINDOW
+# The certification's working precision, the double member's: eight orders
+# below the figure being measured and below the lane's own format by far more.
+FLAT_RAT_F32_CERT_DPS = FLAT_RAT_CERT_DPS
+# The pairs the search visits, in the double walk's order: by the count they
+# store, and within one count the smaller denominator first. No entry has a
+# zero denominator, for the reason the double ladder's last comment gives: a
+# pair whose denominator held only its constant term would be the Chebyshev
+# member's polynomial read under the rational route's name.
+FLAT_RAT_F32_LADDER = FLAT_RAT_LADDER
+
+
+def r32_below(v):
+    """The float immediately below `v`, for the top of a cell's open end."""
+    bits = struct.unpack("<I", struct.pack("<f", float(v)))[0]
+
+    return struct.unpack("<f", struct.pack("<I", bits - 1))[0]
+
+
+def flat_rat_f32_cell(iv, grid):
+    """A cell's float endpoints: a = iv * width and b = a + width.
+
+    Spelled as the emitted constants are, so the cell a pair was fitted on is
+    the cell the locator reaches: kFlatPerUnitF32 is the width's reciprocal
+    exactly, so iv * width is the interval's own left end and not a rounding
+    of it.
+    """
+    width = r32(float(grid["width"]))
+    a = r32(float(iv) * float(grid["width"]))
+
+    return a, r32(a + width)
+
+
+@lru_cache(maxsize=None)
+def flat_rat_f32_fit_points(n, iv, width, intervals):
+    """The grid a cell's pair is solved on: float arguments across the cell and
+    the mapped argument each, with the reference.
+
+    The top of the cell is the float just below b rather than b itself, as the
+    double walk's is: b belongs to the interval the locator puts it in, and a
+    fit that reached it would be fitted one argument outside the cell it is
+    stored for.
+
+    Cached per (order, interval): the walk asks for the same cell at the same
+    order once per ladder entry it visits, and rebuilding the reference at 40
+    digits each time would be most of the run.
+    """
+    grid = {"width": mpf(width), "intervals": intervals}
+    a, b = flat_rat_f32_cell(iv, grid)
+    xs, ts = [], []
+    for i in range(FLAT_RAT_F32_GRID):
+        x = r32(a + (b - a) * (i / FLAT_RAT_F32_GRID))
+        xs.append(x)
+        ts.append(mpf(repr(f32_map(a, b, x))))
+    x = r32_below(b)
+    xs.append(x)
+    ts.append(mpf(repr(f32_map(a, b, x))))
+
+    return ts, xs, f32_rat_reference(n, xs)
+
+
+def flat_rat_f32_delivered(p, q, ts, fs):
+    """The pair's delivered worst |F_n - fit|, in the lane's own arithmetic.
+
+    Both multiply-add routes, because a build runs one of them and the lane
+    publishes one figure: a pair accepted on one reading alone would be a pair
+    whose bound was never measured against the arithmetic the other build runs
+    (see rational_value_float). Returns [fused, separate].
+    """
+    worst = [mpf(0), mpf(0)]
+    for t, f in zip(ts, fs):
+        td = float(t)
+        for route, fused in ((0, True), (1, False)):
+            e = abs(mpf(rational_value_float(p, q, td, fused)) - f)
+            if e > worst[route]:
+                worst[route] = e
+
+    return worst
+
+
+@lru_cache(maxsize=None)
+def flat_rat_f32_view(n, iv, width, intervals):
+    """Every point a cell's pair is certified on, one point per argument.
+
+    Three views of one cell: the fit grid offset half a step, so no point of
+    the two coincides; the points f32_rat_read_points builds for the cell,
+    which are the lane's own acceptance grid and the accuracy gate's cells; and
+    the cell's left end, where the mapping is exact and t is -1. A cell and a
+    view point that are the same float are one point and not two.
+    """
+    grid = {"width": mpf(width), "intervals": intervals}
+    a, b = flat_rat_f32_cell(iv, grid)
+    points = {}
+    for i in range(FLAT_RAT_F32_GRID):
+        x = r32(a + (b - a) * ((i + 0.5) / FLAT_RAT_F32_GRID))
+        if a <= x < b:
+            points[x] = None
+    for (x, _t, _r, _w) in f32_rat_read_points(n, a, b, weighted=False):
+        points.setdefault(x, None)
+    points.setdefault(a, None)
+    with mp.workdps(FLAT_RAT_F32_CERT_DPS):
+        return [(x, mpf(repr(f32_map(a, b, x))), boys_ref(n, mpf(x)))
+                for x in sorted(points)]
+
+
+def flat_rat_f32_certify(n, iv, grid, p, q):
+    """The pair read on the certification view, with the argument each worst was
+    reached at. Returns the per-route worsts and the arguments."""
+    worst = [mpf(0), mpf(0)]
+    at = [None, None]
+    for (_x, t, ref) in flat_rat_f32_view(n, iv, float(grid["width"]),
+                                          grid["intervals"]):
+        td = float(t)
+        for route, fused in ((0, True), (1, False)):
+            e = abs(mpf(rational_value_float(p, q, td, fused)) - ref)
+            if e > worst[route]:
+                worst[route], at[route] = e, td
+
+    return worst, at
+
+
+def flat_rat_f32_exchange(m, k, ts, fs):
+    """The best pair the exchange returns for one cell at one ladder entry.
+
+    Two starting grids and the delivered reading, for the reasons
+    flat_rat_exchange gives: a starting set that collapses is not the entry
+    having no solution, and of two pairs of equal residual the one a caller
+    receives less from is the one kept.
+    """
+    best = None
+    for stride in (1, 2):
+        r = rat_remez(m, k, list(range(0, len(ts), stride)), ts, fs,
+                      iters=FLAT_RAT_F32_ITERS)
+        if r is None:
+            continue
+        _, p, q = r
+        worst = flat_rat_f32_delivered(p, q, ts, fs)
+        if best is None or max(worst) < max(best[2]):
+            best = (p, q, worst)
+
+    return best
+
+
+def flat_rat_f32_try(n, iv, grid, m, k):
+    """One ladder entry at one cell and order, accepted where it is certified.
+
+    The exchange solves on the fitting grid; the acceptance is then read on
+    flat_rat_f32_view, which is the view the figure is published from. An entry
+    the exchange cannot solve, or whose certified reading is above the bar, is
+    not this cell's - and is not a smaller reading of some other entry either,
+    which is why the walk continues rather than stopping.
+
+    Returns (p, q, certified_worsts, certified_arguments) or None.
+    """
+    ts, _xs, fs = flat_rat_f32_fit_points(n, iv, float(grid["width"]),
+                                          grid["intervals"])
+    r = flat_rat_f32_exchange(m, k, ts, fs)
+    if r is None:
+        return None
+    p, q = r[0], r[1]
+    w, at = flat_rat_f32_certify(n, iv, grid, p, q)
+    if max(w) > FLAT_RAT_F32_ACCEPT:
+        return None
+
+    return p, q, w, at
+
+
+def flat_rat_f32_pick(n, iv, grid, start):
+    """The ladder entry that certifies least among those near the first that
+    holds, on the reading flat_rat_pick gives: the entries at a cell set by the
+    lane's rounding differ only by how their own coefficients round, so which
+    one is taken decides which figure is published.
+
+    The window is the double walk's, in stored coefficients above the first
+    entry that holds: the member buys rounding luck with the smallest amount of
+    storage that buys any, and the bound on the search follows from the ladder
+    rather than from an iteration count.
+    """
+    entered = None
+    best = None
+    for index in range(start, len(FLAT_RAT_F32_LADDER)):
+        m, k = FLAT_RAT_F32_LADDER[index]
+        if entered is not None and (m + 1 + k) > entered + FLAT_RAT_F32_WINDOW:
+            break
+        r = flat_rat_f32_try(n, iv, grid, m, k)
+        if r is None:
+            continue
+        if entered is None:
+            entered = m + 1 + k
+        if best is None or max(r[2]) < max(best[1][2]):
+            best = (index, r)
+
+    return best
+
+
+def _flat_rat_f32_interval_job(spec):
+    """One interval's pairs, in a worker process."""
+    iv, grid = spec
+    mp.dps = RAT_DPS  # the fit's working precision; a spawn does not carry it
+
+    return flat_rat_f32_interval(iv, grid)
+
+
+def flat_rat_f32_interval(iv, grid):
+    """One interval of the float grid: its pair, its orders' pairs, its figure.
+
+    The interval's pair is chosen on its own first order - the largest of the
+    interval's orders in absolute value, since |F_n| <= F_0 pointwise - and
+    then held to every order of the interval, because one pair serves all of
+    them. An order that fails the pair the interval was chosen at moves the
+    whole interval one ladder entry up and the walk is made again, which is the
+    double walk's rule and is what keeps the layout's one-pair-per-interval
+    from becoming a per-order pair reported as the interval's.
+    """
+    index = 0
+    while True:
+        if index >= len(FLAT_RAT_F32_LADDER):
+            raise RuntimeError(
+                f"interval {iv} of the float uniform grid has no rational pair on "
+                f"the ladder: every entry up to {FLAT_RAT_F32_LADDER[-1]} fails "
+                f"either the exchange or the {mp.nstr(FLAT_RAT_F32_ACCEPT, 3)} its "
+                f"cells are accepted under, so no member of the route can be "
+                f"emitted for it")
+        chosen = flat_rat_f32_pick(0, iv, grid, index)
+        if chosen is None:
+            raise RuntimeError(
+                f"interval {iv} of the float uniform grid has no rational pair at "
+                f"or above {FLAT_RAT_F32_LADDER[index]} on the ladder")
+        index, (p0, q0, w0, w_at0) = chosen
+        m, k = FLAT_RAT_F32_LADDER[index]
+        pairs = []
+        worst = [mpf(0), mpf(0)]
+        at = [None, None]
+        failed = None
+        for n in range(MAX_ORDER + 1):
+            if n == 0:
+                p, q, w, w_at = p0, q0, w0, w_at0
+            else:
+                r = flat_rat_f32_try(n, iv, grid, m, k)
+                if r is None:
+                    failed = n
+                    break
+                p, q, w, w_at = r
+            for route in (0, 1):
+                if w[route] > worst[route]:
+                    worst[route], at[route] = w[route], (n, w_at[route])
+            pairs.append((n, p, q))
+        if failed is None:
+            return {"interval": iv, "m": m, "k": k, "pairs": pairs, "worst": worst,
+                    "at": at}
+        index += 1
+
+
+def flat_rat_f32_table(grid):
+    """The rational member over the float grid's cells, with its measured figure.
+
+    The grid travels in rather than being derived here, because the member and
+    the Chebyshev table beside it are one partition read through one locator:
+    the grid the float uniform table settled on is the grid this member's
+    intervals are, and a member fitted on the placement law's answer instead
+    would be a second grid under the first one's name.
+    """
+    jobs = [(iv, grid) for iv in range(grid["intervals"])]
+    with multiprocessing.get_context("spawn").Pool(
+            min(len(jobs), NARROW_WORKERS)) as pool:
+        out = pool.map(_flat_rat_f32_interval_job, jobs)
+    worst = [mpf(0), mpf(0)]
+    for row in out:
+        for route in (0, 1):
+            if row["worst"][route] > worst[route]:
+                worst[route] = row["worst"][route]
+    for route in (0, 1):
+        if worst[route] > FLAT_RAT_F32_ACCEPT:
+            raise RuntimeError(
+                f"the float lane's rational member over the uniform grid delivers "
+                f"{float(worst[route]):.6e} in "
+                f"{'fused' if route == 0 else 'separate'} multiply-adds, above the "
+                f"{mp.nstr(FLAT_RAT_F32_ACCEPT, 3)} its route is certified against")
+    return {"grid": grid, "intervals": out, "worst": worst,
+            "stored": sum((MAX_ORDER + 1) * (r["m"] + 1 + r["k"]) for r in out)}
+
+
+def flat_rat_f32_block_lines(frat):
+    """The float lane's rational member over its uniform grid, as the header
+    stores it.
+
+    The double member's layout, names and read rule at this lane's suffix and
+    width: interval-major with the order as the inner index, the offsets,
+    stored counts and degree columns emitted because the intervals carry a pair
+    of their own rather than the table one stride, and the coefficients stored
+    as binary32 literals beside the binary64 figures the row publishes.
+    """
+    grid = frat["grid"]
+    intervals = grid["intervals"]
+    rows = sorted(frat["intervals"], key=lambda r: r["interval"])
+    if [r["interval"] for r in rows] != list(range(intervals)):
+        raise RuntimeError("the float rational member's intervals are not the grid's")
+    offsets = [0]
+    for row in rows:
+        offsets.append(offsets[-1] + (MAX_ORDER + 1) * (row["m"] + 1 + row["k"]))
+    stored = offsets[-1]
+    if stored != frat["stored"]:
+        raise RuntimeError("the float rational member's stored count is not the sum "
+                          "of its intervals' pairs")
+    lines = [
+        "// The rational minimax family over the float lane's uniform grid: one",
+        "// numerator/denominator pair per interval, fitted over that interval's",
+        "// own cell and read at the mapped argument the float locator builds for",
+        "// it. The partition is the grid's - the intervals are the cells the width",
+        "// law derived, not a cut this family makes - so what this table brings to",
+        "// it is the pairs.",
+        "//",
+        "// Each row stores the numerator p_0..p_m and then the denominator's",
+        "// q_1..q_k with q_0 held at 1, the stored form the lane's rational reader",
+        "// uses; the degree columns say how many of each. The pair is chosen as the",
+        "// double member's is: the ladder is walked from the smallest stored pair",
+        "// up until one holds the bound the grid's cells are held to, and the entry",
+        "// kept is the one among the first few that hold whose delivered error is",
+        "// smallest - at the cells that set this member's figure the entries differ",
+        "// only by how their own coefficients round, and the row below is a",
+        "// power-of-two round-up, so which entry is taken decides which figure is",
+        "// published. Every figure read here is the delivered error in the lane's",
+        "// own binary32, at BOTH multiply-add routes with the worse taken, on the",
+        "// coefficients as stored, and on the points the accuracy gate reads this",
+        "// lane at as well as the cell's own.",
+        "//",
+        "// The read rule, because this table has no single stride either:",
+        "//   kFlatRatCoeffsF32[kFlatRatOffsetsF32[iv] + order * kFlatRatStoredF32[iv]",
+        "//                    + j]",
+        "// for j <= kFlatRatNumDegF32[iv] + kFlatRatDenDegF32[iv], the numerator's",
+        "// coefficients first and the denominator's q_1..q_k after them.",
+        f"inline constexpr int kFlatRatIntervalsF32 = {intervals};",
+        f"inline constexpr int kFlatRatStoredTotalF32 = {stored};",
+        "inline constexpr auto kFlatRatNumDegF32 = std::to_array<int>({",
+    ]
+    for i in range(0, len(rows), 12):
+        lines.append("  " + ", ".join(str(r["m"]) for r in rows[i:i + 12]) + ",")
+    lines.append("});")
+    lines.append("inline constexpr auto kFlatRatDenDegF32 = std::to_array<int>({")
+    for i in range(0, len(rows), 12):
+        lines.append("  " + ", ".join(str(r["k"]) for r in rows[i:i + 12]) + ",")
+    lines.append("});")
+    lines.append("// The stored count of each interval's row, which is its pair plus the")
+    lines.append("// denominator's held constant term:")
+    lines.append("inline constexpr auto kFlatRatStoredF32 = std::to_array<int>({")
+    for i in range(0, len(rows), 12):
+        lines.append("  " + ", ".join(str(r["m"] + 1 + r["k"]) for r in rows[i:i + 12])
+                     + ",")
+    lines.append("});")
+    lines.append("// Where each interval's block starts, and the end of the last one:")
+    lines.append("inline constexpr auto kFlatRatOffsetsF32 = std::to_array<int>({")
+    for i in range(0, len(offsets), 12):
+        lines.append("  " + ", ".join(str(o) for o in offsets[i:i + 12]) + ",")
+    lines.append("});")
+    values = []
+    for row in rows:
+        if [p[0] for p in row["pairs"]] != list(range(MAX_ORDER + 1)):
+            raise RuntimeError("the float rational member's rows do not cover every "
+                              "order")
+        for (_n, p, q) in row["pairs"]:
+            values.extend(fmtf(float(c)) for c in p)
+            values.extend(fmtf(float(c)) for c in q)
+    lines.append("inline constexpr auto kFlatRatCoeffsF32 = std::to_array<float>({")
+    for i in range(0, len(values), 6):
+        lines.append("  " + ", ".join(values[i:i + 6]) + ",")
+    lines.append("});")
+    lines.append(f"static_assert(std::size(kFlatRatCoeffsF32) == {stored},\n"
+                 "              \"the float rational member must hold every order of "
+                 "every interval\");")
+    lines.append("static_assert(std::size(kFlatRatNumDegF32) == kFlatRatIntervalsF32\n"
+                 "                  && std::size(kFlatRatDenDegF32) == "
+                 "kFlatRatIntervalsF32\n"
+                 "                  && std::size(kFlatRatStoredF32) == "
+                 "kFlatRatIntervalsF32\n"
+                 "                  && std::size(kFlatRatOffsetsF32) == "
+                 "kFlatRatIntervalsF32 + 1,\n"
+                 "              \"the float rational member must carry one pair and one "
+                 "offset per interval\");")
+    lines.append("static_assert(kFlatRatOffsetsF32[kFlatRatIntervalsF32] == "
+                 "kFlatRatStoredTotalF32,\n"
+                 "              \"the offsets must reach the end of the float rational "
+                 "member\");")
+    lines.append("static_assert(kFlatRatIntervalsF32 == kFlatIntervalsF32,\n"
+                 "              \"the float rational member is read at the float "
+                 "Chebyshev member's own grid\");")
+    lines.append("")
+    lines.append("// What the float rational member delivers, at each multiply-add")
+    lines.append("// route, against the bound the grid's cells are held to. Measured on")
+    lines.append("// each cell's own certification view - the fit grid offset half a step,")
+    lines.append("// the lane's acceptance grid and the accuracy gate's cells - on the")
+    lines.append("// stored coefficients, which is what the acceptance above read.")
+    lines.append("struct FlatRatRowF32 { int stored; double fused, separate; };")
+    lines.append("inline constexpr auto kFlatRatRowsF32 = "
+                 "std::to_array<FlatRatRowF32>({")
+    lines.append(f"  {{{stored}, {fmt(frat['worst'][0])}, {fmt(frat['worst'][1])}}},")
+    lines.append("});")
+    # The bar is the LANE's and not the grid's cell law, which is the one place
+    # this member differs from the double one in what its row says. The double
+    # member's cells are held to FLAT_CELL_BOUND and it delivers two orders
+    # below that, so its bar is the grid's bound and the two readings agree.
+    # This member cannot be: binary32 delivers ~1.1e-7 on the first cells, above
+    # the 1e-7 cell law by construction and below the lane's 1.5e-7 contract, so
+    # publishing the cell law here would publish a bar the member is over - a
+    # documented claim it does not meet. What it is certified against is the
+    # lane's own bar, which is the same target the lane's narrow rational route
+    # is accepted at, and that is what this line states.
+    lines.append(f"inline constexpr double kFlatRatBarF32 = "
+                 f"{fmt(float(FLAT_RAT_F32_ACCEPT))};")
+
+    return lines
+
+
 def write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32,
-                        narrow_a_f32, narrow_b_f32, narrow_rat_f32, flat_f32):
+                        narrow_a_f32, narrow_b_f32, narrow_rat_f32, flat_f32,
+                        flat_rat_f32):
     """The float lane's tables: the shipped lane, the rational route, the narrow
     partition under both routes, the uniform table."""
     f.write("\nnamespace boys::detail::f32 {\n\n")
@@ -5102,13 +5574,18 @@ def write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32,
     # any of them, as the double lane's is written beside its own.
     flat_f32_block_lines(f, flat_f32)
 
+    # The rational member over that same grid, beside the Chebyshev member it
+    # shares the grid with, as the double lane's is written beside its own.
+    for line in flat_rat_f32_block_lines(flat_rat_f32):
+        f.write(line + "\n")
+
     f.write("\n}  // namespace boys::detail::f32\n")
 
 
 def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb,
                  scheme_rows, rat_b, rat_a, rat_a_f32, rat_b_f32, narrow, narrow_a,
                  narrow_rat_a, narrow_rat_b, narrow_a_f32, narrow_b_f32, flat,
-                 flat_f32, flat_rat):
+                 flat_f32, flat_rat, flat_rat_f32):
     with open(path, "w", newline="\n") as f:
         f.write("// Generated by tools/gen_boys_coefficients.py - DO NOT EDIT.\n")
         f.write("// Piecewise Chebyshev (split Clenshaw) fits of F_n(x), region A seeds\n")
@@ -5367,7 +5844,8 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
         # Float lane.
         narrow_rat_f32 = fit_narrow_rational_f32(narrow_a_f32, narrow_b_f32)
         write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32,
-                        narrow_a_f32, narrow_b_f32, narrow_rat_f32, flat_f32)
+                        narrow_a_f32, narrow_b_f32, narrow_rat_f32, flat_f32,
+                        flat_rat_f32)
         f.write("\n/// \\endcond\n")
 
 
@@ -5560,6 +6038,16 @@ def main():
     parser.add_argument("--f32-flat-out", default="",
                         help="where --f32-flat-only writes the table's header block "
                              "(default: nowhere, the figures are printed instead)")
+    parser.add_argument("--f32-flat-rat-only", action="store_true",
+                        help="fit only the float lane's rational member over its "
+                             "uniform grid and print what each interval stores and "
+                             "delivers, without fitting the rest of the table; writes "
+                             "its header block to --f32-flat-rat-out when that is given "
+                             "and nothing when it is not")
+    parser.add_argument("--f32-flat-rat-out", default="",
+                        help="where --f32-flat-rat-only writes the member's header "
+                             "block (default: nowhere, the figures are printed "
+                             "instead)")
     parser.add_argument("--derive-target", default="1e-14",
                         help="the target --derive-partition derives against (default the "
                              "quantum-chemistry 1e-14)")
@@ -5715,6 +6203,58 @@ def main():
             print(f"wrote {args.f32_flat_out}")
         return 0
 
+    if args.f32_flat_rat_only:
+        # The rational member over the float lane's uniform grid on its own, the
+        # double member's scoped run at this lane. Its fits are a function of the
+        # grid and the lane's arithmetic alone - no derived partition and no
+        # scheme sweep is read - so the member and its figure are taken here
+        # without the hours the rest of the generation spends, and the block's
+        # byte-identity is checked without it. The grid is the one the float
+        # uniform table settles on and not the placement law's answer, so the
+        # table is walked here too: flat_rat_f32_block_lines is shared with
+        # write_header, which is what keeps the two from drifting.
+        g32i = uniform_grid("float")
+        print(f"walking the float lane's uniform grid (widest row: read cap "
+              f"{g32i['cap']}, width {mp.nstr(g32i['width'], 6)} over "
+              f"[0, {mp.nstr(g32i['hi'], 6)}], {g32i['intervals']} intervals, the "
+              f"lane's own arithmetic) ...")
+        g32 = flat_table_f32()["grid"]
+        print(f"  the grid settled on: {g32['intervals']} intervals of width "
+              f"{mp.nstr(g32['width'], 6)} reaching {mp.nstr(g32['hi'], 8)}, degrees "
+              f"{min(g32['degs'])}..{max(g32['degs'])}")
+        print(f"fitting the rational member over it (accepted at "
+              f"{mp.nstr(FLAT_RAT_F32_ACCEPT, 3)} delivered, "
+              f"{len(FLAT_RAT_F32_LADDER)} ladder entries, both multiply-add routes, "
+              f"the gate's cells in the certification) ...")
+        flat_rat_f32 = flat_rat_f32_table(g32)
+        rows = sorted(flat_rat_f32["intervals"], key=lambda r: r["interval"])
+        print(f"  intervals {len(rows)}, stored {flat_rat_f32['stored']} floats, "
+              f"distinct pairs {sorted({(r['m'], r['k']) for r in rows})}")
+        for row in rows:
+            print(f"  iv {row['interval']:>3} [{mp.nstr(g32['width'] * row['interval'], 6)},"
+                  f" {mp.nstr(g32['width'] * (row['interval'] + 1), 6)}): pair "
+                  f"{row['m']}/{row['k']}, {row['m'] + 1 + row['k']} stored, worst "
+                  f"fused {float(row['worst'][0]):.6e} separate "
+                  f"{float(row['worst'][1]):.6e}")
+        print(f"  worst over the member: fused "
+              f"{float(flat_rat_f32['worst'][0]):.6e} at "
+              f"{[r['at'][0] for r in rows if r['worst'][0] == flat_rat_f32['worst'][0]][0]},"
+              f" separate {float(flat_rat_f32['worst'][1]):.6e} at "
+              f"{[r['at'][1] for r in rows if r['worst'][1] == flat_rat_f32['worst'][1]][0]}")
+        print(f"  the grid's own bound {mp.nstr(FLAT_CELL_BOUND['float'], 3)}, "
+              f"acceptance {mp.nstr(FLAT_RAT_F32_ACCEPT, 3)}, published round-up "
+              f"{scheme_bound(max(flat_rat_f32['worst'])):.6e}")
+        if args.f32_flat_rat_out:
+            os.makedirs(os.path.dirname(args.f32_flat_rat_out) or ".", exist_ok=True)
+            with open(args.f32_flat_rat_out, "w", newline="\n") as f:
+                f.write("#include <array>\n#include <cstddef>\n\n"
+                        "namespace boys::detail::f32 {\n\n")
+                for line in flat_rat_f32_block_lines(flat_rat_f32):
+                    f.write(line + "\n")
+                f.write("\n}  // namespace boys::detail::f32\n")
+            print(f"wrote {args.f32_flat_rat_out}")
+        return 0
+
     print("fitting double lane (weighted region-A seeds, tol 5e-14, deg<=18) ...")
     double_orders = run_jobs(_fit_order_job,
                              [(n, False, False) for n in range(MAX_ORDER + 1)])
@@ -5814,6 +6354,22 @@ def main():
               f"{flat_f32['worst'][scheme][1]:.6e} (fused / separate), bound "
               f"{flat_f32['bounds'][scheme][0]:.6e}")
 
+    # The rational member over that same grid: one numerator/denominator pair
+    # per interval, chosen for that interval under the bound the grid's cells
+    # are held to, in the lane's own arithmetic. It is fitted on the grid the
+    # table above settled on rather than on the placement law's answer, so the
+    # two members are one partition read through one locator.
+    print(f"fitting the float lane's rational member over its uniform grid "
+          f"(accepted at {mp.nstr(FLAT_RAT_F32_ACCEPT, 3)} delivered, ladder of "
+          f"{len(FLAT_RAT_F32_LADDER)} pair(s), both multiply-add routes) ...")
+    flat_rat_f32 = flat_rat_f32_table(g32)
+    print(f"  the float rational member: {g32['intervals']} intervals, "
+          f"{len({(r['m'], r['k']) for r in flat_rat_f32['intervals']})} distinct "
+          f"pair(s), {flat_rat_f32['stored']} stored, worst delivered "
+          f"{float(flat_rat_f32['worst'][0]):.6e} / "
+          f"{float(flat_rat_f32['worst'][1]):.6e} (fused / separate), bound "
+          f"{float(FLAT_CELL_BOUND['float']):.6e}")
+
     # The rational region-B route, over the interval the Chebyshev region-B fit
     # was just given, so the two are compared on the same interval against the
     # same reference.
@@ -5883,7 +6439,7 @@ def main():
                          (ext_deg, ext_cs, ext_mono), scheme_rows, rat_b, rat_a,
                          rat_a_f32, rat_b_f32, narrow, narrow_a,
                          narrow_rat_a, narrow_rat_b, narrow_a_f32, narrow_b_f32, flat,
-                         flat_f32, flat_rat)
+                         flat_f32, flat_rat, flat_rat_f32)
             format_header(tmp_header)
             write_reference(tmp_reference)
             ok = True
@@ -5904,7 +6460,7 @@ def main():
                  (ext_deg, ext_cs, ext_mono), scheme_rows, rat_b, rat_a,
                  rat_a_f32, rat_b_f32, narrow, narrow_a,
                  narrow_rat_a, narrow_rat_b, narrow_a_f32, narrow_b_f32, flat,
-                 flat_f32, flat_rat)
+                 flat_f32, flat_rat, flat_rat_f32)
     format_header(args.header)
     print(f"wrote {args.header}")
 
