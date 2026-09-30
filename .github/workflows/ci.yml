@@ -489,6 +489,31 @@ jobs:
         if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_doc_transcripts.py --check
+      # The accuracy gate judges every lane and region against a bound, and
+      # those bounds are constants it transcribes: the block they sit in says
+      # "transcribed from README.md and include/boys/boys.hpp". Nothing read the
+      # two against each other until this step, so a figure edited in a document
+      # and not in the gate left the gate certifying its own transcription - the
+      # run green, the document's claim printed beside the gate's number.
+      #
+      # This step holds each transcribed constant to the cell the same fact is
+      # stated in: the header's contract table, the README's contract row for
+      # the lane, and the README's own copy of the gate's printed run. It then
+      # names what it could not tie rather than passing over it - a constant of
+      # the gate that holds a documented figure under another name fails until
+      # it is tied or named, and a figure-bearing row no tie holds fails until
+      # it is named with the reason it is not - so the coverage of the check is
+      # a declared list and not a claim. The correspondence between the two
+      # tables is not one to one and the tool says which ties are set-level for
+      # that reason.
+      #
+      # It reads the two documents, the gate and src/boys.cpp and nothing else -
+      # no build, no compiler, no network - so it is scoped to one combination
+      # like the gates above it, and it is as fast as reading four files.
+      - name: Docs (the bounds the gate transcribes)
+        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_bound_transcripts.py --check
       - name: Docs (zero-warning Doxygen gate)
         if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: cmake --build build --target boys-docs
