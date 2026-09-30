@@ -419,6 +419,18 @@ jobs:
           .venv/bin/python tools/gen_platform_table.py --check
           .venv/bin/python tools/gen_option_matrix.py --check
           .venv/bin/python tools/gen_build_facts.py --check
+      # The packed orders lane is a template instantiated once per cell, and its
+      # cells are written out twice - as `extern template` declarations in
+      # include/boys/boys_impl.hpp and as definitions in src/boys_orders_simd.cpp.
+      # A cell that falls out of one of the two lists and not the other fails
+      # silently: declared and never defined is an unresolved external at a
+      # consumer's link, defined and never declared is a second copy of the body
+      # in every translation unit that calls it. No other gate in this file reads
+      # either list, so this step is the only thing that does.
+      - name: Packed orders cells (declared against instantiated)
+        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_orders_packed_cells.py --check
       - name: Boundary standalone check
         run: |
           mkdir -p boundary-run

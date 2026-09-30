@@ -56,6 +56,19 @@ ctest --test-dir build --output-on-failure
 Optional: `-DBUILD_BENCHMARKS=ON` for the benchmark drivers, which are default ON locally, and
 `-DBUILD_CUDA=ON` for the CUDA lane, which needs the CUDA toolkit and is local-only.
 
+`-DBOYS_BUILD_DEFAULTS=<header>` builds with a header of your own carrying the five choices an entry
+that names no policy resolves to — the fit route, the evaluation scheme, the packing axis, the
+division form and the fit granularity — in place of the shipped ones. They are compile-time values,
+so the build compiles your choices into every call that names none and pays nothing for it at run
+time: the choice was a template argument before and is one still. The file is
+`include/boys/boys_build_defaults.hpp`, and its own comment is the contract a replacement satisfies:
+the five names, and the machine, the date and the option probe's own figures beside them, because a
+choice made there is a measurement taken on one host and a reader has to be able to tell a tuned
+build from a shipped one. The default is OFF, and an untuned build is the shipped configuration —
+the one every bound in this repository was measured at. **Nothing in this tree writes such a
+header**: running `boys-option-probe` at configure time and emitting your machine's ranking is not
+part of the build, so this option takes a header you already have.
+
 The accuracy gate, which re-measures every documented bound against the committed reference grid and
 prints the comparison lane by lane and region by region:
 
@@ -74,6 +87,19 @@ Regeneration check, which is local and never CI:
 ```bash
 python3 tools/gen_boys_coefficients.py --check
 ```
+
+The packed orders lane is a template instantiated once per cell, and its cells are written out twice
+— as `extern template` declarations in `include/boys/boys_impl.hpp` and as definitions in
+`src/boys_orders_simd.cpp`. A cell in one list and not the other fails silently, so the two are
+compared cell by cell:
+
+```bash
+python3 tools/check_orders_packed_cells.py --check
+```
+
+Run it after touching either list. It compares the two lists to each other and never to the option
+space, so a class of cell that neither list names is not something it can see — that one reaches you
+as an unresolved external at link time, named.
 
 The arithmetic the documents state over their own numbers — ratios, shares, margins, percentages —
 is checked against the numbers the same sentence prints:

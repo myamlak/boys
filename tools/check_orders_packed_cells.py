@@ -24,6 +24,15 @@ BoysAllOrdersF32Packed from each, and reports every cell that is in one list and
 not the other. Exit status is 0 when the lists agree and 1 when they do not, so
 it can be run as a check beside the other tools/*.py --check steps.
 
+What it compares is the two lists **to each other**, never to the option space
+the library publishes, and the difference matters when a check is believed: a
+class of cell that neither list names is invisible here, and this script reports
+agreement over whatever the two files happen to hold. What catches that class is
+the link - a cell the compiler is told to expect and no translation unit defines
+is an unresolved external at a consumer's build, with the cell named. So this
+check is what holds the two lists in step; the link is what holds them complete,
+and neither stands in for the other.
+
 The expansion is a small processor for the subset of the preprocessor these two
 files use - object-like and function-like `#define`, `#undef`, and invocation -
 and it is deliberately not a preprocessor: `#if`/`#else` are not evaluated, and
