@@ -1279,8 +1279,10 @@ lane hands over.
   ladder. The reason is the figure this lane publishes: it publishes 1.5e-7 for every form, and the
   plain form's reciprocal on that step takes the ladder outside it — the worst of the gate's own
   reference grid reads 1.75e-7 at n = 0, x = 9.74055, where this lane's exact and refined forms
-  deliver 1.08e-7. Serving the plain form there is a figure the lane does not publish yet; it is
-  owed work rather than a combination that cannot be formed.
+  deliver 3.67355e-09, the second cell that form puts outside being x = 7 at 1.55469e-07 against
+  their 3.62601e-08, and their own worst over the whole grid being 1.08354e-07 at n = 0,
+  x = 11.1509647, inside the base. Serving the plain form there is a figure the lane does not
+  publish yet; it is owed work rather than a combination that cannot be formed.
 
 **Reproduction.** The option probe measures the axis and names the form in every row it prints:
 
