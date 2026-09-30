@@ -8,3 +8,10 @@
 # Python caches and local tooling
 __pycache__/
 .venv/
+
+# Local working notes, probe output and gate transcripts. These are this
+# checkout's own record of work in progress and never ship: the tracked tree
+# carries the library, the generated tables and the documents a consumer reads.
+/.claude/
+/.probe-logs/
+/gate.out
