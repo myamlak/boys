@@ -619,6 +619,10 @@ constexpr bool DeviceEntryServedAtRung(DeviceEntry entry, double multiplier) noe
 /// new option therefore cannot arrive in the space without a statement of which
 /// rungs it answers at — the omission is the error, rather than a default arm
 /// quietly reporting it served everywhere.
+///
+/// \returns true when every enumerator of \c DeviceEntry is answered at the
+///          reference multiplier by the switch above, which is the rung every
+///          entry of this lane serves
 constexpr bool DeviceEntriesAllStateTheirRungs() noexcept {
     for (int i = 0; i < static_cast<int>(DeviceEntry::kCount); ++i)
     {

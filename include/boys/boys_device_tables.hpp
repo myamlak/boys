@@ -229,10 +229,9 @@ struct BoysDeviceTables {
 
     /// The same partition one lane down. Its region B is the float lane's own
     /// piecewise seed; its region A is the double lane's narrow pieces above,
-    /// which is the one seed lane the float entries seed from. No relaxed degree
-    /// is carried beside it: the float lane's narrow tables have a rung cut this
-    /// build does not hold, so an entry of that partition answers at m = 1 and
-    /// names the rung it refuses.
+    /// which is the one seed lane the float entries seed from — so the relaxed
+    /// degrees a rung of this partition reads are the double lane's region A cut
+    /// above and this lane's own region B cut below, one table per basis.
     const int* narrowPieceStart32 = nullptr;
     /// [piece] the index of the piece's first coefficient in \c narrowCoeffs32
     const int* narrowPieceOffset32 = nullptr;
@@ -305,6 +304,17 @@ struct BoysDeviceTables {
     const int* narrowRatBStoredNumDeg32 = nullptr; ///< [piece] numerator degree
     const int* narrowRatBDenDeg32 = nullptr;       ///< [piece] denominator degree
 
+    /// [piece * (kMaxBoysOrder + 1) + order] the float narrow partition's own cut
+    /// of region B's seed at the resident rung, in the Chebyshev form of that
+    /// seed: the degree the piece's fit is read to, which is the cut the launched
+    /// rows of that partition take from the device symbol of the same name.
+    /// Region A carries no table beside it — the seed lane is the double lane's
+    /// narrow pieces, whose cut is \c narrowRelaxedDegA above.
+    const int* narrowRelaxedDegB32 = nullptr;
+    /// The same table for the monomial form of the same seed, which is what a
+    /// Horner call at that rung reads.
+    const int* narrowMonoRelaxedDegB32 = nullptr;
+
     /// The uniform grid's cells, one entry per interval, read by the route's
     /// own entries (BoysDeviceAllOrdersF64Uniform and its float counterpart).
     ///
@@ -330,6 +340,8 @@ struct BoysDeviceTables {
     /// format and read cap: its degrees and its offsets are the double lane's
     /// only by coincidence and are never read in its place.
     const int* flatDegs32 = nullptr;
+    /// [interval + 1] the float grid's first coefficient per interval, the same
+    /// layout and the same closing count as \c flatOffsets above.
     const int* flatOffsets32 = nullptr;
 };
 
@@ -340,7 +352,7 @@ struct BoysDeviceTables {
 /// status layer, which sizes its array with it, and asserted in the device image
 /// against the order's own length, so a table added to either end without the
 /// other is a compile error rather than an address written past an array.
-inline constexpr int kBoysDeviceTablesTailCount = 54;
+inline constexpr int kBoysDeviceTablesTailCount = 56;
 
 /// The tail export's four slots for the uniform grid's per-interval tables, in
 /// the order (double degrees, double offsets, float degrees, float offsets).

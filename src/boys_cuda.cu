@@ -2942,6 +2942,7 @@ const void* const kTableAddressSymbols[] = {&dPieceStart,      &dOffset,
                               &dNarrowRatBDenDeg, &dNarrowRatBDeg,
                               &dNarrowRatBCoeffs32, &dNarrowRatBOffset32,
                               &dNarrowRatBStoredNumDeg32, &dNarrowRatBDenDeg32,
+                              &dNarrowBDegEff32, &dNarrowMonoBDegEff32,
                               &dFlatDegs,        &dFlatOffsets,
                               &dFlatDegsF32,     &dFlatOffsetsF32};
 constexpr int kTableAddressCount =

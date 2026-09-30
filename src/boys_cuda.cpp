@@ -747,6 +747,8 @@ BoysStatus BoysCuda::DeviceTables(BoysDeviceTables* out) {
     tables.narrowRatBOffset32 = static_cast<const int*>(tail[47]);
     tables.narrowRatBStoredNumDeg32 = static_cast<const int*>(tail[48]);
     tables.narrowRatBDenDeg32 = static_cast<const int*>(tail[49]);
+    tables.narrowRelaxedDegB32 = static_cast<const int*>(tail[50]);
+    tables.narrowMonoRelaxedDegB32 = static_cast<const int*>(tail[51]);
 
     // The same grid's two per-interval tables per lane, which its bodies
     // address a cell with: one degree and one block start per interval. They are

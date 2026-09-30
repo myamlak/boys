@@ -2094,15 +2094,16 @@ DeviceSlots DeviceClaimSet(const char* rung, double multiplier) {
     // and what makes each of these a row the chooser sees and the certifier
     // claims.
     //
-    // The double lane's rows, and the float lane's grid, are served at every
-    // rung and are claimed at every rung: the grid is stored at one degree for
-    // every order and every interval, so no rung's criterion cuts it and the
-    // rung a call names is answered by the grid's own coefficients. The float
-    // lane's narrow and rational rows are claimed at m = 1 alone: this build
-    // holds no rung cut of those tables, their entries refuse any other
-    // multiplier with kMultiplierNotResident, and a claim at a rung the call
-    // cannot be made at would be this file asserting a figure over cells nothing
-    // ran. Which of the two a row is reads off the row's own entry
+    // The double lane's rows, and the float lane's grid and narrow rows, are
+    // served at every rung and are claimed at every rung: the grid is stored at
+    // one degree for every order and every interval, so no rung's criterion cuts
+    // it and the rung a call names is answered by the grid's own coefficients,
+    // and the float lane's narrow rows read the cut the rung leaves, which the
+    // handle carries. The float lane's rational rows are claimed at m = 1 alone:
+    // this build holds no rung cut of those tables, their entries refuse any
+    // other multiplier with kMultiplierNotResident, and a claim at a rung the
+    // call cannot be made at would be this file asserting a figure over cells
+    // nothing ran. Which of the two a row is reads off the row's own entry
     // (DeviceEntryServedAtRung), so the claim set and the space's rung mask
     // cannot come apart here.
     slots.narrow64 = AddClaim(
@@ -2145,17 +2146,21 @@ DeviceSlots DeviceClaimSet(const char* rung, double multiplier) {
         Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32UniformHorner).name, rung).c_str(),
         "A..C",
         multiplier * kBoundFloat);
+    // The float lane's narrow rows, which carry every rung: the handle carries
+    // the cut that rung leaves on both halves of the body — the double lane's
+    // narrow pieces for region A and this lane's own region-B seed, one table per
+    // basis — so the two rows are claimed at every rung like the grid's.
+    slots.narrow32 = AddClaim(
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32Narrow).name, rung).c_str(),
+        "A..C",
+        multiplier * kBoundFloat);
+    slots.narrowMono32 = AddClaim(
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowMono).name, rung).c_str(),
+        "A..C",
+        multiplier * kBoundFloat);
 
     if (multiplier == boys::kBoysFullAccuracyMultiplier)
     {
-        slots.narrow32 = AddClaim(
-            Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32Narrow).name, rung).c_str(),
-            "A..C",
-            multiplier * kBoundFloat);
-        slots.narrowMono32 = AddClaim(
-            Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowMono).name, rung).c_str(),
-            "A..C",
-            multiplier * kBoundFloat);
         slots.rat32 =
             AddClaim(Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32Rat).name, rung).c_str(),
                      "A..C",
@@ -3256,15 +3261,15 @@ void SweepDevice(const Reference& ref,
     // reference at the row's own bound, and bit for bit against the launched row
     // of the same option — one arithmetic, two ways to reach it.
     //
-    // The double lane's eight rows and the float lane's two grid rows are served
-    // at the rung the handle carries, whatever rung that is. The float lane's six
-    // narrow and rational rows are served at m = 1 alone: this build holds no
-    // rung cut of those tables, and their entries — like their launched rows —
-    // refuse every other multiplier rather than answer from a cut of another
-    // rung. That is why the block below is guarded instead of run: a call at a
-    // rung the row does not hold returns kMultiplierNotResident, which is a
-    // refusal this file would report as a failure rather than as the refusal it
-    // is.
+    // The double lane's eight rows and the float lane's two grid rows and two
+    // narrow rows are served at the rung the handle carries, whatever rung that
+    // is. The float lane's four rational rows are served at m = 1 alone: this
+    // build holds no rung cut of those tables, and their entries — like their
+    // launched rows — refuse every other multiplier rather than answer from a cut
+    // of another rung. That is why the block below is guarded instead of run: a
+    // call at a rung the row does not hold returns kMultiplierNotResident, which
+    // is a refusal this file would report as a failure rather than as the refusal
+    // it is.
     MeasureDeviceLadder64<kMultiplier>(ref,
                                        grid,
                                        tables,
@@ -3352,27 +3357,31 @@ void SweepDevice(const Reference& ref,
         DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32UniformHorner).name,
         &BoysDeviceDemoLadder32UniformHorner,
         &boys::BoysCuda::AllOrdersF32UniformHorner<kMultiplier>);
+    // The float lane's narrow partition carries every rung on both of the forms
+    // it is stored in, so each of these two rows is measured here at every rung
+    // of the lane's table like the grid's above: one arithmetic reached two ways,
+    // bit for bit as well as against the reference.
+    MeasureDeviceLadder32<kMultiplier>(
+        ref,
+        grid,
+        tables,
+        slots.narrow32,
+        rung,
+        DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32Narrow).name,
+        &BoysDeviceDemoLadder32Narrow,
+        &boys::BoysCuda::AllOrdersF32Narrow<kMultiplier>);
+    MeasureDeviceLadder32<kMultiplier>(
+        ref,
+        grid,
+        tables,
+        slots.narrowMono32,
+        rung,
+        DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowMono).name,
+        &BoysDeviceDemoLadder32NarrowMono,
+        &boys::BoysCuda::AllOrdersF32NarrowMono<kMultiplier>);
 
     if constexpr (kMultiplier == boys::kBoysFullAccuracyMultiplier)
     {
-        MeasureDeviceLadder32<1.0>(
-            ref,
-            grid,
-            tables,
-            slots.narrow32,
-            rung,
-            DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32Narrow).name,
-            &BoysDeviceDemoLadder32Narrow,
-            &boys::BoysCuda::AllOrdersF32Narrow<1.0>);
-        MeasureDeviceLadder32<1.0>(
-            ref,
-            grid,
-            tables,
-            slots.narrowMono32,
-            rung,
-            DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowMono).name,
-            &BoysDeviceDemoLadder32NarrowMono,
-            &boys::BoysCuda::AllOrdersF32NarrowMono<1.0>);
         MeasureDeviceLadder32<1.0>(
             ref,
             grid,
