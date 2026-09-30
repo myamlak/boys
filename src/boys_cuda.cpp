@@ -1931,8 +1931,20 @@ BoysStatus BoysCuda::AllOrdersF32Orders(
 BoysStatus BoysCuda::AllOrdersF32OrdersAtRung(
     double multiplier, const int* n, const double* x, float* out, std::size_t count,
     void* stream) {
-    return RungServedByEntry(DeviceEntry::kAllOrdersF32Orders, multiplier,
-                             BoysCudaLaunchAllOrdersF32Orders, n, x, out, count, stream);
+    // The two launchers and not one, because this row's table has a cut to make:
+    // a relaxed rung reads the rung's own degrees and a full-accuracy call the
+    // stored ones, so the pair is what the compile-time spelling picks between
+    // and what this sibling has to pick between as well. A row of the uniform
+    // grid takes one launcher through RungServedByEntry for the opposite reason —
+    // its table is stored at one degree per interval and there is no second
+    // arithmetic to choose.
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF32Orders,
+                        BoysCudaLaunchAllOrdersF32OrdersEff, n, x, out, count, stream);
 }
 
 
