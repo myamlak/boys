@@ -1078,11 +1078,12 @@ Carriage CarriesSingle(FitRoute route,
 //     float lane's own table and are read at every rung (BoysCuda::AllOrdersF32
 //     and its AtRung form, with SingleF32 beside them); its rational member is a
 //     pair per piece of the same partition (AllOrdersF32Rat and its Horner name),
-//     served at the full-accuracy multiplier alone;
+//     read at every rung too — the pair is this lane's own fit in region B and
+//     the double lane's in region A, each cut by the rung's criterion;
 //   * the narrow partition carries both routes the same way
 //     (AllOrdersF32Narrow with its monomial name, AllOrdersF32NarrowRat with its
-//     Horner name): both bases of the Chebyshev member are read at every rung,
-//     and the rational member at the full-accuracy multiplier alone;
+//     Horner name): both bases of the Chebyshev member and the rational member on
+//     both packing axes are read at every rung;
 //   * the uniform partition carries the Chebyshev member at every rung
 //     (AllOrdersF32Uniform and AllOrdersF32UniformHorner) and no rational member,
 //     which is the one route-partition pair of this lane that no entry of it
@@ -1099,21 +1100,21 @@ Carriage CarriesSingle(FitRoute route,
 // region-B seed, and the rung it answers at is its own row's statement,
 // DeviceEntryServedAtRung.
 //
-// A relaxed rung reaches every stored table of this lane. The shipped
-// partition's rung is the float batch lane's own cut of the float Chebyshev
-// table; the narrow partition's is the float lane's own region-B cut beside the
-// double lane's region-A one, in each of the two bases that partition is stored
-// in (FillNarrowF32Lane and FillNarrowMonoF32Lane, read by Lane32NarrowRelaxed
-// and Lane32NarrowMonoRelaxed); and the uniform grid's one degree is admissible
-// at every multiplier, so a rung of it is the route's own arithmetic. Each is
-// served at every rung on either packing axis, and the lane instantiates all
-// twelve at each of them.
+// A relaxed rung reaches every stored table of this lane, and there is no table
+// it does not. The shipped partition's rung is the float batch lane's own cut of
+// the float Chebyshev table and of its rational pair; the narrow partition's is
+// the float lane's own region-B cut in each of the two bases that partition is
+// stored in (FillNarrowF32Lane, FillNarrowMonoF32Lane, read by Lane32NarrowRelaxed
+// and Lane32NarrowMonoRelaxed) and of its own narrow pair
+// (FillNarrowRatF32Lane); and the uniform grid's one degree is admissible at every
+// multiplier, so a rung of it is the route's own arithmetic. Each is served at
+// every rung on either packing axis, and the lane instantiates all twelve at each
+// of them.
 //
-// What a relaxed rung does not reach is either rational member: the device lane
-// holds no degree table cut from the float lane's rational pairs. A relaxed call
-// over those has no degrees to read — and that is a statement about the *table*,
-// so it refuses the cell on either packing axis, which is why the axis is not
-// tested here.
+// So the multiplier refuses no cell of this lane any more, and no arm below tests
+// it. What the lane still refuses is a route over a partition the family has no
+// member of — the grid's rational member above — and that is a statement about
+// which fits were derived rather than about a rung.
 //
 // What the scheme axis reaches on which partition is the lane's own table's to
 // state: this function has one scheme field for the whole call, and that table is
@@ -1149,19 +1150,10 @@ Carriage CarriesDevice(FitRoute route,
                 "rather than a shape the call cannot have"};
     }
 
-    // No arm below tests the packing axis, and that is the statement this rule
-    // makes about it: both axes are carried on the same stored tables, so a
-    // rung the float lane's pieces or its rational pairs have no cut for is
-    // refused for the table's reason on either of them, and an axis test here
-    // would name a body that exists as one the lane has not been given.
-    if (route == FitRoute::kRationalMinimax && tier != AccuracyTier::kReference)
-    {
-        return {false,
-                "this lane's fp32 rational entries are served at the full-accuracy multiplier "
-                "alone: the device lane holds no rung table cut from the float lane's own pairs, "
-                "so a relaxed call over them has no degrees to read. The lane's entries state that "
-                "as unbuilt work rather than as a property of the route"};
-    }
+    // The rungs are the entries' own and every one of them is served, so no arm
+    // below tests the multiplier: the table that would refuse a rung is the one
+    // DeviceEntryServedAtRung states, and this rule reads it rather than
+    // restating it.
 
     if (!DeviceRungServed(AccuracyMultiplier(tier)))
     {

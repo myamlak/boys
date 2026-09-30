@@ -665,6 +665,10 @@ int BoysCudaLaunchAllOrdersF32NarrowOrders(const int*, const double*, float*, st
 int BoysCudaLaunchAllOrdersF32NarrowOrdersMono(
     const int*, const double*, float*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF32OrdersRat(const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32RatEff(const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32NarrowRatEff(const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32OrdersRatEff(const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32NarrowOrdersRatEff(const int*, const double*, float*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF32NarrowOrdersRat(
     const int*, const double*, float*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF32NarrowEff(const int*, const double*, float*, std::size_t, void*);
@@ -951,12 +955,9 @@ int LaunchLaunched(ProbeEntry entry,
         // same answer the call site is.
         case ProbeEntry::kAllOrdersF32Rat:
         case ProbeEntry::kAllOrdersF32RatHorner:
-            if (relaxed)
-            {
-                return 1;
-            }
-
-            BoysCudaLaunchAllOrdersF32Rat(n,
+            // This route's cut is held on both lanes, so the row answers at every rung.
+            (relaxed ? BoysCudaLaunchAllOrdersF32RatEff
+                     : BoysCudaLaunchAllOrdersF32Rat)(n,
                                           x,
                                           static_cast<float*>(out),
                                           count,
@@ -964,12 +965,9 @@ int LaunchLaunched(ProbeEntry entry,
             break;
         case ProbeEntry::kAllOrdersF32NarrowRat:
         case ProbeEntry::kAllOrdersF32NarrowRatHorner:
-            if (relaxed)
-            {
-                return 1;
-            }
-
-            BoysCudaLaunchAllOrdersF32NarrowRat(n,
+            // The same pair tables on the narrow partition, cut by the same criterion.
+            (relaxed ? BoysCudaLaunchAllOrdersF32NarrowRatEff
+                     : BoysCudaLaunchAllOrdersF32NarrowRat)(n,
                                                 x,
                                                 static_cast<float*>(out),
                                                 count,
@@ -980,12 +978,9 @@ int LaunchLaunched(ProbeEntry entry,
         // region-B pairs have no rung cut here.
         case ProbeEntry::kAllOrdersF32OrdersRat:
         case ProbeEntry::kAllOrdersF32OrdersRatHorner:
-            if (relaxed)
-            {
-                return 1;
-            }
-
-            BoysCudaLaunchAllOrdersF32OrdersRat(n,
+            // The same pair on the packing axis's other side.
+            (relaxed ? BoysCudaLaunchAllOrdersF32OrdersRatEff
+                     : BoysCudaLaunchAllOrdersF32OrdersRat)(n,
                                                 x,
                                                 static_cast<float*>(out),
                                                 count,
@@ -993,12 +988,9 @@ int LaunchLaunched(ProbeEntry entry,
             break;
         case ProbeEntry::kAllOrdersF32NarrowOrdersRat:
         case ProbeEntry::kAllOrdersF32NarrowOrdersRatHorner:
-            if (relaxed)
-            {
-                return 1;
-            }
-
-            BoysCudaLaunchAllOrdersF32NarrowOrdersRat(n,
+            // And on that side's narrow partition.
+            (relaxed ? BoysCudaLaunchAllOrdersF32NarrowOrdersRatEff
+                     : BoysCudaLaunchAllOrdersF32NarrowOrdersRat)(n,
                                                       x,
                                                       static_cast<float*>(out),
                                                       count,

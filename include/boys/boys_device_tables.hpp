@@ -314,6 +314,13 @@ struct BoysDeviceTables {
     /// The same table for the monomial form of the same seed, which is what a
     /// Horner call at that rung reads.
     const int* narrowMonoRelaxedDegB32 = nullptr;
+    /// [2] the float lane's fit route on the shipped partition: its region-B
+    /// pair's degrees at the resident rung, the numerator's first. The route's
+    /// float pair is that lane's own fit, so the double lane's pair above
+    /// (ratRelaxedDegB) is a cut of other coefficients and is not read here.
+    const int* ratRelaxedDegB32 = nullptr;
+    /// [2 * piece] the same pair's degrees on the narrow partition.
+    const int* narrowRatRelaxedDegB32 = nullptr;
 
     /// The uniform grid's cells, one entry per interval, read by the route's
     /// own entries (BoysDeviceAllOrdersF64Uniform and its float counterpart).
@@ -352,7 +359,7 @@ struct BoysDeviceTables {
 /// status layer, which sizes its array with it, and asserted in the device image
 /// against the order's own length, so a table added to either end without the
 /// other is a compile error rather than an address written past an array.
-inline constexpr int kBoysDeviceTablesTailCount = 56;
+inline constexpr int kBoysDeviceTablesTailCount = 58;
 
 /// The tail export's four slots for the uniform grid's per-interval tables, in
 /// the order (double degrees, double offsets, float degrees, float offsets).

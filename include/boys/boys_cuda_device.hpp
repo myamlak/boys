@@ -398,6 +398,35 @@ __device__ __forceinline__ BoysDeviceStatus DeviceNarrowDegrees32(
     return BoysDeviceStatus::kSuccess;
 }
 
+// Where the float lane's fit route's region-B pair is cut at the resident rung:
+// false at the full-accuracy multiplier, where the pair is read at the degrees
+// the table carries, and true at a rung whose cut the handle holds. It is the
+// float counterpart of RatDegrees' reading one lane down.
+//
+// Region A needs no table beside it here either: these entries seed region A from
+// the double lane's pairs, which is what DeviceRatDegrees resolves for the seed
+// lane of the same call, so the half a rung cuts for this lane is region B's.
+template <bool kNarrow>
+__device__ __forceinline__ BoysDeviceStatus DeviceRatDegrees32(
+    const BoysDeviceTables& tables, double multiplier, bool* relaxed) {
+    if (multiplier == kBoysFullAccuracyMultiplier)
+    {
+        *relaxed = false;
+        return BoysDeviceStatus::kSuccess;
+    }
+
+    const int* const cut = kNarrow ? tables.narrowRatRelaxedDegB32 : tables.ratRelaxedDegB32;
+
+    if (multiplier < kBoysFullAccuracyMultiplier || tables.relaxedRung == nullptr ||
+        *tables.relaxedRung != multiplier || cut == nullptr)
+    {
+        return BoysDeviceStatus::kMultiplierNotResident;
+    }
+
+    *relaxed = true;
+    return BoysDeviceStatus::kSuccess;
+}
+
 // Where a fit-route lane's region-A degrees come from, resolved once per call.
 // The route's cut is a pair per piece and comes in two readings, and the reading
 // a device-callable entry makes is the ladder's: region A descends from the top
@@ -672,6 +701,12 @@ template <bool kNarrow>
 struct RatLane32 {
     const BoysDeviceTables* tables;
 
+    /// Whether the seed is read at the resident rung's cut of the pair rather
+    /// than at the degrees the table was stored at. It is the float counterpart
+    /// of RatLane64's \c deg.relaxed, and the cut table it selects is this
+    /// lane's own : the double lane's pair is other coefficients.
+    bool relaxed = false;
+
     __device__ __forceinline__ float BSeed(float x, int) const {
         const float t = 2.0f * (x - static_cast<float>(kX0)) /
                             static_cast<float>(kX1 - kX0) -
@@ -679,8 +714,10 @@ struct RatLane32 {
 
         if constexpr (!kNarrow)
         {
-            return DeviceRatSum32(tables->ratBNum32, f32::kRatBnumDeg, tables->ratBDen32,
-                                  f32::kRatBdenDeg, t);
+            const int numDeg = relaxed ? tables->ratRelaxedDegB32[0] : f32::kRatBnumDeg;
+            const int denDeg = relaxed ? tables->ratRelaxedDegB32[1] : f32::kRatBdenDeg;
+
+            return DeviceRatSum32(tables->ratBNum32, numDeg, tables->ratBDen32, denDeg, t);
         } else
         {
             int piece = 0;
@@ -696,10 +733,12 @@ struct RatLane32 {
             const float u = 2.0f * (x - a) / (b - a) - 1.0f;
             const float* const c = tables->narrowRatBCoeffs32 +
                                    tables->narrowRatBOffset32[piece];
-            const int numDeg = tables->narrowRatBStoredNumDeg32[piece];
+            const int storedNum = tables->narrowRatBStoredNumDeg32[piece];
+            const int numDeg = relaxed ? tables->narrowRatRelaxedDegB32[2 * piece] : storedNum;
+            const int denDeg = relaxed ? tables->narrowRatRelaxedDegB32[2 * piece + 1]
+                                       : tables->narrowRatBDenDeg32[piece];
 
-            return DeviceRatSum32(c, numDeg, c + numDeg + 1,
-                                  tables->narrowRatBDenDeg32[piece], u);
+            return DeviceRatSum32(c, numDeg, c + storedNum + 1, denDeg, u);
         }
     }
 };
@@ -721,18 +760,6 @@ __device__ __forceinline__ BoysDeviceStatus DeviceGroupReady2(const void* first,
                                                               const void* second) {
     return first != nullptr && second != nullptr ? BoysDeviceStatus::kSuccess
                                                  : BoysDeviceStatus::kTablesNotReady;
-}
-
-// The rung test of an entry whose partition or route is stored at one rung: this
-// build holds no cut of that table for any other multiplier, so the rung such a
-// call names is not resident and is refused with the status every entry of this
-// lane refuses a non-resident rung with. Answering from the stored table under a
-// relaxed name is the substitution this test exists to prevent, and it is a
-// refusal of work this build owes rather than a property of the table.
-__device__ __forceinline__ BoysDeviceStatus DeviceFullAccuracyOnly(double multiplier) {
-    return multiplier == kBoysFullAccuracyMultiplier
-               ? BoysDeviceStatus::kSuccess
-               : BoysDeviceStatus::kMultiplierNotResident;
 }
 
 // The rung test of an entry whose table has no cut to make: the full-accuracy
@@ -2240,18 +2267,27 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Rat(const BoysDeviceTables& ta
         return request;
     }
 
-    const BoysDeviceStatus rung = detail::DeviceFullAccuracyOnly(multiplier);
+    // The rung cuts both halves at once: region A's seed is the double lane's
+    // pair at the rung's reading of it, and region B's is this lane's own pair
+    // cut by the same criterion over its own coefficients.
+    detail::RatDegrees deg;
+    const BoysDeviceStatus rung = detail::DeviceRatDegrees<false>(tables, multiplier, &deg);
 
     if (rung != BoysDeviceStatus::kSuccess)
     {
         return rung;
     }
 
-    detail::RatDegrees deg;
-    detail::DeviceRatDegrees<false>(tables, kBoysFullAccuracyMultiplier, &deg);
+    bool relaxed = false;
+    const BoysDeviceStatus seed = detail::DeviceRatDegrees32<false>(tables, multiplier, &relaxed);
+
+    if (seed != BoysDeviceStatus::kSuccess)
+    {
+        return seed;
+    }
 
     detail::DeviceAllOrdersF32(detail::RatLane64<false>{&tables, deg},
-                               detail::RatLane32<false>{&tables},
+                               detail::RatLane32<false>{&tables, relaxed},
                                order,
                                static_cast<float>(x),
                                [&](int l, float v) { out[l] = v; });
@@ -2343,18 +2379,27 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowRat(
         return request;
     }
 
-    const BoysDeviceStatus rung = detail::DeviceFullAccuracyOnly(multiplier);
+    // The same pair of halves the shipped entry resolves, on this partition: the
+    // double lane's narrow pairs at the rung's cut for region A, and this lane's
+    // own narrow pair at the same rung's cut for region B.
+    detail::RatDegrees deg;
+    const BoysDeviceStatus rung = detail::DeviceRatDegrees<true>(tables, multiplier, &deg);
 
     if (rung != BoysDeviceStatus::kSuccess)
     {
         return rung;
     }
 
-    detail::RatDegrees deg;
-    detail::DeviceRatDegrees<true>(tables, kBoysFullAccuracyMultiplier, &deg);
+    bool relaxed = false;
+    const BoysDeviceStatus seed = detail::DeviceRatDegrees32<true>(tables, multiplier, &relaxed);
+
+    if (seed != BoysDeviceStatus::kSuccess)
+    {
+        return seed;
+    }
 
     detail::DeviceAllOrdersF32(detail::RatLane64<true>{&tables, deg},
-                               detail::RatLane32<true>{&tables},
+                               detail::RatLane32<true>{&tables, relaxed},
                                order,
                                static_cast<float>(x),
                                [&](int l, float v) { out[l] = v; });

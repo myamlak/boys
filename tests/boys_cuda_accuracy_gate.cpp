@@ -1282,71 +1282,68 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
         rung,
         &boys::BoysCuda::AllOrdersF32NarrowOrdersMono<kMultiplier>);
 
-    // The rows of that lane served at m = 1 alone, for the reason the rational
-    // route's own rows state: its float region-B pairs have no rung cut here —
-    // the region-A half could be cut from the double lane's table and the
-    // region-B half cannot, and a body cut on one side of it and not the other is
-    // a cut nobody derived. Every row is measured here at the bound the float lane
-    // documents.
-    if constexpr (kMultiplier == boys::kBoysFullAccuracyMultiplier)
-    {
-        // The rational route's two partitions, each named twice because the
-        // route's pair is stored in one form: the two scheme names of a
-        // partition reach one kernel and the row's own scheme says which name
-        // reached it, as the double lane's rational pairs do.
-        MeasureDeviceRowF32<1.0>(
-            ref,
-            grid,
-            boys::DeviceEntry::kAllOrdersF32Rat,
-            rung,
-            &boys::BoysCuda::AllOrdersF32Rat<1.0>);
-        MeasureDeviceRowF32<1.0>(
-            ref,
-            grid,
-            boys::DeviceEntry::kAllOrdersF32RatHorner,
-            rung,
-            &boys::BoysCuda::AllOrdersF32RatHorner<1.0>);
-        MeasureDeviceRowF32<1.0>(
-            ref,
-            grid,
-            boys::DeviceEntry::kAllOrdersF32NarrowRat,
-            rung,
-            &boys::BoysCuda::AllOrdersF32NarrowRat<1.0>);
-        MeasureDeviceRowF32<1.0>(
-            ref,
-            grid,
-            boys::DeviceEntry::kAllOrdersF32NarrowRatHorner,
-            rung,
-            &boys::BoysCuda::AllOrdersF32NarrowRatHorner<1.0>);
-        // The same tables and the same route on the packing axis's other side, at
-        // the same one rung and for the same reason: the missing cut is the
-        // table's, so the row that reads that table on either axis is served
-        // where its twin is and nowhere else.
-        MeasureDeviceRowF32<1.0>(
-            ref,
-            grid,
-            boys::DeviceEntry::kAllOrdersF32OrdersRat,
-            rung,
-            &boys::BoysCuda::AllOrdersF32OrdersRat<1.0>);
-        MeasureDeviceRowF32<1.0>(
-            ref,
-            grid,
-            boys::DeviceEntry::kAllOrdersF32OrdersRatHorner,
-            rung,
-            &boys::BoysCuda::AllOrdersF32OrdersRatHorner<1.0>);
-        MeasureDeviceRowF32<1.0>(
-            ref,
-            grid,
-            boys::DeviceEntry::kAllOrdersF32NarrowOrdersRat,
-            rung,
-            &boys::BoysCuda::AllOrdersF32NarrowOrdersRat<1.0>);
-        MeasureDeviceRowF32<1.0>(
-            ref,
-            grid,
-            boys::DeviceEntry::kAllOrdersF32NarrowOrdersRatHorner,
-            rung,
-            &boys::BoysCuda::AllOrdersF32NarrowOrdersRatHorner<1.0>);
-    }
+    // The float lane's rational route carries every rung on both axes and on
+    // both partitions: the region-B pair is that lane's own fit, which this
+    // lane cuts by the same criterion over the coefficients the row sums, and
+    // region A's seed is the double lane's pair at the same rung's cut. Each of
+    // the eight rows is measured here at every rung of the lane's table, under
+    // both scheme names because the route's pair is stored in one form.
+    // The rational route's two partitions, each named twice because the
+    // route's pair is stored in one form: the two scheme names of a
+    // partition reach one kernel and the row's own scheme says which name
+    // reached it, as the double lane's rational pairs do.
+    MeasureDeviceRowF32<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF32Rat,
+        rung,
+        &boys::BoysCuda::AllOrdersF32Rat<kMultiplier>);
+    MeasureDeviceRowF32<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF32RatHorner,
+        rung,
+        &boys::BoysCuda::AllOrdersF32RatHorner<kMultiplier>);
+    MeasureDeviceRowF32<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF32NarrowRat,
+        rung,
+        &boys::BoysCuda::AllOrdersF32NarrowRat<kMultiplier>);
+    MeasureDeviceRowF32<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF32NarrowRatHorner,
+        rung,
+        &boys::BoysCuda::AllOrdersF32NarrowRatHorner<kMultiplier>);
+    // The same tables and the same route on the packing axis's other side, at
+    // the same one rung and for the same reason: the missing cut is the
+    // table's, so the row that reads that table on either axis is served
+    // where its twin is and nowhere else.
+    MeasureDeviceRowF32<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF32OrdersRat,
+        rung,
+        &boys::BoysCuda::AllOrdersF32OrdersRat<kMultiplier>);
+    MeasureDeviceRowF32<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF32OrdersRatHorner,
+        rung,
+        &boys::BoysCuda::AllOrdersF32OrdersRatHorner<kMultiplier>);
+    MeasureDeviceRowF32<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF32NarrowOrdersRat,
+        rung,
+        &boys::BoysCuda::AllOrdersF32NarrowOrdersRat<kMultiplier>);
+    MeasureDeviceRowF32<kMultiplier>(
+        ref,
+        grid,
+        boys::DeviceEntry::kAllOrdersF32NarrowOrdersRatHorner,
+        rung,
+        &boys::BoysCuda::AllOrdersF32NarrowOrdersRatHorner<kMultiplier>);
 
     if constexpr (kMultiplier == boys::kBoysFullAccuracyMultiplier)
     {
@@ -2094,16 +2091,13 @@ DeviceSlots DeviceClaimSet(const char* rung, double multiplier) {
     // and what makes each of these a row the chooser sees and the certifier
     // claims.
     //
-    // The double lane's rows, and the float lane's grid and narrow rows, are
-    // served at every rung and are claimed at every rung: the grid is stored at
-    // one degree for every order and every interval, so no rung's criterion cuts
-    // it and the rung a call names is answered by the grid's own coefficients,
-    // and the float lane's narrow rows read the cut the rung leaves, which the
-    // handle carries. The float lane's rational rows are claimed at m = 1 alone:
-    // this build holds no rung cut of those tables, their entries refuse any
-    // other multiplier with kMultiplierNotResident, and a claim at a rung the
-    // call cannot be made at would be this file asserting a figure over cells
-    // nothing ran. Which of the two a row is reads off the row's own entry
+    // Every row of the float lane — the shipped and narrow partitions' Chebyshev
+    // and monomial forms and the rational route on both partitions — carries
+    // every rung and is claimed at every rung, as the double lane's rows and the
+    // grid's are: the grid is stored at one degree for every order and every
+    // interval, so no rung's criterion cuts it, and every other table is cut by
+    // the rung's criterion and the cut is what the handle carries. A claim is
+    // therefore made wherever the row's own entry says the row answers
     // (DeviceEntryServedAtRung), so the claim set and the space's rung mask
     // cannot come apart here.
     slots.narrow64 = AddClaim(
@@ -2158,27 +2152,26 @@ DeviceSlots DeviceClaimSet(const char* rung, double multiplier) {
         Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowMono).name, rung).c_str(),
         "A..C",
         multiplier * kBoundFloat);
-
-    if (multiplier == boys::kBoysFullAccuracyMultiplier)
-    {
-        slots.rat32 =
-            AddClaim(Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32Rat).name, rung).c_str(),
-                     "A..C",
-                     multiplier * kBoundFloat);
-        slots.ratHorner32 = AddClaim(
-            Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32RatHorner).name, rung).c_str(),
-            "A..C",
-            multiplier * kBoundFloat);
-        slots.narrowRat32 = AddClaim(
-            Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowRat).name, rung).c_str(),
-            "A..C",
-            multiplier * kBoundFloat);
-        slots.narrowRatHorner32 = AddClaim(
-            Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowRatHorner).name, rung)
-                .c_str(),
-            "A..C",
-            multiplier * kBoundFloat);
-    }
+    // The float lane's rational rows, which carry every rung as well: the
+    // handle carries the cut that rung leaves on both halves of the pair — the
+    // double lane's pairs for region A and this lane's own for region B.
+    slots.rat32 =
+        AddClaim(Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32Rat).name, rung).c_str(),
+                 "A..C",
+                 multiplier * kBoundFloat);
+    slots.ratHorner32 = AddClaim(
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32RatHorner).name, rung).c_str(),
+        "A..C",
+        multiplier * kBoundFloat);
+    slots.narrowRat32 = AddClaim(
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowRat).name, rung).c_str(),
+        "A..C",
+        multiplier * kBoundFloat);
+    slots.narrowRatHorner32 = AddClaim(
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowRatHorner).name, rung)
+            .c_str(),
+        "A..C",
+        multiplier * kBoundFloat);
 
     return slots;
 }
@@ -3380,45 +3373,46 @@ void SweepDevice(const Reference& ref,
         &BoysDeviceDemoLadder32NarrowMono,
         &boys::BoysCuda::AllOrdersF32NarrowMono<kMultiplier>);
 
-    if constexpr (kMultiplier == boys::kBoysFullAccuracyMultiplier)
-    {
-        MeasureDeviceLadder32<1.0>(
-            ref,
-            grid,
-            tables,
-            slots.rat32,
-            rung,
-            DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32Rat).name,
-            &BoysDeviceDemoLadder32Rat,
-            &boys::BoysCuda::AllOrdersF32Rat<1.0>);
-        MeasureDeviceLadder32<1.0>(
-            ref,
-            grid,
-            tables,
-            slots.ratHorner32,
-            rung,
-            DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32RatHorner).name,
-            &BoysDeviceDemoLadder32RatHorner,
-            &boys::BoysCuda::AllOrdersF32RatHorner<1.0>);
-        MeasureDeviceLadder32<1.0>(
-            ref,
-            grid,
-            tables,
-            slots.narrowRat32,
-            rung,
-            DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowRat).name,
-            &BoysDeviceDemoLadder32NarrowRat,
-            &boys::BoysCuda::AllOrdersF32NarrowRat<1.0>);
-        MeasureDeviceLadder32<1.0>(
-            ref,
-            grid,
-            tables,
-            slots.narrowRatHorner32,
-            rung,
-            DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowRatHorner).name,
-            &BoysDeviceDemoLadder32NarrowRatHorner,
-            &boys::BoysCuda::AllOrdersF32NarrowRatHorner<1.0>);
-    }
+    // The float lane's rational rows, each measured at every rung like the
+    // rows above and bit for bit against the launched row of the same option:
+    // the route's pair is cut by the rung's criterion on both lanes, and the
+    // two names of a partition reach one kernel.
+    MeasureDeviceLadder32<kMultiplier>(
+        ref,
+        grid,
+        tables,
+        slots.rat32,
+        rung,
+        DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32Rat).name,
+        &BoysDeviceDemoLadder32Rat,
+        &boys::BoysCuda::AllOrdersF32Rat<kMultiplier>);
+    MeasureDeviceLadder32<kMultiplier>(
+        ref,
+        grid,
+        tables,
+        slots.ratHorner32,
+        rung,
+        DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32RatHorner).name,
+        &BoysDeviceDemoLadder32RatHorner,
+        &boys::BoysCuda::AllOrdersF32RatHorner<kMultiplier>);
+    MeasureDeviceLadder32<kMultiplier>(
+        ref,
+        grid,
+        tables,
+        slots.narrowRat32,
+        rung,
+        DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowRat).name,
+        &BoysDeviceDemoLadder32NarrowRat,
+        &boys::BoysCuda::AllOrdersF32NarrowRat<kMultiplier>);
+    MeasureDeviceLadder32<kMultiplier>(
+        ref,
+        grid,
+        tables,
+        slots.narrowRatHorner32,
+        rung,
+        DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowRatHorner).name,
+        &BoysDeviceDemoLadder32NarrowRatHorner,
+        &boys::BoysCuda::AllOrdersF32NarrowRatHorner<kMultiplier>);
 }
 
 // One rung's fp64 entries on the 45-digit grid. The cells are measured into the

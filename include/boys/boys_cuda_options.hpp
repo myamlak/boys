@@ -391,15 +391,20 @@ constexpr DeviceRungMask DeviceRungBit(double multiplier) noexcept {
 
 /// Whether an entry of this lane answers at a multiplier.
 ///
-/// Almost every entry does at every rung of \c kDeviceRungs, and this is
-/// \c DeviceRungServed for them. The exceptions are the entries whose rung axis
-/// has a cut to make that this lane does not hold, and there is one kind of
-/// them in this lane: a table whose cut this lane does not hold.
+/// **Every entry of this lane does, at every rung of \c kDeviceRungs**, and this
+/// is \c DeviceRungServed for all of them. There is no exception left and the
+/// function keeps its per-entry form only because that is where the reason for
+/// each family is stated: every stored table this lane carries has a cut to make
+/// per rung, and this lane derives, uploads and reads every one of them — the
+/// shipped partition's Chebyshev and rational fits and the float lane's own
+/// narrow pieces in both bases and its rational pairs on both partitions. The
+/// carriage's refusals (a route over a partition the family has no member of) are
+/// the option space's and are made in \c CarriesDevice (boys.cpp), not here.
 ///
-/// The uniform route's six entries are the first kind and are *not* an
-/// exception at all: the route's table is stored at one degree for every order
-/// and every interval, that degree is admissible at every multiplier (the
-/// criterion's Delta(deg) is zero, so the full degree always is — see
+/// The uniform route's six entries are not an exception to that and are the one
+/// family with no cut to make: the route's table is stored at one degree for
+/// every order and every interval, that degree is admissible at every multiplier
+/// (the criterion's Delta(deg) is zero, so the full degree always is — see
 /// boys_effective_degrees.hpp), and every rung is therefore served by the
 /// route's own coefficients.
 /// The route's rows are one table and not six exceptions — the two members of
@@ -417,31 +422,21 @@ constexpr DeviceRungMask DeviceRungBit(double multiplier) noexcept {
 /// the rung's cut is the float lane's own region-B degrees in the basis the row
 /// sums (FillNarrowF32Lane, FillNarrowMonoF32Lane) beside the double lane's
 /// region-A cut, and this lane derives, uploads and reads both. Its four rows
-/// are therefore served at every rung and fall through to the arm below.
+/// are therefore served at every rung.
 ///
-/// The rational route at that lane's precision is the exception the opening
-/// paragraph names, and its reason is unbuilt work rather than an empty axis:
-/// its table *has* a cut to make per rung, and this lane does not hold it. The
-/// derivation exists (boys_effective_degrees.hpp derives the float lane's
-/// rational region-B pairs per partition), but this lane derives and uploads the
-/// double role's cut alone and no kernel of it reads a float rational pair's
-/// cut. A relaxed call would have to be answered by degrees no kernel here
-/// holds, so it is refused — and the work that would lift the refusal is
-/// deriving, uploading and reading that cut.
+/// The float lane's rational route is the same shape one family over: its
+/// region-B pair is that lane's own fit on each partition, cut by the same
+/// criterion over the coefficients the row sums
+/// (RationalRegionBF32Degrees, NarrowRationalRegionBF32Degrees,
+/// FillRatF32Lane and FillNarrowRatF32Lane), and region A's seed is the double
+/// lane's pair at the same rung's cut — the float lanes seed region A from the
+/// double lane's pair on every route. Its eight rows are therefore served at
+/// every rung too, on both packing axes and under both scheme names.
 ///
-/// The rational route's four rows are refused for that reason rather than for
-/// the double lane's route's. A relaxed call of theirs would cut region A from
-/// the double lane's rational cut, which *is* held here — the float lanes seed
-/// region A from the double lane's pair — but region B is the float lane's own
-/// pair, whose cut is not, and a body cut on one side and not the other is a cut
-/// nobody derived. The two partitions' pairs of rows are refused together
-/// because the missing table is the float lane's region-B pairs on either of
-/// them.
-///
-/// Every other member of every axis this lane carries — the shipped and the
-/// narrow partitions of the double lane, the level ladder and the per-order
-/// reading, both schemes and both routes — keeps its twelve rungs, because each
-/// is a stored table whose rung cut is derived per piece and uploaded.
+/// The double lane's members — the shipped and the narrow partitions, the level
+/// ladder and the per-order reading, both schemes and both routes — keep their
+/// twelve rungs for the same reason: each is a stored table whose rung cut is
+/// derived per piece and uploaded.
 ///
 /// The name is a property of the entry and not of the caller, which is why it
 /// is here beside the rows: a probe that decided it for itself, and an entry
@@ -463,25 +458,22 @@ constexpr DeviceRungMask DeviceRungBit(double multiplier) noexcept {
 constexpr bool DeviceEntryServedAtRung(DeviceEntry entry, double multiplier) noexcept {
     switch (entry)
     {
-        // The rungs of a lane whose cut this build does not hold: the entry's
-        // own rung axis has a cut to make and the cut is not derived here, so
-        // the one rung it serves is the reference multiplier. The reason is
-        // above, per partition and per route, and is not a property of the row
-        // that names it.
+        // The float lane's fit route, whose rung cut this lane derives, uploads
+        // and reads: the region-B pair is that lane's own fit
+        // (RationalRegionBF32Degrees, NarrowRationalRegionBF32Degrees), cut by
+        // the same criterion over the coefficients the row sums, and region A's
+        // seed is the double lane's pair at the rung's cut. Its eight rows are
+        // the route's two names on the two partitions and the two packing axes,
+        // and both names of a pair reach one kernel, so the axis is the table's
+        // and all eight are served wherever it is.
         case DeviceEntry::kAllOrdersF32Rat:
         case DeviceEntry::kAllOrdersF32RatHorner:
         case DeviceEntry::kAllOrdersF32NarrowRat:
         case DeviceEntry::kAllOrdersF32NarrowRatHorner:
-        // The float lane's orders rows on the rational route: the cut a rung
-        // would read is a cut of the table, so the row that reads it on the
-        // other axis is served at the same rungs and no others. The narrow
-        // partition's four rows are not here — their cuts this lane derives,
-        // uploads and reads, one per basis, so they fall to the arm below.
         case DeviceEntry::kAllOrdersF32OrdersRat:
         case DeviceEntry::kAllOrdersF32OrdersRatHorner:
         case DeviceEntry::kAllOrdersF32NarrowOrdersRat:
         case DeviceEntry::kAllOrdersF32NarrowOrdersRatHorner:
-            return multiplier == kBoysFullAccuracyMultiplier;
 
         // The uniform route's six rows, which are no exception: the route's
         // table has no cut to make, so every rung's own arithmetic *is* the
@@ -498,8 +490,11 @@ constexpr bool DeviceEntryServedAtRung(DeviceEntry entry, double multiplier) noe
         case DeviceEntry::kAllOrdersF32OrdersUniform:
         case DeviceEntry::kAllOrdersF32OrdersUniformHorner:
 
-        // Every other option of the surface, which is the lane's rungs and no
-        // fewer of them. The single-order entries, the three batch shapes.
+        // Everything else of the surface, which is the lane's rungs and no fewer
+        // of them, and — at this revision — everything there is: every arm above
+        // falls through to here, because every stored table this lane carries has
+        // a cut to make and this lane makes it. The single-order entries and the
+        // three batch shapes.
         case DeviceEntry::kSingleF64:
         case DeviceEntry::kSingleF32:
         case DeviceEntry::kSingleF32Fast:

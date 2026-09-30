@@ -1208,7 +1208,6 @@ TEST(DeviceProbe, ARowStatesTheRungsItIsServedAtAndTheCellsAreCountedFromTheRows
     std::size_t partialRows = 0;
     std::size_t launchedRows = 0;
     std::size_t deviceRows = 0;
-    std::vector<std::string> partialNames;
 
     for (const boys::DeviceOptionInfo& row : space)
     {
@@ -1247,7 +1246,6 @@ TEST(DeviceProbe, ARowStatesTheRungsItIsServedAtAndTheCellsAreCountedFromTheRows
         if (row.servedRungs != boys::kEveryDeviceRung)
         {
             ++partialRows;
-            partialNames.push_back(row.name);
         }
     }
 
@@ -1309,233 +1307,68 @@ TEST(DeviceProbe, ARowStatesTheRungsItIsServedAtAndTheCellsAreCountedFromTheRows
               std::string::npos)
         << text;
 
-    // The rows that hold part of the axis are named under the table, with the
-    // rungs each holds: a figure below the whole says how many and not which, and
-    // which is what a caller placing the row needs.
-    ASSERT_GT(partialRows, 0u);
+    // The rows that hold part of the axis are named under the table when there
+    // are any, with the rungs each holds: a figure below the whole says how many
+    // and not which, and which is what a caller placing the row needs. There are
+    // none at this revision — every entry of the lane serves every rung — so the
+    // block is absent, and its absence is the statement this test makes about the
+    // rows: a row that started holding part of the axis again would print it, and
+    // this fails at the count below before it reaches the text.
+    ASSERT_EQ(partialRows, 0u) << "a row holds part of the rung axis and this build serves no cut "
+                                  "for the rungs it lacks";
 
-    EXPECT_NE(text.find(std::to_string(partialRows) +
-                        " row(s) hold less than the whole of that axis"),
-              std::string::npos)
-        << text;
-
-    for (const std::string& name : partialNames)
-    {
-        // The block's lines are indented four spaces and the table's two, so this
-        // finds the line that names the rungs rather than the row in the table.
-        const std::size_t at = text.find("\n    " + name);
-
-        ASSERT_NE(at, std::string::npos) << name << " is not named among the rows that hold part "
-                                                     "of the rung axis";
-
-        const std::string line = text.substr(at, text.find('\n', at + 1) - at);
-
-        std::size_t rungs = 0;
-        std::size_t found = line.find("m = ");
-
-        while (found != std::string::npos)
-        {
-            ++rungs;
-            found = line.find("m = ", found + 1);
-        }
-
-        std::size_t held = 0;
-
-        for (const boys::DeviceOptionInfo& row : space)
-        {
-            if (row.name == name)
-            {
-                held = static_cast<std::size_t>(std::popcount(row.servedRungs));
-            }
-        }
-
-        EXPECT_EQ(rungs, held) << line;
-    }
+    EXPECT_EQ(text.find("row(s) hold less than the whole of that axis"), std::string::npos) << text;
 }
 
-/// The two lists, tied where a reader meets them: a cell the report refuses is a
-/// cell the entry refuses.
+/// The book's rung axis is whole, and this is where a reader meets that statement.
 ///
-/// A row of the space states the rungs it is served at. Where the row is a
-/// launched one, the entry it names is asked here at every rung the row does not
-/// hold and must answer with the library's own refusal — \c kInvalidArgument,
-/// before anything is made resident — rather than with arithmetic, which is the
-/// claim a reader takes from the row.
+/// A row of the space states the rungs it is served at, and the entry it names
+/// answers at exactly those: a rung the row does not hold is refused by the
+/// entry's own test — \c kInvalidArgument for a launched row, before anything is
+/// made resident — and a call at a rung it holds is arithmetic. This test held
+/// the two lists together while the device lane owed cuts, by asking each partial
+/// row's entry at every rung the row refused.
 ///
-/// A device-callable row has no such form to ask: its entry is a __device__
-/// function, and what refuses a rung is the entry's own test inside the caller's
-/// kernel. Those rows are not dropped — a partial one is checked for the shape
-/// this build's refusals have, and the entry's own refusal is asked by the device
-/// accuracy gate's rung sweep, which runs the entry in a kernel at a rung that is
-/// not the resident one. The loop below says which rows are which.
+/// **It now holds the emptiness instead.** Every stored table the device lane
+/// carries has a cut to make per rung and this revision derives, uploads and
+/// reads every one of them — the float lane's narrow pieces in both bases and its
+/// rational pairs on both partitions beside the double lane's own — and the grid's
+/// table has no cut to make at all. So no built row of the book holds part of the
+/// axis, there is nothing left for a refusal table to name, and a row that appears
+/// with part of it again is the finding this test exists to make.
 ///
-/// The rows are the space's own and not a list here: a launched row the space
-/// calls partial and this table cannot ask is a failure, and so is a row of this
-/// table the space serves at every rung. A new partial row therefore cannot
-/// arrive with only one of the two lists moved.
-///
-/// Nothing of the card is used: every call asked here is refused before the entry
-/// reaches a table, a buffer or a launch, so this runs on a host with no device.
+/// The per-rung tie is the sibling test's
+/// (\c ARowStatesTheRungsItIsServedAtAndTheCellsAreCountedFromTheRows, which asks
+/// \c DeviceEntryServedAtRung for every enumerator at every rung), and the
+/// entries' own answers at a rung are the device accuracy gate's. Nothing of the
+/// card is used here.
 TEST(DeviceProbe, EveryCellTheReportRefusesIsRefusedByTheEntryThatOwnsTheRow) {
-    std::vector<double> outF64(boys::kMaxBoysOrder + 1);
-    std::vector<float> outF32(boys::kMaxBoysOrder + 1);
-
-    /// One row of the table below: the entry, the output buffer its own precision
-    /// takes, and the rung-argument form of its entry.
-    struct RefusingRow {
-        boys::DeviceEntry entry;
-        void* out;
-        boys::BoysStatus (*call)(double, const int*, const double*, void*, std::size_t);
-    };
-
-    // The uniform route's six rows are not in this table: their rung axis is the
-    // lane's whole set, so they refuse no cell of it and no entry of theirs is
-    // asked a refusal here. What a rung of that route delivers is the route's own
-    // arithmetic — the table has no shorter image to read — and the figures a
-    // rung of it is worth are the accuracy gate's and the consumer sweep's, both
-    // of which follow the space and are not guarded on the multiplier.
-    const std::vector<RefusingRow> refuses = {
-        {boys::DeviceEntry::kAllOrdersF32Rat, outF32.data(),
-         [](double m, const int* n, const double* x, void* out, std::size_t count) {
-             return boys::BoysCuda::AllOrdersF32RatAtRung(m, n, x, static_cast<float*>(out), count,
-                                                          nullptr);
-         }},
-        {boys::DeviceEntry::kAllOrdersF32RatHorner, outF32.data(),
-         [](double m, const int* n, const double* x, void* out, std::size_t count) {
-             return boys::BoysCuda::AllOrdersF32RatHornerAtRung(m, n, x, static_cast<float*>(out),
-                                                                count, nullptr);
-         }},
-        {boys::DeviceEntry::kAllOrdersF32NarrowRat, outF32.data(),
-         [](double m, const int* n, const double* x, void* out, std::size_t count) {
-             return boys::BoysCuda::AllOrdersF32NarrowRatAtRung(m, n, x, static_cast<float*>(out),
-                                                                count, nullptr);
-         }},
-        {boys::DeviceEntry::kAllOrdersF32NarrowRatHorner, outF32.data(),
-         [](double m, const int* n, const double* x, void* out, std::size_t count) {
-             return boys::BoysCuda::AllOrdersF32NarrowRatHornerAtRung(
-                 m, n, x, static_cast<float*>(out), count, nullptr);
-         }},
-        // The same tables on the packing axis's other side: the cell a rung of
-        // them refuses is the cell the row above refuses, because the missing
-        // cut is the table's and not the body's.
-        {boys::DeviceEntry::kAllOrdersF32OrdersRat, outF32.data(),
-         [](double m, const int* n, const double* x, void* out, std::size_t count) {
-             return boys::BoysCuda::AllOrdersF32OrdersRatAtRung(
-                 m, n, x, static_cast<float*>(out), count, nullptr);
-         }},
-        {boys::DeviceEntry::kAllOrdersF32OrdersRatHorner, outF32.data(),
-         [](double m, const int* n, const double* x, void* out, std::size_t count) {
-             return boys::BoysCuda::AllOrdersF32OrdersRatHornerAtRung(
-                 m, n, x, static_cast<float*>(out), count, nullptr);
-         }},
-        {boys::DeviceEntry::kAllOrdersF32NarrowOrdersRat, outF32.data(),
-         [](double m, const int* n, const double* x, void* out, std::size_t count) {
-             return boys::BoysCuda::AllOrdersF32NarrowOrdersRatAtRung(
-                 m, n, x, static_cast<float*>(out), count, nullptr);
-         }},
-        {boys::DeviceEntry::kAllOrdersF32NarrowOrdersRatHorner, outF32.data(),
-         [](double m, const int* n, const double* x, void* out, std::size_t count) {
-             return boys::BoysCuda::AllOrdersF32NarrowOrdersRatHornerAtRung(
-                 m, n, x, static_cast<float*>(out), count, nullptr);
-         }},
-    };
-
-    const std::vector<int> n(4, 4);
-    const std::vector<double> x(4, 0.5);
-
-    std::size_t asked = 0;
-    std::size_t devicePartial = 0;
+    std::vector<std::string> partial;
 
     for (const boys::DeviceOptionInfo& row : boys::BoysDeviceOptions())
     {
-        if (row.servedRungs == boys::kEveryDeviceRung)
+        if (!row.built || row.servedRungs == boys::kEveryDeviceRung)
         {
             continue;
         }
 
-        // A device-callable row's refusal is produced inside the caller's own
-        // kernel and cannot be asked from here: the entry it names is a
-        // __device__ function with no launcher of this library's behind it, and
-        // what refuses the call is the entry's own test against the rung the
-        // handle holds. The evidence for those rows is the device accuracy
-        // gate's rung sweep (CheckRungCalls, tests/boys_cuda_accuracy_gate.cpp),
-        // which asks every device row at a rung that is not the resident one and
-        // requires the entry's own refusal with nothing written.
-        //
-        // What is checked here is the shape of this build's refusals: a partial
-        // device-callable row is one whose tables have no rung cut — the float
-        // lane's rational route alone, now that the narrow partition's two bases
-        // are cut here — so a partial row of the double lane, whose every rung
-        // cut this build derives, uploads and reads, is a finding rather than a
-        // property of the row.
-        if (row.group == boys::DeviceOptionGroup::kDeviceCallable)
-        {
-            ++devicePartial;
-
-            EXPECT_EQ(row.precision, boys::DeviceOptionPrecision::kFp32)
-                << row.name
-                << " holds part of the rung axis on a lane whose rung cuts this build holds";
-
-            continue;
-        }
-
-        const RefusingRow* refused = nullptr;
-
-        for (const RefusingRow& candidate : refuses)
-        {
-            if (candidate.entry == row.entry)
-            {
-                refused = &candidate;
-            }
-        }
-
-        ASSERT_NE(refused, nullptr)
-            << row.name << " is served at part of the rung axis and this test cannot ask its "
-                           "entry at the rungs the row refuses";
-
-        for (std::size_t i = 0; i < boys::kDeviceRungCount; ++i)
-        {
-            if ((row.servedRungs & (boys::DeviceRungMask{1} << i)) != 0)
-            {
-                continue;
-            }
-
-            ++asked;
-
-            EXPECT_EQ(refused->call(boys::kDeviceRungs[i], n.data(), x.data(), refused->out, 1),
-                      boys::BoysStatus::kInvalidArgument)
-                << row.name << " at m = " << boys::kDeviceRungs[i];
-        }
+        partial.emplace_back(row.name);
     }
 
-    EXPECT_GT(asked, 0u);
-
-    EXPECT_GT(devicePartial, 0u);
-
-    // Stated rather than left to be counted off the space: this is the number of
-    // cells the report calls refused and the entries answered for, and it is the
-    // one figure of this test a reader cannot get from a passing assertion.
-    std::printf("    %zu cell(s) the report refuses, every one refused by its own entry\n", asked);
-    std::printf("    %zu device-callable row(s) hold part of the axis, refused inside the "
-                "caller's kernel\n",
-                devicePartial);
-
-    // The other direction: a row of the table above that the space serves at
-    // every rung would be an entry this test asks about a refusal the library
-    // does not make.
-    for (const RefusingRow& refused : refuses)
+    for (const std::string& name : partial)
     {
-        bool partial = false;
-
-        for (const boys::DeviceOptionInfo& row : boys::BoysDeviceOptions())
-        {
-            partial = partial || (row.entry == refused.entry &&
-                                  row.servedRungs != boys::kEveryDeviceRung);
-        }
-
-        EXPECT_TRUE(partial) << "a row this test holds a refusal for is one the space serves at "
-                                "every rung";
+        ADD_FAILURE() << name << " holds part of the rung axis, and no row of the device book "
+                                 "does at this revision: every cut it would read is derived, "
+                                 "uploaded and read here";
     }
+
+    EXPECT_TRUE(partial.empty());
+
+    // Stated rather than left to be counted off the space: this is the figure a
+    // reader cannot get from a passing assertion.
+    std::printf("    %zu row(s) of the device book hold part of the rung axis, out of %zu\n",
+                partial.size(),
+                boys::BoysDeviceOptions().size());
 }
 
 } // namespace
