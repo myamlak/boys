@@ -5,74 +5,118 @@
 [![license](https://img.shields.io/badge/license-BSD--3--Clause-blue)](LICENSE)
 [![version](https://img.shields.io/github/v/tag/myamlak/boys?label=latest%20release%20tag)](https://github.com/myamlak/boys/tags)
 
-Self-contained C++23 evaluation of the Boys function family
-F_n(x) = ∫₀¹ t^(2n) exp(−x t²) dt for n = 0..32 — the integral an electronic-structure program
-evaluates at every order a shell quartet can ask for.
+F_n(x) = ∫₀¹ t^(2n) exp(−x t²) dt, for n = 0..32 and x ≥ 0 — the integral an electronic-structure
+program evaluates at every order a shell quartet can ask for. This is a C++ library that evaluates
+it, in double and single precision, on the CPU and optionally on a GPU. It depends on nothing outside
+the C++ standard library and the optional CUDA toolkit.
 
-It ships the function in double and single precision, scalar and vectorised, with 16-bit storage
-wrappers, a packed-half variant, an entry that evaluates a batch of arguments as a matrix product for
-tensor cores, and optional CUDA kernels. It depends on nothing outside the C++ standard library, the
-optional CUDA toolkit, and tables generated and committed with the source. Every entry is checked
-against a reference grid computed to 45 digits.
+## Your first call
 
-## Quick start
-
-    git clone https://github.com/myamlak/boys.git
-    cmake -S . -B build
-    cmake --build build
-    ctest --test-dir build --output-on-failure
-
-The tests are quiet when they pass: `ctest` prints a green line per test and nothing about what was
-checked. To see the accuracy figures themselves, see [Check the figures
-yourself](#check-the-figures-yourself) below.
-
-For a one-file program against an already-built tree, compile and run it like this:
-
-    g++ -std=c++23 -I include try.cpp -L build -lboys -o try
-    ./try
-
-The public headers need C++20 — that is the library's declared requirement, `cxx_std_20` on the
-`boys` target; the tree's own tests are built as C++23. So `-std=c++20` compiles this same program.
-On Windows with the Visual Studio generator the library lands in `build/Release/`, and the CMake
-route below is the one that finds it without flags.
+Copy this into `try.cpp`, build it, run it. It prints exactly the numbers below.
 
 ```cpp
 #include <boys/boys.hpp>
 
+#include <cstdio>
+
 int main()
 {
-    double f0 = boys::BoysSingle(0, 0.5);  // F_0(0.5)
+    // One order at one argument.
+    std::printf("F_3(1.25)  = %.17g\n", boys::BoysSingle(3, 1.25));
 
-    std::array<double, 8> out;
-    boys::BoysAllOrders(7, 1.25, out.data());  // F_0..F_7(1.25)
+    // Every order 0..6 at one argument. A shell quartet wants the whole
+    // ladder, and this is the call that hands it over.
+    double ladder[boys::kMaxBoysOrder + 1] = {};
+    boys::BoysAllOrders(6, 3.5, ladder);
+    std::printf("F_0(3.5)   = %.17g\n", ladder[0]);
+    std::printf("F_3(3.5)   = %.17g\n", ladder[3]);
+    std::printf("F_6(3.5)   = %.17g\n", ladder[6]);
 
-    // Many arguments, all orders: the batch shape an integral engine needs.
-    // Arguments may arrive in any order; the entry classifies, groups and
-    // dispatches internally. out[k * count + i] = F_k(x[i]).
-    const double x[3] = {0.5, 12.5, 30.0};
-    std::array<double, 3 * 33> planes;
-    boys::BoysAllN(32, x, planes.data(), 3);
+    // One order over an array of arguments. out[i] = F_2(x[i]).
+    const double x[3] = {0.25, 4.0, 30.0};
+    double out[3] = {};
+    boys::BoysFixedN(2, x, out, 3);
+    std::printf("F_2(0.25)  = %.17g\n", out[0]);
+    std::printf("F_2(4)     = %.17g\n", out[1]);
+    std::printf("F_2(30)    = %.17g\n", out[2]);
 
-    // Already non-decreasing? Say so and skip the sort.
-    boys::BoysAllN(32, x, planes.data(), 3, boys::BoysSortedArgs{});
-
-    // Each argument its own highest order — the shape a shell-quartet batch
-    // has. The planes are the same, each column stopping at its own n[i];
-    // the cells above n[i] are left as the caller left them.
-    const int n[3] = {4, 12, 7};
-    boys::BoysAllNAtOrders(n, x, planes.data(), 3);
+    // F is positive and falls off with x; a batch of zeros or a negative
+    // value would mean the call did not do what it says.
+    const bool sane = out[0] > 0.0 && out[0] > out[1] && out[1] > out[2] && ladder[0] > ladder[6];
+    if (!sane) {
+        std::printf("FAIL: F is not positive and decreasing in x\n");
+        return 1;
+    }
+    return 0;
 }
 ```
 
-**Choosing a lane.** [docs/consumer-perspective.md](docs/consumer-perspective.md) — how much accuracy
-an integral calculation actually needs, and which of the library's evaluation lanes that leaves to
-choose between.
+    git clone https://github.com/myamlak/boys.git && cd boys
+    cmake -S . -B build -DBOYS_BUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF
+    cmake --build build
 
-**The accuracy contract.** [What each lane guarantees](#accuracy-contract) — the bound, and the
-command that measures it on your machine.
+or, against a tree you have already built:
 
-The words this library uses — *lane*, *region*, *route*, *rung*, *tier*, *scheme*, *axis*, *gate* —
-are defined on the documentation's landing page, together with the full API reference:
+    c++ -std=c++20 -I include try.cpp -L build -lboys -o try     # -I and -L as your build laid them out
+    ./try
+
+```
+F_3(1.25)  = 0.055476132923077535
+F_0(3.5)   = 0.46984703520162352
+F_3(3.5)   = 0.011831383583716678
+F_6(3.5)   = 0.0040954447623731674
+F_2(0.25)  = 0.1675331909073505
+F_2(4)     = 0.017525782161993068
+F_2(30)    = 0.00013483513281636802
+```
+
+The three `OFF`s are there so this builds the library and nothing else, which needs no compiler past
+C++20 — the suite and the benchmark drivers are the targets that want C++23, and each is behind one
+of those flags. Drop them to build all three as well; that is the contributor's build.
+
+On Windows with the Visual Studio generator the library lands in `build/Release/`. This program is
+[`examples/00_first_call.cpp`](examples/00_first_call.cpp); the contributor's build compiles it and
+`ctest` runs it, along with every other program this README and the guide quote, so the transcript
+above cannot rot silently.
+
+**[docs/getting-started.md](docs/getting-started.md)** takes these three calls one at a time, then
+the questions that follow them: how to ask for less accuracy when your calculation can afford it, how
+to name a specific evaluation, how to ask what the library guarantees before you rely on it, and how
+to find out which of the available options is fastest on your machine. Every figure in it is the
+output of a program in [`examples/`](examples/), so you can reproduce any of them.
+
+## Which entry do I call?
+
+By what you want, not by what the library calls things:
+
+| I want | Entry | One clause on when |
+|---|---|---|
+| F_n(x) for one order, one argument | `BoysSingle` | the simplest call; use it when you have one value |
+| F_0..F_nmax at one argument | `BoysAllOrders` | a shell quartet's ladder; this is the common case |
+| F_n at every argument of an array | `BoysFixedN` | when the order is fixed and the arguments vary; takes an output stride |
+| F_0..F_nmax at every argument of an array | `BoysAllN` | the batch shape of an integral engine; the arguments may arrive in any order |
+| ...with each argument's own top order | `BoysAllNAtOrders` | a shell-quartet batch, where no argument is padded to a common order |
+| ...when you know the arguments are already sorted | `BoysAllN` with `BoysSortedArgs{}` | skips the internal sort when your loop already produces a non-decreasing array |
+| any of the above at a looser accuracy, decided at run time | `BoysSingleAtTier`, `BoysAllOrdersAtTier` | when the multiplier is a loop variable rather than a compile-time choice |
+| any of the above in single precision | `BoysSingleF32`, `BoysAllOrdersF32`, `BoysAllNF32` | when the rest of your kernel is `float` |
+| half-precision storage | `BoysSingleF16`, `BoysAllOrdersF16`, `BoysSingleBf16`, `BoysAllOrdersBf16` | 16-bit I/O around the single-precision engine |
+| an answer on a GPU | `boys/boys_cuda.hpp` | device arrays; uploads its tables on first use, so warm the path before measuring |
+| the same arithmetic inside your own CUDA kernel | `boys/boys_cuda_device.hpp` | when a round trip through global memory would cost more than the evaluation |
+
+The complete list, with every overload, is the entry-point table in the
+[API reference](https://myamlak.github.io/boys/).
+
+**How much accuracy do you need?** [docs/consumer-perspective.md](docs/consumer-perspective.md) —
+what integral calculations actually require, and which of the library's evaluation paths that leaves
+to choose between. **Want the guarantee instead?** [What each path
+guarantees](#accuracy-contract) — the bound, and the command that measures it on your machine.
+
+---
+
+Everything below this line is the specification: what each evaluation path guarantees, the settings
+that select one, and the measurements behind the figures. None of it is needed to make your first
+call. The words it uses — *lane*, *region*, *route*, *rung*, *tier*, *scheme*, *axis*, *gate* — are
+defined on the documentation's landing page, together with the full API reference:
 <https://myamlak.github.io/boys/>.
 
 ## Accuracy contract
@@ -93,6 +137,31 @@ over part of the range than over the rest. Every figure below holds for **all** 
 | CUDA fp64 | same m·budgets as the CPU double lanes |
 | CUDA fp32, `RegionBExp::kAccurate` (the default) | same m·budgets as the CPU float lanes |
 | CUDA fp32, `RegionBExp::kFast` | ≤ m·1.5e-7 + 8e-8 — the lane's budget plus the corrected seed's own contribution |
+
+**One axis's members are not one figure.** `DivisionForm` is how every recurrence step divides, and
+its three members are three arithmetics rather than three spellings of one: exact division rounds
+once per step, the plain reciprocal rounds twice, and the refined reciprocal carries the plain
+product back to the exact form's rounding. The rows above are one number per lane, so where the forms
+deliver different figures the figures are stated apart, and a caller who names the plain form is
+reading the number its ladder delivers rather than the lane's base.
+
+On the **double** lane no form leaves a figure above: over the accuracy gate's own reference grid at
+the reference multiplier, 56694 cells per form, the plain reciprocal leaves region A, region B and
+region C where exact division has them and moves the extended band's worst from 3.22e-15 to 6.73e-15,
+inside the 3e-14 that region publishes, and the refined reciprocal is bit-identical to exact division
+in every cell. The double rows are therefore figures under all three forms.
+
+On the **single-precision** lanes the plain reciprocal's figure beside the base is **1.75e-7**,
+measured at n = 0, x = 9.74055 on that grid at the reference multiplier: the worst of the two cells
+that form puts outside the lane's 1.5e-7, the other being x = 7 at 1.55e-7. Both cells are that
+form's own — at them the lane's exact and refined forms deliver 3.67e-9 and 3.63e-8, and their worst
+anywhere on the grid is 1.08e-7, inside the base. The fp16 and bf16 lanes run that
+arithmetic and round at the boundary, so the figure stands beside their base too, before the half
+digit above is added. At this revision that form does not govern the float lane's downward ladder,
+whose divisor is the step's constant rather than the argument, so the lane as served is inside
+1.5e-7 under every form; whether the plain form's excess stays beside the base as m rises is not
+measured here, and neither is the device lane, which has no form to key a figure by because the axis
+is a host policy field the CUDA surface does not name.
 
 "ULP" is the last representable digit of the result in the format concerned. On the C++ surface the
 multiplier is any value at or above 1, with no upper end, and raising it loosens the bound and
@@ -614,7 +683,10 @@ without one the fused step is a library call per recurrence step, and this optio
 **different arithmetic** — two roundings rather than one — and it has its own measured bound, which
 `docs/lane-contract.md` states lane by lane. `BoysBackends()` reports which route is in force.
 `-DBOYS_WERROR=OFF` drops `-WX` for a consumer whose compiler warning noise this tree has not been
-made clean for.
+made clean for. `-DBOYS_BUILD_DEFAULTS=<header>` compiles the five choices an entry that names no
+policy resolves to from a header of your own instead of the shipped ones — the choices are
+compile-time values, so an unnamed call costs what it costs either way. CONTRIBUTING.md states what
+such a header carries and what the option does not do.
 
 As a submodule:
 
@@ -696,6 +768,12 @@ put against another ran one arithmetic route.
 text it prints says the result is about the machine it ran on.
 
 ## Which CUDA entry is cheapest on your card
+
+**Before you time anything, warm the path.** The CUDA entries upload their coefficient tables on
+first use, lazily and idempotently, so the *first* call at a given accuracy multiplier on a given
+device pays a real one-time cost that every later call does not. A loop timed from a cold start
+measures the upload rather than the evaluation. Make one throwaway call at the multiplier you intend
+to use — or call `boys::BoysCuda::InitializeTables` — and time everything after it.
 
 A CUDA ranking is a statement about a card, not about the library: a part whose documented ratio of
 single- to double-precision throughput is 2 orders the fp64 and fp32 lanes differently from one whose

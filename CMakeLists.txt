@@ -33,6 +33,21 @@ option(BOYS_BUILD_TESTS
 option(BUILD_BENCHMARKS
     "Build the CPU benchmark drivers; the timed runs themselves are local-only"
     ${BOYS_TOP_LEVEL})
+option(BUILD_EXAMPLES
+    "Build the examples: one small program per question a new caller asks"
+    ${BOYS_TOP_LEVEL})
+# One file per question, in the order a caller asks them. The list is read
+# twice below - once to build each program, once to register it with ctest -
+# so an example is added in one place and is then both built and run.
+set(boysExamples
+    00_first_call
+    01_one_order
+    02_all_orders
+    03_arguments_array
+    04_accuracy_tier
+    05_policy
+    06_what_it_guarantees
+    07_option_probe)
 option(BUILD_CUDA
     "Build the CUDA lane (needs the CUDA toolkit; a documented local gate — never CI)"
     OFF)
@@ -863,6 +878,18 @@ int main() {
     set_tests_properties(boys-boundary-standalone PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
 
+    # The examples, run rather than only built: each one already decides for
+    # itself whether the number it printed is sane, so a program here that has
+    # rotted into printing nonsense fails a leg. boys-example-07-option-probe
+    # reports a timing, which is a property of the host and the clock rather
+    # than of this revision - so it fails on having measured nothing at all and
+    # never on which option came first (see the driver comment below).
+    if (BUILD_EXAMPLES)
+        foreach (example IN LISTS boysExamples)
+            add_test(NAME boys-example-${example} COMMAND boys-example-${example})
+        endforeach()
+    endif()
+
     # The option probe's driver: measures this build's evaluation options on
     # the machine it is run on and prints what it found, refusal included (see
     # the file preamble). Not a test and not registered as one — its result is
@@ -1214,6 +1241,28 @@ if (BUILD_BENCHMARKS)
 elseif (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/benchmark/CMakeLists.txt")
     message(WARNING "third_party/benchmark is missing; BUILD_BENCHMARKS is OFF, "
         "so the benchmark drivers are not built (informational)")
+endif()
+
+# --- Examples: a consumer's first call, one question per file ---------------
+# Each file answers one question a new caller asks, in the order they ask it,
+# and prints the numbers that answer it. They are built here and REGISTERED
+# WITH CTEST above (in the test section, where enable_testing() is in scope),
+# so an example that stops compiling, or stops printing a number, fails a
+# build instead of quietly teaching a call that no longer works. The README
+# and docs/getting-started.md quote what these programs print and nothing
+# else, which is what keeps a documented figure reproducible.
+#
+# They link boys::boys and nothing else, and take no private include
+# directory: an example is the consumer's view, and it should break here if
+# that view ever stops being reachable from the public surface.
+if (BUILD_EXAMPLES)
+    foreach (example IN LISTS boysExamples)
+        add_executable(boys-example-${example} examples/${example}.cpp)
+        target_link_libraries(boys-example-${example} PRIVATE boys::boys)
+        boys_strict_warnings(boys-example-${example})
+    endforeach()
+elseif (NOT BOYS_TOP_LEVEL)
+    message(STATUS "boys: examples are not built (BUILD_EXAMPLES is OFF)")
 endif()
 
 # --- Generator byte-identity gate (top-level convenience targets) -----------
