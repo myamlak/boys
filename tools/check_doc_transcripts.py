@@ -17,10 +17,10 @@ table column and the documents were wrong about what they print. Nothing in the
 tree compared a quoted run against the string it quotes.
 
 This script does. It reads the rows' `source` strings out of src/boys.cpp and
-every run of those three shapes out of README.md, docs/getting-started.md and
+every run of those shapes out of README.md, docs/getting-started.md and
 docs/lane-contract.md, and compares them after collapsing each side's
 whitespace - a document may wrap a run across lines and the field has none, and
-a line break is a document's, not a quotation's. It then reports three kinds of
+a line break is a document's, not a quotation's. It then reports four kinds of
 run:
 
   * a run that is a proper prefix of a source string and at least twelve
@@ -31,6 +31,15 @@ run:
     next, so the reader has the two texts rather than a verdict about them.
 
   * a run equal to a source string is a confirmed quote, named and counted.
+
+  * a run the document marks as the library's own words, and which no string the
+    library holds carries, is ABSENT, and it fails the run. The prefix rule
+    above cannot see this one: a string the source has deleted altogether has no
+    proper prefix to be a prefix of, and a run of it is a run of nothing. The
+    strings the library holds are read from `src/` and `include/` - every string
+    literal the published library carries, and not the lane rows' `source`
+    members alone, because the sentence a refusal cell prints is the accessor's
+    and is written wherever the accessor is.
 
   * every other run is one this check says nothing about, counted by shape and
     not listed. The documents use the same brackets for cross-reference labels,
@@ -46,6 +55,26 @@ same to any comparison of the two texts, and this script does not guess between
 them; where a run begins with a whole source string and continues, that is
 counted and printed and never failed.
 
+Which runs are marked as the library's own words, and why the two markings are
+not read the same way. A `bound: ...` cell and the italic run of a refusal cell
+both print the library's words and say so. The refusal cell prints the sentence
+a call gets, as the accessor's own, so it is a transcript and not a restatement:
+a string holds those characters or the cell is describing a refusal this
+revision does not make, and the run is ABSENT. The `bound: ...` cells are
+restatements, and the documents have always written them that way. The fp16 cell
+has said "value, claimed" since the commit that wrote the row, where the field
+says "value and claimed"; the fp32-device cell opens with the document's own
+gloss - "the lane's documented figure, " - before the field's words begin.
+Neither is a drift and neither is an error, and a rule that read them as
+transcripts would report those cells on every run. So the rule there is the
+weakest one that still sees a deletion: a `bound: ...` run that agrees with no
+lane row's `source` on a run of at least twelve characters is ABSENT, and a run
+that agrees on any run at all is passed. What that weaker rule misses is a
+`bound: ...` cell rewritten into words that keep a dozen characters of a row's
+old string, and one edited into a sentence no row ever carried while still
+sharing a phrase with the row it names; both are read as the document's prose,
+which is what the two texts alone make of them.
+
 Why twelve characters. The shortest string the rows carry is a full clause, so
 a run agreeing with a source string character for character is a fragment of a
 sentence rather than a word. Twelve is the briefest run worth reading as a
@@ -57,7 +86,10 @@ a program prints carry the field through `%s`, so there the field's characters
 and the program's output are the same characters. The `bound: ...` cells are
 compared against the field as well, and they restate it beside a figure rather
 than quoting a print, which is why a run there that is no part of the field is
-read as the table's own prose.
+read as the table's own prose - with the one exception above, a run that is no
+part of any row's field at all. The refusal cell is compared against the
+library's strings instead, because what it prints is the accessor's sentence
+rather than a lane's terms, and no `source` member carries it.
 
 What this check does not read, and why:
 
@@ -65,26 +97,39 @@ What this check does not read, and why:
     backticks the field does not have, and the delivery accessor's `source`
     strings behind them, which name the tables a figure was read from rather
     than terms the base does not carry and reach no document in one of the
-    three shapes above;
+    shapes above;
 
   * `examples/`, whose output is this check's subject rather than an input;
 
   * the figures the same lines print. `tools/check_doc_arithmetic.py` reads the
     arithmetic of the prose and the accuracy gate reads the bounds; a figure
-    beside a run is neither this check's subject nor one it can confirm.
+    beside a run is neither this check's subject nor one it can confirm;
+
+  * a marked run the library still holds *in part*. A cell cut down to the first
+    half of a sentence the library still has is a MISMATCH where the run is a
+    proper prefix of a row's `source`, and is nothing this check can name
+    anywhere else: a run that stops inside a string the library holds reads the
+    same as a run of the document's own words, and the two texts do not tell
+    them apart.
 
 Usage:
     python tools/check_doc_transcripts.py --check
     python tools/check_doc_transcripts.py --check --source /tmp/old_boys.cpp
 
-`--source` reads the strings from another file, which is how the pre-restoration
-tree is reproduced as a negative control: `git show <rev>:src/boys.cpp > f` and
-point this flag at it.
+`--source` reads the lane rows from another file, which is how the
+pre-restoration tree is reproduced as a negative control: `git show
+<rev>:src/boys.cpp > f` and point this flag at it. The flag stands in for the
+file and not for the tree, and the library's strings are read from `src/` and
+`include/` with that file in the place of `src/boys.cpp`, so the same document
+can be asked twice: against the revision whose strings it was written beside,
+and against the tree's own. The difference between the two runs is the drift,
+measured rather than asserted.
 
-Exit status is 0 when no run is a proper prefix of a source string, and 1 when
-one is. A construct the script cannot read - the rows' initialiser, a row that
-is not five members, a `source` member that is not a string literal - is an
-error naming the construct, never a quiet pass.
+Exit status is 0 when no run is a proper prefix of a source string and no marked
+run is absent from the strings the library holds, and 1 when one is. A construct
+the script cannot read - the rows' initialiser, a row that is not six members, a
+`source` member that is not a string literal, a `src/` or `include/` that is not
+there - is an error naming the construct, never a quiet pass.
 """
 
 from __future__ import annotations
@@ -106,6 +151,13 @@ DOCUMENTS = (
     REPO / "docs" / "lane-contract.md",
 )
 
+# The published library whose strings a marked run has to be one of. The lane
+# rows' `source` members are read from SOURCE; the sentence a refusal cell
+# prints is the accessor's own and is written wherever the accessor is, which is
+# why these are the two trees and not one file.
+LIBRARY = (REPO / "src", REPO / "include")
+LIBRARY_SUFFIXES = (".cpp", ".hpp", ".h", ".cu")
+
 # The rows of BoysLaneContracts(): `std::array<LaneContractInfo, N> name = {{ ... }};`.
 ROWS = re.compile(
     r"std::array<\s*LaneContractInfo\s*,\s*(?P<count>\d+)\s*>\s*"
@@ -114,8 +166,9 @@ ROWS = re.compile(
 )
 
 # The members of a LaneContractInfo row: precision, name, bound, additive,
-# source. The last is the one this check reads, and a revision that adds a
-# field is a construct the readers below name rather than a row read short.
+# plainAdditive, source. The last is the one this check reads, and a revision
+# that adds a field is a construct the readers below name rather than a row read
+# short.
 FIELDS = 6
 
 # One or more adjacent string literals - which is how a value longer than a
@@ -126,14 +179,25 @@ ESCAPES = {"\\": "\\", '"': '"', "'": "'", "n": "\n", "t": "\t", "r": "\r"}
 
 # The shapes a document quotes a run in. The bracket is what
 # examples/06_what_it_guarantees.cpp prints a row's source in, `(from ...)` is
-# what examples/01_one_order.cpp prints it in, and `bound: ...` heads the
-# provenance cell of docs/lane-contract.md's table. A bracket run may span
-# lines and a `bound:` run may not, which is why the two classes differ.
+# what examples/01_one_order.cpp prints it in, `bound: ...` heads the
+# provenance cell of docs/lane-contract.md's table, and the italic run after
+# `no verdict, no figure:` is the sentence docs/lane-contract.md prints as the
+# accessor's own. A bracket run may span lines and the other three may not,
+# which is why the classes differ.
 SHAPES = (
     ("bracket [ ... ]", re.compile(r"\[(?P<run>[^\[\]]+)\]")),
     ("(from ...)", re.compile(r"\(from (?P<run>[^()]+)\)")),
     ("bound: ...", re.compile(r"bound: (?P<run>[^\n]+)")),
+    ("refusal * ... *", re.compile(r"no verdict, no figure: \*(?P<run>[^*\n]+)\*")),
 )
+
+# The two shapes that mark a run as the library's own words rather than as the
+# document's own prose. `bound: ...` restates a lane row's `source` in a figure's
+# provenance cell, and a refusal cell's italic run prints the sentence a call
+# gets. The names are the ones SHAPES carries, because a rule is chosen by the
+# shape it was read in.
+BOUND_SHAPE = "bound: ..."
+REFUSAL_SHAPE = "refusal * ... *"
 
 # The document's own marker inside a provenance cell: everything after `bound: `
 # up to it is the run, and the text after it is the delivered figure's own
@@ -169,6 +233,24 @@ class Run:
     line: int
     shape: str
     text: str
+
+
+@dataclass(frozen=True)
+class Absent:
+    """One marked run that no string the library holds carries.
+
+    `best` and `lane` are what a `bound: ...` cell came closest to: the longest
+    run of characters it shares with a lane row's `source`, and the row it
+    shares it with. They are what tells the reader the cell restates no row. A
+    refusal cell is read as the accessor's transcript, so there is nothing
+    closer for it to be and the two stay at their zeros.
+    """
+
+    run: Run
+    text: str
+    kind: str
+    best: int = 0
+    lane: str = ""
 
 
 def display(path: pathlib.Path) -> str:
@@ -344,6 +426,87 @@ def read_source_strings(path: pathlib.Path) -> list[SourceString]:
     return strings
 
 
+def library_files(source: pathlib.Path) -> list[pathlib.Path]:
+    """Every file the published library's strings are read from.
+
+    `src/` and `include/`, with `source` standing in for the file it names.
+    `--source` stands in for the lane rows' translation unit, and the accessor's
+    sentences are written in that same file, so naming another revision of it
+    reproduces that revision for both - which is what lets the drift this check
+    reads be shown as a difference between two runs of it rather than asserted.
+    """
+    files: list[pathlib.Path] = []
+    replaced = SOURCE.resolve()
+    for root in LIBRARY:
+        if not root.is_dir():
+            raise CheckError(
+                f"no such directory: {display(root)}; this check reads the strings the published "
+                f"library holds - the accessor's own sentences among them - out of src/ and "
+                f"include/, so a tree without one has no strings to read"
+            )
+        files.extend(
+            path
+            for path in sorted(root.rglob("*"))
+            if path.is_file()
+            and path.suffix in LIBRARY_SUFFIXES
+            and path.resolve() != replaced
+        )
+    if not source.is_file():
+        raise CheckError(f"no such source file: {source}")
+    files.append(source)
+    return files
+
+
+def read_library_strings(files: list[pathlib.Path]) -> list[str]:
+    """Every string literal the published library holds, whitespace-collapsed.
+
+    One string per literal, or per run of adjacent literals, because C++ joins
+    those and a sentence longer than a line is written that way here. Comments
+    go and literals stay whole: what a document quotes is the characters a
+    program holds, not the file's layout around them. A literal with an escape
+    this script does not decode is an error naming it, and a library that holds
+    no string at all is an error too, because a marked run cannot be held to a
+    library with nothing to hold it to.
+    """
+    strings: list[str] = []
+    seen: set[str] = set()
+    for path in files:
+        text = strip_comments(read_text(path))
+        for match in LITERAL_RUN.finditer(text):
+            where = f"{display(path)}: offset {match.start()}"
+            value = " ".join(join_literals(match.group(0), where).split())
+            if value and value not in seen:
+                seen.add(value)
+                strings.append(value)
+    if not strings:
+        raise CheckError(
+            f"no string literal was read from {', '.join(display(path) for path in files)}: a "
+            f"marked run cannot be held to a library that has no strings"
+        )
+    return strings
+
+
+def longest_shared_run(text: str, other: str) -> int:
+    """The longest run of characters the two texts have in common.
+
+    The unit a `bound: ...` cell is held to. A restatement keeps runs of the
+    row's words - the fp16 cell carries sixty-three characters of its row's
+    `source` - and a cell written in words no row ever carried keeps none of
+    them.
+    """
+    previous = [0] * (len(other) + 1)
+    best = 0
+    for character in text:
+        current = [0] * (len(other) + 1)
+        for index in range(1, len(other) + 1):
+            if character == other[index - 1]:
+                current[index] = previous[index - 1] + 1
+                if current[index] > best:
+                    best = current[index]
+        previous = current
+    return best
+
+
 def read_runs(path: pathlib.Path) -> list[Run]:
     """Every run of the three shapes the document marks as quoted."""
     text = read_text(path)
@@ -367,9 +530,10 @@ def read_runs(path: pathlib.Path) -> list[Run]:
 def spellings(run: Run) -> list[str]:
     """The run as quoted, and the same run with the document's full stop dropped.
 
-    A `bound: ...` cell ends its sentence with a period the field does not have,
-    and a source string may itself end with one; reading both spellings is what
-    keeps the document's punctuation from being read as a missing character.
+    A cell that marks a run ends its sentence with a period the string it quotes
+    does not have, and a source string may itself end with one; reading both
+    spellings is what keeps the document's punctuation from being read as a
+    missing character.
     """
     if run.text.endswith(".") and len(run.text) > 1:
         return [run.text, run.text[:-1].rstrip()]
@@ -384,15 +548,28 @@ def continuation(run_text: str, source: SourceString) -> str:
     return rest[:CONTINUATION].rstrip() + " ..."
 
 
-def classify(runs: list[Run], strings: list[SourceString]) -> tuple[list, list, list, list, list]:
-    """Sort the runs into mismatches, confirmed quotes, and the rest.
+def classify(
+    runs: list[Run], strings: list[SourceString], sentences: list[str]
+) -> tuple[list, list, list, list, list, list]:
+    """Sort the runs into mismatches, absent marked runs, confirmed quotes, and the rest.
 
     A run that is both a proper prefix of one string and another string in full
     is a mismatch: the run names one lane's figure in a document that sits
     beside a row whose words have grown, and clearing it on the second reading
     would be the check answering a question it was not asked.
+
+    A run is held to the library's strings only where the document marks it as
+    the library's words, and the two markings are held differently. A refusal
+    cell prints the accessor's sentence as the accessor's own, so it is a
+    transcript: a string holds it or the cell is quoting a refusal this revision
+    does not make. A `bound: ...` cell is a restatement - the document adds its
+    own connectives and its own gloss around the row's words - so it is held to
+    the weakest rule that still sees a deletion, an agreement of at least
+    MIN_RUN characters with some row's `source`, and only a cell that agrees
+    with no row on that much is absent.
     """
     mismatches: list[tuple[Run, str, list[SourceString], list[SourceString]]] = []
+    absent: list[Absent] = []
     confirmed: list[tuple[Run, str, list[SourceString]]] = []
     unrelated: list[Run] = []
     short: list[tuple[Run, str, list[SourceString]]] = []
@@ -400,6 +577,10 @@ def classify(runs: list[Run], strings: list[SourceString]) -> tuple[list, list, 
 
     for run in runs:
         texts = spellings(run)
+        if run.shape == REFUSAL_SHAPE:
+            if not any(text in sentence for text in texts for sentence in sentences):
+                absent.append(Absent(run, texts[0], "refusal"))
+            continue
         prefixes = [
             (text, source)
             for text in texts
@@ -415,6 +596,19 @@ def classify(runs: list[Run], strings: list[SourceString]) -> tuple[list, list, 
         if equals:
             confirmed.append((run, equals[0][0], [e[1] for e in equals]))
             continue
+        if run.shape == BOUND_SHAPE:
+            agreements = [
+                (longest_shared_run(text, source.text), source)
+                for text in texts
+                for source in strings
+            ]
+            best, source = max(agreements, key=lambda pair: pair[0])
+            # A run shorter than MIN_RUN cannot hold an agreement that long, and
+            # this check reads a shorter run as a word rather than a quotation
+            # wherever it meets one, so it is passed here as it is there.
+            if len(texts[0]) >= MIN_RUN and best < MIN_RUN:
+                absent.append(Absent(run, texts[0], "bound", best, source.lane))
+                continue
         # Only a run with no exact match is asked the two questions the rule
         # above cannot answer about it. A run that is one row's string in full
         # is accounted for, even where another row's shorter string is the
@@ -436,7 +630,7 @@ def classify(runs: list[Run], strings: list[SourceString]) -> tuple[list, list, 
             and text != source.text
             and text.rstrip(".") != source.text
         )
-    return mismatches, confirmed, unrelated, short, beyond
+    return mismatches, absent, confirmed, unrelated, short, beyond
 
 
 def report_strings(strings: list[SourceString], path: pathlib.Path, out) -> None:
@@ -469,7 +663,7 @@ def report_runs(runs: list[Run], out) -> None:
             )
 
 
-def report_clean(confirmed, unrelated, short, beyond, strings, path, out) -> None:
+def report_clean(confirmed, unrelated, short, beyond, strings, sentences, path, out) -> None:
     print(f"\nconfirmed: {len(confirmed)} runs are a source string in full", file=out)
     for run, text, matches in confirmed:
         lanes = " and ".join(dict.fromkeys(source.lane for source in matches))
@@ -505,9 +699,10 @@ def report_clean(confirmed, unrelated, short, beyond, strings, path, out) -> Non
             )
 
     print(
-        f"\nverdict: clean - no run in these documents is a proper prefix of a source string "
-        f"({len(confirmed)} confirmed, {len(unrelated)} unconfirmed, {len(strings)} strings read "
-        f"from {display(path)})",
+        f"\nverdict: clean - no run in these documents is a proper prefix of a source string, and "
+        f"every run they mark as the library's own words is one the library holds "
+        f"({len(confirmed)} confirmed, {len(unrelated)} unconfirmed, {len(strings)} lane strings "
+        f"read from {display(path)}, {len(sentences)} strings read from the library)",
         file=out,
     )
 
@@ -564,6 +759,70 @@ def report_mismatches(mismatches, runs, strings, path, out) -> None:
     )
 
 
+def report_absent(absent, runs, strings, sentences, out) -> None:
+    """The marked runs that no string the library holds carries.
+
+    One finding per run rather than per place, for the reason the mismatches are
+    grouped: the same words are quoted wherever the same refusal is described.
+    The rule the run was read under is printed with it, because the two are not
+    equally strong - a refusal cell is held to the accessor's own characters, and
+    a `bound: ...` cell only to an agreement of MIN_RUN characters with the row
+    it names - and a reader deciding what to do about the finding needs to know
+    which of the two found it.
+    """
+    print(
+        f"\n{len(absent)} run(s) the documents mark as the library's own words are absent from "
+        f"every string it holds, in {len({finding.text for finding in absent})} distinct "
+        f"finding(s):",
+        file=out,
+    )
+    for finding in absent:
+        run = finding.run
+        print(
+            f'\nABSENT: the run "{finding.text}", read at {run.document}:{run.line} ({run.shape})',
+            file=out,
+        )
+        if finding.kind == "refusal":
+            print(
+                f"  the cell prints the sentence a call gets, as the accessor's own, and none of "
+                f"the {len(sentences)} string literals the published library carries contains it: "
+                f"a transcript of a refusal this revision does not make",
+                file=out,
+            )
+            print(
+                f"  a transcript is held to the characters rather than to a reading of them, "
+                f"because the cell claims the accessor's own sentence: the library says these "
+                f"words or the cell is describing output it no longer produces",
+                file=out,
+            )
+        else:
+            print(
+                f"  the cell names the row's bound, and the closest lane row - the "
+                f"{finding.lane} one - agrees with it on {finding.best} character(s): a cell that "
+                f"shares no run of {MIN_RUN} characters with any of the {len(strings)} rows' "
+                f"`source` strings restates none of them",
+                file=out,
+            )
+            print(
+                f"  this is the weaker of the two rules the marked shapes are read under, and "
+                f"what it cannot tell apart is a string that has left the library from a cell "
+                f"written in words no row ever carried: both agree with every row on nothing "
+                f"worth reading, and the two texts do not separate them",
+                file=out,
+            )
+    print(
+        f"\nA run in one of these shapes is the document's claim that these are the library's "
+        f"characters, and this check reads it as that claim. Either carry the string the library "
+        f"holds today or take the run out of the shape that marks it as one.",
+        file=out,
+    )
+    print(
+        f"\n{len(absent)} of {len(runs)} runs read, against {len(strings)} row strings and "
+        f"{len(sentences)} library strings.",
+        file=out,
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -581,6 +840,7 @@ def main() -> int:
     try:
         path = pathlib.Path(args.source).resolve()
         strings = read_source_strings(path)
+        sentences = read_library_strings(library_files(path))
         missing = [document for document in DOCUMENTS if not document.is_file()]
         if missing:
             raise CheckError(
@@ -588,7 +848,7 @@ def main() -> int:
                 f"reads the runs these documents quote"
             )
         runs = [run for document in DOCUMENTS for run in read_runs(document)]
-        mismatches, confirmed, unrelated, short, beyond = classify(runs, strings)
+        mismatches, absent, confirmed, unrelated, short, beyond = classify(runs, strings, sentences)
         if not confirmed and not mismatches:
             by_shape = ", ".join(
                 f"{shape} {sum(1 for run in runs if run.shape == shape)}" for shape, _ in SHAPES
@@ -609,10 +869,13 @@ def main() -> int:
     )
     report_strings(strings, path, out)
     report_runs(runs, out)
-    if mismatches:
-        report_mismatches(mismatches, runs, strings, path, out)
+    if mismatches or absent:
+        if mismatches:
+            report_mismatches(mismatches, runs, strings, path, out)
+        if absent:
+            report_absent(absent, runs, strings, sentences, out)
         return 1
-    report_clean(confirmed, unrelated, short, beyond, strings, path, out)
+    report_clean(confirmed, unrelated, short, beyond, strings, sentences, path, out)
     return 0
 
 
