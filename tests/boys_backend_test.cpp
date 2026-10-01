@@ -240,8 +240,11 @@ TEST(BackendTest, ThePackedPairAppearsExactlyWithTheVectorTier) {
 //
 // ALL FIVE AXES ARE READ FROM THAT HEADER. Two of them always were - the fit route and the
 // evaluation scheme - and the other three, the packing axis, the division form and the
-// partition, were literals in backend.hpp until they were wired to the same seam. The pins
-// below cover all five, because a pin on some of them is how three macros came to be
+// partition, were literals in backend.hpp until they were wired to the same seam. The guard
+// below reads all five, so a replacement that resolved none of them is refused rather than
+// passing on two of five. The pins below cover all five only where the tuned fixture is in
+// force: the shipped configure pins the route and the scheme and leaves the packing axis,
+// the division form and the partition unpinned, which is how three macros came to be
 // documented, replaced and read by nothing.
 static_assert(boys::EvalPolicy<>{}.kBudget == boys::BoysBudget::kFloat,
               "the default engine budget moved");
@@ -263,16 +266,23 @@ static_assert(boys::kDefaultEvalScheme == boys::EvalScheme::kHorner,
 // stopped delivering the file, both come out as the committed values.
 constexpr bool kShippedDefaultsInForce =
     boys::kDefaultFitRoute == boys::FitRoute::kChebyshev &&
-    boys::kDefaultEvalScheme == boys::EvalScheme::kHorner;
+    boys::kDefaultEvalScheme == boys::EvalScheme::kHorner &&
+    boys::kDefaultPackAxis == boys::PackAxis::kArguments &&
+    boys::kDefaultDivisionForm == boys::DivisionForm::kRefinedReciprocal &&
+    boys::kDefaultFitGranularity == boys::FitGranularity::kNarrow;
 
 static_assert(!kShippedDefaultsInForce,
-              "the defaults header in force names the shipped route and scheme, so this build "
-              "has chosen nothing: point BOYS_BUILD_DEFAULTS at a header that moves at least one "
+              "the defaults header in force names all five shipped values, so this build has "
+              "chosen nothing: point BOYS_BUILD_DEFAULTS at a header that moves at least one "
               "axis, or unset it to build the shipped configuration");
 
 #if defined(BOYS_BUILD_DEFAULTS_TEST_FIXTURE)
 // The test's own override (tests/build_defaults_tuned.hpp), pinned by value so a configure
-// that delivered some other header fails here rather than passing.
+// that delivered a header claiming this name fails here rather than passing. The name is
+// the tuned fixture's own and only its build defines it: a single-axis fixture
+// (tests/build_defaults_fit_route.hpp and the three beside it) defines neither this guard
+// nor BOYS_BUILD_DEFAULTS_SHIPPED, so no pin here reaches the one axis such a fixture
+// moves, and the five values below are the tuned fixture's.
 // One assertion per axis, whichever value the fixture sets it to. Pinning only
 // the axes it happens to move is how the seam's three dead macros went unnoticed:
 // the fixture moved the scheme, copied the library's literals for the rest, and

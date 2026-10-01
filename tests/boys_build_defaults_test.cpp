@@ -46,8 +46,11 @@
 //     build can move, except the fit route, which tests/boys_backend_test.cpp
 //     pins at the shipped value for a header defining its fixture guard. The
 //     configure that points BOYS_BUILD_DEFAULTS at that file is where this check
-//     fails when a reader is broken, and it is a local one: no CI leg sets the
-//     option, so the loud failure is one a person runs.
+//     fails when a reader is broken, and it is not only a local one: the
+//     `Build defaults (tuned fixture built and tested)` step of
+//     `.github/workflows/ci.yml` points the option at that file on the
+//     linux-x86 gcc Release leg and runs the suite there, so the loud failure is
+//     one CI reports as well as one a person can run.
 //   - two of the members the five axes offer cannot be named by a build at all,
 //     so no check of this shape can have teeth on them: PackAxis::kOrders, which
 //     the single-order entry refuses because a call that produces one order has
