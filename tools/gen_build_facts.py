@@ -14,6 +14,12 @@ merges into what is already recorded and --check re-renders the document from
 its own rows: a hand edit to the generated region is drift, and so is a leg in
 ci.yml that the table does not account for.
 
+A table that records a row for no leg of the workflow is refused rather than
+passed. Every row in it would then belong to a build no leg of the matrix
+compares against, so the step that runs --check would go green having compared
+nothing - the rows a leg's own step is checked against are the rows that arm
+it.
+
 Usage:
     python tools/gen_build_facts.py --record build-facts-windows.txt ...
     python tools/gen_build_facts.py --check
@@ -182,7 +188,8 @@ def main():
     parser.add_argument("--record", nargs="+", type=pathlib.Path,
                         help="captured probe output(s) to fold into the table")
     parser.add_argument("--check", action="store_true",
-                        help="exit nonzero if the table is out of date")
+                        help="exit nonzero if the table is out of date, or holds "
+                             "no CI leg's row to check")
     args = parser.parse_args()
     if args.record and args.check:
         parser.error("--record and --check are different acts; pass one")
@@ -198,6 +205,16 @@ def main():
         rows = parse_blocks(current)
         legs = ci_legs()
         recorded = sum(1 for leg in legs if leg in rows)
+        if recorded == 0:
+            print(
+                f"gen_build_facts: docs/build-facts.md records a row for none of "
+                f"the {len(legs)} CI legs. The table carries {len(rows)} row(s), "
+                "none of them a CI leg's, so no leg of the workflow has a row to "
+                "be checked against and this check has nothing to compare. A leg "
+                "prints its own row under its build-facts step; record one with\n"
+                "    python tools/gen_build_facts.py --record <file>",
+                file=sys.stderr)
+            return 1
         print(f"docs/build-facts.md matches its rows: {recorded} of {len(legs)} "
               f"CI legs recorded, {len(rows) - recorded} row(s) from other builds")
         return 0
