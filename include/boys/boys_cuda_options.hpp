@@ -703,10 +703,19 @@ constexpr DeviceRungMask DeviceServedRungMask(DeviceEntry entry, bool built) noe
 /// answering one of the two members for it would state a partition the entry does not
 /// read.
 ///
+/// Every enumerator of \c DeviceEntry is named below, and the switch has no default
+/// arm: an option added to the enumeration without a statement of which partition it
+/// reads is a compile error rather than an option silently reported as reading none.
+/// That sentence is load-bearing here and not a formality — the answer this function
+/// gives for an unstated entry, \c "no partition member", is itself a plausible one
+/// that a report prints and a reader accepts, so before the assertion below an
+/// omission was indistinguishable from a true answer.
+///
 /// \param entry the entry of a row of this space
 ///
 /// \returns the name of the partition it reads, or the statement that it reads
-///          none
+///          none; \c nullptr only for an enumerator no arm above names, which the
+///          check below turns into a compile error
 ///
 /// \ingroup boys
 constexpr const char* DevicePartitionName(DeviceEntry entry) noexcept {
@@ -772,10 +781,100 @@ constexpr const char* DevicePartitionName(DeviceEntry entry) noexcept {
         case DeviceEntry::kDeviceAllOrdersF32NarrowRatHorner:
             return "narrow";
 
-        default:
+        // The entries that read no member of either partition, and the device-callable
+        // generics, which read whatever partition their handle's tables name. Answering
+        // one of the two members for any of these would state a partition the entry does
+        // not read: the single entries and the batch generics are the entry and carry no
+        // partition axis at all, and the shipped partition's own ladders are a third cut
+        // that is neither of the two named members.
+        case DeviceEntry::kSingleF64:
+        case DeviceEntry::kSingleF32:
+        case DeviceEntry::kSingleF32Fast:
+        case DeviceEntry::kSingleF16:
+        case DeviceEntry::kAllOrdersF64:
+        case DeviceEntry::kAllOrdersF32:
+        case DeviceEntry::kAllOrdersF16:
+        // The shipped partition's own ladders: the level ladder, the per-order reading of
+        // it and the rational route over the same pieces, on both packing axes. The
+        // narrow and uniform rows of these same shapes are the cases above.
+        case DeviceEntry::kAllOrdersF64Orders:
+        case DeviceEntry::kAllOrdersF64Mono:
+        case DeviceEntry::kAllOrdersF64OrdersMono:
+        case DeviceEntry::kAllOrdersF64Rat:
+        case DeviceEntry::kAllOrdersF64RatHorner:
+        case DeviceEntry::kAllOrdersF64OrdersRat:
+        case DeviceEntry::kAllOrdersF64OrdersRatHorner:
+        case DeviceEntry::kAllOrdersF32Rat:
+        case DeviceEntry::kAllOrdersF32RatHorner:
+        case DeviceEntry::kAllOrdersF32Orders:
+        case DeviceEntry::kAllOrdersF32OrdersRat:
+        case DeviceEntry::kAllOrdersF32OrdersRatHorner:
+        // The all-N and each-order shapes, whose one top order is the shape and not a
+        // partition, and the device-callable entries that mirror the rows above.
+        case DeviceEntry::kAllNF64:
+        case DeviceEntry::kAllNF32:
+        case DeviceEntry::kAllNF16:
+        case DeviceEntry::kDeviceSingleF64:
+        case DeviceEntry::kDeviceSingleF32:
+        case DeviceEntry::kDeviceSingleF32Fast:
+        case DeviceEntry::kDeviceSingleF16:
+        case DeviceEntry::kDeviceAllOrdersF64:
+        case DeviceEntry::kDeviceAllOrdersF32:
+        case DeviceEntry::kDeviceAllOrdersF16:
+        case DeviceEntry::kDeviceAllNF64:
+        case DeviceEntry::kDeviceAllNF32:
+        case DeviceEntry::kDeviceAllNF16:
+        case DeviceEntry::kDeviceEachOrderF64:
+        case DeviceEntry::kDeviceEachOrderF32:
+        case DeviceEntry::kDeviceEachOrderF16:
+        case DeviceEntry::kDeviceAllOrdersF64Rat:
+        case DeviceEntry::kDeviceAllOrdersF64RatHorner:
+        case DeviceEntry::kDeviceAllOrdersF32Rat:
+        case DeviceEntry::kDeviceAllOrdersF32RatHorner:
             return "no partition member";
+
+        // The sentinel one past the last row this report defines, and not a row a call
+        // can name, so no partition member is owed for it. It is named rather than left
+        // to a default arm: a default would swallow the next enumerator as quietly as it
+        // swallows this one. gcc's -Wswitch wants every enumerator named whether or not
+        // a default is present; MSVC's does not.
+        case DeviceEntry::kCount:
+            break;
     }
+
+    // An enumerator no arm above names, which the check below turns into a compile
+    // error. Nothing here names a partition for an option that has not stated one.
+    return nullptr;
 }
+
+/// Whether the switch above states a partition for every enumerator of
+/// \c DeviceEntry, read over the enumeration's own count.
+///
+/// The compilation of this header is what keeps the two in step: an enumerator
+/// added to \c DeviceEntry and not named above falls through that switch's last
+/// return, this predicate sees it, and the assertion below stops the build. A
+/// new option therefore cannot arrive in the space without a statement of which
+/// partition it reads — the omission is the error, rather than a default arm
+/// quietly reporting it as reading none.
+///
+/// \returns true when every enumerator of \c DeviceEntry is named by the switch
+///          above
+constexpr bool DeviceEntriesAllNameTheirPartition() noexcept {
+    for (int i = 0; i < static_cast<int>(DeviceEntry::kCount); ++i)
+    {
+        if (DevicePartitionName(static_cast<DeviceEntry>(i)) == nullptr)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static_assert(DeviceEntriesAllNameTheirPartition(),
+              "an enumerator of DeviceEntry names no partition member: name it in "
+              "DevicePartitionName (boys_cuda_options.hpp) as the member its entry reads, or as "
+              "the statement that it reads none");
 
 /// One row of the device option space: an option this surface offers, with
 /// what a chooser needs to place it.
