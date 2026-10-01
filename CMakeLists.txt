@@ -952,8 +952,19 @@ int main() {
         # F_3(1.25) from the quoted 0.055476132923077535 to 0.055476132923077695 - and the claim is
         # not one that tree makes. Registering it there would be a leg that is red for being the
         # configuration it declares itself to be.
+        #
+        # The same reasoning excludes a build on the separate multiply-add route. The quoted figures
+        # are the fused route's by construction, and a separate-route build prints the last digit
+        # differently: measured, examples/08_shell_quartet_batch.cpp prints 0.052602850434881915
+        # where docs/getting-started.md quotes 0.052602850434881922 - one token on one line, with
+        # every other example matching.
+        #
+        # The delivery kernel is deliberately NOT excluded. An AVX2 build and a build forced onto
+        # the scalar path were measured to print byte-identical stdout on all eight comparable
+        # examples, so this test holds across the kernels the CI legs actually use, and narrowing it
+        # to one kernel would give up that coverage for nothing.
         find_package(Python3 COMPONENTS Interpreter QUIET)
-        if (Python3_FOUND AND NOT BOYS_BUILD_DEFAULTS)
+        if (Python3_FOUND AND NOT BOYS_BUILD_DEFAULTS AND NOT BOYS_MULADD_SEPARATE)
             list(GET boysExamples 0 boysFirstExample)
             add_test(NAME boys-example-transcripts
                 COMMAND ${Python3_EXECUTABLE}
