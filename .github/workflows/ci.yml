@@ -583,6 +583,22 @@ jobs:
         if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_device_entry_bijection.py --check
+      # The host surface had the same exposure one layer up, and no step read it:
+      # the names three headers declare and the shapes tools/host-shapes.json
+      # places them in were both written by hand and nothing reconciled them, so a
+      # shape nothing reaches read exactly like a shape this surface has.
+      #
+      # This step is the bijection between the two lists a caller meets, in both
+      # directions: a declared name the table does not place is a call whose shape
+      # nothing states, and a name the table places that no header declares is a
+      # shape described for a call that does not exist, which a later reader takes
+      # for a decision. The names are read from the headers rather than from a
+      # second list, so the table cannot agree with itself while disagreeing with
+      # the code.
+      - name: Host (the shapes booked against the names declared)
+        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_host_entry_bijection.py --check
       - name: Docs (zero-warning Doxygen gate)
         if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: cmake --build build --target boys-docs
