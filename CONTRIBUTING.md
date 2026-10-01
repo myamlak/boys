@@ -29,8 +29,9 @@ the reproducibility evidence behind the documented accuracy contract.
    something they cannot open, name the measurement, the reasoning or the result instead. The
    citations that are always safe are the published ones: the entries of `CITATION.bib`.
 3. **Regeneration is local-only.** The committed tables and reference grid are the source of truth
-   for the build and for CI. The generator verifies them byte-for-byte through `--check`. Never
-   commit regenerated tables without running `--check`. Never wire regeneration into CI.
+   for the build and for CI. The generator verifies them byte-for-byte through `--check`, and that
+   check is what CI runs. What is local-only is the mode that **writes** the tables: never wire that
+   into CI, and never commit regenerated tables without running `--check` first.
 4. **Small, reviewable changes.** One logical change per pull request.
 5. **Every figure has one home.** The README states each lane's bound and the command that measures
    it. The per-lane detail lives in `docs/lane-contract.md`: the fit routes and their stored counts,
@@ -92,7 +93,7 @@ each claim it could not confirm. Run it before changing a bound, a threshold, or
 `ctest` runs it as one of its tests, but a passing `ctest` prints only how long the test took. The
 figures are in this binary's own output.
 
-Regeneration check, which is local and never CI:
+The regeneration check, which is what CI runs - the mode that writes the tables is the local one:
 
 ```bash
 python3 tools/gen_boys_coefficients.py --check
