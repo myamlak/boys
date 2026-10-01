@@ -779,6 +779,200 @@ int main() {
             "orders axis")
     endif()
 
+    # The uniform partition on the batched double-precision entries. The entry
+    # book in tests/boys_accuracy_gate.cpp crosses four entries against that
+    # partition and books six cells the entries refuse, and each of those cells
+    # is a call: it is measured the way every refusal above is measured, by
+    # compiling the call and finding that it does not build.
+    #
+    # One probe per cell, not one per guard, because a row prints its own cell's
+    # verdict and nothing else. The guard is route-and-axis, so it covers both
+    # schemes of a cell's entry - but a probe naming one scheme would report one
+    # cell refused while the other's call compiled, and the row for the second
+    # would print a refusal the probe beside it had already refuted. Each probe
+    # below names one cell, name for name: the entry, the route, the scheme, the
+    # packing axis, the uniform partition and the reference rung.
+    #
+    #   plane entry           BoysAllN's partitioned path, the arguments axis of
+    #                         the shipped route (boys_impl.hpp:4769)
+    #   plane entry, sorted   the same path under the sorted overload (:4889)
+    #   fixed-order entry     the reference-rung Chebyshev branch of
+    #                         BoysFixedNImpl (:3251), which is the branch a
+    #                         reference-rung call takes
+    #
+    # The fixed-order entry's other Chebyshev branch (:3316) is the same guard
+    # past the reference rung, and no cell of that book crosses that rung: no
+    # row rests on this branch, so no probe stands for it here.
+    #
+    # The per-element-tops entry (BoysAllNAtOrdersImpl, :4960) has no probe for
+    # the opposite reason: it carries no guard. It hands every element to
+    # BoysAllOrdersImpl, which reads the uniform grid where the policy names it,
+    # so the cells that entry covers are measured rows of the book rather than
+    # refused ones.
+    #
+    # STATIC_LIBRARY, for the reason the probes above give: this asks whether the
+    # declarations accept the combination, not whether this build links it.
+    unset(BOYS_GATE_PLANE_SPLITCLENSHAW_ACCEPTS_UNIFORM CACHE)
+    unset(BOYS_GATE_PLANE_HORNER_ACCEPTS_UNIFORM CACHE)
+    unset(BOYS_GATE_PLANE_SORTED_SPLITCLENSHAW_ACCEPTS_UNIFORM CACHE)
+    unset(BOYS_GATE_PLANE_SORTED_HORNER_ACCEPTS_UNIFORM CACHE)
+    unset(BOYS_GATE_FIXEDN_SPLITCLENSHAW_ACCEPTS_UNIFORM CACHE)
+    unset(BOYS_GATE_FIXEDN_HORNER_ACCEPTS_UNIFORM CACHE)
+    set(_boys_probe_target_type "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
+    set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+    set(CMAKE_REQUIRED_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    if (MSVC)
+        set(CMAKE_REQUIRED_FLAGS "/std:c++20 /EHsc")
+    else()
+        set(CMAKE_REQUIRED_FLAGS "-std=c++20")
+    endif()
+    check_cxx_source_compiles("
+#include <boys/boys.hpp>
+int main() {
+    double out[33] = {};
+    const double x = 1.0;
+    boys::BoysAllN<1.0, boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                         boys::EvalScheme::kSplitClenshaw,
+                                         boys::BoysBudget::kFloat,
+                                         boys::PackAxis::kArguments,
+                                         boys::FitGranularity::kUniform>>(32, &x, out, 1);
+    return 0;
+}
+" BOYS_GATE_PLANE_SPLITCLENSHAW_ACCEPTS_UNIFORM)
+    check_cxx_source_compiles("
+#include <boys/boys.hpp>
+int main() {
+    double out[33] = {};
+    const double x = 1.0;
+    boys::BoysAllN<1.0, boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                         boys::EvalScheme::kHorner,
+                                         boys::BoysBudget::kFloat,
+                                         boys::PackAxis::kArguments,
+                                         boys::FitGranularity::kUniform>>(32, &x, out, 1);
+    return 0;
+}
+" BOYS_GATE_PLANE_HORNER_ACCEPTS_UNIFORM)
+    check_cxx_source_compiles("
+#include <boys/boys.hpp>
+int main() {
+    double out[33] = {};
+    const double x = 1.0;
+    boys::BoysAllN<1.0, boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                         boys::EvalScheme::kSplitClenshaw,
+                                         boys::BoysBudget::kFloat,
+                                         boys::PackAxis::kArguments,
+                                         boys::FitGranularity::kUniform>>(
+        32, &x, out, 1, boys::BoysSortedArgs{});
+    return 0;
+}
+" BOYS_GATE_PLANE_SORTED_SPLITCLENSHAW_ACCEPTS_UNIFORM)
+    check_cxx_source_compiles("
+#include <boys/boys.hpp>
+int main() {
+    double out[33] = {};
+    const double x = 1.0;
+    boys::BoysAllN<1.0, boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                         boys::EvalScheme::kHorner,
+                                         boys::BoysBudget::kFloat,
+                                         boys::PackAxis::kArguments,
+                                         boys::FitGranularity::kUniform>>(
+        32, &x, out, 1, boys::BoysSortedArgs{});
+    return 0;
+}
+" BOYS_GATE_PLANE_SORTED_HORNER_ACCEPTS_UNIFORM)
+    check_cxx_source_compiles("
+#include <boys/boys.hpp>
+int main() {
+    double out[33] = {};
+    const double x = 1.0;
+    boys::BoysFixedN<1.0, boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                           boys::EvalScheme::kSplitClenshaw,
+                                           boys::BoysBudget::kFloat,
+                                           boys::PackAxis::kArguments,
+                                           boys::FitGranularity::kUniform>>(32, &x, out, 1);
+    return 0;
+}
+" BOYS_GATE_FIXEDN_SPLITCLENSHAW_ACCEPTS_UNIFORM)
+    check_cxx_source_compiles("
+#include <boys/boys.hpp>
+int main() {
+    double out[33] = {};
+    const double x = 1.0;
+    boys::BoysFixedN<1.0, boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                           boys::EvalScheme::kHorner,
+                                           boys::BoysBudget::kFloat,
+                                           boys::PackAxis::kArguments,
+                                           boys::FitGranularity::kUniform>>(32, &x, out, 1);
+    return 0;
+}
+" BOYS_GATE_FIXEDN_HORNER_ACCEPTS_UNIFORM)
+    set(CMAKE_TRY_COMPILE_TARGET_TYPE "${_boys_probe_target_type}")
+    unset(_boys_probe_target_type)
+    unset(CMAKE_REQUIRED_FLAGS)
+    unset(CMAKE_REQUIRED_INCLUDES)
+
+    # Each verdict is printed after the probe that produced it, for the reason
+    # the block above states: a statement placed above its probe reads a variable
+    # not yet set.
+    if (NOT BOYS_GATE_PLANE_SPLITCLENSHAW_ACCEPTS_UNIFORM)
+        target_compile_definitions(boys-accuracy-gate PRIVATE
+            BOYS_GATE_PLANE_SPLITCLENSHAW_REFUSES_UNIFORM=1)
+        message(STATUS "boys: the plane entry refuses the uniform partition at the split-clenshaw "
+            "scheme, measured by compiling the call")
+    else()
+        message(STATUS "boys: the plane entry ACCEPTS the uniform partition at the split-clenshaw "
+            "scheme")
+    endif()
+
+    if (NOT BOYS_GATE_PLANE_HORNER_ACCEPTS_UNIFORM)
+        target_compile_definitions(boys-accuracy-gate PRIVATE
+            BOYS_GATE_PLANE_HORNER_REFUSES_UNIFORM=1)
+        message(STATUS "boys: the plane entry refuses the uniform partition at the horner scheme, "
+            "measured by compiling the call")
+    else()
+        message(STATUS "boys: the plane entry ACCEPTS the uniform partition at the horner scheme")
+    endif()
+
+    if (NOT BOYS_GATE_PLANE_SORTED_SPLITCLENSHAW_ACCEPTS_UNIFORM)
+        target_compile_definitions(boys-accuracy-gate PRIVATE
+            BOYS_GATE_PLANE_SORTED_SPLITCLENSHAW_REFUSES_UNIFORM=1)
+        message(STATUS "boys: the sorted plane entry refuses the uniform partition at the "
+            "split-clenshaw scheme, measured by compiling the call")
+    else()
+        message(STATUS "boys: the sorted plane entry ACCEPTS the uniform partition at the "
+            "split-clenshaw scheme")
+    endif()
+
+    if (NOT BOYS_GATE_PLANE_SORTED_HORNER_ACCEPTS_UNIFORM)
+        target_compile_definitions(boys-accuracy-gate PRIVATE
+            BOYS_GATE_PLANE_SORTED_HORNER_REFUSES_UNIFORM=1)
+        message(STATUS "boys: the sorted plane entry refuses the uniform partition at the horner "
+            "scheme, measured by compiling the call")
+    else()
+        message(STATUS "boys: the sorted plane entry ACCEPTS the uniform partition at the horner "
+            "scheme")
+    endif()
+
+    if (NOT BOYS_GATE_FIXEDN_SPLITCLENSHAW_ACCEPTS_UNIFORM)
+        target_compile_definitions(boys-accuracy-gate PRIVATE
+            BOYS_GATE_FIXEDN_SPLITCLENSHAW_REFUSES_UNIFORM=1)
+        message(STATUS "boys: the fixed-order entry refuses the uniform partition at the "
+            "split-clenshaw scheme, measured by compiling the call")
+    else()
+        message(STATUS "boys: the fixed-order entry ACCEPTS the uniform partition at the "
+            "split-clenshaw scheme")
+    endif()
+
+    if (NOT BOYS_GATE_FIXEDN_HORNER_ACCEPTS_UNIFORM)
+        target_compile_definitions(boys-accuracy-gate PRIVATE
+            BOYS_GATE_FIXEDN_HORNER_REFUSES_UNIFORM=1)
+        message(STATUS "boys: the fixed-order entry refuses the uniform partition at the horner "
+            "scheme, measured by compiling the call")
+    else()
+        message(STATUS "boys: the fixed-order entry ACCEPTS the uniform partition at the horner "
+            "scheme")
+    endif()
+
     if (BOYS_GATE_HAS_TIER)
         target_compile_definitions(boys-accuracy-gate PRIVATE BOYS_GATE_TIER=1)
         message(STATUS "boys: the accuracy gate will measure the run-time accuracy tier")
