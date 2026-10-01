@@ -18,14 +18,18 @@
 #include "boys/boys_coefficients.hpp"
 
 // The shipped AVX2 unit, compiled into this one so that the table, Eval4 and
-// Clenshaw4Split below ARE those definitions and not lookalikes. Two of that
+// Clenshaw4Split below ARE those definitions and not lookalikes. Four of that
 // unit's definitions are the library's in this build, which this target links
 // as well, so they are renamed for the length of the include; a new external
 // definition there needs the same treatment, and the duplicate-symbol error at
 // link time is what asks for it.
 #define BoysAvx2Available BoysAvx2AvailableFromShippedUnit
 #define AppendPackedBackends AppendPackedBackendsFromShippedUnit
+#define DetectF16c DetectF16cFromShippedUnit
+#define F16cAvailable F16cAvailableFromShippedUnit
 #include "boys_simd.cpp"
+#undef F16cAvailable
+#undef DetectF16c
 #undef AppendPackedBackends
 #undef BoysAvx2Available
 
