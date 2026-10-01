@@ -5,8 +5,9 @@
 // Every entry accepts a multiplier on its error. 1 is the default; larger
 // values allow a larger error and do less work. The number to read is the
 // guaranteed error printed beside each value - that is the whole price list.
-#include <boys/boys.hpp>
+#include <boys/boys_span.hpp>
 
+#include <array>
 #include <cmath>
 #include <cstdio>
 
@@ -14,15 +15,16 @@ int main()
 {
     const int n = 3;
     const double x = 1.25;
-    const boys::AccuracyTier tiers[] = {boys::AccuracyTier::kReference,
-                                        boys::AccuracyTier::kRelaxed64,
-                                        boys::AccuracyTier::kRelaxed1024,
-                                        boys::AccuracyTier::kRelaxed65536};
+    const std::array<boys::AccuracyTier, 4> tiers{boys::AccuracyTier::kReference,
+                                                  boys::AccuracyTier::kRelaxed64,
+                                                  boys::AccuracyTier::kRelaxed1024,
+                                                  boys::AccuracyTier::kRelaxed65536};
 
     std::printf("F_%d(%.4g), the same call at four multipliers:\n", n, x);
     const double reference = boys::BoysSingleAtTier(boys::AccuracyTier::kReference, n, x);
     double worst = 0.0;
-    for (const boys::AccuracyTier tier : tiers) {
+    for (const boys::AccuracyTier tier : tiers)
+    {
         const double value = boys::BoysSingleAtTier(tier, n, x);
         const double bound = boys::BoysAccuracyGuaranteed(
                                  boys::Precision::kFp64, boys::FitRoute::kChebyshev,
@@ -35,7 +37,8 @@ int main()
         // A relaxed answer must stay inside the bound its own multiplier
         // promises, measured against the full-accuracy answer.
         worst = std::fmax(worst, std::fabs(value - reference));
-        if (!(std::fabs(value - reference) <= bound)) {
+        if (!(std::fabs(value - reference) <= bound))
+        {
             std::printf("FAIL: m = %.0f left its own bound\n", boys::AccuracyMultiplier(tier));
             return 1;
         }

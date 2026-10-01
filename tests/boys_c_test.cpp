@@ -28,8 +28,7 @@ constexpr int kSampleOrders[] = {0, 1, 2, 3, 7, 16, 31, 32};
 constexpr double kUnwritten = -1.0;
 
 // The rungs this file sweeps, ascending. Spelled out because a rung is a
-// template argument at a case here and cannot be read out of a table; the
-// assertion below holds the list to the library's own vocabulary.
+// template argument at a case here and cannot be read out of a table.
 constexpr double kRungs[] = {
     1.0, 2.0, 10.0, 64.0, 100.0, 256.0, 1024.0, 4096.0, 1e4, 16384.0, 65536.0, 1e8};
 
@@ -88,8 +87,7 @@ TEST(BoysCTest, FloatMatchesCppLane) {
 }
 
 // The dispatch is exact over the rung vocabulary: each relaxed entry must be
-// bit-identical to the direct C++ instantiation at that m, and must return the
-// success code — a rung the vocabulary names and the dispatch refuses is a bug.
+// bit-identical to the direct C++ instantiation at that m, and must succeed.
 template <double kM> void CheckMultiplierLane(int n, double x) {
     double viaC = 0.0;
     ASSERT_EQ(BoysDoubleWithMultiplier(kM, n, x, &viaC), BOYS_SUCCESS)
@@ -97,8 +95,7 @@ template <double kM> void CheckMultiplierLane(int n, double x) {
     EXPECT_DOUBLE_EQ(viaC, boys::BoysSingle<kM>(n, x)) << "m=" << kM << " n=" << n << " x=" << x;
 }
 
-// The same for the single-precision entry, which reads the same vocabulary at
-// its own lane's asserted bounds.
+// The same for the single-precision entry, at its own lane's asserted bounds.
 template <double kM> void CheckFloatMultiplierLane(int n, float x) {
     float viaC = 0.0f;
     ASSERT_EQ(BoysFloatWithMultiplier(kM, n, x, &viaC), BOYS_SUCCESS)
@@ -149,9 +146,8 @@ TEST(BoysCTest, FloatMultiplierDispatchMatchesCpp) {
     }
 }
 
-// The table itself, walked as data, so a rung added to the vocabulary — and to
-// the library — without its case in the C surface's dispatch is a refusal here
-// rather than a rung every template-argument sweep above would have missed.
+// The table itself, walked as data, so a rung added to the vocabulary - and to
+// the library - without a case in the C surface's dispatch fails here.
 TEST(BoysCTest, ServesEveryRungOfTheVocabulary) {
     for (const double m : kRungs)
     {
@@ -163,8 +159,8 @@ TEST(BoysCTest, ServesEveryRungOfTheVocabulary) {
 }
 
 TEST(BoysCTest, DoubleBatchMatchesCppPerElement) {
-    // Layout: out[k * count + i] = F_k(x[i]), checked against the C++ batch
-    // lane per element. Exercises x spanning all three regions and x = 0.
+    // Layout: out[k * count + i] = F_k(x[i]), checked against the C++ batch lane
+    // per element. The samples span all three regions, plus x = 0.
     std::vector<double> xs;
     xs.push_back(0.0);
     xs.push_back(1e-9);
@@ -203,8 +199,7 @@ TEST(BoysCTest, FloatBatchMatchesCppPerElement) {
     ASSERT_EQ(BoysFloatBatch(nmax, static_cast<int>(xs.size()), xs.data(), out.data()),
               BOYS_SUCCESS);
 
-    // The C entry routes to the library's float all-N batch, so the two agree
-    // bit for bit as well as per element.
+    // The C entry routes to the library's float all-N batch, so the two agree bit for bit.
     std::vector<float> allN(out.size());
     boys::BoysAllNF32(nmax, xs.data(), allN.data(), xs.size());
 
@@ -226,9 +221,8 @@ TEST(BoysCTest, FloatBatchMatchesCppPerElement) {
 }
 
 TEST(BoysCTest, DoubleBatchAtOrdersMatchesCppPerElement) {
-    // Layout: out[k * count + i] = F_k(x[i]) for k = 0..n[i], the top order
-    // taken per argument. Exercises x spanning all three regions and x = 0,
-    // with top orders at both ends of the range.
+    // Layout: out[k * count + i] = F_k(x[i]) for k = 0..n[i], the top order taken
+    // per argument, over samples in all three regions and top orders at both ends.
     const std::vector<double> xs = {0.0, 1e-9, 0.3, kX0 - 0.5, kX0, 14.5, kX1, kX1 + 5.0, 1e4};
     const std::vector<int> tops = {0, 3, 32, 8, 16, 1, 32, 5, 12};
     const int nmax = 32;
@@ -244,11 +238,9 @@ TEST(BoysCTest, DoubleBatchAtOrdersMatchesCppPerElement) {
 
     for (std::size_t i = 0; i < count; ++i)
     {
-        // The reference is this argument's OWN top order, which is what the
-        // entry documents: out[k * count + i] is bit for bit what
-        // BoysAllOrders(tops[i], xs[i]) writes at k. The batch's nmax is not it
-        // — an all-orders body below the first tier threshold seeds its downward
-        // recursion at the order it is called with.
+        // The reference is this argument's OWN top order, which is what the entry
+        // documents - not the batch's nmax: below the first tier threshold an
+        // all-orders body seeds its downward recursion at the order it is called.
         std::vector<double> row(static_cast<std::size_t>(tops[i]) + 1);
         boys::BoysAllOrders(tops[i], xs[i], row.data());
 
@@ -277,8 +269,7 @@ TEST(BoysCTest, DoubleBatchAtOrdersRejectsTheWholeBatchBeforeWriting) {
     const std::vector<double> xs = {0.5, 0.5, 0.5};
     const std::size_t cells = xs.size() * (boys::kMaxBoysOrder + 1);
 
-    // A rejected batch leaves the caller's buffer as it found it, whatever the
-    // position of the offending element.
+    // A rejected batch leaves the caller's buffer as it found it, at any position.
     const auto rejects = [&](const std::vector<int>& tops, const std::vector<double>& args) {
         std::vector<double> out(cells, kUnwritten);
         EXPECT_EQ(BoysDoubleBatchAtOrders(
@@ -351,8 +342,7 @@ TEST(BoysCTest, RejectsUnsupportedMultipliers) {
     // Argument validation precedes the multiplier dispatch.
     EXPECT_EQ(BoysDoubleWithMultiplier(1.5, -1, 0.5, &value), BOYS_ERROR_INVALID_ARGUMENT);
 
-    // Exact equality: a value the vocabulary does not hold is refused, whether
-    // it sits between two rungs or outside the set's ends.
+    // Exact equality: a value between two rungs, or outside the set, is refused.
     const double kBetweenRungs[] = {
         0.999, 1.5, 3.0, 32.0, 128.0, 512.0, 2048.0, 8192.0, 32768.0, 1e5, 1e6, 1e9};
 

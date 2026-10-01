@@ -1,29 +1,19 @@
-// Consumer check: the shortcut. One name per precision, from <boys/boys.hpp>
-// alone, and the figures that show each name is the policy its entry already
-// runs.
+// Consumer check: the named defaults from <boys/boys.hpp> alone, and the figures
+// that show each name is the policy its entry already runs. A template parameter's
+// zero value cannot be pointed at or cited; these names can.
 //
-// A default that is only the zero value of a template parameter is not
-// something a caller can point at or a document can cite. These names are: a
-// caller that has chosen a precision and no axis writes the name, and what the
-// call then runs is a sentence with a subject.
+// Two claims are checked, each printing numbers rather than a checkmark. First, the
+// name and the empty argument list are one call - for the double and float lanes an
+// identity of types, the aliases being `EvalPolicy<>`, which is what the entries'
+// parameter already defaults to - and the two spellings are compared on values as
+// well, because a type-level argument is not a value-level one. Second, where one
+// precision's default is not another's (the half lanes run the fp16 engine budget, the
+// is not another's (the half lanes run the fp16 engine budget, the float lane the
+// float one), the entry is compared against the alias-composed call bit for bit, and
+// beside it against the float lane's default.
 //
-// Two claims are checked here, and each prints numbers rather than a checkmark:
-//
-//  * the name and the empty argument list are one call. For the double and
-//    float lanes that is an identity of types - the aliases are `EvalPolicy<>`,
-//    which is what the entries' parameter already defaults to - and the two
-//    spellings are compared on the values as well, over the grid below, because
-//    a type-level argument is not a value-level one;
-//
-//  * where one precision's default is not another's - the half lanes run the
-//    fp16 engine budget where the float lane runs the float one - the entry is
-//    compared against the alias-composed call bit for bit, and beside it
-//    against the float lane's default, so the figure that separates the two
-//    budgets is on the page and not in the reasoning.
-//
-// The second pair of rows is the one place a difference is expected and is not
-// counted as a failure: it is the measurement that says the names are not one
-// name written four times.
+// The second claim's rows are the one place a difference is expected and is not a
+// failure.
 //
 // Run:  cmake --build <build> --target boys-consumer-defaults
 //       <build>/boys-consumer-defaults
@@ -41,11 +31,10 @@
 #include <type_traits>
 #include <vector>
 
-// The library's private src/ directory is deliberately NOT on this file's
-// include path: a consumer gets include/ and nothing else. Prove it here rather
-// than assume it. Each name below resolves only if a directory holding that
-// file is on the include path, and those files are the library's sources; five
-// names, so that renaming one does not quietly retire the probe.
+// The library's private src/ is deliberately NOT on this file's include path: a
+// consumer gets include/ and nothing else. Each of the five names below resolves
+// only if a directory holding that source file is on the path, so renaming one still
+// leaves four.
 #if __has_include("boys.cpp") ||                                                                   \
                   __has_include("boys_simd.cpp") ||                                                \
                                 __has_include("boys_transform.cpp") ||                             \
@@ -57,17 +46,13 @@
 
 namespace {
 
-// The two half types are declared behind the BoysFp16 seam, and every name
-// below that spells one is compiled with the seam. The half section of main
-// states the lanes a build with the seam closed does not carry rather than
-// passing over them in silence.
+// The two half types are declared behind the BoysFp16 seam.
 #if BoysFp16
 using boys::Bf16;
 using boys::F16;
 #endif // BoysFp16
 
-/// The four names, one line each. What each selects, and the bound it carries,
-/// are in docs/lane-contract.md.
+/// The four names. What each selects, and the bound it carries, are in docs/lane-contract.md.
 using Fp64Default = boys::DefaultPolicyFp64;
 using Fp32Default = boys::DefaultPolicyFp32;
 using Fp16Default = boys::DefaultPolicyFp16;
@@ -75,10 +60,8 @@ using Bf16Default = boys::DefaultPolicyBf16;
 
 constexpr double kFull = boys::kBoysFullAccuracyMultiplier;
 
-// The name denotes the type the entry's parameter defaults to. For the double
-// and the float lane that is `EvalPolicy<>` itself; for the half lanes it is
-// the same row of axes under the fp16 engine budget, which is the one axis
-// this precision reaches and the float lane does not.
+// The name denotes the type the entry's parameter defaults to: `EvalPolicy<>` for the
+// double and float lanes; for the half lanes the same axes under the fp16 engine budget.
 static_assert(std::is_same_v<Fp64Default, boys::EvalPolicy<>>);
 static_assert(std::is_same_v<Fp32Default, boys::EvalPolicy<>>);
 static_assert(Fp64Default::kBudget == boys::BoysBudget::kFloat);
@@ -87,8 +70,7 @@ static_assert(Fp16Default::kBudget == boys::BoysBudget::kFp16);
 static_assert(!std::is_same_v<Fp16Default, Fp64Default>);
 static_assert(std::is_same_v<Bf16Default, Fp16Default>);
 
-// The other four axes are the shipped defaults on every one of the four names,
-// and the half lanes differ from the float lane in the budget alone.
+// The other four axes are the shipped defaults on all four names.
 static_assert(Fp64Default::kRoute == boys::kDefaultFitRoute);
 static_assert(Fp64Default::kScheme == boys::kDefaultEvalScheme);
 static_assert(Fp64Default::kPack == boys::kDefaultPackAxis);
@@ -98,23 +80,19 @@ static_assert(Fp16Default::kScheme == boys::kDefaultEvalScheme);
 static_assert(Fp16Default::kPack == boys::kDefaultPackAxis);
 static_assert(Fp16Default::kGranularity == boys::kDefaultFitGranularity);
 
-// Address identity: two function addresses compare equal in a constant
-// expression exactly when the two names are one instantiation, and two
-// instantiations of one entry have the same function-pointer type, so these are
-// the assertions that each entry's *own* default is the name — not that the
-// name is a type the entry could be called with. They are what a revision that
-// changed an entry's template default without changing the alias would fail,
-// which is the defect the shortcut exists to make visible.
+// Address identity: two function addresses compare equal in a constant expression only
+// when the two names are one instantiation, and two instantiations of one entry share a
+// function-pointer type, so these assert that each entry's *own* default is the name -
+// not merely that the name is a type the entry could be called with. A revision that
+// changed an entry's template default without changing the alias fails them.
 //
-// Only the yes direction is a constant expression. A comparison between two
-// distinct function addresses is not one under the sanitizer configuration this
-// file is also built in: g++ 15 with -fsanitize=address,undefined refuses it
-// with "'(f == g)' is not a constant expression", and a function address
-// against a null pointer with "'(f == 0)'", while two spellings of one function
-// fold. A variable template's initializer is a constant-expression context even
-// where the value is only read at run time, so this comparison cannot be
-// written as one at all; the two controls that show the relation can say no
-// compare their pairs in main() instead, as ordinary pointer comparisons.
+// Only the yes direction is a constant expression: comparing two distinct function
+// addresses is not one under the sanitizer configuration this file is also built in.
+// g++ 15 with -fsanitize=address,undefined refuses it with "'(f == g)' is not a constant
+// expression", and a function address against a null pointer with "'(f == 0)'", while
+// two spellings of one function fold. A variable template's initializer is a
+// constant-expression context even where the value is only read at run time, so the
+// comparison cannot be written as one; the two controls that can say no compare in main().
 template <auto Left, auto Right> constexpr bool SameCall = (Left == Right);
 
 static_assert(SameCall<&boys::BoysSingle<kFull>, &boys::BoysSingle<kFull, Fp64Default>>);
@@ -129,8 +107,8 @@ static_assert(SameCall<&boys::BoysAllNF32<kFull>, &boys::BoysAllNF32<kFull, Fp32
 
 // --- the comparison ---------------------------------------------------------
 
-/// One row of the report: the cells compared, how many of them the two
-/// spellings answered differently, and the furthest apart they were.
+/// One row of the report: cells compared, how many the two spellings answered
+/// differently, and the furthest apart.
 struct Row {
     const char* name = "";
     std::size_t cells = 0;
@@ -140,8 +118,7 @@ struct Row {
     double worstX = 0.0;
 };
 
-// The half types' representation readers, which only the half rows below call
-// and so arrive and leave with the seam those rows are behind.
+// The half types' representation readers, behind the seam with the rows that call them.
 #if BoysFp16
 std::uint16_t Bits(F16 v) noexcept {
     return std::bit_cast<std::uint16_t>(v);
@@ -164,10 +141,8 @@ std::uint64_t Bits(double v) noexcept {
     return bits;
 }
 
-/// Judges one value of a row. Comparison is on the representation, so a
-/// difference that is below a format's resolution still counts: what is being
-/// asked is whether the two spellings are one call, not whether they are
-/// close.
+/// Judges one value of a row. Comparison is on the representation, so a difference
+/// below a format's resolution still counts: the question is one call, not closeness.
 template <class T> void Tally(Row& row, T named, T plain, int n, double x) {
     ++row.cells;
 
@@ -187,8 +162,7 @@ template <class T> void Tally(Row& row, T named, T plain, int n, double x) {
     }
 }
 
-/// A single-order pair at every order and every argument. Both callables take
-/// (order, argument) and return the same type.
+/// A single-order pair. Both callables take (order, argument) and return the same type.
 template <class T, class Named, class Plain>
 Row SingleOrderRow(const std::vector<double>& xs, Named named, Plain plain) {
     Row row;
@@ -250,8 +224,8 @@ Row FixedOrderRow(const std::vector<double>& xs, Named named, Plain plain) {
     return row;
 }
 
-/// A many-argument pair: both callables take (top order, arguments, count,
-/// output, workspace).
+/// A many-argument pair: both callables take (top order, arguments, count, output,
+/// workspace).
 template <class Named, class Plain>
 Row ManyArgRow(const std::vector<double>& xs, Named named, Plain plain) {
     const std::size_t count = xs.size();
@@ -290,14 +264,12 @@ void Print(const Row& row) {
     std::printf("\n");
 }
 
-/// The arguments: a sweep of the whole supported range with the boundaries
-/// where the lanes change arithmetic included as their own samples, so a
-/// difference in what two spellings select has nowhere to hide between
-/// samples. Sorted and deduplicated, because one of the entries compared is
-/// the form that promises its arguments are in order.
+/// The arguments: a sweep of the whole supported range with the boundaries where the
+/// lanes change arithmetic included as their own samples. Sorted and deduplicated,
+/// because one of the entries compared promises its arguments are in order.
 std::vector<double> Arguments() {
-    // The three arguments the accuracy page names: the region-A band end, the
-    // region-B selector and the point the asymptotic branch takes over.
+    // The three arguments the accuracy page names: the region-A band end, the region-B
+    // selector, and where the asymptotic branch takes over.
     constexpr double kBandEnd = 1.0855252345349333;
     constexpr double kRegionB = 11.899848152108484;
     constexpr double kAsymptotic = 28.98933773882074;
@@ -431,11 +403,9 @@ int main() {
     }
 
     // --- half ---------------------------------------------------------------
-    // The half lanes' entries take no policy: they run their own budget. What
-    // is compared here is the entry against the call the name composes to, so
-    // that the name in the documentation is the arithmetic in the entry. The
-    // entries themselves are declared behind the BoysFp16 seam, so a build with
-    // the seam closed enters the branch below it and says so.
+    // The half lanes' entries take no policy, so the entry is compared against the call
+    // the name composes to: the documented name is the entry's arithmetic. Those entries
+    // sit behind the BoysFp16 seam, so a closed-seam build says so below.
 #if BoysFp16
     {
         Row row = SingleOrderRow<F16>(
@@ -516,11 +486,10 @@ int main() {
     }
 
     // --- why the names are not one name --------------------------------------
-    // Past the reference multiplier the budget decides the rung, so the half
-    // lanes' default and the float lane's are two arithmetics. This row prints
-    // how many cells they part on; it is the figure behind giving each
-    // precision its own name, and it is not a failure either way. At m = 1 the
-    // budget is inert, so this row would read zero and is taken at m = 2.
+    // Past the reference multiplier the budget decides the rung, so the half lanes'
+    // default and the float lane's are two arithmetics; this row prints how many cells
+    // they part on and is not a failure either way. m = 1 is inert and would read zero,
+    // so the row is taken at m = 2.
     std::printf("  (rows below compare a half lane against the FLOAT lane's default, "
                 "m = 2, where the budget decides the rung)\n");
     {
@@ -549,14 +518,11 @@ int main() {
     }
 
     // --- the negative controls ------------------------------------------------
-    // The same comparison the identity assertions above make, on the pair they
-    // cannot make it on: everything above folds only when two names are one
-    // instantiation, so a comparison that could only ever say yes would leave
-    // that block proving nothing, and the half default and the float lane's are
-    // two names. The comparison is made here rather than in a static assertion
-    // because the sanitizer configuration does not accept it in any
-    // constant-expression context (see the note above SameCall); a revision that
-    // made either of them one call fails this the way it would fail an assertion.
+    // The identity assertions above fold only when the two names are one instantiation,
+    // so they prove nothing on the pair they cannot be made on - the half default and
+    // the float lane's, two names that must compare unequal. In main() rather than a
+    // static assertion because the sanitizer configuration rejects the comparison in any
+    // constant-expression context (see SameCall above).
     {
         const bool singleIsHalf = &boys::BoysSingle<kFull> == &boys::BoysSingle<kFull, Fp16Default>;
         const bool singleF32IsHalf =
@@ -571,11 +537,9 @@ int main() {
     }
 #else // BoysFp16
 
-    // Stated, not dropped. With the seam closed this build declares no half
-    // entry, so there is no pair of spellings to compare and no cell to differ
-    // on. The four names themselves are still declared and asserted at the top
-    // of this file; what is absent here is the arithmetic they reach, and the
-    // identity rows counted below are the ones this build can run.
+    // Stated, not dropped. With the seam closed this build declares no half entry, so
+    // there is no pair of spellings to compare; the four names are still asserted at the
+    // top of this file, and what is absent here is the arithmetic they reach.
     std::printf("  fp16/bf16 lanes NOT CARRIED by this build (BoysFp16 = 0): the four "
                 "half-precision entries are declared behind the seam, so the rows those "
                 "lanes own are absent here rather than compared\n");

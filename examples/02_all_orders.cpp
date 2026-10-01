@@ -6,8 +6,9 @@
 // shape an integral code wants, because a shell quartet needs every order at
 // once and the higher orders are cheaper reached from the lower ones than
 // computed one at a time.
-#include <boys/boys.hpp>
+#include <boys/boys_span.hpp>
 
+#include <array>
 #include <cmath>
 #include <cstdio>
 
@@ -16,11 +17,12 @@ int main()
     const int nmax = 6;
     const double x = 3.5;
 
-    double ladder[boys::kMaxBoysOrder + 1] = {};
+    std::array<double, boys::kMaxBoysOrder + 1> ladder{};
     boys::BoysAllOrders(nmax, x, ladder);
 
     std::printf("k   F_%d(%.4g)\n", nmax, x);
-    for (int k = 0; k <= nmax; ++k) {
+    for (int k = 0; k <= nmax; ++k)
+    {
         std::printf("%-3d %.17g\n", k, ladder[k]);
     }
 
@@ -30,7 +32,8 @@ int main()
         boys::PackAxis::kArguments, boys::FitGranularity::kNarrow, boys::AccuracyTier::kReference);
 
     double worst = 0.0;
-    for (int k = 0; k <= nmax; ++k) {
+    for (int k = 0; k <= nmax; ++k)
+    {
         worst = std::fmax(worst, std::fabs(ladder[k] - boys::BoysSingle(k, x)));
     }
     std::printf("worst gap against BoysSingle: %.2g (guaranteed error <= %.2g)\n", worst, bound.value);

@@ -14,10 +14,7 @@
 //     The tier entry must be BIT-IDENTICAL to the compile-time instantiation at
 //     the rung's own multiplier, everywhere, for every order. One exact
 //     comparison and no tolerance: a tolerance here is exactly the slack a
-//     wrong rung could hide in. Asserted twice - against the library's own
-//     instantiation (routed by the extern-template declarations below, so the
-//     comparison carries no per-translation-unit codegen confound) and against
-//     an instantiation this TU compiled for itself.
+//     wrong rung could hide in.
 //
 //  2. BOUND NOT MET. Each rung must hold the bound the code declares for it.
 //     The declaration is transcribed below with its source and re-derived from
@@ -37,7 +34,7 @@
 //     a garbage enumerator is asserted to select the reference rung exactly -
 //     and to leave no sentinel standing in the output.
 //
-// Two guards against a green result that proves nothing. Both are counted and
+// Two guards against a green result that proves nothing, both counted and
 // printed rather than folded into a pass total:
 //  * a cell whose bound exceeds the function's own magnitude is BOUND-COVERED:
 //    returning zero would pass it, so it cannot distinguish the tier from a
@@ -110,14 +107,12 @@ using boys::detail::kX1;
 
 // BoysAllOrdersAtTier's own declaration: the batch entry's contract - the
 // contract table's "double batch" row - which is m*5.5e-14 in all three
-// regions. Not the three-value per-region column (m*1e-15 in region A), which
-// belongs to the single lane: the tier entry dispatches to BoysAllOrders, and
-// TheEntryHoldsTheBatchRowAndNotThePerRegionColumn measures it exceeding that
-// column by 3.2x at m = 1 alone.
-//
-// Not taken on trust: TheTranscribedBoundIsTheOneQueryTierDeclares re-derives
-// the base from QueryTier, which restates it as its own reachable. If either
-// declaration moves, the two disagree and that test fails.
+// regions, and not the three-value per-region column (m*1e-15 in region A)
+// that belongs to the single lane: the tier entry dispatches to BoysAllOrders,
+// and TheEntryHoldsTheBatchRowAndNotThePerRegionColumn measures it exceeding
+// that column by 3.2x at m = 1 alone. TheTranscribedBoundIsTheOneQueryTierDeclares
+// re-derives the base from QueryTier, which restates it as its own reachable,
+// so the two declarations cannot move apart unnoticed.
 constexpr double kDeclaredBatchBase = 5.5e-14;
 
 // The region C entry of that table, restated by QueryTier as an m-independent
@@ -341,9 +336,8 @@ double DeclaredReachable(AccuracyTier tier, AccuracyRegion region) {
 // region B the F0 seed's truncation range and region C the asymptotic onset;
 // each needs many arguments and a wrong tier shows up at specific ones (a piece
 // boundary, the seed's amplification maximum, the onset). The accuracy gate's
-// grid carries 646 / 248 / 544 arguments. The suite grid's x set carries
-// 73 / 5 / 10 - which is why a region below this floor is reported as NOT
-// CHECKED rather than counted as a pass.
+// grid carries 646 / 248 / 544 arguments, the suite grid's x set 73 / 5 / 10 -
+// which is why a region below this floor is reported as NOT CHECKED.
 constexpr std::size_t kMinArgumentsPerRegion = 32;
 
 std::size_t ArgumentCount(AccuracyRegion region) {
@@ -651,11 +645,9 @@ TEST(Tier, TierIsBitIdenticalToTheCompileTimePathAtItsMultiplier) {
 
 TEST(Tier, RungsAreDistinguishableWhereTheTierVaries) {
     // The identity test above proves nothing where two rungs produce the same
-    // bits. Region C is m-invariant by construction - the asymptotic form has
-    // no coefficients to truncate - so a region-C-only sweep could not tell a
-    // correct dispatch from a fixed rung. This measures where the rungs
-    // actually differ, per region, so the identity test's reach is stated
-    // rather than assumed.
+    // bits: region C is m-invariant by construction, so a region-C-only sweep
+    // could not tell a correct dispatch from a fixed rung. This measures where
+    // the rungs actually differ, per region.
     const Grid& grid = Reference();
 
     if (grid.xs.empty())
@@ -750,9 +742,8 @@ TEST(Tier, EveryRungMeetsItsDeclaredBoundOnTheReferenceGrid) {
 
             if (!RegionIsCovered(region))
             {
-                // Not a pass and not a failure: the reference in the tree
-                // cannot check this region's claim, so the region is reported
-                // as unchecked rather than counted either way.
+                // Not a pass and not a failure: the reference in the tree cannot
+                // check this region's claim, so it is reported as unchecked.
                 ++not_checked;
                 continue;
             }
@@ -775,10 +766,9 @@ TEST(Tier, EveryRungMeetsItsDeclaredBoundOnTheReferenceGrid) {
 // ---------------------------------------------------------------------------
 
 TEST(Tier, QueryReachableIsAnUpperBoundOnTheDeliveredError) {
-    // `reachable` is documented as the largest error the tier can deliver in
-    // the region. If the code delivers more, the query has told the caller it
-    // reaches an accuracy it does not have - a report claiming coverage that
-    // is not there, which is the defect this test is for.
+    // `reachable` is documented as the largest error the tier can deliver in the
+    // region. If the code delivers more, the query has told the caller it reaches
+    // an accuracy it does not have - the defect this test is for.
     const Grid& grid = Reference();
 
     if (grid.xs.empty())
@@ -919,12 +909,10 @@ const std::vector<double>& PerArgumentWorst(std::size_t rung) {
 }
 
 TEST(Tier, QueryAnsweredForAnArgumentIsHonestAboutThatArgument) {
-    // The sharpest form of the query's promise, and the one that catches a
-    // report answered for the wrong region: asking about THIS argument must
-    // give a reachable that bounds THIS argument's delivered error, and a
-    // `meets` that the delivered error actually satisfies. A caller who names
-    // the region by hand can produce a report about a different region; the
-    // argument-taking entry cannot.
+    // The sharpest form of the query's promise, and the one that catches a report
+    // answered for the wrong region: asking about THIS argument must give a
+    // reachable that bounds THIS argument's delivered error, and a `meets` that
+    // the delivered error satisfies.
     const Grid& grid = Reference();
 
     if (grid.xs.empty())
@@ -992,10 +980,7 @@ TEST(Tier, NamingTheWrongRegionOverclaimsAndTheArgumentEntryRemovesTheGuess) {
     // caller's classification, and the region boundaries are internal, so a
     // caller who guesses is not being conservative: region C's reachable is the
     // reference tier's at every m, so naming region C for an argument that is
-    // really in region A or B reports a tier reaching m times better than it
-    // does. This measures that hazard per wrong name - the evidence for the
-    // overload, printed rather than asserted at, because the hazard belongs to
-    // a caller's guess and not to the code.
+    // really in region A or B reports a tier reaching m times better than it does.
     const Grid& grid = Reference();
 
     if (grid.xs.empty())
@@ -1057,19 +1042,16 @@ TEST(Tier, NamingTheWrongRegionOverclaimsAndTheArgumentEntryRemovesTheGuess) {
 }
 
 TEST(Tier, TheEntryHoldsTheBatchRowAndNotThePerRegionColumn) {
-    // The tier entry dispatches to BoysAllOrders - the batch entry - so the
-    // bound it can hold is the batch row of the contract table, m*5.5e-14 in
-    // every region, NOT the three-value per-region column (m*1e-15 in region
-    // A) that the single lane holds. The two differ by up to 5.5e-14/1e-15 =
-    // 55 at m = 1, and by 55*m at a relaxed rung, so a caller who reads the
-    // sentence's "B_region" as the per-region column is told a bound up to
-    // tens of times tighter than the code enforces.
-    //
-    // This is decided by measurement, not by preference: if the per-region
-    // column were this entry's contract, the entry would have to hold m*1e-15
-    // in region A, and at m = 1 it does not. The cell the batch lane is worst
-    // at is the smallest argument, where the extended-band seed serves the
-    // whole recursion, so that is where the two bounds are told apart.
+    // The tier entry dispatches to BoysAllOrders - the batch entry - so the bound
+    // it can hold is the batch row of the contract table, m*5.5e-14 in every
+    // region, NOT the three-value per-region column (m*1e-15 in region A) that
+    // the single lane holds. The two differ by up to 5.5e-14/1e-15 = 55 at m = 1,
+    // and by 55*m at a relaxed rung, so a caller who reads the sentence's
+    // "B_region" as the per-region column is told a bound up to tens of times
+    // tighter than the code enforces. This is decided by measurement, not by
+    // preference: the cell the batch lane is worst at is the smallest argument,
+    // where the extended-band seed serves the whole recursion, so that is where
+    // the two bounds are told apart.
     const Grid& grid = Reference();
 
     if (grid.xs.empty())
@@ -1144,9 +1126,8 @@ TEST(Tier, TheEntryHoldsTheBatchRowAndNotThePerRegionColumn) {
     EXPECT_GT(outside_per_region, 0U)
         << "no rung exceeds the per-region column in region A, so this reference cannot tell "
         << "the two readings apart - re-check before changing the documented bound";
-    // ...and it does hold the batch row, which is what QueryTier reports. If
-    // this fails, QueryTier IS under-reporting and the code needs the fix, not
-    // the sentence.
+    // ...and it does hold the batch row, which is what QueryTier reports. If this
+    // fails, QueryTier IS under-reporting and the code needs the fix.
     EXPECT_EQ(outside_batch, 0U)
         << "a rung exceeds the batch row, so QueryTier under-reports the delivered error";
 }
@@ -1177,12 +1158,11 @@ TEST(Tier, QueryLimitingNamesTheComponentThatBoundsTheRegion) {
 
 TEST(Tier, UnavailableTierSelectsTheReferenceRungAndWritesEveryOutput) {
     // There is no named error channel on this surface (void, noexcept), so the
-    // documented refusal is the conservative fallback: an enumerator the
-    // selector does not know evaluates at the reference multiplier, which is
-    // never coarser than any tier the caller could have named. What must never
-    // happen is a SILENT NON-WRITE - the caller reading whatever its buffer
-    // held - so the output is pre-filled with a sentinel that a real evaluation
-    // cannot produce, and the sentinel is asserted gone.
+    // documented refusal is the conservative fallback: an enumerator the selector
+    // does not know evaluates at the reference multiplier, which is never coarser
+    // than any tier the caller could have named. What must never happen is a
+    // SILENT NON-WRITE - the caller reading whatever its buffer held - so the
+    // output is pre-filled with a sentinel a real evaluation cannot produce.
     const Grid& grid = Reference();
 
     if (grid.xs.empty())
@@ -1260,11 +1240,9 @@ TEST(Tier, UnavailableTierIsReportedAsTheReferenceByTheWholeQuerySurface) {
 TEST(Tier, NoArgumentIsOutsideAnyTiersRegion) {
     // The tier entry has no per-tier region restriction: every rung serves all
     // three regions, and the two regions with a relaxable resource are the ones
-    // the rungs differ in. So there is no "argument outside the tier's region"
-    // to refuse, and the sharpest way to say so is that region C is
-    // BIT-IDENTICAL across every rung - asking any tier for a region C value
-    // gets the same bits, which is the m-invariance the query surface reports
-    // as a constant reachable.
+    // the rungs differ in. So there is no "argument outside the tier's region" to
+    // refuse, and the sharpest way to say so is that region C is BIT-IDENTICAL
+    // across every rung - the m-invariance the query surface reports.
     const Grid& grid = Reference();
 
     if (grid.xs.empty())
@@ -1310,17 +1288,15 @@ TEST(Tier, NoArgumentIsOutsideAnyTiersRegion) {
 }
 
 TEST(Tier, DeliveredErrorRatiosArePinnedSoASilentRegressionIsVisible) {
-    // The declared bound is loose enough that a regression can hide under it:
-    // at kRelaxed16384 in region B the code delivers 0.21 of m*5.5e-14, so a
-    // rung that got four times worse would still pass the bound test above.
-    // This pins the ratio the code actually delivers, as an UPPER bound at 5%
-    // above the recorded value - a further improvement passes, a regression
-    // does not.
+    // The declared bound is loose enough that a regression can hide under it: at
+    // kRelaxed16384 in region B the code delivers 0.21 of m*5.5e-14, so a rung
+    // that got four times worse would still pass the bound test above. This pins
+    // the ratio the code actually delivers, as an UPPER bound at 5% above the
+    // recorded value - a further improvement passes, a regression does not.
     //
-    // The ratios are specific to this reference and to this sweep, so they are
-    // pinned only when the accuracy gate's grid is the reference; on the suite
-    // grid the sweep is too thin and the pin is not asserted. Re-baselining is
-    // mechanical: the measured table is printed beside the recorded one.
+    // The ratios are specific to this reference and this sweep, so they are pinned
+    // only when the accuracy gate's grid is the reference; on the suite grid the
+    // sweep is too thin and the pin is not asserted.
     const Grid& grid = Reference();
 
     if (grid.xs.empty())
@@ -1334,16 +1310,12 @@ TEST(Tier, DeliveredErrorRatiosArePinnedSoASilentRegressionIsVisible) {
         double ratio[3];
     };
 
-    // Measured at the library's default policy, which is the policy the tier
-    // entry runs when it is called with a tier alone: the rungs below are read
-    // off the narrow partition at Horner's rule, and every figure moved when the
-    // defaults did. The previous table was measured on the shipped partition by
-    // the split Clenshaw recurrence - kReference A 0.0585 B 0.1807, kRelaxed64 A
-    // 0.7049 B 0.0743, kRelaxed256 A 0.7841 B 0.5211, kRelaxed1024 A 0.9759 B
-    // 0.1303, kRelaxed4096 A 0.8015 B 0.8419, kRelaxed16384 A 0.6249 B 0.2105,
-    // kRelaxed65536 A 0.9786 B 0.0526, region C 0.9091 at every rung - and it is
-    // not recoverable by a caller who names neither axis, because naming neither
-    // is what now reads these tables.
+    // Measured at the library's default policy, which is the policy the tier entry
+    // runs when it is called with a tier alone: the rungs below are read off the
+    // narrow partition at Horner's rule, and every figure moved when the defaults
+    // did. The table a previous revision recorded - the shipped partition under
+    // the split Clenshaw recurrence - is not recoverable by a caller who names
+    // neither axis, because naming neither is what now reads these tables.
     constexpr std::array<Recorded, 7> kRecorded{{
         {"kReference", {0.0585, 0.0137, 0.9091}},
         {"kRelaxed64", {0.9121, 0.3202, 0.9091}},
@@ -1393,11 +1365,10 @@ TEST(Tier, DeliveredErrorRatiosArePinnedSoASilentRegressionIsVisible) {
 }
 
 TEST(Tier, BoundCoveredCellsAreCountedAndNamedRatherThanPassed) {
-    // The vacuous-pass audit: how much of each rung's green total is a cell
-    // where the declared bound is larger than the function's own magnitude, so
-    // returning zero would pass it too. Printed in full and asserted to be
-    // counted, not hidden - a rung whose whole sweep is bound-covered has not
-    // been tested at all.
+    // The vacuous-pass audit: how much of each rung's green total is a cell where
+    // the declared bound is larger than the function's own magnitude, so returning
+    // zero would pass it too. Printed in full and asserted to be counted, not
+    // hidden - a rung whose whole sweep is bound-covered has not been tested.
     const Grid& grid = Reference();
 
     if (grid.xs.empty())
@@ -1457,15 +1428,13 @@ TEST(Tier, BoundCoveredCellsAreCountedAndNamedRatherThanPassed) {
 //  * the report enumerates the routes, one row per route and region, with the
 //    figures a consumer reads - and no two rows describe the same pair twice;
 //  * every row delivers its own bound over the domain its selector serves,
-//    measured against the reference grid, with the bound-covered cells counted
-//    so a row that passes vacuously is visible;
-//  * naming a route changes nothing outside the domain its row states it serves
-//    - in particular nothing below the boundary a row names above its own left
-//    edge, which is the documented fallback for a fit that reaches further than
-//    its selector takes over;
+//    measured against the reference grid, with the bound-covered cells counted;
+//  * naming a route changes nothing outside the domain its row states it serves,
+//    in particular nothing below the boundary a row names above its own left
+//    edge (the documented fallback for a fit that reaches further than its
+//    selector takes over);
 //  * the default route is the default entry bit for bit, and a value the
-//    enumeration does not name is the default route, so no caller is handed a
-//    fit they did not ask for.
+//    enumeration does not name is the default route.
 
 // The domain a row's selector serves: the fit may reach further left than this.
 double ServedFrom(const boys::FitRouteInfo& row) {
@@ -1493,9 +1462,8 @@ TEST(Route, TheReportEnumeratesEveryRouteOverEveryRegionItServes) {
     }
 
     // One row per route and region, and each region that has a fit has both
-    // routes: a consumer comparing two routes over one region needs both rows
-    // to exist. Region C has no stored fit - the asymptotic branch is a closed
-    // form with no coefficients to choose between - so it has no rows.
+    // routes. Region C has no stored fit - the asymptotic branch is a closed form
+    // with no coefficients to choose between - so it has no rows.
     const std::array<AccuracyRegion, 2> fitted{{AccuracyRegion::kA, AccuracyRegion::kB}};
 
     for (AccuracyRegion region : fitted)
@@ -1534,11 +1502,10 @@ TEST(Route, TheReportEnumeratesEveryRouteOverEveryRegionItServes) {
     // The region-A rational row states a served domain that begins above its own
     // fit's left edge, and no other row does. That row is the reason
     // FitRouteInfo::servesFrom exists: below that argument the lane reads every
-    // order from its own fit and documents a tighter figure than the rational
-    // fits hold, so the row claims the narrower domain rather than the interval
-    // its table covers. The argument it names is the lowest of the per-order
-    // boundaries its selector hands orders over at, which is the extended band's
-    // left edge.
+    // order from its own fit and documents a tighter figure than the rational fits
+    // hold, so the row claims the narrower domain. The argument it names is the
+    // lowest of the per-order boundaries its selector hands orders over at, which
+    // is the extended band's left edge.
     std::size_t narrowed = 0;
 
     for (const boys::FitRouteInfo& row : routes)
@@ -1629,10 +1596,9 @@ TEST(Route, EveryRowDeliversItsOwnBoundAtEveryReferenceArgumentItServes) {
 }
 
 TEST(Route, NamingARouteChangesNothingOutsideTheDomainItsRowServes) {
-    // The confinement contract, read off the report: outside the intervals its
-    // rows state, naming a route hands the caller the default entry's values bit
-    // for bit. Below the boundary the region-A rational row names, that is what
-    // keeps the tighter bound the lane documents there.
+    // The confinement contract, read off the report: outside the intervals its rows
+    // state, naming a route hands the caller the default entry's values bit for bit,
+    // which is what keeps the lane's tighter bound below the rational row's boundary.
     const Grid& grid = Reference();
 
     if (grid.xs.empty())
@@ -1700,12 +1666,10 @@ TEST(Route, NamingARouteChangesNothingOutsideTheDomainItsRowServes) {
 }
 
 TEST(Route, AnOrderInsideTheServedDomainKeepsTheDefaultValueUntilItsOwnBoundary) {
-    // The region-A rational row serves per order, so the boundary it states is
-    // the lowest of a set. Above that boundary an order whose own region-A range
-    // has not ended yet is still read from its own fit by the lane, and the
-    // entry hands back the default's value for it rather than the route's - the
-    // property that keeps the lane's tighter per-order figure intact right up to
-    // the argument where the lane itself stops reading the order from its fit.
+    // The region-A rational row serves per order, so the boundary it states is the
+    // lowest of a set. Above that boundary an order whose own region-A range has
+    // not ended yet is still read from its own fit by the lane, and the entry hands
+    // back the default's value for it rather than the route's.
     const Grid& grid = Reference();
 
     if (grid.xs.empty())
@@ -1873,18 +1837,16 @@ TEST(Route, EveryOrderIsWrittenWhateverNmaxAndRouteAreAsked) {
 // ---------------------------------------------------------------------------
 // The rung and the route are two selectors of two different things, and this
 // section is where their product is measured: the pair criterion's own bound
-// (which is the derivation, and is a claim about a bound rather than about any
-// value a table happens to hold), the run-time entry's mapping onto the
-// compile-time instantiation, the rung's declared bound on the reference grid,
-// and the route's carriage - that naming the pair is answered with the route's
-// fits rather than with the default entry's.
+// (a claim about a bound rather than about any value a table happens to hold),
+// the run-time entry's mapping onto the compile-time instantiation, the rung's
+// declared bound on the reference grid, and the route's carriage.
 //
 // What is NOT pinned here is which cut the criterion certifies. That is the
 // criterion's output and not its contract: a coefficient table that moved would
 // move it, and a test that pinned it would fail on a change that is correct.
-// ThePairCriterionBoundsEveryCutOfEveryRationalPiece is the contract - the
-// bound holds whatever the cut is - and it is measured on every cut of every
-// piece, with the cuts the criterion refuses counted beside the ones it admits.
+// ThePairCriterionBoundsEveryCutOfEveryRationalPiece is the contract - the bound
+// holds whatever the cut is - and it is measured on every cut of every piece,
+// with the cuts the criterion refuses counted beside the ones it admits.
 
 // The mapped argument's own grid for the piece-level bound sweep: dense enough
 // that a bound missed between points would have to be missed narrowly.
@@ -2109,8 +2071,7 @@ TEST(Rung, TheRationalRungIsTheRoutesOwnAnswerAndNotTheDefaultEntries) {
     // Naming the route at a rung has to change the answer, or the route was not
     // carried: the default entry's rung is the Chebyshev route's, and the two
     // routes' fits are different numbers over the interval the rational row
-    // serves. Measured and counted rather than asserted, because a route that
-    // agreed everywhere would be a selection that does nothing.
+    // serves. Measured and counted rather than asserted.
     std::size_t cells = 0;
     std::size_t differ = 0;
 
@@ -2147,10 +2108,10 @@ TEST(Rung, TheRationalRungIsTheRoutesOwnAnswerAndNotTheDefaultEntries) {
 // ---------------------------------------------------------------------------
 // An engine that reads one order at a time cannot reach a rung through an entry
 // that computes every order, so the single-order shape has its own run-time
-// entry. What is held here is that it selects, not that it exists: the value the
-// run-time entry returns is the compile-time lane's at the multiplier the tier
-// names, bit for bit, because a switch that reached the wrong body would still
-// deliver something inside every bound in this file.
+// entry. What is held here is that it selects, not that it exists: the value it
+// returns is the compile-time lane's at the multiplier the tier names, bit for
+// bit, because a switch that reached the wrong body would still deliver
+// something inside every bound in this file.
 
 namespace {
 
@@ -2160,12 +2121,11 @@ template <double M> double LibrarySingle(int n, double x) noexcept {
     return boys::BoysSingle<M>(n, x);
 }
 
-// The reference the run-time route entry is compared against names the scheme
-// as well as the route: the entry below asks for a scheme by name, and a policy
-// that leaves its scheme to the default is a policy about the default rather
-// than about the call the entry answers. The axes the entry leaves to the
-// library - the budget, the packing axis and the partition - are left to it on
-// both sides.
+// The reference the run-time route entry is compared against names the scheme as
+// well as the route: the entry below asks for a scheme by name, and a policy that
+// leaves its scheme to the default is a policy about the default rather than about
+// the call the entry answers. The axes the entry leaves to the library - the
+// budget, the packing axis and the partition - are left to it on both sides.
 template <double M, boys::EvalScheme kScheme>
 double LibrarySingleRational(int n, double x) noexcept {
     return boys::BoysSingle<M, boys::EvalPolicy<boys::FitRoute::kRationalMinimax, kScheme>>(n, x);
@@ -2264,10 +2224,9 @@ TEST(Tier, TheSingleOrderRungCarriesTheRouteAtRunTime) {
 
 TEST(Tier, TheSingleOrderEntryAgreesWithTheBatchEntryAtTheSameRung) {
     // The two shapes are different calls and are not required to be equal - the
-    // batch entry seeds at the top order and recurses down where this one reads
-    // its own fit - so what is held is only that both stay inside the contract
-    // at the same rung, which is the claim a caller reading one order cares
-    // about.
+    // batch entry seeds at the top order and recurses down where this one reads its
+    // own fit - so what is held is only that both stay inside the contract at the
+    // same rung.
     std::size_t over = 0;
     std::size_t cells = 0;
 
@@ -2305,32 +2264,27 @@ TEST(Tier, TheSingleOrderEntryAgreesWithTheBatchEntryAtTheSameRung) {
 // 6. The tolerance question: QueryCombination, CombinationCoverage and
 //    ToleranceVerdict
 // ---------------------------------------------------------------------------
-// The two accuracy accessors answer two different questions - what a
-// combination is guaranteed to stay inside, and what it was measured to
-// deliver - and a caller holding a target has a third: *is this at the error I
-// need*, which is a verdict rather than a figure to compare by hand. The
-// failure mode of such an entry is a second list of numbers: a copy of the
-// tables maintained beside them, which drifts from the figures the accessors
-// publish and goes on answering a question the library no longer holds that
-// answer to. So what is held here first is that the reply IS the two accessors'
-// reply, on every combination this build names.
+// The two accuracy accessors answer two different questions - what a combination
+// is guaranteed to stay inside, and what it was measured to deliver - and a
+// caller holding a target has a third: *is this at the error I need*. The failure
+// mode of such an entry is a second list of numbers: a copy of the tables
+// maintained beside them, which drifts from the accessors' figures and goes on
+// answering a question the library no longer holds that answer to. So what is
+// held here first is that the reply IS the two accessors' reply.
 //
 // What is asserted:
-//  * over the whole cross of axes, the query's bound is the guaranteed
-//    accessor's figure and its measured figure is the delivered accessor's, bit
-//    for bit, and its verdict is the comparison of the request with the two;
-//  * the promise a caller relies on in each direction: a request at or above
-//    the bound is never answered below it, and a request below a figure the
-//    reply itself carries is never answered inside on that figure's account;
-//  * the bound decides first, and kDeliveredInside is a state a run reaches -
-//    that state being the whole point of the two figures being two;
+//  * over the whole cross of axes, the query's bound is the guaranteed accessor's
+//    figure and its measured figure is the delivered accessor's, bit for bit, and
+//    its verdict is the comparison of the request with the two;
+//  * the promise a caller relies on in each direction: a request at or above the
+//    bound is never answered below it, and a request below a figure the reply
+//    itself carries is never answered inside on that figure's account;
+//  * the bound decides first, and kDeliveredInside is a state a run reaches;
 //  * a combination this build does not carry returns no figure and no verdict,
-//    with the accessor's own sentence; and the sentence a rung or a shape this
-//    library has not built produces is a different sentence from the one a
+//    with the accessor's own sentence, and that sentence differs from the one a
 //    precision no lane answers for produces, so the two kinds of refusal stay
 //    apart here as they do at the accessor;
-//  * a reply carries the request and the figures it was made on, so every
-//    answer can be checked against the numbers that decided it.
+//  * a reply carries the request and the figures it was made on.
 
 namespace {
 
@@ -2352,9 +2306,8 @@ struct Option {
 };
 
 /// Walk every combination the library's own axis reports name, in the order the
-/// reports enumerate them. The reports rather than a transcribed list, so a
-/// lane, route, scheme, partition or axis a revision adds is walked by these
-/// tests without an edit here, and one it stops carrying stops being walked.
+/// reports enumerate them - the reports rather than a transcribed list, so a lane,
+/// route, scheme, partition or axis a revision adds is walked without an edit here.
 template <typename Fn> void ForEachOption(Fn&& fn) {
     for (const boys::LaneContractInfo& lane : boys::BoysLaneContracts())
     {
@@ -2436,14 +2389,11 @@ TEST(Combination, TheReplyIsTheTwoAccessorsFiguresAndTheirComparison) {
             ++refused;
 
             // Two rows of this revision's space are narrower than their axes, and
-            // every refusal here has to be one of them: the uniform partition,
-            // whose every rung the Chebyshev member's entries serve and whose
-            // rational member's rung the carrier refuses, and the device lane's
-            // single-precision lane, whose entries cover the shipped Chebyshev
-            // ladder and the narrow and uniform partitions of it at the reference
-            // multiplier alone. A refusal naming anything else is a combination
-            // the rows do not account for, and it is counted here rather than
-            // accepted because there are refusals now.
+            // every refusal here has to be one of them: the uniform partition, and
+            // the device lane's single-precision lane, whose entries cover the
+            // shipped Chebyshev ladder and the narrow and uniform partitions of it
+            // at the reference multiplier alone. A refusal naming anything else is
+            // counted here rather than accepted.
             if (option.granularity != boys::FitGranularity::kUniform &&
                 option.precision != boys::Precision::kFp32Device)
             {
@@ -2474,10 +2424,9 @@ TEST(Combination, TheReplyIsTheTwoAccessorsFiguresAndTheirComparison) {
             ++notTheAccessorsFigures;
         }
 
-        // Asked at the figure the combination itself carries, the comparison of
-        // the request with those figures is necessarily "the bound is inside
-        // it": a verdict that said anything else here would be this entry
-        // answering a question other than the one it was asked.
+        // Asked at the figure the combination itself carries, the comparison of the
+        // request with those figures is necessarily "the bound is inside it": a
+        // verdict that said anything else would be answering another question.
         if (asked.verdict != ToleranceVerdict::kGuaranteedInside)
         {
             ++notTheComparison;
@@ -2489,10 +2438,9 @@ TEST(Combination, TheReplyIsTheTwoAccessorsFiguresAndTheirComparison) {
     // One row of the partition axis is served at one route, one packing axis and
     // one rung only - the uniform grid - so this revision refuses combinations
     // inside its own space rather than none, and the refusals are required to be
-    // exactly the cells that name that partition. The refusal path is reached
-    // the other way as well, by naming a value outside the enumerations, which
-    // names no combination at all; that is what keeps it covered rather than
-    // merely absent.
+    // exactly the cells that name that partition. The refusal path is reached the
+    // other way too, by naming a value outside the enumerations, which names no
+    // combination at all; that is what keeps it covered rather than absent.
     {
         const AccuracyFigure outside =
             boys::BoysAccuracyGuaranteed(boys::Precision::kFp32,
@@ -2507,10 +2455,9 @@ TEST(Combination, TheReplyIsTheTwoAccessorsFiguresAndTheirComparison) {
     }
 
     // This build refuses nothing: the member the uniform grid did not carry is
-    // derived and read at every rung on every lane, so the cells that used to be
-    // refused here are served and the rows below would judge nothing. A revision
-    // that refuses a cell again reaches them, and this states which state the
-    // build is in rather than passing on an empty set.
+    // derived and read at every rung on every lane, so the rows below would judge
+    // nothing. A revision that refuses a cell again reaches them, and this states
+    // which state the build is in rather than passing on an empty set.
     if (refused == 0u) {
         GTEST_SKIP() << "no combination of this build is refused, so the refusal rows below would "
                         "judge nothing: the uniform partition serves both its members at every "
@@ -2678,13 +2625,12 @@ TEST(Combination, ARefusalCarriesNoFigureAndTheAccessorsOwnSentence) {
         }
     });
 
-    // The rows below are reached by refusals, and this build has none: both
-    // members of the uniform partition are served at every rung, and every other
-    // row of the space is served whole. The block used to require at least one
-    // refusal; it now states the state the build is in, and a revision that
-    // refuses a cell again reaches the rows. What is required of every refusal is
-    // the same either way: no figure, no verdict, and the accessor's own
-    // sentence.
+    // The rows below are reached by refusals, and this build has none: both members
+    // of the uniform partition are served at every rung, and every other row of the
+    // space is served whole. The block used to require at least one refusal; it now
+    // states the state the build is in, and a revision that refuses a cell again
+    // reaches the rows. What is required of every refusal is the same either way: no
+    // figure, no verdict, and the accessor's own sentence.
     if (refused == 0u) {
         GTEST_SKIP() << "no combination of this build is refused, so the rows below would judge "
                         "nothing: the uniform partition serves both its members at every rung, "
@@ -2696,10 +2642,9 @@ TEST(Combination, ARefusalCarriesNoFigureAndTheAccessorsOwnSentence) {
         << "a refusal did not repeat the accuracy accessor's own sentence";
 
     // The other kind of refusal, and the reason the two have to stay apart: a
-    // precision no lane of this library answers for is not a combination whose
-    // table is owed, it is a combination this library's space does not contain.
-    // Both are kNotCarried at this entry - neither is a verdict about a figure -
-    // and the sentence is what tells a caller which of the two it is holding.
+    // precision no lane of this library answers for is not a combination whose table
+    // is owed, it is a combination this library's space does not contain. Both are
+    // kNotCarried at this entry, and the sentence tells a caller which it holds.
     const Option noLane{static_cast<boys::Precision>(99),
                         boys::FitRoute::kChebyshev,
                         boys::EvalScheme::kSplitClenshaw,
@@ -2762,10 +2707,8 @@ TEST(Combination, ARequestWithNoFigureAtOrBelowItIsAnsweredOutsideAndNotRefused)
     const AccuracyFigure delivered = Delivered(served);
 
     // The documented behaviour of a request the precondition excludes: the
-    // combination is carried, so there is a verdict rather than a refusal, and
-    // the verdict is that nothing is at or below the request. A verdict of
-    // "inside" here would be an entry answering about a figure the caller did
-    // not ask for.
+    // combination is carried, so there is a verdict rather than a refusal, and the
+    // verdict is that nothing is at or below the request.
     const double outOfRange[] = {0.0,
                                  -1.0,
                                  -std::numeric_limits<double>::infinity(),

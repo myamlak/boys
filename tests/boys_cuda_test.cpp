@@ -17,9 +17,8 @@
 #endif
 
 // The lane's residency comparison (src/boys_cuda.cu), reached here to assert its
-// rows directly: the arguments are the device in hand and the multiplier asked
-// for, then the record of what was last uploaded and where. Both arrive as
-// arguments, so the assertion needs no second card and no CUDA call.
+// rows directly: the device in hand and the multiplier asked for, then the record
+// of what was last uploaded and where - so no second card and no CUDA call.
 extern "C" int BoysCudaEffTablesResidentOn(
     int device, double m, int recordedDevice, double recordedM);
 
@@ -27,12 +26,10 @@ namespace {
 
 constexpr std::size_t kCount = 1u << 16;
 constexpr double kDoubleTolerance = 5.5e-14;
-// Cross-lane budget: the CPU lane is validated <= 1.5e-7 against the
-// reference grid, and the default CUDA lane holds the same 1.5e-7, so
-// GPU-vs-CPU agreement on the default path holds within ~3e-7; the budget is
-// stated at 3.5e-7. It is a budget on the default path only: the single
-// entry's fast region-B exponential (RegionBExp::kFast) carries a larger
-// bound of its own, which no cross-lane figure covers.
+// Cross-lane budget: the CPU lane is validated <= 1.5e-7 against the reference grid, and
+// the default CUDA lane holds the same 1.5e-7, so GPU-vs-CPU agreement on the default path
+// holds within ~3e-7, stated at 3.5e-7. It covers the default path only, not the single
+// entry's fast region-B exponential (RegionBExp::kFast), which carries a larger bound.
 constexpr float kFloatTolerance = 3.5e-7f;
 
 struct DeviceSetup {
@@ -79,10 +76,9 @@ struct DeviceSetup {
 };
 
 #if BoysFp16
-// The fp16 lane compares against the CPU fp16 lane (both compute in float
-// and round to fp16): the cross-lane float budget is the F32 one above, and
-// one ULP of quantization covers the fp16 rounding (HalfUlp here is the
-// full grid step, NextUp(x) - x, not half of it).
+// The fp16 lane compares against the CPU fp16 lane: both compute in float and
+// round to fp16, so the cross-lane budget is the F32 one above plus one ULP of
+// quantization (HalfUlp is the full grid step NextUp(x) - x, not half of it).
 double HalfUlp(boys::F16 x) {
     return static_cast<double>(boys::NextUp(x)) - static_cast<double>(x);
 }
@@ -198,12 +194,10 @@ TEST(BoysCudaTest, SingleF32ExpOptionIsCertifiedAtTheRegionBBoundary) {
 
     ASSERT_EQ(boys::BoysCuda::InitializeTables(), boys::BoysStatus::kSuccess);
 
-    // The first float of region B, where the two options separate and where the
-    // recurrence's condition number is at its largest (7.6e4 at this order): the
-    // value F_32(x) is itself at the level of a seed error there, and the ladder
-    // amplifies it by that factor. The double lane is the reference; its own
-    // error at this argument is below 5.5e-14, six orders under the figures
-    // this test is about.
+    // The first float of region B, where the two options separate and the
+    // recurrence's condition number peaks (7.6e4 at this order): F_32(x) is itself
+    // at the level of a seed error there and the ladder amplifies it by that factor.
+    // The double lane is the reference, its own error below 5.5e-14, six orders under.
     const int n = boys::kMaxBoysOrder;
     const double x = static_cast<double>(static_cast<float>(boys::detail::kX0));
     std::vector<double> reference(static_cast<std::size_t>(n) + 1);
@@ -240,21 +234,16 @@ TEST(BoysCudaTest, SingleF32ExpOptionIsCertifiedAtTheRegionBBoundary) {
     const double accurate = evaluate(boys::RegionBExp::kAccurate);
     const double fast = evaluate(boys::RegionBExp::kFast);
 
-    // Both options run, and they are two arithmetics rather than one with a
-    // name for the other.
+    // Both options run, and they are two arithmetics, not one under two names.
     EXPECT_NE(accurate, fast);
 
-    // Both hold their documented bounds here: the lane's 1.5e-7 for the
-    // default, and the lane's plus the corrected seed's own contribution
-    // (8e-8) for the fast one.
+    // Both hold their documented bounds: the lane's 1.5e-7 for the default, and the
+    // lane's plus the corrected seed's own 8e-8 for the fast one.
     EXPECT_LE(std::abs(accurate - want), 1.5e-7);
     EXPECT_LE(std::abs(fast - want), 1.5e-7 + 8e-8);
 
-    // This is the cell the bare approximation returned the wrong sign at, and
-    // the reason the fast option carries a correction: with it, the return has
-    // the value's sign, and the option's own contribution here is a fraction of
-    // the value rather than larger than it. Pinned so that a regression to the
-    // uncorrected seed is a failure and not a footnote.
+    // This is the cell the bare approximation returned the wrong sign at, and why
+    // the fast option carries a correction: with it the return has the value's sign.
     EXPECT_GT(fast * want, 0.0);
     EXPECT_LT(std::abs(fast - accurate), std::abs(want));
 
@@ -264,12 +253,9 @@ TEST(BoysCudaTest, SingleF32ExpOptionIsCertifiedAtTheRegionBBoundary) {
                 want);
 }
 
-// The default option is the batch entries' arithmetic, and the contract says
-// so: outside region A the single entry's seed and ladder are the all-orders
-// body's, so a consumer that reads one and the other of the same (n, x) is
-// reading one arithmetic. Region A is excluded because the two seeds differ
-// there by design - the batch seeds its downward recursion from the double
-// piece table, the single entry from the float one.
+// Outside region A the single entry's seed and ladder are the all-orders body's.
+// Region A is excluded because the seeds differ there by design: the batch seeds
+// its downward recursion from the double piece table, the single entry from float.
 TEST(BoysCudaTest, SingleF32DefaultIsTheBatchArithmeticOutsideRegionA) {
     int deviceCount = 0;
     cudaGetDeviceCount(&deviceCount);
@@ -283,9 +269,8 @@ TEST(BoysCudaTest, SingleF32DefaultIsTheBatchArithmeticOutsideRegionA) {
 
     const int nmax = boys::kMaxBoysOrder;
     const std::size_t count = 512;
-    // Arguments that are exactly floats at or above the first float of region
-    // B, so both entries evaluate the same argument and classify it the same
-    // way, and region B and region C are both covered.
+    // Arguments that are exactly floats at or above the first float of region B, so
+    // both entries evaluate the same argument; regions B and C are both covered.
     const float firstB = static_cast<float>(boys::detail::kX0);
     std::vector<double> hostX(count);
 
@@ -507,9 +492,8 @@ TEST(BoysCudaTest, AllNF64MatchesCpuAllN) {
     cudaMemcpy(
         hostOut.data(), setup.outF64, hostOut.size() * sizeof(double), cudaMemcpyDeviceToHost);
 
-    // The CPU twin over the same arguments, compared in the shipped layout:
-    // every plane of every argument, so a plane the device left unwritten is a
-    // failure too.
+    // The CPU twin over the same arguments, compared in the shipped layout: every
+    // plane of every argument, so an unwritten plane fails too.
     std::vector<double> cpuOut(hostOut.size());
     boys::BoysAllN(boys::kMaxBoysOrder, hostX.data(), cpuOut.data(), count, boys::BoysSortedArgs{});
     double worst = 0.0;
@@ -532,10 +516,9 @@ TEST(BoysCudaTest, AllNF64MatchesCpuAllN) {
 }
 
 TEST(BoysCudaTest, AllNF64RelaxedTierKeepsTheBound) {
-    // The multiplier is named at the call rather than passed to it, so the tier
-    // is an instantiation: m = 10 relaxes the budget to m * 5.5e-14 and uploads
-    // its own degree tables on first use. The reference is the full-accuracy CPU
-    // path, whose own error is a tenth of this budget.
+    // The multiplier is a template argument, so the tier is an instantiation: m = 10
+    // relaxes the budget to m * 5.5e-14 and uploads its own degree tables on first
+    // use. The reference is the full-accuracy CPU path (own error a tenth of this).
     int deviceCount = 0;
     cudaGetDeviceCount(&deviceCount);
 
@@ -634,9 +617,8 @@ TEST(BoysCudaTest, AllNF32IgnoresTheArgumentOrder) {
         GTEST_SKIP() << "no CUDA device";
     }
 
-    // The entry's non-decreasing precondition is a performance one (one
-    // classification path per warp), not a correctness one: the same batch in
-    // arbitrary order must return the same planes.
+    // The non-decreasing precondition is a performance one (one classification path
+    // per warp), not a correctness one: shuffled order must return the same planes.
     std::vector<double> hostX = SortedArguments();
     std::mt19937_64 rng(20260923);
     std::shuffle(hostX.begin(), hostX.end(), rng);
@@ -909,10 +891,9 @@ TEST(BoysCudaTest, AllNF16MatchesCpuAllOrders) {
 }
 
 TEST(BoysCudaTest, CountZeroIsANoOpInEveryEntry) {
-    // One behaviour for every family: count == 0 queues no kernel, writes
-    // nothing, and returns kSuccess. The output buffers are poisoned first, so
-    // the second half of that sentence is measured, not assumed — a zero-block
-    // launch is a CUDA error, which is why the host side has to short-circuit.
+    // One behaviour for every family: count == 0 queues no kernel, writes nothing,
+    // and returns kSuccess. Buffers are poisoned first so a write would be seen; a
+    // zero-block launch is a CUDA error, which is why the host side short-circuits.
     int deviceCount = 0;
     cudaGetDeviceCount(&deviceCount);
 
@@ -1013,11 +994,10 @@ TEST(BoysCudaTest, AllNChecksTheOrder) {
 #endif // BoysFp16
 
 TEST(BoysCudaTest, EffTableResidencyNamesTheDevice) {
-    // The effective-degree tables are per-device copies of __constant__
-    // symbols, so a record compared on the multiplier alone would answer for a
-    // device that has never held them, and a device no upload has reached reads
-    // zero-initialized tables. The row that decides it is the second: the same
-    // multiplier on another device, which must not be answered as resident.
+    // The effective-degree tables are per-device copies of __constant__ symbols, so
+    // a record compared on the multiplier alone would answer for a device that has
+    // never held them, and a device no upload has reached reads zeroed tables. The
+    // deciding row is the second: the same multiplier on another device.
     EXPECT_EQ(BoysCudaEffTablesResidentOn(0, 2.0, 0, 2.0), 1);
     EXPECT_EQ(BoysCudaEffTablesResidentOn(1, 2.0, 0, 2.0), 0);
     EXPECT_EQ(BoysCudaEffTablesResidentOn(0, 2.0, 1, 2.0), 0);

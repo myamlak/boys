@@ -1,15 +1,15 @@
 #pragma once
 
 /// \cond
-// Not API: the seed fits and the region recurrences the CUDA lane runs. The
-// header ships because the lane's device-callable entries are header-defined
-// and have to run the arithmetic the batch kernels run rather than a second
-// copy of it; the API reference documents the entries.
+// Not API: the seed fits and the region recurrences the CUDA lane runs. The header
+// ships because the lane's device-callable entries are header-defined and have to
+// run the arithmetic the batch kernels run rather than a second copy of it; the API
+// reference documents the entries.
 ///
-/// One body per (precision, shape) and every one of them takes the tables as
-/// a lane object, so the same body serves a batch kernel reading the
-/// __constant__ tables and a device entry reading the caller's own handle.
-/// A lane object supplies, all of them inlineable and all of them cheap:
+/// One body per (precision, shape), each taking the tables as a lane object, so the
+/// same body serves a batch kernel reading the __constant__ tables and a device
+/// entry reading the caller's own handle. A lane object supplies, all inlineable and
+/// all cheap:
 ///
 ///   int          Count(int order)                  pieces the fit is cut into
 ///   T            A(int order, int piece)           piece lower edge
@@ -18,36 +18,31 @@
 ///   int          Deg(int order, int piece)         the piece's degree
 ///   T            BSeed(T x, int order)             region-B seed at an argument
 ///
-/// A lane that stores the monomial form of its fits carries a `kMonomial`
-/// member as well, and the piece summation reads it: the same pieces at the
-/// same degrees, summed by Horner in the monomial basis rather than by the
-/// split Clenshaw in the Chebyshev one. It is optional because a lane's stored
-/// form is a property of the tables it was handed and not of the body reading
-/// them, and a lane without the member reads the Chebyshev pool.
+/// A lane that stores the monomial form of its fits carries a `kMonomial` member as
+/// well, and the piece summation reads it: the same pieces at the same degrees,
+/// summed by Horner rather than by the split Clenshaw. The member is optional
+/// because a lane's stored form is a property of the tables it was handed and not of
+/// the body reading them; a lane without it reads the Chebyshev pool.
 ///
-/// A lane whose pieces are rational pairs carries a `kRational` member and
-/// answers the piece read with four members in place of one: `NumDeg` and
-/// `DenDeg` for the pair's two degrees, `Coeffs` for the numerator's block and
-/// `DenCoeffs` for the denominator's, and the summation is the two Horner sums
-/// and the division above. The route is a family and not a basis: a pair has
-/// one stored form and either scheme sums it.
+/// A lane whose pieces are rational pairs carries a `kRational` member and answers
+/// the piece read with four members in place of one: `NumDeg` and `DenDeg` for the
+/// pair's two degrees, `Coeffs` for the numerator's block and `DenCoeffs` for the
+/// denominator's. The route is a family and not a basis: a pair has one stored form
+/// and either scheme sums it.
 ///
-/// T is double for the double lane's seeds and float for the float lane's.
-/// BSeed is the whole of region B's seed, taken at the argument rather than as
-/// one polynomial over the region: the shipped partition's seed is one fit
-/// over [kX0, kX1] and a second partition's is a piecewise one, so a lane
-/// supplies the seed and not the coefficients of a fixed shape. It takes the
-/// order because the relaxed batches read their region-B degree from the
-/// order-0 entry — the F_0 seed's error reaches every output with gain at most
-/// 1 + 1.846e-17 — while the single lanes read it per order; a lane object is
-/// what decides which, and the arithmetic below is the same either way.
+/// T is double for the double lane's seeds and float for the float lane's. BSeed is
+/// the whole of region B's seed, taken at the argument rather than as one polynomial
+/// over the region: the shipped partition's seed is one fit over [kX0, kX1] and
+/// another partition's is piecewise. It takes the order because the relaxed batches
+/// read their region-B degree from the order-0 entry — the F_0 seed's error reaches
+/// every output with gain at most 1 + 1.846e-17 — while the single lanes read it per
+/// order; the lane object decides which, and the arithmetic is the same either way.
 ///
-/// The region structure is the library's: region A (x below kX0) is the
-/// piecewise Chebyshev fit of F_n itself, region B (up to kX1) is the upward
-/// recursion seeded by the region-B fit of F_0, and region C is the F_0
-/// asymptotic form with the same recursion. The all-orders bodies carry a
-/// second, downward recursion inside region A: the fit there is of F_n, and
-/// the lower orders come back down from it.
+/// The region structure is the library's: region A (x below kX0) is the piecewise
+/// Chebyshev fit of F_n itself, region B (up to kX1) is the upward recursion seeded
+/// by the region-B fit of F_0, and region C is the F_0 asymptotic form with the same
+/// recursion. The all-orders bodies carry a second, downward recursion inside region
+/// A: the fit there is of F_n, and the lower orders come back down from it.
 
 #include "boys/boys_coefficients.hpp"
 
@@ -167,11 +162,10 @@ __device__ __forceinline__ float DeviceClenshawSplit32(const float* c, int deg, 
     return __fmaf_rn(t, odd, even);
 }
 
-// The monomial scheme's summation: the same fit in the other basis, stored at
-// the same offsets and degrees as the Chebyshev one and summed by Horner in
-// ascending order. One multiply-add per coefficient, against the split
-// Clenshaw's two, so the scheme is a cost choice at equal degree — the two
-// tables carry the same fit and the delivered accuracy of each is its own
+// The monomial scheme's summation: the same fit in the other basis, at the same
+// offsets and degrees as the Chebyshev one, summed by Horner in ascending order.
+// One multiply-add per coefficient against the split Clenshaw's two, so the scheme
+// is a cost choice at equal degree; each form's delivered accuracy is its own
 // certified row.
 __device__ __forceinline__ double DeviceHornerMono(const double* c, int deg, double t) {
     double acc = c[deg];
@@ -184,13 +178,12 @@ __device__ __forceinline__ double DeviceHornerMono(const double* c, int deg, dou
     return acc;
 }
 
-// The float lanes' form of the same summation, the way DeviceClenshawSplit32 is
-// the float lanes' split Clenshaw: one walk, in the lane's own arithmetic and
-// with the same fused step, so a float piece's two forms are summed the way the
-// two certified rows of their table were measured (kNarrowARowsF32,
-// kFlatRowsF32, boys_coefficients.hpp). The double helper above is not it: it
-// would read a float table through a double pointer and sum a double polynomial,
-// which is a different arithmetic and a different rounding.
+// The float lanes' form of the same summation: one walk, in the lane's own
+// arithmetic and with the same fused step, so a float piece's two forms are summed
+// the way the two certified rows of their table were measured (kNarrowARowsF32,
+// kFlatRowsF32, boys_coefficients.hpp). The double helper above would read a float
+// table through a double pointer and sum a double polynomial, which is a different
+// arithmetic and a different rounding.
 __device__ __forceinline__ float DeviceHornerMono32(const float* c, int deg, float t) {
     float acc = c[deg];
 
@@ -203,14 +196,13 @@ __device__ __forceinline__ float DeviceHornerMono32(const float* c, int deg, flo
 }
 
 // The rational route's summation: a piece is a numerator and a denominator, both
-// stored ascending, both summed by Horner, divided once. The denominator's
-// constant term is held at one, so its own sum ends in a multiply-add against
-// that one rather than carrying a coefficient for it; a pair whose denominator
-// degree is zero has no denominator at all and the numerator is the value. It is
-// the kernel's reading of the stored form, coefficient for coefficient the same
-// as the host lane's piece and seed evaluations (boys_impl.hpp
-// RationalPieceAtCut, RationalSeedAtCut): the two lanes' figures are comparable
-// because they sum the same numbers the same way.
+// stored ascending, both summed by Horner, divided once. The denominator's constant
+// term is held at one, so its sum ends in a multiply-add against that one rather
+// than carrying a coefficient for it; a pair whose denominator degree is zero has no
+// denominator at all and the numerator is the value. It is the kernel's reading of
+// the stored form, coefficient for coefficient the same as the host lane's piece and
+// seed evaluations (boys_impl.hpp RationalPieceAtCut, RationalSeedAtCut), so the two
+// lanes' figures are comparable.
 __device__ __forceinline__ double DeviceRatSum(const double* num,
                                               int numDeg,
                                               const double* den,
@@ -238,18 +230,15 @@ __device__ __forceinline__ double DeviceRatSum(const double* num,
     return numerator / __fma_rn(denominator, t, 1.0);
 }
 
-// The float lanes' form of that summation, walked in the float lanes'
-// arithmetic the way DeviceClenshawSplit32 is their form of the split Clenshaw:
-// the same two Horner sums, the same held denominator constant, the same one
-// division, with every step fused. It is the kernel's reading of the same
-// stored form, so an entry that reached it and the host lane's own float
-// rational reading sum the same numbers the same way and their figures are
-// comparable.
+// The float lanes' form of that summation: the same two Horner sums, the same held
+// denominator constant, the same one division, with every step fused. It reads the
+// same stored form as the host lane's own float rational evaluation, so the two
+// lanes' figures are comparable.
 //
-// The two coefficient blocks are the caller's to place: the float lane's
-// shipped region-B seed stores its numerator and denominator in two arrays and
-// its narrow partition stores them in one pool with the denominator above the
-// numerator, and both are named by a pointer rather than computed here.
+// The two coefficient blocks are the caller's to place: the float lane's shipped
+// region-B seed stores its numerator and denominator in two arrays and its narrow
+// partition stores them in one pool with the denominator above the numerator, and
+// both are named by a pointer rather than computed here.
 __device__ __forceinline__ float DeviceRatSum32(const float* num,
                                                 int numDeg,
                                                 const float* den,
@@ -379,16 +368,14 @@ __device__ __forceinline__ float DeviceSeed32(const Lane& lane, int order, float
 // the region-B exponential of the float lane
 // ---------------------------------------------------------------------------
 
-// The two arithmetics the single float entry offers (RegionBExp,
-// boys_cuda.hpp), and the one factor of the region-B path a caller can trade
-// accuracy for speed on.
+// The two arithmetics the single float entry offers (RegionBExp, boys_cuda.hpp), and
+// the one factor of the region-B path a caller can trade accuracy for speed on.
 //
-//  - kFastExp is the hardware approximation with its argument-scaling
-//    residual removed: __expf(y) evaluates 2^fl(y log2 e), and that one
-//    rounding is the term that grows with |y|. The residual
-//    fma(y, log2 e, -t) of that product is exact, and 2^(t + d) = 2^t 2^d
-//    ~= 2^t (1 + d ln 2), so two fused steps take the error back to the
-//    approximation's own few ulp, flat in the argument.
+//  - kFastExp is the hardware approximation with its argument-scaling residual
+//    removed: __expf(y) evaluates 2^fl(y log2 e), and that one rounding is the term
+//    that grows with |y|. The residual fma(y, log2 e, -t) of that product is exact,
+//    and 2^(t + d) = 2^t 2^d ~= 2^t (1 + d ln 2), so two fused steps take the error
+//    back to the approximation's own few ulp, flat in the argument.
 //  - otherwise the library routine, which is what the batch bodies compute.
 template <bool kFastExp>
 __device__ __forceinline__ float DeviceRegionBExp(float xx) {
@@ -418,10 +405,9 @@ __device__ __forceinline__ double DeviceSingleF64(const Lane& lane, int order, d
         return DeviceSeed(lane, order, xx);
     }
 
-    double f = lane.BSeed(xx, order);
-
     if (xx < kX1)
     {
+        double f = lane.BSeed(xx, order);
         const double expx = 0.5 * exp(-xx);
 
         for (int l = 0; l < order; ++l)
@@ -432,7 +418,7 @@ __device__ __forceinline__ double DeviceSingleF64(const Lane& lane, int order, d
         return f;
     }
 
-    f = kHalfSqrtPi * rsqrt(xx);
+    double f = kHalfSqrtPi * rsqrt(xx);
 
     for (int l = 0; l < order; ++l)
     {
@@ -502,11 +488,10 @@ __device__ __forceinline__ void DeviceAllOrdersF64(
         return;
     }
 
-    double f = lane.BSeed(xx, order);
-    store(0, f);
-
     if (xx < kX1)
     {
+        double f = lane.BSeed(xx, order);
+        store(0, f);
         const double expx = 0.5 * exp(-xx);
 
         for (int l = 1; l <= order; ++l)
@@ -518,9 +503,8 @@ __device__ __forceinline__ void DeviceAllOrdersF64(
         return;
     }
 
-    f = kHalfSqrtPi * rsqrt(xx);
-    store(0, f); // F_0 from the asymptotic form: the region-B seed computed
-                 // above is outside its validity domain here
+    double f = kHalfSqrtPi * rsqrt(xx);
+    store(0, f);
 
     for (int l = 1; l <= order; ++l)
     {
@@ -553,11 +537,10 @@ __device__ __forceinline__ void DeviceAllOrdersF32(
         return;
     }
 
-    float f = lane.BSeed(xx, order);
-    store(0, f);
-
     if (xx < static_cast<float>(kX1))
     {
+        float f = lane.BSeed(xx, order);
+        store(0, f);
         const float expx = 0.5f * expf(-xx);
 
         for (int l = 1; l <= order; ++l)
@@ -569,9 +552,8 @@ __device__ __forceinline__ void DeviceAllOrdersF32(
         return;
     }
 
-    f = static_cast<float>(kHalfSqrtPi) * rsqrtf(xx);
-    store(0, f); // F_0 from the asymptotic form: the region-B seed computed
-                 // above is outside its validity domain here
+    float f = static_cast<float>(kHalfSqrtPi) * rsqrtf(xx);
+    store(0, f);
 
     for (int l = 1; l <= order; ++l)
     {
@@ -584,26 +566,24 @@ __device__ __forceinline__ void DeviceAllOrdersF32(
 // every order at one argument, from one uniform grid
 // ---------------------------------------------------------------------------
 
-// The route whose fit is one table of equal intervals over [0, kFlatHi)
-// rather than pieces cut where the function needs them: every order's block
-// sits at a fixed offset inside its interval's, so the interval an argument
-// falls in is one multiply and a truncation and the degree is a property of
-// the stored table rather than of the argument. The geometry is compile-time,
-// which is why these bodies take the two coefficient pools and nothing else —
-// there are no per-interval edges or degrees to supply, so a lane object would
-// be a pair of pointers with no behaviour behind it.
+// The route whose fit is one table of equal intervals over [0, kFlatHi) rather than
+// pieces cut where the function needs them: every order's block sits at a fixed
+// offset inside its interval's, so the interval an argument falls in is one multiply
+// and a truncation and the degree is a property of the stored table rather than of
+// the argument. The geometry is compile-time, so these bodies take the two
+// coefficient pools and nothing else: there are no per-interval edges or degrees to
+// supply, and a lane object would be a pair of pointers with no behaviour behind it.
 //
-// The pools are the two stored forms of one fit, and kMonomial selects the
-// reader and nothing else, exactly as a lane's own kMonomial member does: the
-// index arithmetic, the join at kFlatHi and the asymptotic arm above it are
-// one spelling for both forms, so the two cannot come to disagree about which
+// The pools are the two stored forms of one fit, and kMonomial selects the reader and
+// nothing else: the index arithmetic, the join at kFlatHi and the asymptotic arm above
+// it are one spelling for both forms, so the two cannot come to disagree about which
 // interval an argument falls in or where the table stops.
 //
-// Above kFlatHi no fit reaches and the call falls to the one-term asymptotic
-// and its own upward recurrence — the arm region C runs elsewhere, read from
-// the same prefactor and stepping by the same (l + 1/2)/x. The join needs no
-// interpolation between the two: kFlatHi is above kX1, so an argument the
-// table does not serve is one the asymptotic already served.
+// Above kFlatHi no fit reaches and the call falls to the one-term asymptotic and its
+// own upward recurrence — the arm region C runs elsewhere, read from the same
+// prefactor and stepping by the same (l + 1/2)/x. The join needs no interpolation:
+// kFlatHi is above kX1, so an argument the table does not serve is one the asymptotic
+// already served.
 
 // The uniform route's ladder, in double.
 template <bool kMonomial, typename Store>
@@ -628,12 +608,11 @@ __device__ __forceinline__ void DeviceAllOrdersF64Flat(const double* cheb,
         return;
     }
 
-    // The interval index is the argument times the reciprocal of the stored
-    // interval width, truncated, so the product is the interval's own boundary
-    // and not a rounding of it: the reciprocal is exact here, and the two
-    // assertions below hold the factor and the grid to the stored width rather
-    // than restating either. The clamp is unreachable below the join and is
-    // kept as the guard the host's own spelling of this map keeps.
+    // The interval index is the argument times the reciprocal of the stored interval
+    // width, truncated, so the product is the interval's own boundary and not a
+    // rounding of it: the reciprocal is exact here, and the two assertions below hold
+    // the factor and the grid to the stored width. The clamp is unreachable below the
+    // join and is kept as the guard the host's own spelling of this map keeps.
     constexpr double kPerUnit = 1.0 / kFlatWidth;
     static_assert(kFlatWidth * kPerUnit == 1.0,
                   "the uniform grid's index factor must be the reciprocal of its stored width: "
@@ -652,13 +631,12 @@ __device__ __forceinline__ void DeviceAllOrdersF64Flat(const double* cheb,
 
     const double t = 2.0 * (u - static_cast<double>(iv)) - 1.0;
 
-    // The interval's own block, at the interval's own degree. Both are read
-    // per interval because the grid's cells do not all carry the same count:
-    // each was given the smallest admissible even degree its own truncation
-    // bound holds it to, so an interval's block is (its degree + 1)
-    // coefficients per order and the table has no stride a reader could
-    // assume. A reader that assumed one would sum a neighbouring cell's
-    // polynomial and no check of the coefficients alone would report it.
+    // The interval's own block at the interval's own degree, both read per interval
+    // because the grid's cells do not all carry the same count: each was given the
+    // smallest admissible even degree its own truncation bound holds it to, so a
+    // block is (its degree + 1) coefficients per order and the table has no stride a
+    // reader could assume. A reader that assumed one would sum a neighbouring cell's
+    // polynomial, which no check of the coefficients alone would report.
     const int deg = degs[iv];
     const double* interval = (kMonomial ? mono : cheb) + static_cast<std::size_t>(offsets[iv]);
 
@@ -685,25 +663,22 @@ __device__ __forceinline__ void DeviceAllOrdersF64Flat(const double* cheb,
 // stored form DeviceRatSum reads - the numerator ascending, then the
 // denominator's q_1..q_k with q_0 held at 1.
 //
-// A body of its own rather than a mode of the Chebyshev one above, for the
-// reason the two host readers are two: the two routes store different things,
-// and an interval's block is addressed at the interval's own pair and its own
-// stored count instead of at one degree. The locate is the one above, spelled
-// again because the two bodies are two routes over one table and a shared
-// helper would be a third spelling of the same index arithmetic in the one
-// place it must not be - the double lane's own host reader states the same
-// hazard (boys_impl.hpp, FlatLocate).
+// A body of its own rather than a mode of the Chebyshev one above: the two routes
+// store different things, and an interval's block is addressed at the interval's own
+// pair and its own stored count instead of at one degree. The locate is the one
+// above, spelled again because a shared helper would be a third spelling of the same
+// index arithmetic in the one place it must not be - the double lane's own host
+// reader states the same hazard (boys_impl.hpp, FlatLocate).
 //
 // The four per-interval tables are the emitter's (tools/gen_boys_coefficients.py,
-// flat_rat_block_lines): the numerator's degree, the denominator's, the stored
-// count of one row, and where the interval's block starts. A reader that assumed
-// one stride for the whole table would read a neighbouring interval's pair, and
-// no check of the coefficients alone would report it.
+// flat_rat_block_lines): the numerator's degree, the denominator's, the stored count
+// of one row, and where the interval's block starts. A reader that assumed one stride
+// for the whole table would read a neighbouring interval's pair, which no check of
+// the coefficients alone would report.
 //
-// The summation is DeviceRatSum, which is the same two Horner sums and the same
-// held denominator constant the host reader performs - so a device row and a
-// host row of this route are one reading of one stored form, and the figures the
-// host gate certifies are the figures this entry delivers.
+// The summation is DeviceRatSum, the same two Horner sums and the same held
+// denominator constant the host reader performs, so the figures the host gate
+// certifies are the figures this entry delivers.
 template <typename Store>
 __device__ __forceinline__ void DeviceAllOrdersF64FlatRat(const double* rat,
                                                           const int* numDegs,
@@ -759,17 +734,16 @@ __device__ __forceinline__ void DeviceAllOrdersF64FlatRat(const double* rat,
     }
 }
 
-// The float lane's uniform ladder. The mapped argument is this lane's own
-// spelling and not the double body's: the double lane maps x by the exact
-// product x * kPerUnit truncated, which is the grid's own boundary and is exact
-// in its arithmetic, while the float lane maps by 2 (x - a)/(b - a) - 1 with a
-// and b the interval's own edges. That is the map the lane's fits were read at
-// when they were measured (tools/gen_boys_coefficients.py, f32_map) and the map
-// its narrow pieces are read with (boys_impl.hpp, ChebyshevValueF32): one map
-// for the lane. The edges are the grid's own boundaries as the generator
-// fitted on them (tools/gen_boys_coefficients.py, flat_order_f32: a = iv *
-// width, b = a + width) and not a scan of stored edges, so the interval an
-// argument is mapped inside is the one the fit was measured in.
+// The float lane's uniform ladder. The mapped argument is this lane's own spelling
+// and not the double body's: the double lane maps x by the exact product x * kPerUnit
+// truncated, while the float lane maps by 2 (x - a)/(b - a) - 1 with a and b the
+// interval's own edges. That is the map the lane's fits were read at when they were
+// measured (tools/gen_boys_coefficients.py, f32_map) and the map its narrow pieces are
+// read with (boys_impl.hpp, ChebyshevValueF32): one map for the lane. The edges are
+// the grid's own boundaries as the generator fitted on them
+// (tools/gen_boys_coefficients.py, flat_order_f32: a = iv * width, b = a + width) and
+// not a scan of stored edges, so the interval an argument is mapped inside is the one
+// the fit was measured in.
 template <bool kMonomial, typename Store>
 __device__ __forceinline__ void DeviceAllOrdersF32Flat(const float* cheb,
                                                        const float* mono,
@@ -839,12 +813,11 @@ __device__ __forceinline__ void DeviceAllOrdersF32Flat(const float* cheb,
     }
 }
 
-// The float lane's uniform grid on its RATIONAL route: the double body above at
-// this lane's width, its own grid, its own tables and DeviceRatSum32. Every
-// figure the host gate certifies for this member was measured on the mapping
-// this locate builds (tools/gen_boys_coefficients.py, f32_map), at BOTH
-// multiply-add routes, so this body's fused-only reading is inside what was
-// certified rather than beside it.
+// The float lane's uniform grid on its RATIONAL route: the double body above at this
+// lane's width, its own grid, its own tables and DeviceRatSum32. Every figure the host
+// gate certifies for this member was measured on the mapping this locate builds
+// (tools/gen_boys_coefficients.py, f32_map), at BOTH multiply-add routes, so this
+// body's fused-only reading is inside what was certified rather than beside it.
 template <typename Store>
 __device__ __forceinline__ void DeviceAllOrdersF32FlatRat(const float* rat,
                                                           const int* numDegs,

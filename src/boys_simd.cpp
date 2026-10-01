@@ -325,6 +325,12 @@ void BoysRegionASimd(int n, const double* x, double* out, std::size_t count) noe
     }
 }
 
+// No entry point calls this lane; its callers are the tests and the benchmark. It
+// takes no policy, only the multiplier, so a caller cannot name it with a division
+// form and wiring it is a signature change. Its vector body forms 1/x once and
+// multiplies it through the ladder - the plain reciprocal, not the kRefinedReciprocal
+// the entries default to - so wired as it stands it would divide in a form no caller
+// named.
 template <double kAccuracyMultiplier>
 void BoysRegionBSimd(int n, const double* x, double* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
@@ -385,6 +391,15 @@ void BoysRegionBSimd(int n, const double* x, double* out, std::size_t count) noe
     }
 }
 
+// No entry point calls this lane either, and unlike region B it holds its bound - C
+// lands 5.0e-14 against the 5.5e-14 the contract table states - so the omission is
+// not an accuracy one. This definition records no reason for it; the tree's one
+// remark on the choice is the batch entry's note that region C runs scalar there.
+//
+// It takes no policy, only the multiplier, so a caller cannot name it with a division
+// form and wiring it is a signature change, and its vector body forms 1/x once and
+// multiplies it through the ladder - the plain reciprocal, not the kRefinedReciprocal
+// the entries default to.
 template <double kAccuracyMultiplier>
 void BoysRegionCSimd(int n, const double* x, double* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
@@ -858,6 +873,10 @@ void BoysRegionASimd(int n, const double* x, double* out, std::size_t count) noe
 }
 
 template <double kAccuracyMultiplier>
+// No entry point calls this lane here either, and it takes no policy, only the
+// multiplier, so wiring it is a signature change. It forms no reciprocal of its own:
+// the run goes to the scalar lane at that lane's unnamed division form, the build
+// default rather than a caller's choice.
 void BoysRegionBSimd(int n, const double* x, double* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
 
@@ -875,6 +894,10 @@ void BoysRegionBSimd(int n, const double* x, double* out, std::size_t count) noe
 }
 
 template <double kAccuracyMultiplier>
+// No entry point calls this lane here either, and it takes no policy, only the
+// multiplier, so wiring it is a signature change. It forms no reciprocal of its own:
+// the run goes to the scalar lane at that lane's unnamed division form, the build
+// default rather than a caller's choice.
 void BoysRegionCSimd(int n, const double* x, double* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
 

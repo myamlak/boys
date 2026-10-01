@@ -5,62 +5,62 @@ whether a bare `a * b + c` written in it is a single rounding, whether the compi
 the runtime's `fma`, which arithmetic backends it carries and what each of them answers, and the
 machine each statement was observed on.
 
-Every line here is deterministic — a preprocessor fact, a compile-time constant, a symbol read out of
-the library's own object code, or the operating system's report of the processor. **Nothing on this
-page is a measurement.** A duration taken on a shared build machine describes the machine and its
-neighbours as much as the code, and none of the questions below needs one: each is a yes-or-no fact
-about a build, and the same build answers it identically on every run.
+Every line here is deterministic. A line is a preprocessor fact, a compile-time constant, a symbol
+read out of the library's own object code, or the operating system's report of the processor.
+**Nothing on this page is a measurement.** A duration taken on a shared build machine describes the
+machine and its neighbours as much as the code, and none of the questions below needs one. Each is a
+yes-or-no fact about a build, and the same build answers it identically on every run.
 
-This page is a record of builds, not of machines. A machine's contribution is named — the processor
-the row was seen on, the count of logical processors, the compiler version, the date the row was
-recorded — and it is reported rather than gated, because the runners these rows come from are
-ephemeral and the same build leg draws different hardware from run to run. **Read a row as a
-statement about an architecture and a flag set, never as a statement about the machine that produced
-it.**
+This page is a record of builds, not of machines. A machine's contribution is named: the processor
+the row was seen on, the count of logical processors, the compiler version, and the date the row was
+recorded. It is reported rather than gated, because the runners these rows come from are ephemeral
+and the same build leg draws different hardware from run to run. **Read a row as a statement about
+an architecture and a flag set, never as a statement about the machine that produced it.**
 
 The rows are printed by `tests/boys_build_facts.cpp`, built as the `boys-build-facts` target. Every
 CI leg that builds anything builds it, runs it under that leg's own check name, and compares what it
-finds against the row recorded here for that leg: a fact that moves turns the leg red, and a leg whose
-row has not been recorded yet prints the row it would record and says so instead of passing quietly.
+finds against the row recorded here for that leg. A fact that moves turns the leg red. A leg whose
+row has not been recorded yet prints the row it would record and says so, instead of passing quietly.
 `tools/gen_build_facts.py` is what folds a printed row into this page.
 
 ## What these facts mean for a consumer
 
-Two of the facts decide the shape of a multiply-add in a caller's kernel, and both belong to the
+Two of these facts decide the shape of a multiply-add in a caller's kernel, and both belong to the
 build rather than to the source. The same expression is two different arithmetics in two builds, and
 the same call is two different costs:
 
 - **A build that does not contract has a different fastest option.** `contract.this-tu.fp64` and
-  `contract.this-tu.fp32` say whether a plain `a * b + c` compiled the way this build compiles is a
-  single rounding. Where the answer is 1, the compiler emits one fused instruction from that bare
-  expression, and an explicit fused call is a second way of writing something the build already does.
-  Where the answer is 0, the same bare expression is two roundings, and a kernel that wants the fused
-  value has to name it — `std::fma`, or this library's own `Fused`. **A route tuned on one build is
-  not the route that build's neighbour measures fastest on, because it is not the same arithmetic.**
+  `contract.this-tu.fp32` say whether a plain `a * b + c`, compiled the way this build compiles it,
+  is a single rounding. Where the answer is 1, the compiler emits one fused instruction from that
+  bare expression, and an explicit fused call is a second way of writing something the build already
+  does. Where the answer is 0, the same bare expression is two roundings, and a kernel that wants the
+  fused value has to name it: `std::fma`, or this library's own `Fused`. **A route tuned on one build
+  is not the route that build's neighbour measures fastest on, because it is not the same
+  arithmetic.**
 - **`fma.route` says what naming it costs.** `out-of-line-call` means the library's objects carry an
-  undefined reference to the runtime's `fma`: every fused operation is a call into the C library.
-  `no-call` means they carry no such reference — on a target with an FMA instruction the compiler
-  emits that instruction instead. This is a fact of the compiled artifact, not of the source, and it
-  is why the two builds of one source on one machine are not interchangeable in a cost model.
+  undefined reference to the runtime's `fma`, so every fused operation is a call into the C library.
+  `no-call` means they carry no such reference; on a target with an FMA instruction, the compiler
+  emits that instruction instead. This is a fact of the compiled artifact, not of the source. It is
+  why two builds of one source on one machine are not interchangeable in a cost model.
 - **`backend.*.contracts` is the same question asked inside the library**, per arithmetic backend,
   because the library compiles its packed arithmetic under different flags than its scalar
   arithmetic. Its answer can differ from `contract.this-tu.*` in the same row, and that is expected:
   each answers for the translation units whose flags it was compiled with.
 - **`simd.target`, `simd.bits` and `simd.lanes.*`** say how much packed arithmetic the build targets
-  and how many values one packed operation covers — the shape a caller's batch wants.
+  and how many values one packed operation covers: the shape a caller's batch wants.
 - **`runtime.avx2`** is the library's own `BoysAvx2Available()` on the machine the row ran on: 1 where
   the AVX2 tier runs, 0 where the entry points dispatch to the scalar lanes.
 
-This page claims no speed for anything. It records the facts a cost decision depends on; which route
+This page claims no speed for anything. It records the facts a cost decision depends on. Which route
 wins on a given build and machine is a question for a measurement taken on that machine.
 
 ## The format
 
 One line per fact, `key=value`, with no spaces around the `=`. The first line of a row is the format
-tag `boys.build-facts/1`; a fenced block that does not open with that tag is prose and is never read
-as a row. A value is a single line — whitespace runs inside one are collapsed. A fact the platform
-cannot establish is printed `unestablished`, with a `fma.route.reason` line where there is a reason;
-nothing is inferred from a neighbouring fact, and no fact is omitted.
+tag `boys.build-facts/1`. A fenced block that does not open with that tag is prose, and is never read
+as a row. A value is a single line, with whitespace runs inside it collapsed. A fact the platform
+cannot establish is printed `unestablished`, with a `fma.route.reason` line where there is a reason.
+Nothing is inferred from a neighbouring fact, and no fact is omitted.
 
 | Key | What it says |
 |---|---|
@@ -85,8 +85,8 @@ nothing is inferred from a neighbouring fact, and no fact is omitted.
 
 The keys `leg`, `recorded`, `cpu.model`, `cpu.model.source`, `cpu.logical`, `compiler.version`,
 `compiler.standard`, `fma.route.tool` and `fma.route.artifact` are **tags**: they say where and by
-whom a row was observed rather than what the build does. A leg reports a tag that has moved and does
-not fail on it; every other key is gated.
+whom a row was observed, rather than what the build does. A leg reports a tag that has moved and does
+not fail on it. Every other key is gated.
 
 Recording a row, from a leg's captured output or a developer build's:
 

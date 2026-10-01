@@ -47,7 +47,8 @@ set(boysExamples
     04_accuracy_tier
     05_policy
     06_what_it_guarantees
-    07_option_probe)
+    07_option_probe
+    08_shell_quartet_batch)
 option(BUILD_CUDA
     "Build the CUDA lane (needs the CUDA toolkit; a documented local gate — never CI)"
     OFF)
@@ -445,6 +446,7 @@ if (BOYS_BUILD_TESTS)
         tests/boys_half_native_test.cpp
         tests/boys_backend_test.cpp
         tests/boys_probe_test.cpp
+        tests/boys_build_defaults_test.cpp
         tests/boys_transform_test.cpp)
     target_link_libraries(boys-tests PRIVATE boys gtest gtest_main)
     target_include_directories(boys-tests PRIVATE src)
@@ -688,6 +690,13 @@ int main() {
     # second call is the one that names the rung, so a probe that compiled only
     # the first would not be measuring the axis at the multiplier the engine
     # answers it at.
+    #
+    # Only the shapes that CAN carry the axis are probed here. A one-order entry
+    # has one order to pack and refuses the axis for that reason alone, which is
+    # a property of the call and not of the axis; asking it here would make this
+    # probe's verdict a fact about the shape while the gate reads it as a fact
+    # about the axis. That shape has the probe below, and its verdict is booked
+    # as the shape limit it is.
     check_cxx_source_compiles("
 #include <boys/boys.hpp>
 int main() {
@@ -697,11 +706,23 @@ int main() {
                                         boys::BoysBudget::kFloat, boys::PackAxis::kOrders>;
     boys::BoysAllOrdersF32<1.0, OrdersAxis>(32, 1.0f, out);
     boys::BoysAllOrdersF32<64.0, OrdersAxis>(32, 1.0f, out);
-    boys::BoysSingleF32<1.0, OrdersAxis>(1, 1.0f);
     boys::BoysAllNF32<1.0, OrdersAxis>(1, in, out, 1);
     return 0;
 }
 " BOYS_GATE_F32_ACCEPTS_ORDERS)
+    # The one-order shape on that lane, which is the shape the probe above used
+    # to be failing on. Refused is the expected verdict: there is one order here
+    # and a packing axis has nothing to pack.
+    unset(BOYS_GATE_F32_SINGLE_ACCEPTS_ORDERS CACHE)
+    check_cxx_source_compiles("
+#include <boys/boys.hpp>
+int main() {
+    using OrdersAxis = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
+                                        boys::BoysBudget::kFloat, boys::PackAxis::kOrders>;
+    boys::BoysSingleF32<1.0, OrdersAxis>(1, 1.0f);
+    return 0;
+}
+" BOYS_GATE_F32_SINGLE_ACCEPTS_ORDERS)
     set(CMAKE_TRY_COMPILE_TARGET_TYPE "${_boys_probe_target_type}")
     unset(_boys_probe_target_type)
     unset(CMAKE_REQUIRED_FLAGS)
@@ -746,6 +767,16 @@ int main() {
         target_compile_definitions(boys-accuracy-gate PRIVATE BOYS_GATE_F32_REFUSES_ORDERS=1)
         message(STATUS "boys: the orders packing axis on the single-precision engines is REFUSED, "
             "measured by compiling the call")
+    endif()
+
+    if (NOT BOYS_GATE_F32_SINGLE_ACCEPTS_ORDERS)
+        target_compile_definitions(boys-accuracy-gate PRIVATE
+            BOYS_GATE_F32_SINGLE_REFUSES_ORDERS=1)
+        message(STATUS "boys: the one-order entry on the single-precision engines is REFUSED the "
+            "orders axis, measured by compiling the call")
+    else()
+        message(STATUS "boys: the one-order entry on the single-precision engines ACCEPTS the "
+            "orders axis")
     endif()
 
     if (BOYS_GATE_HAS_TIER)
@@ -1191,6 +1222,17 @@ if (BUILD_BENCHMARKS)
     target_compile_features(boys-across-orders-benchmark PRIVATE cxx_std_23)
     boys_strict_warnings(boys-across-orders-benchmark)
 
+    # The region-A transform lane's driver: one row per (arithmetic mode, band)
+    # over one argument set, the mode names read from the library
+    # (BoysProductModes()) rather than written out here. Portable: it calls the
+    # public header and no intrinsic of its own. This is the entry's cost
+    # harness; the accuracy gate is what reads the same entry for accuracy.
+    add_executable(boys-transform-benchmark benchmarks/boys_transform_benchmark.cpp)
+    target_link_libraries(boys-transform-benchmark PRIVATE boys)
+    target_compile_definitions(boys-transform-benchmark PRIVATE BoysFp16=1)
+    target_compile_features(boys-transform-benchmark PRIVATE cxx_std_23)
+    boys_strict_warnings(boys-transform-benchmark)
+
     # The AVX2 timing harness is x86_64-only, like the tier it measures. It is
     # a local-only target (never a CI leg), so on a non-x86_64 host it is
     # reported and skipped rather than half-built: the measured numbers would
@@ -1203,8 +1245,11 @@ if (BUILD_BENCHMARKS)
         target_compile_definitions(boys-unsorted-simd-benchmark PRIVATE BoysFp16=1)
         target_compile_features(boys-unsorted-simd-benchmark PRIVATE cxx_std_23)
         boys_strict_warnings(boys-unsorted-simd-benchmark)
+        # The mixed per-vector kernel compiles AVX2 intrinsics in its own TU -
+        # this file's source together with the shipped src/boys_simd.cpp it
+        # includes - so this flag set is what the shipped kernel's code is
+        # compiled with here, as it is for the library's own copy of that unit.
         if (MSVC)
-            # The mixed per-vector kernel compiles AVX2 intrinsics in its own TU.
             set_source_files_properties(benchmarks/boys_unsorted_simd_benchmark.cpp
                 PROPERTIES COMPILE_OPTIONS "/arch:AVX2")
         else()

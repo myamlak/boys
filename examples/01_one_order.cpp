@@ -5,8 +5,9 @@
 // The answer is one call. The second number printed is the error the library
 // guarantees for that call, so the first number is read with a figure beside it
 // rather than on trust.
-#include <boys/boys.hpp>
+#include <boys/boys_span.hpp>
 
+#include <array>
 #include <cmath>
 #include <cstdio>
 
@@ -26,12 +27,13 @@ int main()
 
     // The all-orders entry computes the same value by a different route; the
     // two must agree inside the bound printed above.
-    double ladder[boys::kMaxBoysOrder + 1] = {};
+    std::array<double, boys::kMaxBoysOrder + 1> ladder{};
     boys::BoysAllOrders(n, x, ladder);
     const double gap = std::fabs(ladder[n] - f);
 
     std::printf("BoysAllOrders agrees to %.2g\n", gap);
-    if (!(gap <= bound.value) || !(f > 0.0)) {
+    if (!(gap <= bound.value) || !(f > 0.0))
+    {
         std::printf("FAIL: entries disagree, or F is not positive\n");
         return 1;
     }

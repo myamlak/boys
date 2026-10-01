@@ -775,6 +775,18 @@ struct OptionProbeReport {
     /// appears when the caller narrowed the run to a class of one.
     OptionProbeDefaultHow defaultHow = OptionProbeDefaultHow::kNone;
 
+    /// The members of an axis that the class behind \c recommended held no row
+    /// for, one line per axis, empty when that class covered every axis whole.
+    ///
+    /// **A class that names a default for an axis is a class that compared that
+    /// axis's members**, and a member no row of the class reached was not in the
+    /// comparison. This list is what says so, rather than letting a default read
+    /// as a race that was never run: the axis's name, and the members the class
+    /// held no row for. The default is still named - the run measured what it
+    /// measured - but the report does not present it as chosen among equals it
+    /// never met.
+    std::vector<std::string> defaultClassAbsent;
+
     /// The fastest option of the certified lane's reference class by the main run's
     /// own rounds alone, empty when no option of that class was measured. It is what
     /// \c recommended names whenever the class holds more than one measured

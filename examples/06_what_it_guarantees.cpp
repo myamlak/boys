@@ -5,19 +5,25 @@
 // Ask before you rely on it. The answer is decided by the guaranteed error, not
 // by the error the lane happened to deliver on somebody's test grid, so a "yes"
 // here is something a calculation can rest on.
-#include <boys/boys.hpp>
+#include <boys/boys_span.hpp>
 
+#include <array>
 #include <cstdio>
 
 namespace {
 
 const char* VerdictName(boys::ToleranceVerdict verdict)
 {
-    switch (verdict) {
-        case boys::ToleranceVerdict::kGuaranteedInside: return "YES - guaranteed";
-        case boys::ToleranceVerdict::kDeliveredInside: return "only measured, not guaranteed";
-        case boys::ToleranceVerdict::kOutside: return "NO";
-        case boys::ToleranceVerdict::kNotCarried: return "not offered by this build";
+    switch (verdict)
+    {
+    case boys::ToleranceVerdict::kGuaranteedInside:
+        return "YES - guaranteed";
+    case boys::ToleranceVerdict::kDeliveredInside:
+        return "only measured, not guaranteed";
+    case boys::ToleranceVerdict::kOutside:
+        return "NO";
+    case boys::ToleranceVerdict::kNotCarried:
+        return "not offered by this build";
     }
     return "?";
 }
@@ -26,11 +32,12 @@ const char* VerdictName(boys::ToleranceVerdict verdict)
 
 int main()
 {
-    const double wanted[] = {1e-12, 1e-10, 1e-8};
+    const std::array<double, 3> wanted{1e-12, 1e-10, 1e-8};
 
     std::printf("the double entry, every order, as it ships:\n");
     std::printf("  requested    verdict                  guaranteed   measured\n");
-    for (const double tolerance : wanted) {
+    for (const double tolerance : wanted)
+    {
         const boys::CombinationCoverage answer =
             boys::QueryCombination(boys::Precision::kFp64, boys::FitRoute::kChebyshev,
                                    boys::EvalScheme::kHorner, boys::PackAxis::kArguments,

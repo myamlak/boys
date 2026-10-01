@@ -2980,6 +2980,55 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
         return;
     }
 
+    // ---- what the default's own class actually compared ----------------------
+    //
+    // The class names a default for every axis a caller may leave unnamed, and a
+    // class that names one is a class that compared that axis's members. A member
+    // it held no row for was not in the comparison, and a default read as a race
+    // that was never run is the defect this records: the runs that set this
+    // library's shipped partition default predated the uniform partition, so the
+    // comparison naming 'narrow' had a three-member axis and measured one of them.
+    //
+    // The partition is the axis checked here because it is the one this library's
+    // default states as a comparison. The members are read off the class's own
+    // rows and the axis is read off the library's table, so what the line reports
+    // is a member this run did not compare rather than one the library lacks.
+    {
+        std::vector<std::string> compared;
+
+        for (const std::size_t column : doubles->columns)
+        {
+            for (const FitGranularityInfo& partition : report.granularities)
+            {
+                if (partition.granularity == report.measurements[column].granularity)
+                {
+                    compared.push_back(partition.name);
+                }
+            }
+        }
+
+        std::string missing;
+
+        for (const FitGranularityInfo& partition : report.granularities)
+        {
+            if (std::find(compared.begin(), compared.end(), partition.name) != compared.end())
+            {
+                continue;
+            }
+
+            missing += missing.empty() ? "" : ", ";
+            missing += partition.name;
+        }
+
+        if (!missing.empty())
+        {
+            report.defaultClassAbsent.push_back(
+                Text("partition: the class held no row for %s, so the default it names was not "
+                     "chosen against %s",
+                     missing.c_str(), missing.find(',') == std::string::npos ? "it" : "them"));
+        }
+    }
+
     const RunOutcome pooled = OrderColumns(rounds, pool, figures);
     report.fastestAtReferenceAccuracy = name_of(pooled.leader);
 
@@ -5272,6 +5321,15 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
                                       tiedStage->winner != report.recommended;
 
         text += Text("  default: %s\n", report.recommended.c_str());
+
+        // Printed before the way-it-was-reached, because it qualifies it: a
+        // default named from a class that held no row for a member of an axis is
+        // not the winner of that axis, and the reader has to meet that before
+        // reading how the row was reached rather than after.
+        for (const std::string& absent : report.defaultClassAbsent)
+        {
+            text += Text("    NOT COMPARED: %s\n", absent.c_str());
+        }
 
         if (report.defaultHow == OptionProbeDefaultHow::kOrdered)
         {

@@ -1270,22 +1270,17 @@ on a host without the vector tier, and past the uniform grid's end. A caller nam
 `kPlainReciprocal` together with `PackAxis::kOrders` is served plain steps on every order the packed
 lane hands over.
 
-**The paths that do not carry it.** Two, and both are stated here rather than left to be found:
+**The path that does not carry it.** One, and it is stated here rather than left to be found: the
+**device lane**. `DivisionForm` is a field of the host policy and is named in no device header. The
+GPU surface carries its own axes, and this is not one of them.
 
-- **The device lane.** `DivisionForm` is a field of the host policy and is named in no device
-  header. The GPU surface carries its own axes, and this is not one of them.
-- **The float all-orders entries' region-A downward ladder.** For x below 11.899848152108484 both
-  `BoysAllOrdersF32` entries seed at the top order and recurse down, and that ladder's step is
-  written as a division rather than through the policy's form. `kExactDivision` and
-  `kRefinedReciprocal` are the same number there, so two of the three forms are served exactly as
-  named; a caller naming `kPlainReciprocal` is served the exact form's arithmetic on that one
-  ladder. The reason is the figure this lane publishes: it publishes 1.5e-7 for every form, and the
-  plain form's reciprocal on that step takes the ladder outside it — the worst of the gate's own
-  reference grid reads 1.75e-7 at n = 0, x = 9.74055, where this lane's exact and refined forms
-  deliver 3.67355e-09, the second cell that form puts outside being x = 7 at 1.55469e-07 against
-  their 3.62601e-08, and their own worst over the whole grid being 1.08354e-07 at n = 0,
-  x = 11.1509647, inside the base. Serving the plain form there is a figure the lane does not
-  publish yet; it is owed work rather than a combination that cannot be formed.
+**The float lane's plain reciprocal carries its own figure.** The all-orders entries' region-A
+downward ladder divides by the step's constant rather than by the argument, and that step reads the
+form the policy names. The plain reciprocal rounds once more there, which takes the ladder past the
+lane's 1.5e-7 base: the gate's own reference grid reads 1.7514e-07 at n = 0, x = 9.74055, where the
+lane's exact and refined forms deliver 1.08354e-07 at worst. So the lane publishes a term beside its
+base for that form — 1.5e-7 + 1e-7, which is 2.5e-7 — and `BoysAccuracyGuaranteed` answers it when
+the caller names the form.
 
 **Reproduction.** The option probe measures the axis and names the form in every row it prints:
 
@@ -1378,6 +1373,7 @@ The block's own last lines, from a run of the gate on this tree:
 
     COMBINATIONS: 504 of 672 member(s) of the option space are certified and published
                   0 refused with the library's own reason and owed
+                  0 call-site limit(s) name unbuilt work and are owed the same way
                   168 not runnable on this host, counted apart and not against the library
                   0 offered and covered by no cell of this block
                   0 delivering outside the bound its lane publishes
@@ -1417,7 +1413,7 @@ One combination per lane, from this run:
 | Combination | `bound` — `BoysAccuracyGuaranteed` | `delivered` — `BoysAccuracyDelivered` | The row's own bound | What the whole call measured | Where each figure came from |
 |---|---|---|---|---|---|
 | fp64, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 5.5e-14 | 4.45751e-14 | 5.5e-14 | 5e-14 | bound: throughout, every region. delivered: `BoysFitRoutes()`, `BoysFitGranularities()` and `BoysEvalSchemes()` |
-| fp32, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 1.5e-07 | 1.23617e-07 | 1.5e-07 | 1.08354e-07 | bound: throughout, every region. delivered: `BoysFitRoutesF32()` |
+| fp32, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 1.5e-07 | 1.23617e-07 | 1.5e-07 | 1.08354e-07 | bound: every region, at exact division and the refined reciprocal. delivered: `BoysFitRoutesF32()` |
 | fp16, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 1.5e-07 | no figure | 1.5e-07 | 1.08354e-07 | bound: plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum. delivered: no row of this library measured a half-typed return |
 | fp32-device, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 2.3e-07 | 1.42109e-14 | 2.3e-07 | not measured — this host cannot run the lane | bound: the lane's documented figure, plus 8e-8 under the fast region-B exponential. delivered: `BoysFitRoutes()` |
 | fp64, rational-minimax, split-clenshaw, narrow, arguments, m = 1 | 5.5e-14 | 2.21663e-14 | 5.5e-14 | 5e-14 | bound: throughout, every region. delivered: the narrow pieces' own row |
@@ -1516,25 +1512,31 @@ offers has one, each entry of that precision runs it when the call site names no
 lanes as a fixed policy, since those entries take no policy argument at all — and this section states
 what each name selects and the bound it carries.
 
-**Two of these axes have been measured and two have not, and the table says which is which.** The
-scheme and the partition were set from the option probe's own runs on a quiet host, and **those runs
-did not separate the rows of either axis**: on the double lane's full-accuracy class for the
-all-orders shape, the shipped partition read by the split Clenshaw recurrence and the narrow
-partition read by either scheme came out within 0.9% of each other, against the 5.6 to 7.4 points one
-of those rows moves by from one run to the next, with the class's next row 11.5% to 12% behind them.
-The two settings in the table are therefore two of the rows those runs could not separate rather than
-rows they found cheaper — the probe is what a consumer runs where they deploy, and the figures behind
-these two are its report rather than a recommendation this page can restate, because which option is
-fastest is a property of
-the host, its flags and its card. The route and the packing axis carry the settings the library has
-always shipped and have not been ranked against a timing. Setting any of them from a run is one line
+**Two of these axes have been measured and two have not, and the table says which is which — with one
+correction this page owes its reader.** The scheme and the partition were set from the option probe's
+own runs. **The partition default was never chosen against its axis.** Those runs are dated
+2026-09-28, and every partition-bearing row in them is named `narrow`; the uniform partition reached
+the host lanes on 2026-09-29 and every lane on 2026-09-30. So the comparison that named `narrow` had
+a three-member axis and measured one member of it: that default is owed a re-derivation with the whole
+axis rather than presented here as a settled choice. On the scheme axis the runs did compare both
+rows and did not separate them, so that default is one of two rows the instrument could not tell apart
+rather than the row it found cheaper. Which of the two is faster is a property of the host, its flags
+and its card, and the probe is what a consumer runs where they deploy. The route and the packing axis
+carry the settings the library has always shipped and have not been ranked against a timing. Setting
+any of them from a run is one line
 per name in `include/boys/boys_build_defaults.hpp`, the file a build's defaults are read from: a
 build replaces that file with its own five rather than editing the tree, which is what lets a
 consumer set them for the machine they deploy on without touching a library header
 (`BOYS_BUILD_DEFAULTS`, CONTRIBUTING.md), and the entries that name no policy then compile those
-choices at no run-time cost. The device lane's two, `boys::kBoysFullAccuracyMultiplier` in
-`accuracy.hpp` and `boys::kDefaultRegionBExp` in `boys_device_tables.hpp`, are outside that file and
-are set where they are declared. *What is not claimed*, at the end of this page, names the lanes
+choices at no run-time cost. **Two of the five a build cannot move**, and both refuse at compile time
+with the library's own reason rather than compiling something else: the packing axis, because an
+entry that produces one order has no second order to pack into a vector lane, and the uniform member
+of the fit granularity, which four batched bodies have no branch for. A build that sets either to
+what the library already runs is fine; setting either to another member is a build that does not
+compile. The device lane's two, `boys::kBoysFullAccuracyMultiplier` in `accuracy.hpp` and
+`boys::kDefaultRegionBExp` in `boys_device_tables.hpp`, are outside that file and are set where they
+are declared — and are therefore not consumer-reachable at all, which is owed work rather than a
+design choice. *What is not claimed*, at the end of this page, names the lanes
 nothing here was measured on.
 
 | Precision | Name | Fit route | Scheme | Granularity | Packing axis | Engine budget |

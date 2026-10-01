@@ -1,14 +1,8 @@
-// The arithmetic-backend contract (boys/backend.hpp): which arithmetic the
-// build carries, and what each one's multiply-adds round.
-//
-// The two facts that matter to a caller holding a number are here, because
-// they are what a lane's published figure rests on and neither is visible in
-// the value itself. The first is that MulAdd is fused and MulSub is not — the
-// split-precision lane evaluates its recurrence at the two-rounding reading
-// on purpose, and a build that fused the bare form would move it. The second
-// is Contracts(), which reports whether a bare product-plus-add in this
-// arithmetic is one rounding in this build; it is asserted against a
-// measurement made in this translation unit, not against an expectation.
+// The arithmetic-backend contract (boys/backend.hpp): which arithmetic the build
+// carries, and what each one's multiply-adds round. MulAdd is fused and MulSub is
+// not - the split-precision lane evaluates its recurrence at the two-rounding
+// reading on purpose, and a build that fused the bare form would move it.
+// Contracts() is asserted against a measurement in this translation unit.
 
 #include "boys/backend.hpp"
 
@@ -39,7 +33,6 @@ using boys::backend::Scalar;
 using boys::backend::ScalarFp32;
 using boys::backend::ScalarFp64;
 
-// The concept admits both scalar arithmetics: the declaration is the check.
 static_assert(ArithmeticBackend<ScalarFp64>);
 static_assert(ArithmeticBackend<ScalarFp32>);
 
@@ -63,15 +56,12 @@ Probe<T> MakeProbe() {
                     static_cast<T>(-(unit + half)), static_cast<T>(small * small)};
 }
 
-// Whether a bare product-plus-add is one rounding in this translation unit.
-// The operands are volatile so the expression is evaluated rather than folded
-// away; the multiply-add itself may still be contracted, which is the
-// question, and the addend makes the two answers differ.
+// Whether a bare product-plus-add is one rounding here. The operands are volatile
+// so the expression is evaluated rather than folded away; whether the multiply-add
+// is contracted is the question, and the addend makes the two answers differ.
 //
-// The fused value is spelled out with the standard function rather than taken
-// from the backend, because the backend's own multiply-add is what is under
-// test: it follows the build's route, so asking it here would have the
-// measurement confirm itself.
+// The fused value comes from the standard function rather than the backend, whose
+// own multiply-add is under test: asking it here would have it confirm itself.
 template <typename T>
 bool BareIsFused() {
     const Probe<T> p = MakeProbe<T>();
@@ -91,8 +81,7 @@ TEST(BackendTest, ScalarWidthAndValueType) {
     EXPECT_STREQ(ScalarFp32::kName, "scalar-fp32");
 }
 
-// The transport round-trips, and a broadcast of a value is that value in the
-// one lane the scalar backend has.
+// The transport round-trips; a broadcast is that value in the one lane of a scalar backend.
 TEST(BackendTest, ScalarTransportRoundTrips) {
     const double stored = 3.25;
     const double loaded = ScalarFp64::Load(&stored);
@@ -101,10 +90,9 @@ TEST(BackendTest, ScalarTransportRoundTrips) {
     EXPECT_EQ(out, 6.5);
 }
 
-// MulAdd is the selected route's arithmetic, and this pair of operands tells
-// the two routes apart: the fused step keeps the bit the product's rounding
-// drops and the separate step loses it. MulSub is outside the route and is the
-// two-rounding value on every build.
+// MulAdd is the selected route's arithmetic, and these operands tell the two routes
+// apart: the fused step keeps the bit the product's rounding drops, the separate
+// step loses it. MulSub is outside the route and two-rounding on every build.
 TEST(BackendTest, MulAddIsTheSelectedRouteAndMulSubIsNot) {
     const Probe<double> p = MakeProbe<double>();
 
@@ -116,8 +104,7 @@ TEST(BackendTest, MulAddIsTheSelectedRouteAndMulSubIsNot) {
     const double fused = std::fma(p.a, p.b, p.c);
     const double separate = ScalarFp64::Add(ScalarFp64::Mul(p.a, p.b), p.c);
 
-    // The operands differ between the two readings, so which one MulAdd
-    // returned says which arithmetic it ran.
+    // The two readings differ, so which one MulAdd returned says which arithmetic it ran.
     EXPECT_NE(fused, separate);
     EXPECT_EQ(fused, p.lost);
 
@@ -126,17 +113,14 @@ TEST(BackendTest, MulAddIsTheSelectedRouteAndMulSubIsNot) {
     ASSERT_GE(backends.size(), 1u);
     EXPECT_EQ(mulAdd, backends[0].route == MulAddRoute::kFused ? fused : separate);
 
-    // MulSub is outside the route: the product rounds, then the difference
-    // rounds, on every build.
+    // MulSub is outside the route: product rounds, then difference rounds, on every build.
     EXPECT_EQ(mulSub, ScalarFp64::Sub(ScalarFp64::Mul(p.a, p.b), p.c));
     EXPECT_NE(mulSub, mulAdd);
 }
 
-// The route the report states is the arithmetic the lane delivers, for each
-// scalar precision: the reported route agrees with the one measured in this
-// translation unit, and a route reported as separate is one whose fused step is
-// really two roundings here. This is the check that a caller reading the table
-// can attribute a value to the arithmetic that produced it.
+// The reported route agrees with the arithmetic measured in this translation unit, for
+// each scalar precision: a route reported as separate is one whose fused step is really
+// two roundings here.
 TEST(BackendTest, ReportedMulAddRouteMatchesTheArithmetic) {
     const std::span<const BackendInfo> backends = BoysBackends();
     ASSERT_GE(backends.size(), 2u);
@@ -144,9 +128,8 @@ TEST(BackendTest, ReportedMulAddRouteMatchesTheArithmetic) {
     EXPECT_EQ(backends[0].route, boys::backend::detail::RouteInForce<double>());
     EXPECT_EQ(backends[1].route, boys::backend::detail::RouteInForce<float>());
 
-    // A route in force is the selection unless the build contracts the bare
-    // form, so a reported separate route is only ever printed beside a
-    // contraction measurement that says the two roundings happen.
+    // A route in force is the selection unless the build contracts the bare form, so a
+    // reported separate route is printed only where the two roundings happen.
     for (const BackendInfo& info : backends) {
         if (info.route == MulAddRoute::kSeparate) {
             EXPECT_FALSE(info.contracts) << info.name;
@@ -154,8 +137,7 @@ TEST(BackendTest, ReportedMulAddRouteMatchesTheArithmetic) {
     }
 }
 
-// The route is a name a report can print, and every route in the table has
-// one that is not the placeholder.
+// The route is a name a report can print, and no row answers with the placeholder.
 TEST(BackendTest, MulAddRouteNamesArePrintable) {
     EXPECT_STREQ(MulAddRouteName(MulAddRoute::kFused), "fused");
     EXPECT_STREQ(MulAddRouteName(MulAddRoute::kSeparate), "separate");
@@ -165,9 +147,8 @@ TEST(BackendTest, MulAddRouteNamesArePrintable) {
     }
 }
 
-// MulSub is the two-rounding reading on every build: it agrees with the
-// product and the difference written separately, neither of which a
-// contraction pass can merge into one step.
+// MulSub is the two-rounding reading on every build: the product and the difference are
+// written separately, which no contraction pass can merge into one step.
 TEST(BackendTest, MulSubAgreesWithSeparateProductAndDifference) {
     const double lattice[] = {0.0,           1.0,        -1.0,        2.5,
                               -3.75,         1e-8,       1e8,         6.25e-2,
@@ -187,16 +168,14 @@ TEST(BackendTest, MulSubAgreesWithSeparateProductAndDifference) {
     EXPECT_EQ(compared, std::size(lattice) * std::size(lattice) * std::size(lattice));
 }
 
-// Contracts() answers what this build does with a bare product-plus-add. The
-// assertion is against the measurement itself, in both precisions, so a build
-// that changes its mind is caught rather than assumed.
+// Contracts() answers what this build does with a bare product-plus-add, asserted against
+// the measurement itself in both precisions.
 TEST(BackendTest, ContractsMatchesAMeasurementInThisTranslationUnit) {
     EXPECT_EQ(ScalarFp64::Contracts(), BareIsFused<double>());
     EXPECT_EQ(ScalarFp32::Contracts(), BareIsFused<float>());
 }
 
-// A lane is a value a report can print: every backend the build carries is
-// named, the names are the ones the types state, and none repeats.
+// A lane is a value a report can print: every backend named once, by the name its type states.
 TEST(BackendTest, TheCarriedBackendsAreEnumeratedAndNamed) {
     const std::span<const BackendInfo> backends = BoysBackends();
 
@@ -216,16 +195,12 @@ TEST(BackendTest, TheCarriedBackendsAreEnumeratedAndNamed) {
         << "a backend name repeats";
 }
 
-// The reported contraction flag is the one the header gives for the
-// arithmetic carrying that name, so the report and the arithmetic agree.
-//
-// This is the check that the report describes the arithmetic the scalar lanes
-// actually run. Contraction belongs to a compiled translation unit, and the
-// library has more than one flag context: src/boys_simd.cpp carries the packed
-// flags, everything else does not. A table measured in the packed unit would
-// print that unit's answer beside the scalar lanes' values, so this compares
-// the report against the same arithmetic measured where a scalar kernel would
-// be compiled — which is what this file is.
+// The reported contraction flag is the one the header gives for the arithmetic carrying
+// that name. Contraction belongs to a compiled translation unit, and the library has more
+// than one flag context: src/boys_simd.cpp carries the packed flags, everything else does
+// not. A table measured in the packed unit would print that unit's answer beside the
+// scalar lanes' values, so the comparison is made where a scalar kernel would be compiled,
+// which is what this file is.
 TEST(BackendTest, ReportedContractionMatchesTheArithmetic) {
     const std::span<const BackendInfo> backends = BoysBackends();
     ASSERT_GE(backends.size(), 2u);
@@ -251,28 +226,23 @@ TEST(BackendTest, ThePackedPairAppearsExactlyWithTheVectorTier) {
 // ---------------------------------------------------------------------------
 // The selection axes on the policy, and the five names the build fixes
 // ---------------------------------------------------------------------------
-// Every axis the entries select is one field of EvalPolicy, and every field has
-// its own default. What the entries do with an axis is their own business; what
-// is pinned here is which member each default names, so that a move of one is a
-// decision this test states rather than a value that follows silently, and that
-// the axes report themselves by name.
+// Every axis the entries select is one field of EvalPolicy with its own default. The pins
+// say which member each default names, so a move of one is a decision this test states
+// rather than a value that follows silently, and each axis reports itself by name.
 //
-// The engine budget is the library's: it is what a single-precision engine
-// computes at, and no build replaces it. The names an unnamed call resolves to
-// are the BUILD's rather than the library's, which is what
-// boys/boys_build_defaults.hpp exists for: a build that has measured its own
-// machine replaces that header with its own set (that header states what a
-// replacement carries; the CMake option is BOYS_BUILD_DEFAULTS, CONTRIBUTING.md).
-// So the pins below are the shipped names where the shipped header is in force
-// — the configuration every bound in this repository was measured at — and
-// where it is not, they state what has to hold instead.
+// The engine budget is the library's: what a single-precision engine computes at, and no
+// build replaces it. The names an unnamed call resolves to are the BUILD's, which is what
+// boys/boys_build_defaults.hpp exists for: a build that has measured its own machine
+// replaces that header with its own set (the CMake option is BOYS_BUILD_DEFAULTS,
+// CONTRIBUTING.md). The pins below are the shipped names where the shipped header is in
+// force - the configuration every bound in this repository was measured at - and what has
+// to hold instead where it is not.
 //
-// TWO OF THE FIVE AXES ARE READ FROM THAT HEADER TODAY, the fit route and the
-// evaluation scheme, and the pins below cover those two. The packing axis, the
-// division form and the partition follow the same seam and are read by the
-// constants in backend.hpp, so their pins are asserted in the change that makes
-// those constants read this file rather than a literal: asserting them here
-// would be asserting a value no header governs yet.
+// ALL FIVE AXES ARE READ FROM THAT HEADER. Two of them always were - the fit route and the
+// evaluation scheme - and the other three, the packing axis, the division form and the
+// partition, were literals in backend.hpp until they were wired to the same seam. The pins
+// below cover all five, because a pin on some of them is how three macros came to be
+// documented, replaced and read by nothing.
 static_assert(boys::EvalPolicy<>{}.kBudget == boys::BoysBudget::kFloat,
               "the default engine budget moved");
 
@@ -288,11 +258,9 @@ static_assert(boys::kDefaultFitRoute == boys::FitRoute::kChebyshev,
 static_assert(boys::kDefaultEvalScheme == boys::EvalScheme::kHorner,
               "the default evaluation scheme moved");
 #else
-// A replacement is in force, and it is read instead of the committed file rather
-// than beside it, so the names it carries are this build's. A replacement that
-// names the shipped set has chosen nothing, and so does a seam that stopped
-// delivering the file — both come out here as the committed values, which is
-// what this refuses.
+// A replacement is read instead of the committed file rather than beside it, so the names
+// it carries are this build's. A replacement naming the shipped set, and a seam that
+// stopped delivering the file, both come out as the committed values.
 constexpr bool kShippedDefaultsInForce =
     boys::kDefaultFitRoute == boys::FitRoute::kChebyshev &&
     boys::kDefaultEvalScheme == boys::EvalScheme::kHorner;
@@ -303,23 +271,30 @@ static_assert(!kShippedDefaultsInForce,
               "axis, or unset it to build the shipped configuration");
 
 #if defined(BOYS_BUILD_DEFAULTS_TEST_FIXTURE)
-// The test's own override (tests/build_defaults_tuned.hpp), pinned by value so
-// that a configure which set the option and delivered some other header is a
-// failure here rather than a green run of some other build's choices.
+// The test's own override (tests/build_defaults_tuned.hpp), pinned by value so a configure
+// that delivered some other header fails here rather than passing.
+// One assertion per axis, whichever value the fixture sets it to. Pinning only
+// the axes it happens to move is how the seam's three dead macros went unnoticed:
+// the fixture moved the scheme, copied the library's literals for the rest, and
+// nothing here could tell a move that took effect from a macro nothing read.
 static_assert(boys::kDefaultFitRoute == boys::FitRoute::kChebyshev,
               "the fixture's fit route is not in force");
 static_assert(boys::kDefaultEvalScheme == boys::EvalScheme::kSplitClenshaw,
               "the fixture's evaluation scheme is not in force");
+static_assert(boys::kDefaultPackAxis == boys::PackAxis::kArguments,
+              "the fixture's packing axis is not in force");
+static_assert(boys::kDefaultDivisionForm == boys::DivisionForm::kPlainReciprocal,
+              "the fixture's division form is not in force");
+static_assert(boys::kDefaultFitGranularity == boys::FitGranularity::kShipped,
+              "the fixture's fit granularity is not in force");
 #endif
 #endif
 
-// The unnamed call is the build's policy, and the values it hands back are the
-// shipped policy's only where the shipped header is in force. The comparison is
-// made through the entry a caller writes — BoysAllOrders with no template
-// argument against the same entry called at the shipped policy explicitly, over
-// the domain's regions — so what is measured is what a call site gets and not
-// what a constant holds, and it prints the count it moved rather than a
-// checkmark.
+// The unnamed call is the build's policy, and its values are the shipped policy's only
+// where the shipped header is in force. The comparison is made through the entry a caller
+// writes - BoysAllOrders with no template argument against the same entry called at the
+// shipped policy explicitly - so what is measured is what a call site gets rather than
+// what a constant holds.
 TEST(BackendTest, TheUnnamedCallIsTheDefaultThisBuildWasCompiledWith) {
     using boys::BoysAllOrders;
     using Shipped = boys::EvalPolicy<boys::FitRoute::kChebyshev,
@@ -329,9 +304,8 @@ TEST(BackendTest, TheUnnamedCallIsTheDefaultThisBuildWasCompiledWith) {
                                      boys::FitGranularity::kNarrow,
                                      boys::DivisionForm::kRefinedReciprocal>;
 
-    // Arguments across the domain's regions, at orders that span the ladder: 0
-    // is the seed every higher order is reached from, and kMaxBoysOrder is the
-    // widest call the entries serve.
+    // Arguments across the domain's regions, at orders that span the ladder: 0 is the seed
+    // every higher order is reached from, and kMaxBoysOrder the widest call the entries serve.
     constexpr int kOrders[] = {0, 1, 4, 12, boys::kMaxBoysOrder};
     constexpr double kArguments[] = {0.0, 1e-12, 1e-3, 0.5, 1.0, 3.0, 11.9, 12.0, 60.0, 120.0};
 
@@ -369,50 +343,40 @@ TEST(BackendTest, TheUnnamedCallIsTheDefaultThisBuildWasCompiledWith) {
     EXPECT_EQ(moved, 0u) << "the committed defaults header is in force, so an unnamed call is the "
                             "shipped policy's call and no value may differ";
 #elif defined(BOYS_BUILD_DEFAULTS_TEST_FIXTURE)
-    // The fixture moves the scheme, so the values are not the shipped ones: the
-    // count above is measured rather than expected, and this is the pin that
-    // says an unnamed call follows the build's header.
+    // The fixture moves the scheme, so the values are not the shipped ones and the
+    // assertion says an unnamed call follows the build's header.
     EXPECT_GT(moved, 0u) << "the fixture moves the scheme, so an unnamed call cannot hand back "
                             "the shipped policy's values";
 #endif
 }
 
-// Naming the narrow partition is answered from its own tables; the combinations
-// that have no narrow table are refused where they are named rather than
-// answered from the shipped one. Those refusals are static_asserts inside
-// RouteFit, the relaxed rungs' RequireShippedPartition and the single-precision
-// lanes, and a refusal cannot be exercised by a test that has to compile: what
-// is pinned here is the default, and the refusals are stated in the headers and
-// in the contract document. The member itself is measured in the accuracy gate
-// and reached through the public entries in the consumer umbrella.
+// Naming the narrow partition is answered from its own tables; combinations with no narrow
+// table are refused where they are named rather than answered from the shipped one. Those
+// refusals are static_asserts inside RouteFit, the relaxed rungs' RequireShippedPartition
+// and the single-precision lanes, so a test that has to compile cannot exercise one: what
+// is pinned here is the default. The member itself is measured in the accuracy gate.
 TEST(BackendTest, ThePartitionNamesRoundTrip) {
     EXPECT_STREQ(boys::GranularityName(boys::FitGranularity::kShipped), "shipped");
     EXPECT_STREQ(boys::GranularityName(boys::FitGranularity::kNarrow), "narrow");
     EXPECT_STRNE(boys::GranularityName(boys::FitGranularity::kShipped),
                  boys::GranularityName(boys::FitGranularity::kNarrow));
 
-    // A partition this build serves is a row of the enumeration that says which
-    // partitions exist: a name for a partition the enumeration does not carry is
-    // a route a report cannot print and a caller cannot find, and the value it
-    // prints instead is "unknown", which is the name of no partition at all.
+    // A partition this build serves is a row of the enumeration: a name the enumeration does
+    // not carry would print "unknown", which is the name of no partition at all.
     EXPECT_STREQ(boys::GranularityName(boys::FitGranularity::kUniform), "uniform");
     EXPECT_STRNE(boys::GranularityName(boys::FitGranularity::kUniform), "unknown");
 }
 
-// The uniform partition is one of the rows of that table and not a value the
-// header names on the side, and what the row declares is checked against what
-// the build answers, member by member.
+// The uniform partition is a row of that table rather than a value the header names on the
+// side; what the row declares is checked against what the build answers, member by member.
 //
-// The check that matters is the last one, and it is made by calling the entry
-// rather than by reading the row: a partition served by another partition's
-// tables is the defect the row's own fields cannot show, because the fields
-// would be the ones the substitution was made to satisfy. This build has
-// refused that shape once already, at the fit selector (backend.hpp,
-// RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kUniform>, whose
-// first version was answered by the narrow partition), so what is pinned here is
-// that each of the two members the row now claims is the one it names and not a
-// second name for the narrow fits - once for the Chebyshev member, and once for
-// the rational one.
+// The last check calls the entry rather than reading the row: a partition served from
+// another partition's tables is a defect the row's own fields cannot show, because those
+// fields would be the ones the substitution was made to satisfy. This build refused that
+// shape once, at the fit selector in backend.hpp, RouteFit<FitRoute::kRationalMinimax,
+// kScheme, FitGranularity::kUniform>, whose first version the narrow partition answered;
+// what is pinned is that each of the two members is the one it names, not a second name for
+// the narrow fits.
 TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
     const std::span<const boys::FitGranularityInfo> rows = boys::BoysFitGranularities();
 
@@ -435,8 +399,7 @@ TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
     EXPECT_STREQ(uniform->name, boys::GranularityName(boys::FitGranularity::kUniform));
     EXPECT_STRNE(uniform->name, "unknown");
 
-    // Both routes, both packing axes and every rung of the enumeration, as the
-    // row states them.
+    // Both routes, both packing axes and every rung of the enumeration, as the row states them.
     EXPECT_TRUE(boys::FitGranularityHasRoute(*uniform, boys::FitRoute::kChebyshev));
     EXPECT_TRUE(boys::FitGranularityHasRoute(*uniform, boys::FitRoute::kRationalMinimax));
     EXPECT_TRUE(boys::FitGranularityHasAxis(*uniform, boys::PackAxis::kArguments));
@@ -445,19 +408,14 @@ TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
         << "a rung of the uniform partition is the stored cells read uncut, so the row claims "
            "every rung the enumeration names";
 
-    // The row's fields against the accessor that answers a caller, over every
-    // combination of the other axes: a combination the accessor serves and the
-    // row does not claim is a claim the row is missing, and one the row claims
-    // and the accessor refuses is a route or an axis the build does not have.
+    // The row's fields against the accessor that answers a caller, over every combination of
+    // the other axes: a combination the accessor serves and the row does not claim is a claim
+    // the row is missing, and one the row claims and the accessor refuses is a route or an
+    // axis the build does not have.
     //
-    // The rung count is the row's, for either route. It used to be read per
-    // route - the rational member's claim was the reference rung alone, because
-    // its rung was not wired and the carrier refused it - and both members are
-    // served at every rung now: a rung of this partition is the stored cells
-    // read uncut, and the rational member's pairs are stored and read at every
-    // multiplier by the same reading. So the finer rule this test held the
-    // accessor to is gone because the distinction it drew is gone, and the
-    // claim is the row's own rung count for both routes alike.
+    // The rung count is the row's own, for either route: a rung of this partition is the
+    // stored cells read uncut, and the rational member's pairs are stored and read at every
+    // multiplier by the same reading.
     std::size_t served = 0;
     std::size_t claimedCount = 0;
 
@@ -511,21 +469,16 @@ TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
         }
     }
 
-    // The count is held to the rows' own claim rather than to a literal. It was
-    // a literal - 64 - and it went stale the moment the rational member's rungs
-    // were served, which is the failure mode a number written down beside a
-    // changing space always has. What the literal stood for is the equality
-    // below: the accessor serves every combination the rows claim and no
-    // combination they do not, over the whole cross. `claimed` is computed from
-    // the row's own declarations, and the rows' rungs, routes and axes are
-    // asserted above it, so this is the same claim without the snapshot.
+    // The count is held to the rows' own claim rather than to a literal - it was 64, and it
+    // went stale as soon as the rational member's rungs were served. `claimed` comes from the
+    // row's own declarations, whose rungs, routes and axes are asserted above, so the equality
+    // below is the same claim without the snapshot.
     EXPECT_GT(claimedCount, 0u) << "the uniform row claims nothing at all";
     EXPECT_EQ(served, claimedCount)
         << "the accessor and the uniform row disagree over the cross: the rows claim "
         << claimedCount << " combination(s) and the accessor serves " << served;
 
-    // And the entry the row claims runs, reads its own table, and is not the
-    // narrow partition's under another name.
+    // And the entry the row claims runs, reads its own table, and is not the narrow one renamed.
     constexpr int kNmax = boys::kMaxBoysOrder;
     constexpr std::array<double, 7> kArguments = {0.5, 1.0, 2.0, 6.0, 12.0, 24.0, 34.0};
 
@@ -566,14 +519,11 @@ TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
         << kArguments.size() << " arguments and " << (kNmax + 1)
         << " orders: a uniform policy is being answered from another partition's tables";
 
-    // The same check for the route this build added to the row, because the
-    // substitution it would catch is the one the rational member over the grid
-    // makes possible: its pairs are per interval and the narrow member's are per
-    // narrow piece, so an entry that answered a uniform rational policy from the
-    // narrow pairs would return certified numbers under the grid's name. The two
-    // members are the same family read over different partitions, so this is the
-    // comparison that separates them where two distant families would part for
-    // reasons that say nothing about the partition.
+    // The same check for the rational route, whose substitution risk is real: its pairs are
+    // per interval and the narrow member's per narrow piece, so an entry answering a uniform
+    // rational policy from the narrow pairs would return certified numbers under the grid's
+    // name. The two members are the same family read over different partitions, which is what
+    // makes the comparison meaningful.
     using UniformRatPolicy = boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
                                               boys::EvalScheme::kHorner,
                                               boys::BoysBudget::kFloat,
@@ -614,11 +564,9 @@ TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
            "pairs";
 }
 
-// The division forms report themselves the way the other axes do: one row per
-// member, in enumerator order, named by the library's own function, with the
-// default one of the rows rather than a fourth thing beside them. A report that
-// has to name a form it measured reads the name from here, so a row this
-// accessor does not carry is a member no report can print.
+// The division forms report themselves as the other axes do: one row per member, in
+// enumerator order, named by the library's own function, with the default one of the rows.
+// A row this accessor does not carry is a member no report can print.
 TEST(BackendTest, TheDivisionFormAxisNamesItsMembers) {
     const std::span<const boys::DivisionFormInfo> forms = boys::BoysDivisionForms();
 
@@ -643,28 +591,23 @@ TEST(BackendTest, TheDivisionFormAxisNamesItsMembers) {
     EXPECT_TRUE(carriesDefault) << "the default form is not one of the rows this build reports";
 }
 
-// What each division form actually governs, measured rather than read off the
-// source. Three claims are asserted here and each is a claim the axis's own
-// documentation makes:
+// What each division form actually governs, measured rather than read off the source:
 //
-//  - the refined form is bit-identical to exact division, at every order and
-//    every argument, on both lanes. That is the claim the default form rests on
-//    - every published per-region figure is stated for the exact arithmetic, and
-//    the refined form has to deliver those values to carry that figure;
-//  - the plain form reaches the downward ladder, whose divisor is the step's
-//    constant rather than the argument. Before the constant's reciprocal was a
-//    table, a caller naming the plain form was served exact division there and
-//    nothing reported it. A zero count here is that substitution back again;
-//  - the plain form does NOT reach the single-precision lane's downward ladder.
-//    That lane's figure is one number for every form, and the plain form's
-//    reciprocal at that step takes it outside that number; the axis's
-//    documentation names the carve-out, and this is what holds it. The lane's
-//    upward ladders do take the form, which the fourth count shows - so the two
-//    together separate "the form is not applied on this lane" from "the form is
-//    not applied on this ladder".
+//  - the refined form is bit-identical to exact division, at every order and every argument,
+//    on both lanes. That is the claim the default form rests on: every published per-region
+//    figure is stated for the exact arithmetic, and the refined form has to deliver those
+//    values to carry that figure;
+//  - the plain form reaches the downward ladder, whose divisor is the step's constant rather
+//    than the argument. A caller naming the plain form was once served exact division there
+//    and nothing reported it, so a zero count here is that back again;
+//  - the plain form does NOT reach the single-precision lane's downward ladder. That lane's
+//    figure is one number for every form, and the plain form's reciprocal at that step takes
+//    it outside that number. The lane's upward ladders do take the form (the fourth count),
+//    so the two together separate "not applied on this lane" from "not applied on this
+//    ladder".
 //
-// The counts are printed because a count is the measurement; the assertions are
-// on relations between them and not on the values.
+// The counts are printed because a count is the measurement; the assertions are on relations
+// between them and not on the values.
 TEST(BackendTest, TheDivisionFormReachesTheLaddersItDocuments) {
     using boys::BoysAllOrders;
     using boys::BoysAllOrdersF32;
@@ -682,11 +625,10 @@ TEST(BackendTest, TheDivisionFormReachesTheLaddersItDocuments) {
     using DRefined =
         EvalPolicy<kRoute, kScheme, kBudget, kPack, kGran, DivisionForm::kRefinedReciprocal>;
 
-    // Arguments below each lane's kX0, where the downward recursion runs, and
-    // above it, where the upward ladders do. The largest downward argument is the
-    // cell of the accuracy gate's own grid where the plain form's reciprocal
-    // leaves the float lane's figure, so the carve-out is asserted where it was
-    // found rather than at a convenient point.
+    // Arguments below each lane's kX0, where the downward recursion runs, and above it, where
+    // the upward ladders do. The largest downward argument is the accuracy gate's own cell
+    // where the plain form's reciprocal leaves the float lane's figure, so the carve-out is
+    // asserted where it was found rather than at a convenient point.
     constexpr double kDown[] = {0.01, 0.1, 0.5, 1.0, 2.0, 5.0, 7.0, 9.74054909, 11.5};
     constexpr double kUp[] = {12.0, 15.0, 20.0, 28.9, 29.0, 40.0, 60.0, 120.0};
     constexpr int kNmax = boys::kMaxBoysOrder;

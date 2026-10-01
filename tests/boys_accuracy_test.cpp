@@ -1,36 +1,31 @@
 // The accuracy-parametrization contract tests.
 //
-// Sampled-m per-region contract: for m in {1, 2, 10, 1e2, 1e4, 1e8} x
-// {double single, double batch, float single, float batch}, assert
-// |F_hat_m - ref| <= m * B_region per region on the committed reference
-// grid (region bucketing: A x < kX0, B kX0 <= x < kX1, C x >= kX1), with
-// the asserted bounds B: double single 1e-15/3e-14/5.5e-14, double batch
-// 5.5e-14 per region, float 1.5e-7 per region. The m = 1 rows re-assert
-// the certified pins.
+// Sampled-m per-region contract: for m in {1, 2, 10, 1e2, 1e4, 1e8} x {double single,
+// double batch, float single, float batch}, assert |F_hat_m - ref| <= m * B_region per
+// region on the committed reference grid (region bucketing: A x < kX0, B kX0 <= x < kX1,
+// C x >= kX1), with the asserted bounds B: double single 1e-15/3e-14/5.5e-14, double
+// batch 5.5e-14 per region, float 1.5e-7 per region. The m = 1 rows re-assert the
+// certified pins.
 //
-// The effective-degree tables are non-increasing in m (a larger
-// budget may only truncate further) over all six lane roles and both
-// regions, and the m = 1 tables are the full degrees (the m = 1 path is
-// today's path by construction).
+// The effective-degree tables are non-increasing in m (a larger budget may only truncate
+// further) over all six lane roles and both regions; the m = 1 tables are the full
+// degrees.
 //
-// The fp16/Bf16 lanes forward the multiplier to the F32 engine
-// (I/O-only wrappers, no fp16-specific degree tables): assert
-// |F_hat - F(x16)| <= m * 1e-7 + 1/2 ULP per value on the reference grid at
-// sampled m, F(x16) being the certified double lane evaluated at the
-// fp16-rounded argument (the reference lane).
+// The fp16/Bf16 lanes forward the multiplier to the F32 engine (I/O-only wrappers, no
+// fp16-specific degree tables): assert |F_hat - F(x16)| <= m * 1e-7 + 1/2 ULP per value
+// on the reference grid at sampled m, F(x16) being the certified double lane evaluated at
+// the fp16-rounded argument.
 //
-// The sampled-m instantiations are compiled from the shipped headers
-// (boys/boys_impl.hpp, boys/boys_effective_degrees.hpp); the m = 1 call sites
-// below still route to the library's certified instantiations, which the
-// extern-template declarations in boys/boys.hpp name. The relaxed SIMD lanes
-// consume the same constexpr degree tables as their scalar twins (region A:
-// kDoubleSingle; region B: kDoubleBatch) and the same Clenshaw recursions
-// with runtime degrees (the full-accuracy shape), so the grid contract
-// below pins the mechanism the SIMD lanes share.
+// The sampled-m instantiations are compiled from the shipped headers (boys/boys_impl.hpp,
+// boys/boys_effective_degrees.hpp); the m = 1 call sites below still route to the
+// library's certified instantiations, which the extern-template declarations in
+// boys/boys.hpp name. The relaxed SIMD lanes consume the same constexpr degree tables as
+// their scalar twins (region A: kDoubleSingle; region B: kDoubleBatch) and the same
+// Clenshaw recursions with runtime degrees, so the grid contract below pins the mechanism
+// the SIMD lanes share.
 //
-// The file lives alongside boys_test.cpp rather than inside it to keep that
-// file's existing tests untouched (the split is editorial only — same test
-// binary, same contract).
+// The file lives alongside boys_test.cpp rather than inside it to keep that file's
+// existing tests untouched (same test binary, same contract).
 
 #include "boys/boys.hpp"
 #include "boys/boys_effective_degrees.hpp"
@@ -69,9 +64,8 @@ struct ReferenceRow {
     double value;
 };
 
-// The committed reference grid (tools/gen_boys_coefficients.py, 45-digit
-// mpmath values of F_n at the double in each row's x column) — the same
-// loader as boys_test.cpp.
+// The committed reference grid (tools/gen_boys_coefficients.py, 45-digit mpmath values of
+// F_n at the double in each row's x column) - the same loader as boys_test.cpp.
 std::vector<ReferenceRow> LoadReference() {
     const std::string path = std::string(BoysDataDir) + "/boys_reference.csv";
     std::ifstream file(path);
@@ -103,9 +97,8 @@ std::vector<ReferenceRow> LoadReference() {
     return rows;
 }
 
-// The grid holds every (n, x) pair of its x set (the generator emits all
-// orders per x; the batch lanes look up F_k(x) for k <= nmax), so a
-// per-order binary search is exact. Indexed once at startup.
+// The grid holds every (n, x) pair of its x set (the generator emits all orders per x),
+// so a batch lane's lookup of F_k(x) for k <= nmax is exact. Indexed once at startup.
 struct ReferenceGrid {
     std::array<std::vector<ReferenceRow>, boys::kMaxBoysOrder + 1> byN{};
 
@@ -123,8 +116,7 @@ struct ReferenceGrid {
         }
     }
 
-    // The committed value F_n(x); the pair is guaranteed present (the grid
-    // is complete in n per x — see above).
+    // The committed value F_n(x); present because the grid is complete in n per x.
     double Value(int n, double x) const {
         const std::vector<ReferenceRow>& v = byN[static_cast<std::size_t>(n)];
         const auto it = std::lower_bound(
@@ -152,11 +144,10 @@ BoysRegion RegionOf(double x) {
 
 enum class LaneKind : std::uint8_t { kDoubleSingle, kDoubleBatch, kFloatSingle, kFloatBatch };
 
-// The asserted per-region bounds of the m = 1 contract. The extended band
-// carries the region-B budget: at m = 1 its per-range F0 seed serves the
-// certified upward recursion (the band is the m = 1 lane's; the m > 1
-// branch keeps the region-A treatment there, whose tighter budget implies
-// this cell at every m).
+// The asserted per-region bounds of the m = 1 contract. The extended band carries the
+// region-B budget: at m = 1 its per-range F0 seed serves the certified upward recursion
+// (the band is the m = 1 lane's; the m > 1 branch keeps the region-A treatment there,
+// whose tighter budget implies this cell at every m).
 double RegionBound(BoysRegion region, LaneKind lane) {
     switch (lane)
     {
@@ -188,9 +179,8 @@ double RegionBound(BoysRegion region, LaneKind lane) {
     return 0.0; // unreachable
 }
 
-// Runs the callable once per sampled multiplier, the
-// multiplier passed as a compile-time constant — the NTTP surface is the
-// contract under test.
+// Runs the callable once per sampled multiplier, the multiplier passed as a compile-time
+// constant - the NTTP surface is the contract under test.
 template <typename Fn> void ForEachSampledMultiplier(Fn&& fn) {
     fn.template operator()<1.0>();
     fn.template operator()<2.0>();
@@ -209,8 +199,7 @@ struct RegionWorsts {
     double c = 0.0;
     double e = 0.0;
 
-    // (error, x) are the candidate error and its x - the per-region max
-    // accumulator's pair.
+    // (error, x): the candidate error and its x, the per-region max accumulator's pair.
     //
     // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     void Update(double error, double x) {
@@ -310,14 +299,12 @@ using Fp16Budget = boys::EvalPolicy<boys::kDefaultFitRoute,
                                     boys::kDefaultEvalScheme,
                                     boys::BoysBudget::kFp16>;
 
-// The float lane with the half lanes' engine budget named. The budget picks the
-// degree table the relaxation truncates to, so it selects nothing at the
-// reference multiplier - the lane evaluates its full fits either way - and the
-// promise is the float lane's own bound at every multiplier: what the option
-// buys is fewer coefficients read, not a different bar. The sweep holds it to
-// that bound, and the m = 1 case is checked against the default entry bit for
-// bit, which is the row that would catch the option having reached the
-// certified lane's arithmetic rather than only its truncation.
+// The float lane with the half lanes' engine budget named. The budget picks the degree
+// table the relaxation truncates to, so it selects nothing at the reference multiplier -
+// the lane evaluates its full fits either way - and the promise is the float lane's own
+// bound at every multiplier: the option buys fewer coefficients read, not a different bar.
+// The m = 1 case is checked against the default entry bit for bit, the row that would catch
+// the option having reached the certified lane's arithmetic rather than only its truncation.
 template <double kM> void SweepFloatSingleFp16Budget() {
     RegionWorsts worst;
 
@@ -398,11 +385,10 @@ template <double kM> void SweepFloatBatch() {    RegionWorsts worst;
     PrintWorsts("float batch", kM, worst);
 }
 
-// The Horner rung, measured against the committed reference: the same sweep as
-// the default scheme's above, over the table the monomial degree rule is
-// certified on. The gate's stored-fit rows cover the m = 1 reading; this is
-// the reading a relaxed rung delivers, which is the one the truncation
-// decides.
+// The Horner rung, measured against the committed reference: the same sweep as the default
+// scheme's above, over the table the monomial degree rule is certified on. The gate's
+// stored-fit rows cover the m = 1 reading; this is the reading a relaxed rung delivers,
+// which is the one the truncation decides.
 template <double kM> void SweepDoubleBatchHorner() {
     using Policy = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>;
     RegionWorsts worst;
@@ -427,21 +413,18 @@ template <double kM> void SweepDoubleBatchHorner() {
     PrintWorsts("double batch, horner", kM, worst);
 }
 
-// The uniform route against the same committed reference at the same bar. It
-// answers from a fixed grid rather than a derived partition and reads every
-// order from its own coefficients rather than from a seed and a recursion, so
-// what this measures is the whole of that route's arithmetic - the interval
-// index, the mapped argument, and the block a ladder is read from - and not the
-// fit alone. The last two are as much a part of the table as its numbers are: a
-// wrong stride reads a correct table wrongly and delivers a wrong value that no
-// check of the coefficients would catch.
-// Both schemes, because the table stores both coefficient forms and only the
-// Horner one was ever swept. That omission is not hypothetical: the uniform
-// table was first fitted at an odd degree, which ClenshawSplit cannot read at
-// all (it asserts an even degree and says so), so the route's Clenshaw path
-// asserted in debug and computed silently wrong values in release while a
-// bound for it sat published. A scheme the table carries but nothing sweeps is
-// a scheme nothing has checked.
+// The uniform route against the same committed reference at the same bar: a fixed grid,
+// every order from its own coefficients rather than from a seed and a recursion, so what
+// this measures is the whole of that route's arithmetic - the interval index, the mapped
+// argument, and the block a ladder is read from - and not the fit alone. The last two are
+// part of the table as much as its numbers are: a wrong stride reads a correct table
+// wrongly, delivering a wrong value no check of the coefficients would catch.
+// Both schemes, because the table stores both coefficient forms and only the Horner one had
+// ever been swept. That omission was not hypothetical: the table was first fitted at an odd
+// degree, which ClenshawSplit cannot read at all (it asserts an even degree and says so), so
+// the Clenshaw path asserted in debug and computed silently wrong values in release while a
+// bound for it sat published. A scheme the table carries but nothing sweeps is a scheme
+// nothing has checked.
 template <double kM, boys::EvalScheme kScheme = boys::EvalScheme::kHorner>
 void SweepDoubleBatchUniform() {
     using Policy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
@@ -474,10 +457,9 @@ void SweepDoubleBatchUniform() {
                 worst);
 }
 
-// The uniform route's single-order path, on the same grid and at the same bar.
-// This is the reading where the route is cheapest rather than dearest, and it
-// shares the index arithmetic with the ladder above through one FlatLocate, so
-// what this separates is the order lookup and not the interval lookup.
+// The uniform route's single-order path, on the same grid and at the same bar - the
+// reading where the route is cheapest rather than dearest. It shares the index arithmetic
+// with the ladder above through one FlatLocate, so what this separates is the order lookup.
 template <double kM, boys::EvalScheme kScheme = boys::EvalScheme::kHorner>
 void SweepDoubleSingleUniform() {
     using Policy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
@@ -560,9 +542,8 @@ TEST(BoysAccuracyTest, FloatBatchSampledMultipliers) {
     ForEachSampledMultiplier([]<double kM>() { SweepFloatBatch<kM>(); });
 }
 
-// The same two sweeps with the half lanes' engine budget named. Kept as their
-// own tests rather than folded in, so the default-multiplier sweeps above stay
-// the reading of the certified lane that they were.
+// The same two sweeps with the half lanes' engine budget named. Kept as their own tests, so
+// the default-multiplier sweeps above stay the reading of the certified lane that they were.
 TEST(BoysAccuracyTest, FloatSingleSampledMultipliersFp16Budget) {
     ForEachSampledMultiplier([]<double kM>() { SweepFloatSingleFp16Budget<kM>(); });
 }
@@ -680,17 +661,15 @@ TEST(BoysAccuracyTest, EffectiveDegreesNonIncreasingInMultiplier) {
 // ---------------------------------------------------------------------------
 // A degree table is certified against the table its scheme sums
 // ---------------------------------------------------------------------------
-// A rung truncates one stored table, and what the truncation costs is the
-// 1-norm of the coefficients above d' *in that table*: |T_k(t)| <= 1 and
-// |t^k| <= 1 over the mapped interval, so either basis bounds its own dropped
-// series, and the two tables hold different numbers for the same fit. A degree
-// chosen on one table's tail and spent on the other's is therefore not
-// certified at all — its dropped tail is whatever the other table holds, which
-// for the monomial end of a Chebyshev fit runs orders of magnitude larger.
-// These rows are that statement as a measurement: for every shipped rung, every
-// piece and every order, either the entry is the full degree (it drops
-// nothing) or the tail of the table the basis names, times the path's
-// amplification, is inside the rung's budget.
+// A rung truncates one stored table, and what the truncation costs is the 1-norm of the
+// coefficients above d' *in that table*: |T_k(t)| <= 1 and |t^k| <= 1 over the mapped
+// interval, so either basis bounds its own dropped series, and the two tables hold
+// different numbers for the same fit. A degree chosen on one table's tail and spent on the
+// other's is not certified at all - its dropped tail is whatever the other table holds,
+// which for the monomial end of a Chebyshev fit runs orders of magnitude larger. The rows
+// below are that statement as a measurement: for every shipped rung, piece and order,
+// either the entry is the full degree (it drops nothing) or the tail of the table the basis
+// names, times the path's amplification, is inside the rung's budget.
 // ---------------------------------------------------------------------------
 
 using boys::detail::RegionAAmplification;
@@ -804,11 +783,10 @@ TEST(BoysAccuracyTest, EveryRungDegreesFitTheTableItsSchemeSums) {
 }
 
 TEST(BoysAccuracyTest, BasisTablesAreNotInterchangeable) {
-    // The carriage of the basis through the degree tables: a rung's region-A
-    // and region-B tables must differ from the table of the other basis at
-    // m = 64, and both bases must give the full degrees at m = 1. A choice of
-    // basis that reached no table - one table shared by both, or a rule that
-    // always read the Chebyshev coefficients - would leave the Horner rung
+    // The carriage of the basis through the degree tables: a rung's region-A and region-B
+    // tables must differ from the other basis' at m = 64, and both bases must give the full
+    // degrees at m = 1. A choice of basis that reached no table - one table shared by both,
+    // or a rule that always read the Chebyshev coefficients - would leave the Horner rung
     // uncertified while every number above it stayed green.
     constexpr auto chebA = RegionADegrees<64.0, BoysRole::kDoubleSingle, TailBasis::kChebyshev>();
     constexpr auto monoA = RegionADegrees<64.0, BoysRole::kDoubleSingle, TailBasis::kMonomial>();

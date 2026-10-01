@@ -1,7 +1,6 @@
-// GPU competitor kernels of the benchmark suite: the erf-F0 and the
-// Tsuji-style gridded-LUT lanes. nvcc TUs compile at CMAKE_CUDA_STANDARD 20, so
-// C++23 headers must not reach them: this file includes only CUDA and libm, and
-// reaches the host through the extern "C" seam of the companion header.
+// The GPU competitor kernels: the erf-F0 and the Tsuji-style gridded-LUT lanes.
+// This TU compiles at CMAKE_CUDA_STANDARD 20, so it includes only CUDA and libm
+// and reaches the host through the companion header's extern "C" seam.
 
 #include <cuda_runtime.h>
 #include <math.h>
@@ -22,8 +21,7 @@ constexpr int kLutRows = kLutMaxOrder + kLutKmax + 1; // 38: rows 0..32 + 33..37
 constexpr double kLutThresholdA = 0.064048916778075;
 constexpr double kLutThresholdB = 28.487431543672;
 
-// 38 x 1025 x 8 B = 311.6 KB — too large for __constant__, so it lives in
-// global memory.
+// 38 x 1025 x 8 B = 311.6 KB: too large for __constant__, so it lives in global memory.
 __device__ double gLut[kLutRows][kLutXiCount];
 
 __global__ void BoysErfF64Kernel(const int* n, const double* x, double* out, size_t count) {
@@ -107,9 +105,9 @@ __global__ void BoysLutF64Kernel(const int* n, const double* x, double* out, siz
 
 } // namespace
 
-// Return codes are cudaError_t values, 0 = success, so the host TU reports a
-// failure with cudaGetErrorString. Launch errors surface on the host's sync, so
-// the launch functions return 0 unconditionally.
+// Return codes are cudaError_t values, 0 = success, which the host TU reports
+// with cudaGetErrorString. Launch errors surface on the host's sync, so the
+// launch functions return 0 unconditionally.
 extern "C" {
 
 int BoysBenchSetDevice(int device) {

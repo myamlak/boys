@@ -6,8 +6,9 @@
 // settings below are the ones a caller who has measured a preference names; a
 // call site that names none gets the build's own defaults, which is the call
 // this program compares against.
-#include <boys/boys.hpp>
+#include <boys/boys_span.hpp>
 
+#include <array>
 #include <cmath>
 #include <cstdio>
 
@@ -21,14 +22,15 @@ int main()
                                      boys::FitGranularity::kShipped,
                                      boys::DivisionForm::kExactDivision>;
 
-    double default_ladder[boys::kMaxBoysOrder + 1] = {};
-    double named_ladder[boys::kMaxBoysOrder + 1] = {};
+    std::array<double, boys::kMaxBoysOrder + 1> default_ladder{};
+    std::array<double, boys::kMaxBoysOrder + 1> named_ladder{};
     boys::BoysAllOrders(nmax, x, default_ladder);
     boys::BoysAllOrders<1.0, Shipped>(nmax, x, named_ladder);
 
     std::printf("k   default policy            named policy\n");
     double worst = 0.0;
-    for (int k = 0; k <= nmax; ++k) {
+    for (int k = 0; k <= nmax; ++k)
+    {
         std::printf("%-3d %-24.17g %.17g\n", k, default_ladder[k], named_ladder[k]);
         worst = std::fmax(worst, std::fabs(named_ladder[k] - default_ladder[k]));
     }

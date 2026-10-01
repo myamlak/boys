@@ -5,70 +5,63 @@
 /// the caller computed in a register, with no round trip through global
 /// memory.
 ///
-/// **What it is for.** A production GPU integral kernel forms x per thread —
-/// one x per shell-quartet per primitive pair — and needs F_0..F_n for that
-/// thread's own x, usually inside the same kernel that formed it. The batch
-/// entries of this lane cannot serve that directly: they evaluate an array of
-/// arguments, so a caller has to materialise every x to global memory, launch
-/// a second kernel, synchronise and read the results back — two extra memory
-/// passes per integral batch. The entries here take one (order, x) per call and
-/// return the values to the calling thread, so the fused kernel needs neither
-/// the pass out nor the pass back.
+/// **What it is for.** A production GPU integral kernel forms x per thread — one x
+/// per shell-quartet per primitive pair — and needs F_0..F_n for that thread's own x,
+/// usually inside the same kernel that formed it. The batch entries of this lane
+/// evaluate an array of arguments instead, so a caller has to materialise every x to
+/// global memory, launch a second kernel, synchronise and read the results back — two
+/// extra memory passes per integral batch. The entries here take one (order, x) per
+/// call and return the values to the calling thread, so the fused kernel needs
+/// neither the pass out nor the pass back.
 ///
-/// **How a caller obtains it, and what it costs the build.** The tables are
-/// handed over at run time as a value, BoysDeviceTables, filled host-side by
-/// BoysCuda::DeviceTables. The entries are therefore header-defined device
-/// functions with no device-side symbol to link: including this header is the
-/// whole of what the caller's build pays. No relocatable device code
-/// (\c -rdc=true), no device link step, no library on the link line, no
-/// additional compilation flag — a kernel that calls an entry compiles with the
-/// same nvcc command line as one that does not, and the arithmetic is inlined
-/// into the calling kernel, so there is no call overhead per order. What it
-/// does cost is the compile of the coefficient tables this header pulls in
-/// (boys_coefficients.hpp) and the instructions the compiler emits for the
-/// arithmetic at each call site, which is the same arithmetic the batch kernels
-/// run.
+/// **How a caller obtains it, and what it costs the build.** The tables are handed
+/// over at run time as a value, BoysDeviceTables, filled host-side by
+/// BoysCuda::DeviceTables. The entries are header-defined device functions with no
+/// device-side symbol to link: including this header is the whole of what the
+/// caller's build pays. No relocatable device code (\c -rdc=true), no device link
+/// step, no library on the link line, no additional compilation flag — a kernel that
+/// calls an entry compiles with the same nvcc command line as one that does not — and
+/// the arithmetic is inlined into the calling kernel, so there is no call overhead per
+/// order. What it does cost is the compile of the coefficient tables this header pulls
+/// in (boys_coefficients.hpp) and the instructions the compiler emits at each call
+/// site, which is the same arithmetic the batch kernels run.
 ///
-/// **Precision.** The double entries are the primary surface: a fused integral
-/// kernel is a double-precision computation, and the fp64 bound is what decides
-/// whether it can use the lane at all. The float entries follow — on consumer
-/// hardware fp32 runs many times faster, and the fused kernel is where that
-/// matters most, since the arithmetic is done once per primitive pair — and the
-/// fp16 entries mirror the fp16 batch lane for a caller packing many orders
-/// into registers. All three read the same handle: there is one handle type and
-/// one upload, not one per precision. The float single entry carries one option
-/// the others do not: its region-B exponential is a certified choice of
-/// arithmetic (boys::RegionBExp), which the caller names as a template
-/// argument, exactly as the f32 batch single entry names it as an argument.
+/// **Precision.** The double entries are the primary surface: a fused integral kernel
+/// is a double-precision computation, and the fp64 bound is what decides whether it
+/// can use the lane at all. The float entries follow — on consumer hardware fp32 runs
+/// many times faster, and the fused kernel is where that matters most — and the fp16
+/// entries mirror the fp16 batch lane for a caller packing many orders into registers.
+/// All three read the same handle: there is one handle type and one upload, not one
+/// per precision. The float single entry carries one option the others do not: its
+/// region-B exponential is a certified choice of arithmetic (boys::RegionBExp), named
+/// as a template argument.
 ///
-/// **Order range, and what the entries do when they cannot serve a request.**
-/// Orders run 0..kMaxBoysOrder (32). Two shapes are offered per precision. The
-/// runtime-top-order entry takes the order per call, which is what a fused
-/// kernel needs (the order follows the shell quartets) and takes a capacity —
-/// the number of values the caller's array holds — so that an order the array
-/// cannot receive is reported rather than written past the end. The
-/// compile-time-top-order entry takes the order as a template argument, where
-/// it bounds the recursion loops and the compiler can unroll them.
+/// **Order range, and what the entries do when they cannot serve a request.** Orders
+/// run 0..kMaxBoysOrder (32). Two shapes are offered per precision: the
+/// runtime-top-order entry takes the order per call, which is what a fused kernel
+/// needs (the order follows the shell quartets) and takes a capacity — the number of
+/// values the caller's array holds — so that an order the array cannot receive is
+/// reported rather than written past the end; the compile-time-top-order entry takes
+/// the order as a template argument, where it bounds the recursion loops and the
+/// compiler can unroll them.
 ///
-/// Every failure is a BoysDeviceStatus the caller branches on, and a call that
-/// fails writes nothing: no truncated ladder, no partial fill. An order outside
-/// the range is \c kOrderOutOfRange; an order whose values do not fit the
-/// caller's array is \c kCapacityTooSmall; a handle that carries no tables is
-/// \c kTablesNotReady; a multiplier that is not the resident rung is
-/// \c kMultiplierNotResident.
-///
-/// The checks are ordered tables, then order, then capacity, then rung: a
-/// request that is malformed is reported as malformed whether or not the rung it
-/// names is resident, so a caller that sees \c kMultiplierNotResident has a
-/// well-formed request and one thing to fix.
+/// Every failure is a BoysDeviceStatus the caller branches on, and a call that fails
+/// writes nothing: no truncated ladder, no partial fill. An order outside the range is
+/// \c kOrderOutOfRange; an order whose values do not fit the caller's array is
+/// \c kCapacityTooSmall; a handle that carries no tables is \c kTablesNotReady; a
+/// multiplier that is not the resident rung is \c kMultiplierNotResident. The checks
+/// are ordered tables, then order, then capacity, then rung: a request that is
+/// malformed is reported as malformed whether or not the rung it names is resident, so
+/// a caller that sees \c kMultiplierNotResident has a well-formed request and one thing
+/// to fix.
 ///
 /// **Cost in registers.** A caller keeping the whole ladder live holds order + 1
-/// doubles — 33 of them at the top order, which is the real cost of this
-/// interface and the reason the entries write into the caller's array rather
-/// than into an internal one: the caller's own liveness decides what stays in
-/// registers, and a caller that consumes each order as it arrives can hold
-/// none. BoysDeviceEachOrderF64 and its siblings are that shape: they hand one
-/// value at a time to a caller-supplied sink and keep no ladder at all.
+/// doubles — 33 of them at the top order, which is the real cost of this interface and
+/// the reason the entries write into the caller's array rather than into an internal
+/// one: the caller's own liveness decides what stays in registers, and a caller that
+/// consumes each order as it arrives can hold none. BoysDeviceEachOrderF64 and its
+/// siblings are that shape: they hand one value at a time to a caller-supplied sink and
+/// keep no ladder at all.
 ///
 /// **The handle as a kernel argument.** Pass it by value into the kernel — it
 /// is plain data, and kernel parameters live in the constant bank — and declare
@@ -82,38 +75,34 @@
 /// without the qualifier and reads the handle through a generic pointer, which
 /// is correct and slower; the arithmetic is identical either way.
 ///
-/// **The accuracy multiplier.** Every entry takes the multiplier as its last
-/// argument, defaulted to m = 1, so the default is the strictest rung and a call
-/// can never be relaxed by omission. The rung is a run-time argument here rather
-/// than the template argument the batch entries take, because it replaces a
-/// degree table read inside the caller's own kernel rather than selecting a
-/// kernel: one compiled entry serves every rung, and the caller names the rung
-/// where its own work decides it.
+/// **The accuracy multiplier.** Every entry takes the multiplier as its last argument,
+/// defaulted to m = 1, so the default is the strictest rung and a call can never be
+/// relaxed by omission. The rung is a run-time argument here rather than the template
+/// argument the batch entries take, because it replaces a degree table read inside the
+/// caller's own kernel rather than selecting a kernel: one compiled entry serves every
+/// rung, and the caller names the rung where its own work decides it.
 ///
-/// A rung is served only while it is resident. The relaxed degree tables are one
-/// set, cut for one multiplier at a time — the one the last
-/// BoysCuda::DeviceTables call named, on the same per-(device, m) upload the
-/// batch entries share — so an entry asked for any other rung returns
-/// \c kMultiplierNotResident and writes nothing, rather than running the
-/// full-accuracy arithmetic under a relaxed name or a relaxed one under a name
-/// that promises more. m = 1 needs no such table, is resident from the first
-/// upload, and is never refused this way.
+/// A rung is served only while it is resident. The relaxed degree tables are one set,
+/// cut for one multiplier at a time — the one the last BoysCuda::DeviceTables call
+/// named, on the same per-(device, m) upload the batch entries share — so an entry
+/// asked for any other rung returns \c kMultiplierNotResident and writes nothing,
+/// rather than running the full-accuracy arithmetic under a relaxed name or a relaxed
+/// one under a name that promises more. m = 1 needs no such table, is resident from the
+/// first upload, and is never refused this way.
 ///
-/// The multiplier is matched exactly against the one DeviceTables was
-/// instantiated with, and a value below 1.0 is refused like any other rung that
-/// is not resident (the library's compile-time entries make it a compile-time
-/// error; here it is a status). So a caller names a rung the way the library
-/// does — one of the twelve of kDeviceRungs (boys_cuda_options.hpp): the option
-/// space's 1, 64, 256, 1024, 4096, 16384 and 65536, beside this lane's own 1, 2,
-/// 10, 100, 1e4 and 1e8 — and reads the status instead of assuming the rung is
-/// still the resident one.
+/// The multiplier is matched exactly against the one DeviceTables was instantiated
+/// with, and a value below 1.0 is refused like any other rung that is not resident (the
+/// library's compile-time entries make it a compile-time error; here it is a status).
+/// So a caller names a rung the way the library does — one of the twelve of
+/// kDeviceRungs (boys_cuda_options.hpp): the option space's 1, 64, 256, 1024, 4096,
+/// 16384 and 65536, beside this lane's own 1, 2, 10, 100, 1e4 and 1e8 — and reads the
+/// status instead of assuming the rung is still the resident one.
 ///
-/// **The bound.** Every entry holds the lane's documented bound for its
-/// precision at the rung it was asked for — the same bound the corresponding
-/// batch entry documents, because it is the same arithmetic: m times the m = 1
-/// bound. The device gate measures these entries against the committed
-/// high-precision reference grid at every rung, and reports the worst ratio in
-/// the same vocabulary as every other lane.
+/// **The bound.** Every entry holds the lane's documented bound for its precision at
+/// the rung it was asked for — the same bound the corresponding batch entry documents,
+/// because it is the same arithmetic: m times the m = 1 bound. The device gate measures
+/// these entries against the committed high-precision reference grid at every rung, and
+/// reports the worst ratio in the same vocabulary as every other lane.
 ///
 /// \ingroup boys
 
@@ -127,10 +116,10 @@ namespace boys {
 
 /// Result status of the device-callable entries.
 ///
-/// Device code cannot throw and cannot report an error out of band, so every
-/// refusal is one of these values, returned to the calling thread. A call that
-/// does not return \c kSuccess wrote nothing: the caller's array is untouched
-/// and no value is in flight. \c kSuccess is 0.
+/// Device code cannot throw and cannot report an error out of band, so every refusal
+/// is one of these values, returned to the calling thread. A call that does not return
+/// \c kSuccess wrote nothing: the caller's array is untouched and no value is in
+/// flight. \c kSuccess is 0.
 enum class BoysDeviceStatus : int {
     kSuccess = 0, ///< the values were written
     /// The handle carries no tables: BoysCuda::DeviceTables was never called
@@ -151,22 +140,21 @@ enum class BoysDeviceStatus : int {
 /// \cond
 namespace detail {
 
-// Where a lane's effective degrees come from, resolved once per call rather
-// than once per order. The rungs differ here and nowhere else: the piece edges,
-// the coefficient pool and the piece count are the same tables for every
-// multiplier, and the degree a fit is cut to is the whole of what a rung buys.
+// Where a lane's effective degrees come from, resolved once per call rather than once
+// per order. The rungs differ here and nowhere else: the piece edges, the coefficient
+// pool and the piece count are the same tables for every multiplier, and the degree a
+// fit is cut to is the whole of what a rung buys.
 //
-// The region-A table is read in the calling lane's own piece indexing — the
-// double lane's for kF64Single, kF64Batch, kF32Batch and kF16Batch, whose
-// region-A seed is the double piece table whatever precision the entry returns,
-// and the float lane's for kF32Single and kF16Single. The lane object below
-// indexes it through the piece-start table it reads its coefficients with, so
-// the two agree by construction.
+// The region-A table is read in the calling lane's own piece indexing — the double
+// lane's for kF64Single, kF64Batch, kF32Batch and kF16Batch, whose region-A seed is
+// the double piece table whatever precision the entry returns, and the float lane's
+// for kF32Single and kF16Single. The lane object below indexes it through the
+// piece-start table it reads its coefficients with, so the two agree by construction.
 //
-// The region-B table is read per order by the single lanes and at the order-0
-// entry by the batch lanes: stride carries that, and the batch shape is what
-// the region-B relaxation argues — the F_0 seed's error reaches every output
-// with gain at most 1 + 1.846e-17, so one degree relaxes a whole family.
+// The region-B table is read per order by the single lanes and at the order-0 entry by
+// the batch lanes: stride carries that, and the batch shape is what the region-B
+// relaxation argues — the F_0 seed's error reaches every output with gain at most
+// 1 + 1.846e-17, so one degree relaxes a whole family.
 struct Degrees {
     const int* regionA;
     const int* regionB;
@@ -238,25 +226,22 @@ struct TableLane32 {
     }
 };
 
-// The two refusals every entry shares. The table test is one pointer, and it
-// is the difference between a reported status and a null dereference; the order
-// test is what makes an out-of-range request a value rather than a read outside
-// the piece tables.
+// The two refusals every entry shares. The table test is one pointer, and the
+// difference between a reported status and a null dereference; the order test is what
+// makes an out-of-range request a value rather than a read outside the piece tables.
 __device__ __forceinline__ BoysDeviceStatus DeviceReady(const BoysDeviceTables& tables) {
     return tables.pieceStart == nullptr ? BoysDeviceStatus::kTablesNotReady
                                         : BoysDeviceStatus::kSuccess;
 }
 
-// The same test for the uniform route, on the pointers that route's bodies
-// actually read: the grid is a table of its own and an entry taking it touches
-// no piece table, so testing the piece table would report a readiness the read
-// below does not rest on.
+// The same test for the uniform route, on the pointers that route's bodies actually
+// read: the grid is a table of its own and an entry taking it touches no piece table,
+// so testing the piece table would report a readiness the read below does not rest on.
 //
-// The grid's two per-interval tables are part of that test and not a separate
-// one. A body addresses a cell through both, so coefficients without them is a
-// table that is not resident — the read would take a degree and a block start
-// from nothing — and a test that passed while either was missing would answer a
-// status this route cannot serve.
+// The grid's two per-interval tables are part of that test and not a separate one: a
+// body takes a degree and a block start from them before it touches a coefficient, so
+// a test that passed while either was missing would answer a status this route cannot
+// serve.
 __device__ __forceinline__ BoysDeviceStatus DeviceFlatReady(const BoysDeviceTables& tables) {
     return tables.flatCoeffs == nullptr || tables.flatDegs == nullptr ||
                    tables.flatOffsets == nullptr
@@ -264,10 +249,10 @@ __device__ __forceinline__ BoysDeviceStatus DeviceFlatReady(const BoysDeviceTabl
                : BoysDeviceStatus::kSuccess;
 }
 
-// The float lane's own test, on its own lane's pointers. The two lanes' tables
-// are derived separately and a handle may carry one without the other, so a
-// float entry testing the double lane's pointers would report a readiness its
-// own read does not rest on — and would dereference a null one it never tested.
+// The float lane's own test, on its own lane's pointers: the two lanes' tables are
+// derived separately and a handle may carry one without the other, so a float entry
+// testing the double lane's pointers would report a readiness its own read does not
+// rest on — and would dereference a null one it never tested.
 __device__ __forceinline__ BoysDeviceStatus DeviceFlatReady32(const BoysDeviceTables& tables) {
     return tables.flatCoeffs32 == nullptr || tables.flatDegs32 == nullptr ||
                    tables.flatOffsets32 == nullptr
@@ -276,13 +261,11 @@ __device__ __forceinline__ BoysDeviceStatus DeviceFlatReady32(const BoysDeviceTa
 }
 
 // The same test for the grid's RATIONAL route, which reads five pointers and not
-// three: the pool and the four per-interval columns one row is addressed with.
-// The columns are part of the test and not a separate one for the reason the
-// Chebyshev grid's two are — a body takes the numerator's degree, the
-// denominator's and the block's start before it touches a coefficient, so a
-// handle carrying the pool alone is read at another interval's length — and the
-// count is a column here rather than a constant of the grid, which is why one
-// more of them is named than the monomial twin's.
+// three: the pool and the four per-interval columns one row is addressed with. A body
+// takes the numerator's degree, the denominator's and the block's start before it
+// touches a coefficient, so a handle carrying the pool alone is read at another
+// interval's length. The count is a column here rather than a constant of the grid,
+// which is why one more of them is named than the monomial twin's.
 __device__ __forceinline__ BoysDeviceStatus DeviceFlatRatReady(const BoysDeviceTables& tables) {
     return tables.flatRatCoeffs == nullptr || tables.flatRatNumDeg == nullptr ||
                    tables.flatRatDenDeg == nullptr || tables.flatRatStored == nullptr ||
@@ -306,20 +289,20 @@ __device__ __forceinline__ bool DeviceOrderValid(int order) {
     return order >= 0 && order <= kMaxBoysOrder;
 }
 
-// Which lane's degrees a call reads, resolved once per call from the rung the
-// caller named. m = 1 reads the handle's own full-accuracy tables, and every
-// other rung reads the resident relaxed set, which the lane index selects.
+// Which lane's degrees a call reads, resolved once per call from the rung the caller
+// named. m = 1 reads the handle's own full-accuracy tables, and every other rung reads
+// the resident relaxed set, which the lane index selects.
 //
-// The lanes whose region-A seed is the double piece table are the double single
-// entry and the three family entries; the two single entries of the narrow
-// precisions seed from the float piece table. That is the same split the batch
-// kernels' lane objects make (boys_cuda.cu), and it is what makes the piece
-// index below the calling lane's own.
+// The lanes whose region-A seed is the double piece table are the double single entry
+// and the three family entries; the two single entries of the narrow precisions seed
+// from the float piece table. That is the same split the batch kernels' lane objects
+// make (boys_cuda.cu), and it is what makes the piece index below the calling lane's
+// own.
 //
-// The batch lanes read the order-0 region-B entry and the single lanes the entry
-// for the order the recursion has reached; stride carries that, and stride 0 is
-// also what the full-accuracy case reads, where the degree is one scalar in the
-// handle rather than a table.
+// The batch lanes read the order-0 region-B entry and the single lanes the entry for
+// the order the recursion has reached; stride carries that, and stride 0 is also what
+// the full-accuracy case reads, where the degree is one scalar in the handle rather
+// than a table.
 template <BoysDeviceLane kLane>
 __device__ __forceinline__ BoysDeviceStatus DeviceDegrees(
     const BoysDeviceTables& tables, double multiplier, Degrees* out) {
@@ -950,15 +933,14 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64(const BoysDeviceTables& table
     return BoysDeviceStatus::kSuccess;
 }
 
-/// F_0(x)..F_kTopOrder(x) in double precision, with the top order fixed where
-/// the call site names it.
+/// F_0(x)..F_kTopOrder(x) in double precision, with the top order fixed where the call
+/// site names it.
 ///
 /// The order is a template argument, so the recursion bounds are compile-time
-/// constants: the loops can be unrolled and no order has to be validated. For a
-/// caller whose fused kernel works at one order — or at a handful it
-/// instantiates separately — this is the entry to use, and it is also the
-/// shape a caller can wrap in its own dispatch where the order is a run-time
-/// value.
+/// constants: the loops can be unrolled and no order has to be validated. For a caller
+/// whose fused kernel works at one order — or at a handful it instantiates separately —
+/// this is the entry to use, and it is the shape a caller can wrap in its own dispatch
+/// where the order is a run-time value.
 ///
 /// \tparam kTopOrder the top order, 0..kMaxBoysOrder.
 /// \param tables     the handle BoysCuda::DeviceTables filled
@@ -1004,17 +986,13 @@ __device__ BoysDeviceStatus BoysDeviceAllNF64(const BoysDeviceTables& tables,
     return BoysDeviceStatus::kSuccess;
 }
 
-/// F_0(x)..F_order(x) in double precision, one value at a time into a caller's
-/// sink.
+/// F_0(x)..F_order(x) in double precision, one value at a time into a caller's sink.
 ///
-/// The shape to use when the caller consumes each order as it arrives — an
-/// integral kernel contracting F_l with a coefficient does exactly that — and
-/// therefore has no reason to hold the ladder: nothing is stored inside this
-/// call and the register cost is the caller's sink's own. The sink is called
-/// once per order, in the order the recursion produces it, which is the top
-/// order downwards inside region A and 0 upwards in regions B and C: a sink
-/// that cares about the sequence of calls can see region A's descending
-/// arrival, and a sink that contracts into an accumulator cannot.
+/// The shape to use when the caller consumes each order as it arrives — an integral
+/// kernel contracting F_l with a coefficient does exactly that — and therefore has no
+/// reason to hold the ladder: nothing is stored inside this call. The sink is called
+/// once per order, in the order the recursion produces it, which is the top order
+/// downwards inside region A and 0 upwards in regions B and C.
 ///
 /// \tparam Sink a callable taking (int order, double value), callable from
 ///         device code. Passing it by value is deliberate: a lambda capturing
@@ -1066,21 +1044,16 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderF64(const BoysDeviceTables& table
 /// F_0(x)..F_n(x) in double precision from the uniform grid, inside the
 /// caller's kernel.
 ///
-/// The partition the CPU lane names \c FitGranularity::kUniform: one table of
-/// equal intervals over [0, kFlatHi) rather than pieces cut where the function
-/// needs them. Below the join every order is summed from its own block and none
-/// is built from another, so the top-order argument's ladder is that many
-/// independent chains instead of one recurrence — the independence is the whole
-/// of what the route buys, and it is why every block is stored at one degree.
-/// Above kFlatHi the table does not reach and the call falls to the asymptotic
-/// every other route ends in, so the figure a caller places this entry by is the
-/// double batch lane's bound, which a rung of the call scales by m exactly as it
-/// does on every route of this lane.
+/// The partition the CPU lane names \c FitGranularity::kUniform: one table of equal
+/// intervals over [0, kFlatHi) rather than pieces cut where the function needs them.
+/// Below the join every order is summed from its own block and none is built from
+/// another, which is why every block is stored at one degree. Above kFlatHi the call
+/// falls to the asymptotic every other route ends in, so the figure a caller places
+/// this entry by is the double batch lane's bound, scaled by m at a rung.
 ///
-/// That is the bound the launched row of this route documents, and the
-/// arithmetic is its kernel's (boys_cuda.cu, BoysAllOrdersF64FlatKernel): the
-/// two differ in where the coefficients come from and not in what is done with
-/// them.
+/// The arithmetic is the launched row's kernel's (boys_cuda.cu,
+/// BoysAllOrdersF64FlatKernel): the two differ in where the coefficients come from
+/// and not in what is done with them.
 ///
 /// \param tables     the handle BoysCuda::DeviceTables filled
 /// \param order      the order n, 0..kMaxBoysOrder
@@ -1089,12 +1062,10 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderF64(const BoysDeviceTables& table
 /// \param capacity   the number of values \c out holds
 /// \param multiplier the accuracy multiplier, m >= 1.0, matched exactly against
 ///        the rung BoysCuda::DeviceTables made resident, as every entry of this
-///        header is. This route's table is stored at one degree for every order
-///        and every interval, so no rung's criterion cuts it and no rung is
-///        answered from a shorter fit: every rung the handle is resident for is
-///        served by the table's own coefficients, and a rung the handle is not
-///        resident for is refused with kMultiplierNotResident, exactly as the
-///        launched entries of this route answer.
+///        header is. No rung's criterion cuts this route's table, so every resident
+///        rung is served by its own coefficients and a rung the handle is not
+///        resident for is refused with kMultiplierNotResident, as the launched rows
+///        of this route answer.
 ///
 /// \pre \c x >= 0, as BoysDeviceSingleF64 states.
 /// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
@@ -1140,16 +1111,14 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Uniform(const BoysDeviceTables
     return BoysDeviceStatus::kSuccess;
 }
 
-/// F_0(x)..F_n(x) from the uniform grid's other stored form, inside the
-/// caller's kernel.
+/// F_0(x)..F_n(x) from the uniform grid's other stored form, inside the caller's
+/// kernel.
 ///
-/// The same table and the same degrees, read by Horner in the monomial basis
-/// rather than by the split Clenshaw in the Chebyshev one. The two blocks are
-/// two rows of one table, so this entry and the one above cannot come to
-/// disagree about which interval an argument falls in, where the table stops or
-/// what its degree is; they differ only in the summation, which is the whole of
-/// what a caller selects between them. Contract, bound and refusals are
-/// BoysDeviceAllOrdersF64Uniform's, its own scheme aside.
+/// The same table and the same degrees, read by Horner in the monomial basis rather
+/// than by the split Clenshaw in the Chebyshev one. The two blocks are two rows of one
+/// table, so this entry and the one above cannot disagree about which interval an
+/// argument falls in, where the table stops or what its degree is. Contract, bound and
+/// refusals are BoysDeviceAllOrdersF64Uniform's, its own scheme aside.
 ///
 /// \param tables     the handle BoysCuda::DeviceTables filled
 /// \param order      the order n, 0..kMaxBoysOrder
@@ -1158,12 +1127,10 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Uniform(const BoysDeviceTables
 /// \param capacity   the number of values \c out holds
 /// \param multiplier the accuracy multiplier, m >= 1.0, matched exactly against
 ///        the rung BoysCuda::DeviceTables made resident, as every entry of this
-///        header is. This route's table is stored at one degree for every order
-///        and every interval, so no rung's criterion cuts it and no rung is
-///        answered from a shorter fit: every rung the handle is resident for is
-///        served by the table's own coefficients, and a rung the handle is not
-///        resident for is refused with kMultiplierNotResident, exactly as the
-///        launched entries of this route answer.
+///        header is. No rung's criterion cuts this route's table, so every resident
+///        rung is served by its own coefficients and a rung the handle is not
+///        resident for is refused with kMultiplierNotResident, as the launched rows
+///        of this route answer.
 /// \pre \c x >= 0, as BoysDeviceSingleF64 states.
 /// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
 ///      kCapacityTooSmall and writes nothing.
@@ -1517,19 +1484,16 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderF32(const BoysDeviceTables& table
 /// F_0(x)..F_n(x) in single precision from the float lane's uniform grid,
 /// inside the caller's kernel.
 ///
-/// The float lane's own grid and not a re-cut of the double lane's: 245
-/// intervals at degree 4 against the double lane's 245 at degree 8, fitted over
-/// the same [0, kFlatHi). It is the lane's table throughout — region A's seed is
-/// the grid's own block rather than the double piece table the float lane's
-/// piecewise entries seed from, and every sum below the join is a float one —
-/// so the bound is the float lane's bound, scaled by m at a relaxed rung exactly
-/// as it is on the lane's other routes, and it is the bound the launched row of
-/// this route documents.
+/// The float lane's own grid and not a re-cut of the double lane's: 245 intervals at
+/// degree 4 against the double lane's 245 at degree 8, fitted over the same
+/// [0, kFlatHi). It is the lane's table throughout — region A's seed is the grid's own
+/// block rather than the double piece table the float lane's piecewise entries seed
+/// from, and every sum below the join is a float one — so the bound is the float lane's
+/// bound, scaled by m at a relaxed rung.
 ///
-/// The mapped argument is this lane's own spelling and not the double entry's:
-/// the interval's edges are the correctly rounded float quotients iv/7 and
-/// (iv + 1)/7, which is the grid the fits were measured on. Above kFlatHi the
-/// call falls to the same asymptotic the other float entries end in.
+/// The interval's edges are the correctly rounded float quotients iv/7 and (iv + 1)/7,
+/// which is the grid the fits were measured on. Above kFlatHi the call falls to the
+/// same asymptotic the other float entries end in.
 ///
 /// \param tables     the handle BoysCuda::DeviceTables filled
 /// \param order      the order n, 0..kMaxBoysOrder
@@ -1600,9 +1564,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Uniform(const BoysDeviceTables
 /// \param capacity   the number of values \c out holds
 /// \param multiplier the accuracy multiplier, m >= 1.0, matched against the rung
 ///        BoysCuda::DeviceTables made resident for the reason
-///        BoysDeviceAllOrdersF64Uniform gives: the grid is stored at one degree
-///        for every order and every interval, so every resident rung of it is
-///        served by the table's own coefficients.
+///        BoysDeviceAllOrdersF64Uniform gives.
 /// \pre \c x >= 0, as BoysDeviceSingleF64 states.
 /// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
 ///      kCapacityTooSmall and writes nothing.
@@ -1948,17 +1910,10 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderF16(const BoysDeviceTables& table
 // ---------------------------------------------------------------------------
 // the narrow partition, and the fit route, in the caller's own kernel
 // ---------------------------------------------------------------------------
-// The axes the launched group carries beyond the shipped partition and the
-// Chebyshev scheme, in the shapes this header offers. Each entry is the same
-// ladder as its sibling on the shipped partition and differs in the tables its
-// lane reads, which is the whole of what the partition, the scheme and the route
-// axes are (boys_cuda_arithmetic.hpp): the regions, the shapes and the
-// recourses are one arithmetic.
-//
-// The narrow partition's pieces are cut per order, so its entries read the
-// handle's own piece-start table and a piece index is the partition's; the fit
-// route stores each piece as a numerator and a denominator and its entries sum
-// the pair and divide, which is the one operation the other routes do not carry.
+// The axes the launched group carries beyond the shipped partition and the Chebyshev
+// scheme, in the shapes this header offers. Each entry is the same ladder as its
+// sibling on the shipped partition and differs in the tables its lane reads
+// (boys_cuda_arithmetic.hpp).
 //
 // The rung a call names is matched against the one BoysCuda::DeviceTables made
 // resident, as everywhere in this header. The narrow partitions are cut per rung
@@ -1973,11 +1928,10 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderF16(const BoysDeviceTables& table
 /// F_0(x)..F_n(x) in double precision from the narrow partition, inside the
 /// caller's kernel.
 ///
-/// The partition the CPU lane names \c FitGranularity::kNarrow: the pieces are
-/// cut per order rather than shared, so this entry reads the handle's own
-/// piece-start table and region A's fit of order \c n is the one cut for that
-/// order. Region B's seed is piecewise on this partition, over the edges the
-/// handle carries.
+/// The partition the CPU lane names \c FitGranularity::kNarrow: the pieces are cut per
+/// order rather than shared, so region A's fit of order \c n is the one cut for that
+/// order. Region B's seed is piecewise on this partition, over the edges the handle
+/// carries.
 ///
 /// \param tables     the handle BoysCuda::DeviceTables filled
 /// \param order      the order n, 0..kMaxBoysOrder
@@ -2087,15 +2041,14 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowMono(
 /// F_0(x)..F_n(x) in double precision from the fit route, inside the caller's
 /// kernel.
 ///
-/// The route the CPU lane names \c FitRoute::kRational: the same pieces as the
-/// shipped partition, each stored as a numerator and a denominator and read as
-/// the quotient of the two sums. The division is the arithmetic's own — one per
-/// piece — and it is the whole of what separates this route from the Chebyshev
-/// one, whose fits are polynomials.
+/// The route the CPU lane names \c FitRoute::kRational: the same pieces as the shipped
+/// partition, each stored as a numerator and a denominator and read as the quotient of
+/// the two sums. The division is the arithmetic's own — one per piece — and it is the
+/// whole of what separates this route from the Chebyshev one, whose fits are
+/// polynomials.
 ///
-/// The route's region-A fit is cut per reading, and the reading this entry makes
-/// is its own: the ladder descends from the top order's piece, so the seed's cut
-/// is the one the entry reads and the resident rung's table is that reading's.
+/// The route's region-A fit is cut per reading, and this entry makes the ladder's: the
+/// seed's cut is the one the resident rung's table holds.
 ///
 /// \param tables     the handle BoysCuda::DeviceTables filled
 /// \param order      the order n, 0..kMaxBoysOrder
@@ -2145,10 +2098,9 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Rat(const BoysDeviceTables& ta
 /// F_0(x)..F_n(x) in double precision from the fit route, named at the Horner
 /// scheme.
 ///
-/// One arithmetic under two names, which is what the launched group's two rows
-/// for this route are: the route's pair is stored once, in one basis, and both
-/// scheme names a caller may use select it. This entry is BoysDeviceAllOrdersF64Rat
-/// and answers exactly as it does, at the same rungs and with the same bound.
+/// One arithmetic under two names, which is what the launched group's two rows for this
+/// route are: the route's pair is stored once, in one basis, and both scheme names
+/// select it. This entry is BoysDeviceAllOrdersF64Rat and answers exactly as it does.
 ///
 /// \param tables     the handle BoysCuda::DeviceTables filled
 /// \param order      the order n, 0..kMaxBoysOrder
@@ -2178,13 +2130,11 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64RatHorner(
 /// F_0(x)..F_n(x) in double precision from the fit route on the narrow
 /// partition, inside the caller's kernel.
 ///
-/// The two axes together: the narrow partition's per-order pieces, stored as
-/// numerator and denominator pairs, with region B's piecewise seed stored as a
-/// pair as well. Both of the route's readings are cut on this partition, and
-/// this entry makes the ladder's, as BoysDeviceAllOrdersF64Rat does.
-///
-/// The bound is the double batch lane's at the rung named, as
-/// BoysDeviceAllOrdersF64Rat states it.
+/// The two axes together: the narrow partition's per-order pieces, stored as numerator
+/// and denominator pairs, with region B's piecewise seed stored as a pair as well. Both
+/// of the route's readings are cut on this partition, and this entry makes the
+/// ladder's, as BoysDeviceAllOrdersF64Rat does. The bound is the double batch lane's at
+/// the rung named.
 ///
 /// \param tables     the handle BoysCuda::DeviceTables filled
 /// \param order      the order n, 0..kMaxBoysOrder
@@ -2278,14 +2228,12 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowRatHorner(
 /// \param capacity   the number of values \c out holds
 /// \param multiplier the accuracy multiplier, matched exactly against the rung
 ///        BoysCuda::DeviceTables made resident, as the grid entries' is: this
-///        partition's own tables are cut per rung and this build holds every cut
-///        of them, so a call at the resident rung reads this lane's region-B seed
-///        at that rung's degree and delivers what the launched row of this
-///        partition delivers. Another multiplier is refused with
-///        kMultiplierNotResident rather than answered from the stored table or
-///        from the double lane's cut. The bound delivered is the float batch
-///        lane's, which is the bound the launched row of this partition
-///        documents.
+///        partition's own tables are cut per rung and this build holds every cut of
+///        them, so a call at the resident rung reads this lane's region-B seed at that
+///        rung's degree. Another multiplier is refused with kMultiplierNotResident
+///        rather than answered from the stored table or from the double lane's cut.
+///        The bound delivered is the float batch lane's, the bound the launched row of
+///        this partition documents.
 ///
 /// \pre \c x >= 0, as BoysDeviceSingleF64 states.
 /// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with

@@ -3,13 +3,31 @@
 // C pure asymptotic) and blending them per lane — the cost of the unsorted input
 // stream, against the region-sorted lanes of the companion sorted benchmark.
 //
-// It runs on the shipped coefficient tables and follows the shipped kernel's
-// ExpTable convention: rows padded to 8 doubles, grid index pre-shifted by 3
-// before the scale-8 gather. A copy that skipped that shift reads the wrong rows
-// and returns garbage over the whole array, so --self-check pins the values
-// against BoysSingle rather than assuming it.
+// The measured parts are the shipped kernel's own, compiled here from
+// src/boys_simd.cpp rather than restated: the e^{-x} table and its
+// gather-and-Horner Eval4, the split Clenshaw both fitted region-A paths run,
+// and the constants read beside them (kHalfSqrtPi among them). A change to any
+// of these moves this file's number, which a copy cannot promise. What stays
+// local is the driver - all three paths per vector, blended per lane - because
+// no such lane is shipped: the library's lanes partition the arguments by
+// region first, so every 4-lane vector is homogeneous. The ExpTable's shape is
+// the shipped one for that reason (rows padded to 8 doubles, grid index
+// pre-shifted by 3 before the scale-8 gather),
+// and --self-check pins the values against BoysSingle rather than assuming it.
 #include "boys/boys.hpp"
 #include "boys/boys_coefficients.hpp"
+
+// The shipped AVX2 unit, compiled into this one so that the table, Eval4 and
+// Clenshaw4Split below ARE those definitions and not lookalikes. Two of that
+// unit's definitions are the library's in this build, which this target links
+// as well, so they are renamed for the length of the include; a new external
+// definition there needs the same treatment, and the duplicate-symbol error at
+// link time is what asks for it.
+#define BoysAvx2Available BoysAvx2AvailableFromShippedUnit
+#define AppendPackedBackends AppendPackedBackendsFromShippedUnit
+#include "boys_simd.cpp"
+#undef AppendPackedBackends
+#undef BoysAvx2Available
 
 #include <algorithm>
 #include <chrono>
@@ -27,132 +45,13 @@ namespace {
 constexpr std::size_t kInputCount = 1u << 22; // 4,194,304 values
 constexpr int kOrder = 8; // the order the whole array is evaluated at
 constexpr int kPasses = 3;
-constexpr double kHalfSqrtPi = 0.886226925452758014;
 
-// e^{-x} on [0, 30]: a degree-4 Taylor table, one row per grid abscissa
-// x_i = i * kStep, rows padded to 8 doubles so the gathers can use the legal
-// scale 8.
-//
-// A row holds the quartic Taylor polynomial of e^{-x} at x_i in the monomial
-// basis of the ABSOLUTE argument x, so that Eval4 is a plain Horner chain. The
-// alternating sign that basis carries is folded into the stored coefficients and
-// taken back out by the sign pattern of Eval4's FMA chain.
-class ExpTable {
-public:
-    static constexpr double kStep = 0.01;
-    static constexpr int kNumPoints = 3000;
-    static constexpr int kDegree = 4;
-
-    ExpTable() noexcept {
-        for (int i = 0; i <= kNumPoints; ++i)
-        {
-            const double x = i * kStep;
-            const double decay = std::exp(-x);
-
-            // partialSum[m] = sum_{j=0..m} x^j / j!
-            double term = 1.0;
-            double running = 1.0;
-            double partialSum[kDegree + 1];
-            partialSum[0] = 1.0;
-
-            for (int m = 1; m <= kDegree; ++m)
-            {
-                term *= x / m;
-                running += term;
-                partialSum[m] = running;
-            }
-
-            // Row entry k = e^{-x_i} * S_{4-k} / k!.
-            double factorial = 1.0;
-
-            for (int k = 0; k <= kDegree; ++k)
-            {
-                _coefficients[i][k] = decay * partialSum[kDegree - k] / factorial;
-                factorial *= k + 1;
-            }
-        }
-    }
-
-    // The stored coefficients are the ALTERNATING-sign monomial form: evaluate
-    // c4*x^4 - c3*x^3 + c2*x^2 - c1*x + c0.
-    __m256d Eval4(__m256d x) const noexcept {
-        __m128i index = _mm256_cvtpd_epi32(_mm256_mul_pd(x, _mm256_set1_pd(1.0 / kStep)));
-        index = _mm_min_epi32(index, _mm_set1_epi32(kNumPoints));
-        // Rows are 8 doubles apart: the grid index pre-shifts by 3 so the
-        // scale-8 gather lands on the row address.
-        index = _mm_slli_epi32(index, 3);
-        __m256d c0 = _mm256_i32gather_pd(&_coefficients[0][0], index, 8);
-        __m256d c1 = _mm256_i32gather_pd(&_coefficients[0][1], index, 8);
-        __m256d c2 = _mm256_i32gather_pd(&_coefficients[0][2], index, 8);
-        __m256d c3 = _mm256_i32gather_pd(&_coefficients[0][3], index, 8);
-        __m256d c4 = _mm256_i32gather_pd(&_coefficients[0][4], index, 8);
-        __m256d result = _mm256_fmsub_pd(c4, x, c3);
-        result = _mm256_fmadd_pd(result, x, c2);
-        result = _mm256_fmsub_pd(result, x, c1);
-        result = _mm256_fmadd_pd(result, x, c0);
-        return result;
-    }
-
-private:
-    double _coefficients[kNumPoints + 1][8]{};
-};
-
-// Split Clenshaw (even/odd), 4-wide, half-depth FMA chains — the shipped
-// kernel shape.
-__m256d Clenshaw4Split(const boys::detail::OrderPiece& piece, __m256d xv) {
-    const double* c = boys::detail::kCoeffs.data() + piece.offset;
-    const int deg = piece.deg;
-
-    if (deg == 0)
-    {
-        return _mm256_set1_pd(c[0]);
-    }
-
-    __m256d t = _mm256_sub_pd(xv, _mm256_set1_pd(piece.a));
-    t = _mm256_fmadd_pd(t, _mm256_set1_pd(2.0 / (piece.b - piece.a)), _mm256_set1_pd(-1.0));
-
-    if (deg == 1)
-    {
-        return _mm256_fmadd_pd(t, _mm256_set1_pd(c[1]), _mm256_set1_pd(c[0]));
-    }
-
-    const __m256d v =
-        _mm256_fmsub_pd(_mm256_set1_pd(2.0), _mm256_mul_pd(t, t), _mm256_set1_pd(1.0));
-    const __m256d twoV = _mm256_add_pd(v, v);
-    // even part: e_k = c[2k]
-    const int m = deg / 2;
-    __m256d b1 = _mm256_set1_pd(c[2 * m]);
-    __m256d b2 = _mm256_setzero_pd();
-
-    for (int k = m - 1; k >= 1; --k)
-    {
-        const __m256d b0 = _mm256_fmadd_pd(twoV, b1, _mm256_sub_pd(_mm256_set1_pd(c[2 * k]), b2));
-        b2 = b1;
-        b1 = b0;
-    }
-
-    const __m256d even = _mm256_fmadd_pd(v, b1, _mm256_sub_pd(_mm256_set1_pd(c[0]), b2));
-    // odd part: o_k = c[2k+1], D recurrence (D_1 = 2v-1)
-    __m256d o1 = _mm256_set1_pd(c[2 * m - 1]);
-    __m256d o2 = _mm256_setzero_pd();
-
-    for (int k = m - 2; k >= 1; --k)
-    {
-        const __m256d o0 =
-            _mm256_fmadd_pd(twoV, o1, _mm256_sub_pd(_mm256_set1_pd(c[2 * k + 1]), o2));
-        o2 = o1;
-        o1 = o0;
-    }
-
-    const __m256d odd = _mm256_fmadd_pd(
-        _mm256_sub_pd(twoV, _mm256_set1_pd(1.0)), o1, _mm256_sub_pd(_mm256_set1_pd(c[1]), o2));
-    return _mm256_fmadd_pd(t, odd, even);
-}
-
-// The unsorted variant: all three paths computed per vector, blended per lane.
-// Measures the divergence penalty against the region-specialized lanes.
-void ChebSimdMixed(
-    int n, const double* x, double* out, std::size_t count, const ExpTable& expTable) {
+// All three region paths per vector, blended per lane: the divergence penalty.
+void ChebSimdMixed(int n,
+                   const double* x,
+                   double* out,
+                   std::size_t count,
+                   const boys::detail::ExpTable& expTable) {
     using namespace boys::detail;
 
     for (std::size_t i = 0; i + 3 < count; i += 4)
@@ -173,14 +72,13 @@ void ChebSimdMixed(
                 const __m256d mask = _mm256_and_pd(
                     _mm256_and_pd(mA, _mm256_cmp_pd(xv, _mm256_set1_pd(piece.a), _CMP_GE_OQ)),
                     _mm256_cmp_pd(xv, _mm256_set1_pd(piece.b), _CMP_LT_OQ));
-                fA = _mm256_blendv_pd(fA, Clenshaw4Split(piece, xv), mask);
+                fA = _mm256_blendv_pd(fA, boys::detail::Clenshaw4Split(piece, xv), mask);
             }
         }
 
         __m256d fB = _mm256_setzero_pd();
         {
-            // Split Clenshaw (even/odd) on kBcoeffs — the shipped region-B
-            // F0 seed shape.
+            // Split Clenshaw (even/odd) on kBcoeffs, the shipped region-B F0 seed shape.
             const double* c = kBcoeffs.data();
             const int m = kBDeg / 2;
             __m256d t = _mm256_sub_pd(xv, _mm256_set1_pd(kX0));
@@ -287,7 +185,7 @@ int main(int argc, char** argv) {
     }
 
     std::vector<double> out(kInputCount);
-    const ExpTable expTable;
+    const boys::detail::ExpTable expTable;
 
     if (selfCheck)
     {

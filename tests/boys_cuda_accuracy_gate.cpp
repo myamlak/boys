@@ -4,37 +4,33 @@
 // tools/gen_boys_accuracy_gate_reference.py), over the whole of the lane's
 // named domain, in the CPU gate's own row shape.
 //
-// What it adds to tests/boys_cuda_test.cpp. That test compares the device lane
-// against the CPU lane - |gpu - cpu| against a cross-lane budget - and the two
-// implementations it subtracts can carry error in the same direction, so a
-// difference bounds the device's distance from the CPU lane and not its
-// distance from F_n(x). This gate removes the middle term: the reference is the
-// committed grid of the CPU gate, which shares no code with the library, and
-// every device entry is measured against it directly. The device contract's
-// numbers are what the rows below hold the sweep to.
+// What it adds to tests/boys_cuda_test.cpp: that test compares the device lane
+// with the CPU lane, and the two implementations it subtracts can carry error
+// in the same direction, so a difference bounds the device's distance from the
+// CPU lane and not its distance from F_n(x). This gate removes the middle term
+// and measures every device entry against the CPU gate's committed grid, which
+// shares no code with the library, directly.
 //
-// What is measured, per entry. Every documented device bound is a claim about
-// a (lane, region) cell, and the reference grid is rectangular over orders
-// 0..kMaxBoysOrder and one shared argument list, so one launch per entry
-// covers every cell: the single entries are handed one element per (order,
-// argument) cell, and the batch entries are handed the argument list at
-// nmax = kMaxBoysOrder. A cell the bound cannot fail on - the bound is at
-// least as large as |F_n(x)| itself, so any return in range passes there - is
-// counted in the vacuous column rather than folded into the total, which is
-// the CPU gate's rule and the number to read before the green rows.
+// What is measured, per entry. Every documented device bound is a claim about a
+// (lane, region) cell, and the reference grid is rectangular over orders
+// 0..kMaxBoysOrder and one shared argument list, so one launch per entry covers
+// every cell: the single entries are handed one element per (order, argument)
+// cell, and the batch entries the argument list at nmax = kMaxBoysOrder. A cell
+// the bound cannot fail on - the bound is at least as large as |F_n(x)| itself,
+// so any return in range passes there - is counted in the vacuous column rather
+// than folded into the total, which is the CPU gate's rule.
 //
-// The card is named rather than assumed. A delivered figure describes the
-// arithmetic this device executes; a weaker or stronger double unit changes
-// what a bound costs and not what it is, so the bounds transfer between cards
-// and the delivered figures do not. Every rung is measured, because the header
+// The card is named rather than assumed: a delivered figure describes the
+// arithmetic this device executes, so a weaker or stronger double unit changes
+// what a bound costs and not what it is - the bounds transfer between cards and
+// the delivered figures do not. Every rung is measured, because the header
 // asserts a bound for every rung: the batch entries are swept once per
-// multiplier, each sweep launching the instantiation its row names, and the
-// device-callable entries once per rung with the rung named at the call.
+// multiplier, and the device-callable entries once per rung.
 //
 // One entry carries two certified options rather than one arithmetic: the f32
-// single entry's region-B exponential. It is swept once per option, against the
-// bound that option documents, and the two returns are measured against each
-// other as well - they differ in that one factor, so their difference is the
+// single entry's region-B exponential, swept once per option against the bound
+// that option documents. The two returns are measured against each other as
+// well - they differ in that one factor, so their difference is the
 // contribution the fast option's second bound term has to cover, and the
 // wrong-sign cells are the audit for the defect that term exists because of.
 // The term itself is derived from the recurrence's condition number rather than
@@ -48,8 +44,7 @@
 // reaches. Each of its threads forms its own argument from a factor pair the
 // gate chose exact, so the value measured is the reference's own. The entries
 // that are one body reached through different shapes are additionally compared
-// with each other bit for bit, which is a stronger statement than a bound and
-// is reported beside the rows.
+// with each other bit for bit, which is a stronger statement than a bound.
 //
 // Each of those entries takes the rung as a run-time argument, so each is swept
 // at every rung the lane instantiates - held to m * the m = 1 bound of its
@@ -93,9 +88,8 @@
 
 #include <cuda_runtime.h>
 
-// The reference grid is located the way the CPU gate locates it; a build that
-// bypasses CMake still says which revision it measured rather than naming one
-// it did not read.
+// The grid is located as the CPU gate locates it, so a build that bypasses CMake
+// still says which revision it measured rather than naming one it did not read.
 #ifndef BoysDataDir
 #define BoysDataDir "tests/data"
 #endif
@@ -109,19 +103,15 @@
 // pins that seam ON, so a consumer may build this tree with it closed. The
 // format types arrive from boys/f16.hpp either way; the entries do not exist in
 // a closed build, so calling one is a compile error rather than a wrong number.
-// The lane's cells are therefore measured only where this build carries it. The
-// rows are not dropped where it does not: their claim rows still exist, so the
-// claim count does not move with the seam, and the report names every row it
-// could not measure and why, and says so in its RESULT line - a table missing a
-// row reads as a row that was measured, and "every bound met" over cells that
-// were never compared is the other way of saying nothing.
+// The lane's cells are therefore measured only where this build carries it, and
+// the report names every row it could not measure and why, and says so in its
+// RESULT line: a table missing a row reads as a row that was measured.
 #if BoysFp16
 #define BOYS_CUDA_GATE_FP16 1
 #endif
 
 // The same reference reader and row shape the CPU gate reports in, so a lane
-// measured here is measured against one reference format and printed in one
-// vocabulary rather than one apiece.
+// measured here is printed in one vocabulary rather than one apiece.
 using namespace boys_gate;
 
 namespace {
@@ -130,21 +120,20 @@ namespace {
 // The documented device bounds, and the option rows they are the bounds of.
 //
 // The fp32 and fp16 figures, and the rows the device cells below are claimed
-// for, are read from boys::BoysDeviceOptions() — the library's own report of its
-// device option space, the table the header's entries are documented in and the
-// one a chooser reads. A gate that transcribed them would be a second source of
-// truth for the same numbers, and the two could disagree: a row added to the
-// surface would be certified by nothing, and a bound could say one thing to a
-// chooser and another to the certifier. The fp64 single lane's per-region cells
-// are the exception and are transcribed below, because the report states one
-// figure per option and that lane's contract is four cells of one option.
+// for, are read from boys::BoysDeviceOptions(), the library's own report of its
+// device option space. A gate that transcribed them would be a second source of
+// truth for the same numbers, so a row added to the surface could be certified
+// by nothing and a bound could say one thing to a chooser and another to the
+// certifier. The fp64 single lane's per-region cells are the exception and are
+// transcribed below, because the report states one figure per option and that
+// lane's contract is four cells of one option.
 // ---------------------------------------------------------------------------
 
 /// The report's row for an option, by entry and axis member.
 ///
-/// A row this gate asks for and the library does not report is the drift this
-/// reads the report to prevent, so it stops the gate rather than substituting a
-/// figure: a gate that can invent a bound is not a certifier.
+/// A row this gate asks for and the library does not report stops the gate
+/// rather than substituting a figure: a gate that can invent a bound is not a
+/// certifier.
 const boys::DeviceOptionInfo& DeviceRow(boys::DeviceEntry entry,
                                         boys::RegionBExp exp = boys::RegionBExp::kAccurate) {
     for (const boys::DeviceOptionInfo& option : boys::BoysDeviceOptions())
@@ -163,10 +152,9 @@ const boys::DeviceOptionInfo& DeviceRow(boys::DeviceEntry entry,
 }
 
 // README's accuracy contract: "CUDA fp64 | same m*budgets as the CPU double
-// lanes". The CPU double single lane is the one with per-region cells
-// (1e-15 below the region-A edge, 3e-14 through the extended band and region
-// B, 5.5e-14 in region C); the CPU double batch lane publishes one, 5.5e-14.
-//
+// lanes". The CPU double single lane is the one with per-region cells (1e-15
+// below the region-A edge, 3e-14 through the extended band and region B,
+// 5.5e-14 in region C); the CPU double batch lane publishes one, 5.5e-14.
 // Three of those cells are transcribed below, because the report states one
 // figure per option and this lane's contract is four cells of one option. The
 // region-C cell and the batch bound are read from the report, as every fp32 and
@@ -191,12 +179,11 @@ const double kBoundFloat = DeviceRow(boys::DeviceEntry::kDeviceSingleF32).bound;
 // boundary - so a seed whose relative error is flat at rho ulp contributes at
 // most G_n (1/2) e^{-x} rho: 6.1e-8 at rho = 4 ulp, 8e-8 here. The sweep below
 // reports the contribution it actually measured, and the audit reports the
-// wrong-sign cells (zero at m = 1 for the corrected form).
+// wrong-sign cells.
 //
-// It is read as the difference between the two options' documented bounds - the
-// fast option's figure is the lane's plus this contribution, and both figures are
-// the report's. A contribution derived here from two reported numbers cannot
-// disagree with either of them.
+// It is read as the difference between the two options' documented bounds: the
+// fast option's figure is the lane's plus this contribution, and both figures
+// are the report's.
 const double kFastExpContribution =
     DeviceRow(boys::DeviceEntry::kDeviceSingleF32Fast, boys::RegionBExp::kFast).bound -
                                     DeviceRow(boys::DeviceEntry::kDeviceSingleF32).bound;
@@ -215,12 +202,11 @@ const double kBoundHalfRow = DeviceRow(boys::DeviceEntry::kDeviceSingleF16).boun
 //
 // The list is kDeviceRungs (boys_cuda_options.hpp), spelled out here because a
 // sweep names its rung at the call site and a template argument cannot be read
-// out of a table. It holds every rung that lane serves: the option space's
-// 64, 256, 1024, 4096, 16384 and 65536, whose option rows this lane's entries
-// are claimed for, beside the lane's own finer-at-the-low-end sample set. A rung
-// the lane serves and this list does not hold would be a row of the library no
-// bound is measured at, which is the drift the coverage check at the end of this
-// file exists to catch.
+// out of a table. It holds every rung that lane serves: the option space's 64,
+// 256, 1024, 4096, 16384 and 65536, whose option rows this lane's entries are
+// claimed for, beside the lane's own finer-at-the-low-end sample set. A rung the
+// lane serves and this list misses is the drift the coverage check at the end of
+// this file exists to catch.
 struct Rung {
     double multiplier;
     const char* name;
@@ -240,16 +226,14 @@ constexpr Rung kRungs[] = {{1.0, nullptr},
                            {1e8, "1e8"}};
 
 // The last rung of that list, which is the one the run's sweeps leave resident:
-// it is the highest multiplier the lane serves, and the sweeps run in the order
-// above.
+// it is the highest multiplier the lane serves, and the sweeps run in that order.
 constexpr int kLastRung = static_cast<int>(sizeof(kRungs) / sizeof(kRungs[0])) - 1;
 
 // Whether the list above is the lane's own rung set, element by element and in
-// order. A sweep names its rung at the call site and a template argument cannot
-// be read out of a table, so the list has to be spelled out; this is what keeps
-// the spelling and kDeviceRungs (boys_cuda_options.hpp) from parting. A rung
-// added to the lane and not to the list would be a row of the library no bound
-// is measured at, and one added to the list and not to the lane would not link.
+// order, so the spelling and kDeviceRungs (boys_cuda_options.hpp) cannot part:
+// a rung added to the lane and not to the list would be a row of the library no
+// bound is measured at, and one added to the list and not to the lane would not
+// link.
 constexpr bool RungsAreTheLanesSet() noexcept {
     constexpr std::size_t kListed = sizeof(kRungs) / sizeof(kRungs[0]);
 
@@ -287,8 +271,6 @@ constexpr double kFloatMinNormal = std::numeric_limits<float>::min();
 // the function. The second is a tripwire rather than a bound term: a seed error
 // the recurrence amplifies is what put the wrong sign there before the
 // correction, so a non-zero count at m = 1 means the correction has been lost.
-// A wrong sign is at least as large as the value itself in relative terms, so
-// that column is never below 1.
 struct ExpAudit {
     std::string lane;
     double contributed = 0.0;
@@ -309,9 +291,9 @@ std::vector<ExpAudit>& ExpAudits() {
 }
 
 // The claim rows this build could not measure because the entries behind them
-// are behind a closed fp16 seam, named the way their own claim is registered.
+// sit behind a closed fp16 seam, named the way their own claim is registered.
 // Empty in a build that carries the lane, and every reader of it prints nothing
-// then, so the two builds differ only in what each one says it could not do.
+// then.
 std::vector<std::string>& NotCarriedLanes() {
     static std::vector<std::string> lanes;
     return lanes;
@@ -329,7 +311,7 @@ void NoteNotCarried(int slot) {
 
 // That register as the report prints it: one line naming the seam and the
 // reason, then the rows, deduplicated because each rung registers the same
-// lanes again and a reader wants the lanes and not the repetition.
+// lanes again.
 void PrintNotCarried() {
     if (NotCarriedLanes().empty())
     {
@@ -1025,8 +1007,7 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
     // The fit route's rows, in the same four shapes. The route's two scheme
     // names select one arithmetic, so the four policies below are the shapes'
     // four and not eight: a row of the route is read against the host lane at
-    // the route, the shape's partition and the shape's packing axis, and its
-    // own scheme is named on the row.
+    // the route, the shape's partition and the shape's packing axis.
     using RatPolicy = boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
                                        boys::kDefaultEvalScheme,
                                        boys::BoysBudget::kFloat,
@@ -1097,10 +1078,9 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
         rung,
         rungWord,
         &boys::BoysCuda::AllOrdersF64NarrowOrdersMono<kMultiplier>);
-    // The fit route's rows. The two scheme names of a shape run one kernel, so
-    // both rows of a pair are measured and each carries its own figure; a pair
-    // whose figures differ would be a report that named two arithmetics where
-    // the lane has one.
+    // The fit route's rows. Both rows of a scheme pair are measured and each
+    // carries its own figure; a pair whose figures differ would be a report that
+    // named two arithmetics where the lane has one.
     const std::vector<double> ratOut = MeasureDeviceRow<kMultiplier>(
         ref,
         grid,
@@ -1160,21 +1140,11 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
 
     // The uniform route's rows, at every rung the lane serves. Its table is
     // stored at one degree for every order and every interval, so no rung's
-    // criterion cuts it: every rung's arithmetic is the route's one degree, the
-    // row's bound at a rung is its own figure times m, and the entry serves every
-    // rung of the lane. That is the same statement the library makes in
-    // DeviceEntryServedAtRung, and it is why there is no guard around this block.
-    //
-    // So a rung's cell of this route is measured here like any other row's, and
-    // the figure says what a rung of it is worth: the route has no shorter fit to
-    // read, so the rung buys no less work, and the bound is what a caller of a
-    // rung of it reads. A rung this gate skipped would be a rung the report
-    // offers and no measurement covers.
-    //
-    // Every row of the route is measured, including the two that name the
-    // packing axis and run the kernel of the scheme they carry: a row of the
-    // report is certified by this gate or it is not, and a name that reached no
-    // measurement would be a row the chooser reads and the certifier skips.
+    // criterion cuts it: every rung's arithmetic is that one degree, a rung's
+    // row is its own figure times m, and the entry serves every rung - the same
+    // statement the library makes in DeviceEntryServedAtRung, which is why
+    // there is no guard around this block. Every row of the route is measured,
+    // the two packing-axis rows included.
     {
         const std::vector<double> uniformOut = MeasureDeviceRow<kMultiplier>(
             ref,
@@ -1240,10 +1210,8 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
         (void)ordersUniformHornerOut;
     }
 
-    // The float lane's grid, which is the uniform route at that lane's precision
-    // and is served at every rung for the reason the double lane's is: its table
-    // is stored at one degree for every order and every interval, so every rung's
-    // arithmetic is that one degree and the entry serves every rung.
+    // The float lane's grid, the uniform route at that lane's precision, served
+    // at every rung for the reason the double lane's is.
     MeasureDeviceRowF32<kMultiplier>(
         ref,
         grid,
@@ -1258,10 +1226,9 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
         &boys::BoysCuda::AllOrdersF32UniformHorner<kMultiplier>);
 
     // The grid on its rational route, the float lane's member over its own
-    // intervals. Served at every rung for the reason the two rows above are: one
-    // pair per interval and no per-order effective-degree column, so no rung's
-    // criterion has anything to cut. Both scheme names reach one kernel and both
-    // are rows, because a caller who named a scheme named a call.
+    // intervals, served at every rung for the reason the rows above are: one
+    // pair per interval and no per-order effective-degree column, so nothing to
+    // cut.
     MeasureDeviceRowF32<kMultiplier>(
         ref,
         grid,
@@ -1289,10 +1256,8 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
 
     // The float lane's other packing axis, on the two tables whose rung this
     // lane holds: the shipped partition's own cut of the float Chebyshev table,
-    // and the uniform grid, whose rows are the per-argument rows' kernels and
-    // whose one degree per interval no rung's criterion cuts. Each is measured
-    // at the bound the float lane documents, over the whole committed grid, like
-    // every other row here.
+    // and the uniform grid, whose one degree per interval no rung's criterion
+    // cuts. Both are measured at the bound the float lane documents.
     MeasureDeviceRowF32<kMultiplier>(
         ref,
         grid,
@@ -1313,10 +1278,8 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
         &boys::BoysCuda::AllOrdersF32OrdersUniformHorner<kMultiplier>);
 
     // The float lane's narrow partition carries every rung on both axes, in each
-    // of the two forms it is stored in, and each form's cut is the float lane's
-    // own region-B degrees in that form beside the double lane's region-A cut,
-    // so each of its four rows is measured here at every rung of the lane's table
-    // like the entries above.
+    // of the two forms it is stored in, each form's cut being the float lane's
+    // own region-B degrees in that form beside the double lane's region-A cut.
     MeasureDeviceRowF32<kMultiplier>(
         ref,
         grid,
@@ -1343,15 +1306,12 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
         &boys::BoysCuda::AllOrdersF32NarrowOrdersMono<kMultiplier>);
 
     // The float lane's rational route carries every rung on both axes and on
-    // both partitions: the region-B pair is that lane's own fit, which this
-    // lane cuts by the same criterion over the coefficients the row sums, and
-    // region A's seed is the double lane's pair at the same rung's cut. Each of
-    // the eight rows is measured here at every rung of the lane's table, under
-    // both scheme names because the route's pair is stored in one form.
-    // The rational route's two partitions, each named twice because the
-    // route's pair is stored in one form: the two scheme names of a
-    // partition reach one kernel and the row's own scheme says which name
-    // reached it, as the double lane's rational pairs do.
+    // both partitions: the region-B pair is that lane's own fit, cut by the same
+    // criterion over the coefficients the row sums, and region A's seed is the
+    // double lane's pair at the same rung's cut. Each of its rows is measured at
+    // every rung, named twice because the route's pair is stored in one form:
+    // the two scheme names of a partition reach one kernel, and the row's own
+    // scheme says which name reached it.
     MeasureDeviceRowF32<kMultiplier>(
         ref,
         grid,
@@ -1376,10 +1336,9 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
         boys::DeviceEntry::kAllOrdersF32NarrowRatHorner,
         rung,
         &boys::BoysCuda::AllOrdersF32NarrowRatHorner<kMultiplier>);
-    // The same tables and the same route on the packing axis's other side, at
-    // the same one rung and for the same reason: the missing cut is the
-    // table's, so the row that reads that table on either axis is served
-    // where its twin is and nowhere else.
+    // The same tables and route on the packing axis's other side, at every rung
+    // and for the same reason: a rung cuts the pair this row reads as it cuts the
+    // per-argument row's, so the two are served at the same rungs.
     MeasureDeviceRowF32<kMultiplier>(
         ref,
         grid,
@@ -1461,11 +1420,11 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
         CompareDeviceWithHost<kMultiplier, NarrowOrdersMonoPolicy>(
             ref, grid, bothMonoOut, bothMonoHost);
 
-        // The fit route's rows, each shape's two scheme names measured against
-        // the host lane at the route and at that shape's partition and packing
-        // axis. Both names of a shape run one kernel, so the two distances are
-        // two measurements of one arithmetic; they are recorded per row rather
-        // than once for the pair, because a row's claim is the row's own.
+        // The fit route's rows, each shape's two scheme names measured against the
+        // host lane at the route and that shape's partition and packing axis.
+        // Both names of a shape run one kernel, so the two distances are two
+        // measurements of one arithmetic; each is recorded per row, because a
+        // row's claim is the row's own.
         const auto routeHostClaim = [&](const char* rowName, const char* shape) {
             return AddClaim((std::string(rowName) + rungWord + " vs fp64 host " + shape).c_str(),
                             "A..C",
@@ -1496,17 +1455,12 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
             ref, grid, narrowRatHornerOut, narrowRatHornerHost);
 
         // The narrow partition under the rational route on the orders axis, the
-        // last of the route's four shapes. It is a combination the host lane
-        // carries: its packed entry takes the route and the partition as
-        // template arguments, and boys_orders_simd.cpp instantiates that pair
-        // for both schemes at every rung (BOYS_ORDERS_NARROW_RATIONAL_
-        // INSTANTIATIONS). This gate read a gap here once - a shape it believed
-        // the host lane refused and therefore did not measure - and the block
-        // that reported it quoted BoysAccuracyGuaranteed's reason, which was
-        // empty because the accessor answers carried. An accessor that answers
-        // and a report that says nothing is not a gap: it is one of the two
-        // being wrong, and here it was the block. The rows are read against the
-        // host lane at their own policy like every other shape of the route.
+        // last of the route's four shapes. The host lane carries it: its packed
+        // entry takes the route and the partition as template arguments, and
+        // boys_orders_simd.cpp instantiates that pair for both schemes at every
+        // rung (BOYS_ORDERS_NARROW_RATIONAL_INSTANTIATIONS). The rows are read
+        // against the host lane at their own policy like every other shape of
+        // the route.
         const int bothRatHost = routeHostClaim(
             DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowOrdersRat).name, "narrow orders rat");
         const int bothRatHornerHost = routeHostClaim(
@@ -1602,8 +1556,7 @@ void SweepFloat(const Reference& ref,
 
                 // The sign audit is over the cells whose value the format
                 // holds: a subnormal or zero F_n(x) has no relative error to
-                // speak of, and the bound's own floor is what covers those
-                // cells.
+                // speak of, and the bound's own floor covers those cells.
                 const double want = ref.vf[e];
 
                 if (want != 0.0 && std::fabs(want) >= kFloatMinNormal)
@@ -1822,8 +1775,8 @@ void SweepHalf(const Reference& ref,
     }
 #else
     // No entry to call: this build's fp16 seam is closed, so the three rows
-    // this sweep fills are left unmeasured rather than measured against
-    // nothing, and the report names them by the claims they belong to.
+    // this sweep fills are left unmeasured, and the report names them by their
+    // claims.
     (void)ref;
     (void)grid;
     (void)sorted;
@@ -1906,11 +1859,9 @@ std::size_t FamilySlot(std::size_t element, int order) {
 }
 
 // Two shapes of one body, compared bit for bit. A bound says how close a return
-// is to F_n(x); this says two entries returned the same bits, which is what the
-// header claims where two entries reach one body and what no bound can say.
-// Only the slots a call writes are compared: an element writes its own top
-// order and below, and the slots above it would only count agreements that say
-// nothing.
+// is to F_n(x); this says two entries returned the same bits. Only the slots a
+// call writes are compared: the slots above an element's top order would only
+// count agreements that say nothing.
 struct ShapeAgreement {
     std::string what;
     std::size_t identical = 0;
@@ -1965,12 +1916,11 @@ void Agree(const std::string& what,
     ShapeAgreements().push_back(agreement);
 }
 
-// The compile-time-top-order entry against the runtime-top-order one at that
-// same order. Both are one call to one body with one top order, so the claim is
-// bit identity, and the runtime side of it is the element whose own top order is
-// kMaxBoysOrder: a call at a lower order descends from that lower order and
-// returns different last bits on purpose, so comparing the two at the element's
-// own order would be comparing two arithmetic paths and not two entries.
+// The compile-time-top-order entry against the runtime-top-order one, at the
+// element whose own top order is kMaxBoysOrder. Both are one call to one body
+// with one top order, so the claim is bit identity; a call at a lower order
+// descends from that lower order, so comparing there would be comparing two
+// arithmetic paths and not two entries.
 template <typename T>
 void AgreeFixedTopOrder(const std::string& what,
                         const std::vector<T>& fixed,
@@ -2010,8 +1960,7 @@ void AgreeFixedTopOrder(const std::string& what,
 }
 
 // Every element's status, required to be what the entry should have returned.
-// The entries report through their enum and never throw, so a caller that
-// ignores a status is the caller's own risk and the gate is not that caller.
+// The entries report through their enum and never throw.
 void ExpectStatus(const std::vector<int>& status,
                   std::size_t count,
                   int want,
@@ -2061,9 +2010,8 @@ void CheckDemo(int error, const char* what) {
 }
 
 // Which row each device entry's cells are measured into. One entry per row
-// except the double single lane, whose bound is published per region, and one
-// set of rows per rung: the multiplier is an argument of the call, so the same
-// entry's cells at two rungs are two claims with two bounds.
+// except the double single lane, whose bound is published per region; one set
+// of rows per rung, since the multiplier is an argument of the call.
 struct DeviceSlots {
     int singleA = -1;
     int singleBand = -1;
@@ -2082,11 +2030,10 @@ struct DeviceSlots {
     int allN16 = -1;
     int each16 = -1;
 
-    // The partition and route axes of the ladder shape. The float lane's narrow
-    // and rational rows are served at m = 1 alone — their launched rows refuse
-    // the other eleven rungs and `DeviceEntryServedAtRung` reads the refusal
-    // from the launched row — so those four slots are filled at that rung and
-    // are -1 at every other, where the row has no cell in this build.
+    // The partition and route axes of the ladder shape. Every row of them - the
+    // float lane's narrow and rational rows included - is served at every rung,
+    // so DeviceClaimSet below fills every slot here at every rung; the -1 is the
+    // initial value and not what a rung leaves unclaimed.
     int narrow64 = -1;
     int narrowMono64 = -1;
     int rat64 = -1;
@@ -2151,19 +2098,14 @@ DeviceSlots DeviceClaimSet(const char* rung, double multiplier) {
     // The partition and route axes reached in the caller's kernel. Each row's
     // name, precision and bound are its launched row's above, because the
     // arithmetic is the same arithmetic: the two rows differ in how a caller
-    // reaches it, which is what the coverage check at the end of this file reads
-    // and what makes each of these a row the chooser sees and the certifier
-    // claims.
+    // reaches it.
     //
-    // Every row of the float lane — the shipped and narrow partitions' Chebyshev
-    // and monomial forms and the rational route on both partitions — carries
+    // Every row of the float lane - the shipped and narrow partitions' Chebyshev
+    // and monomial forms and the rational route on both partitions - carries
     // every rung and is claimed at every rung, as the double lane's rows and the
-    // grid's are: the grid is stored at one degree for every order and every
-    // interval, so no rung's criterion cuts it, and every other table is cut by
-    // the rung's criterion and the cut is what the handle carries. A claim is
-    // therefore made wherever the row's own entry says the row answers
-    // (DeviceEntryServedAtRung), so the claim set and the space's rung mask
-    // cannot come apart here.
+    // grid's are: a claim is made wherever the row's own entry says the row
+    // answers (DeviceEntryServedAtRung), so the claim set and the space's rung
+    // mask cannot come apart here.
     slots.narrow64 = AddClaim(
         Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64Narrow).name, rung).c_str(),
         "A..C",
@@ -2205,8 +2147,7 @@ DeviceSlots DeviceClaimSet(const char* rung, double multiplier) {
         "A..C",
         multiplier * kBoundFloat);
     // The grid's rational member on both lanes, claimed at every rung for the
-    // reason the four above are: the table has no cut to make, so a rung of it
-    // is the route's own arithmetic.
+    // reason the four above are: the table has no cut to make.
     slots.uniformRat64 = AddClaim(
         Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64UniformRat).name, rung).c_str(),
         "A..C",
@@ -2237,9 +2178,9 @@ DeviceSlots DeviceClaimSet(const char* rung, double multiplier) {
         Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowMono).name, rung).c_str(),
         "A..C",
         multiplier * kBoundFloat);
-    // The float lane's rational rows, which carry every rung as well: the
-    // handle carries the cut that rung leaves on both halves of the pair — the
-    // double lane's pairs for region A and this lane's own for region B.
+    // The float lane's rational rows, which carry every rung as well: the handle
+    // carries the cut that rung leaves on both halves of the pair - the double
+    // lane's pairs for region A and this lane's own for region B.
     slots.rat32 =
         AddClaim(Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32Rat).name, rung).c_str(),
                  "A..C",
@@ -2266,9 +2207,8 @@ DeviceSlots DeviceClaimSet(const char* rung, double multiplier) {
 // body, a lane object that reads the caller's handle instead of a __constant__
 // symbol. A bound cannot say that, and the header claims it, so every value the
 // device call wrote is compared bit for bit against the batch entry launched on
-// the same orders and the same arguments. A divergence is a defect in one of
-// the two routes, not a looser bound, so it stops the gate at the cell it was
-// found at.
+// the same orders and the same arguments; a divergence is a defect in one of
+// the two routes, not a looser bound.
 struct RungAgreement {
     std::string what;
     std::size_t identical = 0;
@@ -2331,9 +2271,8 @@ void AgreeRungCells(const std::string& what,
 
 // One top order's ladder against the batch entry launched at that same top
 // order. Region A descends from the top order, so two top orders are two chains
-// of rounding and the comparison has to be made within one top order; the
-// counts land in the caller's agreement row, because the statement is about the
-// entry rather than about the order.
+// of rounding and the comparison has to be made within one; the counts land in
+// the caller's agreement row.
 template <typename T>
 void AgreeRungOrder(RungAgreement& agreement,
                     const std::vector<T>& device,
@@ -2371,7 +2310,7 @@ void AgreeRungOrder(RungAgreement& agreement,
 // Every order of a family. The device call writes the element's own block and
 // the batch entry the order-major plane, so the two indexings are compared
 // through the element: `deviceTop` is the highest order this comparison covers,
-// which is the element's own top order for the shapes that descend from it and
+// the element's own top order for the shapes that descend from it and
 // kMaxBoysOrder for the shape that descends from kMaxBoysOrder at every
 // argument. A slot above that is one neither call wrote.
 template <typename T>
@@ -2411,21 +2350,17 @@ void AgreeRungFamily(const std::string& what,
 }
 
 // One device-callable row of the ladder shape, measured at one rung: the entry
-// called inside the consumer's kernel over the grid, its cells compared with the
-// reference at the row's own bound, and its values compared bit for bit with the
-// launched row of the same option at the same rung.
+// called inside the consumer's kernel over the grid, its cells compared with
+// the reference at the row's own bound, and its values compared bit for bit
+// with the launched row of the same option at the same rung.
 //
 // The two comparisons are two statements and neither implies the other. The
 // bound is what a caller of the row is promised, and it is the claim the report
 // carries. The bit-for-bit comparison is what the header claims for a
-// device-callable entry — one arithmetic reached two ways, the same degree
-// tables read through the handle instead of through a __constant__ symbol —
-// which no bound can state, because a bound admits a difference and this is an
-// identity. A divergence stops the gate at the cell it was found at.
-//
-// The rung is a compile-time argument because the launched row's launcher takes
-// it as one: the two sides of the comparison are the same rung of the same
-// arithmetic, which is the whole of what makes the comparison mean anything.
+// device-callable entry - one arithmetic reached two ways, the same degree
+// tables read through the handle instead of through a __constant__ symbol -
+// which no bound can state. The rung is a compile-time argument because the
+// launched row's launcher takes it as one.
 template <double kMultiplier>
 void MeasureDeviceLadder64(
     const Reference& ref,
@@ -2513,10 +2448,9 @@ void MeasureDeviceLadder64(
     RungAgreements().push_back(agreement);
 }
 
-// The float lane's half of the same measurement. The reference is that lane's
-// own column — the entry evaluates the argument the thread formed and rounded,
-// so a wider reference would be measuring the rounding and not the fit — and the
-// bound is the float lane's, which is the figure the row documents.
+// The float lane's half of the same measurement: the reference is that lane's
+// own column, because the entry evaluates the argument the thread formed and
+// rounded, and the bound is the figure the row documents.
 template <double kMultiplier>
 void MeasureDeviceLadder32(
     const Reference& ref,
@@ -2687,10 +2621,9 @@ void SweepDevice(const Reference& ref,
         }
     }
 
-    // The three double family shapes: one body reached by a runtime top order,
-    // a compile-time top order and a sink that keeps no ladder. Each is
-    // measured at every element's own top order, and the three are compared
-    // with each other beside the rows.
+    // The three double family shapes: one body reached by a runtime top order, a
+    // compile-time top order and a sink that keeps no ladder, each measured at
+    // every element's own top order and compared with each other beside the rows.
     {
         DevBuf<int> dN(cells);
         DevBuf<double> dRho(cells);
@@ -2778,13 +2711,12 @@ void SweepDevice(const Reference& ref,
             }
         }
 
-        // The batch entries of the same rung on the same orders and the same
+        // The batch entries of the same rung, on the same orders and the same
         // arguments, element for element. The single entry is launched over the
-        // whole element list, so its element is the device's element. The
-        // ladders are launched once per top order, because a ladder descends
-        // from the order it is named; the all-n entry takes its arguments
-        // non-decreasing, so its plane is permuted back to the reference order
-        // before the comparison.
+        // whole element list, so its element is the device's element; the ladders
+        // are launched once per top order, because a ladder descends from the
+        // order it is named; the all-n entry takes its arguments non-decreasing,
+        // so its plane is permuted back to the reference order first.
         {
             RungAgreement ladderAgreement;
             RungAgreement eachAgreement;
@@ -3117,9 +3049,8 @@ void SweepDevice(const Reference& ref,
 
     // The fp16 shapes, at the half value of the argument the grid carries, with
     // the bound the fp16 lane documents and the floor the format sets. Closed
-    // seam: the entries these four rows are measured through are declared behind
-    // the seam, so there is nothing here to call and the rows stay unmeasured
-    // rather than measured against nothing. The report says which ones.
+    // seam: the entries these four rows are measured through are behind the seam,
+    // so the rows stay unmeasured rather than measured against nothing.
     {
 #ifdef BOYS_CUDA_GATE_FP16
         DevBuf<int> dN(cells);
@@ -3207,9 +3138,8 @@ void SweepDevice(const Reference& ref,
                 const std::size_t e = ref.Index(n, i);
 
                 // An argument past the fp16 range has no reference value at all
-                // (the grid's x16 column is infinite there), so it is not a
-                // measured cell of the single row - the same rule the batch fp16
-                // single row follows.
+                // (the grid's x16 column is infinite there), so it is not a measured
+                // cell - the rule the batch fp16 single row follows too.
                 if (std::isfinite(ref.x16[i]))
                 {
                     measureElement(slots.single16, n, i, static_cast<double>(single[e]));
@@ -3221,10 +3151,9 @@ void SweepDevice(const Reference& ref,
             }
         }
 
-        // The batch entries of the same rung, on the same orders and the same
-        // arguments, element for element, as in the f64 block above. The fp16
-        // batch entries take their argument in fp16 already, which is the value
-        // the grid carries and the demo kernels form.
+        // The batch entries of the same rung, on the same orders and arguments,
+        // element for element, as in the f64 block above. The fp16 batch entries
+        // take their argument in fp16 already, the value the grid carries.
         {
             {
                 DevBuf<int> dNb(cells);
@@ -3337,17 +3266,15 @@ void SweepDevice(const Reference& ref,
     // The partition and route axes reached in the caller's kernel, at this rung.
     // Each is measured the way the shapes above are: over the grid, against the
     // reference at the row's own bound, and bit for bit against the launched row
-    // of the same option — one arithmetic, two ways to reach it.
+    // of the same option.
     //
-    // The double lane's eight rows and the float lane's two grid rows and two
-    // narrow rows are served at the rung the handle carries, whatever rung that
-    // is. The float lane's four rational rows are served at m = 1 alone: this
-    // build holds no rung cut of those tables, and their entries — like their
-    // launched rows — refuse every other multiplier rather than answer from a cut
-    // of another rung. That is why the block below is guarded instead of run: a
-    // call at a rung the row does not hold returns kMultiplierNotResident, which
-    // is a refusal this file would report as a failure rather than as the refusal
-    // it is.
+    // The double lane's eight rows, and the float lane's grid, narrow and
+    // rational rows, are all served at the rung the handle carries: the float
+    // lane's rational pairs are cut per rung as its narrow seed is, so this
+    // block runs unguarded at every rung. A call naming a rung that is not
+    // resident returns kMultiplierNotResident, a refusal about the handle's rung
+    // and not about the route, and it is exercised beside the rung sweep rather
+    // than here.
     MeasureDeviceLadder64<kMultiplier>(ref,
                                        grid,
                                        tables,
@@ -3473,8 +3400,7 @@ void SweepDevice(const Reference& ref,
         &boys::BoysCuda::AllOrdersF32UniformRatHorner<kMultiplier>);
     // The float lane's narrow partition carries every rung on both of the forms
     // it is stored in, so each of these two rows is measured here at every rung
-    // of the lane's table like the grid's above: one arithmetic reached two ways,
-    // bit for bit as well as against the reference.
+    // like the grid's above: one arithmetic reached two ways.
     MeasureDeviceLadder32<kMultiplier>(
         ref,
         grid,
@@ -3494,10 +3420,9 @@ void SweepDevice(const Reference& ref,
         &BoysDeviceDemoLadder32NarrowMono,
         &boys::BoysCuda::AllOrdersF32NarrowMono<kMultiplier>);
 
-    // The float lane's rational rows, each measured at every rung like the
-    // rows above and bit for bit against the launched row of the same option:
-    // the route's pair is cut by the rung's criterion on both lanes, and the
-    // two names of a partition reach one kernel.
+    // The float lane's rational rows, each measured at every rung like the rows
+    // above and bit for bit against the launched row of the same option: the
+    // route's pair is cut by the rung's criterion on both lanes.
     MeasureDeviceLadder32<kMultiplier>(
         ref,
         grid,
@@ -3539,8 +3464,7 @@ void SweepDevice(const Reference& ref,
 // One rung's fp64 entries on the 45-digit grid. The cells are measured into the
 // entry's own row as well as into the accumulator below, so a cell over bound
 // here fails the gate like every other cell; the accumulator is what names the
-// worst cell this grid produced, which the shared row cannot say once it holds
-// both grids' cells.
+// worst cell this grid produced.
 struct DigitRow {
     std::string rung;
     Accum cell;
@@ -3570,8 +3494,7 @@ void SweepDigit64(const DigitGrid& digits,
 
     // Every thread forms its own argument as rho * d2, exactly as the kernels of
     // the gate grid's sweep do: rho is a power of two, so the product is the
-    // grid's own argument to the last bit and the value measured is the
-    // reference's own.
+    // grid's own argument to the last bit.
     std::vector<double> hostRho(cells);
     std::vector<double> hostD2(cells);
 
@@ -3745,9 +3668,8 @@ void SweepDigit64(const DigitGrid& digits,
 
 // The refusals, per shape where the shapes differ and per precision where they
 // do not: an order outside the range, a capacity one value short, and - beside
-// each - the same call repaired, because a sentinel that survives every call is
-// the other way a sentinel check can lie. The decision is on the order and the
-// capacity and not on the argument, so four elements carry it.
+// each - the same call repaired. The decision is on the order and the capacity
+// and not on the argument, so four elements carry it.
 void CheckRefusals(const boys::BoysDeviceTables& tables) {
     const int nmax = boys::kMaxBoysOrder;
     const std::size_t count = 4;
@@ -3938,12 +3860,10 @@ void CheckRefusals(const boys::BoysDeviceTables& tables) {
 // One shape run at one named rung, with the status the call must return and
 // whether it must write. The sentinel is what separates a refusal from a silent
 // fallback - an entry that reported a refusal and still wrote would leave its
-// output changed, and one that wrote without reporting would leave the status
-// clean - and it is also what separates an accepted call from a refusal this
-// check mis-read, since a call that is served must leave the sentinel behind.
-//
-// The tally counts the probes that came back as required, so the report can
-// state that the path was exercised rather than only that the gate exited zero.
+// output changed - and it is also what separates an accepted call from a refusal
+// this check mis-read, since a call that is served must leave the sentinel
+// behind. The tally counts the probes that came back as required, so the report
+// can state that the path was exercised.
 std::size_t& RetiredRungProbes() {
     static std::size_t probes = 0;
     return probes;
@@ -3986,10 +3906,9 @@ void ProbeOnce(const char* label,
 // whether it must write. One function carries both halves of the rung contract
 // as a consumer meets it: a rung that is not resident, which must refuse at
 // every shape rather than read whatever the tables now hold, and m = 1 while a
-// relaxed rung is resident, which must be served at every shape because it
-// reads the handle's own tables and never the resident one. Every lane is
-// covered, and every shape, because both decisions are made per lane and the
-// shapes reach them through different bodies.
+// relaxed rung is resident, which must be served at every shape because it reads
+// the handle's own tables and never the resident one. Every lane and every shape
+// is covered, because both decisions are made per lane.
 void CheckRungCalls(const boys::BoysDeviceTables& tables,
                     double multiplier,
                     int want,
@@ -4245,13 +4164,11 @@ void CheckRungCalls(const boys::BoysDeviceTables& tables,
               });
 #endif // BoysFp16
 
-    // The partition and route axes reached in the caller's kernel, probed for
-    // the same two statements as the shapes above: a rung that is not the one
-    // the handle was made resident for is refused with kMultiplierNotResident
-    // and writes nothing, and m = 1 is served because it reads the handle's own
-    // tables and never the resident rung's. The rows are a table per precision
-    // and not sixteen call sites, so a row of this group that is not probed can
-    // be seen to be missing.
+    // The partition and route axes reached in the caller's kernel, probed for the
+    // same two statements as the shapes above: a rung that is not the one the
+    // handle was made resident for is refused with kMultiplierNotResident and
+    // writes nothing, and m = 1 is served because it reads the handle's own
+    // tables. The rows are a table per precision, so a missing probe is visible.
     struct LadderRow64 {
         const char* what;
         int (*demo)(const boys::BoysDeviceTables*,
@@ -4355,8 +4272,7 @@ void CheckRungCalls(const boys::BoysDeviceTables& tables,
 // rows that rung's cells are measured into, and every entry through the
 // consumer's kernels. Filling the handle at the rung is what makes it the
 // resident one; the sweep at m = 1 is unaffected by a relaxed rung being
-// resident, because that entry reads the m = 1 tables and never the resident
-// rung's.
+// resident, because that entry reads the m = 1 tables.
 template <double kMultiplier>
 void SweepRung(const Reference& ref,
                const Grid& grid,
@@ -4370,10 +4286,10 @@ void SweepRung(const Reference& ref,
     SweepDigit64<kMultiplier>(digits, tables, slots, rung);
 }
 
-// One cell, every entry: what each device entry returns beside the reference,
-// so a reported failure can be reproduced and acted on rather than believed.
-// The argument is looked up on the committed grid; an argument that is not on
-// it is printed as such rather than measured against the nearest node.
+// One cell, every entry: what each device entry returns beside the reference, so
+// a reported failure can be reproduced rather than believed. An argument that is
+// not on the committed grid is printed as such, not measured against the nearest
+// node.
 void RunProbe(const Reference& ref,
               const boys::BoysDeviceTables& tables,
               int n,
@@ -4386,10 +4302,8 @@ void RunProbe(const Reference& ref,
     const std::size_t notFound = ref.count * static_cast<std::size_t>(nmax + 1);
 
     // Each lane is measured at its own rounding of the argument, and the grid
-    // carries a column per rounding, so the reference for a lane is the cell
-    // whose own column holds the argument that lane evaluates at. A column
-    // with no such cell leaves that lane's reference blank rather than
-    // measuring it against the nearest node.
+    // carries a column per rounding: a column with no cell for that argument
+    // leaves the lane's reference blank rather than measuring the nearest node.
     const auto findIn = [&](const std::vector<double>& column, double value) {
         for (std::size_t i = 0; i < ref.count; ++i)
         {
@@ -4546,9 +4460,8 @@ void RunProbe(const Reference& ref,
 #else
     // The three fp16 rows of this table. Their entries are declared behind the
     // BoysFp16 seam, which this build has closed, so there is no entry here to
-    // call. They are named in the table rather than left out of it, with the
-    // build fact that leaves them unmeasured: a row missing from a table reads
-    // as a row that was measured.
+    // call; they are named in the table with the build fact that leaves them
+    // unmeasured, because a row missing from a table reads as a row measured.
     (void)ref16;
     const char* const seam = "not carried: this build's BoysFp16 seam is closed";
     std::printf("  %-22s %s\n", "cuda single f16", seam);
@@ -4558,8 +4471,7 @@ void RunProbe(const Reference& ref,
 
     // The device-callable entries at the same cell, through the same consumer
     // kernels the rows above are measured through. Each thread forms its own
-    // argument as rho * d2; rho = 1 here, which is exact, and the single rows
-    // are printed against the same bound their sweep row holds.
+    // argument as rho * d2; rho = 1 here, which is exact.
     {
         const std::vector<double> hostRho(1, 1.0);
         const std::vector<double> hostD2(1, x);
@@ -4723,9 +4635,8 @@ void RunProbe(const Reference& ref,
             have16);
 #else
         // The four device-callable fp16 rows, on the same cell as the f32 rows
-        // above them. The demo entries that reach the fp16 arithmetic are
-        // declared behind the BoysFp16 seam, which this build has closed: the
-        // rows are named as rows this build does not serve, so the table says
+        // above them. The demo entries that reach the fp16 arithmetic are declared
+        // behind the BoysFp16 seam, which this build has closed, so the table says
         // four entries are missing from it and why.
         const char* const seamNote = "not carried: this build's BoysFp16 seam is closed";
         std::printf("  %-22s %s\n", "device single f16", seamNote);
@@ -4961,14 +4872,12 @@ int main(int argc, char** argv) {
     SweepRelaxed<65536.0>(ref, grid, sorted, kRungs[10].name);
     SweepRelaxed<1e8>(ref, grid, sorted, kRungs[kLastRung].name);
 
-    // The device-callable entries: one set of rows per rung, one handle per
-    // rung, and the same consumer kernels every time. Every documented device
-    // bound is a claim about the rung the caller names, so the rung is swept
-    // like any other option - a relaxed rung held to the m = 1 bound would be
-    // asserting exactly what it was relaxed out of. The order and the capacity
-    // refusals are exercised first, while m = 1 is resident, and the retired
-    // rung after the last upload, when every other rung has stopped being the
-    // one the tables hold.
+    // The device-callable entries: one set of rows per rung, one handle per rung,
+    // and the same consumer kernels every time. Every documented device bound is
+    // a claim about the rung the caller names, so the rung is swept like any
+    // other option - a relaxed rung held to the m = 1 bound would be asserting
+    // what it was relaxed out of. The refusals are exercised first, while m = 1
+    // is resident, and the retired rung after the last upload.
     CheckRefusals(tables);
     SweepRung<1.0>(ref, grid, sorted, digits, kRungs[0].name);
     SweepRung<2.0>(ref, grid, sorted, digits, kRungs[1].name);
@@ -4984,11 +4893,10 @@ int main(int argc, char** argv) {
     SweepRung<1e8>(ref, grid, sorted, digits, kRungs[kLastRung].name);
     // A rung that was resident earlier in the run and is not any more: the last
     // upload left the highest rung resident, so m = 2 is a rung whose degree
-    // tables have been replaced. It is refused rather than run against the
-    // tables that replaced them. Every shape is then run once more at m = 1,
-    // which is still served - the full-accuracy tables are the handle's own and
-    // no upload retires them - so the refusal is one rung of the surface and not
-    // the surface closing.
+    // tables have been replaced, and it is refused rather than run against them.
+    // Every shape is then run once more at m = 1, which is still served - the
+    // full-accuracy tables are the handle's own - so the refusal is one rung of
+    // the surface and not the surface closing.
     CheckRungCalls(tables,
                    2.0,
                    BoysDeviceDemoStatusMultiplierNotResident(),
@@ -5044,9 +4952,8 @@ int main(int argc, char** argv) {
     }
 
     // The device entries that are one body reached through different shapes: a
-    // bound cannot say this and the header does, so the gate checks it. Every
-    // slot a call writes is compared, at every element, in every one of the
-    // three precisions.
+    // bound cannot say this and the header does, so the gate checks it. Every slot
+    // a call writes is compared, in every one of the three precisions.
     if (!ShapeAgreements().empty())
     {
         std::printf("\n  the device entries that are one body reached through different shapes,\n"
@@ -5062,10 +4969,9 @@ int main(int argc, char** argv) {
 
     // A device entry and the batch entry of the same precision at the same rung
     // are one arithmetic reached two ways: the same degree tables, the same
-    // inlined body, a lane object that reads the caller's handle where the
-    // batch kernel reads a __constant__ symbol. No bound can say that, so every
-    // value the device call wrote is compared bit for bit with the batch entry
-    // of the same rung.
+    // inlined body, a lane object that reads the caller's handle where the batch
+    // kernel reads a __constant__ symbol. Every value the device call wrote is
+    // compared bit for bit with the batch entry of the same rung.
     if (!RungAgreements().empty())
     {
         std::printf("\n  the device entries against the batch entries of the same rung, one\n"
@@ -5081,10 +4987,8 @@ int main(int argc, char** argv) {
 
     // What a consumer sees when it names a rung the tables do not hold: every
     // shape refuses, the status says which refusal it is, and no output slot is
-    // written. A silent fallback would show up here as a written slot or as a
-    // clean status on a call that could not be served. The same shapes are then
-    // run at m = 1, which is the other half of the same contract: the rung the
-    // caller named is the only thing that decides.
+    // written. The same shapes are then run at m = 1, the other half of the same
+    // contract: the rung the caller named is the only thing that decides.
     if (RetiredRungProbes() != 0 && ServedRungProbes() != 0)
     {
         std::printf("\n  the rung, from the consumer kernels: %zu shapes run at m = %s while\n"
@@ -5103,9 +5007,8 @@ int main(int argc, char** argv) {
     }
 
     // The 45-digit grid beside the gate grid. Its cells are counted in the rows
-    // above, so a cell over bound here fails the gate with them; this table is
-    // what names the worst cell that grid produced at each rung, which a row
-    // holding both grids' cells cannot say.
+    // above, so a cell over bound here fails the gate with them; this table names
+    // the worst cell that grid produced at each rung.
     if (!DigitRows().empty())
     {
         std::printf("\n  the fp64 device entries on the 45-digit grid as well, at the bound of\n"
@@ -5150,14 +5053,12 @@ int main(int argc, char** argv) {
         }
     }
 
-    // The fast option's row is a bound on the distance from F_n(x) and not on
-    // the direction, and the seed it carries is a correction of the hardware
-    // approximation rather than the approximation itself. The audit is what
-    // keeps both facts checkable: the contribution is the term the fast bound
-    // carries on top of the lane's, and the wrong-sign count is what a seed
-    // error the recurrence amplifies does to a value that is itself at that
-    // level - the defect this correction removes, and a tripwire for its
-    // return.
+    // The fast option's row is a bound on the distance from F_n(x) and not on the
+    // direction, and the seed it carries is a correction of the hardware
+    // approximation rather than the approximation itself. The audit keeps both
+    // facts checkable: the contribution is the term the fast bound carries on top
+    // of the lane's, and the wrong-sign count is a tripwire for the return of the
+    // defect this correction removes.
     if (!ExpAudits().empty())
     {
         std::printf(
@@ -5235,8 +5136,6 @@ int main(int argc, char** argv) {
     // names, and there is no list of rows that could not be: a row this gate
     // cannot read across the lanes is a row whose own claim or the library's
     // carriage is wrong, and both are defects rather than a section to print.
-    // The one shape this file once reported as such was a gap that did not
-    // exist - the host lane carries it, and the reading is taken above.
 
     const std::size_t uncovered = ReportDeviceOptionCoverage();
 

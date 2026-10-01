@@ -163,8 +163,7 @@ std::vector<Item> gMolecular = MolecularInputs();
 } // namespace
 
 static void BmBoysSingleUniform(benchmark::State& state) {
-    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
-                         // variable is deliberately unused.
+    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): loop var unused by design
     {
         RunSingle(gUniform, false);
         benchmark::DoNotOptimize(gSink);
@@ -176,8 +175,7 @@ static void BmBoysSingleUniform(benchmark::State& state) {
 BENCHMARK(BmBoysSingleUniform);
 
 static void BmBoysAllOrdersUniform(benchmark::State& state) {
-    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
-                         // variable is deliberately unused.
+    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): loop var unused by design
     {
         RunBatch(gUniform, false);
         benchmark::DoNotOptimize(gSink);
@@ -189,8 +187,7 @@ static void BmBoysAllOrdersUniform(benchmark::State& state) {
 BENCHMARK(BmBoysAllOrdersUniform);
 
 static void BmBoysSingleMolecular(benchmark::State& state) {
-    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
-                         // variable is deliberately unused.
+    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): loop var unused by design
     {
         RunSingle(gMolecular, false);
         benchmark::DoNotOptimize(gSink);
@@ -202,8 +199,7 @@ static void BmBoysSingleMolecular(benchmark::State& state) {
 BENCHMARK(BmBoysSingleMolecular);
 
 static void BmBoysAllOrdersMolecular(benchmark::State& state) {
-    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
-                         // variable is deliberately unused.
+    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): loop var unused by design
     {
         RunBatch(gMolecular, false);
         benchmark::DoNotOptimize(gSink);
@@ -215,8 +211,7 @@ static void BmBoysAllOrdersMolecular(benchmark::State& state) {
 BENCHMARK(BmBoysAllOrdersMolecular);
 
 static void BmBoysSingleF32Uniform(benchmark::State& state) {
-    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
-                         // variable is deliberately unused.
+    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): loop var unused by design
     {
         RunSingle(gUniform, true);
         benchmark::DoNotOptimize(gSink);
@@ -278,8 +273,7 @@ static void BmBoysSimdSortedN8(benchmark::State& state) {
 
     constexpr int n = 8;
 
-    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
-                         // variable is deliberately unused.
+    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): loop var unused by design
     {
         boys::detail::BoysRegionASimd(n, gSimd.xA.data(), gSimd.outA.data(), gSimd.xA.size());
         boys::detail::BoysRegionBSimd(n, gSimd.xB.data(), gSimd.outB.data(), gSimd.xB.size());
@@ -296,16 +290,14 @@ BENCHMARK(BmBoysSimdSortedN8);
 
 #if BoysFp16
 // The fp16 lane: F16/Bf16 I/O around the certified fp32 engine, on the same
-// (n, x) pairs as the f32 lanes, so a row carries the conversion overhead on top
-// of the same engine work.
+// (n, x) pairs as the f32 lanes, so a row carries the conversion overhead.
 namespace {
 
 template <typename Half, Half (*SingleFn)(int, Half) noexcept>
 void RunSingleHalf(const std::vector<Item>& items) {
     for (const auto& item : items)
     {
-        // Two steps on purpose: the half types' constructors take a float, so
-        // the narrowing is spelled out rather than left to the compiler.
+        // Two steps on purpose: the half types' constructors take a float.
         gSink += static_cast<float>(
             SingleFn(item.n, static_cast<Half>(static_cast<float>(item.x))));
     }
@@ -365,8 +357,7 @@ SimdInputsF16 gSimdF16 = BuildSimdInputsF16(8);
 } // namespace
 
 static void BmBoysSingleF16Uniform(benchmark::State& state) {
-    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
-                         // variable is deliberately unused.
+    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): loop var unused by design
     {
         RunSingleHalf<boys::F16, boys::BoysSingleF16>(gUniform);
         benchmark::DoNotOptimize(gSink);
@@ -378,8 +369,7 @@ static void BmBoysSingleF16Uniform(benchmark::State& state) {
 BENCHMARK(BmBoysSingleF16Uniform);
 
 static void BmBoysSingleF16Molecular(benchmark::State& state) {
-    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
-                         // variable is deliberately unused.
+    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): loop var unused by design
     {
         RunSingleHalf<boys::F16, boys::BoysSingleF16>(gMolecular);
         benchmark::DoNotOptimize(gSink);
@@ -391,8 +381,7 @@ static void BmBoysSingleF16Molecular(benchmark::State& state) {
 BENCHMARK(BmBoysSingleF16Molecular);
 
 static void BmBoysAllOrdersF16Uniform(benchmark::State& state) {
-    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
-                         // variable is deliberately unused.
+    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): loop var unused by design
     {
         RunBatchHalf<boys::F16, boys::BoysAllOrdersF16>(gUniform);
         benchmark::DoNotOptimize(gSink);
@@ -404,8 +393,7 @@ static void BmBoysAllOrdersF16Uniform(benchmark::State& state) {
 BENCHMARK(BmBoysAllOrdersF16Uniform);
 
 static void BmBoysAllOrdersF16Molecular(benchmark::State& state) {
-    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
-                         // variable is deliberately unused.
+    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): loop var unused by design
     {
         RunBatchHalf<boys::F16, boys::BoysAllOrdersF16>(gMolecular);
         benchmark::DoNotOptimize(gSink);
@@ -417,8 +405,7 @@ static void BmBoysAllOrdersF16Molecular(benchmark::State& state) {
 BENCHMARK(BmBoysAllOrdersF16Molecular);
 
 static void BmBoysSingleBf16Uniform(benchmark::State& state) {
-    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
-                         // variable is deliberately unused.
+    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): loop var unused by design
     {
         RunSingleHalf<boys::Bf16, boys::BoysSingleBf16>(gUniform);
         benchmark::DoNotOptimize(gSink);
@@ -430,8 +417,7 @@ static void BmBoysSingleBf16Uniform(benchmark::State& state) {
 BENCHMARK(BmBoysSingleBf16Uniform);
 
 static void BmBoysAllOrdersBf16Uniform(benchmark::State& state) {
-    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
-                         // variable is deliberately unused.
+    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): loop var unused by design
     {
         RunBatchHalf<boys::Bf16, boys::BoysAllOrdersBf16>(gUniform);
         benchmark::DoNotOptimize(gSink);
@@ -451,8 +437,7 @@ static void BmBoysSimdF16SortedN8(benchmark::State& state) {
 
     constexpr int n = 8;
 
-    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): the GoogleBenchmark loop
-                         // variable is deliberately unused.
+    for (auto _ : state) // NOLINT(clang-analyzer-deadcode.DeadStores): loop var unused by design
     {
         boys::detail::BoysRegionASimdF16(n, gSimdF16.xA.data(), gSimdF16.outA.data(), gSimdF16.xA.size());
         boys::detail::BoysRegionBSimdF16(n, gSimdF16.xB.data(), gSimdF16.outB.data(), gSimdF16.xB.size());

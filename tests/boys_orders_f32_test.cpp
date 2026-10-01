@@ -1,40 +1,34 @@
-// The single-precision across-orders packed lane's contract tests: eight
-// orders of one argument in one vector register, where the double lane holds
-// four.
+// The single-precision across-orders packed lane's contract tests: eight orders of
+// one argument in one vector register, where the double lane holds four.
 //
 // The lane is a second body over the float lane's own region-A tables, and the
-// tables are the part that differs from the double lane's: the float table cuts
-// each order's cover where that order needs it, so order 0 is cut into two
-// pieces where order 14 is cut into three and a break is not shared between
-// orders. A fixed argument therefore selects a DIFFERENT piece in each of the
-// eight lanes, and the offset from one lane's coefficients to the next is not a
-// stride. What the eight lanes share is the degree the group is summed at, and
-// the group runs at its lanes' largest one with a lane reading zeros above its
-// own cut.
+// tables are the part that differs from the double lane's: the float table cuts each
+// order's cover where that order needs it, so order 0 is cut into two pieces where
+// order 14 is cut into three, and a break is not shared between orders. A fixed
+// argument therefore selects a DIFFERENT piece in each of the eight lanes, and the
+// offset from one lane's coefficients to the next is not a stride. What the eight
+// lanes share is the degree the group is summed at, and the group runs at its lanes'
+// largest one with a lane reading zeros above its own cut.
 //
 // What can go wrong with that, and what each test is for:
-//
 //  1. A LANE THAT IS NOT THE PER-ORDER VALUE. Reading zeros above a cut is the
 //     lane's own polynomial and, down the split Clenshaw, the lane's own
 //     arithmetic: the extra top step has an exact zero for both of its terms.
 //     The claim is therefore the strong one - the packed value IS the per-order
-//     value, bit for bit - and the test asserts it over a region-A sweep and
-//     every order, at each entry, each rung and each budget. On a build whose
-//     scalar arithmetic is the two-rounding route the packed lane's own
-//     instruction has one rounding and the scalar lane has two, so the two part
-//     there. The reading that build takes is the lane's accuracy against the
-//     double lane rather than its agreement with its sibling, because a sibling
-//     is not a reference: measured on that build, the per-order rational lane is
-//     itself at 1.7277e-07 against the double lane - over the 1.5e-07 the route
-//     is certified against - so a difference from it cannot be held to that bar
-//     by either lane. The packed lane, which performs the fused step, reads
-//     1.3093e-07 there and is inside it. Both numbers are printed, so which
-//     reading the build took is never a matter of the test's word.
+//     value, bit for bit. On a build whose scalar arithmetic is the two-rounding
+//     route the packed lane's own instruction has one rounding and the scalar lane
+//     has two, so the two part there, and the reading that build takes is the
+//     lane's accuracy against the double lane rather than its agreement with its
+//     sibling, because a sibling is not a reference: measured on that build, the
+//     per-order rational lane is itself at 1.7277e-07 against the double lane -
+//     over the 1.5e-07 the route is certified against - so a difference from it
+//     cannot be held to that bar by either lane. The packed lane, which performs
+//     the fused step, reads 1.3093e-07 there and is inside it. Both numbers are
+//     printed, so which reading the build took is never a matter of the test's word.
 //
-//  2. A GROUP BOUNDARY THAT DROPS A LANE. nmax + 1 is not a multiple of eight,
-//     so the last group is partial and the lane's tail runs beside the vector
-//     body. The sweep runs every nmax from 0 to kMaxBoysOrder, which is every
-//     remainder there is.
+//  2. A GROUP BOUNDARY THAT DROPS A LANE. nmax + 1 is not a multiple of eight, so
+//     the last group is partial and the lane's tail runs beside the vector body.
+//     The sweep runs every nmax from 0 to kMaxBoysOrder: every remainder there is.
 //
 //  3. A RUNG THAT DOES NOT REACH THE LANE. A policy naming a relaxed
 //     multiplier must return the fits cut to that rung's degrees, and the
@@ -48,13 +42,11 @@
 //     and must return the same bits.
 //
 // Each sweep is measured twice from the same values: against the library's own
-// per-order lane at the same policy, which is the certified entry and the thing
-// the packing is supposed to reproduce, and against the double lane, which is
-// the function itself as far as a 1e-7 question can tell. The first is the
-// assertion wherever the build's scalar arithmetic is the packed instruction's,
-// and the second wherever it is not. The bound both are measured against is the
-// float lane's documented one, read from the generated header rather than
-// written here.
+// per-order lane at the same policy, the certified entry the packing must reproduce,
+// and against the double lane, the function itself as far as a 1e-7 question can
+// tell. Which of the two is the assertion depends on the build (see kScalarIsFused),
+// and the bound both are measured against is the float lane's documented one, read
+// from the generated header rather than written here.
 
 #include "boys/boys.hpp"
 #include "boys/boys_coefficients.hpp"
@@ -93,14 +85,13 @@ constexpr bool kScalarIsFused() noexcept {
 #endif
 }
 
-// A region-A sweep that reaches every part of the interval the float table
-// covers: the small-x end where order 0's first piece lies, each break the
-// table declares, and the right edge at kX0. The edge itself is in the sweep
-// and is worth its place: the largest float below kX0 casts to the same float
-// as kX0 and dedupes away, and that float is read by the lane's own test as
-// region A - its comparison is x < (float)kX0, which is false there - so the
-// sweep's last point is the first argument the entry answers from the fallback
-// instead of from the vector, and the sweep is where that handover is measured.
+// A region-A sweep that reaches every part of the interval the float table covers:
+// the small-x end where order 0's first piece lies, each break the table declares,
+// and the right edge at kX0. The edge is in the sweep and is worth its place: the
+// largest float below kX0 casts to the same float as kX0 and dedupes away, and the
+// lane's own test reads that float as region A - its comparison is x < (float)kX0,
+// which is false there - so the sweep's last point is answered from the fallback
+// rather than from the vector, and that handover is measured here.
 std::vector<float> RegionAGridF32() {
     std::vector<float> grid;
     const std::size_t logSteps = 1200;
@@ -136,8 +127,8 @@ std::vector<float> RegionAGridF32() {
 }
 
 // The per-order lane the packed lane must reproduce: the certified float single
-// entry at the same policy with the shipped packing axis, which is the axis the
-// default policy names.
+// entry at the same policy with the shipped packing axis, the axis the default
+// policy names.
 template <double kMultiplier, class Policy>
 float PerOrder(int n, float x) noexcept {
     using ArgsAxis = boys::EvalPolicy<Policy::kRoute,
@@ -147,18 +138,17 @@ float PerOrder(int n, float x) noexcept {
     return boys::BoysSingleF32<kMultiplier, ArgsAxis>(n, x);
 }
 
-// The double lane at the same order and argument: the function the float lane
-// is a fit to. Its own error is a double lane's, so it is a reference for
-// anything the float lane does down to the bar the float lane publishes.
+// The double lane at the same order and argument: the function the float lane is a
+// fit to. Its own error is a double lane's, so it is a reference down to the bar the
+// float lane publishes.
 double DoubleLaneValue(int n, float x) noexcept {
     return boys::BoysSingle(n, static_cast<double>(x));
 }
 
-// What one sweep measured. The two worst figures are the same values read
-// against two references: the per-order lane at the same policy, which is what
-// the lane has to reproduce, and the double lane, which is what it has to be
-// right about. They are carried together because which of the two is the
-// assertion depends on the build, and a reader has to see the one that is not.
+// What one sweep measured. The two worst figures are the same values read against
+// two references: the per-order lane at the same policy, and the double lane. They
+// are carried together because which of the two is the assertion depends on the
+// build, and a reader has to see the one that is not.
 struct SweepTotals {
     std::size_t compared = 0;
     std::size_t differing = 0;
@@ -171,8 +161,8 @@ struct SweepTotals {
 };
 
 // One policy's sweep: every order from 0 to kNmax, every argument of the grid.
-// `differing` counts the values that are not the per-order value bit for bit.
-// Both measurements are this sweep's own and are added to the caller's totals.
+// `differing` counts the values that are not the per-order value bit for bit, and
+// both measurements are this sweep's own, added to the caller's totals.
 template <double kMultiplier, class Policy>
 void SweepPolicy(const char* name, SweepTotals& totals) {
     const std::vector<float> grid = RegionAGridF32();
@@ -249,10 +239,10 @@ void SweepPolicy(const char* name, SweepTotals& totals) {
     }
 }
 
-// The policy families the lane accepts. The budget is a template parameter on
-// this lane because the fp16 budget's fits are certified against a tighter bar
-// than the kFloat one, so a lane that answered an fp16 policy with the kFloat
-// degrees would deliver the looser figure under the tighter name.
+// The policy families the lane accepts. The budget is a template parameter because
+// the fp16 fits are certified against a tighter bar than the kFloat ones, so an fp16
+// policy answered with kFloat degrees would deliver the looser figure under the
+// tighter name.
 template <boys::FitRoute kRoute, boys::EvalScheme kScheme, boys::BoysBudget kBudget>
 using Orders = boys::EvalPolicy<kRoute, kScheme, kBudget, boys::PackAxis::kOrders>;
 
@@ -261,8 +251,7 @@ constexpr double kRungMax = boys::AccuracyMultiplier(boys::AccuracyTier::kRelaxe
 
 } // namespace
 
-// The axis is the one the caller named, and the default is still the shipped
-// one, so a call site that names no axis compiles what it always did.
+// The axis is the one the caller named, and the default is still the shipped one.
 static_assert(Orders<boys::FitRoute::kChebyshev,
                      boys::EvalScheme::kSplitClenshaw,
                      boys::BoysBudget::kFloat>::kPack == boys::PackAxis::kOrders,
@@ -270,11 +259,8 @@ static_assert(Orders<boys::FitRoute::kChebyshev,
 static_assert(boys::EvalPolicy<>{}.kPack == boys::PackAxis::kArguments,
               "the default axis moved");
 
-// Every configuration the lane carries, at the reference multiplier: three
-// schemes on the shipped route and the rational route, at both budgets. The
-// per-order value is asserted bit for bit where the build's scalar arithmetic
-// is the one the packed instruction performs, and held to the lane's own bar
-// where it is not.
+// Every configuration the lane carries, at the reference multiplier: three schemes
+// on the shipped route and the rational route, at both budgets.
 TEST(BoysOrdersF32, ThePackedLaneIsThePerOrderValue) {
     if (!boys::BoysAvx2Available())
     {
@@ -314,31 +300,27 @@ TEST(BoysOrdersF32, ThePackedLaneIsThePerOrderValue) {
             << " n=" << totals.perOrderOrder;
     }
 
-    // The lane's accuracy, on every build. On the fused build this is the same
-    // number the per-order lane delivers, since the two are one arithmetic and
-    // the row above already says they are bit-identical; on the two-rounding
-    // build it is the only reading of the two that means anything, because the
-    // per-order rational lane is itself outside this bar there.
+    // The lane's accuracy, on every build. On the fused build it is the same number
+    // the per-order lane delivers, the row above having said they are bit-identical;
+    // on the two-rounding build it is the only reading that means anything, the
+    // per-order rational lane being outside this bar there.
     EXPECT_LE(totals.worstFromTruth, kF32Bar)
         << "the packed lane is outside the float lane's documented bar: worst "
         << totals.worstFromTruth << " at x=" << totals.truthAt << " n=" << totals.truthOrder;
 }
 
-// The relaxed rungs, where the lane reads a table of certified cuts rather than
-// the whole fit: the effective-degree table for the Chebyshev route, the pair
-// table for the rational one, on this lane's default partition. Both routes are
-// swept, which they were not until the rational route's rungs were found to be
-// instantiated while the body read every piece whole. The bar is the rung's own:
-// the float lane's documented bar multiplied by the multiplier the rung names,
-// which is what a relaxed rung means - the same fit cut to fewer degrees, at a
-// correspondingly larger error.
+// The relaxed rungs, where the lane reads a table of certified cuts rather than the
+// whole fit: the effective-degree table for the Chebyshev route, the pair table for
+// the rational one, on this lane's default partition. The bar is the rung's own -
+// the float lane's documented bar multiplied by the multiplier the rung names, the
+// same fit cut to fewer degrees at a correspondingly larger error.
 //
-// The rational route over this lane's default partition is swept with it. It is
-// a rung of its own rather than a cut of the Chebyshev row - the criterion runs
-// over the pairs' coefficients - and the lane carried those rungs in its
-// instantiation set while reading every piece whole, so a rung was answered with
-// the reference rung's values: 901 of 2304 values parted from the per-order lane
-// at m = 64 and 2296 of 2304 at m = 65536, which this sweep is what holds shut.
+// The rational route over this partition is a rung of its own rather than a cut of
+// the Chebyshev row, because the criterion runs over the pairs' coefficients. The
+// lane carried those rungs in its instantiation set while reading every piece whole,
+// so a rung was answered with the reference rung's values: 901 of 2304 values parted
+// from the per-order lane at m = 64 and 2296 of 2304 at m = 65536, which this sweep
+// holds shut.
 TEST(BoysOrdersF32, TheRelaxedRungsAreTheRungsOwnReading) {
     if (!boys::BoysAvx2Available())
     {
@@ -385,8 +367,7 @@ TEST(BoysOrdersF32, TheRelaxedRungsAreTheRungsOwnReading) {
         << kRungMax * kF32Bar;
 }
 
-// The two entries are one lane: the gathered fetch and the composed fetch must
-// return the same bits over the whole sweep.
+// The gathered fetch and the composed fetch are one lane and must return the same bits.
 TEST(BoysOrdersF32, TheComposedFetchIsTheGatheredFetch) {
     if (!boys::BoysAvx2Available())
     {
@@ -424,22 +405,20 @@ TEST(BoysOrdersF32, TheComposedFetchIsTheGatheredFetch) {
     EXPECT_EQ(differing, 0u) << "the two fetches have parted";
 }
 
-// Past the packed lane's own interval the entry is defined and answers from the
-// lane that can: the entry is not allowed to be undefined outside region A.
+// Past the packed lane's own interval the entry is defined and answers from the lane
+// that can: it is not allowed to be undefined outside region A.
 //
-// This is where the axis crosses a translation-unit boundary and where the claim
-// stops being about the vector lane. Region B seeds a downward recurrence and
-// region C is three closed-form lines; the packed entry reaches them through the
-// library's own translation unit while the reference here is compiled into this
-// one. That is only a difference if the arithmetic those two units compile is a
-// difference, and in this lane it is not: the region-B seed and the recurrence's
-// own steps both name their rounding - the seed through the fit's fused
-// multiply-add, the step through the backend's two-rounding multiply-subtract -
-// so both units compute the same bits and the strong form of the claim holds
-// past the ledger as well. The test says so rather than assuming it, and it is
-// the guard on that spelling: a regression to a bare product and difference in
-// either body shows up here as a red row on a build whose two units contract
-// differently.
+// This is where the axis crosses a translation-unit boundary and the claim stops
+// being about the vector lane. Region B seeds a downward recurrence and region C is
+// three closed-form lines; the packed entry reaches them through the library's own
+// translation unit while the reference here is compiled into this one. That is only
+// a difference if the arithmetic the two units compile is a difference, and here it
+// is not: the region-B seed and the recurrence's own steps both name their rounding -
+// the seed through the fit's fused multiply-add, the step through the backend's
+// two-rounding multiply-subtract - so both units compute the same bits and the strong
+// form of the claim holds past the ledger too. The guard on that spelling: a
+// regression to a bare product and difference in either body shows up as a red row on
+// a build whose two units contract differently.
 TEST(BoysOrdersF32, TheAxisIsDefinedPastItsOwnDomain) {
     using Policy = Orders<boys::FitRoute::kChebyshev,
                           boys::EvalScheme::kSplitClenshaw,
@@ -498,9 +477,8 @@ TEST(BoysOrdersF32, TheAxisIsDefinedPastItsOwnDomain) {
                                 "policy's own lane";
 }
 
-// The partial last group: nmax + 1 is not a multiple of eight for most nmax, and
-// a lane dropped at the group boundary would show up as a value that is not the
-// per-order one at exactly one order.
+// The partial last group: nmax + 1 is not a multiple of eight for most nmax, so a
+// lane dropped at the boundary would show up as one order that is not per-order.
 TEST(BoysOrdersF32, EveryGroupTailIsThePerOrderValue) {
     if (!boys::BoysAvx2Available())
     {
@@ -620,25 +598,21 @@ void UniformRungSweep(std::size_t& compared,
 
 // The uniform partition's answer does not read the multiplier.
 //
-// The partition's cells are the grid's, stored at the degrees the derivation
-// fitted them at, so a rung of it is the reference reading and not a cut of one:
-// the criterion that would cut it scans the dropped tail to the first degree
-// that fits the rung's budget, and the full degree's tail is zero, so the scan
-// reaches it at every multiplier. Above the grid's join the table does not reach
-// and the entry's region path answers, and it must answer with the partition it
-// answers with at m = 1 - because the alternative is the rung body's fit, which
-// resolves every partition but the shipped one to the NARROW pieces
-// (ChebyshevFit32AtRung). A uniform policy reaching that body was answered by
-// the narrow member's region-B seed bit for bit over the whole of
-// [kFlatHiF32, kX1), where the same argument at m = 1 returned the shipped
-// member's value: certified numbers, from a partition the caller never named,
-// with nothing reporting it.
+// The partition's cells are the grid's, stored at the degrees the derivation fitted
+// them at, so a rung of it is the reference reading and not a cut of one: the
+// criterion that would cut it scans the dropped tail to the first degree that fits
+// the rung's budget, and the full degree's tail is zero, so the scan reaches it at
+// every multiplier. Above the grid's join the entry's region path answers, and it
+// must answer with the partition it answers with at m = 1. The alternative is the
+// rung body's fit, which resolves every partition but the shipped one to the NARROW
+// pieces (ChebyshevFit32AtRung): a uniform policy reaching it was answered by the
+// narrow member's region-B seed bit for bit over the whole of [kFlatHiF32, kX1),
+// where m = 1 returned the shipped member's value - certified numbers, from a
+// partition the caller never named, with nothing reporting it.
 //
-// So the test is stated on values rather than on a table, and it is the
-// invariant the partition's own shape gives: raising the multiplier changes
-// nothing about what a uniform policy returns, anywhere in its domain. The
-// second reading is the one that names the substitution, and it is a second
-// reading of the same values rather than a second test.
+// The test is therefore stated on values rather than on a table: raising the
+// multiplier changes nothing about what a uniform policy returns, anywhere in its
+// domain. The second reading is what names the substitution.
 TEST(BoysOrdersF32, TheUniformPartitionsAnswerDoesNotReadTheMultiplier) {
     std::size_t compared = 0;
     std::size_t moved = 0;

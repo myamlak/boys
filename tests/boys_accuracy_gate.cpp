@@ -334,6 +334,27 @@ int AddF32PolicyClaim(const char* lane, const char* region, double bound) {
     return static_cast<int>(F32PolicyClaims().size()) - 1;
 }
 
+// The entry book's own accumulation, held apart from the five books above for
+// the reason each of them gives: an entry is a call shape a caller names, and
+// the cells that measure one are not the lane cells the claim count is quoted
+// against. The book exists because every other book reaches its combinations
+// through one entry per lane, so a combination the axes admit and another entry
+// refuses is in no book at all. Its block is printed after the granularity
+// book's, so a row added for it moves none of the books above.
+std::vector<Accum>& EntryClaims() {
+    static std::vector<Accum> claims;
+    return claims;
+}
+
+int AddEntryClaim(const char* lane, const char* region, double bound) {
+    Accum a;
+    a.lane = lane;
+    a.region = region;
+    a.baseBound = bound;
+    EntryClaims().push_back(a);
+    return static_cast<int>(EntryClaims().size()) - 1;
+}
+
 // The run-time tier's rungs, named by the multiplier each one selects.
 const char* TierRungLabel(int rung) {
     switch (rung)
@@ -6910,6 +6931,571 @@ int main(int argc, char** argv) {
                 "             |F_n(x)| itself, so any returned value in range passes\n"
                 "  no value = of those, points where the lane returned zero or a subnormal\n");
 
+    // ---- the entry book: the batched entries on the uniform partition --------
+    // A combination is not a point in an axis space, it is a call, and a call has
+    // an entry. Every book above names its cells by axes and reaches them through
+    // one entry per lane - the cross through BoysAllOrders, the packing book
+    // through the two entries the axis is carried on - so a combination these
+    // axes admit and an entry refuses has no cell in any of them: the space the
+    // arithmetic below counts has no entry factor in it. This book is that
+    // factor, at the partition the batched bodies refuse on the paths that carry
+    // no branch for it.
+    //
+    // The entries it crosses, as a declared list rather than an implied one:
+    //
+    //   plane entry          BoysAllN(nmax, x, out, count, workspace) - every
+    //                        order over an array of arguments (boys.hpp:1316)
+    //   plane entry, sorted  the same entry under its BoysSortedArgs overload,
+    //                        for arguments the caller declared ordered
+    //                        (boys.hpp:1345)
+    //   per-element tops     BoysAllNAtOrders(n, x, out, count) - each argument's
+    //                        own top order (boys.hpp:1397)
+    //   fixed-order entry    BoysFixedN(n, x, out, count, stride) - one order over
+    //                        the same array (boys.hpp:1222)
+    //
+    // The first three are the many-argument all-orders entries. The fourth is the
+    // fixed-order entry beside them, and it is here because its uniform refusal is
+    // a cell of the same class - the same partition named on a call shape whose
+    // body has no branch for it, guarded in both of its Chebyshev paths
+    // (boys_impl.hpp:3251 and :3316) - and because it is the shape that gives this
+    // book its third state: a call producing one order has no second order to
+    // fill a packed lane with, so the orders axis cannot be formed on it at all
+    // (boys_impl.hpp:3209).
+    //
+    // What this book does NOT cross, each for a reason the report already
+    // carries: the per-argument entries (BoysSingle, BoysAllOrders), whose grid
+    // rows are the scheme book's entry rows and the cross's; the
+    // single-precision and half lanes' entries, whose rows the float and half
+    // books carry; and the device lane's entries, not runnable on this host.
+    //
+    // Every combination is exactly one of three states, and there is no fourth:
+    //
+    //   measured        the entry serves the call at this revision: the
+    //                   combination runs over the whole committed grid and is
+    //                   judged at the figure the double batch lane publishes for
+    //                   that shape, m x 5.5e-14, at the reference multiplier.
+    //   refused, and owed
+    //                   the entry's body has no branch for the grid on that path
+    //                   and refuses the policy where it is named. The row prints
+    //                   the library's own assertion, so a refusal is a named
+    //                   reason on the row and not an absence.
+    //   not applicable to the entry's shape
+    //                   the call shape cannot form the axis at all. No branch and
+    //                   no revision of that entry changes it, which is what
+    //                   separates it from the state above.
+    //
+    // The refused state is the one this book cannot measure from inside a
+    // translation unit: the refused call is not instantiated, because
+    // instantiating it is what fails, and the row is backed the way the limits
+    // list above backs its unprobed rows - by naming the assertion that states
+    // it. What keeps that from being a sentence is the rows beside it: the same
+    // route, scheme, axis and partition measured through an entry that does serve
+    // them, which is what says the refusal belongs to the entry's body and not to
+    // the combination's tables. A revision that lifts the guard leaves the row
+    // stale until it is edited, and that direction is stated here rather than
+    // left to be found.
+    //
+    // The partition and the rung are not axes of this book: it is the uniform
+    // member of the partition axis that the batched bodies do not read, and the
+    // grid stores one degree for every order and every interval and reads no
+    // multiplier, so every rung of it is the route's own arithmetic rather than a
+    // cut of it (src/boys.cpp, the uniform row's rungs field) - the other two
+    // partitions are swept at every rung by the two books above.
+    enum class BatchEntry : std::uint8_t {
+        kPlane,       // BoysAllN: every order over an array of arguments
+        kPlaneSorted, // BoysAllN, the BoysSortedArgs overload
+        kAtOrders,    // BoysAllNAtOrders: each argument's own top order
+        kFixedN,      // BoysFixedN: one order over the same array
+    };
+
+    // The state one combination is in. Exactly one of the three, and every
+    // combination carries one: a row that fits none of them is not a state this
+    // book may leave a combination in.
+    enum class EntryState : std::uint8_t {
+        kMeasured,   // the entry serves the call, and the sweep below ran it
+        kRefused,    // the entry's body refuses the policy where it is named
+        kShapeLimit, // the call shape cannot form the axis at all
+    };
+
+    struct EntryBody {
+        const char* name;
+        BatchEntry kind;
+    };
+
+    // The entry list, written here by hand and labelled as such: the library has
+    // no accessor that names its entries, which is the piece the axis is missing,
+    // so this list is the coverage this book claims. Every name in it is a public
+    // entry of boys.hpp, and the states below are decided off the entry's own
+    // branch, not off this list.
+    constexpr std::array<EntryBody, 4> entryBodies{{
+        {"plane entry", BatchEntry::kPlane},
+        {"plane entry, sorted", BatchEntry::kPlaneSorted},
+        {"per-element tops", BatchEntry::kAtOrders},
+        {"fixed-order entry", BatchEntry::kFixedN},
+    }};
+
+    constexpr std::size_t kEntryBodyCount = std::size(entryBodies);
+
+    struct EntryBookRow {
+        std::string axes;
+        const char* entry = "";
+        // The three selections the row names, taken from the library's own
+        // tables (the route names, the scheme names, the axis names), so a table
+        // that renames a member renames the row with it.
+        std::string route;
+        std::string scheme;
+        std::string axis;
+        BatchEntry kind = BatchEntry::kPlane;
+        EntryState state = EntryState::kShapeLimit;
+        const char* reason = "";
+        double bound = 0.0;
+        int slot = -1;
+    };
+
+    // The two assertions the refused and shape-limit rows print, quoted from the
+    // library. They are the library's sentences and not this book's, so a reader
+    // of a refused row reads the reason the library states where the call is
+    // named rather than one written here beside it.
+    constexpr const char* kEntryUniformGuard =
+        "this body has no uniform branch: it reaches its values through a recursion "
+        "over the orders, and the uniform table is fitted per order with no "
+        "recurrence to enter. A policy naming that partition here would be answered "
+        "by another partition's fits under the uniform name. Either give this body "
+        "a branch that reads the uniform table, or refuse the partition here - do "
+        "not leave it to the policy's contract members"
+        " (boys_impl.hpp, RefuseUniformPartition, the assertion at :2915)";
+
+    constexpr const char* kEntryOrdersShapeLimit =
+        "the orders axis cannot be formed on this entry: a packed lane keeps four "
+        "orders of one argument in a register, and this call produces exactly one "
+        "order at every argument of the array, so there are not four orders here to "
+        "fill a lane with - the wide dimension it does have is count, and that is the "
+        "arguments axis"
+        " (boys_impl.hpp, BoysFixedNImpl, the assertion at :3209)";
+
+    // One combination at one policy. The refused and shape-limit states are
+    // decided by `if constexpr` on the entry's own branch condition - the same two
+    // policy members the entries test - and the served ones are run.
+    const auto sweepEntryBook =
+        [&]<boys::FitRoute kRoute, boys::EvalScheme kScheme, boys::PackAxis kAxis>(
+            BatchEntry kind, EntryBookRow& row) {
+            using Policy = boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFloat, kAxis,
+                                            boys::FitGranularity::kUniform>;
+
+            const auto open = [&row]() {
+                row.state = EntryState::kMeasured;
+                row.slot = AddEntryClaim(row.entry, "uniform grid, whole committed grid",
+                                         kBoundDoubleBatch);
+            };
+
+            switch (kind)
+            {
+            case BatchEntry::kPlane:
+            case BatchEntry::kPlaneSorted:
+                // The partitioned path is the arguments axis of the shipped
+                // route, and that path is the one with no uniform branch: its
+                // body reads the shipped and narrow tables through ChebyshevFit
+                // and would answer a uniform policy from the narrow fits. Every
+                // other combination of this entry delegates to BoysAllOrdersImpl,
+                // which reads the grid, and is served - which is why the refusal
+                // is the entry's and not the partition's.
+                if constexpr (kRoute == boys::FitRoute::kChebyshev &&
+                              kAxis == boys::PackAxis::kArguments)
+                {
+                    row.state = EntryState::kRefused;
+                    row.reason = kEntryUniformGuard;
+                }
+                else
+                {
+                    open();
+
+                    const bool sorted = kind == BatchEntry::kPlaneSorted;
+                    const std::vector<double>& args = sorted ? refSorted : ref.x;
+                    std::vector<double> planes(count * (static_cast<std::size_t>(nmax) + 1));
+
+                    if (sorted)
+                    {
+                        boys::BoysAllN<1.0, Policy>(nmax, args.data(), planes.data(), count,
+                                                    boys::BoysSortedArgs{});
+                    }
+                    else
+                    {
+                        boys::BoysAllN<1.0, Policy>(nmax, args.data(), planes.data(), count);
+                    }
+
+                    for (int n = 0; n <= nmax; ++n)
+                    {
+                        for (std::size_t j = 0; j < count; ++j)
+                        {
+                            // The sorted call lays its planes out in its own
+                            // argument order, so a position in them maps back
+                            // through the permutation rather than being the
+                            // reference's own index.
+                            const std::size_t i = sorted ? sortedPerm[j] : j;
+                            const std::size_t k = ref.Index(n, i);
+                            const double got = planes[static_cast<std::size_t>(n) * count + j];
+
+                            MeasureAt(EntryClaims()[static_cast<std::size_t>(row.slot)],
+                                      n,
+                                      ref.x[i],
+                                      got,
+                                      ref.v[k],
+                                      ref.decade[k],
+                                      kBoundDoubleBatch,
+                                      Unrepresentable(got, -1022));
+                        }
+                    }
+                }
+
+                break;
+
+            case BatchEntry::kAtOrders:
+            {
+                // No guard reaches this entry at any route, scheme or axis: it
+                // hands every element to BoysAllOrdersImpl at that element's own
+                // top order, and that body reads the grid where the policy names
+                // it. The row is measured rather than excused for exactly that
+                // reason - this is the entry the refused rows beside it are
+                // compared against.
+                open();
+
+                std::vector<int> tops(count);
+
+                for (std::size_t i = 0; i < count; ++i)
+                {
+                    tops[i] = nmax - static_cast<int>(i % static_cast<std::size_t>(nmax + 1));
+                }
+
+                std::vector<double> planes(count * (static_cast<std::size_t>(nmax) + 1));
+                boys::BoysAllNAtOrders<1.0, Policy>(
+                    tops.data(), ref.x.data(), planes.data(), count);
+
+                for (std::size_t i = 0; i < count; ++i)
+                {
+                    for (int n = 0; n <= tops[i]; ++n)
+                    {
+                        const std::size_t k = ref.Index(n, i);
+                        const double got = planes[k];
+
+                        MeasureAt(EntryClaims()[static_cast<std::size_t>(row.slot)],
+                                  n,
+                                  ref.x[i],
+                                  got,
+                                  ref.v[k],
+                                  ref.decade[k],
+                                  kBoundDoubleBatch,
+                                  Unrepresentable(got, -1022));
+                    }
+                }
+
+                break;
+            }
+
+            case BatchEntry::kFixedN:
+                if constexpr (kAxis == boys::PackAxis::kOrders)
+                {
+                    // The shape limit, and it is the entry's own assertion rather
+                    // than a partition's: this call produces one order at every
+                    // argument, so there are not four orders on it to fill a lane
+                    // with. Naming the grid beside it changes nothing about that.
+                    row.state = EntryState::kShapeLimit;
+                    row.reason = kEntryOrdersShapeLimit;
+                }
+                else if constexpr (kRoute == boys::FitRoute::kChebyshev)
+                {
+                    row.state = EntryState::kRefused;
+                    row.reason = kEntryUniformGuard;
+                }
+                else
+                {
+                    // The route branch delegates to BoysSingleImpl, which reads
+                    // the grid, so the same combination this entry refuses on the
+                    // shipped route is served on the other one.
+                    open();
+
+                    std::vector<double> values(count);
+
+                    for (int n = 0; n <= nmax; ++n)
+                    {
+                        boys::BoysFixedN<1.0, Policy>(
+                            n, ref.x.data(), values.data(), count);
+
+                        for (std::size_t i = 0; i < count; ++i)
+                        {
+                            const std::size_t k = ref.Index(n, i);
+                            const double got = values[i];
+
+                            MeasureAt(EntryClaims()[static_cast<std::size_t>(row.slot)],
+                                      n,
+                                      ref.x[i],
+                                      got,
+                                      ref.v[k],
+                                      ref.decade[k],
+                                      kBoundDoubleBatch,
+                                      Unrepresentable(got, -1022));
+                        }
+                    }
+                }
+
+                break;
+            }
+        };
+
+    // The arms this book writes its policies from: the two routes, two schemes
+    // and two packing axes the entries' own branches test. That set is a list
+    // written here, so it is reconciled against the tables that report those
+    // axes in both directions where the book reports - an arm no table names
+    // cannot be swept, and a table member no arm covers would otherwise be left
+    // unswept and unrefused. Either turns the run red.
+    struct EntryArm {
+        boys::FitRoute route;
+        boys::EvalScheme scheme;
+        boys::PackAxis axis;
+    };
+
+    const std::array<EntryArm, 8> entryArms{{
+        {boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw, boys::PackAxis::kArguments},
+        {boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw, boys::PackAxis::kOrders},
+        {boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner, boys::PackAxis::kArguments},
+        {boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner, boys::PackAxis::kOrders},
+        {boys::FitRoute::kRationalMinimax, boys::EvalScheme::kSplitClenshaw,
+         boys::PackAxis::kArguments},
+        {boys::FitRoute::kRationalMinimax, boys::EvalScheme::kSplitClenshaw,
+         boys::PackAxis::kOrders},
+        {boys::FitRoute::kRationalMinimax, boys::EvalScheme::kHorner, boys::PackAxis::kArguments},
+        {boys::FitRoute::kRationalMinimax, boys::EvalScheme::kHorner, boys::PackAxis::kOrders},
+    }};
+
+    // The name each table reports for one arm's route and one arm's axis: the
+    // rows are labelled with the library's own names, and an arm the table does
+    // not name comes back empty and is counted as such.
+    const auto entryArmRouteName = [](boys::FitRoute route) {
+        for (const boys::FitRouteInfo& tableRow : boys::BoysFitRoutes())
+        {
+            if (tableRow.route == route)
+            {
+                return std::string(tableRow.name);
+            }
+        }
+
+        return std::string();
+    };
+
+    const auto entryArmAxisName = [](boys::PackAxis axis) {
+        for (const boys::PackAxisInfo& tableRow : boys::BoysPackAxes())
+        {
+            if (tableRow.axis == axis)
+            {
+                return std::string(tableRow.name);
+            }
+        }
+
+        return std::string();
+    };
+
+    std::size_t entryArmsUnnamed = 0;
+
+    for (const EntryArm& arm : entryArms)
+    {
+        if (entryArmRouteName(arm.route).empty() || entryArmAxisName(arm.axis).empty())
+        {
+            ++entryArmsUnnamed;
+        }
+    }
+
+    // The other direction: what the tables name and no arm covers. A route the
+    // table names twice is one route, so the route walk de-duplicates the way the
+    // cross below does.
+    std::size_t entryTableUncovered = 0;
+    std::string entryTableUncoveredNames;
+    std::vector<boys::FitRoute> entryTableRoutes;
+
+    for (const boys::FitRouteInfo& tableRow : boys::BoysFitRoutes())
+    {
+        bool seen = false;
+
+        for (const boys::FitRoute known : entryTableRoutes)
+        {
+            seen = seen || known == tableRow.route;
+        }
+
+        if (seen)
+        {
+            continue;
+        }
+
+        entryTableRoutes.push_back(tableRow.route);
+
+        bool covered = false;
+
+        for (const EntryArm& arm : entryArms)
+        {
+            covered = covered || arm.route == tableRow.route;
+        }
+
+        if (!covered)
+        {
+            ++entryTableUncovered;
+            entryTableUncoveredNames += Fmt(" %s", tableRow.name);
+        }
+    }
+
+    for (const boys::PackAxisInfo& tableRow : boys::BoysPackAxes())
+    {
+        bool covered = false;
+
+        for (const EntryArm& arm : entryArms)
+        {
+            covered = covered || arm.axis == tableRow.axis;
+        }
+
+        if (!covered)
+        {
+            ++entryTableUncovered;
+            entryTableUncoveredNames += Fmt(" %s", tableRow.name);
+        }
+    }
+
+    for (const boys::EvalSchemeInfo& tableRow : boys::BoysEvalSchemes())
+    {
+        bool covered = false;
+
+        for (const EntryArm& arm : entryArms)
+        {
+            covered = covered || arm.scheme == tableRow.scheme;
+        }
+
+        if (!covered)
+        {
+            ++entryTableUncovered;
+            entryTableUncoveredNames += Fmt(" %s", tableRow.name);
+        }
+    }
+
+    std::vector<EntryBookRow> entryBook;
+
+    for (const EntryBody& body : entryBodies)
+    {
+        for (std::size_t a = 0; a < entryArms.size(); ++a)
+        {
+            const EntryArm& arm = entryArms[a];
+            EntryBookRow row;
+            row.entry = body.name;
+            row.route = entryArmRouteName(arm.route);
+            row.scheme = boys::EvalSchemeName(arm.scheme);
+            row.axis = entryArmAxisName(arm.axis);
+            row.kind = body.kind;
+            row.bound = kBoundDoubleBatch;
+            row.axes = Fmt("%s, %s, %s, %s, uniform",
+                           body.name,
+                           row.route.c_str(),
+                           row.scheme.c_str(),
+                           row.axis.c_str());
+
+            // The dispatch: one arm per combination of the three selections the
+            // entries' branches test, flat rather than nested, so that a member
+            // added to any axis is an arm this list does not have - which the
+            // reconciliation above names and fails on - rather than a nested
+            // fall-through that measures it under another member's policy.
+            switch (a)
+            {
+            case 0:
+                sweepEntryBook.template operator()<boys::FitRoute::kChebyshev,
+                                                    boys::EvalScheme::kSplitClenshaw,
+                                                    boys::PackAxis::kArguments>(body.kind, row);
+
+                break;
+            case 1:
+                sweepEntryBook.template operator()<boys::FitRoute::kChebyshev,
+                                                    boys::EvalScheme::kSplitClenshaw,
+                                                    boys::PackAxis::kOrders>(body.kind, row);
+
+                break;
+            case 2:
+                sweepEntryBook.template operator()<boys::FitRoute::kChebyshev,
+                                                    boys::EvalScheme::kHorner,
+                                                    boys::PackAxis::kArguments>(body.kind, row);
+
+                break;
+            case 3:
+                sweepEntryBook.template operator()<boys::FitRoute::kChebyshev,
+                                                    boys::EvalScheme::kHorner,
+                                                    boys::PackAxis::kOrders>(body.kind, row);
+
+                break;
+            case 4:
+                sweepEntryBook.template operator()<boys::FitRoute::kRationalMinimax,
+                                                    boys::EvalScheme::kSplitClenshaw,
+                                                    boys::PackAxis::kArguments>(body.kind, row);
+
+                break;
+            case 5:
+                sweepEntryBook.template operator()<boys::FitRoute::kRationalMinimax,
+                                                    boys::EvalScheme::kSplitClenshaw,
+                                                    boys::PackAxis::kOrders>(body.kind, row);
+
+                break;
+            case 6:
+                sweepEntryBook.template operator()<boys::FitRoute::kRationalMinimax,
+                                                    boys::EvalScheme::kHorner,
+                                                    boys::PackAxis::kArguments>(body.kind, row);
+
+                break;
+            case 7:
+                sweepEntryBook.template operator()<boys::FitRoute::kRationalMinimax,
+                                                    boys::EvalScheme::kHorner,
+                                                    boys::PackAxis::kOrders>(body.kind, row);
+
+                break;
+            default:
+                // An arm with no case above. The row is not built, and the
+                // arithmetic below counts the rows that exist against the arms
+                // the tables report - so an arm added to the table without its
+                // case turns the run red instead of printing a state the row does
+                // not have.
+                continue;
+            }
+
+            entryBook.push_back(std::move(row));
+        }
+    }
+
+    // The book's own counters, taken here rather than where the rows are printed
+    // because the combination block below reads them into the run's arithmetic.
+    // A row is in exactly one of the three states and the three add to the book's
+    // own total: that is the arithmetic the entry factor is carried by.
+    std::size_t entryBookMeasured = 0;
+    std::size_t entryBookRefused = 0;
+    std::size_t entryBookShapeLimit = 0;
+
+    for (const EntryBookRow& row : entryBook)
+    {
+        switch (row.state)
+        {
+        case EntryState::kMeasured:
+            ++entryBookMeasured;
+
+            break;
+        case EntryState::kRefused:
+            ++entryBookRefused;
+
+            break;
+        case EntryState::kShapeLimit:
+            ++entryBookShapeLimit;
+
+            break;
+        }
+    }
+
+    // The same total a second way, off the sizes the tables report. A member
+    // added to any of the three axes the library reports moves this and the
+    // arms together; a row the enumeration above drops moves only one of them,
+    // and the difference is what the combination block fails on.
+    const std::size_t entryBookRows = entryBook.size();
+    const std::size_t entryBookClaimed = kEntryBodyCount * entryTableRoutes.size() *
+                                         boys::BoysEvalSchemes().size() *
+                                         boys::BoysPackAxes().size();
+
     // ---- the published cells and ranges, measured ---------------------------
     std::printf("\npublished cells and ranges, measured:\n");
 
@@ -10469,20 +11055,44 @@ int main(int argc, char** argv) {
                         "produces four orders for the axis to pack",
                         true});
 #endif
+#ifdef BOYS_GATE_F32_SINGLE_REFUSES_ORDERS
+    // A one-order entry has one order, so it has nothing to pack and refuses the
+    // axis for that reason alone. This is a property of the call and not of the
+    // axis - the same shape limit BoysFixedN carries below - so it is booked as
+    // one, and the debt count is left to the rows that name a table or a body
+    // nobody has built.
+    refusals.push_back({"orders axis on the one-order single-precision entry",
+                        "this entry produces one order at one argument, so there are not four "
+                        "orders on this shape to fill a vector lane with; the probe compiles the "
+                        "call and it does not build. This one is a property of the call and not a "
+                        "lane nobody wrote: no revision of this entry produces four orders for the "
+                        "axis to pack, and the same lane's all-orders and many-argument entries "
+                        "carry the axis",
+                        true});
+#else
+    // The shape refuses the axis and the probe compiled it, which would mean the
+    // limit is not what this block says it is. Nothing is silent in either
+    // direction: the probe decides which line prints.
+    ++liftedRefusals;
+    std::printf("  LIFTED: the one-order entry on the single-precision engines accepts the "
+                "orders\n  axis, which a call producing one order has nothing to fill - so the "
+                "shape limit this\n  block books is not the shape's. A revision that reaches this "
+                "line has changed what\n  the entry is\n");
+#endif
 #ifdef BOYS_GATE_F32_REFUSES_ORDERS
-    // The entry's own sentence names which of the two kinds this refusal is -
-    // "a lane nobody had written, not a combination that cannot exist" - so it
-    // is recorded as unbuilt work and counted with the outstanding
-    // combinations, the way the sentence reads.
+    // The axis itself, on the shapes that can carry it. This is the row the
+    // probe above measures directly: the all-orders entry at two rungs and the
+    // many-argument entry, so a failure here is a fact about the axis.
     refusals.push_back({"orders axis on the single-precision engines",
                         "a packed lane reads one coefficient stride and the float table gives "
                         "each order its own cover, so a fixed argument selects a different piece "
                         "in each lane and the eight bases are not a stride apart; the probe "
-                        "compiles the call and it does not build. This is a lane nobody had "
-                        "written, not a combination that cannot exist: the eight lanes share the "
-                        "degree the group is summed at, and a lane whose own fit is cut shorter "
-                        "reads zeros above its own cut, which is that lane's own polynomial read "
-                        "in that lane's own arithmetic",
+                        "compiles the call and it does not build. The packed lane is built at "
+                        "this revision, so this row prints only where a revision has lost it - "
+                        "and a lost packed lane is a body to write, not a shape the call cannot "
+                        "have: the eight lanes share the degree the group is summed at, and a "
+                        "lane whose own fit is cut shorter reads zeros above its own cut, which "
+                        "is that lane's own polynomial read in that lane's own arithmetic",
                         true,
                         true});
 #else
@@ -10728,9 +11338,12 @@ int main(int argc, char** argv) {
     //
     // What it multiplies instead is the measurement. Every cell below is
     // evaluated at every form the accessor answers, each form is judged against
-    // the figure the row's own lane publishes, and the delivered figure the row
-    // prints is the worst of the three. A form that leaves the bound fails the
-    // row it belongs to. Where the forms deliver one value the row says that
+    // the figure its own lane publishes for that form, and the delivered figure
+    // the row prints is the worst of the three. A form that leaves its figure
+    // fails the row it belongs to. A lane whose plain reciprocal rounds once
+    // more per step publishes the term that costs apart from its base, and this
+    // block reads it: the alternative is a lane judged against a figure it never
+    // claimed for that arithmetic, which fails a correct implementation. Where the forms deliver one value the row says that
     // too, in the counts printed after the cross, so a lane that runs one
     // arithmetic is reported as running one rather than credited with three.
     //
@@ -10810,6 +11423,12 @@ int main(int argc, char** argv) {
         std::size_t over = 0;
         double delivered = 0.0;
         double bound = 0.0;
+        // The widest bar the row was judged against, which is the figure it is
+        // certified under. It differs from `bound` exactly where a lane publishes
+        // the plain reciprocal's own figure beside its base, and the printed row
+        // shows this one so that a delivered figure above the base cannot read as
+        // a contradiction.
+        double judgedBound = 0.0;
         double accessorBound = 0.0;
         double accessorDelivered = 0.0;
         bool accessorDeliveredKnown = false;
@@ -10919,6 +11538,7 @@ int main(int argc, char** argv) {
         std::size_t over;
         double delivered;
         double bound;
+        double judgedTo;      // the widest bar any form of this cell was judged against
         int worstN;
         double worstX;
         int worstForm;        // which division form delivered the worst value
@@ -10936,6 +11556,16 @@ int main(int argc, char** argv) {
         std::size_t over = 0;
         double worst = 0.0;
         double bound = 0.0;
+        // The bar a form is judged against where its lane publishes a figure of
+        // its own for it; zero means the lane publishes one figure for every
+        // form, which is the case on every row whose forms deliver one value.
+        double formBar[kCombForms] = {};
+        // The widest bar this cell was judged against. It is `bound` on every lane
+        // whose forms publish one figure, and the plain form's own figure where a
+        // lane publishes one for it: the figure the row is certified under is the
+        // widest of them, and printing the base beside a delivered figure above it
+        // would read as a contradiction the run does not have.
+        double judgedTo = 0.0;
         double ceiling = 0.0; // above this magnitude the bound is claimed
         int worstN = -1;
         double worstX = 0.0;
@@ -10955,7 +11585,16 @@ int main(int argc, char** argv) {
         {
             const double err = std::abs(got - want);
             const double magnitude = std::abs(want);
-            const double bar = bound + ulp;
+            // The form's own figure where the lane publishes one for it: a lane
+            // whose plain reciprocal rounds once more than its other forms
+            // states that term apart, and judging the plain form against the
+            // other forms' figure would fail the lane for a figure it publishes.
+            const double bar =
+                (formBar[static_cast<std::size_t>(form)] > 0.0
+                     ? formBar[static_cast<std::size_t>(form)]
+                     : bound) +
+                ulp;
+            judgedTo = bar > judgedTo ? bar : judgedTo;
             ++cells;
 
             if (ceiling > 0.0 && magnitude <= bar)
@@ -11040,6 +11679,8 @@ int main(int argc, char** argv) {
                                           boys::DivisionForm::kRefinedReciprocal>;
         const double laneBound = combLaneRows[static_cast<std::size_t>(lane)].bound;
         const double laneAdd = combLaneRows[static_cast<std::size_t>(lane)].additive;
+        const double lanePlainAdd =
+            combLaneRows[static_cast<std::size_t>(lane)].plainAdditive;
 
         [&]<std::size_t... kRung>(std::index_sequence<kRung...>) {
             (void)std::initializer_list<int>{
@@ -11050,6 +11691,8 @@ int main(int argc, char** argv) {
                     std::array<std::array<double, 33>, kCombForms> out{};
 
                     a.bound = kM * laneBound + laneAdd;
+                    a.formBar[static_cast<std::size_t>(boys::DivisionForm::kPlainReciprocal)] =
+                        kM * (laneBound + lanePlainAdd) + laneAdd;
 
                     for (std::size_t i = 0; i < count; ++i)
                     {
@@ -11077,6 +11720,7 @@ int main(int argc, char** argv) {
                                             a.over,
                                             a.worst,
                                             a.bound,
+                                            a.judgedTo,
                                             a.worstN,
                                             a.worstX,
                                             a.worstForm,
@@ -11100,6 +11744,8 @@ int main(int argc, char** argv) {
             using PRefined = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
                                               boys::DivisionForm::kRefinedReciprocal>;
             const double laneBound = combLaneRows[static_cast<std::size_t>(lane)].bound;
+            const double lanePlainAdd =
+                combLaneRows[static_cast<std::size_t>(lane)].plainAdditive;
 
             [&]<std::size_t... kStep>(std::index_sequence<kStep...>) {
                 (void)std::initializer_list<int>{
@@ -11113,6 +11759,8 @@ int main(int argc, char** argv) {
                         std::array<std::array<float, 33>, kCombForms> out{};
 
                         a.bound = kM * laneBound;
+                        a.formBar[static_cast<std::size_t>(
+                            boys::DivisionForm::kPlainReciprocal)] = kM * (laneBound + lanePlainAdd);
                         a.ceiling = static_cast<double>(lane == combHalfLane) * a.bound;
 
                         for (std::size_t i = 0; i < count; ++i)
@@ -11154,6 +11802,7 @@ int main(int argc, char** argv) {
                                                 a.over,
                                                 a.worst,
                                                 a.bound,
+                                                a.judgedTo,
                                                 a.worstN,
                                                 a.worstX,
                                                 a.worstForm,
@@ -11625,13 +12274,22 @@ int main(int argc, char** argv) {
                                 c.over = cell->over;
                                 c.delivered = cell->delivered;
                                 c.bound = cell->bound;
+                                c.judgedBound = cell->judgedTo > cell->bound ? cell->judgedTo
+                                                                            : cell->bound;
                                 c.worstN = cell->worstN;
                                 c.worstX = cell->worstX;
                                 c.worstForm = cell->worstForm;
                                 c.state = c.over == 0
                                               ? "certified and published"
                                               : "DEFECT: delivers outside its documented bound";
-                                c.source = "measured here over the whole committed grid";
+                                c.source =
+                                    c.judgedBound > c.bound
+                                        ? Fmt("measured here over the whole committed grid. The "
+                                              "bound shown is %.6g, not the lane's base: this lane "
+                                              "publishes that figure for the plain reciprocal, and "
+                                              "the row was read at every form",
+                                              c.judgedBound)
+                                        : "measured here over the whole committed grid";
                             } else if (!guaranteed.available)
                             {
                                 c.state = "refused - owed";
@@ -11976,7 +12634,7 @@ int main(int argc, char** argv) {
                     c.cells,
                     c.over,
                     c.delivered,
-                    c.bound,
+                    c.judgedBound > 0.0 ? c.judgedBound : c.bound,
                     c.state.c_str());
     }
 
@@ -11984,7 +12642,12 @@ int main(int argc, char** argv) {
 
     for (const Combination& c : combinations)
     {
-        if (c.state.rfind("certified", 0) != 0 && c.state.rfind("not runnable", 0) != 0)
+        // A certified row whose bound is not its lane's base prints its reason
+        // too: the figure above is the one the lane publishes for the form the
+        // row was read at, and a reader meeting 2.5e-07 where the summary table
+        // says 1.5e-07 is owed the sentence that says why.
+        if ((c.state.rfind("certified", 0) != 0 && c.state.rfind("not runnable", 0) != 0) ||
+            c.judgedBound > c.bound)
         {
             std::printf("  %-58s %s\n", c.axes.c_str(), c.source.c_str());
         }
@@ -12062,6 +12725,34 @@ int main(int argc, char** argv) {
                 combPartitions,
                 combAxes,
                 combRungs);
+    // The entry factor, which the arithmetic above has none of on its own: the
+    // cross reaches every one of its cells through one entry per lane, so a
+    // combination these axes admit and another entry refuses is in no book at all
+    // until it is counted here. The three states of the entry book are added to
+    // the same total, and the book's own space is read off the same tables a
+    // second way below it.
+    std::printf("                 the entry book's own %zu cell(s), the factor this arithmetic "
+                "has none of:\n                 %zu measured + %zu refused with the library's own "
+                "reason and owed +\n                 %zu not applicable to the entry's shape = "
+                "%zu\n",
+                entryBookRows,
+                entryBookMeasured,
+                entryBookRefused,
+                entryBookShapeLimit,
+                entryBookMeasured + entryBookRefused + entryBookShapeLimit);
+    std::printf("                 the entry book's space read off the same tables a second way: "
+                "%zu entry(ies) x %zu route(s) x %zu scheme(s),\n                 %zu axis(es) = "
+                "%zu\n",
+                kEntryBodyCount,
+                entryTableRoutes.size(),
+                combSchemes,
+                combAxes,
+                entryBookClaimed);
+    std::printf("                 the run's total with the entry factor: %zu + %zu = %zu "
+                "cell(s)\n",
+                combTotal,
+                entryBookRows,
+                combTotal + entryBookRows);
     std::printf("  the cross: %zu of %zu member(s) the accessor claims the library carries are "
                 "certified and\n                published by the rows above\n",
                 combClaimedCarried,
@@ -12240,7 +12931,15 @@ int main(int argc, char** argv) {
     // by a claim that failed. The figure is published so a reader can see it.
     if (combTotal != combClaimed || combTotal != combAccounted || combUncovered > 0 ||
         combOfferedBad > 0 || combAccessorDisagreeing > 0 ||
-        combToleranceDisagreeing > 0)
+        combToleranceDisagreeing > 0 ||
+        // The entry factor, on both sides of the identity: the book's rows are
+        // the cells the cross has no entry for, and its own total is read off the
+        // tables a second way. A member added to any axis of either arithmetic
+        // moves one side and not the other, and that is the difference this
+        // catches - the hole the entry book exists to close, where a combination
+        // a caller can name is refused and no arithmetic has a term for it.
+        entryBookRows != entryBookMeasured + entryBookRefused + entryBookShapeLimit ||
+        combTotal + entryBookRows != combClaimed + entryBookClaimed)
     {
         std::printf("\n  COMBINATION COVERAGE FAIL: the option space this library offers is not "
                     "the option space\n  this block accounts for. Each count above is a member "
@@ -12746,6 +13445,147 @@ int main(int argc, char** argv) {
 
         std::printf("\n  FAIL (exit status 1; the granularity-axis rows are judged with the "
                     "books above)\n");
+        return 1;
+    }
+
+    // ---- the entry book's rows, counted apart -------------------------------
+    // The block above the report's arithmetic counts the space the axes describe;
+    // this one counts the space a caller names, and it is the only place a
+    // combination the axes admit and an entry refuses is printed at all: every
+    // other book reaches its cells through one entry per lane, so the refusal has
+    // no cell in any of them. Its own rows, its own cell count and its own RESULT
+    // line, for the reason the three blocks above give: the numbers a reader has
+    // seen before must not move, and this axis is added to the report rather than
+    // folded into theirs.
+    //
+    // The three states are printed and not summarised, because two of them are
+    // not measurements and a count alone would hide which combination is which. A
+    // refused row carries the library's own assertion underneath it, so what the
+    // reader of a gap gets is the reason the library states where the call is
+    // named. A row in the shape-limit state carries the entry's own assertion,
+    // and the difference between the two is the debt: the first is a branch
+    // nobody has written, the second is a shape no branch can serve.
+    std::printf("\nthe entry book: the batched double-precision entries crossed with the uniform\n"
+                "partition, per route, per scheme and per packing axis, at the reference rung.\n"
+                "Every combination is measured, refused by the library's own guard, or not\n"
+                "applicable to the entry's shape; a refused row prints the assertion that\n"
+                "refuses it, so a combination no row measures is a named refusal and not an\n"
+                "absence\n");
+    std::printf("  %-22s %-20s %-16s %-11s %8s %-12s %-12s %7s  %-20s %s\n",
+                "entry",
+                "route",
+                "scheme",
+                "axis",
+                "cells",
+                "bound",
+                "delivered",
+                "ratio",
+                "worst cell",
+                "state");
+    std::printf("  %s\n", std::string(170, '-').c_str());
+
+    int entryMet = 0;
+    std::size_t entryJudged = 0;
+    std::vector<std::string> entryNotMet;
+
+    for (const EntryBookRow& row : entryBook)
+    {
+        if (row.state == EntryState::kMeasured)
+        {
+            const Accum& a = EntryClaims()[static_cast<std::size_t>(row.slot)];
+            const Verdict v = FromAccum(a);
+            ++entryJudged;
+
+            if (IsMet(v))
+            {
+                ++entryMet;
+            } else
+            {
+                entryNotMet.push_back(row.axes);
+            }
+
+            char where[64];
+            std::snprintf(where, sizeof(where), "n=%d, x=%.6g", a.worstN, a.worstX);
+            std::printf("  %-22s %-20s %-16s %-11s %8zu %-12.6g %-12.6g %7.3g  %-20s %s\n",
+                        row.entry,
+                        row.route.c_str(),
+                        row.scheme.c_str(),
+                        row.axis.c_str(),
+                        a.points,
+                        row.bound,
+                        a.worstErr,
+                        a.worstRatio,
+                        where,
+                        VerdictName(v));
+        } else
+        {
+            std::printf("  %-22s %-20s %-16s %-11s %8s %-12s %-12s %7s  %-20s %s\n",
+                        row.entry,
+                        row.route.c_str(),
+                        row.scheme.c_str(),
+                        row.axis.c_str(),
+                        "n/a",
+                        "n/a",
+                        "n/a",
+                        "n/a",
+                        "",
+                        row.state == EntryState::kRefused ? "refused, and owed"
+                                                          : "not applicable to the entry's shape");
+            std::printf("    %s\n", row.axes.c_str());
+            std::printf("    %s\n", row.reason);
+        }
+    }
+
+    // The two states that are not measurements are printed with their counts
+    // again, in the book's own arithmetic, so that a reader who takes only the
+    // numbers still sees them. The identity is checked with the run's arithmetic
+    // above - the same total read off the tables a second way - and the arms are
+    // reconciled against the tables that report the three axes here, both ways:
+    // an arm no table names, and a table member no arm covers.
+    std::printf("  %s\n", std::string(170, '-').c_str());
+    std::printf("  ENTRY RESULT: %d of %zu measured entry row(s) met at this revision (%zu "
+                "refused and owed,\n                %zu not applicable to the entry's shape; the "
+                "three states add to the %zu\n                combination(s) this book crosses)\n",
+                entryMet,
+                entryJudged,
+                entryBookRefused,
+                entryBookShapeLimit,
+                entryBookRows);
+
+    if (entryArmsUnnamed == 0 && entryTableUncovered == 0)
+    {
+        std::printf("                the axes are the tables': this book's %zu arm(s) are named "
+                    "by the %zu\n                route(s), %zu scheme(s) and %zu axis(es) the "
+                    "lane reports, and every one\n                of those members is an arm\n",
+                    entryArms.size(),
+                    entryTableRoutes.size(),
+                    boys::BoysEvalSchemes().size(),
+                    boys::BoysPackAxes().size());
+    } else
+    {
+        std::printf("\n  ENTRY BOOK FAIL: the axes this book sweeps are not the library's. %zu "
+                    "arm(s) of the\n  %zu it writes are named by no table, and %zu member(s) the "
+                    "tables report are no arm of\n  its:%s\n  A member added to any of those three "
+                    "axes is a row this book has to be given before the\n  space it sweeps is "
+                    "that table's; the arithmetic above counts the rows that exist and\n  not the "
+                    "members that are there\n",
+                    entryArmsUnnamed,
+                    entryArms.size(),
+                    entryTableUncovered,
+                    entryTableUncoveredNames.c_str());
+        return 1;
+    }
+
+    if (!entryNotMet.empty())
+    {
+        std::printf("  NOT MET at this revision:");
+
+        for (const std::string& id : entryNotMet)
+        {
+            std::printf(" [%s]", id.c_str());
+        }
+
+        std::printf("\n  FAIL (exit status 1; the entry rows are judged with the books above)\n");
         return 1;
     }
 

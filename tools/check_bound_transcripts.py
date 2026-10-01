@@ -129,7 +129,7 @@ LANE_ROWS = re.compile(
     re.S,
 )
 # precision, name, bound, additive, source.
-LANE_MEMBERS = 5
+LANE_MEMBERS = 6
 
 # The column of the header's contract table, by the label this check reads it
 # under. Matching is by prefix so a parenthesised range beside a label - the
@@ -651,8 +651,17 @@ def declared_gate(gate: dict[str, Figure], name: str) -> Figure:
     return gate[name]
 
 
-def read_lanes(path: pathlib.Path) -> dict[str, tuple[Figure, Figure | None]]:
-    """The `BoysLaneContracts()` rows: lane name to its bound and its additive."""
+def read_lanes(
+    path: pathlib.Path,
+) -> dict[str, tuple[Figure, Figure | None, Figure | None]]:
+    """The `BoysLaneContracts()` rows: lane name to its bound, additive and plain term.
+
+    The third is the plain reciprocal's own term, zero on a lane whose forms
+    deliver one figure. Where it is not zero the figure the lane publishes for
+    that form is the bound plus it, and that sum is what the document rows are
+    held to - the row states the term and the document states the figure, which
+    is the same fact written the two ways each side writes it.
+    """
     text = strip_comments(read_text(path))
     source = display(path)
     match = LANE_ROWS.search(text)
@@ -669,7 +678,7 @@ def read_lanes(path: pathlib.Path) -> dict[str, tuple[Figure, Figure | None]]:
             f"{len(rows)}"
         )
     body_start = text.count("\n", 0, match.start("rows")) + 1
-    lanes: dict[str, tuple[Figure, Figure | None]] = {}
+    lanes: dict[str, tuple[Figure, Figure | None, Figure | None]] = {}
     offset = 0
     for index, row in enumerate(rows):
         at = body.find(row, offset)
@@ -692,7 +701,8 @@ def read_lanes(path: pathlib.Path) -> dict[str, tuple[Figure, Figure | None]]:
         lane = members[1].strip()[1:-1]
         bound = members[2].strip()
         additive = members[3].strip()
-        for value in (bound, additive):
+        plain_additive = members[4].strip()
+        for value in (bound, additive, plain_additive):
             if NUMBER.fullmatch(value) is None:
                 raise CheckError(
                     f"{where}: `{value}` is not a numeric literal, and this check reads the rows' "
@@ -707,6 +717,14 @@ def read_lanes(path: pathlib.Path) -> dict[str, tuple[Figure, Figure | None]]:
             Figure(float(bound), "absolute", bound, f"{where} bound"),
             Figure(float(additive), "additive", additive, f"{where} additive")
             if float(additive) != 0.0
+            else None,
+            Figure(
+                float(bound) + float(plain_additive),
+                "absolute",
+                f"{bound} + {plain_additive}",
+                f"{where} plain-reciprocal figure",
+            )
+            if float(plain_additive) != 0.0
             else None,
         )
     if not lanes:
@@ -771,10 +789,12 @@ def main() -> int:
             lines.append(f"  {untied.constant:<22} {figure.text:<9} {figure.where} (not tied)")
 
         lines.append(f"\nthe library's own lane rows ({display(library_path)}, BoysLaneContracts())")
-        for lane, (bound, additive) in lanes.items():
+        for lane, (bound, additive, plain) in lanes.items():
             term = f" + {additive.text}" if additive is not None else ""
+            plain_term = f", or {plain.text} in the plain form" if plain is not None else ""
             lines.append(
-                f"  {lane:<12} {bound.text}{term:<12} {bound.where.rsplit(' ', 1)[0]}"
+                f"  {lane:<12} {bound.text}{term:<12}{plain_term:<34} "
+                f"{bound.where.rsplit(' ', 1)[0]}"
             )
 
         for table, name, columns in (
@@ -875,43 +895,35 @@ def main() -> int:
                     f"table that drops one has to drop the alias with it"
                 )
 
-        # The README's contract rows, as sets: a row states one figure per lane
-        # and the constants tied to the row are all of them.
-        for (source, line), wanted in expected.items():
-            row = next(row for row in contract.rows if row.line == line)
-            found = keys(row_figures(contract, row, (contract_bound,)))
-            where = f"{source}:{line} (`{ascii_safe(row.label)}`)"
-            missing = wanted - found
-            extra = found - wanted
-            if missing:
-                findings.append(
-                    f"the constants tied to {where} state "
-                    f"{', '.join(sorted(pretty(key) for key in missing))}, and the row does not: "
-                    f"it states {', '.join(sorted(pretty(key) for key in found)) or 'nothing'}"
-                )
-            if extra:
-                findings.append(
-                    f"{where} states {', '.join(sorted(pretty(key) for key in extra))}, and no "
-                    f"constant tied to that row carries it: the row would be publishing a figure "
-                    f"the gate does not transcribe"
-                )
-
         for tie in LIBRARY_TIES:
             if tie.row not in lanes:
                 raise CheckError(
                     f"{display(library_path)}: no lane row named `{tie.row}`. The rows read are: "
                     f"{', '.join(sorted(lanes))}"
                 )
-            bound, additive = lanes[tie.row]
+            bound, additive, plain = lanes[tie.row]
             figures = [bound] + ([additive] if additive is not None else [])
+            # The README's contract row is the one cell that states every figure
+            # a lane publishes, so it carries the plain form's own figure too.
+            # The header's table has a cell per region and states the base there,
+            # so only the README row is held to the third figure - holding the
+            # header to it would need one figure per cell where it states one.
+            readme_figures = figures + ([plain] if plain is not None else [])
             where = bound.where.rsplit(" ", 1)[0]
             contract_row = row_of(contract, tie.readme)
             tied.add((contract.source, contract_row.line))
+            # A figure a library row states is tied to the README's row the same
+            # way a gate constant's is, so the set sweep below reads both. The
+            # plain form's figure is the one figure on this side that no constant
+            # of the gate transcribes: the row states the term, the document
+            # states the figure, and the sum is the tie.
+            for figure in readme_figures:
+                expected.setdefault((contract.source, contract_row.line), set()).add(figure.key)
             found = keys(row_figures(contract, contract_row, (contract_bound,)))
-            if found != keys(figures):
+            if found != keys(readme_figures):
                 findings.append(
                     f"the library's `{tie.row}` row carries "
-                    f"{', '.join(pretty(figure.key) for figure in figures)} at {where}, and the "
+                    f"{', '.join(pretty(figure.key) for figure in readme_figures)} at {where}, and the "
                     f"README row `{ascii_safe(tie.readme)}` at {contract.source}:"
                     f"{contract_row.line} states "
                     f"{', '.join(sorted(pretty(key) for key in found)) or 'nothing'}"
@@ -927,6 +939,30 @@ def main() -> int:
                         f"the header's `{tie.header}` row at {header.source}:{header_row.line} "
                         f"states {', '.join(sorted(pretty(key) for key in found)) or 'nothing'}"
                     )
+
+        # The README's contract rows, as sets: a row states every figure its lane
+        # publishes, and the figures tied to the row - the gate's constants and
+        # the library's own row - are all of them. This runs after both tie
+        # tables for that reason.
+        for (source, line), wanted in expected.items():
+            row = next(row for row in contract.rows if row.line == line)
+            found = keys(row_figures(contract, row, (contract_bound,)))
+            where = f"{source}:{line} (`{ascii_safe(row.label)}`)"
+            missing = wanted - found
+            extra = found - wanted
+            if missing:
+                findings.append(
+                    f"the figures tied to {where} state "
+                    f"{', '.join(sorted(pretty(key) for key in missing))}, and the row does not: "
+                    f"it states {', '.join(sorted(pretty(key) for key in found)) or 'nothing'}"
+                )
+            if extra:
+                findings.append(
+                    f"{where} states {', '.join(sorted(pretty(key) for key in extra))}, and "
+                    f"neither a constant of the gate nor a row of BoysLaneContracts() tied to it "
+                    f"carries it: the row would be publishing a figure nothing in the library "
+                    f"states"
+                )
 
         # The withdrawn bound: the header must not claim it outside region A.
         withdrawn = declared_gate(gate, UNTIED[0].constant)
@@ -1037,11 +1073,12 @@ def main() -> int:
             file=out,
         )
     for tie in LIBRARY_TIES:
-        bound, additive = lanes[tie.row]
+        bound, additive, plain = lanes[tie.row]
         figures = [bound] + ([additive] if additive is not None else [])
+        readme_figures = figures + ([plain] if plain is not None else [])
         print(
             f"  BoysLaneContracts() {tie.row:<12} "
-            f"{', '.join(pretty(figure.key) for figure in figures):<14} = the README's "
+            f"{', '.join(pretty(figure.key) for figure in readme_figures):<22} = the README's "
             f"`{tie.readme}` (as a set)"
             + (f" = the header's `{tie.header}` (as a set)" if tie.header else ""),
             file=out,

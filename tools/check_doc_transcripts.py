@@ -116,7 +116,7 @@ ROWS = re.compile(
 # The members of a LaneContractInfo row: precision, name, bound, additive,
 # source. The last is the one this check reads, and a revision that adds a
 # field is a construct the readers below name rather than a row read short.
-FIELDS = 5
+FIELDS = 6
 
 # One or more adjacent string literals - which is how a value longer than a
 # line is written here - and the escape sequences decoded below.
@@ -333,7 +333,7 @@ def read_source_strings(path: pathlib.Path) -> list[SourceString]:
         if len(members) != FIELDS:
             raise CheckError(
                 f"{where}: {len(members)} members, and LaneContractInfo has {FIELDS} "
-                f"(precision, name, bound, additive, source); the last is the one read here"
+                f"(precision, name, bound, additive, plainAdditive, source); the last is the one read here"
             )
         lane = " ".join(join_literals(members[1], where).split()) or f"row {index}"
         source = " ".join(join_literals(members[FIELDS - 1], where).split())

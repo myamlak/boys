@@ -15,8 +15,9 @@ the C++ standard library and the optional CUDA toolkit.
 Copy this into `try.cpp`, build it, run it. It prints exactly the numbers below.
 
 ```cpp
-#include <boys/boys.hpp>
+#include <boys/boys_span.hpp>
 
+#include <array>
 #include <cstdio>
 
 int main()
@@ -26,16 +27,16 @@ int main()
 
     // Every order 0..6 at one argument. A shell quartet wants the whole
     // ladder, and this is the call that hands it over.
-    double ladder[boys::kMaxBoysOrder + 1] = {};
+    std::array<double, boys::kMaxBoysOrder + 1> ladder{};
     boys::BoysAllOrders(6, 3.5, ladder);
     std::printf("F_0(3.5)   = %.17g\n", ladder[0]);
     std::printf("F_3(3.5)   = %.17g\n", ladder[3]);
     std::printf("F_6(3.5)   = %.17g\n", ladder[6]);
 
     // One order over an array of arguments. out[i] = F_2(x[i]).
-    const double x[3] = {0.25, 4.0, 30.0};
-    double out[3] = {};
-    boys::BoysFixedN(2, x, out, 3);
+    const std::array<double, 3> x{0.25, 4.0, 30.0};
+    std::array<double, 3> out{};
+    boys::BoysFixedN(2, x, out);
     std::printf("F_2(0.25)  = %.17g\n", out[0]);
     std::printf("F_2(4)     = %.17g\n", out[1]);
     std::printf("F_2(30)    = %.17g\n", out[2]);
@@ -43,13 +44,19 @@ int main()
     // F is positive and falls off with x; a batch of zeros or a negative
     // value would mean the call did not do what it says.
     const bool sane = out[0] > 0.0 && out[0] > out[1] && out[1] > out[2] && ladder[0] > ladder[6];
-    if (!sane) {
+    if (!sane)
+    {
         std::printf("FAIL: F is not positive and decreasing in x\n");
         return 1;
     }
     return 0;
 }
 ```
+
+`boys/boys_span.hpp` is the one header a C++ caller needs beyond `boys/boys.hpp`: it adds an
+overload of each many-argument entry taking a `std::span`, so a container goes straight in. It costs
+nothing - the overload forwards to the entry and both spellings compile to the same call - and a call
+passing a pointer and a count still reaches the pointer entry exactly.
 
     git clone https://github.com/myamlak/boys.git && cd boys
     cmake -S . -B build -DBOYS_BUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF
@@ -131,37 +138,33 @@ over part of the range than over the rest. Every figure below holds for **all** 
 |---|---|
 | double single | ≤ m·5.5e-14 everywhere; ≤ m·3e-14 below x = 11.899848152108484; ≤ m·1e-15 below about x = 1.0855 |
 | double batch, whether the top order is the batch's or each argument's | ≤ m·5.5e-14 |
-| float single / batch | ≤ m·1.5e-7 |
-| fp16 / bf16 | ≤ m·1.5e-7 + ½ ULP |
+| float single / batch | ≤ m·1.5e-7, or ≤ m·2.5e-7 in the plain-reciprocal form |
+| fp16 / bf16 | ≤ m·1.5e-7 + ½ ULP, or ≤ m·2.5e-7 + ½ ULP in the plain-reciprocal form |
 | native half, x ≥ 28.984375 | ≤ 8 ULP of the returned value |
 | CUDA fp64 | same m·budgets as the CPU double lanes |
 | CUDA fp32, `RegionBExp::kAccurate` (the default) | same m·budgets as the CPU float lanes |
 | CUDA fp32, `RegionBExp::kFast` | ≤ m·1.5e-7 + 8e-8 — the lane's budget plus the corrected seed's own contribution |
 
 **One axis's members are not one figure.** `DivisionForm` is how every recurrence step divides, and
-its three members are three arithmetics rather than three spellings of one: exact division rounds
-once per step, the plain reciprocal rounds twice, and the refined reciprocal carries the plain
-product back to the exact form's rounding. The rows above are one number per lane, so where the forms
-deliver different figures the figures are stated apart, and a caller who names the plain form is
-reading the number its ladder delivers rather than the lane's base.
+its three members are three arithmetics, not three spellings of one. Exact division rounds once per
+step, the plain reciprocal rounds twice, and the refined reciprocal recovers the exact form's
+rounding from the plain product.
 
-On the **double** lane no form leaves a figure above: over the accuracy gate's own reference grid at
-the reference multiplier, 56694 cells per form, the plain reciprocal leaves region A, region B and
-region C where exact division has them and moves the extended band's worst from 3.22e-15 to 6.73e-15,
-inside the 3e-14 that region publishes, and the refined reciprocal is bit-identical to exact division
-in every cell. The double rows are therefore figures under all three forms.
+On the **double** lane the three deliver one figure. Over the accuracy gate's reference grid at the
+reference multiplier, 56694 cells per form, the plain reciprocal leaves region A, region B and region
+C where exact division has them and moves the extended band's worst from 3.22e-15 to 6.73e-15, inside
+the 3e-14 that region publishes. The refined reciprocal is bit-identical to exact division in every
+cell. So the double rows are figures under all three forms.
 
-On the **single-precision** lanes the plain reciprocal's figure beside the base is **1.75e-7**,
-measured at n = 0, x = 9.74055 on that grid at the reference multiplier: the worst of the two cells
-that form puts outside the lane's 1.5e-7, the other being x = 7 at 1.55e-7. Both cells are that
-form's own — at them the lane's exact and refined forms deliver 3.67e-9 and 3.63e-8, and their worst
-anywhere on the grid is 1.08e-7, inside the base. The fp16 and bf16 lanes run that
-arithmetic and round at the boundary, so the figure stands beside their base too, before the half
-digit above is added. At this revision that form does not govern the float lane's downward ladder,
-whose divisor is the step's constant rather than the argument, so the lane as served is inside
-1.5e-7 under every form; whether the plain form's excess stays beside the base as m rises is not
-measured here, and neither is the device lane, which has no form to key a figure by because the axis
-is a host policy field the CUDA surface does not name.
+On the **single-precision** lanes the plain reciprocal costs accuracy, so those lanes publish a
+figure for it beside their base: **1.5e-7 + 1e-7 = 2.5e-7**. Its measured worst is 1.7514e-07, at
+n = 0, x = 9.74055, where the lane's exact and refined forms deliver 1.08354e-07 at worst. The fp16
+and bf16 lanes run that arithmetic and round at the boundary, so the same term stands beside their
+base, before the half digit above is added.
+
+`BoysAccuracyGuaranteed` takes the form as an argument and answers the figure for the form you name.
+The device lane carries no form to key one by: the axis is a host policy field the CUDA surface does
+not name.
 
 "ULP" is the last representable digit of the result in the format concerned. On the C++ surface the
 multiplier is any value at or above 1, with no upper end, and raising it loosens the bound and
@@ -194,10 +197,11 @@ nothing written: the lane answers at twelve rungs, and a value outside them is r
 has a named default, and so does the device lane. [docs/lane-contract.md](docs/lane-contract.md#the-default-policy-per-precision-and-per-device)
 states what each selects, the bound it carries, and the command that prints the name and the in-force
 default as numbers. Two of the five choices — the evaluation scheme and the interval partition — were
-set from the option probe's own runs, and **those runs did not separate the rows of either**: the three
-rows of the double lane's full-accuracy class for the all-orders shape came out within 0.9% of one
-another, against the 5.6 to 7.4 points one of them moves by from one run to the next, so each of the two
-defaults is one of three rows the instrument could not separate rather than the row it found cheaper.
+set from the option probe's own runs, and **neither was settled by them**. The partition was not
+chosen against its axis at all: those runs are dated 2026-09-28, every partition-bearing row in them
+is one partition, and the uniform partition reached the host lanes on 2026-09-29 and every lane on
+2026-09-30, so re-deriving that default with the whole axis is owed. On the scheme axis the runs did
+compare both rows and did not separate them.
 The route and the packing axis carry the settings the library has always shipped and have not been
 ranked against a timing. The fifth choice, the accuracy rung, carries no shipped default at all: a call
 that names nothing evaluates at the reference multiplier, the finest of the seven, and a caller names a
@@ -642,13 +646,21 @@ both regions and a fit over the shipped partition's; the single-precision lanes 
 both their routes; every partition's rungs are cut from that partition's own pieces, on either packing
 axis, and the across-orders entries reach a per-order cut by fetching each order's own piece.
 
-**Nothing is refused.** The rational route over the uniform grid was the last member this space was
-owed — the grid's intervals are fixed by its width law rather than cut by a criterion, so a rational
-pair over them was a fit to derive over the grid's own cells rather than a table to cut — and it is
-now derived, emitted and served on every lane: at the relaxed rungs on the double lane, and at every
-rung on the single-precision and device lanes. **Every combination the library offers is therefore
-either certified and published or a device cell a host without a CUDA device cannot run**, which is
-the whole of the gate's arithmetic: 504 certified, none refused, 168 not runnable here.
+**Nothing of the axis cross is refused.** The rational route over the uniform grid was the last
+member this space was owed — the grid's intervals are fixed by its width law rather than cut by a
+criterion, so a rational pair over them was a fit to derive over the grid's own cells rather than a
+table to cut — and it is now derived, emitted and served on every lane: at the relaxed rungs on the
+double lane, and at every rung on the single-precision and device lanes. **Every combination of the
+axes is therefore either certified and published or a device cell a host without a CUDA device
+cannot run**, which is the whole of the gate's arithmetic: 504 certified, none refused, 168 not
+runnable here.
+
+**The entries are a further dimension, and the gate does not cross it.** A body that reaches its
+values through a recursion over the orders has no branch that reads the uniform grid, so the batched
+entries' Chebyshev and partitioned paths refuse a policy naming that partition — with the library's
+own reason, and rather than being answered from the narrow partition's fits, which is exactly the
+substitution those guards exist to prevent. Those branches are owed work, and this page says so here
+rather than letting the arithmetic above read as a claim about the entries too.
 
 A member that a *future* revision had not derived would still be refused where it is named, with the
 reason, rather than answered from another partition's fits — which is what the refusals this library
@@ -755,7 +767,10 @@ from the certified double lane's precision at the library's own full-accuracy mu
 the shape this probe's workload asks: a faster row of a relaxed rung, of another precision, or of
 the other shape is a different class and never a default candidate. Within that class the default is
 the row the run's own figures put first, so the name it prints and the table it prints it beside
-never disagree about which option is cheapest.
+never disagree about which option is cheapest. **A class that held no row for a member of an axis
+prints a `NOT COMPARED:` line naming that member**, because a default read as a race it never ran is
+worse than no default: the partition axis is the one this library's shipped default states as a
+comparison, and a run whose rows are all one partition has not compared partitions at all.
 
 When a class cannot be ordered — a pair whose within-round ratio band straddles one, or too few
 rounds for a band to exist — the run still ends with one combination, and it says how it reached it.

@@ -1,6 +1,5 @@
-// The region-A transform lane (boys/boys_transform.hpp): F_0..F_nmax for a
-// batch of arguments in one band, by one matrix product in the named mode's
-// arithmetic.
+// The region-A transform lane (boys/boys_transform.hpp): F_0..F_nmax for a batch
+// of arguments in one band, by one matrix product in the named mode's arithmetic.
 //
 // Every mode's delivered error is held to the bound the public header's table
 // asserts for it, and reported beside that bound.
@@ -98,7 +97,6 @@ double Reference(int n, double x) {
     return 0.0;
 }
 
-// The worst delivered error of one mode over one band, and where it sits.
 struct Worst {
     double error = 0.0;
     int order = 0;
@@ -160,7 +158,6 @@ constexpr double kFp16Bound = 5e-4;
 
 } // namespace
 
-// The modes' delivered error, held to their asserted bounds.
 TEST(BoysTransform, DeliveredErrorPerMode) {
     for (boys::RegionABand band : {boys::RegionABand::kA1, boys::RegionABand::kA2})
     {
@@ -178,7 +175,6 @@ TEST(BoysTransform, DeliveredErrorPerMode) {
     }
 }
 
-// The single-pass narrow modes, held to their own floors in the same sweep.
 TEST(BoysTransform, DeliveredErrorPerSinglePassMode) {
     for (boys::RegionABand band : {boys::RegionABand::kA1, boys::RegionABand::kA2})
     {
@@ -196,9 +192,8 @@ TEST(BoysTransform, DeliveredErrorPerSinglePassMode) {
     }
 }
 
-// tf32 and fp16 carry the same significand, and the band's operands are all well
-// inside binary16's exponent range, so the two modes are one arithmetic here and
-// must return the same bits.
+// tf32 and fp16 carry the same significand, and the band's operands sit well
+// inside binary16's exponent range, so the two modes return the same bits here.
 TEST(BoysTransform, Tf32AndFp16CoincideOnRegionA) {
     for (boys::RegionABand band : {boys::RegionABand::kA1, boys::RegionABand::kA2})
     {
@@ -219,8 +214,7 @@ TEST(BoysTransform, Tf32AndFp16CoincideOnRegionA) {
 }
 
 // The mode report a consumer reads, held to the header's table and to the
-// enumeration: one row per enumerator, in the enumeration's order, with the
-// delivered figure and the published floor.
+// enumeration: one row per enumerator, in order, with figure and published floor.
 TEST(BoysTransform, ModeReportMatchesTheHeaderTable) {
     const std::span<const boys::ProductModeInfo> rows = boys::BoysProductModes();
 
@@ -322,9 +316,8 @@ TEST(BoysTransform, SplitModesDoNotReachTheDoubleBudget) {    const Worst tf32 =
     EXPECT_GT(bf16.error, 1e-9);
 }
 
-// The fp64 mode is the double lane's own arithmetic in the product's shape. Held
-// against the shipped per-order fit at the same argument: two schemes, and
-// neither may leave the lane's budget.
+// The fp64 mode is the double lane's own arithmetic in the product's shape, held
+// against the shipped per-order fit at the same argument: two schemes, one budget.
 TEST(BoysTransform, Fp64MatchesTheShippedFitWithinTheBudget) {
     constexpr int kNmax = boys::kMaxBoysOrder;
     const std::vector<double> xs = BandArguments(boys::RegionABand::kA1);
@@ -343,8 +336,7 @@ TEST(BoysTransform, Fp64MatchesTheShippedFitWithinTheBudget) {
     }
 
     std::cout << "kFp64 vs BoysSingle, region A: worst " << worst << std::endl;
-    // Two schemes each inside its own bound: the difference is bounded by their
-    // sum, not zero.
+    // Two schemes each inside its own bound: the difference is bounded by their sum, not zero.
     EXPECT_LE(worst, 3.1e-14);
 }
 
@@ -373,8 +365,7 @@ TEST(BoysTransform, LayoutIsOrderMajorPlanes) {
 // The result does not depend on the batch tile: the same arguments in one call
 // and split across calls that straddle the tile boundary agree bit for bit.
 TEST(BoysTransform, ResultIsIndependentOfBatching) {
-    // A synthetic sweep inside the upper band: the check is about the call
-    // pattern, not accuracy.
+    // A synthetic sweep inside the upper band: the check is the call pattern, not accuracy.
     std::vector<double> xs;
     for (int i = 0; i < 100; ++i)
     {
@@ -441,9 +432,8 @@ TEST(BoysTransform, ModeSetIsTheUsableOne) {
 }
 
 // The split modes are worst at the left end of the lower band, where the band's
-// polynomial oscillates fastest and the reference grid's samples understate them
-// - so this sweeps densely against the shipped per-order fit, whose own error at
-// these orders and arguments is 1e-16 and does not enter the figure.
+// polynomial oscillates fastest and the reference grid's samples understate them,
+// so this sweeps densely against the shipped per-order fit (own error 1e-16 here).
 TEST(BoysTransform, SplitModesAreInsideTheirBoundOnADenseSweep) {
     std::vector<double> xs;
     // u stays below 1: the band is half-open, so its right end belongs to the
@@ -491,9 +481,8 @@ TEST(BoysTransform, SplitModesAreInsideTheirBoundOnADenseSweep) {
     EXPECT_LE(sweep(boys::ProductMode::kBf16x6), kSplitBound);
 }
 
-// The multiplier's path: the band's fits truncate to one width every order it
-// admits, and the relaxed product stays inside the same bound. The multiplier is
-// live from m = 2 upward, which is where a relaxed width can be seen.
+// The multiplier's path: the band's fits truncate to one width every order it admits, so the
+// relaxed product stays inside the same bound; the multiplier is live from m = 2 upward.
 TEST(BoysTransform, RelaxedMultiplierStaysInsideTheBound) {
     constexpr double kMultiplier = 1024.0;
     const std::vector<double> xs = BandArguments(boys::RegionABand::kA1);
@@ -517,8 +506,7 @@ TEST(BoysTransform, RelaxedMultiplierStaysInsideTheBound) {
               << kMultiplier * kFp64Bound << ")" << std::endl;
     EXPECT_LE(worst, kMultiplier * kFp64Bound);
 
-    // The relaxed width is a compile-time fact of the instantiation, not a
-    // runtime switch.
+    // The relaxed width is a compile-time fact of the instantiation, not a runtime switch.
     EXPECT_LT(boys::detail::BandDegreeAtMultiplier<0>(kMultiplier),
               boys::detail::BandDegreeAtMultiplier<0>(1.0));
 }

@@ -1,23 +1,20 @@
-// The fixed-n vector entry (BoysFixedN) contract tests: F_n(x[i]) over an
-// array of arguments at one fixed order, the batch shape of
-// angular-momentum-grouped integral-engine inner loops.
+// The fixed-n vector entry (BoysFixedN) contract tests: F_n(x[i]) over an array of
+// arguments at one fixed order, the batch shape of angular-momentum-grouped
+// integral-engine inner loops.
 //
-// The entry's per-element contract is the scalar single lane's: each
-// element runs the BoysSingle region bodies verbatim (m = 1: the
-// certified path, bit-identical by construction; m > 1: the same bodies
-// at the single-lane effective degrees), so the accuracy assertions reuse
-// the double-single per-region bounds (1e-15 / 3e-14 / 5.5e-14) over the
-// committed reference grid, and the identity tests assert bitwise
-// agreement with BoysSingle at every sampled multiplier. The layout tests
-// pin the strided surface (out[i * stride] = F_n(x[i]), stride >= 1 in
-// doubles, default 1) and the alignment contract (natural double
-// alignment only - the entry is scalar; buffers over-aligned like the
-// AVX2 lanes' are accepted unchanged).
+// Each element runs the BoysSingle region bodies verbatim (m = 1: the certified
+// path, bit-identical by construction; m > 1: the same bodies at the single-lane
+// effective degrees), so the accuracy assertions reuse the double-single per-region
+// bounds (1e-15 / 3e-14 / 5.5e-14) over the committed reference grid, and the
+// identity tests assert bitwise agreement with BoysSingle at every sampled
+// multiplier. The layout tests pin the strided surface (out[i * stride] = F_n(x[i]),
+// stride >= 1 in doubles, default 1) and the alignment contract (natural double
+// alignment only - the entry is scalar; buffers over-aligned like the AVX2 lanes'
+// are accepted unchanged).
 //
-// The sampled-m instantiations compile from the internal headers, like
-// the rest of the accuracy suite; the m = 1 call sites below route to the
-// library's certified instantiation (extern-template surface in boys.hpp,
-// explicit instantiation in boys.cpp).
+// The sampled-m instantiations compile from the internal headers; the m = 1 call
+// sites below route to the library's certified instantiation (extern-template
+// surface in boys.hpp, explicit instantiation in boys.cpp).
 
 #include "boys/boys.hpp"
 #include "boys/boys_effective_degrees.hpp"
@@ -52,9 +49,8 @@ struct ReferenceRow {
     double value;
 };
 
-// The committed reference grid (tools/gen_boys_coefficients.py, 45-digit
-// mpmath values of F_n at the double in each row's x column) - the same
-// loader as the other suites.
+// The committed reference grid (tools/gen_boys_coefficients.py, 45-digit mpmath
+// values of F_n at the double in each row's x column); the other suites' loader.
 std::vector<ReferenceRow> LoadReference() {
     const std::string path = std::string(BoysDataDir) + "/boys_reference.csv";
     std::ifstream file(path);
@@ -112,10 +108,9 @@ GridColumns BuildColumns(const std::vector<ReferenceRow>& rows) {
     return grid;
 }
 
-// Region bucketing (x = kX1 rows land
-// in region C), the shipped kernel's own boundaries. The extended band
-// [kExtendedBX0, kX0) is its own region: the per-range F0 seed + upward
-// recursion serves it per kmax tier with the region-B budget.
+// Region bucketing (x = kX1 rows land in region C), the shipped kernel's own
+// boundaries. The extended band [kExtendedBX0, kX0) is its own region: the
+// per-range F0 seed + upward recursion serves it per kmax tier, with the region-B budget.
 enum class BoysRegion : std::uint8_t { A, B, C, E };
 
 BoysRegion RegionOf(double x) {
@@ -132,8 +127,7 @@ BoysRegion RegionOf(double x) {
     return BoysRegion::C;
 }
 
-// The double-single per-region bound (the fixed-n entry mirrors the scalar
-// single lane per element).
+// The double-single per-region bound; this entry mirrors the scalar single lane per element.
 double RegionBound(BoysRegion region) {
     switch (region)
     {
@@ -199,8 +193,7 @@ void PrintWorsts(const char* lane, double m, const RegionWorsts& worst) {
                 worst.e);
 }
 
-// The x sets each order is swept over: the order's own grid x's plus the
-// region-boundary and edge probes.
+// The x sets each order is swept over: its own grid x's plus the boundary and edge probes.
 std::vector<double> SweepXOf(const GridColumns& grid, int n) {
     std::vector<double> xs = grid.x[static_cast<std::size_t>(n)];
 
@@ -218,9 +211,7 @@ std::vector<double> SweepXOf(const GridColumns& grid, int n) {
     return xs;
 }
 
-// ---------------------------------------------------------------------------
-// Grid accuracy: |BoysFixedN value - reference| <= m * B_region per element
-// ---------------------------------------------------------------------------
+// --- Grid accuracy: |BoysFixedN value - reference| <= m * B_region per element ---
 
 template <double kM> void SweepGridAccuracy(const GridColumns& grid) {
     RegionWorsts worst;
@@ -246,10 +237,7 @@ template <double kM> void SweepGridAccuracy(const GridColumns& grid) {
     PrintWorsts("fixed-n vector", kM, worst);
 }
 
-// ---------------------------------------------------------------------------
-// Identity: bitwise agreement with BoysSingle per element (the region
-// bodies are the single lane's verbatim at every m)
-// ---------------------------------------------------------------------------
+// --- Identity: bitwise agreement with BoysSingle per element, at every m ------
 
 template <double kM> void SweepSingleIdentity(const GridColumns& grid) {
     std::vector<double> out;
@@ -268,9 +256,7 @@ template <double kM> void SweepSingleIdentity(const GridColumns& grid) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// The tests
-// ---------------------------------------------------------------------------
+// --- The tests --------------------------------------------------------------
 
 TEST(BoysFixedNTest, GridSweepMatchesReferenceAtM1) {
     const GridColumns grid = BuildColumns(gReference);
@@ -281,10 +267,8 @@ TEST(BoysFixedNTest, GridSweepMatchesReferenceAtSampledMultipliers) {
     const GridColumns grid = BuildColumns(gReference);
     ForEachSampledMultiplier([&grid]<double kM>() {
         // if constexpr, not if: kM is a non-type template parameter, so this
-        // condition IS a compile-time constant. MSVC on arm64 says so out loud
-        // (C4127 "conditional expression is constant"), which /WX promotes to
-        // an error on that leg alone - x86_64 folds the same expression without
-        // complaining, so the plain `if` passed there and failed here.
+        // condition is a compile-time constant, and MSVC on arm64 warns (C4127),
+        // which /WX promotes to an error; x86_64 folds it without a word.
         if constexpr (kM != 1.0)
         {
             SweepGridAccuracy<kM>(grid);
@@ -348,10 +332,9 @@ TEST(BoysFixedNTest, StridedLayoutWritesOnlyStrideSlots) {
     }
 }
 
-// The alignment contract: natural double alignment is the only requirement;
-// x and out placed at 8/16/32/64-byte alignments all deliver the same
-// values (the over-aligned placements are what the AVX2 region lanes need,
-// so one buffer can serve both surfaces).
+// The alignment contract: natural double alignment is the only requirement; x and
+// out at 8/16/32/64-byte alignments all deliver the same values. The over-aligned
+// placements are what the AVX2 region lanes need, so one buffer serves both.
 TEST(BoysFixedNTest, AlignmentContractHoldsFromNaturalUp) {
     const GridColumns grid = BuildColumns(gReference);
     alignas(64) std::array<double, 512> xStore{};
@@ -388,16 +371,10 @@ TEST(BoysFixedNTest, AlignmentContractHoldsFromNaturalUp) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// The fit route on this entry
-// ---------------------------------------------------------------------------
-// A call naming a route other than the shipped one is answered by the
-// per-argument single entry, once per argument. That is the body this entry's
-// own m = 1 path already mirrors region for region, so the bit-identity the
-// suite asserts between this entry and BoysSingle is, on the route, exact by
-// construction rather than by inspection - and the route's values differ from
-// the shipped ones over the intervals its rows cover, which is what makes the
-// carriage a measurement and not a sentence about the surface.
+// --- The fit route on this entry --------------------------------------------
+// A call naming a route other than the shipped one is answered by the per-argument
+// single entry, once per argument, so the identity with BoysSingle is exact there;
+// the route's values differ from the shipped ones over the intervals its rows cover.
 
 namespace {
 

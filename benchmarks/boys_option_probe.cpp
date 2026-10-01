@@ -1,6 +1,5 @@
 // The option probe driver: measures this build's evaluation options on this
-// machine and prints what it found, including whether it found enough to name
-// one.
+// machine and prints what it found, verdict included.
 //
 // The exit status is 0 whether or not a default was named — a refusal is one of
 // this tool's results, not a failure of it — so a script that wants the verdict
@@ -32,8 +31,7 @@ std::string Timestamp() {
     return std::string(buffer.data());
 }
 
-// A comma-separated list of option names, appended to the set the caller is
-// narrowing the measurement to.
+// Appends a comma-separated list of option names to the caller's set.
 void AppendNames(const char* list, std::vector<std::string>& names) {
     const std::string text(list);
 

@@ -44,7 +44,7 @@ namespace {
 constexpr double kBoundaryThreshold = 5e-14;
 
 // The gate's measurement resolution (section [2b]): each pinned cell IS the largest
-// failing sample of a descending sweep at this step, so the step is part of the cell.
+// failing sample of a descending sweep at this step.
 constexpr double kMeasurementResolution = 1e-4;
 
 constexpr double kPi = 3.14159265358979323846;
@@ -198,12 +198,11 @@ double MeasureBoundaryFine(int kmax) {
 }
 
 // ---------------------------------------------------------------------------
-// The GATE's measurement (section [2b]): the FAILURE TOP - the largest failing sample
-// of a descending sweep from the sweep start at kMeasurementResolution. A failing
-// sample is a witness that the recursion leaves the window there, so the value is a
-// rigorous lower bound on the top of the failure set, bracketed above by the sampled
-// point one step higher, which passes. It is the same kind of measurement as the
-// recorded cells, so the comparison is like for like.
+// The GATE's measurement (section [2b]): the FAILURE TOP - the largest failing sample of a
+// descending sweep from the sweep start at kMeasurementResolution. A failing sample is a
+// witness that the recursion leaves the window there, so the value is a rigorous lower bound
+// on the top of the failure set, bracketed above by the sampled point one step higher, which
+// passes; it is the same kind of measurement as the recorded cells.
 // ---------------------------------------------------------------------------
 struct FailureTop {
     bool startPasses = false; // the sweep start is inside the 5e-14 window
@@ -343,12 +342,10 @@ const std::array<ThresholdRow, 4> kThresholdRows = {
 };
 
 // ---------------------------------------------------------------------------
-// [3] the 0.0001-step descending sweep over [0.8 x0, 1.2 x0] of a cell x0
-// (see the file header) - each cell IS the first failing sample of this
-// walk. The whole band is walked - not stopped at the first
-// failure - so the pass/fail alternations (the amplified seed-rounding error
-// oscillating through the 5e-14 line) are counted as evidence of the grid's
-// adequacy near the transition.
+// [3] the 0.0001-step descending sweep over [0.8 x0, 1.2 x0] of a cell x0 - each cell IS the
+// first failing sample of this walk. The whole band is walked, not stopped at the first
+// failure, so the pass/fail alternations (the amplified seed-rounding error oscillating
+// through the 5e-14 line) are counted as evidence of the grid's adequacy near the transition.
 // ---------------------------------------------------------------------------
 constexpr double kPostCheckStep = 0.0001;
 
@@ -627,9 +624,7 @@ bool PassesThresholdExtended(int kmax, double x) {
     return true;
 }
 
-// The [4] rows: the certified boundary of the extended band per tier. The certified
-// crossings must sit at or above the first failures, a conservative bound crossing no
-// lower than the true error does.
+// The [4] rows: the certified boundary of the extended band per tier.
 struct ExtendedRow {
     int kmax;
     double xEnvCertified; // the certified boundary (1-ulp-exp column)
@@ -651,9 +646,8 @@ struct ExtendedSweepResult {
     double lastPassX = 0.0; // the passing sample just above the first failure
 };
 
-// The 0.0001-step descending sweep over the extended-band path, from just below kX0
-// down to 0.8 * xEnvCertified. The whole range is walked, not stopped at the first
-// failure, so the alternations are counted as evidence of the oscillation.
+// The 0.0001-step descending sweep over the extended-band path, from just below kX0 down to
+// 0.8 * xEnvCertified. The whole range is walked, not stopped at the first failure.
 ExtendedSweepResult RunExtendedSeedSweep(const ExtendedRow& row) {
     const double xTop = kX0 - kPostCheckStep;
     const double xBottom = 0.8 * row.xEnvCertified;

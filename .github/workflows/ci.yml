@@ -514,6 +514,75 @@ jobs:
         if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_bound_transcripts.py --check
+      # The build-defaults seam offers a consumer five choices, and until this
+      # step nothing checked that the library reads them. Three of the five were
+      # read by nothing at all - the packing axis, the division form and the fit
+      # granularity compiled hard-coded literals - so a consumer who replaced
+      # the seam header got two choices honoured and three silently ignored, and
+      # the tuned fixture could not notice because it moved the scheme and
+      # copied the library's own values for the other four.
+      #
+      # This step reads the macro names off the seam file and requires each to be
+      # expanded somewhere in include/ or src/. It does not check that a reader
+      # is correct, or that the axis can be moved at all: those are compile-time
+      # facts, and a build that moves an axis and fails is the reading for them.
+      # It is the cheap half - a choice that stops being read at all, which is
+      # the half that goes quiet.
+      - name: Docs (the choices the build-defaults seam offers)
+        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_seam_macros.py --check
+      # The same seam read the expensive way, and the half the step above cannot
+      # supply: that a macro is expanded somewhere in include/ or src/ is a text
+      # fact, while whether the value it names is the value an entry that names no
+      # policy resolves to is a compile-time one, and a build that moves an axis is
+      # the only reading for it. tests/build_defaults_tuned.hpp is that build's
+      # header: it moves the evaluation scheme, the division form and the fit
+      # granularity off the shipped values, and tests/boys_backend_test.cpp pins
+      # all five against it, so an axis whose reader stops being reached resolves
+      # the shipped value and fails this leg rather than passing quietly. The three
+      # axes that once sat in the seam file named, documented and expanded by
+      # nothing are what this exists for: the fixture could not see them, because
+      # it copied the library's own values for the four it did not move.
+      #
+      # A second configure in a second build directory rather than a leg or a job
+      # of its own: the answer is a fact about the SOURCES - whether the library
+      # reads the choices it declares - and does not depend on this leg's compiler
+      # or build type, which is why the generator, generated-tables, packed-orders
+      # and docs steps above are scoped to the same one combination. It also
+      # leaves the leg list alone, and that list is what README's platform table is
+      # generated from (tools/gen_platform_table.py --check, run above).
+      #
+      # The configure is this leg's own with one flag added, so the two trees
+      # differ in exactly the header the seam resolves to and the same suite is
+      # the reading of the difference. The dispatch-assertion option is carried
+      # rather than dropped for that reason: a second tree registering one fewer
+      # test than the tree beside it would be a configuration nobody declared.
+      - name: Build defaults (tuned fixture built and tested)
+        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          cmake -S . -B build-defaults-tuned -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF -DBOYS_EXPECT_AVX2=1 \
+            -DBOYS_BUILD_DEFAULTS=tests/build_defaults_tuned.hpp
+          cmake --build build-defaults-tuned -j 4
+          ctest --test-dir build-defaults-tuned --output-on-failure
+      # The device surface is described by five hand-written lists and nothing
+      # reconciled them, so they disagreed: four rows of the option enumeration
+      # named entries that had never been declared in any commit - and because
+      # those rows were served at every rung, carried report rows with bounds and
+      # built = true, were launched by the measurement tool through a twin's
+      # launcher, and were claimed by the accuracy gate, four mechanisms consumed
+      # the description without one asking whether the entry was there.
+      #
+      # This step is the bijection between the two lists a caller meets: every row
+      # of the enumeration names a member the class declares, and every declared
+      # member is booked by a row. Both directions are defects - a row with no
+      # member is an option the library advertises and cannot deliver, and a
+      # member with no row is an entry no book describes or counts.
+      - name: Device (the options booked against the entries declared)
+        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_device_entry_bijection.py --check
       - name: Docs (zero-warning Doxygen gate)
         if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: cmake --build build --target boys-docs

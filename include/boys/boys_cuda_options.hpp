@@ -4,14 +4,13 @@
 /// The device option space: one row per option of the CUDA lane, with what a
 /// chooser needs to place it.
 ///
-/// A header of its own, reached from boys_cuda.hpp, because these rows are one
-/// table with two readers: the host surface that declares the entries
-/// (BoysCuda, in boys_cuda.hpp) and the device functions that implement them
-/// (boys_cuda_device.hpp). The second is compiled by nvcc, in a translation
-/// unit that has to stay free of the library's C++23 headers, so the rows live
-/// here rather than in the host header alone — which is what lets a probe's
-/// rows and an accuracy gate's claims be projections of one report instead of
-/// lists that drift from it.
+/// A header of its own, reached from boys_cuda.hpp, because these rows are one table
+/// with two readers: the host surface that declares the entries (BoysCuda, in
+/// boys_cuda.hpp) and the device functions that implement them
+/// (boys_cuda_device.hpp). The second is compiled by nvcc, in a translation unit that
+/// has to stay free of the library's C++23 headers, so the rows live here and a
+/// probe's rows and an accuracy gate's claims are projections of one report rather
+/// than lists that drift from it.
 
 #include "boys/accuracy.hpp"
 #include "boys/boys_device_tables.hpp"
@@ -79,49 +78,38 @@ enum class DeviceEntry : int {
     kAllOrdersF32Uniform, ///< BoysCuda::AllOrdersF32Uniform at EvalScheme::kSplitClenshaw, launched
     kAllOrdersF32UniformHorner, ///< BoysCuda::AllOrdersF32UniformHorner at kHorner, launched
 
-    /// The float lane's rational route, which the two rows below carry on the
-    /// shipped partition and the two after them on the narrow one — the same
-    /// pair of partitions the double lane's route is carried on, and the same
-    /// reason for two names per partition: the route's pair is stored in
-    /// monomial form and read by Horner, so neither scheme name a caller may
-    /// use selects a second arithmetic and the two rows of a partition run one
-    /// kernel.
+    /// The float lane's rational route, on the shipped partition here and the narrow
+    /// one below — the same pair of partitions the double lane's route is carried on,
+    /// and the same reason for two names per partition: the route's pair is stored in
+    /// monomial form and read by Horner, so neither scheme name selects a second
+    /// arithmetic and the two rows of a partition run one kernel.
     kAllOrdersF32Rat, ///< BoysCuda::AllOrdersF32Rat at EvalScheme::kSplitClenshaw, launched
     kAllOrdersF32RatHorner, ///< BoysCuda::AllOrdersF32RatHorner at kHorner, launched
     kAllOrdersF32NarrowRat, ///< BoysCuda::AllOrdersF32NarrowRat at kSplitClenshaw, launched
     kAllOrdersF32NarrowRatHorner, ///< BoysCuda::AllOrdersF32NarrowRatHorner at kHorner, launched
-    /// The rational route over the uniform grid: the same family and the same
-    /// two names per pair as the rows above, over the grid's intervals instead
-    /// of a derived partition's pieces. The pair is stored in the monomial form
-    /// the family is stored in everywhere, so neither scheme name reaches a
-    /// second arithmetic and the two rows run one kernel.
+    /// The rational route over the uniform grid: the same family and the same two
+    /// names per pair as the rows above, over the grid's intervals instead of a
+    /// derived partition's pieces, so neither scheme name reaches a second arithmetic.
     kAllOrdersF32UniformRat, ///< BoysCuda::AllOrdersF32UniformRat at kSplitClenshaw, launched
     kAllOrdersF32UniformRatHorner, ///< BoysCuda::AllOrdersF32UniformRatHorner at kHorner, launched
 
-    /// The float lane's other packing axis: the counterpart of each row above
-    /// that carries a packing axis's choice, over the same stored table and at
-    /// the same rungs.
+    /// The float lane's other packing axis: the counterpart of each row above that
+    /// carries it, over the same stored table and at the same rungs.
     ///
-    /// The axis is a reading of region A and not a second fit: every order's own
-    /// piece is located and its own fit summed, where the per-argument shape
-    /// seeds the top order's fit and brings the lower orders back down a
-    /// recurrence. The double lane's rows of the axis are the shape these
-    /// mirror, one per partition and route, and the two agree row for row: the
-    /// shipped partition's rung is that lane's own cut and its orders row carries
-    /// the two forms a rung has, while the narrow partition's and the rational
-    /// route's orders rows serve the reference multiplier alone — a rung of
-    /// theirs would read a cut this lane does not hold, which is the statement
-    /// their per-argument siblings already make.
+    /// The axis is a reading of region A and not a second fit: every order's own piece
+    /// is located and its own fit summed, where the per-argument shape seeds the top
+    /// order's fit and brings the lower orders back down a recurrence. The double
+    /// lane's rows of the axis are the shape these mirror, one per partition and route,
+    /// and the two agree row for row: the shipped partition's rung is that lane's own
+    /// cut and its orders row carries the two forms a rung has, as every orders row
+    /// here does: each answers at a rung out of this lane's own cut of the table it
+    /// sums, the narrow partition's and the rational route's included.
     ///
     /// The shipped partition's row is one row for both scheme names, exactly as
-    /// \c kAllOrdersF32 is: this lane stores that partition once, in the
-    /// Chebyshev basis, and the scheme axis names which of the lane's two stored
-    /// forms a body sums. The uniform grid's are its per-argument rows'
-    /// kernels, for the reason those rows state — the grid's cells carry their
-    /// own degree and block start, so the route's packing axis has one member.
-    /// That holds for the grid's rational member as well: its rows are stored
-    /// per interval at the interval's own pair and stored count, so this
-    /// route's packing axis has one member too.
+    /// \c kAllOrdersF32 is. The uniform grid's are its per-argument rows' kernels: the
+    /// grid's cells carry their own degree and block start, so the route's packing axis
+    /// has one member, and the grid's rational member is the same shape — stored per
+    /// interval at the interval's own pair and stored count.
     kAllOrdersF32Orders, ///< BoysCuda::AllOrdersF32Orders, launched
     kAllOrdersF32NarrowOrders, ///< BoysCuda::AllOrdersF32NarrowOrders, launched
     kAllOrdersF32NarrowOrdersMono, ///< BoysCuda::AllOrdersF32NarrowOrdersMono, launched
@@ -191,10 +179,9 @@ enum class DeviceEntry : int {
 /// How a caller reaches an option: through a call of this library's that
 /// queues a kernel, or through a device function a caller's own kernel calls.
 ///
-/// The two are not comparable as costs — a launched row's figure includes the
-/// launch and a device-callable one's is measured by subtraction against the
-/// same kernel with the call removed — so a cost report names which one
-/// produced each row and never ranks across them.
+/// The two are not comparable as costs — a launched row's figure includes the launch
+/// and a device-callable one's is measured by subtraction against the same kernel with
+/// the call removed — so a cost report never ranks across them.
 ///
 /// \ingroup boys
 enum class DeviceOptionGroup : int {
@@ -205,23 +192,22 @@ enum class DeviceOptionGroup : int {
 /// The precision an option computes in: the choice a caller has already made
 /// from the accuracy their calculation needs.
 ///
-/// A bound never trades one of these for another — a row of a looser bound is a
-/// faster way to compute the precision it names, not a different precision —
-/// and the two half formats share one member, because both round a 32-bit
-/// engine's result to their format at the boundary instead of computing in it.
-/// That is the CPU lane's own reading of the same axis, whose \c Precision::kFp16
-/// is "the fp16 and bfloat16 entries", so the member means one thing on both
-/// lanes: the half lane, whose arithmetic is the float lane's and whose figure
-/// carries a term of the format it stores.
+/// A bound never trades one of these for another — a row of a looser bound is a faster
+/// way to compute the precision it names, not a different precision — and the two half
+/// formats share one member, because both round a 32-bit engine's result to their
+/// format at the boundary instead of computing in it. That is the CPU lane's own
+/// reading of the same axis, whose \c Precision::kFp16 is "the fp16 and bfloat16
+/// entries", so the member means one thing on both lanes: the half lane, whose
+/// arithmetic is the float lane's and whose figure carries a term of the format it
+/// stores.
 ///
-/// **This build serves that lane's fp16 entries and not its bfloat16 ones.** A
-/// bfloat16 entry of the CPU lane is the same float engine's value stored into
-/// bf16, so a bf16 row here would be a row over this lane's existing tables
-/// rather than new arithmetic — but no such row exists yet. Closing it is a
-/// piece of its own: the launched entries at every rung, their device-callable
-/// siblings, and the gate's half-precision block for the second format. Until
-/// that lands this member is served for fp16 alone, which is unbuilt work and
-/// not a property of the lane.
+/// **This build serves that lane's fp16 entries and not its bfloat16 ones.** A bf16
+/// row here would be a row over this lane's existing tables rather than new arithmetic
+/// — the same float engine's value stored into bf16 — but no such row exists yet.
+/// Closing it is a piece of its own: the launched entries at every rung, their
+/// device-callable siblings, and the gate's half-precision block for the second
+/// format. Until that lands this member is served for fp16 alone, which is unbuilt
+/// work and not a property of the lane.
 ///
 /// \ingroup boys
 enum class DeviceOptionPrecision : int {
@@ -277,25 +263,23 @@ enum class DeviceOptionAxis : int {
 /// The accuracy multipliers the CUDA lane serves, ascending: the values of m a
 /// call of this lane may name.
 ///
-/// The lane's relaxed degree tables are cut per multiplier, so a rung is a
-/// value of the accuracy axis and the lane's set of them is what its entries
-/// answer at. It is the union of two sets: the option space's rungs — the seven
-/// multipliers the CPU tier lane's AccuracyTier names, which the accuracy
-/// contract is published over and which the CPU lanes serve at run time — and
-/// the lane's own six, the finer-at-the-low-end sample set the device
-/// arithmetic was measured at. The two overlap at m = 1 alone, the default and
-/// every lane's full-accuracy rung.
+/// The lane's relaxed degree tables are cut per multiplier, so a rung is a value of
+/// the accuracy axis and the lane's set of them is what its entries answer at. It is
+/// the union of two sets: the option space's rungs — the seven multipliers the CPU
+/// tier lane's AccuracyTier names, which the accuracy contract is published over — and
+/// the lane's own six, the finer-at-the-low-end sample set the device arithmetic was
+/// measured at. The two overlap at m = 1 alone, the default and every lane's
+/// full-accuracy rung.
 ///
-/// The table is the one the library reads. The accessors that answer for the
-/// device lane consult it to decide whether a combination is carried, and the
-/// entries of the lane are instantiated at each of its values, so the set the
-/// API answers for and the set the kernels are compiled at are one set. A rung
-/// added to either belongs here in the same change.
+/// The table is the one the library reads: the accessors that answer for the device
+/// lane consult it, and the entries of the lane are instantiated at each of its
+/// values, so the set the API answers for and the set the kernels are compiled at are
+/// one set. A rung added to either belongs here in the same change.
 ///
-/// A caller reaches every one of them. The batch entries take the rung as a
-/// template argument and are instantiated at each of these values; the
-/// device-callable entries take it as a run-time argument and read it against
-/// the resident rung, which is one of these at a time (BoysCuda::DeviceTables).
+/// A caller reaches every one of them: the batch entries take the rung as a template
+/// argument and are instantiated at each of these values, and the device-callable
+/// entries take it as a run-time argument and read it against the resident rung
+/// (BoysCuda::DeviceTables).
 ///
 /// \ingroup boys
 inline constexpr std::array<double, 12> kDeviceRungs = {
@@ -305,19 +289,17 @@ inline constexpr std::array<double, 12> kDeviceRungs = {
 
 /// Where a multiplier sits in \c kDeviceRungs, or -1 where it is not one.
 ///
-/// The position and not a pointer, because the position is what the lane's
-/// run-time entries dispatch on: the set the accessors here answer for, the arms
-/// an \c AtRung entry switches over and the multipliers its launchers are
-/// instantiated at are then one table read three ways rather than three lists
-/// that have to agree. The comparison is exact and the rungs are all exactly
-/// representable, which is the same match every entry of this lane makes between
-/// the multiplier a call names and the one its degree tables were cut for.
+/// The position and not a pointer, because the position is what the lane's run-time
+/// entries dispatch on: the set the accessors here answer for, the arms an \c AtRung
+/// entry switches over and the multipliers its launchers are instantiated at are then
+/// one table read three ways rather than three lists that have to agree. The comparison
+/// is exact and the rungs are all exactly representable, the same match every entry of
+/// this lane makes between the multiplier a call names and the one its degree tables
+/// were cut for.
 ///
-/// A value the table does not hold has no position and no rung. That is what a
-/// caller is told at a multiplier the lane cannot be resident for — a rung of it
-/// is one of the twelve or it does not exist, and a call that answered at
-/// another rung than the one it named would be the one outcome the rung argument
-/// is for ruling out.
+/// A value the table does not hold has no position and no rung: a rung of this lane is
+/// one of the twelve or it does not exist, and a call that answered at another rung than
+/// the one it named would be the one outcome the rung argument is for ruling out.
 ///
 /// \param multiplier the accuracy multiplier m a call names
 ///
@@ -341,10 +323,10 @@ constexpr int DeviceRungIndex(double multiplier) noexcept {
 /// \c kDeviceRungs.
 ///
 /// The entry names of the lane are instantiated at each of those values and its
-/// run-time rung argument is matched against them, so a caller that reads this
-/// and a call that dispatches read one table. A value that is not a rung is not
-/// served by any entry: the lane answers no arithmetic at it, so a caller is
-/// told so rather than handed another rung's tables.
+/// run-time rung argument is matched against them, so a caller that reads this and a
+/// call that dispatches read one table. A value that is not a rung is served by no
+/// entry: the lane answers no arithmetic at it, so a caller is told so rather than
+/// handed another rung's tables.
 ///
 /// \param multiplier the accuracy multiplier m a call names
 ///
@@ -367,12 +349,11 @@ inline constexpr std::size_t kDeviceRungCount = kDeviceRungs.size();
 /// A set of rungs of \c kDeviceRungs, one bit each: bit i is the rung
 /// \c kDeviceRungs[i].
 ///
-/// A mask and not a list per row, because the axis is one of twelve and a report
-/// states it for every row: a row that carried the rungs as names would carry a
-/// second spelling of the table beside it, and a row that carried none left a
-/// reader to infer coverage from a field that does not have it. A report prints
-/// the count a mask holds and names the rungs only of a row that holds less than
-/// the whole of it.
+/// A mask and not a list per row, because the axis is one of twelve and a report prints
+/// it for every row: a row that carried the rungs as names would carry a second
+/// spelling of the table beside it, and a row that carried none left a reader to infer
+/// coverage from a field that does not have it. A report prints the count a mask holds
+/// and names the rungs only of a row that holds less than the whole of it.
 ///
 /// \ingroup boys
 using DeviceRungMask = std::uint32_t;
@@ -411,63 +392,46 @@ constexpr DeviceRungMask DeviceRungBit(double multiplier) noexcept {
 
 /// Whether an entry of this lane answers at a multiplier.
 ///
-/// **Every entry of this lane does, at every rung of \c kDeviceRungs**, and this
-/// is \c DeviceRungServed for all of them. There is no exception left and the
-/// function keeps its per-entry form only because that is where the reason for
-/// each family is stated: every stored table this lane carries has a cut to make
-/// per rung, and this lane derives, uploads and reads every one of them — the
-/// shipped partition's Chebyshev and rational fits and the float lane's own
-/// narrow pieces in both bases and its rational pairs on both partitions. The
-/// carriage's refusals (a route over a partition the family has no member of) are
-/// the option space's and are made in \c CarriesDevice (boys.cpp), not here.
+/// **Every entry of this lane does, at every rung of \c kDeviceRungs**, and this is
+/// \c DeviceRungServed for all of them. The per-entry form is kept because this is
+/// where the reason for each family is stated: every stored table this lane carries
+/// has a cut to make per rung and this lane derives, uploads and reads every one of
+/// them. The carriage's refusals (a route over a partition the family has no member
+/// of) are the option space's and are made in \c CarriesDevice (boys.cpp), not here.
 ///
-/// The uniform route's six entries are not an exception to that and are the one
-/// family with no cut to make: the route's table is stored at one degree for
-/// every order and every interval, that degree is admissible at every multiplier
-/// (the criterion's Delta(deg) is zero, so the full degree always is — see
-/// boys_effective_degrees.hpp), and every rung is therefore served by the
-/// route's own coefficients.
-/// The route's rows are one table and not six exceptions — the two members of
-/// the scheme axis and the two of the packing axis are rows of the same table,
-/// and the float lane's two are rows of that lane's own grid — so a rung the
-/// route serves is one every row of it serves, and a call there is answered by
-/// the route's own coefficients and by nothing else. What a rung does not buy
-/// on this route is less work: there is no shorter fit to read, and the cost of
-/// a call is the route's cost at every multiplier. That is a property of a
-/// route whose table has no cut to make, and the row's bound is what states the
-/// accuracy a rung of it delivers.
+/// The uniform route's rows are the one family with no cut to make: the route's table
+/// is stored at one degree for every order and every interval, and that degree is
+/// admissible at every multiplier (the criterion's Delta(deg) is zero, so the full
+/// degree always is — see boys_effective_degrees.hpp). The route's rows are one table,
+/// so a rung the route serves is one every row of it serves, and a call there is
+/// answered by the route's own coefficients and by nothing else. What a rung does not
+/// buy on this route is less work: there is no shorter fit to read.
 ///
-/// The float lane's narrow partition is a table with a cut to make per rung,
-/// and this lane makes it — in both of the forms the partition is stored in:
-/// the rung's cut is the float lane's own region-B degrees in the basis the row
-/// sums (FillNarrowF32Lane, FillNarrowMonoF32Lane) beside the double lane's
-/// region-A cut, and this lane derives, uploads and reads both. Its four rows
-/// are therefore served at every rung.
+/// The float lane's narrow partition is a table with a cut to make per rung, and this
+/// lane makes it in both of the forms the partition is stored in: the rung's cut is
+/// that lane's own region-B degrees in the basis the row sums (FillNarrowF32Lane,
+/// FillNarrowMonoF32Lane) beside the double lane's region-A cut. Its four rows are
+/// served at every rung.
 ///
-/// The float lane's rational route is the same shape one family over: its
-/// region-B pair is that lane's own fit on each partition, cut by the same
-/// criterion over the coefficients the row sums
-/// (RationalRegionBF32Degrees, NarrowRationalRegionBF32Degrees,
-/// FillRatF32Lane and FillNarrowRatF32Lane), and region A's seed is the double
-/// lane's pair at the same rung's cut — the float lanes seed region A from the
-/// double lane's pair on every route. Its eight rows are therefore served at
-/// every rung too, on both packing axes and under both scheme names.
+/// The float lane's rational route is the same shape one family over: its region-B
+/// pair is that lane's own fit on each partition, cut by the same criterion over the
+/// coefficients the row sums (RationalRegionBF32Degrees, NarrowRationalRegionBF32Degrees,
+/// FillRatF32Lane and FillNarrowRatF32Lane), and region A's seed is the double lane's
+/// pair at the same rung's cut — the float lanes seed region A from the double lane's
+/// pair on every route. Its eight rows are served at every rung too.
 ///
 /// The double lane's members — the shipped and the narrow partitions, the level
-/// ladder and the per-order reading, both schemes and both routes — keep their
-/// twelve rungs for the same reason: each is a stored table whose rung cut is
-/// derived per piece and uploaded.
+/// ladder and the per-order reading, both schemes and both routes — keep their twelve
+/// rungs for the same reason: each is a stored table whose rung cut is derived per
+/// piece and uploaded.
 ///
-/// The name is a property of the entry and not of the caller, which is why it
-/// is here beside the rows: a probe that decided it for itself, and an entry
-/// that decided it for itself, would be two answers to one question.
+/// The name is a property of the entry and not of the caller: a probe that decided it
+/// for itself, and an entry that decided it for itself, would be two answers to one
+/// question.
 ///
-/// Every enumerator of \c DeviceEntry is named below, and the switch has no
-/// default arm: an option added to the enumeration without a rung axis stated
-/// here is a compile error rather than an option silently reported at every
-/// rung. That is the one link this header can make on its own — the entries
-/// themselves are one TU away and are tied to this list by the entry their own
-/// refusal is written for, which they state by name.
+/// Every enumerator of \c DeviceEntry is named below, and the switch has no default
+/// arm: an option added to the enumeration without a rung axis stated here is a
+/// compile error rather than an option silently reported at every rung.
 ///
 /// \param entry      the entry a call would name
 /// \param multiplier the accuracy multiplier m
@@ -478,14 +442,12 @@ constexpr DeviceRungMask DeviceRungBit(double multiplier) noexcept {
 constexpr bool DeviceEntryServedAtRung(DeviceEntry entry, double multiplier) noexcept {
     switch (entry)
     {
-        // The float lane's fit route, whose rung cut this lane derives, uploads
-        // and reads: the region-B pair is that lane's own fit
-        // (RationalRegionBF32Degrees, NarrowRationalRegionBF32Degrees), cut by
-        // the same criterion over the coefficients the row sums, and region A's
-        // seed is the double lane's pair at the rung's cut. Its eight rows are
-        // the route's two names on the two partitions and the two packing axes,
-        // and both names of a pair reach one kernel, so the axis is the table's
-        // and all eight are served wherever it is.
+        // The float lane's fit route, whose rung cut this lane derives, uploads and
+        // reads: region B's pair is that lane's own fit (RationalRegionBF32Degrees,
+        // NarrowRationalRegionBF32Degrees), and region A's seed is the double lane's
+        // pair at the rung's cut. Its eight rows are the two names on the two
+        // partitions and the two packing axes, and both names of a pair reach one
+        // kernel.
         case DeviceEntry::kAllOrdersF32Rat:
         case DeviceEntry::kAllOrdersF32RatHorner:
         case DeviceEntry::kAllOrdersF32NarrowRat:
@@ -495,22 +457,17 @@ constexpr bool DeviceEntryServedAtRung(DeviceEntry entry, double multiplier) noe
         case DeviceEntry::kAllOrdersF32NarrowOrdersRat:
         case DeviceEntry::kAllOrdersF32NarrowOrdersRatHorner:
 
-        // The uniform route's twelve rows, which are no exception: the route's
-        // tables have no cut to make, so every rung's own arithmetic *is* the
-        // route's, and every rung of either is served. The reason is above, per
-        // route, and it is why these fall through to the arm below. The float
-        // lane's two orders rows of that route are the same table and the same
-        // reason.
+        // The uniform route's rows, which are no exception: the route's tables have no
+        // cut to make, so every rung's own arithmetic *is* the route's. The reason is
+        // above, per route, and it is why these fall through to the arm below.
         //
-        // The grid's RATIONAL member is here and not with the rational rows
-        // above, and that is the one place this switch does not group by route
-        // alone: the rows above are refused at a rung because the piecewise
-        // rational route derives, uploads and reads a per-rung cut, while this
-        // one has no rung axis at all - it stores one pair per interval and no
-        // per-order effective-degree column, which the host row states as well
-        // (src/boys.cpp, where kUniformRatReadDeg is folded into the one
-        // regionADeg of the uniform row). So a rung of it is the route's own
-        // arithmetic, exactly as a rung of the grid's Chebyshev member is.
+        // The grid's RATIONAL member is here and not with the rational rows above:
+        // those are answered at a rung by the cut the piecewise rational route
+        // derives, uploads and reads, while this one stores one pair per interval
+        // and no per-order effective-degree column, which the host row states as well
+        // (src/boys.cpp, where kUniformRatReadDeg is folded into the one regionADeg of
+        // the uniform row). So a rung of it is the route's own arithmetic, exactly as a
+        // rung of the grid's Chebyshev member is.
         case DeviceEntry::kAllOrdersF64Uniform:
         case DeviceEntry::kAllOrdersF64UniformHorner:
         case DeviceEntry::kAllOrdersF64OrdersUniform:
@@ -528,11 +485,9 @@ constexpr bool DeviceEntryServedAtRung(DeviceEntry entry, double multiplier) noe
         case DeviceEntry::kAllOrdersF32OrdersUniformRat:
         case DeviceEntry::kAllOrdersF32OrdersUniformRatHorner:
 
-        // Everything else of the surface, which is the lane's rungs and no fewer
-        // of them, and — at this revision — everything there is: every arm above
-        // falls through to here, because every stored table this lane carries has
-        // a cut to make and this lane makes it. The single-order entries and the
-        // three batch shapes.
+        // Everything else of the surface: the lane's rungs and no fewer of them, and —
+        // at this revision — everything there is, because every arm above falls through
+        // to here. The single-order entries and the three batch shapes.
         case DeviceEntry::kSingleF64:
         case DeviceEntry::kSingleF32:
         case DeviceEntry::kSingleF32Fast:
@@ -646,13 +601,11 @@ constexpr bool DeviceEntryServedAtRung(DeviceEntry entry, double multiplier) noe
         case DeviceEntry::kDeviceAllOrdersF32UniformRatHorner:
             return DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32UniformRatHorner,
                                            multiplier);
-        // The sentinel one past the last row this report defines, and not a row
-        // a call can name, so no rung axis is owed for it. It is named here
-        // rather than left to a default arm: a default would swallow the next
-        // enumerator as quietly as it swallows this one, and the check below
-        // exists so that a row with no stated rung axis cannot compile.
-        // gcc's -Wswitch wants every enumerator named whether or not a default
-        // is present, which is how this came to light; MSVC's does not.
+        // The sentinel one past the last row this report defines, and not a row a call
+        // can name, so no rung axis is owed for it. It is named rather than left to a
+        // default arm: a default would swallow the next enumerator as quietly as it
+        // swallows this one. gcc's -Wswitch wants every enumerator named whether or not
+        // a default is present; MSVC's does not.
         case DeviceEntry::kCount:
             break;
     }
@@ -700,13 +653,12 @@ static_assert(DeviceEntriesAllStateTheirRungs(),
 /// The rungs a row of this space is served at, as a mask: the entry's own rungs
 /// where the build serves the option, and none where it does not.
 ///
-/// Derived and not listed. The rows of the space are initializers that name
-/// their entry and whether the build serves it, and everything else about a
-/// row's rungs follows from those two: a row whose entry answers at one rung is
-/// served at that one, and a row no build serves is served at no rung, whatever
-/// its entry's axis states. A row that carried its own copy of that answer would
-/// be a second statement of a fact this header already holds, and the two could
-/// come apart without anything failing.
+/// Derived and not listed. The rows of the space name their entry and whether the
+/// build serves it, and everything else about a row's rungs follows from those two: a
+/// row whose entry answers at one rung is served at that one, and a row no build
+/// serves is served at no rung, whatever its entry's axis states. A row that carried
+/// its own copy of that answer would be a second statement of a fact this header
+/// already holds.
 ///
 /// \param entry the row's entry
 /// \param built whether this build serves the option
@@ -736,21 +688,20 @@ constexpr DeviceRungMask DeviceServedRungMask(DeviceEntry entry, bool built) noe
 /// The partition member an entry reads, as the name a report prints, or the
 /// stated name of an entry that reads no member at all.
 ///
-/// The space carries the partition axis for the rows that take it but not yet a
-/// field for its member, so the entries that read a partition are told apart
-/// here — once, beside the rows they are rows of — rather than by each reader of
-/// the space in turn. The member is a property of the *entry* and not of the
-/// axis a row states: the narrow partition's pieces are read by the rows whose
-/// axis is the partition, by the rows whose axis is the scheme inside it and by
-/// the rows whose axis is the route inside it, and all three read that one
-/// partition. The same holds of the grid.
+/// The space carries the partition axis for the rows that take it but not yet a field
+/// for its member, so the entries that read a partition are told apart here — once,
+/// beside the rows they are rows of. The member is a property of the *entry* and not
+/// of the axis a row states: the narrow partition's pieces are read by the rows whose
+/// axis is the partition, by the rows whose axis is the scheme inside it and by the
+/// rows whose axis is the route inside it, and all three read that one partition. The
+/// same holds of the grid.
 ///
-/// The last arm is not a member and says so. An entry whose row carries no
-/// partition axis — the single entries, the shipped partition's own ladders, the
-/// all-N and each-order shapes, and the device-callable generics, which read
-/// whatever partition their handle's tables name — reads no partition this
-/// function could name, and answering one of the two members for it would state
-/// a partition the entry does not read.
+/// The last arm is not a member and says so: an entry whose row carries no partition
+/// axis — the single entries, the shipped partition's own ladders, the all-N and
+/// each-order shapes, and the device-callable generics, which read whatever partition
+/// their handle's tables name — reads no partition this function could name, and
+/// answering one of the two members for it would state a partition the entry does not
+/// read.
 ///
 /// \param entry the entry of a row of this space
 ///
@@ -829,13 +780,12 @@ constexpr const char* DevicePartitionName(DeviceEntry entry) noexcept {
 /// One row of the device option space: an option this surface offers, with
 /// what a chooser needs to place it.
 ///
-/// The rows are the space and not a list of the interesting ones: an entry that
-/// exists but that a given build cannot serve is carried here with \c built
-/// false and the reason, so its absence from a report is a stated refusal
-/// rather than an omission. The build-time case this build has is the fp16
-/// seam; whether a *device* is present is a run-time fact about a host and not
-/// a property of the option, so a host report states that beside its figures
-/// rather than here.
+/// The rows are the space and not a list of the interesting ones: an entry that exists
+/// but that a given build cannot serve is carried here with \c built false and the
+/// reason, so its absence from a report is a stated refusal rather than an omission.
+/// The build-time case this build has is the fp16 seam; whether a *device* is present
+/// is a run-time fact about a host and not a property of the option, so a host report
+/// states that beside its figures rather than here.
 ///
 /// \ingroup boys
 struct DeviceOptionInfo {
@@ -867,59 +817,50 @@ struct DeviceOptionInfo {
     /// The term of this row's documented bound that does not scale with the
     /// multiplier, as a figure.
     ///
-    /// \c boundForm is the same statement in words and \c bound is the figure at
-    /// m = 1, so the three agree: the bound a row documents at a rung m is
-    /// \c m * (bound - boundFixed) + boundFixed, with the term a returned value
-    /// decides dropped exactly as \c bound drops it. Zero for every form in this
-    /// table but the fast region-B exponential's, whose form adds a seed
-    /// contribution the truncation does not scale; a lane that documents another
-    /// such term states it here.
+    /// \c boundForm is the same statement in words and \c bound is the figure at m = 1,
+    /// so the three agree: the bound a row documents at a rung m is
+    /// \c m * (bound - boundFixed) + boundFixed, with the term a returned value decides
+    /// dropped exactly as \c bound drops it. Zero for every form in this table but the
+    /// fast region-B exponential's, whose form adds a seed contribution the truncation
+    /// does not scale; a lane that documents another such term states it here.
     double boundFixed = 0.0;
 
     /// The rungs of \c kDeviceRungs this row is served at in this build, as a
     /// mask over them: bit i is the rung \c kDeviceRungs[i], \c kEveryDeviceRung
     /// is the whole axis and zero is no rung at all.
     ///
-    /// The rung axis is the one a row carries into every class of the report,
-    /// and a row that stated it nowhere was read as a row of every class: this
-    /// row's own contract refuses eleven of the twelve rungs, and a report that
-    /// printed the option as served without them said a caller could ask for
-    /// arithmetic the entry does not answer with. A row states the set here, and
-    /// a reader that needs the rungs themselves has \c kDeviceRungs in the same
-    /// order the bits are in.
+    /// The rung axis is the one a row carries into every class of the report, and a row
+    /// that stated it nowhere was read as a row of every class: a report that printed an
+    /// option as served without it said a caller could ask for arithmetic the entry does
+    /// not answer with. A reader that needs the rungs themselves has \c kDeviceRungs in
+    /// the same order the bits are in.
     ///
-    /// Read from the row's own entry and from whether this build serves it,
-    /// never listed beside them: \c DeviceEntryServedAtRung is the one statement
-    /// of which rungs an entry answers at, and a row carrying a second copy of
-    /// it would be a row that could disagree with the library it reports.
+    /// Read from the row's own entry and from whether this build serves it, never listed
+    /// beside them: \c DeviceEntryServedAtRung is the one statement of which rungs an
+    /// entry answers at, and a row carrying a second copy of it could disagree with the
+    /// library it reports.
     ///
-    /// Zero where this build does not serve the row, whatever its entry's axis
-    /// states: a row no build serves is served at no rung, and a report that
-    /// counted its cells as served would be counting arithmetic nothing here can
-    /// run. The build's own refusal is stated beside this, in \c built and
-    /// \c refusedBecause, so the two are read together and neither is inferred
-    /// from the other.
+    /// Zero where this build does not serve the row, whatever its entry's axis states, so
+    /// a report never counts cells as served for arithmetic nothing here can run. The
+    /// build's own refusal is stated beside this, in \c built and \c refusedBecause.
     DeviceRungMask servedRungs = DeviceServedRungMask(entry, built);
 };
 
 /// The device option space this revision defines, one row per option, read from
 /// the entries and the bounds in this header rather than listed beside them.
 ///
-/// A report that enumerates *this* is a projection of the library and cannot
-/// fall behind it: a precision, a shape or an axis member added to the surface
-/// appears here as a row, and a row no build-time seam serves is carried with
-/// the reason. What a chooser gets from a row is the entry, the precision it
-/// computes in, the question it answers, the axis it varies where it has one,
-/// the degree tables it reads, and the bound it is documented at — the same
-/// facts the accuracy gate certifies the entry at, so the chooser and the
-/// certifier read one table.
+/// A report that enumerates *this* is a projection of the library and cannot fall
+/// behind it: a precision, a shape or an axis member added to the surface appears here
+/// as a row, and a row no build-time seam serves is carried with the reason. What a
+/// chooser gets from a row is the entry, the precision it computes in, the question it
+/// answers, the axis it varies where it has one, the degree tables it reads, and the
+/// bound it is documented at — the same facts the accuracy gate certifies the entry at.
 ///
-/// The bound is the figure at the full-accuracy multiplier, over the whole
-/// argument range the entry serves; \c boundForm states the shape the
-/// documentation gives it, in which the multiplier m enters. Where that form
-/// carries a term a value decides — the fp16 rows' half ULPs — \c bound is the
-/// figure with that term dropped, so a column of costs compares figures of one
-/// kind, and the form beside it says what the dropped term is.
+/// The bound is the figure at the full-accuracy multiplier, over the whole argument
+/// range the entry serves; \c boundForm states the shape the documentation gives it, in
+/// which the multiplier m enters. Where that form carries a term a value decides — the
+/// fp16 rows' half ULPs — \c bound is the figure with that term dropped, so a column of
+/// costs compares figures of one kind.
 ///
 /// \returns the rows, in a fixed order: the enumerator order of DeviceEntry.
 ///

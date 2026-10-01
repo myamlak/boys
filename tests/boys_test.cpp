@@ -23,9 +23,8 @@ struct ReferenceRow {
     double value;
 };
 
-// The committed reference grid (tools/gen_boys_coefficients.py, 45-digit
-// mpmath values of F_n at the double in each row's x column). Definitive
-// accuracy gate for the kernel.
+// The committed reference grid (tools/gen_boys_coefficients.py, 45-digit mpmath
+// values of F_n at the double in each row's x column): the kernel's accuracy gate.
 std::vector<ReferenceRow> LoadReference() {
     const std::string path = std::string(BoysDataDir) + "/boys_reference.csv";
     std::ifstream file(path);
@@ -51,9 +50,8 @@ std::vector<ReferenceRow> LoadReference() {
         row.x = std::strtod(cell.c_str(), nullptr);
         std::getline(ss, cell, ',');
         row.value = std::strtod(cell.c_str(), nullptr);
-        // The committed grid ends at x = 100, beyond which region C's asymptotic
-        // form covers every F_n; the filter guards against a future extension past
-        // the series' convergence limit (~x = 250 in the generator).
+        // The committed grid ends at x = 100, beyond which region C's asymptotic form
+        // covers every F_n; the filter guards an extension past the series' limit (~x = 250).
         if (row.x <= 100.0)
         {
             rows.push_back(row);
@@ -68,17 +66,15 @@ std::vector<ReferenceRow> LoadReference() {
 constexpr double kDoubleTolerance = 5.5e-14;
 constexpr float kFloatTolerance = 1.5e-7f;
 
-// Per-region worst bounds for the double single lane, each matching its measured
-// worst (in parentheses) within one significant digit: region A <= 1e-15
-// (6.7e-16), region B <= 3e-14 (2.9e-14), region C shares the overall 5.5e-14
-// (5.0e-14 at (32, x1)).
+// Per-region worst bounds for the double single lane, each within one significant
+// digit of its measured worst: region A <= 1e-15 (6.7e-16), region B <= 3e-14
+// (2.9e-14), region C the overall 5.5e-14 (5.0e-14 at (32, x1)).
 constexpr double kRegionATolerance = 1e-15;
 constexpr double kRegionBTolerance = 3e-14;
 
-// Region bucketing: A is x < kExtendedBX0, E is the extended band
-// [kExtendedBX0, kX0) (served by the per-range F0 seed + upward recursion, per
-// kmax tier), B is [kX0, kX1), C is x >= kX1. The boundaries are the shipped
-// kernel's own (boys_coefficients.hpp).
+// Region bucketing: A is x < kExtendedBX0, E the extended band [kExtendedBX0, kX0)
+// (per-range F0 seed + upward recursion, per kmax tier), B is [kX0, kX1), C is
+// x >= kX1. The boundaries are the shipped kernel's own (boys_coefficients.hpp).
 enum class BoysRegion : std::uint8_t { A, B, C, E };
 
 BoysRegion RegionOf(double x) {
@@ -107,7 +103,6 @@ struct RegionWorsts {
     double e = 0.0;
 
     // The candidate error and its x - the per-region max accumulator's pair.
-    //
     // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     void Update(double error, double x) {
         switch (RegionOf(x))
@@ -134,11 +129,10 @@ struct RegionWorsts {
 std::vector<ReferenceRow> gReference = LoadReference();
 
 #if BoysFp16
-// The fp16 reference is the certified double lane (5e-14) evaluated at the
-// fp16-rounded argument, and the tolerance is the fp16 lanes' asserted bound -
-// the 1e-7 base of the fp16 bound formula plus one half-ULP of that reference,
-// strictly stronger than the error-bounded 1.5e-7 + 1/2 ULP contract (the fp16
-// output quantizes at ~1e-3 near x = 0, far above any 1e-7 absolute assertion).
+// The fp16 reference is the certified double lane (5e-14) at the fp16-rounded argument,
+// and the tolerance is the 1e-7 base of the fp16 bound plus one half-ULP of that reference,
+// strictly stronger than the error-bounded 1.5e-7 + 1/2 ULP contract - the fp16 output
+// quantizes at ~1e-3 near x = 0, far above any 1e-7 absolute assertion.
 double HalfUlp(boys::F16 x) {
     return 0.5 * (static_cast<double>(boys::NextUp(x)) - static_cast<double>(x));
 }
@@ -147,10 +141,9 @@ double HalfUlp(boys::Bf16 x) {
     return 0.5 * (static_cast<double>(boys::NextUp(x)) - static_cast<double>(x));
 }
 
-// Reference-grid sweep shared by the F16/Bf16 single and batch tests. The half
-// type is the API, so the engine receives the fp16-rounded argument and the
-// reference is the certified double lane evaluated at that same rounded
-// argument; the tolerance is the fp16 bound above.
+// Reference-grid sweep shared by the F16/Bf16 single and batch tests. The half type is
+// the API: the engine receives the fp16-rounded argument, the reference is the certified
+// double lane at that same rounded argument, and the tolerance is the fp16 bound above.
 template <typename Half,
           Half (*SingleFn)(int, Half) noexcept,
           void (*BatchFn)(int, Half, Half*) noexcept>
@@ -165,9 +158,8 @@ void RunReferenceChecks(const char* label) {
 
     for (const auto& row : gReference)
     {
-        // Two steps on purpose: the half types take the value at float width
-        // first (the F16/Bf16 fallback constructors are float-taking), so the
-        // narrowing is spelled out rather than left to the compiler.
+        // Two steps on purpose: the F16/Bf16 fallback constructors are float-taking,
+        // so the narrowing is spelled out rather than left to the compiler.
         const Half x = static_cast<Half>(static_cast<float>(row.x));
         const double reference = boys::BoysSingle(row.n, static_cast<double>(x));
         const Half half = static_cast<Half>(static_cast<float>(reference));
@@ -183,9 +175,8 @@ void RunReferenceChecks(const char* label) {
 
         for (int k = 0; k <= row.n; ++k)
         {
-            // The row tolerance is tied to F_{row.n}(x), which underflows to
-            // fp16 zero at large x for high orders; each batch element is
-            // quantized at its own F_k(x), so it needs its own half-ULP.
+            // The row tolerance is tied to F_{row.n}(x), which underflows to fp16 zero at
+            // large x for high orders; each batch element needs its own F_k(x) half-ULP.
             const double batchReference = boys::BoysSingle(k, static_cast<double>(x));
             const double batchTolerance =
                 1e-7 + HalfUlp(static_cast<Half>(static_cast<float>(batchReference)));
@@ -199,9 +190,8 @@ void RunReferenceChecks(const char* label) {
         }
     }
 
-    // fp16 accuracy cells: per-region worst <= 1e-7 + one half-ULP of
-    // representation, the certified mixed-precision contract. Each region's bound
-    // is its max per-value budget, which the per-value asserts above imply.
+    // fp16 accuracy cells: per-region worst <= 1e-7 + one half-ULP of representation,
+    // the certified mixed-precision contract; the per-value asserts above imply it.
     EXPECT_LE(singleWorst.a, singleWorstTolerance.a) << "fp16 single region A (x < kX0)";
     EXPECT_LE(singleWorst.b, singleWorstTolerance.b) << "fp16 single region B (kX0 <= x < kX1)";
     EXPECT_LE(singleWorst.c, singleWorstTolerance.c) << "fp16 single region C (x >= kX1)";
@@ -240,11 +230,10 @@ void RunReferenceChecks(const char* label) {
         batchWorstTolerance.e);
 }
 
-// SIMD-lane sweep shared by the F16/Bf16 tests: each region lane must agree with
-// the scalar fp16 lane within one half-ULP (both compute in the F32 engine and
-// round to the same half type). The draw ranges keep the fp16-rounded arguments
-// inside their region bands: fp16 spacing is 2^-7 near x0 and 2^-6 near x1, so
-// the double ranges used above would round across a region boundary.
+// SIMD-lane sweep shared by the F16/Bf16 tests: each region lane must agree with the
+// scalar fp16 lane within one half-ULP (both compute in F32 and round to the same half
+// type). Draw ranges stay inside the region bands: fp16 spacing is 2^-7 near x0 and
+// 2^-6 near x1, so the double ranges used above would round across a boundary.
 template <typename Half,
           Half (*SingleFn)(int, Half) noexcept,
           void (*BatchFn)(int, Half, Half*) noexcept,
@@ -259,11 +248,10 @@ void RunSimdLaneChecks() {
     std::vector<Half> out(kCount);
     std::vector<Half> batchOut(kCount * (boys::kMaxBoysOrder + 1));
 
-    // Region A (x < x0): same-n array. The tolerance is one full ULP, here and in
-    // regions B and C below: the SIMD kernel maps x to the Chebyshev argument with
-    // one fused multiply-add where the scalar lane rounds each step separately, so
-    // the two F32 values can sit on opposite sides of a half grid step when the fit
-    // value lands within ~1e-10 of an fp16 rounding boundary.
+    // Region A (x < x0): same-n array. The tolerance is one full ULP here and in regions
+    // B and C: the SIMD kernel maps x to the Chebyshev argument with one fused
+    // multiply-add where the scalar lane rounds each step separately, so the two F32
+    // values can straddle a half grid step within ~1e-10 of an fp16 rounding boundary.
     std::uniform_real_distribution<float> xdA(1e-4f, 11.85f);
 
     for (auto& v : x)
@@ -323,9 +311,8 @@ void RunSimdLaneChecks() {
             << "region C i=" << i << " x=" << static_cast<float>(x[i]);
     }
 
-    // Tail fallbacks: counts that are not multiples of eight exercise the
-    // scalar tail; count = 0 must be a no-op. Each region function receives
-    // arguments from its own domain (the documented precondition).
+    // Tail fallbacks: counts that are not multiples of eight exercise the scalar tail;
+    // count = 0 must be a no-op; each region takes its own domain's arguments (documented).
     const std::array<Half, 5> tailA = {static_cast<Half>(1.0f),
                                        static_cast<Half>(2.0f),
                                        static_cast<Half>(5.0f),
@@ -410,8 +397,7 @@ TEST(BoysTest, BatchMatchesReferenceDouble) {
 
         for (int k = 0; k <= row.n; ++k)
         {
-            // Compare against the single evaluation of the same order from the
-            // reference grid: fetch the reference value for (k, row.x).
+            // The reference value for (k, row.x), scanned out of the grid.
             double reference = 0.0;
 
             for (const auto& other : gReference)
@@ -431,9 +417,8 @@ TEST(BoysTest, BatchMatchesReferenceDouble) {
         }
     }
 
-    // The batch lane asserts its own merged 5.5e-14 cell per region: the
-    // weighted region-A worst was measured at 1.6e-14, so a 1e-15
-    // single-lane bound would not hold for the batch.
+    // The batch lane asserts its own merged 5.5e-14 cell per region: the weighted
+    // region-A worst was measured at 1.6e-14, so a 1e-15 bound would not hold here.
     EXPECT_LE(regionWorst.a, kDoubleTolerance) << "batch region A (x < kX0)";
     EXPECT_LE(regionWorst.b, kDoubleTolerance) << "batch region B (kX0 <= x < kX1)";
     EXPECT_LE(regionWorst.c, kDoubleTolerance) << "batch region C (x >= kX1)";
@@ -560,8 +545,7 @@ TEST(BoysTest, ZeroArgumentIsExact) {
 }
 
 TEST(BoysTest, BatchConsistentWithSingleDouble) {
-    // Different arithmetic paths (seed + recursion vs. per-order fits) must
-    // agree within the combined error bound.
+    // Two arithmetic paths (seed + recursion vs. per-order fits), combined bound.
     std::mt19937_64 rng(12345);
     std::uniform_real_distribution<double> xd(1e-4, 40.0);
     std::vector<double> batch(boys::kMaxBoysOrder + 1);
@@ -599,16 +583,12 @@ TEST(BoysTest, AsymptoticBehavior) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Region-B exp-Taylor gather-table pin. The shipped ExpTable is private to its
-// TU, so this is a deliberately independent replica of it: 3001 rows at step
-// 0.01, row i holding the quartic Taylor polynomial of e^{-x} at x_i = i * 0.01
-// in the monomial basis of the ABSOLUTE argument x, with the alternating sign
-// folded into the row. Eval mirrors the SIMD chain's Horner form,
-// c4*x^4 - c3*x^3 + c2*x^2 - c1*x + c0, at row index
-// i = min(3000, trunc(x / 0.01)) - the _mm256_cvtpd_epi32 semantics, and the
-// clamp is inert on [kX0, kX1).
-// ---------------------------------------------------------------------------
+// Region-B exp-Taylor gather-table pin: the shipped ExpTable is private to its TU, so
+// this is a deliberately independent replica. 3001 rows at step 0.01, row i holding
+// the quartic Taylor polynomial of e^{-x} at x_i = i * 0.01 in the monomial basis of
+// the ABSOLUTE argument x, sign folded into the row; Eval mirrors the SIMD chain's
+// Horner form c4*x^4 - c3*x^3 + c2*x^2 - c1*x + c0 at row index i = min(3000,
+// trunc(x / 0.01)) - the _mm256_cvtpd_epi32 semantics, with the clamp inert on [kX0, kX1).
 struct ExpTaylorReplica {
     static constexpr double kStep = 0.01;
     static constexpr int kNumPoints = 3000;
@@ -698,12 +678,11 @@ TEST(BoysTest, ExpTaylorGatherTableRegionB) {
 TEST(BoysTest, FootprintSizes) {
     namespace detail = boys::detail;
 
-    // The committed footprint beside the two flat layouts a table of the same
-    // reach could be stored in: ~18 KB of Chebyshev coefficients (17,904 B incl.
-    // metadata), a ~192 KB region-B gather table, a ~5 MB flat Taylor table. The
-    // flat figures follow the comparator geometry (maxn = 24, step 0.01,
-    // limit = 50 -> nx = 5000): _b is (maxn + 1) x (nx + 1) x 5 doubles per order,
-    // _c is (nx + 1) x 6 doubles (the e^{-x} degree-5 companion table).
+    // The committed footprint beside the two flat layouts a table of the same reach
+    // could be stored in: ~18 KB of Chebyshev coefficients (17,904 B incl. metadata),
+    // a ~192 KB region-B gather table, a ~5 MB flat Taylor table. The flat figures
+    // follow the comparator geometry (maxn = 24, step 0.01, limit = 50 -> nx = 5000):
+    // _b is (maxn + 1) x (nx + 1) x 5 doubles per order, _c (nx + 1) x 6 doubles (e^{-x}).
     const std::size_t chebyshevBytes =
         detail::kCoeffs.size() * sizeof(double) + detail::kBcoeffs.size() * sizeof(double) +
         detail::f32::kCoeffs.size() * sizeof(float) + detail::f32::kBcoeffs.size() * sizeof(float);
@@ -743,10 +722,9 @@ TEST(BoysTest, SimdMatchesScalarWhenAvailable) {
     std::vector<double> out(kCount);
     std::vector<double> batchOut(kCount * (boys::kMaxBoysOrder + 1));
 
-    // Region A (x < x0): same-n array. In the extended band the SIMD lane serves
-    // the region-A per-order fits where the scalar single uses the per-range
-    // extended seed, so band draws agree within the two budgets (3e-14 + 1e-15),
-    // while the below-band draws keep the bit-close 1e-15.
+    // Region A (x < x0): same-n array. In the extended band the SIMD lane serves the region-A
+    // per-order fits where the scalar single uses the per-range extended seed, so band draws
+    // agree within the two budgets (3e-14 + 1e-15); below-band draws keep the bit-close 1e-15.
     std::uniform_real_distribution<double> xdA(1e-4, 11.89);
 
     for (auto& v : x)
@@ -808,10 +786,9 @@ TEST(BoysTest, SimdMatchesScalarWhenAvailable) {
         EXPECT_NEAR(out[i], boys::BoysSingle(n, x[i]), 1e-15);
     }
 
-    // Tail fallbacks: counts that are not multiples of four (count = 5 exercises
-    // the scalar tail; count = 0 must be a no-op). Each region function receives
-    // arguments from its own domain, the documented precondition, and the A tail's
-    // band draws use the combined budgets as in the main loop above.
+    // Tail fallbacks: counts that are not multiples of four (count = 5 exercises the scalar
+    // tail; count = 0 must be a no-op). Region functions take their own domain's arguments,
+    // the documented precondition; the A tail uses the combined budgets above.
     double tailA[5] = {1.0, 2.0, 5.0, 8.0, 11.0};
     double tailC[5] = {30.0, 35.0, 40.0, 45.0, 50.0};
     double tailOut[5] = {};
@@ -841,8 +818,7 @@ TEST(BoysTest, SingleMatchesReferenceF16) {
 }
 
 TEST(BoysTest, BatchMatchesReferenceF16) {
-    // Covered by the single sweep's batch half; this test name documents the
-    // batch gate explicitly for the fp16 lane.
+    // Covered by the single sweep's batch half; the name documents the fp16 batch gate.
     RunReferenceChecks<boys::F16, boys::BoysSingleF16, boys::BoysAllOrdersF16>("BoysF16(batch)");
 }
 
@@ -855,8 +831,7 @@ TEST(BoysTest, BatchMatchesReferenceBf16) {
 }
 
 TEST(BoysTest, ZeroArgumentIsExactF16) {
-    // The engine computes in float: the exact value 1/(2n+1) must survive to
-    // the fp16 output up to one half-ULP of quantization.
+    // The engine computes in float: 1/(2n+1) must survive to fp16 within one half-ULP of it.
     for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
     {
         const boys::F16 got = boys::BoysSingleF16(n, boys::F16{0.0f});
@@ -901,10 +876,9 @@ TEST(BoysTest, ZeroArgumentIsExactBf16) {
 }
 
 TEST(BoysTest, BatchConsistentWithSingleF16) {
-    // Seed + downward recursion (batch) and per-order fits (single) are
-    // independent float paths, each within its own 1e-7 absolute budget of the
-    // certified value; where F_n is tiny their sum can straddle an fp16 rounding
-    // boundary, so the bound is two budgets plus one ULP of the fp16 output.
+    // Seed + downward recursion (batch) and per-order fits (single) are independent float paths,
+    // each holding the 1e-7 absolute budget against the certified value; where F_n is tiny their
+    // sum can straddle an fp16 rounding boundary, so two budgets plus one ULP is the bound.
     std::mt19937_64 rng(24680);
     std::uniform_real_distribution<float> xd(1e-4f, 100.0f);
     std::vector<boys::F16> batch(boys::kMaxBoysOrder + 1);
@@ -926,9 +900,8 @@ TEST(BoysTest, BatchConsistentWithSingleF16) {
 }
 
 TEST(BoysTest, BatchConsistentWithSingleBf16) {
-    // Same two-budgets-plus-one-ULP bound as the F16 variant: the batch
-    // recursion and the per-order fits each hold the 1e-7 absolute budget,
-    // and their sum can straddle a half grid step where F_n is tiny.
+    // Same two-budgets-plus-one-ULP bound as the F16 variant: both paths hold the 1e-7 absolute
+    // budget, and their sum can straddle a half grid step where F_n is tiny.
     std::mt19937_64 rng(24681);
     std::uniform_real_distribution<float> xd(1e-4f, 100.0f);
     std::vector<boys::Bf16> batch(boys::kMaxBoysOrder + 1);

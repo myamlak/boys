@@ -1,14 +1,12 @@
-// CUDA lane of the Boys kernel. Mirrors the scalar/simd design (boys.cpp,
-// boys_simd.cpp): piecewise Chebyshev seeds + recurrences, region structure
-// A/B/C with the weighted region-A fits (see tools/gen_boys_coefficients.py).
-// C++20 with a CUDA-safe include list only: the library's C++23 headers
-// would poison the nvcc translation unit.
+// CUDA lane of the Boys kernel. Mirrors the scalar/simd design (boys.cpp, boys_simd.cpp):
+// piecewise Chebyshev seeds + recurrences, region structure A/B/C with the weighted
+// region-A fits (see tools/gen_boys_coefficients.py). C++20 with a CUDA-safe include
+// list only: the library's C++23 headers would poison the nvcc translation unit.
 
 #include "boys/boys_cuda_arithmetic.hpp"
 
-// The handle's own declaration, for the count the address order's two halves are
-// asserted against: the fields those slots fill and the order they are exported
-// in are one statement, and the assertion below is what keeps them one.
+// The handle's own declaration, for the count the address order's two halves are asserted
+// against: the fields and the export order are one statement, and the assertion keeps them one.
 #include "boys/boys_device_tables.hpp"
 
 #include <cuda_fp16.h>
@@ -42,25 +40,20 @@ __constant__ int cCount32[33];
 __constant__ float cBcoeffs32[24];
 __constant__ int cBDeg32;
 
-// The accuracy-multiplier effective-degree tables: one lane per CUDA role,
-// in the order the host fills them (boys_cuda.cpp FillEffLane). Each all-orders
-// lane serves both entries of its precision — the per-element orders and the
-// uniform nmax — so the two read one degree table:
-//   0 = double single (BoysSingleF64KernelEff, region-B degree per order)
-//   1 = double batch (BoysAllOrdersF64KernelEff/BoysAllNF64KernelEff,
-//       region-B degree = order-0 entry)
-//   2 = float single (BoysSingleF32KernelEff, region-B degree per order)
-//   3 = float batch (BoysAllOrdersF32KernelEff/BoysAllNF32KernelEff,
-//       region-B degree = order-0 entry;
-//       the region-A seed is the DOUBLE piece table, budget 1.5e-7)
-//   4 = fp16 single (BoysSingleF16KernelEff, region-B degree per order)
-//   5 = fp16 batch (BoysAllOrdersF16KernelEff/BoysAllNF16KernelEff,
-//       region-B degree = order-0 entry;
-//       the region-A seed is the DOUBLE piece table, budget 1e-7)
-// Filled host-side once per (device, m) — the single-m-per-process cache,
-// same idempotence contract as BoysCudaUploadTables. The relaxed kernels
-// read these exactly like the kernels above read cDeg/cBDeg (the degree
-// shape is unchanged; only the values differ).
+// The accuracy-multiplier effective-degree tables: one lane per CUDA role, in the order the
+// host fills them (boys_cuda.cpp FillEffLane). Each all-orders lane serves both entries of its
+// precision - the per-element orders and the uniform nmax - so the two read one degree table:
+//   0 = double single (region-B degree per order)
+//   1 = double batch (region-B degree = order-0 entry)
+//   2 = float single (region-B degree per order)
+//   3 = float batch (region-B degree = order-0 entry; the region-A seed is the DOUBLE piece
+//       table, budget 1.5e-7)
+//   4 = fp16 single (region-B degree per order)
+//   5 = fp16 batch (region-B degree = order-0 entry; the region-A seed is the DOUBLE piece
+//       table, budget 1e-7)
+// Filled host-side once per (device, m) - the single-m-per-process cache, same idempotence
+// contract as BoysCudaUploadTables. The relaxed kernels read these exactly as the kernels above
+// read cDeg/cBDeg: the degree shape is unchanged, only the values differ.
 constexpr int kEffLaneCount = 6;
 __constant__ int cDegEff[kEffLaneCount][33][kMaxPieces];
 __constant__ int cBDegEff[kEffLaneCount][33];
@@ -68,18 +61,16 @@ __constant__ int cBDegEff[kEffLaneCount][33];
 // ---------------------------------------------------------------------------
 // the flat device image: the tables a caller's own kernel reads
 // ---------------------------------------------------------------------------
-// A consumer's kernel cannot name this translation unit's __constant__ arrays
-// (naming them across translation units takes relocatable device code in the
-// consumer's build), so the tables are copied a second time into __device__
-// globals whose addresses the host hands out. The piece metadata is the flat
-// form of the __constant__ tables — indexed by pieceStart[order] + piece,
-// which is the piece-start table the coefficient header already carries, so no
-// stride constant has to agree between the library and a consumer. The handle
-// a caller passes to a device entry is a value, and kernel parameters live in
-// the constant bank, so reading it costs no global memory traffic.
+// A consumer's kernel cannot name this translation unit's __constant__ arrays (that takes
+// relocatable device code in the consumer's build), so the tables are copied a second time into
+// __device__ globals whose addresses the host hands out. The piece metadata is the flat form of
+// the __constant__ tables, indexed by pieceStart[order] + piece - the piece-start table the
+// coefficient header already carries - so no stride constant has to agree between the library
+// and a consumer. The handle is a value and kernel parameters live in the constant bank, so
+// reading it costs no global memory traffic.
 //
-// The two lanes' piece tables are separate: the float lane cuts its orders
-// differently and needs its own starts, degrees and pool.
+// The two lanes' piece tables are separate: the float lane cuts its orders differently and needs
+// its own starts, degrees and pool.
 constexpr int kPiecesTotal = detail::kPieceStart[detail::kMaxOrder + 1];
 constexpr int kPiecesTotal32 = detail::f32::kPieceStart[detail::kMaxOrder + 1];
 
@@ -99,51 +90,41 @@ __device__ int dDeg32[kPiecesTotal32];
 __device__ float dCoeffs32[kMaxCoeffs];
 __device__ float dBSeed32[24];
 
-// The relaxed degrees, in the same flat form and one set for the whole device:
-// one rung is resident at a time, so a table per rung is not what a caller can
-// have. The stride is the larger of the two lanes' piece counts, so one lane
-// axis serves both piece tables; a lane's own entries are indexed with the
-// piece-start table its region-A seed reads its coefficients with, exactly as
-// the full-accuracy table above is.
+// The relaxed degrees, in the same flat form and one set for the whole device: one rung is
+// resident at a time, so a table per rung is not what a caller can have. The stride is the larger
+// of the two lanes' piece counts, so one lane axis serves both piece tables; a lane's own entries
+// are indexed with the piece-start table its region-A seed reads its coefficients with, exactly
+// as the full-accuracy table above is.
 //
-// The lane order is cDegEff's. Lanes 0, 1, 3 and 5 are indexed by the double
-// piece table (the batch lanes' region-A seed is computed in double whatever
-// precision they return — RoleUsesDoubleTables) and lanes 2 and 4 by the float
-// one.
+// The lane order is cDegEff's. Lanes 0, 1, 3 and 5 are indexed by the double piece table (the
+// batch lanes' region-A seed is computed in double whatever precision they return -
+// RoleUsesDoubleTables) and lanes 2 and 4 by the float one.
 constexpr int kRelaxedPieces = kPiecesTotal > kPiecesTotal32 ? kPiecesTotal : kPiecesTotal32;
 
 __device__ int dDegEff[kEffLaneCount * kRelaxedPieces];
 __device__ int dBDegEff[kEffLaneCount * (detail::kMaxOrder + 1)];
-// The rung the two arrays above are cut for, zero when none has been uploaded.
-// It is read through the handle a consumer holds rather than copied into it, so
-// a handle filled for one rung reports itself as retired when another rung
-// replaces it instead of running tables that have since been overwritten.
+// The rung the two arrays above are cut for, zero when none has been uploaded. Read through the
+// handle a consumer holds rather than copied into it, so a handle filled for one rung reports
+// itself retired when another rung replaces it instead of running tables since overwritten.
 __device__ double dRelaxedM;
 
 // ---------------------------------------------------------------------------
 // the narrow partition, on this lane
 // ---------------------------------------------------------------------------
-// The second cut of the double lane's fits: region A's pieces are cut per
-// order, and region B's seed is 5 pieces at degree 10 rather than one
-// polynomial over the interval. A lane reading it therefore supplies the seed
-// at the argument rather than the coefficients of a fixed shape, which is what
-// the lane interface says a lane supplies.
+// The second cut of the double lane's fits: region A's pieces are cut per order, and region B's
+// seed is 5 pieces at degree 10 rather than one polynomial over the interval. A lane reading it
+// therefore supplies the seed at the argument rather than the coefficients of a fixed shape.
 //
-// It is the double lane's partition. The float lane has one of its own — its
-// own pieces at its own degree, cut over the same region — and it is uploaded
-// beside these as the narrow tables of the float lane below; a partition is a
-// cut of a region rather than a property of a lane, so the two lanes' partitions
-// are different fits and not one table read twice.
+// It is the double lane's partition; the float lane has one of its own below. A partition is a cut
+// of a region rather than a property of a lane, so the two lanes' partitions are different fits
+// and not one table read twice. The effective degrees a rung cuts this one to are derived for the
+// roles that evaluate these fits (boys_effective_degrees.hpp), and the entries carrying this
+// partition's rungs are the double ones.
 //
-// The effective degrees a rung cuts this one to are derived for the roles that
-// evaluate these fits (boys_effective_degrees.hpp), and the entries that carry
-// this partition's rungs are the double ones.
-//
-// __device__ and not __constant__: the narrow region-A pool is 3421
-// coefficients against the shipped lane's 1876, and the two do not fit the
-// 64 KB constant bank beside the float lane's tables. One fetch per piece per
-// thread is the pattern the flat image above already serves from global
-// memory.
+// __device__ and not __constant__: the narrow region-A pool is 3421 coefficients against the
+// shipped lane's 1876, and the two do not fit the 64 KB constant bank beside the float lane's
+// tables. One fetch per piece per thread is the pattern the flat image above already serves from
+// global memory.
 constexpr int kNarrowPiecesTotal = detail::kNarrowAPieceStart[detail::kMaxOrder + 1];
 constexpr int kNarrowCoeffsTotal = kNarrowPiecesTotal * (detail::kNarrowADeg + 1);
 
@@ -156,20 +137,17 @@ __device__ double dNarrowACoeffs[kNarrowCoeffsTotal];
 __device__ double dNarrowBEdges[detail::kNarrowBPieces + 1];
 __device__ double dNarrowBCoeffs[detail::kNarrowBPieces * (detail::kNarrowBDeg + 1)];
 
-// The float lane's own narrow partition, in the lane's coefficients and its
-// degree: 218 pieces at degree 6 against the double lane's 311 at degree 10, so
-// the pool is 1526 coefficients against 3421 and the lane's own pieces are the
-// ones its entries read. Both are in global memory for the reason the double
-// lane's is: the reads are per-thread piece lookups and not a uniform broadcast.
+// The float lane's own narrow partition, in the lane's coefficients and its degree: 218 pieces at
+// degree 6 against the double lane's 311 at degree 10, so the pool is 1526 coefficients against
+// 3421. Both are in global memory for the reason the double lane's is: the reads are per-thread
+// piece lookups and not a uniform broadcast.
 //
-// The rung's cut of this partition is one table per basis, carried beside the
-// stored pool and derived over it: this lane's region-B degrees in the
-// Chebyshev form and in the monomial one (FillNarrowF32Lane,
-// FillNarrowMonoF32Lane, boys_cuda.cpp). Region A carries none of its own here
-// because this lane's region-A seed is the double lane's, whose cut the same
-// upload carries. So the entries reading this partition are served at every
-// rung of the lane in both of the bases it sums in (DeviceEntryServedAtRung,
-// boys_cuda_options.hpp).
+// The rung's cut of this partition is one table per basis, carried beside the stored pool and
+// derived over it: this lane's region-B degrees in the Chebyshev form and in the monomial one
+// (FillNarrowF32Lane, FillNarrowMonoF32Lane, boys_cuda.cpp). Region A carries none of its own
+// here because this lane's region-A seed is the double lane's, whose cut the same upload carries.
+// So the entries reading this partition are served at every rung of the lane in both of the bases
+// it sums in (DeviceEntryServedAtRung, boys_cuda_options.hpp).
 constexpr int kNarrowPiecesTotal32 =
     detail::f32::kNarrowAPieceStartF32[detail::kMaxOrder + 1];
 constexpr int kNarrowCoeffsTotal32 =
@@ -188,24 +166,21 @@ __device__ float dNarrowBEdges32[detail::f32::kNarrowBPiecesF32 + 1];
 __device__ float dNarrowBCoeffs32[kNarrowBCoeffsTotal32];
 __device__ float dNarrowBMonoCoeffs32[kNarrowBCoeffsTotal32];
 
-// The float lane's rational region-B seed, in the lane's own coefficients and
-// at the lane's own degree: one pair per partition the lane carries. Region A's
-// pairs are not here — the float lanes seed region A from the double lane's
-// table, which is what the lane argument below at the seed position is, so the
-// float rational tables this lane reads are region B's and region B's alone.
+// The float lane's rational region-B seed, in the lane's own coefficients and at the lane's own
+// degree: one pair per partition the lane carries. Region A's pairs are not here - the float lanes
+// seed region A from the double lane's table, which the seed lane argument below carries - so the
+// float rational tables this lane reads are region B's alone.
 //
-// The shipped partition holds one pair over the whole of region B, read at the
-// interval's own mapped argument; the narrow partition holds one per piece,
-// read at the piece's own, and its two blocks sit in one pool with the
-// denominator above the STORED numerator's position — the reading
+// The shipped partition holds one pair over the whole of region B, read at the interval's own
+// mapped argument; the narrow partition holds one per piece, read at the piece's own, and its two
+// blocks sit in one pool with the denominator above the STORED numerator's position - the reading
 // DeviceRatSum32 and the host's RationalSeedNarrowF32AtCut share.
 //
-// The rung's cut of that seed is carried beside it, one table per partition, for
-// the reason the double role's is: the criterion cuts the pair together, so the
-// degrees a rung leaves are the pair's own and a call at a rung of this lane
-// reads the same fit short the launched row reads. The numerator's cut is the
-// first entry of a pair and the denominator's the second, as the double lane's
-// dRatBDeg and dNarrowRatBDeg are laid out.
+// The rung's cut of that seed is carried beside it, one table per partition, for the reason the
+// double role's is: the criterion cuts the pair together, so the degrees a rung leaves are the
+// pair's own and a call at a rung of this lane reads the same fit short the launched row reads.
+// The numerator's cut is the first entry of a pair and the denominator's the second, as the double
+// lane's dRatBDeg and dNarrowRatBDeg are laid out.
 __device__ float dRatBnum32[detail::f32::kRatBnumDeg + 1];
 __device__ float dRatBden32[detail::f32::kRatBdenDeg];
 __device__ int dRatBDeg32[2];
@@ -219,64 +194,54 @@ __device__ int dNarrowRatBStoredNumDeg32[detail::f32::kNarrowRatBPiecesCountF32]
 __device__ int dNarrowRatBDenDeg32[detail::f32::kNarrowRatBPiecesCountF32];
 __device__ int dNarrowRatBDeg32[2 * detail::f32::kNarrowRatBPiecesCountF32];
 
-// The rung's cut of the same partition, laid out as the shipped lanes' relaxed
-// tables are: region A flat over the partition's rows, region B flat over
-// (piece, order), matching boys_effective_degrees.hpp's derivation. A rung's
-// table is one role's — the double batch, the shape the entries carrying the
-// partition have — so it is one table and not a lane axis.
+// The rung's cut of the same partition, laid out as the shipped lanes' relaxed tables are: region A
+// flat over the partition's rows, region B flat over (piece, order), matching
+// boys_effective_degrees.hpp's derivation. It is one role's table - the double batch, the shape the
+// entries carrying the partition have - so one table and not a lane axis.
 //
-// They are written only by a relaxed upload, so a full-accuracy call reads the
-// stored degrees above instead and is not served whatever rung is resident.
+// Written only by a relaxed upload, so a full-accuracy call reads the stored degrees above instead
+// and is not served whatever rung is resident.
 __device__ int dNarrowDegEff[kNarrowPiecesTotal];
 __device__ int dNarrowBDegEff[detail::kNarrowBPieces * (detail::kMaxOrder + 1)];
 
-// The float lane's own cut of the same rung, region B. Region A needs no table
-// beside it: the float lane's region-A seed is the double lane's, which is what
-// the seed lane argument of DeviceAllOrdersF32 is, so the pieces a rung cuts on
-// the float lane are this lane's region-B pieces and those alone.
+// The float lane's own cut of the same rung, region B. Region A needs no table beside it: the float
+// lane's region-A seed is the double lane's, so the pieces a rung cuts on the float lane are this
+// lane's region-B pieces and those alone.
 //
-// It is a table of its own and not a second reader of the double lane's: this
-// lane's region B is 4 pieces at degree 6 against the double lane's 5 at degree
-// 10, so a cut derived over the double lane's coefficients is a cut of a fit
-// this lane does not read.
+// A table of its own and not a second reader of the double lane's: this lane's region B is 4 pieces
+// at degree 6 against the double lane's 5 at degree 10, so a cut derived over the double lane's
+// coefficients is a cut of a fit this lane does not read.
 __device__ int dNarrowBDegEff32[detail::f32::kNarrowBPiecesF32 * (detail::kMaxOrder + 1)];
 
-// The other basis's cut of the same rung, over the same float pieces and the
-// same region-B edges. It is a table of its own rather than a second reader of
-// the one above: the two bases are two stored forms of one fit, and a degree
-// the Chebyshev form's coefficients certify is the degree of a polynomial the
-// monomial form's coefficients do not sum — the tail a rung drops is read from
-// the coefficients the kernel reads, which is what NarrowRegionBDegrees'
-// TailBasis argument is.
+// The other basis's cut of the same rung, over the same float pieces and the same region-B edges. A
+// table of its own rather than a second reader of the one above: the two bases are two stored forms
+// of one fit, and a degree the Chebyshev form's coefficients certify is the degree of a polynomial
+// the monomial form's coefficients do not sum - the tail a rung drops is read from the coefficients
+// the kernel reads, which is what NarrowRegionBDegrees' TailBasis argument is.
 __device__ int dNarrowMonoBDegEff32[detail::f32::kNarrowBPiecesF32 * (detail::kMaxOrder + 1)];
 
 // ---------------------------------------------------------------------------
 // the monomial scheme's stored form, on this lane
 // ---------------------------------------------------------------------------
-// The same fits in the other basis: every piece table above is carried in both
-// forms (boys_coefficients.hpp), so this family stores no second fit and needs
-// no second partition — it is the pools and the summation, and the pieces,
-// edges, counts and stored degrees are the Chebyshev lanes' own.
+// The same fits in the other basis: every piece table above is carried in both forms
+// (boys_coefficients.hpp), so this family stores no second fit and needs no second partition - it
+// is the pools and the summation, and the pieces, edges, counts and stored degrees are the
+// Chebyshev lanes' own.
 //
-// All of it is global rather than constant memory. The double lane's Chebyshev
-// pool and the float lane's tables already fill most of the 64 KB constant
-// bank, so a second double pool of the same size does not fit beside them; the
-// narrow pool is out of the bank for the same reason the Chebyshev narrow one
-// is.
+// All of it global rather than constant memory: the double lane's Chebyshev pool and the float
+// lane's tables already fill most of the 64 KB constant bank, so a second double pool of the same
+// size does not fit beside them.
 __device__ double dMonoCoeffs[kMaxCoeffs];
 __device__ double dMonoBcoeffs[24];
 __device__ double dNarrowAMonoCoeffs[kNarrowCoeffsTotal];
 __device__ double dNarrowBMonoCoeffs[detail::kNarrowBPieces * (detail::kNarrowBDeg + 1)];
 
-// The rung's cut, in the monomial basis: the same derivations as the Chebyshev
-// tables above at the other form of the same table (TailBasis::kMonomial), so
-// a rung's degrees are the ones that rung certifies for the pool and the
-// summation this family reads. Region A is order-major as cDegEff is, since the
-// cut is derived per order and piece; region B is one row per order, read at
-// the order-0 entry by the batch shape.
+// The rung's cut, in the monomial basis: the same derivations as the Chebyshev tables above at the
+// other form of the same table (TailBasis::kMonomial), so a rung's degrees are the ones that rung
+// certifies for the pool and the summation this family reads. Region A is order-major as cDegEff
+// is; region B is one row per order, read at the order-0 entry by the batch shape.
 //
-// The narrow partition's cut is one table each, as its Chebyshev counterpart's
-// is.
+// The narrow partition's cut is one table each, as its Chebyshev counterpart's is.
 __device__ int dMonoDegEff[detail::kMaxOrder + 1][kMaxPieces];
 __device__ int dMonoBDegEff[detail::kMaxOrder + 1];
 __device__ int dNarrowMonoDegEff[kNarrowPiecesTotal];
@@ -285,35 +250,29 @@ __device__ int dNarrowMonoBDegEff[detail::kNarrowBPieces * (detail::kMaxOrder + 
 // ---------------------------------------------------------------------------
 // the rational route's stored form, on this lane
 // ---------------------------------------------------------------------------
-// The other route's tables: a numerator/denominator pair per piece rather than
-// one polynomial, over the same pieces — the route reads the shipped partition's
-// own intervals and the narrow partition's, so no piece table, edge or count here
-// is new. What is new is what a piece's coefficients are: the numerator ascending
-// from p_0, then the denominator's q_1..q_k with q_0 held at one, so the
-// denominator's base is the STORED numerator degree's position and not the cut's
-// (boys_impl.hpp RationalPieceAtCut). The pair is evaluated as two Horner sums
-// and a division.
+// The other route's tables: a numerator/denominator pair per piece rather than one polynomial, over
+// the same pieces - the route reads the shipped partition's own intervals and the narrow
+// partition's, so no piece table, edge or count here is new. What is new is what a piece's
+// coefficients are: the numerator ascending from p_0, then the denominator's q_1..q_k with q_0 held
+// at one, so the denominator's base is the STORED numerator degree's position and not the cut's
+// (boys_impl.hpp RationalPieceAtCut). The pair is evaluated as two Horner sums and a division.
 //
-// The degrees are carried twice per piece: the pair the table was stored at,
-// which is what a full-accuracy rung reads the whole of, and the cut a rung's
-// criterion certifies. A rung's cut is per reading as well as per partition —
-// region A read one piece per order pays A = 1, and the same piece read as a
-// batch seed pays its own w(b) — so the two shapes carry their own cut table and
-// the argument shape's cells read the seed's.
+// The degrees are carried twice per piece: the pair the table was stored at, and the cut a rung's
+// criterion certifies. A rung's cut is per reading as well as per partition - region A read one
+// piece per order pays A = 1, and the same piece read as a batch seed pays its own w(b) - so the
+// two shapes carry their own cut table and the argument shape's cells read the seed's.
 //
-// All of it global memory, for the reason the pools above are: the constant bank
-// is full.
+// All of it global memory, for the reason the pools above are: the constant bank is full.
 constexpr int kRatACoeffsTotal = static_cast<int>(std::size(detail::kRatACoeffs));
 constexpr int kNarrowRatACoeffsTotal = static_cast<int>(std::size(detail::kNarrowRatACoeffs));
 constexpr int kNarrowRatBCoeffsTotal = static_cast<int>(std::size(detail::kNarrowRatBCoeffs));
 constexpr int kRatBPool = static_cast<int>(std::size(detail::kRatBnum));
 constexpr int kRatBPoolDen = static_cast<int>(std::size(detail::kRatBden));
 
-// The shipped partition's pairs, indexed as the Chebyshev pieces are: a row per
-// order, a column per piece within the order. The two coefficient blocks are
-// addressed separately because the cut moves the numerator's base — the
-// denominator's is the STORED numerator degree's position, which is why it is
-// carried as an offset rather than computed at the read.
+// The shipped partition's pairs, indexed as the Chebyshev pieces are: a row per order, a column per
+// piece within the order. The two coefficient blocks are addressed separately because the cut moves
+// the numerator's base - the denominator's is the STORED numerator degree's position, which is why
+// it is carried as an offset rather than computed at the read.
 __device__ double dRatACoeffs[kRatACoeffsTotal];
 __device__ int dRatAOffset[detail::kMaxOrder + 1][kMaxPieces];
 __device__ int dRatADenOffset[detail::kMaxOrder + 1][kMaxPieces];
@@ -322,45 +281,36 @@ __device__ int dRatADenDeg[detail::kMaxOrder + 1][kMaxPieces];
 __device__ double dRatBnum[kRatBPool];
 __device__ double dRatBden[kRatBPoolDen];
 
-// The uniform route's own table: one grid over [0, kFlatHi), every interval the
-// same width, every order fitted on its own at that interval's own degree.
-// Interval-major, so one argument's whole ladder is one contiguous run and a
-// thread reads it in cache-line steps. Both forms of every fit are stored — the
-// Chebyshev one and the monomial one — at the same offsets, chosen by the scheme
-// a call names; the two are the two rows of kFlatRows.
+// The uniform route's own table: one grid over [0, kFlatHi), every interval the same width, every
+// order fitted on its own at that interval's own degree. Interval-major, so one argument's whole
+// ladder is one contiguous run and a thread reads it in cache-line steps. Both forms of every fit
+// are stored at the same offsets, chosen by the scheme a call names.
 //
-// The intervals do not all carry the same degree, so the table has no stride and
-// its size is the header's own stored count and not a product of one degree
-// written out again: kFlatOffsets[kFlatIntervals] is that count, and the
-// generator asserts it against the coefficient array's length. The size is read
-// from that array here because the device copy is uploaded from it, so the two
-// cannot come to disagree.
+// The intervals do not all carry the same degree, so the table has no stride and its size is the
+// header's own stored count and not a product of one degree written out again:
+// kFlatOffsets[kFlatIntervals] is that count, and the generator asserts it against the coefficient
+// array's length. The size is read from that array here because the device copy is uploaded from
+// it, so the two cannot come to disagree.
 //
-// Global memory and not the constant bank: the stored count is well past what
-// this card's 64 KiB bank holds, and the access is not uniform across a warp — a
-// warp of arguments spans several intervals of the grid, so a constant-bank read
-// would serialize. The pool is read-only after the upload and is the same size
-// on every device.
+// Global memory and not the constant bank: the stored count is well past what this card's 64 KiB
+// bank holds, and a warp of arguments spans several intervals of the grid, so a constant-bank read
+// would serialize. The pool is read-only after the upload and is the same size on every device.
 constexpr int kFlatPool = static_cast<int>(std::size(detail::kFlatCoeffs));
 __device__ double dFlatCoeffs[kFlatPool];
 __device__ double dFlatMonoCoeffs[kFlatPool];
 
-// The two tables the read rule names. Interval iv's block is (kFlatDegs[iv] + 1)
-// coefficients per order and starts at kFlatOffsets[iv], so a reader needs both
-// to address a cell and neither is a constant of the grid. They are uploaded
-// from the header's arrays rather than recomputed here, so the device and the
-// host cannot come to disagree about a cell's shape.
+// The two tables the read rule names: interval iv's block is (kFlatDegs[iv] + 1) coefficients per
+// order and starts at kFlatOffsets[iv]. They are uploaded from the header's arrays rather than
+// recomputed here, so the device and the host cannot disagree about a cell's shape.
 constexpr int kFlatCells = static_cast<int>(std::size(detail::kFlatDegs));
 constexpr int kFlatCellOffsets = static_cast<int>(std::size(detail::kFlatOffsets));
 __device__ int dFlatDegs[kFlatCells];
 __device__ int dFlatOffsets[kFlatCellOffsets];
 
-// The float lane's own uniform table, on the lane's own grid: it is derived from
-// this lane's bound, this lane's format and this lane's read cap, so its width,
-// its interval count and its degrees are the double lane's only by coincidence.
-// The host lane states the same of itself (boys_impl.hpp, FlatPointF32), and a
-// reader that took the double lane's grid under this lane's name would be handed
-// a table fitted to a bound this lane's arithmetic cannot reach.
+// The float lane's own uniform table, on the lane's own grid: derived from this lane's bound, this
+// lane's format and this lane's read cap, so its width, interval count and degrees are the double
+// lane's only by coincidence. A reader that took the double lane's grid under this lane's name
+// would be handed a table fitted to a bound this lane's arithmetic cannot reach.
 constexpr int kFlatPoolF32 = static_cast<int>(std::size(detail::f32::kFlatCoeffsF32));
 __device__ float dFlatCoeffsF32[kFlatPoolF32];
 __device__ float dFlatMonoCoeffsF32[kFlatPoolF32];
@@ -370,13 +320,11 @@ constexpr int kFlatCellOffsetsF32 = static_cast<int>(std::size(detail::f32::kFla
 __device__ int dFlatDegsF32[kFlatCellsF32];
 __device__ int dFlatOffsetsF32[kFlatCellOffsetsF32];
 
-// The same two grids on their rational route. The pool and the four per-interval
-// columns are one image, as the Chebyshev grid's are: a reader handed the pairs
-// without the degrees, the stored counts or the block starts would address a row
-// at a length the table does not have, which is the substitution the readiness
-// test below refuses. The pool's rows are intervals here and not orders, and its
-// stride is the interval's own stored count, so the four columns are named
-// rather than derived.
+// The same two grids on their rational route. Pool and four per-interval columns are one image: a
+// reader handed the pairs without the degrees, the stored counts or the block starts would address
+// a row at a length the table does not have, which is the substitution the readiness test below
+// refuses. The pool's rows are intervals here and not orders, and its stride is the interval's own
+// stored count.
 constexpr int kFlatRatPool = static_cast<int>(std::size(detail::kFlatRatCoeffs));
 __device__ double dFlatRatCoeffs[kFlatRatPool];
 
@@ -398,29 +346,23 @@ __device__ int dFlatRatDenDegF32[kFlatRatCellsF32];
 __device__ int dFlatRatStoredF32[kFlatRatCellsF32];
 __device__ int dFlatRatOffsetsF32[kFlatRatCellOffsetsF32];
 
-// The rungs' cuts, one table per region-A reading; region B's is one pair either
-// way, so the two readings share it. A cell is the pair a cut leaves — the
-// numerator's degree then the denominator's — which is why every table here has
-// a trailing two: the criterion derives the two together and a rung that used
-// one without the other would be a cut nobody certified.
+// The rungs' cuts, one table per region-A reading; region B's is one pair either way, so the two
+// readings share it. A cell is the pair a cut leaves - the numerator's degree then the
+// denominator's - which is why every table here has a trailing two: the criterion derives the two
+// together and a rung using one without the other would be a cut nobody certified.
 __device__ int dRatSeedDeg[detail::kMaxOrder + 1][kMaxPieces][2];
 __device__ int dRatOrdDeg[detail::kMaxOrder + 1][kMaxPieces][2];
 __device__ int dRatBDeg[2];
 
-// The same route's metadata in the flat form a caller's kernel can index: the
-// device image's one convention is pieceStart[order] + piece, which is the
-// piece-start table the coefficient header already carries, so the row-major
-// tables above are re-cut once at the upload rather than read with a stride the
-// handle would have to state and keep in step with this file. The route's own
-// pool and region-B pair are flat already and are read as they are stored; the
-// four per-piece tables and the cut of the one reading a device entry carries
-// need the second image.
+// The same route's metadata in the flat form a caller's kernel can index: the device image's one
+// convention is pieceStart[order] + piece, so the row-major tables above are re-cut once at the
+// upload rather than read with a stride the handle would have to state and keep in step with this
+// file. The route's own pool and region-B pair are flat already; the four per-piece tables and the
+// cut of the one reading a device entry carries need the second image.
 //
-// A cut's two degrees are the two consecutive entries of one cell here as they
-// are above, the numerator first. Only the seed's reading has an image: it is
-// the reading of the ladder shape, which is the one shape this lane's
-// device-callable entries carry, and the per-order reading's cut is read by the
-// launched orders-shape rows from the symbol above.
+// A cut's two degrees are the two consecutive entries of one cell here as they are above, the
+// numerator first. Only the seed's reading has an image: it is the reading of the ladder shape,
+// the one shape this lane's device-callable entries carry.
 __device__ int dRatOffsetFlat[kPiecesTotal];
 __device__ int dRatDenOffsetFlat[kPiecesTotal];
 __device__ int dRatNumDegFlat[kPiecesTotal];
@@ -437,9 +379,8 @@ __device__ int dNarrowRatSeedDeg[kNarrowPiecesTotal][2];
 __device__ int dNarrowRatOrdDeg[kNarrowPiecesTotal][2];
 __device__ double dNarrowRatBCoeffs[kNarrowRatBCoeffsTotal];
 __device__ int dNarrowRatBOffset[detail::kNarrowBPieces];
-// One stored numerator degree per piece: it is both the degree a full-accuracy
-// read sums to and the position the denominator's q_1 sits above, which is what
-// a cut leaves where it is.
+// One stored numerator degree per piece: both the degree a full-accuracy read sums to and the
+// position the denominator's q_1 sits above, which is what a cut leaves where it is.
 __device__ int dNarrowRatBStoredNumDeg[detail::kNarrowBPieces];
 __device__ int dNarrowRatBDenDeg[detail::kNarrowBPieces];
 __device__ int dNarrowRatBDeg[detail::kNarrowBPieces][2];
@@ -447,19 +388,16 @@ __device__ int dNarrowRatBDeg[detail::kNarrowBPieces][2];
 // ---------------------------------------------------------------------------
 // the lanes: what the kernels below hand the shared arithmetic
 // ---------------------------------------------------------------------------
-// boys_cuda_arithmetic.hpp holds one body per (precision, shape), and it takes
-// the tables as a lane object rather than reading a symbol, so the kernels
-// here and the device-callable entries a caller's own kernel calls run the
-// same code. These six lane objects are the kernels' side of that: the
-// __constant__ tables of this translation unit.
+// boys_cuda_arithmetic.hpp holds one body per (precision, shape) and takes the tables as a lane
+// object rather than reading a symbol, so the kernels here and the device-callable entries a
+// caller's own kernel calls run the same code. These six lane objects are the kernels' side of
+// that: the __constant__ tables of this translation unit.
 //
-// The relaxed lanes read their degrees from cDegEff/cBDegEff, in the lane
-// order documented there. Which degree table a lane reads, and whether its
-// region-B degree is the per-order entry or the order-0 one, is the only thing
-// the relaxed lane objects differ in. The batch lanes read the order-0
-// region-B entry because the F0 seed's error reaches every output with gain
-// at most 1 + 1.846e-17, and the per-order region-A entry at the batch's top
-// order, which is the order the batch bodies pass.
+// The relaxed lanes read their degrees from cDegEff/cBDegEff, in the lane order documented there.
+// Which degree table a lane reads, and whether its region-B degree is the per-order entry or the
+// order-0 one, is the only thing the relaxed lane objects differ in. The batch lanes read the
+// order-0 region-B entry because the F0 seed's error reaches every output with gain at most
+// 1 + 1.846e-17, and the per-order region-A entry at the batch's top order.
 
 struct Lane64Full {
     __device__ __forceinline__ int Count(int order) const {
@@ -625,14 +563,12 @@ template <int kLane> struct Lane32EffBatch {
     }
 };
 
-// The narrow partition's lane, in the two forms a rung has: kRelaxed false
-// reads the degrees the partition was stored at, which no rung's upload
-// touches, and true reads the rung's own cut. The distinction is the shipped
-// lanes' cDeg/cDegEff one, and it is what keeps a full-accuracy call from being
-// served a resident rung's table.
+// The narrow partition's lane, in the two forms a rung has: kRelaxed false reads the degrees the
+// partition was stored at, which no rung's upload touches, and true reads the rung's own cut. That
+// is what keeps a full-accuracy call from being served a resident rung's table.
 //
-// Region B's seed is piecewise here and the batch shape reads it at order 0, so
-// BSeed ignores the order it is passed for the same reason Lane64EffBatch does.
+// Region B's seed is piecewise here and the batch shape reads it at order 0, so BSeed ignores the
+// order it is passed.
 template <bool kRelaxed> struct Lane64Narrow {
     __device__ __forceinline__ int Count(int order) const {
         return dNarrowAPieceStart[order + 1] - dNarrowAPieceStart[order];
@@ -681,11 +617,10 @@ template <bool kRelaxed> struct Lane64Narrow {
     }
 };
 
-// The monomial scheme's lanes: the shipped lanes' pieces and degrees with the
-// coefficients read from the monomial pool and the piece summed by Horner. The
-// kMonomial member is the whole of the difference the shared bodies see — they
-// choose the summation with it (boys_cuda_arithmetic.hpp) and read the degrees
-// the lane hands them either way, so a rung of this family is a cut of this
+// The monomial scheme's lanes: the shipped lanes' pieces and degrees with the coefficients read
+// from the monomial pool and the piece summed by Horner. The kMonomial member is the whole of the
+// difference the shared bodies see: they choose the summation with it (boys_cuda_arithmetic.hpp)
+// and read the degrees the lane hands them either way, so a rung of this family is a cut of this
 // family's table and not the Chebyshev one's.
 struct Lane64MonoFull {
     static constexpr bool kMonomial = true;
@@ -747,10 +682,9 @@ struct Lane64MonoEff {
     }
 };
 
-// The narrow partition in the monomial basis, in the two forms a rung has, as
-// Lane64Narrow carries the Chebyshev one: kRelaxed false reads the degrees the
-// partition was stored at and true the rung's own cut of this basis. Region B
-// is piecewise here and read at order 0, for the reason Lane64Narrow gives.
+// The narrow partition in the monomial basis, in the two forms a rung has, as Lane64Narrow carries
+// the Chebyshev one: kRelaxed false reads the stored degrees, true the rung's own cut of this
+// basis. Region B is piecewise here and read at order 0.
 template <bool kRelaxed> struct Lane64NarrowMono {
     static constexpr bool kMonomial = true;
 
@@ -805,16 +739,13 @@ template <bool kRelaxed> struct Lane64NarrowMono {
 // ---------------------------------------------------------------------------
 // the float lane's narrow partition
 // ---------------------------------------------------------------------------
-// The same shape of lane one lane down, over the float lane's own pieces. Each
-// pair of lanes comes in the two forms a rung has, as the double lane's do: the
-// stored form reads the degrees the partition was stored at, which no rung's
-// upload touches, and the relaxed form reads the rung's own cut of region B
-// (the symbol block above carries both bases').
+// The same shape of lane one lane down, over the float lane's own pieces, and in the same two
+// forms a rung has: the stored form reads the degrees the partition was stored at, and the relaxed
+// form the rung's own cut of region B (the symbol block above carries both bases').
 //
-// The lanes come in the same pair the double lane's do. The Chebyshev one reads
-// the float narrow pool and sums each piece by a split Clenshaw; the monomial
-// one reads the same partition's other form by Horner, and the kMonomial member
-// is the whole of the difference the shared bodies see.
+// The Chebyshev lane reads the float narrow pool and sums each piece by a split Clenshaw; the
+// monomial one reads the same partition's other form by Horner, and the kMonomial member is the
+// whole of the difference the shared bodies see.
 struct Lane32Narrow {
     __device__ __forceinline__ int Count(int order) const {
         return dNarrowAPieceStart32[order + 1] - dNarrowAPieceStart32[order];
@@ -855,12 +786,11 @@ struct Lane32Narrow {
     }
 };
 
-// The same lane at a rung: the stored coefficients, read at the degree that
-// rung's cut left. It is the float lane's counterpart of Lane64Narrow<true> and
-// it exists for the same reason — a rung's arithmetic is the stored fit read
-// short, and a call asking for a rung must not be answered with the stored
-// degree. Region A is not here: this lane's region-A seed is the double lane's
-// (Lane64Narrow), so the cut this object reads is region B's alone.
+// The same lane at a rung: the stored coefficients, read at the degree that rung's cut left. The
+// float lane's counterpart of Lane64Narrow<true>, for the same reason - a rung's arithmetic is the
+// stored fit read short, and a call asking for a rung must not be answered with the stored degree.
+// Region A is not here: this lane's region-A seed is the double lane's (Lane64Narrow), so the cut
+// this object reads is region B's alone.
 struct Lane32NarrowRelaxed {
     __device__ __forceinline__ float BSeed(float x, int) const {
         int piece = 0;
@@ -881,11 +811,10 @@ struct Lane32NarrowRelaxed {
     }
 };
 
-// The other form of that rung: the monomial pool's coefficients read at the
-// cut derived over those coefficients. The kMonomial member is what tells the
-// shared bodies to sum by Horner, exactly as it does on the stored lanes, and
-// the table it reads is the monomial one — a rung of the monomial form is a cut
-// of that form's tail and not of the other's.
+// The other form of that rung: the monomial pool's coefficients read at the cut derived over those
+// coefficients. The kMonomial member tells the shared bodies to sum by Horner, and the table it
+// reads is the monomial one - a rung of the monomial form is a cut of that form's tail and not of
+// the other's.
 struct Lane32NarrowMonoRelaxed {
     static constexpr bool kMonomial = true;
 
@@ -953,16 +882,14 @@ struct Lane32NarrowMono {
 // ---------------------------------------------------------------------------
 // the rational route's lanes
 // ---------------------------------------------------------------------------
-// The other family's pieces: the same partitions, the same intervals, the same
-// region structure and the same bodies, with a piece summed as a pair
-// (boys_cuda_arithmetic.hpp). The kRational member is what tells the shared
-// bodies so, exactly as kMonomial does for the scheme.
+// The other family's pieces: the same partitions, intervals, region structure and bodies, with a
+// piece summed as a pair (boys_cuda_arithmetic.hpp). The kRational member tells the shared bodies
+// so, exactly as kMonomial does for the scheme.
 //
-// The route's degree table is per piece AND per reading, so a lane names which
-// reading its cut is: the arguments shape seeds at the top order's piece and
-// recurses down, which pays the piece's own w(b) for the seed it carries, and
-// the orders shape reads each order's own piece, which pays A = 1. Region B is
-// one pair read at order 0 either way, so the two readings share its table.
+// The route's degree table is per piece AND per reading, so a lane names which reading its cut is:
+// the arguments shape seeds at the top order's piece and recurses down, paying that piece's own
+// w(b), and the orders shape reads each order's own piece, paying A = 1. Region B is one pair read
+// at order 0 either way, so the two readings share its table.
 enum class RatCut : int {
     kPerOrder = 0, // the argument shape's reading: the piece is the order's value
     kBatchSeed = 1, // the recursion's reading: the seed is carried down from the piece
@@ -1045,10 +972,9 @@ template <RatCut kCut> struct Lane64RatEff {
     }
 };
 
-// The narrow partition, in the two forms a rung has and at either reading:
-// kRelaxed false reads the pairs the table was stored at and true the rung's own
-// cut, and kCut chooses which of the two cuts that is. Region B's seed is a pair
-// per piece here, so its cut is per piece as well and the two readings share it.
+// The narrow partition, in the two forms a rung has and at either reading: kRelaxed false reads the
+// pairs the table was stored at and true the rung's own cut, and kCut chooses which of the two cuts
+// that is. Region B's seed is a pair per piece here, so the two readings share its cut.
 template <bool kRelaxed, RatCut kCut> struct Lane64NarrowRat {
     static constexpr bool kRational = true;
 
@@ -1121,17 +1047,14 @@ template <bool kRelaxed, RatCut kCut> struct Lane64NarrowRat {
     }
 };
 
-// The float lane's rational route. It carries region B alone: the float lanes
-// seed region A from the double lane's table — the argument the float bodies
-// take beside their own lane, and the reason a float seed is never amplified —
-// so the pair a float lane is asked for is the region-B seed and there is no
-// float region-A pair in this lane to read.
+// The float lane's rational route. It carries region B alone: the float lanes seed region A from
+// the double lane's table, so the pair a float lane is asked for is the region-B seed and there is
+// no float region-A pair in this lane to read.
 //
-// The two members below are the shipped and the narrow partition's seed, and
-// each reads the tables its partition stores (dRatBnum32/dRatBden32, or the
-// narrow pool with its denominator above the numerator) through the float form
-// of the route's summation. Nothing here is a cut: these lanes are read at the
-// full-accuracy multiplier only, for the reason the symbols state.
+// The two members below are the shipped and the narrow partition's seed, each reading the tables
+// its partition stores (dRatBnum32/dRatBden32, or the narrow pool with its denominator above the
+// numerator) through the float form of the route's summation. Nothing here is a cut: these lanes
+// are read at the full-accuracy multiplier only.
 struct Lane32Rat {
     __device__ __forceinline__ float BSeed(float x, int) const {
         const float t = 2.0f * (x - static_cast<float>(detail::kX0)) /
@@ -1167,15 +1090,13 @@ struct Lane32NarrowRat {
     }
 };
 
-// The same two lanes at a rung: the stored pairs read at the degrees that rung's
-// criterion left, which is the pair its table holds. They are the float
-// counterparts of Lane64RatEff and Lane64NarrowRat<true, ...>, and the cut is one
-// table per partition rather than one per reading: region B is one seed either
-// way, so both of the route's readings share it.
+// The same two lanes at a rung: the stored pairs read at the degrees that rung's criterion left.
+// The float counterparts of Lane64RatEff and Lane64NarrowRat<true, ...>, cut one table per
+// partition rather than one per reading: region B is one seed either way, so both readings share
+// it.
 //
-// The denominator's position is the STORED numerator's, in the narrow pool as in
-// the full-accuracy lane above: a cut shortens the two blocks and does not move
-// the second of them.
+// The denominator's position is the STORED numerator's, in the narrow pool as in the full-accuracy
+// lane above: a cut shortens the two blocks and does not move the second of them.
 struct Lane32RatRelaxed {
     static constexpr bool kRational = true;
 
@@ -1214,16 +1135,13 @@ struct Lane32NarrowRatRelaxed {
     }
 };
 
-// ---------------------------------------------------------------------------
-// kernels
-// ---------------------------------------------------------------------------
-// Each of these is one thread's worth of index arithmetic around one call into
-// the shared bodies of boys_cuda_arithmetic.hpp — the same bodies the
-// device-callable entries run.
+// --------------------------------------------------------------------------- kernels
+// --------------------------------------------------------------------------- Each of these is one
+// thread's worth of index arithmetic around one call into the shared bodies of
+// boys_cuda_arithmetic.hpp - the same bodies the device-callable entries run.
 //
-// __restrict__ on x/out: the buffers are distinct DeviceBuffers by
-// construction, and without it every out store would force nvcc to reload x
-// (assumed aliasing).
+// __restrict__ on x/out: the buffers are distinct DeviceBuffers by construction, and without it
+// every out store would force nvcc to reload x (assumed aliasing).
 template <bool kFastExp>
 __global__ void BoysSingleF32Kernel(const int* n,
                                     const double* __restrict__ x,
@@ -1318,29 +1236,24 @@ __global__ void BoysAllNF64Kernel(int nmax, const double* x, double* out, size_t
 // ---------------------------------------------------------------------------
 // the uniform route's ladder
 // ---------------------------------------------------------------------------
-// One thread per argument, the whole ladder to that argument's own order, the
-// output order-major as the entries above write it.
+// One thread per argument, the whole ladder to that argument's own order, the output order-major as
+// the entries above write it.
 //
-// Below the join every order is summed from its own coefficients and none is
-// built from another, so the 33 sums a top-order argument walks are 33
-// independent chains rather than one recurrence: that independence is the whole
-// of what this route buys, and it is why the pool is read at a fixed stride.
-// At and above the join no fit reaches and the call falls to the one-term
-// asymptotic and its own upward recurrence — the arm region C runs, read from
-// the header's own prefactor and stepping by the same (l + 1/2)/x.
+// Below the join every order is summed from its own coefficients and none is built from another, so
+// the 33 sums a top-order argument walks are 33 independent chains rather than one recurrence: that
+// independence is the whole of what this route buys, and it is why the pool is read at a fixed
+// stride. At and above the join no fit reaches and the call falls to the one-term asymptotic and
+// its own upward recurrence - the arm region C runs, read from the header's own prefactor and
+// stepping by the same (l + 1/2)/x.
 //
-// The mapping is the lane's own: thread i owns argument i, so its stores to
-// out[l * count + i] are coalesced across the warp while it walks its own
-// interval's 2112 contiguous bytes. Consecutive lanes of a warp therefore
-// usually sit in different intervals of the grid, so the pool's read is not
-// uniform across a warp; that is a property of an argument stream and not of
-// this kernel, and it is what the grid's width decides.
+// Thread i owns argument i, so its stores to out[l * count + i] are coalesced across the warp while
+// it walks its own interval's 2112 contiguous bytes. Consecutive lanes of a warp therefore usually
+// sit in different intervals, so the pool's read is not uniform across a warp; that is a property
+// of an argument stream and not of this kernel.
 //
-// The ladder itself is the header's (DeviceAllOrdersF64Flat): the pools are the
-// whole of what this route reads, so a kernel holding them by their local
-// symbols and a caller holding them through the handle run one body, and the
-// route's choice of table reaches a caller's kernel rather than stopping at
-// this translation unit's own symbols.
+// The ladder itself is the header's (DeviceAllOrdersF64Flat): the pools are the whole of what this
+// route reads, so a kernel holding them by their local symbols and a caller holding them through
+// the handle run one body.
 template <bool kMonomial>
 __global__ void BoysAllOrdersF64FlatKernel(const int* n,
                                            const double* x,
@@ -1362,16 +1275,13 @@ __global__ void BoysAllOrdersF64FlatKernel(const int* n,
                                               });
 }
 
-// The same grid on its rational route. The structure is the kernel above — one
-// thread per argument, the whole ladder to that argument's own order, the
-// output order-major — and what differs is the table it steps: one numerator/
-// denominator pair per interval, addressed at the interval's own stored count,
-// so the kernel closes over the pool and the four per-interval columns instead
-// of the two pools and the two.
+// The same grid on its rational route. The structure is the kernel above - one thread per argument,
+// the whole ladder to that argument's own order, the output order-major - and what differs is the
+// table it steps: one numerator/denominator pair per interval, addressed at the interval's own
+// stored count, so the kernel closes over the pool and the four per-interval columns.
 //
-// No form parameter: the route is a family and not a basis, so both scheme names
-// a caller may use reach this one kernel, exactly as the lane's shipped and
-// narrow rational pairs do.
+// No form parameter: the route is a family and not a basis, so both scheme names a caller may use
+// reach this one kernel.
 __global__ void BoysAllOrdersF64FlatRatKernel(const int* n,
                                               const double* x,
                                               double* out,
@@ -1396,17 +1306,15 @@ __global__ void BoysAllOrdersF64FlatRatKernel(const int* n,
 // ---------------------------------------------------------------------------
 // the float lane's uniform route
 // ---------------------------------------------------------------------------
-// One thread per argument on the float lane's own grid, the whole ladder to that
-// argument's own order and the output order-major as every entry above writes
-// it. The structure is the double route's — read each order from its own fit,
-// fall to the asymptotic at the join — and the arithmetic is the lane's: the
-// every sum is a float one, and the mapped argument is the
-// float lane's own spelling rather than a narrowing of the double lane's.
+// One thread per argument on the float lane's own grid, the whole ladder to that argument's own
+// order, the output order-major as every entry above writes it. The structure is the double
+// route's - read each order from its own fit, fall to the asymptotic at the join - and the
+// arithmetic is the lane's: every sum is a float one, and the mapped argument is the float lane's
+// own spelling rather than a narrowing of the double lane's.
 //
-// The ladder is the header's (DeviceAllOrdersF32Flat), which states that map
-// and its reason, for the same cause the double kernel above gives: the two
-// pools and the grid's two per-interval tables are the whole of what this route
-// reads, so the local symbols and a caller's handle reach one body.
+// The ladder is the header's (DeviceAllOrdersF32Flat), for the same cause the double kernel above
+// gives: the two pools and the grid's two per-interval tables are the whole of what this route
+// reads.
 template <bool kMonomial>
 __global__ void BoysAllOrdersF32FlatKernel(const int* n,
                                            const double* x,
@@ -1419,9 +1327,8 @@ __global__ void BoysAllOrdersF32FlatKernel(const int* n,
         return;
     }
 
-    // The entry takes doubles and the kernel narrows itself, as every float
-    // entry of this lane does: the argument measured at is the float it
-    // evaluates at.
+    // The entry takes doubles and the kernel narrows itself, as every float entry of this lane
+    // does: the argument measured at is the float it evaluates at.
     float* o = out + i;
 
     detail::DeviceAllOrdersF32Flat<kMonomial>(dFlatCoeffsF32, dFlatMonoCoeffsF32, dFlatDegsF32,
@@ -1432,9 +1339,8 @@ __global__ void BoysAllOrdersF32FlatKernel(const int* n,
                                               });
 }
 
-// The float lane's grid on its rational route, the double kernel above at this
-// lane's grid, tables and arithmetic, and with no form parameter for the same
-// reason.
+// The float lane's grid on its rational route: the double kernel above at this lane's grid, tables
+// and arithmetic, and with no form parameter for the same reason.
 __global__ void BoysAllOrdersF32FlatRatKernel(const int* n,
                                               const double* x,
                                               float* out,
@@ -1460,17 +1366,14 @@ __global__ void BoysAllOrdersF32FlatRatKernel(const int* n,
 // ---------------------------------------------------------------------------
 // the float lane's narrow partition
 // ---------------------------------------------------------------------------
-// The same body as the shipped float batch entry with the partition named: the
-// float lane's own narrow pieces in region A and its own narrow region-B seed,
-// read one fit at a time.
+// The same body as the shipped float batch entry with the partition named: the float lane's own
+// narrow pieces in region A and its own narrow region-B seed, read one fit at a time.
 //
-// The two lane arguments are the two tables the float lane's shipped batch entry
-// already reads, one lane down. Region A's seed is the DOUBLE lane's piece table
-// — the downward recursion amplifies a float seed error past the float budget,
-// which is why DeviceAllOrdersF32 takes a seed lane at all — and the region-B
-// seed is the float lane's own, which is the split the shipped entry (Lane64Full
-// beside Lane32Full) already makes. Here the double lane's parts are its narrow
-// partition's, so the entry is the narrow route rather than a mixed one.
+// Region A's seed is the DOUBLE lane's piece table - the downward recursion amplifies a float seed
+// error past the float budget, which is why DeviceAllOrdersF32 takes a seed lane at all - and the
+// region-B seed is the float lane's own, the split the shipped entry (Lane64Full beside Lane32Full)
+// already makes. Here the double lane's parts are its narrow partition's, so the entry is the
+// narrow route rather than a mixed one.
 __global__ void BoysAllOrdersF32NarrowKernel(const int* n,
                                              const double* __restrict__ x,
                                              float* __restrict__ out,
@@ -1507,13 +1410,10 @@ __global__ void BoysAllOrdersF32NarrowMonoKernel(const int* n,
                                [&](int l, float v) { out[l * count + i] = v; });
 }
 
-// The float lane's rational route, one kernel per partition it is carried on.
-// The seed lane is the double lane's rational pair at that partition — the same
-// lane the double route's own rows pass, which is what makes the two lanes'
-// region-A seeds one reading — and the float lane supplies the region-B seed.
-// The route has no second scheme: its pair is stored in monomial form and read
-// by Horner, so both scheme names a caller may use reach one kernel and one
-// arithmetic, as they do on the double lane.
+// The float lane's rational route, one kernel per partition it is carried on. The seed lane is the
+// double lane's rational pair at that partition, which is what makes the two lanes' region-A seeds
+// one reading, and the float lane supplies the region-B seed. The route has no second scheme: its
+// pair is stored in monomial form and read by Horner, so both scheme names reach one kernel.
 __global__ void BoysAllOrdersF32RatKernel(const int* n,
                                           const double* __restrict__ x,
                                           float* __restrict__ out,
@@ -1552,8 +1452,8 @@ __global__ void BoysAllOrdersF32NarrowRatKernel(const int* n,
 
 // ---------------------------------------------------------------------------
 // fp16 lane (the certified mixed-precision extension; BoysFp16 seam).
-// __half I/O around the fp32 engine above -- the same __constant__ tables,
-// the same region-partitioned dispatch, the same bodies.
+// __half I/O around the fp32 engine above -- the same __constant__ tables, the same
+// region-partitioned dispatch, the same bodies.
 // ---------------------------------------------------------------------------
 #if BoysFp16
 __global__ void BoysSingleF16Kernel(const int* n,
@@ -1612,17 +1512,13 @@ __global__ void BoysAllNF16Kernel(int nmax,
 // ---------------------------------------------------------------------------
 // effective-degree kernels (the relaxation path)
 // ---------------------------------------------------------------------------
-// One per CUDA lane, mirroring the full-accuracy kernels above exactly
-// (same arithmetic, same region structure, same output layout) except that
-// the seed degrees come from cDegEff/cBDegEff — the m = 1 kernels stay
-// byte-identical (the full-accuracy pin). The lane index is the kernel's
-// identity, in the order documented at cDegEff. The batch lanes read the
-// order-0 region-B entry and the per-order region-A entry at the batch's top
-// order (the A_A(nmax) amplification covers the downward recursion) — exactly
-// the CPU relaxed batches. Which lane object a kernel passes is the whole of
-// the difference from the kernels above: the relaxed single lanes read their
-// region-B degree per order, and the relaxed batch lanes read the order-0
-// entry whatever order their body hands them.
+// One per CUDA lane, mirroring the full-accuracy kernels above exactly (same arithmetic, same
+// region structure, same output layout) except that the seed degrees come from
+// cDegEff/cBDegEff - the m = 1 kernels stay byte-identical (the full-accuracy pin). The lane
+// index is the kernel's identity, in the order documented at cDegEff. The batch lanes read the
+// order-0 region-B entry and the per-order region-A entry at the batch's top order (the A_A(nmax)
+// amplification covers the downward recursion) - exactly the CPU relaxed batches. The relaxed
+// single lanes read their region-B degree per order.
 template <int kLane>
 __global__ void BoysSingleF64KernelEff(const int* n, const double* x, double* out, size_t count) {
     const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
@@ -1668,15 +1564,13 @@ __global__ void BoysAllNF64KernelEff(int nmax, const double* x, double* out, siz
 // ---------------------------------------------------------------------------
 // the orders axis and the narrow partition
 // ---------------------------------------------------------------------------
-// Six kernels and not two, because each shape has a full-accuracy form and a
-// rung's form, exactly as the all-orders kernel above does. The orders axis is
-// a body choice and the partition is a lane choice, so the two compose: the
-// last pair is the narrow partition read with the orders axis.
+// Six kernels and not two, because each shape has a full-accuracy form and a rung's form, exactly
+// as the all-orders kernel above does. The orders axis is a body choice and the partition is a
+// lane choice, so the two compose: the last pair is the narrow partition read with the orders
+// axis.
 //
-// The orders axis is a choice inside region A only: past kX0 these kernels run
-// the certified all-orders body, whose row is the lane's own bound over the
-// whole range, so the axis adds a claim in region A and takes none away
-// outside it.
+// The orders axis is a choice inside region A only: past kX0 these kernels run the certified
+// all-orders body, whose row is the lane's own bound over the whole range.
 template <typename Lane>
 __device__ __forceinline__ void DeviceOrdersBody(
     const Lane& lane, int order, double xx, double* out, size_t count, size_t i) {
@@ -1775,14 +1669,13 @@ __global__ void BoysAllOrdersF64NarrowOrdersKernelEff(const int* n,
 // ---------------------------------------------------------------------------
 // the evaluation scheme: the same fits in the monomial basis
 // ---------------------------------------------------------------------------
-// The scheme axis is a lane choice and not a body choice — the pieces, the
-// edges, the region structure and the shape are the shipped ones, and what
-// changes is the pool a piece's coefficients come from and the summation they
-// are read by (boys_cuda_arithmetic.hpp) — so these are the same four shapes
-// with a monomial lane, each with the full-accuracy form and the rung's.
+// The scheme axis is a lane choice and not a body choice - the pieces, the edges, the region
+// structure and the shape are the shipped ones, and what changes is the pool a piece's
+// coefficients come from and the summation they are read by (boys_cuda_arithmetic.hpp) - so these
+// are the same four shapes with a monomial lane, each with the full-accuracy form and the rung's.
 //
-// The orders axis composes with it too: DeviceOrdersBody takes the lane, so
-// the axis is a choice inside region A whichever basis that lane sums.
+// The orders axis composes with it too: DeviceOrdersBody takes the lane, so the axis is a choice
+// inside region A whichever basis that lane sums.
 __global__ void BoysAllOrdersF64MonoKernel(const int* n,
                                            const double* __restrict__ x,
                                            double* __restrict__ out,
@@ -1906,19 +1799,17 @@ __global__ void BoysAllOrdersF64NarrowOrdersMonoKernelEff(const int* n,
 // ---------------------------------------------------------------------------
 // the fit route: the same fits as rational minimax pairs
 // ---------------------------------------------------------------------------
-// The route axis is a lane choice like the scheme axis: the pieces, the edges,
-// the partitions, the region structure and the shapes are the shipped ones, and
-// what changes is what a piece's coefficients are — a numerator/denominator
-// pair summed by two Horner passes and a division (boys_cuda_arithmetic.hpp) —
-// so these are the same four shapes with a rational lane.
+// The route axis is a lane choice like the scheme axis: the pieces, edges, partitions, region
+// structure and shapes are the shipped ones, and what changes is what a piece's coefficients are -
+// a numerator/denominator pair summed by two Horner passes and a division
+// (boys_cuda_arithmetic.hpp) - so these are the same four shapes with a rational lane.
 //
-// Each shape appears twice because the route's cut is per reading: the
-// arguments shape seeds at its top order's piece and carries that piece's w(b),
-// and the orders shape reads each order's own piece at A = 1, so the two name
-// different cuts of the same stored pairs.
+// Each shape appears twice because the route's cut is per reading: the arguments shape seeds at its
+// top order's piece and carries that piece's w(b), and the orders shape reads each order's own
+// piece at A = 1, so the two name different cuts of the same stored pairs.
 //
-// The scheme axis is inert on this route: the pair is stored once, in one
-// basis, so both scheme names launch this same kernel.
+// The scheme axis is inert on this route: the pair is stored once, in one basis, so both scheme
+// names launch this same kernel.
 __global__ void BoysAllOrdersF64RatKernel(const int* n,
                                           const double* __restrict__ x,
                                           double* __restrict__ out,
@@ -2152,27 +2043,21 @@ __global__ void BoysAllNF16KernelEff(int nmax,
 // ---------------------------------------------------------------------------
 // the orders axis on the float lane
 // ---------------------------------------------------------------------------
-// The float lane's mirror of the orders-axis block above, one kernel per shape
-// and the same body: region A read as one fit per order rather than seeded at
-// the top order and brought down a recurrence, and past kX0 the certified
-// all-orders body of the shape the kernel names.
+// The float lane's mirror of the orders-axis block above, one kernel per shape and the same body:
+// region A read as one fit per order rather than seeded at the top order and brought down a
+// recurrence, and past kX0 the certified all-orders body of the shape the kernel names.
 //
-// The seed lane is the double lane's, which is the pairing every float lane
-// kernel of this file already makes (Lane64Full beside Lane32Full, and
-// Lane64EffBatch<kLane> beside Lane32EffBatch<kLane> for a rung): the region-A
-// seed is computed in double and rounded once on entry to the recursion,
-// because the downward recursion amplifies a float seed error past the float
-// budget. So each kernel below hands DeviceOrdersF32 a lane object this file
-// already runs and a piece table this lane already stores — the axis is a
-// reading of the same stored fits and not a new fit.
+// The seed lane is the double lane's, the pairing every float lane kernel of this file already
+// makes (Lane64Full beside Lane32Full, and Lane64EffBatch<kLane> beside Lane32EffBatch<kLane> for a
+// rung): the region-A seed is computed in double and rounded once on entry to the recursion,
+// because the downward recursion amplifies a float seed error past the float budget. So each
+// kernel below hands DeviceOrdersF32 a lane object this file already runs and a piece table this
+// lane already stores - the axis is a reading of the same stored fits and not a new fit.
 //
-// The shipped partition's rung is the float batch's own cut, which this lane
-// derives, uploads and reads, so its row has the two forms a rung has, and the
-// narrow partition's pair has them too, one per basis (the kernels beside the
-// per-argument ones above). The rational route's rows are served at the
-// full-accuracy multiplier alone, for the reason their per-argument siblings
-// state: this lane holds no rung cut of the float lane's rational pairs, and a
-// rung kernel here would have to read one. A rung those rows do not serve is
+// The shipped partition's rung is the float batch's own cut, so its row has the two forms a rung
+// has, and the narrow partition's pair has them too, one per basis. The rational route's rows are
+// served at the full-accuracy multiplier alone: this lane holds no rung cut of the float lane's
+// rational pairs, and a rung kernel here would have to read one. A rung those rows do not serve is
 // refused at the entry and is never answered from the stored table.
 template <typename SeedLane, typename Lane>
 __device__ __forceinline__ void DeviceOrdersBody32(
@@ -2242,11 +2127,10 @@ __global__ void BoysAllOrdersF32NarrowOrdersMonoKernel(const int* n,
                        static_cast<float>(x[i]), out, count, i);
 }
 
-// The fit route's orders shapes. The pair is stored once and read by the two
-// readings the double lane's route names: this one reads each order's own
-// piece at A = 1 (RatCut::kPerOrder), which is what an order's own value is,
-// where the per-argument shape seeds at its top order's piece and carries that
-// piece's w(b) down the recursion.
+// The fit route's orders shapes. The pair is stored once and read by the two readings the double
+// lane's route names: this one reads each order's own piece at A = 1 (RatCut::kPerOrder), which is
+// what an order's own value is, where the per-argument shape seeds at its top order's piece and
+// carries that piece's w(b) down the recursion.
 __global__ void BoysAllOrdersF32OrdersRatKernel(const int* n,
                                                 const double* __restrict__ x,
                                                 float* __restrict__ out,
@@ -2261,9 +2145,8 @@ __global__ void BoysAllOrdersF32OrdersRatKernel(const int* n,
     DeviceOrdersBody32(Lane64RatFull{}, Lane32Rat{}, n[i], static_cast<float>(x[i]), out, count, i);
 }
 
-// The narrow partition at a rung, both axes. Region A is the double lane's
-// narrow cut through the per-order seed lane and region B this lane's own cut
-// (Lane32NarrowRelaxed), which is the pair the rung's table holds.
+// The narrow partition at a rung, both axes: region A is the double lane's narrow cut through the
+// per-order seed lane and region B this lane's own cut (Lane32NarrowRelaxed).
 __global__ void BoysAllOrdersF32NarrowKernelEff(const int* n,
                                                 const double* __restrict__ x,
                                                 float* __restrict__ out,
@@ -2297,11 +2180,9 @@ __global__ void BoysAllOrdersF32NarrowOrdersKernelEff(const int* n,
                        static_cast<float>(x[i]), out, count, i);
 }
 
-// The same partition's rung in the monomial basis, on both axes: the other
-// form of the seed lane and the other form's cut of region B. The two are one
-// pair — the basis a lane sums in and the table its degree was cut from — and
-// nothing here reads the Chebyshev pair, so a Horner call at a rung is answered
-// by the monomial coefficients this entry reads at the stored degree too.
+// The same partition's rung in the monomial basis, on both axes: the other form of the seed lane
+// and the other form's cut of region B. The two are one pair - the basis a lane sums in and the
+// table its degree was cut from - and nothing here reads the Chebyshev pair.
 __global__ void BoysAllOrdersF32NarrowMonoKernelEff(const int* n,
                                                     const double* __restrict__ x,
                                                     float* __restrict__ out,
@@ -2335,11 +2216,10 @@ __global__ void BoysAllOrdersF32NarrowOrdersMonoKernelEff(const int* n,
                        static_cast<float>(x[i]), out, count, i);
 }
 
-// The fit route at a rung, on both of this lane's partitions and both of the
-// route's readings. The seed lane is the double lane's pair at the rung's own cut
-// of the reading this shape makes, exactly as the shipped float partition's rung
-// kernels take it, and the float lane supplies the region-B seed at the same
-// rung's cut of its own pair — the one seed both readings share.
+// The fit route at a rung, on both of this lane's partitions and both of the route's readings: the
+// seed lane is the double lane's pair at the rung's own cut of the reading this shape makes, and
+// the float lane supplies the region-B seed at the same rung's cut of its own pair - the one seed
+// both readings share.
 __global__ void BoysAllOrdersF32RatKernelEff(const int* n,
                                              const double* __restrict__ x,
                                              float* __restrict__ out,
@@ -2422,7 +2302,7 @@ __global__ void BoysAllOrdersF32NarrowOrdersRatKernel(const int* n,
 }
 
 // ---------------------------------------------------------------------------
-// host layer: plain exported functions (no library C++ types — this TU
+// host layer: plain exported functions (no library C++ types - this TU
 // stays C++20). The BoysStatus layer lives in boys_cuda.cpp (C++23).
 // ---------------------------------------------------------------------------
 int gTablesDevice = -1; // device ordinal the tables were uploaded to
@@ -2446,11 +2326,10 @@ extern "C" int BoysCudaUploadTables() {
         // The monomial scheme's pool, packed at the same offsets as the
         // Chebyshev one — the two forms of one fit over the same pieces.
         double monoCoeffs[kMaxCoeffs] = {};
-        // The fit route's own blocks, at the same offsets: a piece's numerator
-        // and denominator are one run of the pool and the route's metadata says
-        // where each begins. The two blocks are addressed separately because a
-        // rung's cut moves the numerator's end and leaves the denominator's
-        // start where the stored numerator's degree put it.
+        // The fit route's own blocks, at the same offsets: a piece's numerator and denominator are
+        // one run of the pool and the route's metadata says where each begins. The two blocks are
+        // addressed separately because a rung's cut moves the numerator's end and leaves the
+        // denominator's start where the stored numerator's degree put it.
         int ratOffset[33][kMaxPieces] = {};
         int ratDenOffset[33][kMaxPieces] = {};
         int ratNumDeg[33][kMaxPieces] = {};
@@ -2608,9 +2487,8 @@ extern "C" int BoysCudaUploadTables() {
             return 2;
         }
 
-        // The monomial scheme's pools. Only the pool is copied: the pieces,
-        // their edges and their degrees are the ones above, which is what the
-        // two forms of a fit share.
+        // The monomial scheme's pools. Only the pool is copied: the pieces, their edges and their
+        // degrees are the ones above, which is what the two forms of a fit share.
         if (cudaMemcpyToSymbol(dMonoCoeffs, monoCoeffs, sizeof(monoCoeffs)) != cudaSuccess)
         {
             return 2;
@@ -2622,10 +2500,9 @@ extern "C" int BoysCudaUploadTables() {
             return 2;
         }
 
-        // The fit route's pool, metadata and region-B pair. The pool is copied
-        // as the header stores it — a cut reads a prefix of the same run — and
-        // region B is the two arrays the header keeps, which is why it needs no
-        // per-piece table here.
+        // The fit route's pool, metadata and region-B pair. The pool is copied as the header stores
+        // it - a cut reads a prefix of the same run - and region B is the two arrays the header
+        // keeps, so it needs no per-piece table here.
         if (cudaMemcpyToSymbol(dRatACoeffs,
                                detail::kRatACoeffs.data(),
                                sizeof(detail::kRatACoeffs)) != cudaSuccess ||
@@ -2651,11 +2528,9 @@ extern "C" int BoysCudaUploadTables() {
             return 2;
         }
 
-        // The float lane's rational region-B seed over the same partition. The
-        // header keeps it as two arrays exactly as the double lane's, so it is
-        // copied the same way and needs no per-piece table; the float lane's
-        // region-A pair is the double lane's and is uploaded above with the rest
-        // of the route.
+        // The float lane's rational region-B seed over the same partition. The header keeps it as
+        // two arrays exactly as the double lane's, so it is copied the same way; the float lane's
+        // region-A pair is the double lane's and is uploaded above with the rest of the route.
         if (cudaMemcpyToSymbol(dRatBnum32,
                                detail::f32::kRatBnum.data(),
                                sizeof(detail::f32::kRatBnum)) != cudaSuccess ||
@@ -2666,18 +2541,15 @@ extern "C" int BoysCudaUploadTables() {
             return 2;
         }
 
-        // The uniform route's pool, both forms of every fit, copied as the
-        // header stores them, and the grid's two per-interval tables beside
-        // them. It is not a cut and no rung moves it: the cells carry the
-        // degrees the grid's own cell law placed them at, a rung's degree table
-        // says nothing about it, and there is no relaxed image of it to make
-        // resident. An entry of this route is therefore served at every rung,
-        // and by this pool at each of them.
+        // The uniform route's pool, both forms of every fit, copied as the header stores them, and
+        // the grid's two per-interval tables beside them. It is not a cut and no rung moves it: the
+        // cells carry the degrees the grid's own cell law placed them at, and an entry of this
+        // route is served at every rung by this pool.
         //
-        // The coefficients and the two tables are one image: a reader given the
-        // coefficients and a stale degree would sum a cell's block at another
-        // cell's length, so a copy that left either table behind would be a
-        // table the kernel reads wrongly rather than one it does not find.
+        // The coefficients and the two tables are one image: a reader given the coefficients and a
+        // stale degree would sum a cell's block at another cell's length, so a copy that left
+        // either table behind would be a table the kernel reads wrongly rather than one it does not
+        // find.
         if (cudaMemcpyToSymbol(dFlatCoeffs,
                                detail::kFlatCoeffs.data(),
                                sizeof(detail::kFlatCoeffs)) != cudaSuccess ||
@@ -2836,11 +2708,10 @@ extern "C" int BoysCudaUploadTables() {
         }
     }
 
-    // The float lane's narrow partition, laid out as the double lane's is: one
-    // pool per form and one row per piece, a row's flat index being its position
-    // in kNarrowAPiecesF32. The stored degrees travel with the pieces because no
-    // rung table is carried beside them here (see the symbol block), so the
-    // degrees a full-accuracy call reads are the header's own.
+    // The float lane's narrow partition, laid out as the double lane's is: one pool per form and
+    // one row per piece, a row's flat index being its position in kNarrowAPiecesF32. The stored
+    // degrees travel with the pieces because no rung table is carried beside them here (see the
+    // symbol block).
     {
         int start[detail::kMaxOrder + 2] = {};
         int offset[kNarrowPiecesTotal32] = {};
@@ -2909,11 +2780,9 @@ extern "C" int BoysCudaUploadTables() {
         }
     }
 
-    // The float lane's rational region-B seed over that same partition: one pair
-    // per piece, at the piece's own two degrees. The pieces, their edges and
-    // their intervals are the narrow Chebyshev partition's own — the header's
-    // kNarrowRatBPiecesF32 carries the edges kNarrowBEdges32 holds — so what is
-    // uploaded here is the pairs and their degrees and nothing else.
+    // The float lane's rational region-B seed over that same partition: one pair per piece, at the
+    // piece's own two degrees. The pieces, their edges and their intervals are the narrow Chebyshev
+    // partition's own, so what is uploaded here is the pairs and their degrees and nothing else.
     {
         int offset[detail::f32::kNarrowRatBPiecesCountF32] = {};
         int numDeg[detail::f32::kNarrowRatBPiecesCountF32] = {};
@@ -2924,9 +2793,8 @@ extern "C" int BoysCudaUploadTables() {
             const detail::f32::RatPiece& piece =
                 detail::f32::kNarrowRatBPiecesF32[static_cast<std::size_t>(p)];
 
-            // The pair occupies offset .. offset + numdeg, then the denominator's
-            // q_1..q_k above it, so the last coefficient a read touches is
-            // offset + numdeg + 1 + (dendeg - 1).
+            // The pair occupies offset .. offset + numdeg, then the denominator's q_1..q_k above
+            // it, so the last coefficient a read touches is offset + numdeg + 1 + (dendeg - 1).
             if (piece.offset < 0 ||
                 piece.offset + piece.numdeg + 1 + piece.dendeg > kNarrowRatBCoeffsTotal32F32)
             {
@@ -2949,10 +2817,8 @@ extern "C" int BoysCudaUploadTables() {
         }
     }
 
-    // The float lane's uniform table, both forms of every fit, copied as the
-    // header stores them and for the reason the double lane's is copied: it is
-    // not a cut and no rung moves it, so an entry of the route is served at
-    // every rung, by this pool at each of them.
+    // The float lane's uniform table, both forms of every fit, copied as the header stores them and
+    // for the reason the double lane's is: it is not a cut and no rung moves it.
     if (cudaMemcpyToSymbol(dFlatCoeffsF32,
                            detail::f32::kFlatCoeffsF32.data(),
                            sizeof(detail::f32::kFlatCoeffsF32)) != cudaSuccess ||
@@ -2969,10 +2835,9 @@ extern "C" int BoysCudaUploadTables() {
         return 2;
     }
 
-    // The two grids' rational route, uploaded as the same kind of one image and
-    // for the same reason: the pool and its four per-interval columns are read by
-    // one body, and a reader given the pool without them would address a row at
-    // another interval's length.
+    // The two grids' rational route, uploaded as the same kind of one image and for the same
+    // reason: the pool and its four per-interval columns are read by one body, and a reader given
+    // the pool without them would address a row at another interval's length.
     if (cudaMemcpyToSymbol(dFlatRatCoeffs,
                            detail::kFlatRatCoeffs.data(),
                            sizeof(detail::kFlatRatCoeffs)) != cudaSuccess ||
@@ -3007,9 +2872,9 @@ extern "C" int BoysCudaUploadTables() {
         return 2;
     }
 
-    // The cudaMemcpyToSymbol calls above are asynchronous (default stream);
-    // sync before the guard flips so a concurrent launch on a non-default
-    // stream can never read partially uploaded constant tables.
+    // The cudaMemcpyToSymbol calls above are asynchronous (default stream); sync before the guard
+    // flips so a concurrent launch on a non-default stream can never read partially uploaded
+    // constant tables.
     const cudaError_t uploadSync = cudaStreamSynchronize(static_cast<cudaStream_t>(0));
 
     if (uploadSync != cudaSuccess)
@@ -3017,10 +2882,9 @@ extern "C" int BoysCudaUploadTables() {
         return static_cast<int>(uploadSync);
     }
 
-    // The narrow partition of the double lane's fits. One pool of coefficients
-    // and one row per piece of the partition, laid out as the header stores it:
-    // a row's flat index is its position in kNarrowAPieces, which is also the
-    // index its effective degree is derived at.
+    // The narrow partition of the double lane's fits: one pool of coefficients and one row per
+    // piece of the partition, laid out as the header stores it. A row's flat index is its position
+    // in kNarrowAPieces, which is also the index its effective degree is derived at.
     {
         int start[detail::kMaxOrder + 2] = {};
         int offset[kNarrowPiecesTotal] = {};
@@ -3028,16 +2892,15 @@ extern "C" int BoysCudaUploadTables() {
         double b[kNarrowPiecesTotal] = {};
         int stored[kNarrowPiecesTotal] = {};
         double coeffs[kNarrowCoeffsTotal] = {};
-        // The partition's own fits in the monomial basis, at the same offsets:
-        // the pieces, edges and stored degrees above are the two forms' shared
-        // ones.
+        // The partition's own fits in the monomial basis, at the same offsets: the pieces, edges
+        // and stored degrees above are the two forms' shared ones.
         double monoCoeffs[kNarrowCoeffsTotal] = {};
         double edges[detail::kNarrowBPieces + 1] = {};
         double bcoeffs[detail::kNarrowBPieces * (detail::kNarrowBDeg + 1)] = {};
         double monoBcoeffs[detail::kNarrowBPieces * (detail::kNarrowBDeg + 1)] = {};
-        // The partition's fits in the rational route's form: a pair per row, at
-        // the header's own offsets, and region B's pairs per piece above the
-        // shared offsets the Chebyshev seed does not use.
+        // The partition's fits in the rational route's form: a pair per row, at the header's own
+        // offsets, and region B's pairs per piece above the shared offsets the Chebyshev seed does
+        // not use.
         int ratOffset[kNarrowPiecesTotal] = {};
         int ratDenOffset[kNarrowPiecesTotal] = {};
         int ratNumDeg[kNarrowPiecesTotal] = {};
@@ -3133,15 +2996,13 @@ extern "C" int BoysCudaUploadTables() {
     return 0;
 }
 
-// The addresses of the flat device image, in the order the status layer fills
-// BoysDeviceTables (boys_cuda.hpp): the double lane's pieceStart, offset, a, b,
-// deg, coeffs and region-B seed, then the float lane's seven, then the relaxed
-// image's three, then the uniform grid's four pools — the double lane's two
-// stored forms and the float lane's two. The status layer cannot name a CUDA
-// symbol, so the order is the seam between this file and boys_cuda.cpp and both
-// sides state it.
-// Uploads first, so a caller that skipped InitializeTables still gets a table
-// rather than a null pointer.
+// The addresses of the flat device image, in the order the status layer fills BoysDeviceTables
+// (boys_cuda.hpp): the double lane's pieceStart, offset, a, b, deg, coeffs and region-B seed, then
+// the float lane's seven, then the relaxed image's three, then the uniform grid's four pools. The
+// status layer cannot name a CUDA symbol, so the order is the seam between this file and
+// boys_cuda.cpp and both sides state it.
+// Uploads first, so a caller that skipped InitializeTables still gets a table rather than a null
+// pointer.
 namespace {
 
 // The address order, one entry per symbol, in the slot order the handle's fields
@@ -3204,11 +3065,10 @@ static_assert(kTableAddressCount >= kTableAddressFirstCount,
               "the two calls that fill the address order must cover it in one direction: "
               "the first cannot hold more slots than the order has");
 
-// The order's second half is exactly the handle's count of the fields those
-// slots belong to. The status layer sizes the array it offers this export by
-// that count, so the two sides state the same width and a table appended here
-// without a field to receive it is a compile error rather than an address
-// written past the end of the caller's array.
+// The order's second half is exactly the handle's count of the fields those slots belong to. The
+// status layer sizes the array it offers this export by that count, so the two sides state the same
+// width and a table appended here without a field to receive it is a compile error rather than an
+// address written past the end of the caller's array.
 static_assert(kTableAddressCount - kTableAddressFirstCount == kBoysDeviceTablesTailCount,
               "the tail export's width must be the handle's own count of the symbols after "
               "the first twenty-one: one slot per symbol, in the order both sides state");
@@ -3223,28 +3083,22 @@ extern "C" int BoysCudaDeviceTableAddresses(void** out) {
         return uploaded;
     }
 
-    // The element type is const void*, not void**: cudaGetSymbolAddress has a
-    // template overload taking const T&, and a void** lvalue binds to it as
-    // T = void**, which hands the runtime the address of the array slot instead
-    // of the address of the variable. A const void* value matches the
-    // non-template overload, which is the one that resolves a symbol.
+    // The element type is const void*, not void**: cudaGetSymbolAddress has a template overload
+    // taking const T&, and a void** lvalue binds to it as T = void**, which hands the runtime the
+    // address of the array slot instead of the address of the variable. A const void* value matches
+    // the non-template overload, which is the one that resolves a symbol.
     //
-    // Every table added after the original seventeen is appended rather than
-    // slotted in beside the tables it belongs to, so that a slot a caller's
-    // build already reads keeps its index: the order below and the one the
-    // status layer fills with are one order, and only its end grew. Slots 17 to
-    // 20 are the uniform grid's four pools; 21 to 34 the narrow partition's
-    // double lane, 35 to 44 its float lane; 45 to 55 the fit route on the
-    // shipped partition, 56 to 66 on the narrow one, 67 to 70 its float lane;
-    // 71 to 74 the uniform grid's two per-interval tables in each lane. A new
-    // group goes after those and never inside them.
+    // Every table added after the original seventeen is appended rather than slotted in beside the
+    // tables it belongs to, so that a slot a caller's build already reads keeps its index. Slots 17
+    // to 20 are the uniform grid's four pools; 21 to 34 the narrow partition's double lane, 35 to
+    // 44 its float lane; 45 to 55 the fit route on the shipped partition, 56 to 66 on the narrow
+    // one, 67 to 70 its float lane; 71 to 74 the uniform grid's two per-interval tables in each
+    // lane. A new group goes after those and never inside them.
     //
-    // The order is read by two calls and not one: the first twenty-one slots are
-    // the ones a caller's build already holds an array for, so they are written
-    // by BoysCudaDeviceTableAddresses and the rest by
-    // BoysCudaDeviceTableAddressesTail, which fills the handle's later fields.
-    // Splitting there is what keeps a caller that has not been rebuilt for the
-    // wider handle from being handed more addresses than its array holds.
+    // The order is read by two calls: the first twenty-one slots are the ones a caller's build
+    // already holds an array for, written by BoysCudaDeviceTableAddresses, and the rest by
+    // BoysCudaDeviceTableAddressesTail. Splitting there keeps a caller not rebuilt for the wider
+    // handle from being handed more addresses than its array holds.
 
     // The bound is the array's own length, so a pool added here cannot be
     // exported without one of the two loops below reaching it.
@@ -3269,10 +3123,9 @@ extern "C" int BoysCudaDeviceTableAddressesTail(void** out) {
         return uploaded;
     }
 
-    // The same call for the rest of the order, at the same element type and for
-    // the same reason. The caller's array holds one entry per symbol from the
-    // first of these onwards, so slot kTableAddressFirstCount + i lands at its
-    // index i.
+    // The same call for the rest of the order, at the same element type and for the same reason.
+    // The caller's array holds one entry per symbol from the first of these onwards, so slot
+    // kTableAddressFirstCount + i lands at its index i.
     for (int i = kTableAddressFirstCount; i < kTableAddressCount; ++i)
     {
         const cudaError_t got =
@@ -3317,11 +3170,10 @@ extern "C" int BoysCudaLaunchAllOrdersF32(
     return static_cast<int>(cudaGetLastError());
 }
 
-// The float lane's partition and grid, one launcher per arithmetic: the route is
-// an argument of the caller's and not of the launch, so the choice is the symbol
-// it names. The uniform pair's rung axis is empty (the table is stored at one
-// degree per order and interval); the narrow pair's is refused at the entry
-// instead, for the reason DeviceEntryServedAtRung gives.
+// The float lane's partition and grid, one launcher per arithmetic: the route is an argument of the
+// caller's and not of the launch, so the choice is the symbol it names. The uniform pair's rung
+// axis is empty (the table is stored at one degree per order and interval); the narrow pair's is
+// refused at the entry instead, for the reason DeviceEntryServedAtRung gives.
 extern "C" int BoysCudaLaunchAllOrdersF32Uniform(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
     BoysAllOrdersF32FlatKernel<false>
@@ -3358,9 +3210,8 @@ extern "C" int BoysCudaLaunchAllOrdersF32NarrowMono(
     return static_cast<int>(cudaGetLastError());
 }
 
-// The float lane's rational route, one launcher per partition, named as the
-// double route's are: the two scheme names a caller may use differ in the
-// report's row and not here, because the route's pair is stored in one form and
+// The float lane's rational route, one launcher per partition: the two scheme names a caller may
+// use differ in the report's row and not here, because the route's pair is stored in one form and
 // the two names reach one kernel.
 extern "C" int BoysCudaLaunchAllOrdersF32Rat(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
@@ -3376,14 +3227,12 @@ extern "C" int BoysCudaLaunchAllOrdersF32NarrowRat(
     return static_cast<int>(cudaGetLastError());
 }
 
-// The float lane's orders axis: the same launches the rows above make, one per
-// kernel of that axis. The shipped partition's row and the narrow partition's
-// two have the two forms a rung has, so their pairs are here; the rational
-// route's rows serve the full-accuracy multiplier alone and have the one
-// launcher each, exactly as their per-argument siblings do. The uniform grid's
-// two orders rows need no launcher of their own: the grid is stored at one
-// degree per order and interval, so its packing axis has one member and those
-// rows launch BoysCudaLaunchAllOrdersF32Uniform and its Horner twin.
+// The float lane's orders axis: the same launches the rows above make, one per kernel of that axis.
+// The shipped partition's row and the narrow partition's two have the two forms a rung has, so
+// their pairs are here; the rational route's rows serve the full-accuracy multiplier alone and have
+// the one launcher each. The uniform grid's two orders rows need no launcher of their own: its
+// packing axis has one member and those rows launch BoysCudaLaunchAllOrdersF32Uniform and its
+// Horner twin.
 extern "C" int BoysCudaLaunchAllOrdersF32Orders(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
     BoysAllOrdersF32OrdersKernel<<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
@@ -3398,11 +3247,9 @@ extern "C" int BoysCudaLaunchAllOrdersF32OrdersEff(
     return static_cast<int>(cudaGetLastError());
 }
 
-// The narrow partition's rung in the Chebyshev basis, on both axes. One
-// launcher each and no lane argument: what selects the rung is which degree
-// table the host made resident, which is the same statement the shipped
-// partition's pair makes. The other basis has a pair of its own below, for the
-// reason it has a table of its own.
+// The narrow partition's rung in the Chebyshev basis, on both axes. One launcher each and no lane
+// argument: what selects the rung is which degree table the host made resident. The other basis has
+// a pair of its own below, for the reason it has a table of its own.
 extern "C" int BoysCudaLaunchAllOrdersF32NarrowEff(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
     BoysAllOrdersF32NarrowKernelEff
@@ -3417,10 +3264,9 @@ extern "C" int BoysCudaLaunchAllOrdersF32NarrowOrdersEff(
     return static_cast<int>(cudaGetLastError());
 }
 
-// The same partition's rung in the monomial basis, on both axes. The rung is
-// selected by the monomial degree table the host made resident rather than by a
-// lane argument here, and the two forms are two launchers because the kernel
-// each runs reads a different pool's degrees.
+// The same partition's rung in the monomial basis, on both axes. The rung is selected by the
+// monomial degree table the host made resident rather than by a lane argument here, and the two
+// forms are two launchers because the kernel each runs reads a different pool's degrees.
 extern "C" int BoysCudaLaunchAllOrdersF32NarrowMonoEff(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
     BoysAllOrdersF32NarrowMonoKernelEff
@@ -3463,9 +3309,8 @@ extern "C" int BoysCudaLaunchAllOrdersF32NarrowOrdersRat(
     return static_cast<int>(cudaGetLastError());
 }
 
-// The same four rows at a rung. One launcher each and no lane argument, as every
-// relaxed launcher of this file: what selects the rung is which pair tables the
-// host made resident, so a row's two forms are two launchers and nothing else.
+// The same four rows at a rung. One launcher each and no lane argument, as every relaxed launcher
+// of this file: what selects the rung is which pair tables the host made resident.
 extern "C" int BoysCudaLaunchAllOrdersF32RatEff(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
     BoysAllOrdersF32RatKernelEff
@@ -3522,10 +3367,9 @@ extern "C" int BoysCudaLaunchAllOrdersF64Uniform(
     return static_cast<int>(cudaGetLastError());
 }
 
-// The same launch over the same table's other form. Two launchers and not one
-// taking the form as an argument: the form is the arithmetic, and an argument
-// would be a choice made at run time by the caller of a function whose whole
-// contract is which numbers it delivers.
+// The same launch over the same table's other form. Two launchers and not one taking the form as an
+// argument: the form is the arithmetic, and an argument would be a choice made at run time by the
+// caller of a function whose whole contract is which numbers it delivers.
 extern "C" int BoysCudaLaunchAllOrdersF64UniformHorner(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
     BoysAllOrdersF64FlatKernel<true>
@@ -3533,10 +3377,9 @@ extern "C" int BoysCudaLaunchAllOrdersF64UniformHorner(
     return static_cast<int>(cudaGetLastError());
 }
 
-// The grid's rational route, one launcher and not two: the pair is stored in one
-// form, so both scheme names a caller may use reach it, which is what the comment
-// above calls the arithmetic. The orders-axis rows of that route are this same
-// launch, because the route's packing axis has no second member to run.
+// The grid's rational route, one launcher and not two: the pair is stored in one form, so both
+// scheme names a caller may use reach it. The orders-axis rows of that route are this same launch,
+// because the route's packing axis has no second member to run.
 extern "C" int BoysCudaLaunchAllOrdersF64UniformRat(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
     BoysAllOrdersF64FlatRatKernel
@@ -3552,9 +3395,9 @@ extern "C" int BoysCudaLaunchAllNF64(
 }
 
 #if BoysFp16
-// Async launch contract (uniform with the F32/F64 launchers): the kernel
-// is queued on the caller's stream and the call returns once the launch is
-// accepted — callers synchronize the stream before reading the outputs.
+// Async launch contract (uniform with the F32/F64 launchers): the kernel is queued on the caller's
+// stream and the call returns once the launch is accepted - callers synchronize the stream before
+// reading the outputs.
 extern "C" int BoysCudaLaunchSingleF16(
     const int* n, const void* x, void* out, std::size_t count, void* stream) {
     BoysSingleF16Kernel<<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(

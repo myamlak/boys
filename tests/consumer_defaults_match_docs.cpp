@@ -1,9 +1,8 @@
 // The default policy table of docs/lane-contract.md, read back against the four
 // `DefaultPolicy*` constants it describes.
 //
-// A changed default is still a certified combination meeting its own bound, so no
-// accuracy gate would notice it; this comparison is what keeps that table from
-// describing a library that no longer exists.
+// A changed default is still a certified combination meeting its own bound, so
+// no accuracy gate would notice it - this comparison keeps the table honest.
 
 #include "boys/boys.hpp"
 
@@ -182,7 +181,7 @@ int main() {
         return 1;
     }
 
-    // How the block is found: by this header, not by a line number an edit above would move.
+    // The block is found by this header, not by a line number an edit would move.
     const std::string kHeader = "| Precision | Name | Fit route | Scheme | Granularity |";
     std::string line;
     bool in_table = false;

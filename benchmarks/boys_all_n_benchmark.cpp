@@ -1,36 +1,32 @@
 // The all-orders batch entry (BoysAllN) against the per-argument loop it
-// replaces: same arguments, same order-major planes, and the sort's own cost
+// replaces: same arguments, same order-major planes, with the sort's own cost
 // separated from the grouped-path win.
 //
 // Five variants over ONE argument set:
-//   perarg          BoysAllOrders per argument, scattered into the planes
-//                   (the baseline a caller writes today; the C API's
-//                   BoysDoubleBatch is this loop)
+//   perarg          BoysAllOrders per argument, scattered into the planes (the
+//                   C API's BoysDoubleBatch is this loop)
 //   shuffled        BoysAllN on the arguments in generation order - the sort is
 //                   paid
 //   ascending       BoysAllN on the same arguments sorted - the sort is still
 //                   walked, but the run memory is sequential
-//   tag             BoysAllN with BoysSortedArgs on the sorted arguments - the
-//                   sort is skipped
+//   tag             BoysAllN with BoysSortedArgs on sorted input - sort skipped
 //   tag_workspace   the same call with a caller-supplied workspace
 //
-// The honest separations: tag vs perarg is the win the entry exists for; a
-// measurement of the sort by itself is ascending minus tag (same arguments,
-// same runs, and the only difference is the classification pass, the index
-// scatter and the indexed plane writes); shuffled vs ascending isolates the
-// input-order effect at a fixed sort cost.
+// tag vs perarg is the win the entry exists for. The sort's own cost is
+// ascending minus tag: same arguments, same runs, differing only in the
+// classification pass, the index scatter and the indexed plane writes. shuffled
+// vs ascending isolates the input-order effect at a fixed sort cost.
 //
-// Protocol: rounds of one call per variant, interleaved, so a busy machine
-// inflates every variant together and the reported ratios survive it; per
-// variant the minimum over the rounds is what is reported, with the round
-// count and the max/min spread printed so a reader can judge the noise. The
-// ratios, not the milliseconds, are the result.
+// Protocol: interleaved rounds of one call per variant, so a busy machine
+// inflates every variant together; each variant reports its minimum over the
+// rounds, with the round count and the max/min spread printed so a reader can
+// judge the noise. The ratios, not the milliseconds, are the result.
 //
-// Workload: x log-uniform on [1e-3, 40] by default (a synthetic stand-in for a
-// molecular argument set: it populates region A, the extended band, region B and
-// region C in one array); --xrange=lo,hi, --nmax=N, --count=N and --rounds=N
-// move it to the shapes a consumer actually asks for (a low angular momentum
-// shell quartet wants a small nmax over region-A arguments).
+// Workload: x log-uniform on [1e-3, 40], which populates region A, the extended
+// band, region B and region C in one array - a synthetic stand-in for a
+// molecular argument set. --xrange=lo,hi, --nmax=N, --count=N and --rounds=N
+// move it to other shapes (a low angular momentum shell quartet wants a small
+// nmax over region-A arguments).
 #include "boys/boys.hpp"
 
 #include <algorithm>
@@ -75,8 +71,7 @@ std::string Timestamp() {
     return std::string(buffer.data());
 }
 
-// The baseline: one per-argument call per element, scattered into the same
-// order-major planes the entry writes.
+// The baseline: one per-argument call per element into the entry's order-major planes.
 void RunPerArgument(const double* x, double* out, std::size_t count, int order) {
     double batch[boys::kMaxBoysOrder + 1];
 
@@ -168,8 +163,8 @@ int main(int argc, char** argv) {
         }
     };
 
-    // Warm-up: every variant once, so the tables and the workspace pages are
-    // resident before the first timed round.
+    // Warm-up: every variant once, so tables and workspace pages are resident
+    // before the first timed round.
     const std::string started = Timestamp();
 
     for (std::size_t v = 0; v < std::size(variants); ++v)

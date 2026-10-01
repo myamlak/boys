@@ -2,15 +2,14 @@
 // card, and what it does when the caller names a card that is not there.
 //
 // No cost is asserted here, a figure being the property of the card it was taken
-// on. What is asserted is the shape of the report: ratios formed inside a round and
-// pooled over every round, a pass the canary flagged used rather than dropped, a
-// canary no pass read told apart from a silent one, every name taken from a clock
-// rather than off the library's tables, and a class being one precision, one
-// accuracy rung and one question shape.
+// on. What is asserted is the shape of the report: ratios formed inside a round
+// and pooled over every round, a pass the canary flagged used rather than
+// dropped, a canary no pass read told apart from a silent one, every name taken
+// from a clock rather than off the library's tables, and a class being one
+// precision, one accuracy rung and one question shape.
 //
-// The protocol is short on purpose, the shape of the result being what is under
-// test. ATieNamesEveryRivalAndTheBandItFellIn is the exception: it hunts a tie
-// through the refinement stage and takes tens of minutes on a real card.
+// ATieNamesEveryRivalAndTheBandItFellIn is the exception: it hunts a tie through
+// the refinement stage and takes tens of minutes on a real card.
 
 #include "boys/boys_cuda_probe.hpp"
 
@@ -41,8 +40,7 @@ using boys::DeviceProbeStatus;
 using boys::DeviceProbeVerdict;
 
 /// A workload a test can afford: two passes of two rounds is four pooled rounds,
-/// the least a lower-quartile band can be formed from, so a test that wants a run
-/// able to order anything keeps at least this much.
+/// the least a lower-quartile band can be formed from.
 DeviceProbeOptions Small() {
     DeviceProbeOptions options;
     options.count = 1u << 12;
@@ -55,7 +53,6 @@ DeviceProbeOptions Small() {
 
 /// The canary's alarm flags a pass and neither drops nor admits it: the canary is
 /// fixed work read by a device clock, so it measures the clock as much as the load.
-/// Checked at both ends of the alarm, with the same rounds pooled either way.
 TEST(DeviceProbe, APassAboveTheCanaryAlarmIsFlaggedAndStillUsed) {
     DeviceProbeOptions flagged = Small();
     flagged.canarySpreadAlarm = 0.0;
@@ -68,8 +65,7 @@ TEST(DeviceProbe, APassAboveTheCanaryAlarmIsFlaggedAndStillUsed) {
     EXPECT_EQ(wide.passesWithinAlarm, 0);
     EXPECT_EQ(wide.pairedRounds, flagged.passes * flagged.rounds);
 
-    // The three counters partition the passes. With the alarm at zero, every pass a
-    // reading was taken in is above it.
+    // The three counters partition the passes, and with the alarm at zero every pass is above it.
     EXPECT_EQ(wide.passesWithinAlarm + wide.passesAboveAlarm + wide.passesWithoutCanary,
               static_cast<int>(wide.passes.size()));
     EXPECT_EQ(wide.passesAboveAlarm + wide.passesWithoutCanary, flagged.passes);
@@ -96,9 +92,8 @@ TEST(DeviceProbe, APassAboveTheCanaryAlarmIsFlaggedAndStillUsed) {
         EXPECT_FALSE(pass.canaryWide);
     }
 
-    // Every pass of the run above was flagged, and the run is the same run: the
-    // same number of passes reported and the same rounds pooled. A flagged pass
-    // that had been discarded would show up here as fewer pooled rounds.
+    // The flagged run is the same run: the same passes reported and the same rounds
+    // pooled, where a discarded flagged pass would show up as fewer pooled rounds.
     EXPECT_EQ(within.pairedRounds, wide.pairedRounds);
     EXPECT_EQ(within.passes.size(), wide.passes.size());
 }
@@ -145,20 +140,17 @@ TEST(DeviceProbe, ACanaryThatDidNotRunIsNotAQuietCanary) {
 
     const std::string row = unreadText.substr(body, tableEnd - body);
 
-    // The words, and not a zero: a reading would print as 0.0000 here, which is the
-    // failure this test exists to catch.
+    // The words, and not a zero: a reading would print 0.0000 here, the failure this test catches.
     EXPECT_NE(row.find("canary not timed"), std::string::npos) << row;
     EXPECT_EQ(row.find("0.0000"), std::string::npos) << row;
 
-    // A measured pass beside it prints its figures and its flag, so the words above
-    // are the absence of a reading and not a column that never carries one.
+    // A measured pass beside it prints figures and its flag, so the words are a missing reading.
     DeviceProbeReport mixed = unread;
     mixed.passes = {silent, read};
     mixed.passesWithoutCanary = 1;
     mixed.passesAboveAlarm = 1;
 
-    // The counters are the table: the pass that took no reading is in the third
-    // and in neither of the other two.
+    // The counters are the table: the pass that took no reading is in the third of them.
     EXPECT_EQ(mixed.passesWithinAlarm + mixed.passesAboveAlarm + mixed.passesWithoutCanary,
               static_cast<int>(mixed.passes.size()));
 
@@ -170,13 +162,11 @@ TEST(DeviceProbe, ACanaryThatDidNotRunIsNotAQuietCanary) {
     EXPECT_NE(mixedText.find("took no canary reading at all"), std::string::npos) << mixedText;
     EXPECT_EQ(mixedText.find("no pass took a canary reading"), std::string::npos) << mixedText;
 
-    // The resolution line carries the canary only where one was read: a shape with no
-    // canary spread must not be handed a zero to read as one.
+    // The resolution line carries the canary only where one was read, not a zero otherwise.
     DeviceProbeRanking refused;
     refused.question = "all-orders";
     refused.asked = "every order";
-    // At four paired rounds or more the report prints a band; below that it says so
-    // instead.
+    // At four paired rounds or more the report prints a band; below that it says so instead.
     refused.rounds = 10;
     refused.resolution = 0.25;
     refused.verdict = DeviceProbeVerdict::kCannotDetermine;
@@ -204,11 +194,9 @@ TEST(DeviceProbe, ACanaryThatDidNotRunIsNotAQuietCanary) {
 }
 
 /// Every figure rests on every pooled round, and the reference entry's own ratio to
-/// itself is exactly one with exactly no drift — the one value in the table known
-/// independently of the card, which is what pins the ratios as formed per round and
-/// not across rounds.
-///
-/// The anchor is per rung: a row's cost is its own rung's block scaled by a
+/// itself is exactly one with no drift - the one value in the table known
+/// independently of the card, which pins the ratios as formed per round and not across
+/// rounds. The anchor is per rung: a row's cost is its own rung's block scaled by a
 /// within-rung ratio, while the report's \c referenceNsPerArgument carries the
 /// full-accuracy block alone.
 TEST(DeviceProbe, AFigureIsAWithinRoundRatioOverEveryPooledRound) {
@@ -226,8 +214,7 @@ TEST(DeviceProbe, AFigureIsAWithinRoundRatioOverEveryPooledRound) {
 
     for (const DeviceProbeMeasurement& measurement : report.measurements) {
         if (!measurement.measured) {
-            // An entry that produced no figure rests on no round, and it says so
-            // rather than claiming the run's rounds.
+            // An entry with no figure rests on no round rather than claiming the run's rounds.
             EXPECT_EQ(measurement.rounds, 0);
             continue;
         }
@@ -235,23 +222,20 @@ TEST(DeviceProbe, AFigureIsAWithinRoundRatioOverEveryPooledRound) {
         ++measured;
 
         EXPECT_EQ(measurement.rounds, report.pairedRounds) << measurement.name;
-        // Both ends of the band are ratios of two entries timed in one round, so
-        // the upper quartile is never below the lower one.
+        // Both ends are ratios of two entries timed in one round, so hi cannot be below lo.
         EXPECT_GE(measurement.ratioHi, measurement.ratioLo) << measurement.name;
         // An in-kernel row resolves when the difference it was reduced to stood above
-        // its own baseline, which is what that statistic reads; a launched row always
-        // does, its cell being its own reading rather than a difference that could be
-        // floored. The band's lower end may still be the zero that difference was
-        // floored at, so only the figure decides whether the row is ordered.
+        // its own baseline; a launched row always does, its cell being its own reading
+        // rather than a difference that could be floored. The band's lower end may still
+        // be the zero it was floored at, so only the figure decides whether it is ordered.
         EXPECT_EQ(measurement.subtractionResolved,
                   measurement.launchedByLibrary || measurement.nsPerArgument > 0.0)
             << measurement.name;
         EXPECT_GE(measurement.spread, 1.0) << measurement.name;
 
-        // The reported cost is this row's own anchor scaled by its ratio to it, so the
-        // two columns cannot come from different statistics. The anchor is the row's and
-        // not the report's: referenceNsPerArgument is the full-accuracy rung's block, and
-        // a row of another rung was scaled by that rung's own block.
+        // The two columns cannot come from different statistics: the reported cost is this
+        // row's own anchor scaled by its ratio to it. The report's referenceNsPerArgument is
+        // the full-accuracy rung's block; a row of another rung is scaled by its own.
         EXPECT_NEAR(measurement.nsPerArgument,
                     measurement.referenceNsPerArgument * measurement.ratioToReference,
                     1e-9 * std::max(1.0, measurement.referenceNsPerArgument)) << measurement.name;
@@ -262,8 +246,7 @@ TEST(DeviceProbe, AFigureIsAWithinRoundRatioOverEveryPooledRound) {
         // The peak column is the entry's own fastest single round, a raw figure under no
         // anchor, beside a reported cost that is a quartile of ratios anchored to the
         // reference: statistics of different quantities, so neither bounds the other in
-        // general. The bound is asserted where it is real — on the reference entry, whose
-        // two columns come from one entry's own rounds.
+        // general. The bound is asserted where it is real - on the reference entry.
         EXPECT_TRUE(std::isfinite(measurement.nsPerArgumentPeak)) << measurement.name;
         EXPECT_GE(measurement.nsPerArgumentPeak, 0.0) << measurement.name;
 
@@ -273,8 +256,7 @@ TEST(DeviceProbe, AFigureIsAWithinRoundRatioOverEveryPooledRound) {
 
         sawReference = true;
         // The reference against itself: one in every round by construction, so every
-        // quantile is one and the drift is zero — at every rung, the entry being its
-        // block's own anchor.
+        // quantile is one and the drift is zero, at every rung.
         EXPECT_DOUBLE_EQ(measurement.ratioToReference, 1.0);
         EXPECT_DOUBLE_EQ(measurement.ratioLo, 1.0);
         EXPECT_DOUBLE_EQ(measurement.ratioHi, 1.0);
@@ -282,10 +264,9 @@ TEST(DeviceProbe, AFigureIsAWithinRoundRatioOverEveryPooledRound) {
         EXPECT_DOUBLE_EQ(measurement.nsPerArgument, measurement.referenceNsPerArgument);
         EXPECT_LE(measurement.nsPerArgumentPeak, measurement.nsPerArgument + 1e-12);
 
-        // The one anchor the report carries is this entry's figure at the full-accuracy
-        // rung, the block it was taken from. Every other row is scaled by its own rung's
-        // anchor, which is why the anchor is carried on the row and not once for the
-        // table.
+        // The report's one anchor is this entry's figure at the full-accuracy rung; every
+        // other row is scaled by its own rung's anchor, which is why the anchor is carried
+        // on the row and not once for the table.
         if (measurement.rung == boys::kDeviceRungs.front()) {
             EXPECT_DOUBLE_EQ(measurement.referenceNsPerArgument, report.referenceNsPerArgument);
         }
@@ -297,24 +278,20 @@ TEST(DeviceProbe, AFigureIsAWithinRoundRatioOverEveryPooledRound) {
 
 /// A run too short for a quartile band still ends with one entry per shape that
 /// produced a figure, and says both the count it took and the count a band needs.
-///
 /// Below four readings a band's two ends are the same reading twice, so such a run
-/// can place nothing. What it may not do is leave a shape that produced a figure
-/// without a name: the one entry such a shape has, or the entry the refinement
-/// stage's longer protocol led.
+/// can place nothing; what it may not do is leave a shape that produced a figure
+/// without a name - its one entry, or the entry the refinement stage's longer protocol led.
 TEST(DeviceProbe, AShortRunNamesAnEntryAndSaysTheBandWasNeverFormed) {
     DeviceProbeOptions options = Small();
-    // Short in rounds rather than in workload: a fixture small in both is one whose
-    // entries may not resolve, and this rule is about rounds.
+    // Short in rounds, not in workload: a fixture small in both may not resolve.
     options.count = 1u << 18;
     options.passes = 1;
     options.repetitions = 8;
     options.refinementRuns = 2;
     options.refinementFactor = 2;
     options.canarySpreadAlarm = 1.0e9;
-    // One shape of two rows — one launched and one in-kernel — and two shapes of one,
-    // so the run holds a name reached by the stage and a name reached by there being
-    // no rival at all.
+    // One shape of two rows - one launched and one in-kernel - and two shapes of one,
+    // so the run holds a name reached by the stage and one reached with no rival at all.
     options.only = {"single-fp64", "device-single-fp64", "single-fp32", "all-n-fp64"};
 
     const DeviceProbeReport report = boys::RunDeviceOptionProbe(options);
@@ -331,18 +308,15 @@ TEST(DeviceProbe, AShortRunNamesAnEntryAndSaysTheBandWasNeverFormed) {
             const DeviceProbeRanking& ranking = clause.ranking;
             EXPECT_EQ(ranking.rounds, report.pairedRounds);
 
-            // Nothing can be placed on two readings, so the reason says the count it took
-            // and the count it needs rather than leaving the shortfall to be inferred.
+            // Nothing can be placed on two readings: the reason names the count it took and needs.
             EXPECT_NE(ranking.reason.find("2 paired round(s)"), std::string::npos)
                 << ranking.reason;
             EXPECT_NE(ranking.reason.find("need 4"), std::string::npos) << ranking.reason;
 
-            // No shape of this run is reported as an ordering: the band one would have
-            // been read off was never formed, whichever way the name was reached.
+            // No shape is reported as an ordering: its band was never formed.
             EXPECT_NE(ranking.defaultHow, DeviceProbeDefaultHow::kOrdered) << ranking.question;
 
-            // The rows of this shape at this class's own rung. Counting a precision's rows
-            // without the rung would read a class of one row as a class of twelve.
+            // This shape's rows at this rung: a count without the rung reads one row as twelve.
             std::size_t read = 0;
             bool namedIsRead = false;
 
@@ -360,8 +334,7 @@ TEST(DeviceProbe, AShortRunNamesAnEntryAndSaysTheBandWasNeverFormed) {
             }
 
             if (read == 0) {
-                // The one answer a run cannot name an entry from: no entry of this
-                // shape produced a figure at all.
+                // The one answer a run cannot name from: no entry of this shape produced a figure.
                 EXPECT_EQ(ranking.verdict, DeviceProbeVerdict::kCannotDetermine)
                     << ranking.question;
                 EXPECT_TRUE(ranking.recommended.empty()) << ranking.question;
@@ -369,8 +342,7 @@ TEST(DeviceProbe, AShortRunNamesAnEntryAndSaysTheBandWasNeverFormed) {
                 continue;
             }
 
-            // Entries of this shape produced figures, so it ends with exactly one name, and
-            // that name is one of those entries and never a row read off a table.
+            // Entries produced figures, so it ends with exactly one name, one of those entries.
             ++named;
             EXPECT_EQ(ranking.verdict, DeviceProbeVerdict::kRecommend) << ranking.question;
             EXPECT_FALSE(ranking.recommended.empty()) << ranking.question;
@@ -380,14 +352,12 @@ TEST(DeviceProbe, AShortRunNamesAnEntryAndSaysTheBandWasNeverFormed) {
         }
     }
 
-    // The premise: at these counts the entries resolve, so a run that read nothing fails
-    // here rather than passing vacuously.
+    // The premise: at these counts the entries resolve, so a run that read nothing fails here.
     EXPECT_GT(named, 0u) << "no shape of this run read a figure at " << options.count
                          << " arguments, so the naming rule was never reached";
 
-    // A band of two readings is not a resolution, so a run this short prints none: the
-    // sentence that would carry one implies bands above it could be ordered, which this
-    // run cannot say, so the line names the count it is missing instead.
+    // A band of two readings is not a resolution, so a run this short prints none: the line
+    // names the count it is missing rather than implying bands above it could be ordered.
     const std::string text = boys::FormatDeviceOptionProbe(report);
 
     EXPECT_EQ(text.find("cannot be ordered on this run"), std::string::npos) << text;
@@ -400,14 +370,13 @@ TEST(DeviceProbe, AShortRunNamesAnEntryAndSaysTheBandWasNeverFormed) {
 /// how it reached the name: the entries it could not separate are re-run alone at a
 /// longer protocol and the one that led those runs is named.
 ///
-/// The check is the rule itself, ranking by ranking: a shape ordered by its own rounds
-/// leaves no rival unplaced, a shape reached any other way carries the route with the
-/// name, and a shape whose entries produced no figure is the only one naming nothing.
+/// The check is the rule itself, ranking by ranking: an ordering leaves no rival
+/// unplaced, any other route carries the route with the name, and only a figureless
+/// shape names nothing.
 TEST(DeviceProbe, AShapeItsRoundsCouldNotOrderIsNamedByTheRefinementStage) {
     DeviceProbeOptions options = Small();
     options.canarySpreadAlarm = 1.0e9;
-    // The named set holds shapes of one entry, which cannot be ordered and are not
-    // refusals either, so the run holds a name reached without an ordering.
+    // The named set holds shapes of one entry, which cannot be ordered and are not refusals.
     options.only = {"all-n-fp64", "single-fp64", "device-single-fp64"};
 
     const DeviceProbeReport report = boys::RunDeviceOptionProbe(options);
@@ -423,16 +392,14 @@ TEST(DeviceProbe, AShapeItsRoundsCouldNotOrderIsNamedByTheRefinementStage) {
             const DeviceProbeRanking& ranking = clause.ranking;
             EXPECT_FALSE(ranking.asked.empty());
 
-            // This class is one precision at one rung for one question shape: the rung is
-            // part of the key, and a count taken without it would make a class of one row
-            // look like a class of twelve.
+            // This class is one precision at one rung for one question shape: a count taken
+            // without the rung would make a class of one row look like a class of twelve.
             //
             // Three counts over its rows. A row has *measured* when its rounds produced a
             // reading; it carries a *figure* when the run has a cost to print beside it; it
-            // is *placeable* when the run's own checks would order it — its figure resolved
-            // and its repetition control agreed. A row of the other kinds is not dropped:
-            // the class prints it among the rows it set aside, with the check that set it
-            // aside.
+            // is *placeable* when the run's own checks would order it - its figure resolved
+            // and its repetition control agreed. A row of the other kinds is printed among the
+            // rows the class set aside, with the check that set it aside.
             std::size_t measuredRows = 0;
             std::size_t figureRows = 0;
             std::size_t placeableRows = 0;
@@ -453,10 +420,8 @@ TEST(DeviceProbe, AShapeItsRoundsCouldNotOrderIsNamedByTheRefinementStage) {
             anyMeasured = anyMeasured || measuredRows > 0;
 
             if (figureRows == 0) {
-                // No row of this class produced a figure, so there is no name to reach. A
-                // row that measured and carries no figure is this answer and not an
-                // exception to it: there is no cost to name a row by and nothing for the
-                // stage to re-run.
+                // No row of this class produced a figure, so there is no name to reach: a row
+                // that measured and carries no figure is this answer, not an exception to it.
                 ++refused;
                 EXPECT_EQ(ranking.verdict, DeviceProbeVerdict::kCannotDetermine);
                 EXPECT_TRUE(ranking.recommended.empty()) << ranking.question;
@@ -471,8 +436,7 @@ TEST(DeviceProbe, AShapeItsRoundsCouldNotOrderIsNamedByTheRefinementStage) {
             EXPECT_NE(ranking.defaultHow, DeviceProbeDefaultHow::kNone);
 
             if (ranking.defaultHow == DeviceProbeDefaultHow::kOrdered) {
-                // An ordering is only reached past every rival, so no rival of a
-                // shape ordered on its own rounds is left unplaced.
+                // An ordering is only reached past every rival, so none is left unplaced.
                 EXPECT_TRUE(ranking.inseparable.empty()) << ranking.recommended;
                 continue;
             }
@@ -481,10 +445,9 @@ TEST(DeviceProbe, AShapeItsRoundsCouldNotOrderIsNamedByTheRefinementStage) {
 
             if (ranking.defaultHow == DeviceProbeDefaultHow::kOnlyEntry) {
                 // The name rests on there being no alternative to order it against, which is
-                // a statement about the rows the run could place and not about the rows it
-                // timed: a row whose subtraction resolved nothing, or whose repetition control
-                // disagreed, is printed beside the name with its reason rather than counted as
-                // a rival the run failed to name.
+                // a statement about the rows the run could place and not the rows it timed: a
+                // row whose subtraction resolved nothing, or whose repetition control
+                // disagreed, is printed beside the name, not counted as a rival.
                 EXPECT_LE(placeableRows, 1u)
                     << "a shape ordered against nothing holds at most one row it could order";
                 EXPECT_GT(figureRows, 0u)
@@ -494,9 +457,8 @@ TEST(DeviceProbe, AShapeItsRoundsCouldNotOrderIsNamedByTheRefinementStage) {
                 continue;
             }
 
-            // A tie: the stage ran and voted over the entries the shape's own rounds could
-            // not separate. The vote decides how the named entry was reached, never which
-            // entry it is, so the route is read back from the vote.
+            // A tie: the stage ran and voted over the entries the shape's own rounds could not
+            // separate, and the vote decides how the named entry was reached, never which one.
             EXPECT_TRUE(ranking.refinement.ran) << ranking.question;
             EXPECT_FALSE(ranking.refinement.winner.empty()) << ranking.question;
 
@@ -514,9 +476,8 @@ TEST(DeviceProbe, AShapeItsRoundsCouldNotOrderIsNamedByTheRefinementStage) {
                 << "the shape's figures put first, and a vote for another entry is a tie";
 
             // The invariant the report rests on: the name printed as the default is the
-            // cheapest row its own class could be ordered by. A vote may name another entry —
-            // and the report says so — but no placeable row of the class may be faster than
-            // the name.
+            // cheapest row its own class could be ordered by. A vote may name another entry -
+            // and the report says so - but no placeable row of the class may be faster.
             const DeviceProbeMeasurement* namedRow = nullptr;
 
             for (const DeviceProbeMeasurement& measurement : report.measurements) {
@@ -563,13 +524,12 @@ TEST(DeviceProbe, AShapeItsRoundsCouldNotOrderIsNamedByTheRefinementStage) {
     }
 }
 
-/// A tie is a result, and its evidence is what a reader has to be able to judge: each
-/// unplaced rival named with the band its ratio to the leader fell in and with how
-/// often it was the slower of the two.
+/// A tie is a result, and its evidence is what a reader has to judge: each unplaced rival
+/// named with the band its ratio to the leader fell in and how often it was the slower.
 ///
-/// Whether the card produces a tie is the card's answer rather than this test's, so a
-/// run that places every shape outright is silent. This is the file's long pole by a
-/// wide margin: the refinement stage the tie reaches takes tens of minutes.
+/// Whether the card produces a tie is the card's answer, so a run that places every shape
+/// outright is silent. This is the file's long pole: the refinement stage it reaches takes
+/// tens of minutes.
 TEST(DeviceProbe, ATieNamesEveryRivalAndTheBandItFellIn) {
     DeviceProbeOptions options = Small();
     options.canarySpreadAlarm = 1.0e9;
@@ -596,17 +556,15 @@ TEST(DeviceProbe, ATieNamesEveryRivalAndTheBandItFellIn) {
                     << ranking.reason;
             }
 
-            // A refined tie still names the rivals its own rounds could not separate: the
-            // refinement answers the shape and does not erase what the shape found.
+            // A refined tie still names the rivals its own rounds could not separate.
             if (ranking.refinement.ran) {
                 EXPECT_FALSE(ranking.tiedEntries.empty()) << ranking.question;
             }
 
-            // The name the shape ends with is the one its own figures put first, whatever
-            // the vote said — a tie is where it is easiest to print a name the table beside
-            // it contradicts. "Its own figures" means the placeable rows: a row the run
-            // declines to rank anything on may carry a figure the name is behind, and the
-            // report says so where it prints that route.
+            // The name the shape ends with is the one its own figures put first, whatever the
+            // vote said - a tie is where it is easiest to print a name the table beside it
+            // contradicts. "Its own figures" means the placeable rows: a row the run declines
+            // to rank anything on may carry a figure the name is behind, and the report says so.
             if (ranking.recommended.empty()) {
                 continue;
             }
@@ -640,18 +598,16 @@ TEST(DeviceProbe, ATieNamesEveryRivalAndTheBandItFellIn) {
     }
 }
 
-/// A refusal carries the clock check as a recommendation does: whether any pair's
-/// ratio to the leader moved between the run's halves by more than the run can order.
-/// A refusal is exactly where a reader wants it — the difference between entries too
-/// close to separate and a machine that moved under them.
+/// A refusal carries the clock check as a recommendation does: whether any pair's ratio to
+/// the leader moved between the run's halves by more than the run can order - the difference
+/// between entries too close to separate and a machine that moved under them.
 ///
-/// Whether a run produces a refusal is the card's answer, so a run with no unplaced
-/// rival skips rather than failing; the assertions above it run either way.
+/// Whether a run produces a refusal is the card's answer, so one with no unplaced rival skips
+/// rather than failing; the assertions above run either way.
 TEST(DeviceProbe, ARefusalCarriesTheClockCheckToo) {
     DeviceProbeOptions options = Small();
     options.canarySpreadAlarm = 1.0e9;
-    // Enough rounds for a quartile band, at a workload the in-kernel rows resolve at: the
-    // pair this test is about is two rows of one kernel a few percent apart.
+    // Enough rounds for a quartile band, at a workload the in-kernel rows resolve at.
     options.count = 65536;
     options.nmax = 16;
     options.repetitions = 16;
@@ -693,8 +649,7 @@ TEST(DeviceProbe, ARefusalCarriesTheClockCheckToo) {
 
             EXPECT_TRUE(warned || held) << ranking.confidence;
 
-            // "Moved" is named against the run's own resolution, so a reader can judge the
-            // word rather than take it.
+            // "Moved" is named against the run's own resolution, so a reader can judge the word.
             EXPECT_NE(ranking.confidence.find("this run can order"), std::string::npos)
                 << ranking.confidence;
 
@@ -724,9 +679,8 @@ TEST(DeviceProbe, ARefusalCarriesTheClockCheckToo) {
 
 /// Every name the report carries came out of a clock: a name is always a row this run
 /// timed, and a shape whose rows produced no figure names nothing rather than falling
-/// back to the library's tables. Both halves are checked — the words the fallback was
-/// printed under are absent from the text, and each name belongs to a measured row of
-/// its shape.
+/// back to the library's tables. Both halves are checked - the fallback's own words are
+/// absent from the text, and each name belongs to a measured row of its shape.
 TEST(DeviceProbe, EveryNameTheReportCarriesWasTimed) {
     DeviceProbeOptions options = Small();
     options.canarySpreadAlarm = 1.0e9;
@@ -782,8 +736,7 @@ TEST(DeviceProbe, EveryNameTheReportCarriesWasTimed) {
 /// must not be silently blank when the runtime could name a card.
 TEST(DeviceProbe, ADisturbedRunRefusesWithAReason) {
     DeviceProbeOptions options = Small();
-    // The alarm at zero flags every pass, the most disturbed the canary can report, and
-    // the run is not filtered by it.
+    // The alarm at zero flags every pass, and the run is not filtered by it.
     options.canarySpreadAlarm = 0.0;
 
     const DeviceProbeReport report = boys::RunDeviceOptionProbe(options);
@@ -826,14 +779,12 @@ TEST(DeviceProbe, TheReportCarriesTheProtocolItWasTakenUnder) {
     EXPECT_EQ(report.workloadCount, options.count);
     EXPECT_FALSE(report.caveat.empty());
 
-    // The protocol is named, and the number of paired rounds the figures rest on
-    // is the run's own passes times its own rounds rather than a claim about it.
+    // The protocol is named, and the paired rounds are the run's own passes times its rounds.
     EXPECT_EQ(report.options.passes, options.passes);
     EXPECT_EQ(report.options.rounds, options.rounds);
     EXPECT_EQ(report.pairedRounds, options.passes * options.rounds);
     // The protocol's bookkeeping, in the data and not only in the text: the passes the
-    // canary placed and those it was not read in account for every pass, so none was
-    // dropped.
+    // canary placed and those it was not read in account for every pass, none dropped.
     EXPECT_EQ(report.passesWithinAlarm + report.passesAboveAlarm + report.passesWithoutCanary,
               options.passes);
 
@@ -844,8 +795,7 @@ TEST(DeviceProbe, TheReportCarriesTheProtocolItWasTakenUnder) {
         EXPECT_GT(measurement.documentedBound, 0.0);
 
         if (measurement.measured) {
-            // A measured row's spread is a ratio of ratios, so one is its floor,
-            // and it rests on the run's pooled rounds rather than on a pass.
+            // A measured row's spread is a ratio of ratios, so one is its floor.
             EXPECT_GE(measurement.spread, 1.0);
             EXPECT_EQ(measurement.rounds, report.pairedRounds);
         } else {
@@ -855,8 +805,7 @@ TEST(DeviceProbe, TheReportCarriesTheProtocolItWasTakenUnder) {
 }
 
 /// A class is one precision, one accuracy rung and one question shape: no entry is ever
-/// placed against an entry of another precision, of another rung or of another question.
-/// That is the rule the ranking is read under, so it is checked key by key.
+/// placed against one of another key, which is the rule the ranking is read under.
 TEST(DeviceProbe, AClassIsOnePrecisionOneRungAndOneShape) {
     DeviceProbeOptions options = Small();
     options.canarySpreadAlarm = 1.0e9;
@@ -875,9 +824,8 @@ TEST(DeviceProbe, AClassIsOnePrecisionOneRungAndOneShape) {
         EXPECT_FALSE(clause.asked.empty());
         EXPECT_FALSE(clause.note.empty());
 
-        // Every rung a class is keyed on is one the library serves, and the rung a default
-        // is read from has to be measured: a class keyed on a rung no lane holds holds
-        // nothing.
+        // Every rung a class is keyed on is one the library serves; a class keyed on a rung
+        // no lane holds holds nothing, and the rung a default is read from has to be measured.
         const auto rung =
             std::find(boys::kDeviceRungs.begin(), boys::kDeviceRungs.end(), clause.rung);
         EXPECT_NE(rung, boys::kDeviceRungs.end()) << clause.rungName;
@@ -896,8 +844,7 @@ TEST(DeviceProbe, AClassIsOnePrecisionOneRungAndOneShape) {
         EXPECT_EQ(ranking.question, clause.question);
         EXPECT_EQ(ranking.asked, clause.asked);
 
-        // Every row the report places in this ranking — the recommended one included — is of
-        // this class's precision, rung and question, and there is at least one such row.
+        // Every row this ranking places, the recommended one included, is of this class's key.
         std::size_t rows = 0;
 
         for (const DeviceProbeMeasurement& measurement : report.measurements) {
@@ -939,8 +886,7 @@ TEST(DeviceProbe, ANameIsResolvedAtTheClassesOwnRung) {
 
     ASSERT_EQ(report.status, DeviceProbeStatus::kSuccess);
 
-    // The sweep happened: a name appears as many times as the run took rungs, which is
-    // precisely what a lookup by name alone would get wrong.
+    // The sweep happened: a name appears once per rung the run took.
     bool sawRepeatedName = false;
 
     for (const DeviceProbeMeasurement& measurement : report.measurements) {
@@ -1030,12 +976,11 @@ TEST(DeviceProbe, AVerdictNamesOnlyEntriesItMeasured) {
     }
 }
 
-/// A ranking is a comparison, so it needs two entries to be one. A shape whose table
-/// holds one entry names it as the shape's only entry and not as the winner of a field
-/// it never met — one entry is not a ranking, and not a refusal either.
-///
-/// The check is on the shape's own rows rather than on a figure, since whether an entry
-/// measures at this workload is the card's business.
+/// A ranking is a comparison, so it needs two entries to be one. A shape whose table holds
+/// one entry names it as the shape's only entry, not as the winner of a field it never met
+/// - one entry is not a ranking, and not a refusal either. The check is on the shape's own
+/// rows rather than on a figure, since whether an entry measures at this workload is the
+/// card's business.
 TEST(DeviceProbe, AShapeOfOneNamesItsOnlyEntry) {
     DeviceProbeOptions options = Small();
     options.canarySpreadAlarm = 1.0e9;
@@ -1050,9 +995,8 @@ TEST(DeviceProbe, AShapeOfOneNamesItsOnlyEntry) {
     for (const DeviceProbeClass& clause : report.classes) {
         {
             const DeviceProbeRanking& ranking = clause.ranking;
-            // One precision at one rung for one question shape: counting without the rung
-            // would call a class of one row a class of twelve as soon as the run measured
-            // more than one rung.
+            // One precision at one rung for one question shape: counting without the rung would
+            // call a class of one row a class of twelve once more than one rung is measured.
             std::size_t rows = 0;
             std::size_t figureRows = 0;
 
@@ -1076,9 +1020,8 @@ TEST(DeviceProbe, AShapeOfOneNamesItsOnlyEntry) {
             EXPECT_FALSE(ranking.confidence.empty());
 
             if (figureRows == 0) {
-                // A shape of one whose entry produced no figure is the case with nothing to
-                // name. The count is the figures' and not the rows': a row that measured and
-                // came out with no figure is this answer and not an exception to it.
+                // A shape of one whose entry produced no figure has nothing to name: the count is
+                // the figures' and not the rows', so a figureless measured row is this answer.
                 EXPECT_EQ(ranking.verdict, DeviceProbeVerdict::kCannotDetermine);
                 EXPECT_TRUE(ranking.recommended.empty());
                 continue;
@@ -1090,8 +1033,7 @@ TEST(DeviceProbe, AShapeOfOneNamesItsOnlyEntry) {
             EXPECT_TRUE(ranking.tiedEntries.empty()) << "a shape of one has no rival to tie with";
             EXPECT_TRUE(ranking.inseparable.empty());
 
-            // The line says what the name rests on, so that a reader does not take
-            // it for the winner of a comparison.
+                // The line says what the name rests on, so no reader takes it for a winner.
             EXPECT_NE(ranking.reason.find("no alternative"), std::string::npos) << ranking.reason;
         }
     }
@@ -1100,8 +1042,7 @@ TEST(DeviceProbe, AShapeOfOneNamesItsOnlyEntry) {
 }
 
 /// A control that agrees has two figures to compare: a zero left where the subtraction
-/// resolved no cost is not a second reading, and a control calling that agreement would
-/// pass on no evidence.
+/// resolved no cost is not a second reading, and calling it one passes on no evidence.
 TEST(DeviceProbe, AControlAgreesOnlyBetweenTwoFigures) {
     DeviceProbeOptions options = Small();
     options.canarySpreadAlarm = 1.0e9;
@@ -1122,17 +1063,15 @@ TEST(DeviceProbe, AControlAgreesOnlyBetweenTwoFigures) {
         EXPECT_GT(control->nsPerArgumentHigh, 0.0) << control->entry;
         EXPECT_TRUE(std::isfinite(control->difference)) << control->entry;
 
-        // The two counts are judged against the resolution the row's own shape showed, and
-        // the two figures are quartiles of the control's own rounds, so the yardstick is
-        // measured rather than chosen here.
+        // The two counts are judged against the resolution the row's own shape showed and the
+        // two figures are quartiles of the control's own rounds: the yardstick is measured.
         EXPECT_GT(control->judgedAgainst, 0.0) << control->entry;
         EXPECT_LE(control->difference, control->judgedAgainst) << control->entry;
     }
 }
 
-/// The control's own statistic is the report's: the low and high counts are quartiles of
-/// the control's rounds, which makes the two figures a check of the estimator rather than
-/// of a pass.
+/// The control's own statistic is the report's: the low and high counts are quartiles of the
+/// control's rounds, so the two figures check the estimator rather than a pass.
 TEST(DeviceProbe, AControlComparesTwoQuartilesOfTheSameRounds) {
     DeviceProbeOptions options = Small();
     options.canarySpreadAlarm = 1.0e9;
@@ -1153,8 +1092,7 @@ TEST(DeviceProbe, AControlComparesTwoQuartilesOfTheSameRounds) {
         EXPECT_GT(control->repetitionsHigh, control->repetitionsLow);
         EXPECT_FALSE(control->route.empty());
 
-        // The disagreement is computed from the same two figures and to the same precision,
-        // so it cannot drift into a conclusion the numbers do not support.
+        // The disagreement comes from the same two figures and precision, so it cannot drift.
         if (control->nsPerArgumentHigh > 0.0 && std::isfinite(control->difference)) {
             const double smaller =
                 std::min(control->nsPerArgumentLow, control->nsPerArgumentHigh);
@@ -1168,8 +1106,7 @@ TEST(DeviceProbe, AControlComparesTwoQuartilesOfTheSameRounds) {
     }
 }
 
-/// A device the caller names that is not there is a status, not a crash, and not
-/// a silent fallback to the card this happens to be running on.
+/// A device the caller names that is not there is a status, not a crash, not a silent fallback.
 TEST(DeviceProbe, AnAbsentDeviceIsAStatusAndNotACrash) {
     DeviceProbeOptions options = Small();
     options.device = 4096;
@@ -1185,16 +1122,13 @@ TEST(DeviceProbe, AnAbsentDeviceIsAStatusAndNotACrash) {
 
 /// The option space's rung axis, as a report carries it.
 ///
-/// The rows are the library's own and the text is rendered by the same function
-/// the driver prints, from a report whose measurement grid is the one the probe
-/// builds — a cell per (row, rung) this build serves, none of them measured — so
-/// the figures the appendix states about the cells are the figures a real run of
-/// this revision states, without a card and without a clock.
+/// The rows are the library's own and the text is rendered by the same function the
+/// driver prints, from a report whose measurement grid is the one the probe builds - a
+/// cell per (row, rung) this build serves, none measured - so the figures stated about
+/// the cells are those of a real run of this revision, without a card or a clock.
 ///
-/// A row that refuses eleven of the twelve rungs is what this is about. Such a
-/// row used to be a row the space reported as served, with a reason field that
-/// named the build seam instead of the rung, so a reader of the option space
-/// concluded a caller could ask for arithmetic the entry does not answer with.
+/// It is a row that refuses eleven of the twelve rungs: the space once reported such a
+/// row as served, its reason naming the build seam rather than the rung.
 TEST(DeviceProbe, ARowStatesTheRungsItIsServedAtAndTheCellsAreCountedFromTheRows) {
     const std::span<const boys::DeviceOptionInfo> space = boys::BoysDeviceOptions();
 
@@ -1221,8 +1155,7 @@ TEST(DeviceProbe, ARowStatesTheRungsItIsServedAtAndTheCellsAreCountedFromTheRows
         {
             const bool stated = (row.servedRungs & (boys::DeviceRungMask{1} << i)) != 0;
 
-            // The row's mask is the library's own answer per rung, and it is that
-            // answer read through the one derivation rather than a second list.
+            // The row's mask is the library's own answer per rung, through one derivation.
             EXPECT_EQ(stated, boys::DeviceEntryServedAtRung(row.entry, boys::kDeviceRungs[i]))
                 << row.name << " at m = " << boys::kDeviceRungs[i];
             EXPECT_EQ(stated,
@@ -1249,9 +1182,8 @@ TEST(DeviceProbe, ARowStatesTheRungsItIsServedAtAndTheCellsAreCountedFromTheRows
         }
     }
 
-    // A build that does not serve a row serves it at no rung, whatever its
-    // entry's axis states: the mask folds the build seam in rather than leaving a
-    // reader to combine two columns.
+    // A build that does not serve a row serves it at no rung, whatever its entry's axis
+    // states: the mask folds the build seam in rather than leaving two columns to combine.
     EXPECT_EQ(boys::DeviceServedRungMask(boys::DeviceEntry::kSingleF16, false), 0u);
     EXPECT_EQ(boys::DeviceServedRungMask(boys::DeviceEntry::kSingleF16, true),
               boys::kEveryDeviceRung);
@@ -1262,9 +1194,8 @@ TEST(DeviceProbe, ARowStatesTheRungsItIsServedAtAndTheCellsAreCountedFromTheRows
     const std::size_t servedCells = cells - refusedCells;
     std::size_t unbuiltCells = 0;
 
-    // Stated rather than left to be counted off the report: these are the figures
-    // the appendix carries, and a reader checking a revision needs them printed
-    // rather than only asserted.
+    // Stated rather than left to be counted off the report: these are the figures the
+    // appendix carries, and a reader checking a revision needs them printed.
     std::printf("    space: %zu option(s) = %zu launched + %zu device-callable; %zu cell(s) at %zu "
                 "rung(s): %zu served, %zu refused, %zu row(s) holding part of the axis\n",
                 space.size(),
@@ -1284,8 +1215,7 @@ TEST(DeviceProbe, ARowStatesTheRungsItIsServedAtAndTheCellsAreCountedFromTheRows
         }
     }
 
-    // The space's cells, served and refused, as the appendix states them: the
-    // count a reader of this report takes for coverage.
+    // The space's cells, served and refused, as the appendix states them, for coverage.
     const std::string counted = std::to_string(boys::kDeviceRungCount) + " rung(s) the lane serves: " +
                                 std::to_string(cells) + " cell(s)";
     EXPECT_NE(text.find(counted), std::string::npos) << text;
@@ -1300,20 +1230,17 @@ TEST(DeviceProbe, ARowStatesTheRungsItIsServedAtAndTheCellsAreCountedFromTheRows
               std::string::npos)
         << text;
 
-    // Every cell the space serves is a cell of this run's grid, and none of them
-    // produced a figure: the two figures are the run's own and not the space's.
+    // Every cell the space serves is a cell of this run's grid, and none produced a figure.
     EXPECT_NE(text.find("cells it serves, " + std::to_string(servedCells) +
                         " produced no figure here"),
               std::string::npos)
         << text;
 
-    // The rows that hold part of the axis are named under the table when there
-    // are any, with the rungs each holds: a figure below the whole says how many
-    // and not which, and which is what a caller placing the row needs. There are
-    // none at this revision — every entry of the lane serves every rung — so the
-    // block is absent, and its absence is the statement this test makes about the
-    // rows: a row that started holding part of the axis again would print it, and
-    // this fails at the count below before it reaches the text.
+    // The rows that hold part of the axis are named under the table with the rungs each
+    // holds: a figure below the whole says how many and not which, and which is what a
+    // caller placing the row needs. There are none at this revision, since every entry of
+    // the lane serves every rung: a row that started holding part of the axis again would
+    // print the block, and this fails at the count below before it reaches the text.
     ASSERT_EQ(partialRows, 0u) << "a row holds part of the rung axis and this build serves no cut "
                                   "for the rungs it lacks";
 
@@ -1322,26 +1249,20 @@ TEST(DeviceProbe, ARowStatesTheRungsItIsServedAtAndTheCellsAreCountedFromTheRows
 
 /// The book's rung axis is whole, and this is where a reader meets that statement.
 ///
-/// A row of the space states the rungs it is served at, and the entry it names
-/// answers at exactly those: a rung the row does not hold is refused by the
-/// entry's own test — \c kInvalidArgument for a launched row, before anything is
-/// made resident — and a call at a rung it holds is arithmetic. This test held
-/// the two lists together while the device lane owed cuts, by asking each partial
-/// row's entry at every rung the row refused.
+/// A row of the space states the rungs it is served at and the entry it names answers at
+/// exactly those: a rung it does not hold is refused by the entry's own test, \c
+/// kInvalidArgument for a launched row, before anything is made resident.
 ///
-/// **It now holds the emptiness instead.** Every stored table the device lane
-/// carries has a cut to make per rung and this revision derives, uploads and
-/// reads every one of them — the float lane's narrow pieces in both bases and its
-/// rational pairs on both partitions beside the double lane's own — and the grid's
-/// table has no cut to make at all. So no built row of the book holds part of the
-/// axis, there is nothing left for a refusal table to name, and a row that appears
-/// with part of it again is the finding this test exists to make.
+/// Every stored table the lane carries has a cut per rung and this revision derives,
+/// uploads and reads every one of them (the float lane's narrow pieces in both bases and
+/// its rational pairs on both partitions, beside the double lane's own); the grid's table
+/// has no cut at all, so no built row holds part of the axis and a row appearing with part
+/// of it again is the finding this test exists to make.
 ///
-/// The per-rung tie is the sibling test's
-/// (\c ARowStatesTheRungsItIsServedAtAndTheCellsAreCountedFromTheRows, which asks
-/// \c DeviceEntryServedAtRung for every enumerator at every rung), and the
-/// entries' own answers at a rung are the device accuracy gate's. Nothing of the
-/// card is used here.
+/// The per-rung tie is the sibling test's (\c
+/// ARowStatesTheRungsItIsServedAtAndTheCellsAreCountedFromTheRows, which asks \c
+/// DeviceEntryServedAtRung for every enumerator at every rung); the entries' own answers
+/// at a rung are the device accuracy gate's. Nothing of the card is used here.
 TEST(DeviceProbe, EveryCellTheReportRefusesIsRefusedByTheEntryThatOwnsTheRow) {
     std::vector<std::string> partial;
 
@@ -1364,8 +1285,7 @@ TEST(DeviceProbe, EveryCellTheReportRefusesIsRefusedByTheEntryThatOwnsTheRow) {
 
     EXPECT_TRUE(partial.empty());
 
-    // Stated rather than left to be counted off the space: this is the figure a
-    // reader cannot get from a passing assertion.
+    // Stated, not counted off the space: the figure a passing assertion cannot give a reader.
     std::printf("    %zu row(s) of the device book hold part of the rung axis, out of %zu\n",
                 partial.size(),
                 boys::BoysDeviceOptions().size());

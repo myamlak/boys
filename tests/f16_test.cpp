@@ -56,8 +56,7 @@ TEST(F16ConversionTest, FloatToHalfRoundsToNearestEven) {
 }
 
 TEST(F16ConversionTest, FloatToBf16RoundsToNearestEven) {
-    // Not constexpr: MSVC's STL does not make std::ldexp constexpr (GCC/
-    // Clang do, so a constexpr table would compile on CI and fail locally).
+// Not constexpr, for the reason given above: MSVC's std::ldexp is not constexpr.
     struct Case {
         float input;
         std::uint16_t expectedBits;
@@ -81,8 +80,7 @@ TEST(F16ConversionTest, FloatToBf16RoundsToNearestEven) {
 }
 
 TEST(F16ConversionTest, WideningIsExact) {
-    // binary16 -> binary32 is exact: the widened value must reproduce the
-    // stored pattern's exact value (checked against the raw-bit widening).
+// binary16 -> binary32 is exact (checked against the raw-bit widening).
     EXPECT_EQ(static_cast<float>(F16FromBits(0x3C00u)), 1.0f);
     EXPECT_EQ(static_cast<float>(F16FromBits(0x0001u)), std::ldexp(1.0f, -24));
     EXPECT_EQ(static_cast<float>(F16FromBits(0x0400u)), std::ldexp(1.0f, -14));

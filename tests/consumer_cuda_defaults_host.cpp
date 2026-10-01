@@ -1,8 +1,7 @@
-// The host half of the consumer check on the CUDA lane's default. Naming the
-// lane's defaults and naming nothing are one call rather than two that agree:
-// the static assertions below hold the entry's template default and the value it
-// names to be one instantiation, with the lane's other region-B exponential as a
-// negative control, so the equality is not a name against itself.
+// The host half of the consumer check on the CUDA lane's default. The static
+// assertions below hold the entry's template default and the value it names to
+// be one instantiation, with the lane's other region-B exponential as a negative
+// control, so the equality is not a name against itself.
 //
 // This is the half that can include <boys/boys_cuda.hpp>, a host header. The
 // kernel and the device entry are in tests/consumer_cuda_defaults.cu.
@@ -47,8 +46,7 @@ namespace {
 
 constexpr std::size_t kCount = 33u * 128u;
 
-/// One row of the report: the cells compared, how many differed, and the
-/// furthest apart the two values were.
+/// One row of the report: cells compared, differing cells, and the worst gap.
 struct Row {
     const char* name = "";
     std::size_t cells = 0;
@@ -215,9 +213,9 @@ int main() {
     cudaFreeHost(hostNamed);
     cudaFreeHost(hostFast);
 
-    // The device half returns its rows' difference and the elements whose calls
-    // disagreed on the status, so the three identity comparisons are the batch
-    // row, the device row and the statuses.
+    // The device half returns its own differing elements and the calls that
+    // disagreed on the status; the three identity comparisons are those two and
+    // the statuses.
     const std::size_t identityDiffering =
         batch.differing + static_cast<std::size_t>(deviceDiffering);
 

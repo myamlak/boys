@@ -5,14 +5,14 @@ This library evaluates the Boys function,
     F_n(x) = integral from 0 to 1 of t^(2n) exp(-x t^2) dt,   n = 0..32,  x >= 0
 
 the integral an electronic-structure program needs at every order a shell quartet can ask for. This
-page is the task-shaped route in: each section is a question you would actually ask, the code that
-answers it, and what that code prints. Every number below is what one of those programs printed, and
-the command that reproduces it is beside it. Nothing on this page is a figure you have to take on
+page is the task-shaped route in. Each section is a question you would actually ask, the code that
+answers it, and what that code prints. Every transcript below is what one of those programs printed,
+and the command that reproduces it is beside it. Nothing on this page is a figure you have to take on
 trust.
 
 The precise guarantees, the evaluation settings, and the measurements behind them are in
 [docs/lane-contract.md](lane-contract.md) and the [API reference](mainpage.md). This page links to
-them where a guarantee is involved; it does not restate them.
+them where a guarantee is involved. It does not restate them.
 
 ## Build it, and run the programs below
 
@@ -24,10 +24,10 @@ Each example is also a program you can compile on its own against an already-bui
 
     c++ -std=c++20 -I include examples/00_first_call.cpp -L build -lboys -o first && ./first
 
-The headers need C++20, and the compile line above is the whole of what they ask for. The build in the
+The headers need C++20, and the compile line above is all they ask for. The build in the
 block before it is the contributor's: it compiles the test suite as well, which wants C++23. On
-Windows with the Visual Studio generator the library lands in `build/Release/`, and the CMake route
-above is the one that finds it without flags.
+Windows with the Visual Studio generator the library lands in `build/Release/`. The CMake route above
+is the one that finds it without flags.
 
 ---
 
@@ -54,9 +54,9 @@ boys::BoysSingle(3, 1.25);                    // F_3(1.25)
     F_2(4)     = 0.017525782161993068
     F_2(30)    = 0.00013483513281636802
 
-All three are `noexcept` and total: `n` in `[0, 32]` and `x >= 0` are the requirements on the values,
+All three are `noexcept` and total. The requirements on the values are `n` in `[0, 32]` and `x >= 0`,
 and both hold for anything a basis set produces. The two calls that write into an array ask one thing
-more of the caller, and nothing checks it: the buffer has to hold the values the call writes.
+more: the buffer has to hold the values the call writes. Nothing checks it.
 
 **Next:** if you want one of these three shapes specifically, read on. If you want the whole
 catalogue at once, jump to [Which entry do I call?](#which-entry-do-i-call).
@@ -76,22 +76,22 @@ const double f = boys::BoysSingle(n, x);
     BoysAllOrders agrees to 0
 
 The second line is the whole accuracy story in one figure: **the answer is within 5.5e-14 of the true
-F_3(1.25)**. It is not an estimate of the error somebody observed; it is the bound the library
+F_3(1.25)**. It is not an estimate of the error somebody observed. It is the bound the library
 guarantees for this call, read out of the library at run time rather than typed into a document. The
-phrase in parentheses after it says how far that figure reaches: the argument line is cut into
+phrase in parentheses after it says how far that figure reaches. The argument line is cut into
 regions, and this is the lane's bound over every one of them. If your calculation needs an error below
 that, see [I need to know what the library guarantees before I rely on
 it](#i-need-to-know-what-the-library-guarantees-before-i-rely-on-it).
 
-**Next:** if you need more than one order, `BoysSingle` computes each one on its own. Reach for the
-ladder below instead — it is the same call an integral code makes.
+**Next:** `BoysSingle` computes each order on its own, so reach for the ladder below if you need more
+than one. It is the same call an integral code makes.
 
 ---
 
 ## I want every order at one argument
 
-`examples/02_all_orders.cpp` — a shell quartet needs F_0 through F_nmax at the same argument, and one
-call hands over the whole ladder rather than one call per order.
+`examples/02_all_orders.cpp` — a shell quartet needs F_0 through F_nmax at the same argument. One call
+hands over the whole ladder, instead of one call per order.
 
 ```cpp
 double ladder[boys::kMaxBoysOrder + 1] = {};
@@ -108,11 +108,11 @@ boys::BoysAllOrders(nmax, x, ladder);         // ladder[k] = F_k(x)
     6   0.0040954447623731674
     worst gap against BoysSingle: 0 (guaranteed error <= 5.5e-14)
 
-The entry writes `nmax + 1` doubles. The example declares the full `kMaxBoysOrder + 1` so the same
+The entry writes `nmax + 1` doubles. The example declares the full `kMaxBoysOrder + 1`, so the same
 buffer serves any later call without a second array.
 
 **Next:** if your arguments are an array and the order is one number, the call below turns the loop
-inside out — which is the shape that gets help from the vector units.
+inside out. That is the shape that gets help from the vector units.
 
 ---
 
@@ -132,11 +132,11 @@ boys::BoysFixedN(n, x, column, count, stride);   // column[i * stride] = F_n(x[i
     x = 30      out[ 8] = 0.00013483513281636802
     worst gap against BoysSingle: 0 (guaranteed error <= 5.5e-14)
 
-The stride is why the entry exists: the answer can go straight into a column of a larger structure
-without an intermediate copy. Leave it out and it defaults to 1.
+The stride is why the entry exists: the answer can go straight into a column of a larger structure,
+with no intermediate copy. Leave it out and it defaults to 1.
 
 **Next:** all three calls so far are as accurate as the library gets. If that is more than your
-calculation needs, the next section is how you turn that into speed.
+calculation needs, the next section turns that into speed.
 
 ---
 
@@ -157,30 +157,30 @@ const double value = boys::BoysSingleAtTier(boys::AccuracyTier::kRelaxed1024, n,
     worst departure from the m = 1 answer: 5e-15
 
 Read the two number columns together. The value moves very little — here, by 5e-15 — while the
-*guarantee* loosens by five orders of magnitude. **A relaxed multiplier does not mean the answer you
+*guarantee* loosens by nearly five orders of magnitude. **A relaxed multiplier does not mean the answer you
 get is worse by that much; it means the library is no longer promising it is better than that.** That
-is what buys the speed, and it is why the guaranteed figure is what a calculation should be checked
+is what buys the speed. It is also why the guaranteed figure is what a calculation should be checked
 against.
 
 Whether your calculation can afford a looser guarantee is not a question this library can answer.
 [docs/consumer-perspective.md](consumer-perspective.md) works through what integral codes actually
-need, and it is the right thing to read before choosing a multiplier.
+need. It is the right thing to read before choosing a multiplier.
 
-**Next:** if you have read that and want a specific evaluation rather than just a looser one, the
-next section is how you name it.
+**Next:** if you want a specific evaluation rather than just a looser one, the next section is how you
+name it.
 
 ---
 
 ## I want to name a specific evaluation
 
-**First, a warning, because this one is a trap.** One of the settings below is called `kNarrow`, and
-that name reads as "narrower, therefore more careful". It is not. `kNarrow` and `kShipped` cut the
-fitted interval into pieces of different widths and carry a different number of pieces; **both meet
-the same published error bound.** Choosing the wrong one changes the work, not the accuracy, and it
-costs you nothing visible: both compile, both run, both are correct, so you would never find out you
-had picked backwards. `kNarrow` is the one a call site that names no partition reads, and `kShipped`
-is the one the program below names. If you have not measured a preference, name no policy at all and
-take the default: the bound the library publishes is the lane's, and no partition moves it.
+**First, a warning, because this one is a trap.** One of the settings below is called `kNarrow`. That
+name reads as "narrower, therefore more careful". It is not. `kNarrow` and `kShipped` cut the fitted
+interval into pieces of different widths and carry a different number of pieces; **both meet the same
+published error bound.** Choosing the wrong one changes the work, not the accuracy. It costs you
+nothing visible: both compile, both run, both are correct, so you would never find out you had picked
+backwards. `kNarrow` is what a call site that names no partition reads. `kShipped` is what the program
+below names. If you have not measured a preference, name no policy at all and take the default. The
+bound the library publishes is the lane's, and no partition moves it.
 
 `examples/05_policy.cpp` — a policy is named in the template argument list, never constructed. The
 values below are the program's own ladder, at the one argument and the one top order it sets for
@@ -203,9 +203,9 @@ boys::BoysAllOrders<1.0, Shipped>(nmax, x, named_ladder);
     4   0.015602172536926787     0.015602172536926787
     worst disagreement: 0 (guaranteed error <= 5.5e-14)
 
-The two agree here to the last bit, and that is the expected outcome rather than a coincidence: the
-settings select how the same approximation is summed, not what is approximated. The places to change
-it are the ones where they do **not** agree, and finding those on your machine is what
+The two agree here to the last bit, and that is expected rather than a coincidence: the settings
+select how the same approximation is summed, not what is approximated. The places to change it are
+the ones where they do **not** agree. Finding those on your machine is what
 [the option probe](#i-want-to-know-which-option-is-fastest-on-this-machine) is for.
 
 The six settings, in the order they are written: which stored fit serves the interval, how its
@@ -213,7 +213,7 @@ coefficients are summed, an internal precision budget, whether vector lanes hold
 four orders, how finely the fitted interval is cut, and how the recursion's divisions are performed.
 Each is documented beside its type in [the API reference](mainpage.md).
 
-**Next:** you have now named a specific evaluation. Before you rely on it, ask what it guarantees.
+**Next:** you have named a specific evaluation. Before you rely on it, ask what it guarantees.
 
 ---
 
@@ -236,19 +236,19 @@ const boys::CombinationCoverage answer = boys::QueryCombination(
       1e-08        YES - guaranteed       5.5e-14      4.1e-14  [throughout, every region]
     1e-20 is answered NO
 
-The distinction the verdict makes is the one that matters for a calculation: **`YES - guaranteed`
-means the bound the library documents for that combination is at or below what you asked for.** The
-middle state, `only measured, not guaranteed`, means a figure exists but it is an observation rather
-than a promise, and it is deliberately not treated as a pass. A request nothing can meet comes back
-`NO` rather than as a quietly rounded yes — the last line above is that case.
+The distinction the verdict makes matters for a calculation. **`YES - guaranteed` means the bound the
+library documents for that combination is at or below what you asked for.** The middle state,
+`only measured, not guaranteed`, means a figure exists but it is an observation rather than a promise.
+It is deliberately not treated as a pass. A request nothing can meet comes back `NO`, not as a
+quietly rounded yes. The last line above is that case.
 
 "Is this accurate enough?" and "which of these two is more accurate?" are different questions with
 different answers, and the function above answers only the first. For the second, `BoysAccuracyDelivered`
-returns the figure a combination was *measured* to deliver; the [API reference](mainpage.md) documents
+returns the figure a combination was *measured* to deliver. The [API reference](mainpage.md) documents
 both accessors and says which reading a calculation's safety may rest on.
 
-**Next:** `YES - guaranteed` tells you the answer is good enough. The option probe tells you how to
-find out which of the good-enough options is fastest where you are.
+**Next:** `YES - guaranteed` tells you the answer is good enough. The option probe tells you which of
+the good-enough options is fastest where you are.
 
 ---
 
@@ -271,30 +271,30 @@ const boys::OptionProbeReport report = boys::RunOptionProbe(options);
 
     recommended here: uniform-pack-orders-horner-exact-division-fp64
 
-**The important line is the third one, not the second.** Of the 72 options in that group the run could
-not place 2 behind the leader, so the "fastest" row is one of three that are effectively tied — which
-is the real answer, and the probe says so rather than inventing a winner from a timing difference too
-small to measure. Read the result as *a group at the top and a tail behind it*. Being on the leader is
-worth little; being well behind the group is worth fixing.
+**The important line is the third one, not the second.** Of the 72 options in that group, the run
+could not place 2 behind the leader. The "fastest" row is therefore one of three that are effectively
+tied, and that is the real answer. The probe says so rather than inventing a winner from a timing
+difference too small to measure. Read the result as *a group at the top and a tail behind it*. Being
+on the leader is worth little. Being well behind the group is worth fixing.
 
-**Every figure in that transcript is a property of this host and this run**: the nanosecond figures
-are wall-clock measurements, which options tie follows from them, and the headline counts follow the
+**Every figure in that transcript is a property of this host and this run.** The nanosecond figures
+are wall-clock measurements. Which options tie follows from them, and the headline counts follow the
 build. What carries to your machine is the shape of the answer — a leader, a tied group, and a tail —
 not the numbers in it.
 
 That distinction is also why these figures should not be copied. On the machine that wrote this page
-the same program was run several times while other work was going on, and the leader — and the length
-of the tied group — changed each time, because a timing taken on a busy machine measures the machine.
-Run it on a machine you are not otherwise using, and re-run it if you change the build flags.
+the same program was run several times while other work was going on. The leader changed each time,
+and so did the length of the tied group. A timing taken on a busy machine measures the machine. Run it
+on a machine you are not otherwise using, and re-run it if you change the build flags.
 
-The example runs a deliberately short protocol so it can run inside a build; the command-line tool
+The example runs a deliberately short protocol so it can run inside a build. The command-line tool
 `boys-option-probe` runs the full one and prints every group, every figure beside its spread, and the
 machine load the rounds were taken under.
 
 Once you have a preference, name it at your call site — [the section
-above](#i-want-to-name-a-specific-evaluation) — or, for a whole build, point `BOYS_BUILD_DEFAULTS`
-at a header carrying your own five choices, so that every call site that names nothing compiles the
-choices your probe measured. `CONTRIBUTING.md` describes the second route.
+above](#i-want-to-name-a-specific-evaluation) — or point `BOYS_BUILD_DEFAULTS` at a header carrying
+your own five choices for a whole build. Every call site that names nothing then compiles the choices
+your probe measured. `CONTRIBUTING.md` describes the second route.
 
 ---
 
@@ -321,8 +321,8 @@ The complete list, with every overload and the arithmetic behind it, is the entr
 
 ## What you can and cannot choose at run time
 
-The settings that select an evaluation fall into two kinds: three can be named by a value the program
-computes, and the rest can only be named where the call is compiled:
+The settings that select an evaluation fall into two kinds. Three can be named by a value the program
+computes. The rest can only be named where the call is compiled:
 
 | Setting | Can you name it at run time? | How |
 |---|---|---|
@@ -335,28 +335,27 @@ computes, and the rest can only be named where the call is compiled:
 | how the recursion divides | no | template argument only — `EvalPolicy`'s sixth parameter |
 
 The ones that cannot be named late are fixed when the translation unit is compiled. **This revision
-offers no run-time entry for them**, and a choice that has to be made per input record has to be made
-with an `if` over two instantiations at the call site, not by passing a value into one.
+offers no run-time entry for them.** A choice that has to be made per input record needs an `if` over
+two instantiations at the call site, not a value passed into one.
 
 ## On a GPU, the first call is the slow one
 
 The GPU entries upload coefficient tables on first use, lazily and idempotently. **The first call at
 a given accuracy multiplier on a given device therefore pays a real one-time cost that every later
-call does not** — and a caller timing a loop from a cold start measures the upload, not the
-evaluation.
+call does not.** A caller timing a loop from a cold start measures the upload, not the evaluation.
 
-If you are benchmarking or budgeting latency: warm the path with one throwaway call at the multiplier
+If you are benchmarking or budgeting latency, warm the path with one throwaway call at the multiplier
 you intend to use, and time everything after it. A warm-up is also what `BoysCuda::InitializeTables`
 is for, if you would rather pay the cost where you can see it than inside your first real call.
 
 ## What you do not pay for
 
 A call that names no multiplier and no policy is resolved entirely at compile time. It compiles to
-that one call — no run-time dispatch, no branch on an axis, nothing to predict — and **the library
-has already compiled that specialization into its own archive**, so your translation unit links
-against it instead of instantiating the kernel a second time. That is why an unnamed call costs you
-neither run-time selection nor template-instantiation time. Naming another multiplier or another
-policy is what instantiates the version you asked for, in your translation unit.
+that one call — no run-time dispatch, no branch on an axis, nothing to predict. **The library has
+already compiled that specialization into its own archive**, so your translation unit links against
+it instead of instantiating the kernel a second time. An unnamed call therefore costs you neither
+run-time selection nor template-instantiation time. Naming another multiplier or another policy is
+what instantiates the version you asked for, in your translation unit.
 
 ## Where the specification lives
 

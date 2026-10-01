@@ -8,7 +8,16 @@
 // cannot fail, which is the way a check of this kind stops meaning anything.
 //
 //   cmake -S . -B build-defaults-noop -DBOYS_BUILD_DEFAULTS=tests/build_defaults_noop.hpp
-
+//
+// The five values are the committed file's own, copied by value and not read
+// from it: include/boys/boys_build_defaults.hpp carries them and a move of one
+// there has to move here too, or this configure stops being a control and starts
+// being a build with a choice. It is the control for the seam test's "has chosen
+// nothing" assertion and for nothing else: the seam's macro check
+// (tests/boys_build_defaults_test.cpp) holds each value below to the constant
+// that owns it, which a header naming the shipped values satisfies by
+// construction - that check has teeth where a value is moved, which is what
+// tests/build_defaults_tuned.hpp is for.
 #define BOYS_BUILD_DEFAULT_FIT_ROUTE FitRoute::kChebyshev
 #define BOYS_BUILD_DEFAULT_EVAL_SCHEME EvalScheme::kHorner
 #define BOYS_BUILD_DEFAULT_PACK_AXIS PackAxis::kArguments

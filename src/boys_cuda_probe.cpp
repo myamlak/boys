@@ -1,31 +1,25 @@
-// The option probe's host side: the workload, the protocol, the folding of the
-// rounds into figures, the refusal to order noise, and the text a consumer
-// reads.
+// The option probe's host side: the workload, the protocol, the folding of the rounds into figures,
+// the refusal to order noise, and the text a consumer reads.
 //
-// The clock is not here. Every timed region is a CUDA event pair this file
-// opens and closes through boys_cuda_probe_kernels.cu, because the host's own
-// submission cost must not be in the figure and the events are the only thing
-// that keeps it out. What this file decides is what to time, how many times, and
-// what the results are allowed to say.
+// The clock is not here. Every timed region is a CUDA event pair this file opens and closes through
+// boys_cuda_probe_kernels.cu, because the host's own submission cost must not be in the figure and
+// the events are the only thing that keeps it out. What this file decides is what to time, how many
+// times, and what the results are allowed to say.
 //
-// The shape is the CPU option probe's (src/boys_probe.cpp in this library): every
-// entry is timed once in every round, a comparison between two entries is the
-// ratio of their per-round figures inside one round, the figure reported for an
-// entry is the middle of that entry's ratios to a reference entry scaled by
-// the reference's own lower-quartile cost, the canary beside each pass is a
-// diagnostic that gates nothing, the resolution is what the run measured rather
-// than a bar chosen in advance, a rival whose band does not clear one is named as
-// unplaced instead of being ordered, and the entries a shape's own rounds cannot
-// separate are re-measured on their own and voted on rather than guessed at. The
-// differences are all forced by the device: the instrument is a kernel and not a
-// host spin, the card is named instead of the host, and the entries that exist to
-// run inside the caller's kernel are measured by subtraction rather than launched.
+// The shape is the CPU option probe's (src/boys_probe.cpp): every entry is timed once in every
+// round, a comparison between two entries is the ratio of their per-round figures inside one round,
+// an entry's reported figure is the middle of its ratios to a reference entry scaled by the
+// reference's own lower-quartile cost, the canary beside each pass is a diagnostic that gates
+// nothing, the resolution is what the run measured rather than a bar chosen in advance, a rival
+// whose band does not clear one is named as unplaced instead of being ordered, and the entries a
+// shape's own rounds cannot separate are re-measured on their own and voted on. The differences are
+// all forced by the device: the instrument is a kernel and not a host spin, the card is named
+// instead of the host, and the entries that exist to run inside the caller's kernel are measured by
+// subtraction rather than launched.
 //
-// The two halves of an in-kernel row's subtraction are timed adjacent inside the
-// *same round*, with their order alternating by round, so the difference that
-// row's figure is made of is a within-round pair exactly like a ratio between two
-// entries is, and a clock that drifts over the run moves both halves together and
-// cancels in it.
+// The two halves of an in-kernel row's subtraction are timed adjacent inside the *same round*, with
+// their order alternating by round, so that row's difference is a within-round pair exactly like a
+// ratio between two entries is, and a clock that drifts over the run cancels in it.
 
 #include "boys/boys_cuda_probe.hpp"
 
@@ -49,10 +43,9 @@
 #include <string>
 #include <vector>
 
-// ---------------------------------------------------------------------------
-// The device-side boundary (boys_cuda_probe_kernels.cu). Return codes as the
-// lane's own exported functions: 0 success, 1 an internal error, 2 a CUDA
-// failure.
+// --------------------------------------------------------------------------- The device-side
+// boundary (boys_cuda_probe_kernels.cu). Return codes as the lane's own exported functions: 0
+// success, 1 an internal error, 2 a CUDA failure.
 // ---------------------------------------------------------------------------
 extern "C" {
 int BoysCudaProbeDeviceCount(int* out);
@@ -147,31 +140,29 @@ double QuantileOf(std::vector<double> values, double p) {
     return values[lower] * (1.0 - weight) + values[upper] * weight;
 }
 
-/// The quantile the reported cost's ratio to the reference, and the band a pair is
-/// placed by, are read at.
+/// The quantile the reported cost's ratio to the reference, and the band a pair is placed by, are
+/// read at.
 ///
-/// A lower quartile rather than the minimum or the mean: on a card whose clock
-/// decays under a sustained load the minimum of a run is its earliest and
-/// best-clocked round, which a caller's long workload does not meet, and a mean
-/// would let one disturbed round move a figure a consumer builds a default on.
+/// A lower quartile rather than the minimum or the mean: on a card whose clock decays under a
+/// sustained load the minimum of a run is its earliest and best-clocked round, which a caller's
+/// long workload does not meet, and a mean would let one disturbed round move a figure a consumer
+/// builds a default on.
 ///
-/// This is the quantile of the **band** a pair is placed by. It is not the
-/// quantile an entry's figure is formed at; that is \c kFigureQuantile.
+/// This is the quantile of the **band** a pair is placed by; an entry's own figure is formed at
+/// \c kFigureQuantile.
 constexpr double kStatisticQuantile = 0.25;
 
 /// The quantile an entry's own figure is formed at: the middle of its rounds.
 ///
-/// **Not the lower quartile.** Every cost column of a rung is its reference
-/// entry's own cost scaled by that row's ratio to it, and the reference's ratio is
-/// one in every round, so its ratio's lower quartile is one too: at a lower
-/// quartile the reference would be scored at the middle of its own rounds while
-/// every other entry is scored at the twenty-fifth percentile of its ratio, a
-/// credit that belongs to the anchor rather than to the entries.
+/// **Not the lower quartile.** Every cost column of a rung is its reference entry's own cost scaled
+/// by that row's ratio to it, and the reference's ratio is one in every round, so its ratio's lower
+/// quartile is one too: at a lower quartile the reference would be scored at the middle of its own
+/// rounds while every other entry is scored at the twenty-fifth percentile of its ratio, a credit
+/// that belongs to the anchor rather than to the entries.
 ///
-/// The middle is the quantile that treats the two alike, and it is exactly
-/// reciprocal under a change of anchor — the set of ratios to the anchor is the
-/// set against it, element for element, so two entries agree on which of them is
-/// cheaper.
+/// The middle is the quantile that treats the two alike, and it is exactly reciprocal under a
+/// change of anchor: the set of ratios to the anchor is the set against it, element for element, so
+/// two entries agree on which of them is cheaper.
 constexpr double kFigureQuantile = 0.5;
 
 /// The number of paired rounds a quartile band needs before it can exist: the two
@@ -179,23 +170,23 @@ constexpr double kFigureQuantile = 0.5;
 /// the same observation twice.
 constexpr std::size_t kMinimumPairedRounds = 4;
 
-/// The widest relative width of a within-round ratio band a set of rounds showed,
-/// in percent: for each entry, the upper quartile of its ratio to \p reference
-/// over the lower quartile of the same ratio, taken at its widest.
+/// The widest relative width of a within-round ratio band a set of rounds showed, in percent: for
+/// each entry, the upper quartile of its ratio to \p reference over the lower quartile of the same
+/// ratio, taken at its widest.
 ///
-/// The reference's own column is skipped, and only it: its ratio is one in every
-/// round by construction, so it would contribute a band of zero. A set too short
-/// for a band, or one whose reference column holds a non-positive reading, reports
-/// zero rather than a width it did not measure.
+/// The reference's own column is skipped, and only it: its ratio is one in every round by
+/// construction, so it would contribute a band of zero. A set too short for a band, or one whose
+/// reference column holds a non-positive reading, reports zero rather than a width it did not
+/// measure.
 ///
-/// The columns read are \p first .. \p first + \p count - 1, which is one rung's
-/// block of the round table: a ratio is a ratio inside one rung, so a band formed
-/// across two rungs would be a band across two arithmetics.
+/// The columns read are \p first .. \p first + \p count - 1, one rung's block of the round table: a
+/// ratio is a ratio inside one rung, so a band across two rungs would be a band across two
+/// arithmetics.
 ///
-/// \param rounds    the pass's round table, one row per round
-/// \param reference the anchor's column, inside the same block
-/// \param first     the block's first column
-/// \param count     how many columns the block holds
+/// /// \\param rounds the pass's round table, one row per round
+/// /// \\param reference the anchor's column, inside the same block
+/// /// \\param first the block's first column
+/// /// \\param count how many columns the block holds
 double PassPairedSpread(const std::vector<std::vector<double>>& rounds,
                         std::size_t reference,
                         std::size_t first,
@@ -249,10 +240,9 @@ double PassPairedSpread(const std::vector<std::vector<double>>& rounds,
     return widest;
 }
 
-/// One rival measured against one leader, inside the rounds: every quantity here
-/// is a ratio formed inside a single round, so a drift common to the round is in
-/// both terms of the ratio and cancels. This is the comparison the probe is
-/// ordered by.
+/// One rival measured against one leader, inside the rounds: every quantity here is a ratio formed
+/// inside a single round, so a drift common to the round cancels. This is the comparison the probe
+/// is ordered by.
 struct PairedOutcome {
     /// Lower and upper quartile of the within-round ratio, rival over leader: the
     /// band the middle half of the run put the pair in.
@@ -264,12 +254,10 @@ struct PairedOutcome {
     int slowerRounds = 0;
     int rounds = 0;
 
-    /// How far the pair's ratio moved between the run's first and second half of
-    /// rounds: the second half's median ratio over the first half's, less one. A
-    /// pair whose ratio is a property of the two entries holds still as the card's
-    /// clock moves; one that drifts is a pair whose two entries do not carry the
-    /// clock alike, which is the one way a paired comparison can still be misled
-    /// by a card whose boost decays.
+    /// How far the pair's ratio moved between the run's first and second half of rounds: the second
+    /// half's median ratio over the first half's, less one. A pair whose ratio is a property of the
+    /// two entries holds still as the card's clock moves; one that drifts is a pair whose two
+    /// entries do not carry the clock alike.
     double drift = 0.0;
 
     /// Whether the band clears one: the middle half of the run put the rival
@@ -279,14 +267,13 @@ struct PairedOutcome {
 
 /// Measures one rival against one leader over the run's rounds.
 ///
-/// The band is the lower and upper quartile of the per-round ratios, and the
-/// ordering is that lower quartile clearing one: the middle half of the run has to
-/// put the rival behind, not merely the run's average.
+/// The band is the lower and upper quartile of the per-round ratios, and the ordering is that lower
+/// quartile clearing one: the middle half of the run has to put the rival behind, not merely the
+/// run's average.
 ///
-/// \param rounds the round table: one row per round, one column per entry, in
-///               cost per argument
-/// \param leader column of the entry the rival is measured against
-/// \param rival  column of the entry being placed
+/// /// \\param rounds the round table: one row per round, one column per entry, in cost per argument
+/// /// \\param leader column of the entry the rival is measured against
+/// /// \\param rival column of the entry being placed
 ///
 /// \returns the pair's own band, its slower-round count and its drift
 PairedOutcome CompareToLeader(const std::vector<std::vector<double>>& rounds, std::size_t leader,
@@ -390,17 +377,16 @@ struct EntryInfo {
     ProbeQuestion question;
     bool inKernel;
 
-    /// The bound the library documents for this entry's precision at full
-    /// accuracy, read from the library's own tables rather than measured here:
-    /// what a lane delivers on a card is the accuracy gate's business, and this
-    /// probe spends its time on cost. The report carries it so that a faster
-    /// precision is not read as a faster option at the same accuracy.
+    /// The bound the library documents for this entry's precision at full accuracy, read from the
+    /// library's own tables rather than measured here: what a lane delivers on a card is the
+    /// accuracy gate's business, and this probe spends its time on cost. The report carries it so
+    /// that a faster precision is not read as a faster option at the same accuracy.
     double bound;
 
-    /// The term of that bound which the accuracy multiplier does not scale, also
-    /// read from the library: the bound a row documents at a rung m is
-    /// \c m * (bound - boundFixed) + boundFixed. It is what lets a relaxed class
-    /// carry a bound of its own instead of the m = 1 figure under a rung's name.
+    /// The term of that bound which the accuracy multiplier does not scale, also read from the
+    /// library: the bound a row documents at a rung m is \c m * (bound - boundFixed) + boundFixed,
+    /// so a relaxed class carries a bound of its own instead of the m = 1 figure under a rung's
+    /// name.
     double boundFixed;
 
     /// The bound this entry documents at \p rung, from those two figures.
@@ -409,15 +395,13 @@ struct EntryInfo {
     }
 };
 
-/// One accuracy rung this probe measures at, and the name the report prints it
-/// under.
+/// One accuracy rung this probe measures at, and the name the report prints it under.
 ///
-/// The list is the lane's own rung table (kDeviceRungs, boys_cuda_options.hpp)
-/// with the spelling the library's documentation uses for each multiplier; the
-/// static_assert below is what keeps the two from parting. It is written out
-/// because the report names a rung in a class key and a class key is text, and
-/// because the rung a call is made at is a compile-time argument at the call
-/// sites below rather than a value read from a table.
+/// The list is the lane's own rung table (kDeviceRungs, boys_cuda_options.hpp) with the spelling
+/// the library's documentation uses for each multiplier; the static_assert below keeps the two from
+/// parting. It is written out because the report names a rung in a class key and a class key is
+/// text, and because the rung a call is made at is a compile-time argument at the call sites below
+/// rather than a value read from a table.
 struct RungRow {
     double multiplier;
     const char* name;
@@ -436,10 +420,9 @@ constexpr RungRow kProbeRungs[] = {{1.0, "1"},
                                    {65536.0, "65536"},
                                    {1e8, "1e8"}};
 
-/// Whether the list above is the lane's own rung set, element by element and in
-/// order. A rung the lane serves and this list does not hold would be a class no
-/// run of this probe ever measures, and one this list holds and the lane does not
-/// would not link; the static_assert is what stops either.
+/// Whether the list above is the lane's own rung set, element by element and in order. A rung the
+/// lane serves and this list does not hold would be a class no run measures, and one this list
+/// holds and the lane does not would not link; the static_assert stops either.
 constexpr bool RungsAreTheLanesSet() noexcept {
     constexpr std::size_t kListed = sizeof(kProbeRungs) / sizeof(kProbeRungs[0]);
 
@@ -474,18 +457,16 @@ inline bool AtFullAccuracy(double rung) noexcept {
 /// Makes one rung's degree tables the resident ones and fills \p handle from them.
 ///
 /// It is the library's own call, at the rung this report's classes are keyed on:
-/// \c BoysCuda::DeviceTables<m> uploads m's degree tables (a no-op when they
-/// already are, and for m = 1 nothing at all, since the full-accuracy tables are
-/// resident from the first upload) and fills the handle the device-callable
-/// entries match the multiplier against.
+/// \c BoysCuda::DeviceTables<m> uploads m's degree tables (a no-op when they already are, and for m
+/// = 1 nothing at all, the full-accuracy tables being resident from the first upload) and fills the
+/// handle the device-callable entries match the multiplier against.
 ///
-/// The device holds one rung at a time, which is why this is called before a row
-/// is timed rather than chosen at the call site: a kernel launched under another
-/// rung's tables would be a figure for a different option. It is host work and
-/// belongs outside every timed region.
+/// The device holds one rung at a time, which is why this is called before a row is timed rather
+/// than chosen at the call site: a kernel launched under another rung's tables would be a figure
+/// for a different option. It is host work and belongs outside every timed region.
 ///
-/// \param multiplier the rung, one of kProbeRungs
-/// \param handle     the table handle the in-kernel rows read
+/// /// \\param multiplier the rung, one of kProbeRungs
+/// /// \\param handle the table handle the in-kernel rows read
 ///
 /// \returns whether the rung is the resident one when the call returns
 bool RungIsResident(double multiplier, BoysDeviceTables& handle) {
@@ -549,10 +530,10 @@ bool RungIsResident(double multiplier, BoysDeviceTables& handle) {
         return BoysCuda::DeviceTables<1e8>(&handle) == BoysStatus::kSuccess;
     }
 
-    // Unreachable: the rungs this function is called with are kProbeRungs, and the
-    // static_assert above pins that list to the lane's own table. Answered as a
-    // failure rather than asserted, because a build that reached here would
-    // otherwise time a rung whose tables are not the ones it named.
+    // Unreachable: the rungs this function is called with are kProbeRungs, and the static_assert
+    // above pins that list to the lane's own table. Answered as a failure rather than asserted,
+    // because a build that reached here would otherwise time a rung whose tables are not the ones
+    // it named.
     return false;
 }
 
@@ -613,11 +594,9 @@ const char* GroupName(DeviceOptionGroup group) {
     return group == DeviceOptionGroup::kLaunched ? "launched" : "device";
 }
 
-/// The axis a row varies, with the member it is. A row with no axis states the
-/// one thing its entry is; a row with one states which member of it the row
-/// measured, because that is what its bound is the bound of: the member the row's
-/// own axis names, so a row that varies the scheme carries a scheme and not a
-/// region-B exponential.
+/// The axis a row varies, with the member it is. A row with no axis states the one thing its entry
+/// is; a row with one states which member of it the row measured, because that is what its bound
+/// is the bound of.
 std::string AxisName(const DeviceOptionInfo& option) {
     switch (option.axis)
     {
@@ -644,10 +623,9 @@ std::string AxisName(const DeviceOptionInfo& option) {
     }
 }
 
-/// The degree tables a row reads. The lane is what makes two rows of one
-/// precision different arithmetic — the seed amplification it carries is the
-/// lane's — so a report that names the precision and not the lane has not said
-/// which arithmetic it measured.
+/// The degree tables a row reads. The lane is what makes two rows of one precision different
+/// arithmetic - the seed amplification it carries is the lane's - so a report that names the
+/// precision and not the lane has not said which arithmetic it measured.
 const char* LaneName(BoysDeviceLane lane) {
     switch (lane)
     {
@@ -666,23 +644,20 @@ const char* LaneName(BoysDeviceLane lane) {
     }
 }
 
-/// The sentence a class opens with: what a class is, and what its winner is
-/// therefore a claim about.
+/// The sentence a class opens with: what a class is, and what its winner is therefore a claim
+/// about.
 ///
-/// The class is one precision, one accuracy rung and one question shape, and the
-/// reason it is keyed on those three rather than on anything the library picks is
-/// the reason this sentence exists: a caller has already chosen fp64, fp32 or
-/// fp16 from the accuracy their calculation needs, the rung they can afford, and
-/// the question they are asking, so no entry of this class is a substitute for one
-/// of another class — it is a faster or slower way to answer the same call. The
-/// bounds the rows document are then their own, and whether one class holds two
-/// of them is a fact about the rows, so it is read off them rather than assumed.
+/// The class is one precision, one accuracy rung and one question shape, and it is keyed on those
+/// three rather than on anything the library picks because a caller has already chosen fp64, fp32
+/// or fp16 from the accuracy their calculation needs, the rung they can afford, and the question
+/// they are asking. So no entry of this class is a substitute for one of another class - it is a
+/// faster or slower way to answer the same call. The bounds the rows document are then their own,
+/// and whether one class holds two of them is read off the rows rather than assumed.
 ///
-/// \param clause      a row of the class, for the precision, the rung and the
-///                    question the class is keyed on
-/// \param asked       the class's question said in full
-/// \param members     how many rows the class holds, measured or not
-/// \param oneBound    whether every row of it documents one bound at this rung
+/// /// \\param clause a row of the class, for the precision, the rung and the question it is keyed on
+/// /// \\param asked the class's question said in full
+/// /// \\param members how many rows the class holds, measured or not
+/// /// \\param oneBound whether every row of it documents one bound at this rung
 std::string ClassNote(const DeviceProbeMeasurement& clause,
                       const std::string& asked,
                       std::size_t members,
@@ -714,13 +689,12 @@ std::string ClassNote(const DeviceProbeMeasurement& clause,
     return text;
 }
 
-/// The option table, projected from the library's own report: one probe row per
-/// report row this build serves, and one unoffered entry per report row it does
-/// not, carrying the library's reason.
+/// The option table, projected from the library's own report: one probe row per report row this
+/// build serves, and one unoffered entry per report row it does not, carrying the library's reason.
 ///
-/// Nothing here names an option the library does not report. A row the library
-/// adds appears in this probe's table, and a row it refuses appears in the
-/// probe's list of what this build cannot serve, both without an edit here.
+/// Nothing here names an option the library does not report: a row the library adds appears in this
+/// probe's table, and a row it refuses appears in the probe's list of what this build cannot serve,
+/// both without an edit here.
 std::vector<EntryInfo> EnumerateEntries(std::vector<std::string>& unoffered,
                                        std::vector<std::string>& refusedBecause) {
     std::vector<EntryInfo> entries;
@@ -752,14 +726,13 @@ std::vector<EntryInfo> EnumerateEntries(std::vector<std::string>& unoffered,
 // The workload.
 // ---------------------------------------------------------------------------
 
-/// The library's own question, as the CPU probe asks it: a set of arguments in
-/// which each argument carries its own highest order, drawn as the sum of two
-/// shell angular momenta, over a log-uniform range that populates every region
-/// of the kernel.
+/// The library's own question, as the CPU probe asks it: a set of arguments in which each argument
+/// carries its own highest order, drawn as the sum of two shell angular momenta, over a log-uniform
+/// range that populates every region of the kernel.
 ///
-/// The pairs are sorted by argument because the uniform-order entries document
-/// that their arguments are non-decreasing: this probe does not sort for them,
-/// so it has to present them a batch that already satisfies what they promise.
+/// The pairs are sorted by argument because the uniform-order entries document that their arguments
+/// are non-decreasing: this probe does not sort for them, so it has to present them a batch that
+/// already satisfies what they promise.
 struct Workload {
     std::vector<int> n;
     std::vector<double> x;
@@ -818,10 +791,9 @@ Workload BuildWorkload(const DeviceProbeOptions& options) {
     work.n.swap(sortedN);
     work.x.swap(sortedX);
 
-    // The narrow lanes' argument arrays. The batch entries of the fp32 and fp16
-    // lanes take the double argument and round it themselves; the device-callable
-    // entries of those lanes take the narrowed argument, which is what a caller's
-    // own kernel would hold in a register.
+    // The narrow lanes' argument arrays. The batch entries of the fp32 and fp16 lanes take the
+    // double argument and round it themselves; the device-callable entries of those lanes take the
+    // narrowed argument, which is what a caller's own kernel would hold in a register.
     work.xf.resize(count);
     work.xh.resize(count);
 
@@ -906,11 +878,10 @@ double PerArgument(double milliseconds, int reps, std::size_t count) {
 
 /// What one entry's timed region or regions produced, in device milliseconds.
 ///
-/// A launched row fills \c withMs and leaves \c withoutMs at zero. An in-kernel
-/// row fills both: the caller's kernel with the call in it, and the same kernel
-/// with the call removed and the traffic kept. Both halves are kept, not only
-/// their difference, so the report can print the subtraction rather than assert
-/// that one happened.
+/// A launched row fills \c withMs and leaves \c withoutMs at zero. An in-kernel row fills both: the
+/// caller's kernel with the call in it, and the same kernel with the call removed and the traffic
+/// kept. Both halves are kept, not only their difference, so the report can print the subtraction
+/// rather than assert that one happened.
 struct TimedEntry {
     double withMs = 0.0;
     double withoutMs = 0.0;
@@ -920,18 +891,16 @@ struct TimedEntry {
 
 /// One entry's timed figure for one round, in milliseconds of device time.
 ///
-/// A launched entry is one region. A device-callable entry is two, taken adjacent
-/// in the same round, so a drift in the card's clocks moves both halves together
-/// and cancels in the difference.
+/// A launched entry is one region. A device-callable entry is two, taken adjacent in the same
+/// round, so a drift in the card's clocks moves both halves together and cancels in the difference.
 ///
-/// Which half goes first alternates by round, and both halves of every round are
-/// kept. A region carries a small fixed cost of its own — the event pair, the
-/// first launch's cold start, the host's submission of the launch — which is
-/// divided by the repetition count rather than by the call, so whichever half pays
-/// it lands in the difference as a term that shrinks as the repetition count
-/// rises. That is a bias, not noise: it does not average away, and it moves the
-/// figure between two repetition counts, which is what the subtraction control
-/// found. Alternating the order spreads it over both halves.
+/// Which half goes first alternates by round, and both halves of every round are kept. A region
+/// carries a small fixed cost of its own - the event pair, the first launch's cold start, the
+/// host's submission of the launch - divided by the repetition count rather than by the call, so
+/// whichever half pays it lands in the difference as a term that shrinks as the repetition count
+/// rises. That is a bias, not noise: it does not average away, and it moves the figure between two
+/// repetition counts, which is what the subtraction control found. Alternating the order spreads it
+/// over both halves.
 TimedEntry TimeEntry(const EntryInfo& info,
                      const ProbeTimeRequest& base,
                      int reps,
@@ -970,38 +939,33 @@ TimedEntry TimeEntry(const EntryInfo& info,
     return timed;
 }
 
-/// Times one entry at two very different repetition counts and fills a
-/// repetition-count control from what the two said.
+/// Times one entry at two very different repetition counts and fills a repetition-count control
+/// from what the two said.
 ///
-/// The counts have to be far apart for the check to mean anything: a cost that
-/// is paid per region rather than per call is divided by a different number of
-/// launches at each count, so it changes the per-argument figure by that cost's
-/// share of it times the ratio of the counts. An entry whose figure holds across
-/// the two has had such a cost divided out.
+/// The counts have to be far apart for the check to mean anything: a cost paid per region rather
+/// than per call is divided by a different number of launches at each count, so it changes the
+/// per-argument figure by that cost's share of it times the ratio of the counts. An entry whose
+/// figure holds across the two has had such a cost divided out.
 ///
-/// **What the two counts are compared on is the figure the report ships**: each
-/// count's figure is that count's own readings at both of the run's argument
-/// counts, reduced to the count-independent cost they extrapolate to — the same
-/// quantity, formed the same way, as the figure the row carries in the table. A
-/// control reading a row at one argument count while the report ships the
-/// extrapolation of two would be checking a number beside the figure, and would
-/// set a row aside for a dependence on the argument count that the shipped figure
-/// does not have.
+/// **What the two counts are compared on is the figure the report ships**: each count's figure is
+/// that count's own readings at both of the run's argument counts, reduced to the count-independent
+/// cost they extrapolate to - the same quantity, formed the same way, as the figure the row carries
+/// in the table. A control reading a row at one argument count while the report ships the
+/// extrapolation of two would be checking a number beside the figure.
 ///
-/// Both halves of a subtraction are reported, not only their difference, so that
-/// a reader can see the difference was not two unstable readings cancelling.
-/// Returns false when any of the four regions could not be timed.
+/// Both halves of a subtraction are reported, not only their difference, so that a reader can see
+/// the difference was not two unstable readings cancelling. Returns false when any of the four
+/// regions could not be timed.
 ///
-/// \param base     the run's own request at the first of its two argument counts
-/// \param pairBase the same request at the second count, which is what makes each
-///                 figure the row's own rather than a reading beside it
+/// Each count is read over \c kMinimumPairedRounds rounds with the order of the two halves
+/// alternating, and each count's figure is the lower quartile of its own rounds' figures, with an
+/// in-kernel round's difference formed inside the round. **The check fails closed**: a count whose
+/// readings left no figure to form leaves no second figure to compare, and a run that cannot
+/// resolve the row cannot vouch for its repetition counts either.
 ///
-/// Each count is read over \c kMinimumPairedRounds rounds with the order of the
-/// two halves alternating, and each count's figure is the lower quartile of its
-/// own rounds' figures, with an in-kernel round's difference formed inside the
-/// round. **The check fails closed**: a count whose readings left no figure to
-/// form leaves no second figure to compare, and a run that cannot resolve the row
-/// cannot vouch for its repetition counts either.
+/// /// \\param base the run's own request at the first of its two argument counts
+/// /// \\param pairBase the same request at the second count, which is what makes each figure the row's
+///                 own rather than a reading beside it
 bool RunRepetitionControl(const EntryInfo& info,
                           const DeviceProbeMeasurement& row,
                           const ProbeTimeRequest& base,
@@ -1112,22 +1076,20 @@ bool RunRepetitionControl(const EntryInfo& info,
     }
 
     const double smaller = std::min(out.nsPerArgumentLow, out.nsPerArgumentHigh);
-    // A count whose readings left no figure to form — a launched row whose two
-    // readings left no positive launch term, a subtraction that resolved nothing —
-    // leaves no second figure to compare, and the one outcome that must never come
-    // out of that is agreement: the control would be passing without evidence, and
-    // this is the check the whole subtraction route rests on. The difference is
-    // infinite rather than zero, so the data says what the note says.
+    // A count whose readings left no figure to form - a launched row whose two readings left no
+    // positive launch term, a subtraction that resolved nothing - leaves no second figure to
+    // compare, and the one outcome that must never come out of that is agreement: the control would
+    // be passing without evidence, and this is the check the whole subtraction route rests on. The
+    // difference is infinite rather than zero, so the data says what the note says.
     const bool resolved = smaller > 0.0;
 
     out.difference = resolved
                          ? std::fabs(out.nsPerArgumentHigh - out.nsPerArgumentLow) / smaller
                          : std::numeric_limits<double>::infinity();
-    // The widest within-round band this row's own shape showed on this run is
-    // what the two counts are judged against - the same number that shape's
-    // refusal prints - and not a bar invented here. A run that could not resolve
-    // the row has no yardstick for its repetition counts either, and the control
-    // says so rather than passing.
+    // The widest within-round band this row's own shape showed on this run is what the two counts
+    // are judged against - the same number that shape's refusal prints - and not a bar invented
+    // here. A run that could not resolve the row has no yardstick for its repetition counts either,
+    // and the control says so rather than passing.
     out.agrees = judgedAgainst > 0.0 && out.difference <= judgedAgainst;
 
     const std::string comparison =
@@ -1189,40 +1151,27 @@ bool RunRepetitionControl(const EntryInfo& info,
 // The conclusion for one question shape of one precision.
 // ---------------------------------------------------------------------------
 
-/// Folds one shape's live measurements into a verdict, on the CPU probe's rule:
-/// the shape's leader is the entry with the lowest figure the report prints for
-/// it, and it stands only when every rival's own within-round band against it has
-/// a lower quartile above one. A rival whose band
-/// straddles one cannot be placed, and a rival whose band lies wholly below one was
-/// ahead in that half, which means the statistic and the rounds disagree about the
-/// pair; both end in a refusal that names each unplaced rival with its band and its
-/// slower-round count and prints the run's own resolution. The ordering is never
-/// weakened into a ranking: no winner is named while any rival is unplaced.
+/// Folds one shape's live measurements into a verdict, on the CPU probe's rule: the shape's leader
+/// is the entry with the lowest figure the report prints for it, and it stands only when every
+/// rival's own within-round band against it has a lower quartile above one. A rival whose band
+/// straddles one cannot be placed, and a rival whose band lies wholly below one was ahead in that
+/// half, which means the statistic and the rounds disagree about the pair; both end in a refusal
+/// that names each unplaced rival with its band and its slower-round count and prints the run's own
+/// resolution. The ordering is never weakened into a ranking: no winner is named while any rival is
+/// unplaced.
 ///
-/// Every row handed in is already of one precision and one question shape, which
-/// is what makes them comparable at all. The bounds those rows document are
-/// columns of their own rows and are not what this orders on: two rows at
-/// different bounds are still two ways to compute the precision the caller
-/// chose, which is why the class holds them together.
+/// Every row handed in is already of one precision and one question shape, which is what makes them
+/// comparable at all. The bounds those rows document are columns of their own rows and are not what
+/// this orders on: two rows at different bounds are still two ways to compute the precision the
+/// caller chose.
 ///
-/// \param clause the ranking to fill in
-/// \param live   the shape's measured rows, in the report's own order
-/// \param columns each live row's own column in \p rounds, in the same order as
-///               \p live
-/// \param rounds the round table the report's figures were aggregated from: one
-///               row per pooled round, one column per entry in the measurements'
-///               own order, in cost per argument, so a pair can be compared
-///               inside a round
-/// \param pairedRounds rounds the run pooled, which is what a quartile band needs
-///               four of
-/// The clock check, stated: whether any pair of the shape moved between the run's
-/// first and second half of rounds by more than the run can order.
-///
-/// It is appended to a ranking's confidence line on every path that followed a
-/// pair, a refusal included, because a reader of a refusal is asking exactly this:
-/// whether the shape could not be ordered because its entries are close or because
-/// the clock moved under the run. It carries its own leading punctuation because it
-/// is always a sentence added to one already written.
+/// /// \\param clause the ranking to fill in
+/// /// \\param live the shape's measured rows, in the report's own order
+/// /// \\param columns each live row's own column in \p rounds, in the same order as \p live
+/// /// \\param rounds \param rounds the round table the report's figures were aggregated from: one row
+///               per pooled round, one column per entry in the measurements' own order, in cost per
+///               argument
+/// /// \\param pairedRounds rounds the run pooled, which is what a quartile band needs four of
 std::string DriftClause(const std::string& driftPair, double widestDrift, double resolution) {
     if (std::abs(widestDrift) > resolution) {
         return Text(". WARNING: the pair %s moved %.1f%% between the run's first and second half of "
@@ -1251,7 +1200,7 @@ std::string DriftClause(const std::string& driftPair, double widestDrift, double
 /// entries produced figures ends with one — and this is what its reader is told
 /// about the rounds it came from. Empty when the run was long enough for a band.
 ///
-/// \param pairedRounds rounds the run pooled
+/// /// \\param pairedRounds rounds the run pooled
 std::string ShortRunClause(int pairedRounds) {
     if (pairedRounds >= static_cast<int>(kMinimumPairedRounds))
     {
@@ -1715,20 +1664,16 @@ void Conclude(DeviceProbeRanking& clause,
 
 /// The widest within-round ratio band one shape showed on this run, as a fraction.
 ///
-/// It is the number the shape's refusal prints and the number the repetition
-/// control's two counts are judged against, computed once from the pairs rather
-/// than twice from two thresholds: an entry's own band to the reference, every
-/// rival's band against the shape's fastest entry, and the fastest entry's own
-/// band, taken at their widest.
+/// It is the number the shape's refusal prints and the number the repetition control's two counts
+/// are judged against, computed once from the pairs rather than twice from two thresholds: an
+/// entry's own band to the reference, every rival's band against the shape's fastest entry, and the
+/// fastest entry's own band, taken at their widest.
 ///
-/// A shape with fewer than two rows that could be ordered has no pair to form, and
-/// reports the fastest row's own band, which is what one row's rounds can say
-/// about themselves.
+/// A shape with fewer than two rows that could be ordered has no pair to form, and reports the
+/// fastest row's own band, which is what one row's rounds can say about themselves.
 ///
-/// The rows formed into pairs are the ones of one class: one precision, one rung
-/// and one question shape. The rung is part of it because two rows of one entry at
-/// two rungs are two arithmetics, and a band across them would be a band across the
-/// tables each was cut from rather than the band this run's clock gives the one.
+/// The rows formed into pairs are the ones of one class: one precision, one rung and one question
+/// shape. The rung is part of it because two rows of one entry at two rungs are two arithmetics.
 double ShapeResolution(const std::vector<DeviceProbeMeasurement>& measurements,
                        const std::vector<std::vector<double>>& rounds,
                        const std::string& precision,
@@ -1783,49 +1728,36 @@ double ShapeResolution(const std::vector<DeviceProbeMeasurement>& measurements,
     return widest;
 }
 
-/// The refinement stage: a shape's tied entries, measured alone at a larger
-/// protocol, repeated, and voted on.
+/// The refinement stage: a shape's tied entries, measured alone at a larger protocol, repeated, and
+/// voted on.
 ///
-/// This is what the report does instead of naming an entry from a figure counted
-/// off the library's tables. The entries re-measured are the shape's fastest entry
-/// and every entry of it the main run could not place behind the fastest.
+/// The entries re-measured are the shape's fastest entry and every entry of it the main run could
+/// not place behind the fastest. Each run is a fresh pass over the tied set at \c passes * the
+/// refinement factor passes of \c rounds * the same factor rounds, with its own shuffle, ordered by
+/// the same within-round ratio rule the main run used. A run whose own rounds cannot place a rival
+/// contributes its leader alone, which is what makes the vote a vote rather than a re-run of the
+/// main statistic.
 ///
-/// Each run is a fresh pass over the tied set at \c passes * the refinement factor
-/// passes of \c rounds * the same factor rounds, with its own shuffle, and each run
-/// is ordered by the same within-round ratio rule the main run used — a run is a
-/// smaller measurement of the same kind and not a different rule. A run whose own
-/// rounds cannot place a rival contributes its leader alone, which is what makes
-/// the vote a vote rather than a re-run of the main statistic.
+/// **The figure it ranks is the main run's figure**: each entry is read at both of the run's
+/// argument counts inside the round and the cell is the count-independent cost the two readings
+/// extrapolate to, formed exactly as the main run forms it. A refinement that ranked a different
+/// quantity from the one the main run could not separate would be answering a question the shape
+/// did not ask.
 ///
-/// **The figure it ranks is the main run's figure**: each entry is read at both of
-/// the run's argument counts inside the round and the cell is the count-independent
-/// cost the two readings extrapolate to, formed exactly as the main run forms it.
-/// A refinement that ranked a different quantity from the one the main run could
-/// not separate would be answering a question the shape did not ask.
+/// The stage settles **how the shape's own fastest was reached**, and nothing else: the name is the
+/// entry the shape's figures put first, and what the stage adds is whether the longer re-run of the
+/// tied rows named that entry too, which is what the shape's route - a refinement, a vote, or a tie
+/// the runs could not break - is made of.
 ///
-/// The stage settles **how the shape's own fastest was reached**, and nothing
-/// else. The name is the entry the shape's figures put first, set before this
-/// stage runs; what the stage adds is whether the longer re-run of the tied rows
-/// named that entry too or named another, which is what the shape's route - a
-/// refinement, a vote, or a tie the runs could not break - is made of. It appends
-/// the vote to the reason and the confidence the main run wrote, so that a reader
-/// of either line sees both what the main run could not separate and how the name
-/// it printed was reached.
-///
-/// \param clause   the shape whose tie is to be refined, with its tiedEntries
-///                 filled
-/// \param entries  the rows this run measured, in the report's own order
-/// \param base     the request every timed region of this run is made from, at the
-///                 run's first count
-/// \param pairBase the same request at the run's second count
-/// \param clamped  the protocol in force, read for the run count and the factor
-/// \param live     the class's own rows, which is the set the tied names are
-///                 resolved in: a name is a row of this class and of no other, and
-///                 a name outside it is not the row the class could not place
-/// \param rung     the accuracy rung the class and every one of its rows is at.
-///                 The stage re-runs the tied rows under the tables the class was
-///                 measured under, so the vote is over the same arithmetic the tie
-///                 was: a re-run at another rung would be a vote on another question
+/// /// \\param clause the shape whose tie is to be refined, with its tiedEntries filled
+/// /// \\param entries the rows this run measured, in the report's own order
+/// /// \\param base the request every timed region of this run is made from, at the run's first count
+/// /// \\param pairBase the same request at the run's second count
+/// /// \\param clamped the protocol in force, read for the run count and the factor
+/// /// \\param live the class's own rows, the set the tied names are resolved in
+/// /// \\param rung the accuracy rung the class and all of its rows are at: the stage re-runs the
+///                 tied rows under the tables the class was measured under, so the vote is over the
+///                 same arithmetic the tie was
 void RefineShape(DeviceProbeRanking& clause,
                  const std::vector<DeviceProbeMeasurement*>& live,
                  const std::vector<EntryInfo>& entries,
@@ -2681,21 +2613,17 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
 
     // --- The device-side launch floor, as the diagnostic it is ---------------
     //
-    // A kernel launched the same way that does no Boys arithmetic at all gives
-    // the cheapest launch this route can make, and the report states it per
-    // launch and as a fraction of the fastest row, so a run whose workload was
-    // too small says so instead of quietly ranking the launcher.
+    // A kernel launched the same way that does no Boys arithmetic at all gives the cheapest launch
+    // this route can make, and the report states it per launch and as a fraction of the fastest
+    // row, so a run whose workload was too small says so instead of quietly ranking the launcher.
     //
-    // **It is not what the figures have taken out of them.** An entry's kernel
-    // needs registers and an occupancy ramp that an empty kernel never pays, so
-    // the floor is a lower bound on an entry's own launch cost and subtracting it
-    // would take out part of the term. What comes out of a figure is the entry's
-    // own launch term, fixed by that entry's readings at the two counts below.
+    // **It is not what the figures have taken out of them.** An entry's kernel needs registers and
+    // an occupancy ramp an empty kernel never pays, so the floor is a lower bound on an entry's own
+    // launch cost and subtracting it would take out part of the term. What comes out of a figure is
+    // the entry's own launch term, fixed by that entry's readings at the two counts below.
     //
-    // So a floor that cannot be read costs this run its diagnostic and not its
-    // figures: the measurement continues and the control says the floor was not
-    // established. The floor's own reading is taken at the run's repetition count
-    // and argument count, which is the protocol the rows are taken under.
+    // So a floor that cannot be read costs this run its diagnostic and not its figures: the
+    // measurement continues and the control says the floor was not established.
     bool floorTimed = false;
 
     {
@@ -2725,22 +2653,19 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
 
     // --- Passes --------------------------------------------------------------
     //
-    // Every pass is run and every pass is used; what the canary said beside one is
-    // reported with it and decides nothing.
+    // Every pass is run and every pass is used; what the canary said beside one is reported with it
+    // and decides nothing.
     //
-    // The visit order is shuffled once per round from the run's own seed, inside
-    // each rung's block. A fixed order would put the same entry first in every
-    // round, and whatever a position in the round is worth — the first launch
-    // touching a table the others then find warm — would be worth the same to that
-    // entry every time and would enter its ratio as though it were the entry's own
-    // cost. The seed keeps a run reproducible.
+    // The visit order is shuffled once per round from the run's own seed, inside each rung's block.
+    // A fixed order would put the same entry first in every round, and whatever a position in the
+    // round is worth - the first launch touching a table the others then find warm - would enter
+    // that entry's ratio as though it were the entry's own cost. The seed keeps a run reproducible.
     //
-    // A round walks the blocks in the rung table's order, because the device holds
-    // one rung's tables at a time: the rung is made resident when the round reaches
-    // its block and every row of the block is timed under it, so the two rows of
-    // any comparison this report makes were timed under one rung's arithmetic. The
-    // upload between two blocks is host work and lands between timed regions, never
-    // inside one.
+    // A round walks the blocks in the rung table's order, because the device holds one rung's
+    // tables at a time: the rung is made resident when the round reaches its block and every row of
+    // the block is timed under it, so the two rows of any comparison this report makes were timed
+    // under one rung's arithmetic. The upload between two blocks is host work and lands between
+    // timed regions.
     std::mt19937_64 shuffle(clamped.seed);
     std::vector<std::size_t> visit(rows.size());
 
@@ -3000,21 +2925,17 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
 
     // --- Fold the rounds into figures ---------------------------------------
     //
-    // Every figure below is an aggregate of ratios taken inside a round of the
-    // table above, which is what makes it a paired comparison: two cells of one
-    // round were timed under one clock. The statistic a pair is placed by is a
-    // lower quartile — see QuantileOf and kStatisticQuantile for why not the
-    // minimum, and why not a mean — and a row's own ratio to the reference is read
-    // at the middle (\c kFigureQuantile), so the cost is the reference entry's own
-    // lower-quartile figure scaled by that ratio, and every cost column of the
-    // report is anchored to one entry's own measurement.
+    // Every figure below is an aggregate of ratios taken inside a round of the table above, which
+    // is what makes it a paired comparison: two cells of one round were timed under one clock. The
+    // statistic a pair is placed by is a lower quartile - see QuantileOf and kStatisticQuantile -
+    // and a row's ratio to the reference is read at the middle (\c kFigureQuantile), so the cost is
+    // the reference entry's own lower-quartile figure scaled by that ratio.
     //
-    // The fold is per rung's block, because the anchor is: the reference entry is
-    // measured at every rung this run holds, and a row's cost is scaled by its own
-    // rung's reference figure, so a ratio is always a ratio between two rows
-    // measured under one rung's tables. Comparing two rungs' figures is comparing
-    // two anchors, and the report does that only as a ratio between two classes'
-    // winners, never as one measurement.
+    // The fold is per rung's block, because the anchor is: the reference entry is measured at every
+    // rung this run holds, and a row's cost is scaled by its own rung's reference figure, so a
+    // ratio is always between two rows measured under one rung's tables. Comparing two rungs'
+    // figures is comparing two anchors, and the report does that only as a ratio between two
+    // classes' winners.
     if (!roundCost.empty())
     {
         for (RungBlock& block : blocks)
@@ -3242,16 +3163,15 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
 
     // --- The classes, one per precision, rung and question shape -------------
     //
-    // After the controls, and run to a fixed point: every row a class would
-    // recommend goes through the repetition control first, and a row that does not
-    // agree sets the class back to the next one.
+    // After the controls, and run to a fixed point: every row a class would recommend goes through
+    // the repetition control first, and a row that does not agree sets the class back to the next
+    // one.
     //
-    // The class set comes from the rows this run was asked for rather than from
-    // the rows that happened to measure, so a class whose every row failed to
-    // measure is still reported with its reason. It is walked over the measurement
-    // table, which is the option table crossed with the lane's rungs and ordered by
-    // rung, so the entries of one rung print together and the m = 1 classes — the
-    // ones a default is taken from — come first.
+    // The class set comes from the rows this run was asked for rather than from the rows that
+    // happened to measure, so a class whose every row failed to measure is still reported with its
+    // reason. It is walked over the measurement table, which is the option table crossed with the
+    // lane's rungs and ordered by rung, so the entries of one rung print together and the m = 1
+    // classes - the ones a default is taken from - come first.
     /// The block of one rung's rows, by the multiplier the class is keyed on.
     const auto BlockFor = [&blocks](double rung) -> const RungBlock* {
         for (const RungBlock& block : blocks)
@@ -3727,8 +3647,7 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
     return report;
 }
 
-// ---------------------------------------------------------------------------
-// The text.
+// --------------------------------------------------------------------------- The text.
 // ---------------------------------------------------------------------------
 
 /// How much of the lane's rung axis a row of the space is served at, as the
@@ -3772,19 +3691,16 @@ std::string RungNames(DeviceRungMask mask) {
     return names;
 }
 
-/// The library's report of its device option space, row by row, with the row
-/// this probe carries for each beside it.
+/// The library's report of its device option space, row by row, with the row this probe carries for
+/// each beside it.
 ///
-/// This block is the probe's coverage statement and not a courtesy: the probe's
-/// option table is a projection of the library's, so every row listed here is
-/// either a row measured above or a refusal with the library's reason, and a
-/// row this probe carries that the library does not report would be a list kept
-/// beside the library rather than read from it. `probeRows` is what the run
-/// actually carried — the measurement table's own names, in its own order — so
-/// the comparison is against the report this run printed and not against a
-/// second reading of the same source.
-/// \param probeRows     the entries the run carried a figure for
-/// \param emptyRows     the offered cells that produced no figure
+/// This block is the probe's coverage statement and not a courtesy: the probe's option table is a
+/// projection of the library's, so every row listed here is either a row measured above or a
+/// refusal with the library's reason. `probeRows` is what the run actually carried - the
+/// measurement table's own names, in its own order - so the comparison is against the report this
+/// run printed and not against a second reading of the same source.
+/// /// \\param probeRows the entries the run carried a figure for
+/// /// \\param emptyRows the offered cells that produced no figure
 void AppendOptionSpace(std::string& text,
                        const std::vector<std::string>& probeRows,
                        std::size_t emptyRows) {
@@ -4575,21 +4491,19 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
         }
     };
 
-    /// How the shape's recommendation was reached, in the report's own words: the
-    /// one thing a consumer reading a name has to be able to tell, since a name
-    /// measured over the shape's own rounds and a name taken from a vote over
-    /// re-runs are answers of different strength, and a name taken by choice among
-    /// entries the runs divided evenly is not a measurement at all.
+    /// How the shape's recommendation was reached, in the report's own words: the one thing a
+    /// consumer reading a name has to be able to tell, since a name measured over the shape's own
+    /// rounds and a name taken from a vote over re-runs are answers of different strength, and a
+    /// name taken by choice among entries the runs divided evenly is not a measurement at all.
     ///
-    /// A shape that reached no recommendation gets the line saying so, and the
-    /// reason above it says which count or which row was missing.
+    /// A shape that reached no recommendation gets the line saying so, and the reason above it says
+    /// which count or which row was missing.
     ///
-    /// \param ranking the ranking whose name is being explained
-    /// \param clause  the class the ranking sits in, which is what its shape's
-    ///                rows are read out of: a name taken because the shape had
-    ///                nothing to order it against is one answer when the shape
-    ///                holds one row and another when the run's own checks left one
-    ///                row of several standing, and the line says which it was
+    /// /// \\param ranking the ranking whose name is being explained
+    /// /// \\param clause the class the ranking sits in, which is what its shape's rows are read out
+    ///                of: a name taken because the shape had nothing to order it against is one
+    ///                answer when the shape holds one row and another when the run's own checks
+    ///                left one row of several standing, and the line says which it was
     const auto AppendReached = [&text, &ShapeRows](const DeviceProbeRanking& ranking,
                                                   const DeviceProbeClass& clause) {
         if (ranking.recommended.empty())

@@ -7,18 +7,16 @@
 //
 // Every fact is deterministic - a preprocessor fact, a compile-time constant, a
 // binary fact read out of the library's own object code, or an operating-system
-// report of the machine the process is on. There is no timing here and there
-// must not be: a duration taken on a shared build machine is a distribution
-// across ephemeral runners, not a fact.
+// report of the machine. No timing, and there must not be: a duration taken on a
+// shared build machine is a distribution across ephemeral runners, not a fact.
 //
-// --leg names the leg this build belongs to; CI passes the job's own check name,
-// which is what the recorded table is keyed by. Without it the probe derives a
-// name for a developer build that cannot be mistaken for a CI leg.
+// --leg is the key the recorded table is keyed by; CI passes the job's own check
+// name. Without it the probe derives a name for a developer build that no CI leg
+// can be mistaken for.
 //
 // --check gates on a fact and never on the runner's identity: the CPU model, the
-// processor count, the compiler version and the recording date are tags,
-// reported when they move and never failed, because the same leg draws
-// different hardware on an ephemeral runner.
+// processor count, the compiler version and the recording date are tags, reported
+// when they move and never failed - a leg draws different hardware each run.
 
 #include <boys/boys.hpp>
 
@@ -43,9 +41,8 @@
 #include <cpuid.h>
 #endif
 
-// Supplied at configure time: the artifact to inspect and the tool that reads
-// its symbol table. Both optional - a build that supplies neither reports the
-// route as unestablished rather than guessing.
+// Supplied at configure time: the artifact to inspect and the tool that reads its symbol
+// table. Both optional - a build supplying neither reports the route as unestablished.
 #ifndef BOYS_FACTS_LIB
 #define BOYS_FACTS_LIB ""
 #endif
@@ -66,8 +63,7 @@ struct Fact {
     std::string value;
 };
 
-/// Collapses whitespace runs and trims, so a value is one line (CPU brand
-/// strings arrive padded).
+/// Collapses whitespace runs and trims, so a value is one line (CPU brands arrive padded).
 std::string Trim(const std::string& text) {
     std::string out;
     bool pending = false;
@@ -123,9 +119,8 @@ std::string ValueAfter(const std::string& line, char separator) {
 // --- the CPU the process is running on --------------------------------------
 
 /// The value of an environment variable, trimmed, empty when it is not set.
-///
-/// The MSVC branch is not stylistic: this tree promotes warnings to errors and
-/// MSVC deprecates getenv (C4996). maybe_unused: only some platforms call it.
+/// The MSVC branch is not stylistic - this tree promotes warnings to errors and MSVC
+/// deprecates getenv (C4996). maybe_unused: only some platforms call it.
 [[maybe_unused]] std::string Environment(const char* name) {
 #if defined(_MSC_VER)
     char* value = nullptr;
@@ -190,13 +185,11 @@ std::string ScratchPath(const char* prefix) {
            std::to_string(reinterpret_cast<std::uintptr_t>(&marker)) + ".tmp";
 }
 
-/// Runs `command` with its standard output redirected to `path`, and returns
-/// whether it exited zero.
+/// Runs `command` with its standard output redirected to `path`; true when it exited zero.
 ///
-/// The Windows form is not decoration: cmd.exe strips the first and last quote
-/// off the remainder of a `cmd /c` line that starts with a quote and carries
-/// more than two of them, and a command whose tool and arguments both need
-/// quoting then runs as a broken path. The nested `cmd /c` with the whole line
+/// The Windows form is not decoration: cmd.exe strips the first and last quote off a `cmd /c`
+/// line that starts with a quote and carries more than two, so a command whose tool and
+/// arguments both need quoting runs as a broken path. The nested `cmd /c` with the whole line
 /// quoted is what survives it.
 bool RunToFile(const std::string& command, const std::string& path) {
 #if defined(_WIN32)
@@ -208,7 +201,6 @@ bool RunToFile(const std::string& command, const std::string& path) {
 }
 
 /// The first line a command wrote to its standard output, empty on any failure.
-///
 /// It never throws: a fact this raises is reported as unestablished rather than
 /// failing the leg. maybe_unused: only some platforms need a system query.
 [[maybe_unused]] std::string FirstLineOfCommand(const std::string& command) {
@@ -226,9 +218,8 @@ bool RunToFile(const std::string& command, const std::string& path) {
     return read ? Trim(line) : std::string{};
 }
 
-/// What the operating system reports as this machine's processor, and where
-/// that came from: a brand string is not available everywhere, and an
-/// unavailable model is reported as such.
+/// What the operating system reports as this machine's processor, and where that came from:
+/// a brand string is not available everywhere, and an unavailable model is reported as such.
 void AddCpuModel(std::vector<Fact>& facts) {
     std::string model = X86BrandString();
     if (!model.empty())
@@ -361,12 +352,10 @@ std::string Architecture() {
 #endif
 }
 
-/// The packed arithmetic the target's ISA provides, and its width in bits - the
-/// target the compiler was asked for, not the width this program happens to use.
-/// A build that names none has no packed arithmetic at all (width 0).
-///
-/// Two entries are the target's own baseline rather than a macro's presence:
-/// MSVC defines neither __SSE2__ nor __ARM_NEON, and both targets require them.
+/// The packed arithmetic the target's ISA provides, and its width in bits - the target the
+/// compiler was asked for, not the width this program uses. A build that names none has no
+/// packed arithmetic at all (width 0). Two entries are the target's own baseline rather than
+/// a macro's presence: MSVC defines neither __SSE2__ nor __ARM_NEON, and both require them.
 std::pair<std::string, unsigned> SimdTarget() {
 #if defined(__AVX512F__)
     return {"avx512", 512};
@@ -405,12 +394,10 @@ std::string Sanitizers() {
     return found.empty() ? "none" : found;
 }
 
-/// The name a developer build records under, reached only where no leg was
-/// named, and spelled so that no CI leg can be mistaken for it.
-///
-/// The target's packed arithmetic and the sanitizers are part of it because both
-/// are properties of the build: builds differing in either must not record over
-/// each other.
+/// The name a developer build records under, reached only where no leg was named, and
+/// spelled so that no CI leg can be mistaken for it. The target's packed arithmetic and
+/// the sanitizers are part of it, both being properties of the build: builds differing
+/// in either must not record over each other.
 std::string DerivedLegName() {
     std::string name = "local-" + OperatingSystem() + "-" + Architecture() +
                        "-" + SimdTarget().first + " " + CompilerId() + "-" +
@@ -425,10 +412,9 @@ std::string DerivedLegName() {
 
 // --- the library's own facts ------------------------------------------------
 
-/// Reads the library artifact's symbol table for a reference to an out-of-line
-/// fma. A binary fact, not a timing: a fused multiply-add leaves nothing to call,
-/// and one the compiler did not fuse leaves an undefined reference to the
-/// runtime's fma.
+/// Reads the library artifact's symbol table for a reference to an out-of-line fma.
+/// A binary fact, not a timing: a fused multiply-add leaves nothing to call, and one the
+/// compiler did not fuse leaves an undefined reference to the runtime's fma.
 void AddFmaRoute(std::vector<Fact>& facts) {
     const std::string tool = BOYS_FACTS_SYMBOL_TOOL;
     const std::string mode = BOYS_FACTS_SYMBOL_MODE;
@@ -476,15 +462,12 @@ void AddFmaRoute(std::vector<Fact>& facts) {
         return;
     }
 
-    // The undefined-symbol view differs per tool: msvc-dump marks the line
-    // UNDEF and names the symbol after a `|`, nm marks it `U`, objdump `*UND*`.
-    // The parser looks for the marker and the name, not for a layout.
-    //
-    // Every decoration is stripped from the name: Mach-O (and some COFF symbols)
-    // prefixes an underscore, and a COFF object reaching the runtime through an
-    // import library - the shape a Debug build of this tree produces - names the
-    // thunk __imp_fma. Read as written, that is not "fma", and a build that calls
-    // the runtime would be reported as one that does not.
+    // The undefined-symbol view differs per tool: msvc-dump marks the line UNDEF and names the
+    // symbol after a `|`, nm marks it `U`, objdump `*UND*`; the parser looks for the marker and
+    // the name, not for a layout. Every decoration is stripped: Mach-O (and some COFF symbols)
+    // prefixes an underscore, and a COFF object reaching the runtime through an import library -
+    // the shape a Debug build produces - names the thunk __imp_fma. Read as written, that is
+    // not "fma", so a build that calls the runtime is reported as one that does not.
     bool undefinedFma = false;
     bool undefinedFmaf = false;
     {
@@ -578,8 +561,7 @@ std::vector<Fact> Gather(const std::string& leg) {
 
     facts.push_back({"compiler.id", CompilerId()});
     facts.push_back({"compiler.version", CompilerVersion()});
-    // MSVC reports __cplusplus as 199711L unless /Zc:__cplusplus is passed, so
-    // the source macro would understate every standard this tree builds at.
+    // MSVC reports __cplusplus as 199711L without /Zc:__cplusplus, understating the standard.
 #if defined(_MSVC_LANG)
     facts.push_back({"compiler.standard", std::to_string(_MSVC_LANG)});
 #else
@@ -681,9 +663,8 @@ std::vector<Fact> Gather(const std::string& leg) {
         facts.push_back({"simd.lanes.fp16", std::to_string(simd.second / 16u)});
     }
 
-    // The multiply-add route in force, from the library's own report, which
-    // answers per backend: contraction belongs to the flags a translation unit
-    // was compiled with, and the packed arithmetic is compiled under others.
+    // The multiply-add route in force, from the library's own report, which answers per backend:
+    // contraction belongs to a translation unit's flags, the packed arithmetic under others.
     const std::span<const boys::backend::BackendInfo> backends =
         boys::backend::BoysBackends();
     for (const boys::backend::BackendInfo& backend : backends)
@@ -707,9 +688,8 @@ std::vector<Fact> Gather(const std::string& leg) {
 
 // --- the recorded table -----------------------------------------------------
 
-/// The tag a recorded row opens with, and the version of the format: a fenced
-/// block that does not open with it is prose, so the document can show the
-/// format without showing a row.
+/// The tag a recorded row opens with, and the version of the format: a fenced block that
+/// does not open with it is prose, so the document can show the format without a row.
 constexpr const char* kFormatTag = "boys.build-facts/1";
 
 /// The keys that carry where and by whom a row was observed rather than what
@@ -730,9 +710,8 @@ bool IsTag(const std::string& key) {
     return false;
 }
 
-/// Every row the table records, in document order. A row is a fenced block whose
-/// first line is the format tag; anything else is prose and is skipped, so a
-/// block that merely looks like key=value lines is never mistaken for a fact.
+/// Every row the table records, in document order: a row is a fenced block opening with the
+/// format tag; anything else is prose and skipped, never mistaken for a fact.
 std::vector<std::vector<Fact>> TableRows(const std::string& path, bool& tableFound) {
     std::vector<std::vector<Fact>> rows;
     std::ifstream table(path);
@@ -823,9 +802,8 @@ int CheckAgainst(const std::vector<Fact>& facts, const std::string& path) {
     }
     if (row.empty())
     {
-        // No row recorded yet is not a failure: the block above is that row. The
-        // legs the table does carry are listed, so a leg name nothing will ever
-        // match is visible rather than silently unchecked.
+        // No row recorded yet is not a failure: the block above is that row. The legs the table
+        // does carry are listed, so a leg name nothing will ever match is not silently unchecked.
         std::printf("\nbuild facts: the table records no row for `%s`. The block "
                     "above is that row:\nrecord it with\n"
                     "    python tools/gen_build_facts.py --record <file>\n",

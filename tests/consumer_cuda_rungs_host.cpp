@@ -1,28 +1,20 @@
 // The consumer check on the CUDA lane's run-time rung.
 //
-// A caller of the device lane that decides its accuracy at run time writes what
-// this file writes:
+// A caller of the device lane that decides its accuracy at run time writes
+// `boys::BoysCuda::AllOrdersF64AtRung(m, n, x, out, count, stream)` and names one of the rungs of
+// `boys::kDeviceRungs` in `m`, where a caller that fixed the rung where the call is written would
+// write `boys::BoysCuda::AllOrdersF64<4096.0>(...)`: no switch over the rungs at the call site and
+// no run-time search, the combination being the entry's name and the rung the call's own argument.
 //
-//   boys::BoysCuda::AllOrdersF64AtRung(m, n, x, out, count, stream);
-//
-// and names one of the rungs of `boys::kDeviceRungs` in `m`, where a caller that
-// had fixed the rung where the call is written would write
-// `boys::BoysCuda::AllOrdersF64<4096.0>(...)`. There is no switch over the rungs
-// at the call site and no run-time search: the combination is the entry's name
-// and the rung is the call's own argument.
-//
-// What this file checks, and against what: **the book**, `BoysDeviceOptions()`,
-// the lane's own report of what it serves, read here rather than retyped and
-// counted per precision; **the rung it was handed**, every cell evaluated both
-// through the rung-argument sibling and through the same entry's compile-time
-// spelling at that rung and compared bit for bit - a row the library carries at
-// fewer rungs than the table holds has one such pair per cell and the refusal
-// at the rest, which the rung-argument call must answer and which is counted
-// with the cells the row names; **the bound that cell carries**,
-// judged against the committed 45-digit reference grid at the figure the book
-// states for its own row at the rung it ran at; and **the refusal, on the card**,
-// whose other half runs the device-callable entry in a kernel at a resident and a
-// non-resident rung (tests/consumer_cuda_rungs.cu).
+// What this file checks, against what: **the book**, `BoysDeviceOptions()`, read rather than
+// retyped, counted per precision; **the rung it was handed**, every cell evaluated through the
+// rung-argument sibling and through the same entry's compile-time spelling at that rung and
+// compared bit for bit, where a row the library carries at fewer rungs has one pair per cell and
+// the refusal at the rest - which the rung-argument call must answer, and which is counted with the
+// cells the row names; **the bound that cell carries**, against the committed 45-digit grid at the
+// figure the book states for its own row at the rung it ran at; **the refusal, on the card**, whose
+// other half runs the device-callable entry in a kernel at a resident and a non-resident rung
+// (tests/consumer_cuda_rungs.cu).
 //
 // Run:  cmake --build <build> --config Release --target boys-consumer-cuda-rungs
 //       <build>/Release/boys-consumer-cuda-rungs
@@ -41,9 +33,8 @@
 #include <string>
 #include <vector>
 
-// Defined in tests/consumer_cuda_rungs.cu; C linkage, so the two sides are one
-// signature and a drift between them is a link error rather than a silent
-// second reading.
+// Defined in tests/consumer_cuda_rungs.cu; C linkage, so the two sides are one signature and a
+// drift between them is a link error rather than a silent second reading.
 extern "C" int BoysConsumerCudaRungSingle(const boys::BoysDeviceTables* tables,
                                           const int* n,
                                           const double* x,
@@ -53,8 +44,7 @@ extern "C" int BoysConsumerCudaRungSingle(const boys::BoysDeviceTables* tables,
                                           int* statuses);
 
 /// The two values the device half's entry returns, named from that side because
-/// boys_cuda_device.hpp is a CUDA header and this half cannot include it: one
-/// library, one definition of what each status is worth.
+/// boys_cuda_device.hpp is a CUDA header and this half cannot include it: one definition of each.
 extern "C" int BoysConsumerCudaRungSuccess();
 extern "C" int BoysConsumerCudaRungNotResident();
 
@@ -87,8 +77,7 @@ void Check(cudaError_t error, const char* what) {
 
 // --- the committed reference grid -------------------------------------------
 
-/// One cell of the committed 45-digit grid: F_n(x) to more digits than any lane
-/// here returns.
+/// One cell of the committed 45-digit grid: F_n(x) to more digits than any lane here returns.
 struct Cell {
     int n = 0;
     double x = 0.0;
@@ -101,17 +90,15 @@ struct Grid {
     std::size_t argCount = 0;
 };
 
-/// The column pair the grid is read through: the argument the lane is handed,
-/// and the value at that argument.
+/// The column pair the grid is read through: the argument the lane is handed and the value there.
 struct Columns {
     std::size_t x = 0;
     std::size_t value = 0;
 };
 
-/// Reads the committed grid and sweeps every k-th distinct argument of it,
-/// keeping the whole ladder at every swept argument: the fits, the region-B seed
-/// and the asymptotic form are three pieces of arithmetic behind one entry, and
-/// a combination named at one argument would not say which of them it reached.
+/// Reads the committed grid and sweeps every k-th distinct argument of it, keeping the whole ladder
+/// at every swept argument: the fits, the region-B seed and the asymptotic form are three pieces of
+/// arithmetic behind one entry, and one argument would not say which of them it reached.
 bool LoadGrid(const char* path, Columns columns, Grid& grid) {
     std::ifstream in(path);
 
@@ -263,9 +250,8 @@ private:
 
 // --- what a launch takes ----------------------------------------------------
 
-/// The arguments every launched entry of this check takes: the per-element order
-/// array (or, for the uniform-order shape, the scalar it reads instead), the
-/// arguments, the count and the stream.
+/// The arguments every launched entry of this check takes: the per-element order array (or, for the
+/// uniform-order shape, the scalar it reads instead), the arguments, the count and the stream.
 struct Batch {
     const int* n = nullptr;
     const void* x = nullptr;
@@ -274,17 +260,15 @@ struct Batch {
     void* stream = nullptr;
 };
 
-/// The value type an entry returns, and the width one value occupies in the
-/// caller's array.
+/// The value type an entry returns, and the width one value occupies in the caller's array.
 enum class Kind { kDouble, kFloat, kHalf };
 
 std::size_t Width(Kind kind) {
     return kind == Kind::kDouble ? sizeof(double) : kind == Kind::kFloat ? sizeof(float) : 2u;
 }
 
-/// The value one slot holds, widened to double for the bound judgement. The half
-/// lane's widening is the library's, so the two sides agree by construction
-/// rather than by a second rounding rule written here.
+/// The value one slot holds, widened to double for the bound judgement. The half lane's widening is
+/// the library's, so the two sides agree by construction and not by a rule written here.
 double Widen(Kind kind, const unsigned char* buffer, std::size_t index) {
     switch (kind)
     {
@@ -307,15 +291,11 @@ bool SameBits(Kind kind, const unsigned char* left, const unsigned char* right, 
 
 // --- the tags: one per entry, named where a caller writes it ----------------
 
-/// A tag carries the name a caller writes and the entry that name is a call of,
-/// beside the two spellings of one rung. The entry is carried because a row's
-/// rungs are a property of its entry and not of the caller (the library answers
-/// for them in DeviceEntryServedAtRung), and the tag is the one place the rung has
-/// to be known before the call exists.
-///
-/// A tag names one entry even where two rows of the book name one arithmetic: the
-/// Rat pair's scheme axis is inert, so both rows are swept through the one entry
-/// its tag carries.
+/// A tag carries the name a caller writes and the entry that name is a call of, beside the two
+/// spellings of one rung. The entry is carried because a row's rungs are a property of its entry
+/// and not of the caller (the library answers for them in DeviceEntryServedAtRung), and the tag is
+/// the one place the rung has to be known before the call exists - one entry per tag even where two
+/// rows name one arithmetic: the Rat pair's scheme axis is inert, so both are swept through it.
 struct SingleF64Tag {
     static constexpr const char* kEntry = "SingleF64";
     static constexpr boys::DeviceEntry kDeviceEntry = boys::DeviceEntry::kSingleF64;
@@ -407,9 +387,8 @@ struct SingleF32FastTag {
     }
 };
 
-/// The double lane's rows of this shape — the structural axes' siblings of
-/// AllOrdersF64 and the uniform route's four — one tag each, and the same two
-/// spellings of one rung.
+/// The double lane's rows of this shape - the axes' siblings of AllOrdersF64 and the uniform
+/// route's four - one tag each, and the same two spellings of one rung.
 #define BOYS_CONSUMER_F64_AXIS_TAG(Tag, Entry)                                                  \
     struct Tag {                                                                                \
         static constexpr const char* kEntry = #Entry;                                           \
@@ -521,25 +500,20 @@ struct AllNF16Tag {
 
 // --- one arm per rung -------------------------------------------------------
 
-/// The twelve arms a tag is reached through, in the order of the library's own
-/// rung table: this is where the rung becomes the compile-time spelling the
-/// sibling is one call of, written on the other side of the call so that the two
-/// can be compared cell for cell.
-///
-/// An entry this lane carries at the reference multiplier alone has no spelling
-/// at another rung - its own template refuses the multiplier where the call would
-/// be written - so there is no arm to take. The library's answer decides which of
-/// the two this is, so a rung an entry starts serving is swept without an edit
-/// here.
+/// The twelve arms a tag is reached through, in the order of the library's own rung table: here the
+/// rung becomes the compile-time spelling the sibling is one call of, written on the other side of
+/// the call so the two can be compared cell for cell. An entry the lane carries at the reference
+/// multiplier alone has no spelling at another rung - its own template refuses the multiplier where
+/// the call would be written - so there is no arm to take; the library's answer
+/// (DeviceEntryServedAtRung) decides which of the two applies.
 template <typename Tag, double M> boys::BoysStatus SpellAt(const Batch& b, void* out) {
     if constexpr (boys::DeviceEntryServedAtRung(Tag::kDeviceEntry, M))
     {
         return Tag::template CompileTime<M>(b, out);
     } else
     {
-        // The sweep does not take this arm: a rung the row's entry does not
-        // serve is asked of the rung-argument call alone, because that is the
-        // only spelling of it that exists.
+        // The sweep does not take this arm: a rung the row's entry does not serve is asked of the
+        // rung-argument call alone, because that is the only spelling of it that exists.
         return boys::BoysStatus::kInvalidArgument;
     }
 }
@@ -589,9 +563,8 @@ template <typename Tag> boys::BoysStatus RowCompileTime(int rung, const Batch& b
 using AtRungFn = boys::BoysStatus (*)(double, const Batch&, void*);
 using CompileTimeFn = boys::BoysStatus (*)(int, const Batch&, void*);
 
-/// One launched option of the device lane's book, with the two spellings of one
-/// cell: the sibling that takes the rung in the call, and the entry that takes
-/// it where the call is written.
+/// One launched option of the device lane's book, with the two spellings of one cell: the sibling
+/// that takes the rung in the call, and the entry that takes it where the call is written.
 struct Row {
     boys::DeviceEntry entry = boys::DeviceEntry::kSingleF64;
     const char* entryName = "";
@@ -618,18 +591,14 @@ Row MakeRow(boys::DeviceEntry entry,
     return row;
 }
 
-/// The rung-argument surface, one row per option of the device book that carries
-/// one. The Rat rows come in pairs — the scheme axis is inert on that route, so
-/// both scheme names select one arithmetic and one entry — and each row is one
-/// option of the book and is swept as one.
+/// The rung-argument surface, one row per option of the device book that carries one. The Rat rows
+/// come in pairs - the scheme axis is inert on that route, so both scheme names select one
+/// arithmetic and one entry - and each row is one option of the book, swept as one.
 ///
-/// The rungs a row is swept at are its entry's, not this table's: the four
-/// uniform-route rows and the float lane's narrow and rational rows are carried
-/// at the reference multiplier alone, so each of them is swept at that one rung
-/// and its other rungs are the refusal. Which rows those are is read from the
-/// library (DeviceEntryServedAtRung) in the sweep, so a row this table lists and
-/// the library starts serving at more rungs is swept at them without an edit
-/// here.
+/// The rungs a row is swept at are its entry's, not this table's: the four uniform-route rows and
+/// the float lane's narrow and rational rows are carried at the reference multiplier alone, so each
+/// is swept at that one rung and its other rungs are the refusal; which rows those are is read from
+/// the library (DeviceEntryServedAtRung) rather than fixed here.
 const std::vector<Row>& Rows() {
     static const std::vector<Row> rows = [] {
         using boys::DeviceEntry;
@@ -731,11 +700,10 @@ const std::vector<Row>& Rows() {
         built.push_back(MakeRow<AllOrdersF32UniformHornerTag>(
             DeviceEntry::kAllOrdersF32UniformHorner, kFp32, DeviceOptionShape::kAllOrders,
             Kind::kFloat));
-        // The float lane's orders axis, in the row order of the book: the shapes
-        // of the two piecewise partitions and of the route beside the two of the
-        // grid, which are the per-argument rows' kernels and are named here
-        // because the cell is the book's and this table is one row per cell the
-        // book serves.
+        // The float lane's orders axis, in the row order of the book: the shapes of the two
+        // piecewise partitions and of the route beside the two of the grid, which are the
+        // per-argument rows' kernels, named here because this table is one row per cell the book
+        // serves.
         built.push_back(MakeRow<AllOrdersF32OrdersTag>(
             DeviceEntry::kAllOrdersF32Orders, kFp32, DeviceOptionShape::kAllOrders, Kind::kFloat));
         built.push_back(MakeRow<AllOrdersF32NarrowOrdersTag>(
@@ -809,12 +777,11 @@ const boys::DeviceOptionInfo* BookRow(boys::DeviceEntry entry) {
 
 // --- one row's sweep --------------------------------------------------------
 
-/// What a row's sweep compares, built once per row: the output slot each compared
-/// value lives in, the reference value there, the (order, argument) pair it
-/// belongs to so a failing cell can name itself, and the launch the row's own
-/// shape takes. The ladder and the uniform-order shape both write
-/// `out[k * count + i]` and are swept over the arguments at one top order; the
-/// single-order shape writes one value per element, over the grid's own cells.
+/// What a row's sweep compares, built once per row: the output slot each compared value lives in,
+/// the reference value there, the (order, argument) pair it belongs to so a failing cell can name
+/// itself, and the launch the row's own shape takes. The ladder and the uniform-order shape both
+/// write `out[k * count + i]` and are swept over the arguments at one top order; the single-order
+/// shape writes one value per element, over the grid's own cells.
 struct Sweep {
     std::vector<std::size_t> outIndex;
     std::vector<double> reference;
@@ -858,17 +825,15 @@ Sweep MakeSweep(const Grid& source, boys::DeviceOptionShape shape) {
     return sweep;
 }
 
-/// The figure the book states for one row at one rung: the row's documented
-/// bound, scaled by the rung, plus the term the row's own form adds and does not
-/// scale. The half rows' form adds half an ULP of the returned value, which is a
-/// property of the value rather than of the call, so it is added per value.
+/// The figure the book states for one row at one rung: the row's documented bound, scaled by the
+/// rung, plus the term its own form adds and does not scale. The half rows' form adds half an ULP
+/// of the returned value, a property of the value and so added per value.
 double BoundAt(const boys::DeviceOptionInfo& row, double multiplier) {
     return multiplier * (row.bound - row.boundFixed) + row.boundFixed;
 }
 
-/// Half an ULP of a binary16 value: its own quantum, except at zero, where it is
-/// the format's smallest subnormal — the narrowest the format can be, and what a
-/// zero reference is judged with.
+/// Half an ULP of a binary16 value: its own quantum, except at zero, where it is the format's
+/// smallest subnormal - the narrowest the format can be, and what a zero reference is judged with.
 double HalfUlp(double value) {
     const double magnitude = std::fabs(value);
 
@@ -892,13 +857,12 @@ struct Census {
     std::size_t exceeded = 0;
 };
 
-/// Sweeps one row over every rung of the lane's table and folds the result into
-/// the census: whether the rung the call was handed is the rung the same cell is
-/// spelled at, and whether the value that came back is inside the figure the
-/// book states for that cell. A rung the row's entry is not served at is the
-/// third outcome and is folded in as itself: the rung-argument call must refuse
-/// it and write nothing, and there is no second spelling of it to compare
-/// against, so the row carries one rung and eleven refusals.
+/// Sweeps one row over every rung of the lane's table and folds the result into the census: whether
+/// the rung the call was handed is the rung the same cell is spelled at, and whether the value that
+/// came back is inside the figure the book states for that cell. A rung the row's entry is not
+/// served at is the third outcome, folded in as itself: the rung-argument call must refuse it and
+/// write nothing, and there is no second spelling to compare against, so the row carries one rung
+/// and eleven refusals.
 void SweepRow(const Row& row, const Grid& source, Census& census) {
     const Sweep sweep = MakeSweep(source, row.shape);
 
@@ -949,12 +913,11 @@ void SweepRow(const Row& row, const Grid& source, Census& census) {
     {
         const double multiplier = boys::kDeviceRungs[rung];
 
-        // The rungs this row is swept at are its entry's and not this file's
-        // list: an entry carried at fewer rungs than the lane's table holds says
-        // so in its own contract, and the library answers for it here. A rung an
-        // entry does not serve has no compile-time spelling to compare against —
-        // its own template refuses the multiplier where the call would be written
-        // — so what the rung-argument call must answer there is the refusal.
+        // The rungs this row is swept at are its entry's and not this file's list: an entry carried
+        // at fewer rungs than the lane's table holds says so in its own contract, and the library
+        // answers for it here. A rung an entry does not serve has no compile-time spelling to
+        // compare against - its own template refuses the multiplier where the call would be written
+        // - so what the rung-argument call must answer there is the refusal.
         if (!boys::DeviceEntryServedAtRung(row.entry, multiplier))
         {
             produced.Fill(0xCD);
@@ -1058,9 +1021,8 @@ void SweepRow(const Row& row, const Grid& source, Census& census) {
 
     census.moved += moved;
 
-    // The count is of the pairs the sweep judged, so a row swept at one rung
-    // states the one rung's worth and not the table's twelve; the refusals it
-    // carries instead are counted where they belong, the cells named.
+    // The count is of the pairs the sweep judged, so a row swept at one rung states that rung's
+    // worth and not the table's twelve; its refusals are counted with the cells named instead.
     const std::size_t swept = sweep.outIndex.size() * served;
     const std::size_t refused = boys::kDeviceRungs.size() - served;
 
@@ -1072,10 +1034,9 @@ void SweepRow(const Row& row, const Grid& source, Census& census) {
 
 // --- the device half's own check --------------------------------------------
 
-/// The resident-rung rule, on the card. The handle is filled at one relaxed rung,
-/// the device-callable entry is run at that rung and at another, and the two
-/// answers are printed: the first is a value, the second is the refusal and the
-/// output the refused call did not write.
+/// The resident-rung rule, on the card. The handle is filled at one relaxed rung, the
+/// device-callable entry is run at that rung and at another, and the two answers are printed: the
+/// first is a value, the second the refusal and the output the refused call did not write.
 void CheckResidencyRefusal(const Grid& grid, void* stream) {
     constexpr double kResident = 2.0;
     constexpr double kOther = 100.0;

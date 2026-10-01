@@ -939,18 +939,22 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
     //
     // The figure is one per lane and the division form is a third of the
     // arithmetic's choice, so where the forms of that axis deliver different
-    // figures the row states them in its own `source`, which is the field the
-    // struct documents for a bound that is not flat over its whole domain. A
-    // caller who needs the plain form's figure as a number rather than as the
-    // sentence beside the base has to read it there: the accessor above takes no
-    // form, so there is no member of this row to key one by. Two lanes carry a
-    // form dimension and two do not, and which is which is measured rather than
-    // reasoned - the numbers, the cells they were measured at and the grid are
-    // in the rows below.
+    // figures the row states the plain form's apart, in the member the struct
+    // documents for it. Two lanes carry a form dimension and two do not, and
+    // which is which is measured rather than reasoned - the numbers, the cells
+    // they were measured at and the grid are in the rows below.
+    //
+    // The fp32 and fp16 terms are the plain reciprocal's own rounding, measured
+    // on the accuracy gate's reference grid at the reference multiplier: that
+    // form's worst on the fp32 lane is 1.75140e-07 at n = 0, x = 9.74054909,
+    // where the lane's other two forms deliver 1.08354e-07 at worst. The
+    // difference is 6.68e-8, and the term published is 1e-7, which bounds it
+    // with the margin a guarantee needs.
     static const std::array<LaneContractInfo, 4> rows = {{
-        {Precision::kFp64, "fp64", 5.5e-14, 0.0, "throughout, every region"},
-        {Precision::kFp32, "fp32", 1.5e-7, 0.0, "throughout, every region"},
-        {Precision::kFp16, "fp16", 1.5e-7, 0.0,
+        {Precision::kFp64, "fp64", 5.5e-14, 0.0, 0.0, "throughout, every region"},
+        {Precision::kFp32, "fp32", 1.5e-7, 0.0, 1e-7,
+         "every region, at exact division and the refined reciprocal"},
+        {Precision::kFp16, "fp16", 1.5e-7, 0.0, 1e-7,
          "the single-precision lane's own figure, plus half of the last representable digit of the "
          "returned value and claimed only where the value exceeds the sum. The half lane computes "
          "in that arithmetic and stores what it returns, so it cannot be more accurate than the "
@@ -961,7 +965,7 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
          "boys_impl.hpp), so the plain reciprocal's larger figure on that lane - 1.75140e-07 at "
          "n = 0, x = 9.74054909, 6.67e-8 above that lane's own worst of 1.08354e-07 - is this "
          "lane's too, before the format's own half digit is added to it"},
-        {Precision::kFp32Device, "fp32-device", 1.5e-7, 8e-8,
+        {Precision::kFp32Device, "fp32-device", 1.5e-7, 8e-8, 0.0,
          "plus 8e-8 under the fast region-B exponential, which is the corrected seed's own "
          "contribution. This row carries no form dimension and does not need one: the division "
          "form is a host policy field and is named by none of the CUDA surface's headers at this "
@@ -1166,7 +1170,8 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
                                       EvalScheme scheme,
                                       PackAxis axis,
                                       FitGranularity granularity,
-                                      AccuracyTier tier) noexcept
+                                      AccuracyTier tier,
+                                      DivisionForm form) noexcept
 {
     const std::span<const LaneContractInfo> lanes = BoysLaneContracts();
     const std::size_t index = static_cast<std::size_t>(precision);
@@ -1277,8 +1282,15 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
         return figure;
     }
 
+    // The plain reciprocal rounds once more per step than the other two forms,
+    // so on a lane where that costs accuracy the row publishes a term beside its
+    // base and this form's figure is the base plus it. Every other lane carries
+    // 0.0 here and the figure is the base at every form.
+    const double formTerm =
+        form == DivisionForm::kPlainReciprocal ? lane.plainAdditive : 0.0;
+
     figure.available = true;
-    figure.value = AccuracyMultiplier(tier) * lane.bound + lane.additive;
+    figure.value = AccuracyMultiplier(tier) * (lane.bound + formTerm) + lane.additive;
     figure.source = lane.source;
 
     return figure;

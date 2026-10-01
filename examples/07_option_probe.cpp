@@ -6,7 +6,7 @@
 // read off a table - it has to be measured where it will run. This is that
 // measurement, on a protocol short enough to run here; the command-line tool
 // boys-option-probe runs the full one and prints the whole report.
-#include <boys/boys.hpp>
+#include <boys/boys_span.hpp>
 
 #include <cstddef>
 #include <cstdio>
@@ -29,10 +29,12 @@ int main()
 
     // The group a new caller lives in: full accuracy, double precision, the
     // shape that hands back one argument's whole ladder.
-    for (const boys::OptionProbeClass& group : report.classes) {
+    for (const boys::OptionProbeClass& group : report.classes)
+    {
         if (group.precision != boys::OptionPrecision::kFp64 ||
             group.tier != boys::AccuracyTier::kReference ||
-            group.shape != boys::OptionProbeShape::kAllOrders) {
+            group.shape != boys::OptionProbeShape::kAllOrders)
+        {
             continue;
         }
         std::printf("\n%s - %zu options ranked\n", group.name.c_str(), group.ranked.size());
@@ -40,14 +42,16 @@ int main()
                     group.leaderNsPerArgument);
         std::printf("  the run could not separate %zu of them from the leader\n",
                     group.unplaced.size());
-        for (const std::string& name : group.unplaced) {
+        for (const std::string& name : group.unplaced)
+        {
             std::printf("    %s\n", name.c_str());
         }
     }
 
     std::printf("\nrecommended here: %s\n",
                 report.hasDefault ? report.recommended.c_str() : "CANNOT DETERMINE");
-    if (!report.hasDefault) {
+    if (!report.hasDefault)
+    {
         std::printf("reason: %s\n", report.reason.c_str());
     }
     return report.measurements.empty() ? 1 : 0;

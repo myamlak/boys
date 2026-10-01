@@ -5,17 +5,17 @@
 // machine: that every option it reports is one this build's backend table
 // carries, that the comparison is formed inside a round rather than across
 // rounds, and that a run which measured its class ends in exactly one default
-// with the way it was reached stated — a measured ordering, a vote over
-// re-runs, or a pick among equals the report labels as such — never in a set of
+// with the way it was reached stated - a measured ordering, a vote over
+// re-runs, or a pick among equals the report labels as such - never in a set of
 // candidates and never in a name a table was counted for instead of timed. A
-// class that holds one option is an answer of its own: one entry is not a
-// ranking, and there is no alternative to it. The costs themselves are this
-// machine's and asserting them here would pin a number that describes one host.
+// class that holds one option is an answer of its own. The costs themselves are
+// this machine's and asserting them here would pin a number that describes one
+// host.
 //
 // The protocols below are short on purpose: a probe test that took a minute
 // would be a probe nobody runs. Two of them are the shortest protocols there
-// are — one pass of one round, with an empty calibration window, so the run
-// costs nothing and concludes nothing about cost — and the third is the shortest
+// are - one pass of one round, with an empty calibration window, so the run
+// costs nothing and concludes nothing about cost - and the third is the shortest
 // protocol that can order anything, since a quartile band needs four paired
 // rounds to be formed at all.
 
@@ -41,11 +41,11 @@ using boys::OptionProbeVerdict;
 using boys::ProbeOptions;
 using boys::QueryTier;
 
-// The shortest run there is: one pass of one round, on a workload small enough
-// to be free, with an empty calibration window so the load instrument never finds
-// a floor. Nothing about cost is concluded from it — a ratio needs two rounds and
-// a band needs four — and that is exactly what the tests about the option book,
-// the accuracy column and the refusal paths read.
+// The shortest run there is: one pass of one round, on a workload small enough to
+// be free, with an empty calibration window so the load instrument never finds a
+// floor. Nothing about cost is concluded from it - a ratio needs two rounds and a
+// band needs four - and that is what the tests about the option book, the accuracy
+// column and the refusal paths read.
 ProbeOptions OneRound() {
     ProbeOptions options;
     options.count = 256;
@@ -56,10 +56,9 @@ ProbeOptions OneRound() {
     return options;
 }
 
-// The shortest protocol that can order anything: four paired rounds, which is
-// what a lower and upper quartile need, over the same small workload. Every
-// option is called once in every round, so the rounds put every option under the
-// same clock and the ratios between them are formed inside a round.
+// The shortest protocol that can order anything: four paired rounds, which is what
+// a lower and upper quartile need, over the same small workload. Every option is
+// called once in every round, so the ratios are formed inside a round.
 ProbeOptions Timed() {
     ProbeOptions options = OneRound();
     options.calibrationSeconds = 0.5;
@@ -69,10 +68,9 @@ ProbeOptions Timed() {
     return options;
 }
 
-// The same protocol with the canary alarm moved. The alarm decides one thing —
-// the flag printed beside a pass — and a test about that flag has to be able to
-// put it anywhere, including below anything repeated fixed work can reach. The
-// probe's own default protocol is untouched.
+// The same protocol with the canary alarm moved. The alarm decides one thing - the
+// flag printed beside a pass - and a test about that flag has to be able to put it
+// anywhere, including below anything repeated fixed work can reach.
 ProbeOptions TimedWithAlarm(double percent) {
     ProbeOptions options = Timed();
     options.canarySpreadAlarm = percent;
@@ -107,12 +105,10 @@ std::string RowLine(const std::string& text, const std::string& name) {
     return {};
 }
 
-// The members of the class the probe takes its default from: the certified
-// double lane's precision at the library's own full-accuracy multiplier,
-// answering the all-orders question — the shape the workload is asked in and the
-// shape the library's own default entry answers. The key is that triple, so a
-// faster row of another rung, of another precision or of another shape is a
-// different class and not this one.
+// The members of the class the probe takes its default from: the certified double
+// lane's precision at the library's own full-accuracy multiplier, answering the
+// all-orders question - the shape the workload is asked in. The key is that triple,
+// so a faster row of another rung, precision or shape is a different class.
 std::vector<const OptionProbeMeasurement*> ReferenceMembers(const OptionProbeReport& report) {
     std::vector<const OptionProbeMeasurement*> members;
 
@@ -259,9 +255,8 @@ TEST(ProbeTest, NothingTheLibraryOffersGoesUnreported) {
     EXPECT_FALSE(NotCarried(report, "f16-io"));
     EXPECT_FALSE(NotCarried(report, "bf16-io"));
 #else
-    // A closed seam must not read as a build that never had the lanes: the two
-    // are reported as entries this build does not carry, which is a fact a
-    // caller can act on, where their absence would be a fact about nothing.
+    // A closed seam must not read as a build that never had the lanes: the two are
+    // reported as entries this build does not carry, a fact a caller can act on.
     EXPECT_TRUE(NotCarried(report, "f16-io"));
     EXPECT_TRUE(NotCarried(report, "bf16-io"));
     EXPECT_TRUE(Find(report, "f16-io") == nullptr);
@@ -284,9 +279,8 @@ TEST(ProbeTest, TheReferenceBoundIsReadFromTheLibrary) {
 }
 
 // The accuracy column is measured whether or not a cost was: the values a lane
-// returns for an argument are a property of the build, and a run too short to
-// form a ratio must not blank the column. The timed rounds ran all the same —
-// the load instrument is what an uncalibrated run does without.
+// returns for an argument are a property of the build, and a run too short to form
+// a ratio must not blank the column. The timed rounds ran all the same.
 TEST(ProbeTest, TheAccuracyColumnDoesNotDependOnACleanPass) {
     const OptionProbeReport report = boys::RunOptionProbe(OneRound());
 
@@ -304,8 +298,7 @@ TEST(ProbeTest, TheAccuracyColumnDoesNotDependOnACleanPass) {
 
 // The column is a measurement, not a constant: the fp64 options sit at the
 // certified lane's own resolution, and the fp32 lane's errors are orders above
-// them. A column that read zero for every option would pass every bound in this
-// file and tell a reader nothing.
+// them. A column that read zero for every option would pass every bound here.
 TEST(ProbeTest, TheAccuracyColumnSeparatesTheLanes) {
     const OptionProbeReport report = boys::RunOptionProbe(OneRound());
 
@@ -355,12 +348,11 @@ TEST(ProbeTest, TheNarrowerLanesAreHeldToTheirOwnBound) {
     }
 }
 
-// A relaxed rung is documented looser than the certified lane, and it is a
-// class of its own at that: the class key is one precision, one rung AND one
-// question shape, so a relaxed row is never a member of the class the default is
-// taken from, however the two figures compare. The figures are still reported — that is what lets a
-// reader see a faster option was faster at a lower accuracy rather than at the
-// same one.
+// A relaxed rung is documented looser than the certified lane, and it is a class of
+// its own at that: the class key is one precision, one rung AND one question shape,
+// so a relaxed row is never a member of the class the default is taken from, however
+// the two figures compare. The figures are still reported, so a reader sees a faster
+// option was faster at a lower accuracy rather than at the same one.
 TEST(ProbeTest, ARelaxedRungIsNeverInTheCertifiedAccuracyClass) {
     const OptionProbeReport report = boys::RunOptionProbe(Timed());
     const boys::OptionProbeClass* reference =
@@ -420,12 +412,11 @@ TEST(ProbeTest, AnUncalibratedInstrumentStillMeasuresAndSaysWhatItLost) {
     EXPECT_NE(text.find("nothing to be relative to"), std::string::npos);
 }
 
-// The canary alarm is a flag and not a gate: with the alarm below anything
-// repeated fixed work can reach, every pass is flagged — and every pass is still
-// used, so the run still produces the same kind of figures it produces with the
-// alarm out of the way. Before this change the same run produced no figure at all
-// and ended in CANNOT DETERMINE, which is what a fixed work measured by wall
-// clock does to its own admission rule on a machine whose clock moves.
+// The canary alarm is a flag and not a gate: with the alarm below anything repeated
+// fixed work can reach, every pass is flagged - and every pass is still used, so the
+// run still produces the same kind of figures it produces with the alarm out of the
+// way. A fixed work measured by wall clock would otherwise fail its own admission
+// rule on a machine whose clock moves.
 TEST(ProbeTest, APassAboveTheCanaryAlarmIsFlaggedAndStillUsed) {
     const OptionProbeReport flagged = boys::RunOptionProbe(TimedWithAlarm(1e-9));
 
@@ -463,13 +454,11 @@ TEST(ProbeTest, APassAboveTheCanaryAlarmIsFlaggedAndStillUsed) {
     EXPECT_NE(text.find("reported, used"), std::string::npos) << "the pass table does not say so";
     EXPECT_NE(text.find("gates nothing"), std::string::npos);
 
-    // The other end of the same knob changes only the flags: with the alarm out
-    // of reach nothing is flagged, and the run is the same run. A pass is placed
-    // on one side of the alarm or the other against the floor the calibration
-    // found, and the second run finds its own floor: on a machine that gave the
-    // first run one and this one none, the passes carry no reading and none is
-    // flagged, which is what the counts say rather than a quiet pass reported as
-    // a measurement.
+    // The other end of the same knob changes only the flags: with the alarm out of
+    // reach nothing is flagged, and the run is the same run. A pass is placed on one
+    // side of the alarm or the other against the floor the calibration found, and the
+    // second run finds its own floor: on a machine that gave the first run one and
+    // this one none, the passes carry no reading and none is flagged.
     const OptionProbeReport quiet = boys::RunOptionProbe(TimedWithAlarm(1e9));
 
     // The alarm changes the flags and nothing else, so the run behind them is the
@@ -509,12 +498,10 @@ TEST(ProbeTest, TheResolutionIsTheWidestBandTheClassShowed) {
         << "the class holds two measured options over four rounds, and yet no band was formed";
 }
 
-// A class the run ordered names its own leader and leaves no rival unplaced;
-// a class the run could not order still ends in one default, and the options it
-// could not place are named beside it, so a reader is never handed a name
-// without the evidence that is missing for it. The class is one precision, one
-// rung and one question shape, so a faster row of another precision, another
-// rung or another shape is never a rival of it.
+// A class the run ordered names its own leader and leaves no rival unplaced; a class
+// the run could not order still ends in one default, and the options it could not
+// place are named beside it, so a reader is never handed a name without the evidence
+// that is missing for it. The class key is one precision, one rung and one shape.
 TEST(ProbeTest, ARecommendationLeavesNoRivalUnplaced) {
     const OptionProbeReport report = boys::RunOptionProbe(Timed());
     const OptionProbeMeasurement* leader = ReferenceLeader(report);
@@ -530,12 +517,10 @@ TEST(ProbeTest, ARecommendationLeavesNoRivalUnplaced) {
         ASSERT_NE(leader, nullptr);
         EXPECT_EQ(doubles->leader, leader->name);
 
-        // The invariant the whole report rests on: the default is the row the
-        // report's own figures put first in the class the rule names. Whether the
-        // class ordered, the refinement runs agreed or they named another row, the
-        // name printed as the default is the name the class block prints first -
-        // a report whose two halves disagree about which option is cheapest is a
-        // report the reader has to correct, and no vote may produce one.
+        // The invariant the whole report rests on: the default is the row the report's
+        // own figures put first in the class the rule names. Whether the class ordered,
+        // the refinement runs agreed or they named another row, the name printed as the
+        // default is the name the class block prints first.
         EXPECT_EQ(report.recommended, leader->name)
             << "the default is not the cheapest row of its own class by the figures printed "
                "beside it";
@@ -554,10 +539,9 @@ TEST(ProbeTest, ARecommendationLeavesNoRivalUnplaced) {
             return;
         }
 
-        // Reached by the refinement's vote, or by a tie this run could not break:
-        // the name is one of the class's own options, the pair the class could not
-        // place is reported, and the runs taken over the tied set are in the report
-        // rather than only their outcome.
+        // Reached by the refinement's vote, or by a tie this run could not break: the
+        // name is one of the class's own options, and the runs taken over the tied set
+        // are in the report rather than only their outcome.
         bool member = false;
 
         for (const OptionProbeMeasurement* candidate : ReferenceMembers(report)) {
@@ -570,10 +554,9 @@ TEST(ProbeTest, ARecommendationLeavesNoRivalUnplaced) {
         EXPECT_FALSE(report.refinements.empty())
             << "a tie was decided with no refinement run behind the choice";
 
-        // From here the class is tied, and the way the report says the tie was
-        // reached has to match the vote's own record: the vote naming this row is
-        // what kRefined and kVote mean, and a vote that named another row is a
-        // kChosenAmongEquals whose reason prints both figures.
+        // From here the class is tied, and the way the report says the tie was reached
+        // has to match the vote's own record: the vote naming this row is what kRefined
+        // and kVote mean, and a vote that named another row is a kChosenAmongEquals.
         const boys::OptionProbeRefinement& stage = report.refinements.front();
         const bool voteNamesThisRow = stage.winner == report.recommended;
 
@@ -604,10 +587,9 @@ TEST(ProbeTest, ARecommendationLeavesNoRivalUnplaced) {
     EXPECT_FALSE(report.reason.empty());
 }
 
-// The output states the resolution in the reader's own terms and in the units
-// the comparison is made in, so a refusal is a measurement with a number
-// attached rather than a shrug. When the run was too short for a band, the text
-// says that instead of printing a width it never measured.
+// The output states the resolution in the reader's own terms and in the units the
+// comparison is made in, so a refusal is a measurement with a number attached rather
+// than a shrug. When the run was too short for a band, the text says that instead.
 TEST(ProbeTest, TheTextStatesTheResolution) {
     const OptionProbeReport report = boys::RunOptionProbe(Timed());
     const std::string text = boys::FormatOptionProbe(report);
@@ -626,13 +608,13 @@ TEST(ProbeTest, TheTextStatesTheResolution) {
     }
 }
 
-// The clock check, made rather than assumed, and made from the run's own rows.
-// Wider vector registers draw a lower clock, so two options that do not run one
-// arithmetic can be exposed to the machine differently; the report says which
-// case it measured instead of implying that an ordering holds at any clock. It
-// states how far the widest-moving pair's ratio travelled between the run's
-// halves beside the resolution that figure is read against, and whether every
-// option the comparison put against another ran the same arithmetic route.
+// The clock check, made rather than assumed, and made from the run's own rows. Wider
+// vector registers draw a lower clock, so two options that do not run one arithmetic
+// can be exposed to the machine differently; the report says which case it measured
+// instead of implying that an ordering holds at any clock. It states how far the
+// widest-moving pair's ratio travelled between the run's halves beside the resolution
+// that figure is read against, and whether every option the comparison put against
+// another ran the same arithmetic route.
 TEST(ProbeTest, TheClockCheckIsReadFromTheRunsOwnRows) {
     const OptionProbeReport report = boys::RunOptionProbe(Timed());
     const std::string text = boys::FormatOptionProbe(report);
@@ -660,9 +642,8 @@ TEST(ProbeTest, TheClockCheckIsReadFromTheRunsOwnRows) {
     const bool heldStill = report.confidence.find("No pair of the class moved") != std::string::npos;
     const bool warned = report.confidence.find("WARNING: the pair") != std::string::npos;
 
-    // Exactly one of the two, and both name the pair and the resolution the
-    // figure was read against: a pair that came in under it, or one that went
-    // past it with the ordering's own exposure named.
+    // Exactly one of the two, and both name the pair and the resolution the figure was
+    // read against: a pair that came in under it, or one that went past it.
     EXPECT_NE(heldStill, warned) << report.confidence;
     EXPECT_NE(report.confidence.find("this run can order"), std::string::npos)
         << report.confidence;
@@ -686,11 +667,10 @@ TEST(ProbeTest, TheClockCheckIsReadFromTheRunsOwnRows) {
     }
 }
 
-// A band is a lower and an upper quartile, and two rounds have neither: no pair
-// of the class is placed, and the report says so rather than printing a width it
-// never measured. The run still ends in one default — the class's own fastest,
-// reached by the refinement runs, which are taken at a longer protocol than the
-// run that could not order — and it says which of the two this is.
+// A band is a lower and an upper quartile, and two rounds have neither: no pair of the
+// class is placed, and the report says so rather than printing a width it never
+// measured. The run still ends in one default - the class's own fastest, reached by
+// the refinement runs, taken at a longer protocol - and it says which of the two this is.
 TEST(ProbeTest, AnOrderingNeedsFourPairedRounds) {
     ProbeOptions options = Timed();
     options.passes = 1;
@@ -761,13 +741,12 @@ TEST(ProbeTest, AnOrderingNeedsFourPairedRounds) {
     EXPECT_NE(text.find("default: " + report.recommended), std::string::npos);
 }
 
-// The comparison is paired, and this is what that means in the report: every
-// option was called in every round the run took — they all rest on the same
-// round count, and that count is every pass's every round — and the reference
-// lane, being the option every ratio is formed against, is exactly one against
-// itself in every round and so has no drift at all. A design that timed one
-// option in one set of rounds and another in another would be reporting a ratio
-// of two figures taken under two clocks, which is the defect this pins.
+// The comparison is paired, and this is what that means in the report: every option was
+// called in every round the run took - they all rest on the same round count - and the
+// reference lane, being the option every ratio is formed against, is exactly one against
+// itself in every round and so has no drift at all. A design that timed one option in
+// one set of rounds and another in another would report a ratio of two figures taken
+// under two clocks, which is the defect this pins.
 TEST(ProbeTest, ThePairsAreFormedInsideTheRounds) {
     const OptionProbeReport report = boys::RunOptionProbe(Timed());
 
@@ -798,13 +777,11 @@ TEST(ProbeTest, ThePairsAreFormedInsideTheRounds) {
     }
 }
 
-// A run that formed no figure at all ends in the refusal and in nothing else:
-// no name is printed, no candidate set is left for the caller to choose from,
-// and no option is offered as a default on the strength of a table rather than a
-// measurement. The report gives the reason instead — the rounds a band needs —
-// so a consumer who cannot afford a longer run is told what the longer run buys
-// rather than handed a name the run never measured. One pass of one round forms
-// no ratio at all.
+// A run that formed no figure at all ends in the refusal and in nothing else: no name is
+// printed, no candidate set is left for the caller to choose from, and no option is
+// offered as a default on the strength of a table rather than a measurement. The report
+// gives the reason instead - the rounds a band needs - so a consumer who cannot afford a
+// longer run is told what the longer run buys.
 TEST(ProbeTest, ARunThatMeasuredNothingLeavesNoDefault) {
     ProbeOptions options = OneRound();
     const OptionProbeReport report = boys::RunOptionProbe(options);
@@ -833,12 +810,11 @@ TEST(ProbeTest, ARunThatMeasuredNothingLeavesNoDefault) {
     }
 }
 
-// Where a class cannot be ordered, the owner's rule is: re-run the options it
-// left tied, alone, at a longer protocol; take the one that led most of those
-// runs; and where no candidate leads most of them, take one of the leaders and
-// say plainly that this is what happened. The protocol here is two rounds, which
-// can form no band at all, so the tie is certain and the vote is what decides —
-// and the run leaders, the counts and the winner are checked against each other.
+// Where a class cannot be ordered, the owner's rule is: re-run the options it left tied,
+// alone, at a longer protocol; take the one that led most of those runs; and where no
+// candidate leads most of them, take one of the leaders and say plainly that this
+// happened. The protocol here is two rounds, which can form no band, so the tie is
+// certain and the vote decides.
 TEST(ProbeTest, ATiedClassIsReRunAloneAndVotedOn) {
     ProbeOptions options = Timed();
     options.passes = 1;
@@ -856,12 +832,10 @@ TEST(ProbeTest, ATiedClassIsReRunAloneAndVotedOn) {
     EXPECT_EQ(stage.runLeaders.size(), 6u) << "a run of the vote placed no leader";
     EXPECT_FALSE(stage.winner.empty()) << "the vote ended with no entry to name";
 
-    // The default is the class's own fastest row by the figure the report prints,
-    // and the vote is the longer protocol's reading of the same question: it either
-    // names that row — and then the report says the vote is what carried it — or it
-    // names another, and then the report prints both figures and says the two
-    // cannot be separated. What it never does is hand back a row the figures
-    // beside it put behind.
+    // The default is the class's own fastest row by the figure the report prints, and the
+    // vote is the longer protocol's reading of the same question: it either names that row
+    // - and then the report says the vote is what carried it - or it names another, and
+    // then the report prints both figures and says the two cannot be separated.
     const OptionProbeMeasurement* classLeader = ReferenceLeader(report);
     ASSERT_NE(classLeader, nullptr);
     EXPECT_EQ(report.recommended, classLeader->name);
@@ -977,12 +951,11 @@ TEST(ProbeTest, EveryRunThatMeasuredEndsInExactlyOneDefault) {
     }
 }
 
-// Whatever the machine did, the protocol's bookkeeping adds up: every pass was
-// either within the canary's alarm or above it and all of them were used, every
-// figure rests on every paired round, and a figure that exists is a positive
-// cost with a band around it. A run whose load instrument never found a floor
-// took no canary and places no pass on either side of the alarm, and its
-// confidence line says so rather than naming a load of zero.
+// Whatever the machine did, the protocol's bookkeeping adds up: every pass was either
+// within the canary's alarm or above it and all of them were used, every figure rests on
+// every paired round, and a figure that exists is a positive cost with a band around it.
+// A run whose load instrument never found a floor took no canary, and its confidence line
+// says so rather than naming a load of zero.
 TEST(ProbeTest, ThePassBookkeepingAddsUp) {
     const OptionProbeReport report = boys::RunOptionProbe(Timed());
 
@@ -1040,14 +1013,13 @@ TEST(ProbeTest, ThePassBookkeepingAddsUp) {
     }
 }
 
-// The verdict and the names it is built from always agree with each other: the
-// default is an option of the certified lane's precision at the library's own
-// multiplier, answering the workload's own question — never a faster row of
-// another precision, another rung or another shape — and a
-// class the run ordered hands over its own leader while a class it could not
-// order hands over one of the options it left tied, with the pair it could not
-// place named beside the answer. The narrowest reading names the fastest option
-// of that class, and a refusal names nothing.
+// The verdict and the names it is built from always agree with each other: the default is
+// an option of the certified lane's precision at the library's own multiplier, answering
+// the workload's own question - never a faster row of another precision, rung or shape -
+// and a class the run ordered hands over its own leader while a class it could not order
+// hands over one of the options it left tied, with the pair it could not place named
+// beside the answer. The narrowest reading names the fastest option of that class, and a
+// refusal names nothing.
 TEST(ProbeTest, TheVerdictAndTheNamesAgree) {
     const OptionProbeReport report = boys::RunOptionProbe(Timed());
 
@@ -1091,15 +1063,14 @@ TEST(ProbeTest, TheVerdictAndTheNamesAgree) {
     }
 }
 
-// A class is one precision, one rung and one question shape, and that triple is
-// the whole key: nothing inside a class was built at another precision or
-// another multiplier and nothing inside it answers another question, the leader
-// of a class is its fastest member, a class that says it is ordered holds no
-// unplaced member and no member of one entry — one entry is not a ranking — and
-// every figure the run produced is ranked in the class of its own triple and in
-// no other. A class is built from the rounds the run took, so an uncalibrated
-// instrument still produces them; what a short run cannot produce is a band, and
-// then nothing in a class of more than one is ordered.
+// A class is one precision, one rung and one question shape, and that triple is the whole
+// key: nothing inside a class was built at another precision or multiplier and nothing
+// inside it answers another question, the leader of a class is its fastest member, a class
+// that says it is ordered holds no unplaced member and no member of one entry, and every
+// figure the run produced is ranked in the class of its own triple and in no other. A
+// class is built from the rounds the run took, so an uncalibrated instrument still
+// produces them; what a short run cannot produce is a band, and then nothing in a class of
+// more than one is ordered.
 TEST(ProbeTest, EveryClassIsOnePrecisionOneRungAndOneShapeAndRanksOnlyItsOwn) {
     const OptionProbeReport report = boys::RunOptionProbe(Timed());
 
@@ -1170,9 +1141,8 @@ TEST(ProbeTest, EveryClassIsOnePrecisionOneRungAndOneShapeAndRanksOnlyItsOwn) {
                 << entry.name << " names an entry of a class it measured against others";
         }
 
-        // A band over the lower and upper quartiles of the paired ratios needs
-        // four rounds; below that a class is measured and not ordered, and the
-        // note says which of the two it is.
+        // A band over the lower and upper quartiles of the paired ratios needs four
+        // rounds; below that a class is measured and not ordered.
         if (report.pairedRounds < 4) {
             EXPECT_FALSE(entry.ordered) << entry.name
                                         << " says it is ordered on too few rounds for a band";
@@ -1196,9 +1166,8 @@ TEST(ProbeTest, EveryClassIsOnePrecisionOneRungAndOneShapeAndRanksOnlyItsOwn) {
         }
     }
 
-    // Every figure the run produced is ranked in the class of its own precision
-    // and rung, and in no other class: an option measured under a key the report
-    // does not class would be a figure a reader could not place.
+    // Every figure the run produced is ranked in the class of its own precision and
+    // rung, and in no other class.
     for (const OptionProbeMeasurement& measurement : report.measurements) {
         if (!measurement.measured) {
             continue;
@@ -1226,13 +1195,11 @@ TEST(ProbeTest, EveryClassIsOnePrecisionOneRungAndOneShapeAndRanksOnlyItsOwn) {
     }
 }
 
-// The report says in its own words what a class is and what its key is — one
-// precision, one rung and one question shape, decided by the multiplier an
-// option was built at and by what it hands back, and never by comparing one
-// lane's documented figure against another's — and it says what the winner of a
-// class is a claim about, so a reader who takes the name it prints knows which
-// question the answer belongs to and how far the claim reaches. Every class the
-// run made carries its key in its name, so two of them can never be read as one.
+// The report says in its own words what a class is and what its key is - one
+// precision, one rung and one question shape, decided by the multiplier an option
+// was built at and by what it hands back, and never by comparing one lane's
+// documented figure against another's - and it says what the winner of a class is
+// a claim about. Every class the run made carries its key in its name.
 TEST(ProbeTest, TheReportSaysAClassIsOnePrecisionOneRungAndOneShape) {
     const OptionProbeReport report = boys::RunOptionProbe(Timed());
     const std::string text = boys::FormatOptionProbe(report);
@@ -1270,9 +1237,8 @@ TEST(ProbeTest, TheReportSaysAClassIsOnePrecisionOneRungAndOneShape) {
     }
 }
 
-// The same seed and the same options are the same workload: the values, and so
-// the accuracy column, come back identical. Without this a figure could not be
-// reproduced from the report alone.
+// The same seed and the same options are the same workload: the values, and so the
+// accuracy column, come back identical.
 TEST(ProbeTest, TheSameSeedIsTheSameWorkload) {
     ProbeOptions first = OneRound();
     ProbeOptions second = OneRound();
@@ -1321,10 +1287,9 @@ TEST(ProbeTest, TheWorkloadIsClampedAndReportedAsRun) {
     EXPECT_GE(report.options.rounds, 1);
 }
 
-// The output is a report a reader can act on with nothing else at hand: it
-// names the machine's arithmetic, the protocol, the load instrument, the
-// accuracy comparison's floor, and the fact that the result describes this
-// machine.
+// The output is a report a reader can act on with nothing else at hand: it names the
+// machine's arithmetic, the protocol, the load instrument, the accuracy comparison's
+// floor, and the fact that the result describes this machine.
 TEST(ProbeTest, TheTextStatesWhatTheResultIsAbout) {
     const OptionProbeReport report = boys::RunOptionProbe(OneRound());
     const std::string text = boys::FormatOptionProbe(report);
@@ -1392,9 +1357,8 @@ TEST(ProbeTest, NamingEveryOptionIsTheSameSetAsNamingNone) {
     EXPECT_TRUE(namedRun.notAnOption.empty());
 }
 
-// A name that is no option of this library is reported rather than quietly
-// measuring nothing, because an empty report otherwise reads as a machine on
-// which nothing is fast.
+// A name that is no option of this library is reported rather than quietly measuring
+// nothing, because an empty report otherwise reads as a machine where nothing is fast.
 TEST(ProbeTest, ANameThatIsNoOptionIsReported) {
     ProbeOptions options = OneRound();
     options.only = {"batch-fp64-that-never-was"};
@@ -1431,11 +1395,10 @@ TEST(ProbeTest, ASetThisBuildCannotServeIsNotAMisspelling) {
     EXPECT_TRUE(report.measurements.empty());
 }
 
-// The space the probe accounts for is the library's own product, not a list
-// written in the probe: one cell per combination of the axes the library
-// reports, every combination present, no two cells sharing a name, and a reason
-// on every cell this build does not serve. A combination that is missing from
-// this book is the defect the book exists to prevent.
+// The space the probe accounts for is the library's own product, not a list written in
+// the probe: one cell per combination of the axes the library reports, every
+// combination present, no two cells sharing a name, and a reason on every cell this
+// build does not serve.
 TEST(ProbeTest, TheOptionSpaceIsTheLibrarysOwnProduct) {
     const OptionProbeReport report = boys::RunOptionProbe(OneRound());
 
@@ -1497,10 +1460,9 @@ TEST(ProbeTest, TheOptionSpaceIsTheLibrarysOwnProduct) {
         return rungs;
     };
 
-    // One book per precision class, each the product of its own lane's axes, so
-    // the space the report accounts for is the library's and not one lane's
-    // product read four times: a class measured at fewer cells than its lane
-    // serves is the defect this book exists to prevent.
+    // One book per precision class, each the product of its own lane's axes, so the
+    // space the report accounts for is the library's: a class measured at fewer cells
+    // than its lane serves is the defect this book exists to prevent.
     std::vector<boys::OptionPrecision> classes = {boys::OptionPrecision::kFp64,
                                                   boys::OptionPrecision::kFp32};
 #if BoysFp16
@@ -1568,20 +1530,16 @@ TEST(ProbeTest, TheOptionSpaceIsTheLibrarysOwnProduct) {
     }
 }
 
-// The division form is an axis of the option space like the others: the members
-// are read from the library rather than written out in the probe, every
-// combination of the other axes is enumerated at each of them, a cell of a
-// non-default form carries the library's own name for it, and the members are
-// ranked against each other inside one class rather than in a class apiece. The
-// defect this pins is the quiet one an unranked axis leaves: a member the
-// instrument never varies reads in a report exactly like a member the library
-// does not have.
+// The division form is an axis of the option space like the others: the members are
+// read from the library rather than written out in the probe, every combination of the
+// other axes is enumerated at each of them, a cell of a non-default form carries the
+// library's own name for it, and the members are ranked against each other inside one
+// class rather than in a class apiece. The defect this pins is the quiet one an
+// unranked axis leaves: a member the instrument never varies reads in a report exactly
+// like a member the library does not have.
 //
-// The protocol is the measuring one, because a class is made where a run
-// produced figures and the one-round run the option book is read from produces
-// none: a report from it carries no classes at all, and the ranking below would
-// be asserted against nothing. The rows read above are the same rows either way,
-// measured or not.
+// The protocol is the measuring one, because a class is made where a run produced
+// figures and the one-round run carries no classes at all.
 TEST(ProbeTest, TheDivisionFormAxisIsEnumeratedAndRanked) {
     const OptionProbeReport report = boys::RunOptionProbe(Timed());
     const std::span<const boys::DivisionFormInfo> forms = boys::BoysDivisionForms();
@@ -1595,12 +1553,10 @@ TEST(ProbeTest, TheDivisionFormAxisIsEnumeratedAndRanked) {
         EXPECT_STREQ(forms[i].name, boys::DivisionFormName(forms[i].form));
     }
 
-    // The no-axis cell of the double lane's reference rung, at each form. The
-    // default form's carries the name the shape row has always had, because that
-    // row runs the default policy and therefore divides in it; the other two
-    // carry the library's own spelling of the member beside it, and the three
-    // names differ — one name for two arithmetic bodies is what the segment is
-    // there to prevent.
+    // The no-axis cell of the double lane's reference rung, at each form. The default
+    // form's carries the name the shape row has always had, because that row runs the
+    // default policy and therefore divides in it; the other two carry the library's own
+    // spelling of the member beside it, and the three names differ.
     std::set<std::string> names;
 
     for (const boys::DivisionFormInfo& form : forms)
@@ -1641,15 +1597,14 @@ TEST(ProbeTest, TheDivisionFormAxisIsEnumeratedAndRanked) {
            "reports, so the axis is carried and not compared";
 }
 
-// A partition the library serves is a cell of the space this probe enumerates,
-// measured and reported under its own name, and the cells of it the library
-// refuses are refused with the library's reason rather than by the probe.
+// A partition the library serves is a cell of the space this probe enumerates, measured
+// and reported under its own name, and the cells of it the library refuses are refused
+// with the library's reason rather than by the probe.
 //
-// The uniform partition is the one this test is about, and it is the axis's
-// third member: a probe that read its space from the library and then answered
-// this value with the shipped partition's tables would report a uniform row
-// whose numbers are another partition's, which is the failure the row's own
-// fields cannot show.
+// The uniform partition is the one this test is about, and it is the axis's third
+// member: a probe that read its space from the library and then answered this value with
+// the shipped partition's tables would report a uniform row whose numbers are another
+// partition's.
 TEST(ProbeTest, TheUniformPartitionIsEnumeratedAndMeasured) {
     const OptionProbeReport report = boys::RunOptionProbe(OneRound());
 
@@ -1745,17 +1700,13 @@ TEST(ProbeTest, ARefusedCellIsNotAMisspelling) {
     EXPECT_NE(text.find("unbuilt work"), std::string::npos);
 }
 
-// A narrower lane's row is held to the bound its own lane documents, read from
-// the library, and its error is reported against the certified lane's floor
-// when the two partitions differ by more than the row's own bound allows — the
-// honest third state, rather than a pass bought by comparing two partitions.
-// A partition's figures are its stored fits' figures, certified over the
-// interval those fits cover, and the row is judged by the entry's whole-domain
-// figure instead: naming a partition changes the tables an entry reads and not
-// the entry's own documented accuracy. The defect this pins is the other way
-// round — the partition's figure used as the row's judgement, over a workload
-// running past the fitted interval, which reported the narrow partition as
-// missing a promise it never made.
+// A narrower lane's row is held to the bound its own lane documents, read from the
+// library, and its error is reported against the certified lane's floor when the two
+// partitions differ by more than the row's own bound allows - the honest third state,
+// rather than a pass bought by comparing two partitions. A partition's figures are its
+// stored fits' figures, certified over the interval those fits cover, and the row is
+// judged by the entry's whole-domain figure instead: naming a partition changes the
+// tables an entry reads and not the entry's own documented accuracy.
 TEST(ProbeTest, APartitionRowIsJudgedByTheEntrysWholeDomainFigure) {
     const OptionProbeReport report = boys::RunOptionProbe(OneRound());
 
@@ -1789,12 +1740,10 @@ TEST(ProbeTest, APartitionRowIsJudgedByTheEntrysWholeDomainFigure) {
         << measured->bound;
 }
 
-// The figure a row is judged by must hold over the arguments the row was
-// measured on, and the workload range is the caller's to choose, so the verdict
-// and the bound behind it must read the same over a range inside the fitted
-// interval and over the default one that runs past it. Before this the narrow
-// rows read "within bound" confined and "within the floor" at the default range,
-// which was the judgement moving and not the option.
+// The figure a row is judged by must hold over the arguments the row was measured on,
+// and the workload range is the caller's to choose, so the verdict and the bound behind
+// it must read the same over a range inside the fitted interval and over the default one
+// that runs past it.
 TEST(ProbeTest, TheVerdictDoesNotMoveWithTheWorkloadRange) {
     ProbeOptions whole = OneRound();
 
@@ -1820,10 +1769,9 @@ TEST(ProbeTest, TheVerdictDoesNotMoveWithTheWorkloadRange) {
     }
 }
 
-// A partition's own figure covers a narrower domain than the cells a row is
-// measured on, so the row says which figure it was judged at and which figure is
-// the partition's, with the interval the second holds on. A reader comparing two
-// rows must not have to reach the prose below the table to learn that.
+// A partition's own figure covers a narrower domain than the cells a row is measured on,
+// so the row says which figure it was judged at and which figure is the partition's,
+// with the interval the second holds on.
 TEST(ProbeTest, APartitionRowPrintsItsOwnFiguresInterval) {
     const OptionProbeReport report = boys::RunOptionProbe(OneRound());
     const std::string text = boys::FormatOptionProbe(report);
@@ -1849,10 +1797,9 @@ TEST(ProbeTest, APartitionRowPrintsItsOwnFiguresInterval) {
         << "the narrow row does not say which of the two figures is the column's: " << row;
 }
 
-// What the probe does not measure is stated in its own output, with the counts:
-// the cells the library refuses, the call shapes the axes are not crossed with,
-// and the lanes the design leaves out. An omission that is not stated is the
-// defect this list exists to prevent.
+// What the probe does not measure is stated in its own output, with the counts: the cells
+// the library refuses, the call shapes the axes are not crossed with, and the lanes the
+// design leaves out.
 TEST(ProbeTest, TheTextStatesWhatIsNotMeasured) {
     const OptionProbeReport report = boys::RunOptionProbe(OneRound());
     const std::string text = boys::FormatOptionProbe(report);
