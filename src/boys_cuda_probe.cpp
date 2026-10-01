@@ -41,6 +41,7 @@
 #include <limits>
 #include <random>
 #include <string>
+#include <utility>
 #include <vector>
 
 // --------------------------------------------------------------------------- The device-side
@@ -346,6 +347,29 @@ std::string FormatBytes(std::size_t bytes) {
     return Text("%.1f GiB", gib);
 }
 
+/// Every value of an enumeration, against one check per value.
+///
+/// The namers below are covered by a class template each rather than by a predicate over the
+/// enumeration's count, and this is what instantiates them. The reason is the diagnostic: a
+/// static_assert's message is a string literal, and no C++23 construct turns an enumerator into
+/// text, so the message cannot name the value that failed it. An instantiation can - the compiler
+/// prints its argument - and on MSVC that note is the difference between "name it in StatusName"
+/// and a name to go and find, because MSVC emits no -Wswitch and the message is otherwise the
+/// only diagnostic there is. The explicit instantiation beside each namer is what asks the
+/// question and is not decoration: a check that nothing instantiates checks nothing.
+template <template <auto> class Check, typename Enum, typename Index>
+struct EveryValueOf;
+
+template <template <auto> class Check, typename Enum, std::size_t... Index>
+struct EveryValueOf<Check, Enum, std::index_sequence<Index...>>
+    : Check<static_cast<Enum>(Index)>... {};
+
+/// The named check, over every value the enumeration counts.
+template <template <auto> class Check, typename Enum>
+struct EveryValue
+    : EveryValueOf<Check, Enum, std::make_index_sequence<static_cast<std::size_t>(Enum::kCount)>> {
+};
+
 /// The status in words, so a caller reading the text does not have to know the
 /// enumerators to see why nothing was measured.
 ///
@@ -375,24 +399,17 @@ constexpr const char* StatusName(DeviceProbeStatus status) noexcept {
     return nullptr;
 }
 
-/// Whether the switch above names every enumerator of \c DeviceProbeStatus, read over
-/// the enumeration's own count. The compilation of this file is what keeps the two in
-/// step.
-constexpr bool StatusesAllNameThemselves() noexcept {
-    for (int i = 0; i < static_cast<int>(DeviceProbeStatus::kCount); ++i)
-    {
-        if (StatusName(static_cast<DeviceProbeStatus>(i)) == nullptr)
-        {
-            return false;
-        }
-    }
+/// One enumerator of \c DeviceProbeStatus that the switch above names no status for. The
+/// compilation of this file is what keeps the two in step, and the failed instantiation names
+/// the enumerator it stopped on.
+template <DeviceProbeStatus Status>
+struct StatusIsNamed {
+    static_assert(StatusName(Status) != nullptr,
+                  "an enumerator of DeviceProbeStatus names no status: name it in StatusName "
+                  "(src/boys_cuda_probe.cpp)");
+};
 
-    return true;
-}
-
-static_assert(StatusesAllNameThemselves(),
-              "an enumerator of DeviceProbeStatus names no status: name it in StatusName "
-              "(src/boys_cuda_probe.cpp)");
+template struct EveryValue<StatusIsNamed, DeviceProbeStatus>;
 
 // ---------------------------------------------------------------------------
 // The entries this build offers, as the library reports them.
@@ -601,27 +618,28 @@ constexpr const char* QuestionAsked(ProbeQuestion question) noexcept {
     return nullptr;
 }
 
-/// Whether both namers above name every enumerator of \c DeviceOptionQuestion, read
-/// over the enumeration's own count. One predicate for the question and its full
-/// sentence, because a question named by one of them and not the other is the same
-/// defect twice.
-constexpr bool QuestionsAllNameThemselves() noexcept {
-    for (int i = 0; i < static_cast<int>(DeviceOptionQuestion::kCount); ++i)
-    {
-        const DeviceOptionQuestion question = static_cast<DeviceOptionQuestion>(i);
+/// One enumerator of \c DeviceOptionQuestion that \c QuestionName states no token for.
+///
+/// Both namers of a question are covered, as one predicate covered them before: a question
+/// named by one of them and not the other is the same defect twice, and each instantiation
+/// now says which of the two namers and which enumerator it is.
+template <DeviceOptionQuestion Question>
+struct QuestionIsNamed {
+    static_assert(QuestionName(Question) != nullptr,
+                  "an enumerator of DeviceOptionQuestion names no question: name it in "
+                  "QuestionName (src/boys_cuda_probe.cpp)");
+};
 
-        if (QuestionName(question) == nullptr || QuestionAsked(question) == nullptr)
-        {
-            return false;
-        }
-    }
+/// One enumerator of \c DeviceOptionQuestion that \c QuestionAsked states no sentence for.
+template <DeviceOptionQuestion Question>
+struct QuestionIsAsked {
+    static_assert(QuestionAsked(Question) != nullptr,
+                  "an enumerator of DeviceOptionQuestion is asked no question: name it in "
+                  "QuestionAsked (src/boys_cuda_probe.cpp)");
+};
 
-    return true;
-}
-
-static_assert(QuestionsAllNameThemselves(),
-              "an enumerator of DeviceOptionQuestion names no question: name it in both "
-              "QuestionName and QuestionAsked (src/boys_cuda_probe.cpp)");
+template struct EveryValue<QuestionIsNamed, DeviceOptionQuestion>;
+template struct EveryValue<QuestionIsAsked, DeviceOptionQuestion>;
 
 /// The precision as the report spells it.
 ///
@@ -664,31 +682,24 @@ constexpr const char* ShapeName(DeviceOptionShape shape) noexcept {
     return nullptr;
 }
 
-/// Whether the two namers above name every enumerator of their own enumeration, read
-/// over each enumeration's count.
-constexpr bool PrecisionsAndShapesAllNameThemselves() noexcept {
-    for (int i = 0; i < static_cast<int>(DeviceOptionPrecision::kCount); ++i)
-    {
-        if (PrecisionName(static_cast<DeviceOptionPrecision>(i)) == nullptr)
-        {
-            return false;
-        }
-    }
+/// One enumerator of \c DeviceOptionPrecision that \c PrecisionName spells no name for.
+template <DeviceOptionPrecision Precision>
+struct PrecisionIsNamed {
+    static_assert(PrecisionName(Precision) != nullptr,
+                  "an enumerator of DeviceOptionPrecision names no member: name it in "
+                  "PrecisionName (src/boys_cuda_probe.cpp)");
+};
 
-    for (int i = 0; i < static_cast<int>(DeviceOptionShape::kCount); ++i)
-    {
-        if (ShapeName(static_cast<DeviceOptionShape>(i)) == nullptr)
-        {
-            return false;
-        }
-    }
+/// One enumerator of \c DeviceOptionShape that \c ShapeName spells no name for.
+template <DeviceOptionShape Shape>
+struct ShapeIsNamed {
+    static_assert(ShapeName(Shape) != nullptr,
+                  "an enumerator of DeviceOptionShape names no member: name it in ShapeName "
+                  "(src/boys_cuda_probe.cpp)");
+};
 
-    return true;
-}
-
-static_assert(PrecisionsAndShapesAllNameThemselves(),
-              "an enumerator of DeviceOptionPrecision or DeviceOptionShape names no member: "
-              "name it in PrecisionName or ShapeName (src/boys_cuda_probe.cpp)");
+template struct EveryValue<PrecisionIsNamed, DeviceOptionPrecision>;
+template struct EveryValue<ShapeIsNamed, DeviceOptionShape>;
 
 /// The group as the report spells it. Written as a switch rather than the two-way test it
 /// was, which answered "device" to every group but the launched one and would have gone on
@@ -761,31 +772,24 @@ constexpr const char* LaneName(BoysDeviceLane lane) noexcept {
     return nullptr;
 }
 
-/// Whether the two namers above name every enumerator of their own enumeration, read
-/// over each enumeration's count.
-constexpr bool GroupsAndLanesAllNameThemselves() noexcept {
-    for (int i = 0; i < static_cast<int>(DeviceOptionGroup::kCount); ++i)
-    {
-        if (GroupName(static_cast<DeviceOptionGroup>(i)) == nullptr)
-        {
-            return false;
-        }
-    }
+/// One enumerator of \c DeviceOptionGroup that \c GroupName spells no name for.
+template <DeviceOptionGroup Group>
+struct GroupIsNamed {
+    static_assert(GroupName(Group) != nullptr,
+                  "an enumerator of DeviceOptionGroup names no member: name it in GroupName "
+                  "(src/boys_cuda_probe.cpp)");
+};
 
-    for (int i = 0; i < static_cast<int>(BoysDeviceLane::kCount); ++i)
-    {
-        if (LaneName(static_cast<BoysDeviceLane>(i)) == nullptr)
-        {
-            return false;
-        }
-    }
+/// One enumerator of \c BoysDeviceLane that \c LaneName spells no name for.
+template <BoysDeviceLane Lane>
+struct LaneIsNamed {
+    static_assert(LaneName(Lane) != nullptr,
+                  "an enumerator of BoysDeviceLane names no member: name it in LaneName "
+                  "(src/boys_cuda_probe.cpp)");
+};
 
-    return true;
-}
-
-static_assert(GroupsAndLanesAllNameThemselves(),
-              "an enumerator of DeviceOptionGroup or BoysDeviceLane names no member: name it in "
-              "GroupName or LaneName (src/boys_cuda_probe.cpp)");
+template struct EveryValue<GroupIsNamed, DeviceOptionGroup>;
+template struct EveryValue<LaneIsNamed, BoysDeviceLane>;
 
 /// The sentence a class opens with: what a class is, and what its winner is therefore a claim
 /// about.
@@ -2292,23 +2296,15 @@ constexpr const char* DeviceProbeDefaultHowName(DeviceProbeDefaultHow how) noexc
 
 namespace {
 
-/// Whether the switch above names every enumerator of \c DeviceProbeDefaultHow, read
-/// over the enumeration's own count.
-constexpr bool DefaultHowsAllNameThemselves() noexcept {
-    for (int i = 0; i < static_cast<int>(DeviceProbeDefaultHow::kCount); ++i)
-    {
-        if (DeviceProbeDefaultHowName(static_cast<DeviceProbeDefaultHow>(i)) == nullptr)
-        {
-            return false;
-        }
-    }
+/// One enumerator of \c DeviceProbeDefaultHow that the switch above names no state for.
+template <DeviceProbeDefaultHow How>
+struct DefaultHowIsNamed {
+    static_assert(DeviceProbeDefaultHowName(How) != nullptr,
+                  "an enumerator of DeviceProbeDefaultHow names no state: name it in "
+                  "DeviceProbeDefaultHowName (src/boys_cuda_probe.cpp)");
+};
 
-    return true;
-}
-
-static_assert(DefaultHowsAllNameThemselves(),
-              "an enumerator of DeviceProbeDefaultHow names no state: name it in "
-              "DeviceProbeDefaultHowName (src/boys_cuda_probe.cpp)");
+template struct EveryValue<DefaultHowIsNamed, DeviceProbeDefaultHow>;
 
 } // namespace
 

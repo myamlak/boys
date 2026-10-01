@@ -27,6 +27,27 @@ which is four orders below the tightest documented bound of 1e-15). The
 argument list reaches the top of every format's finite range, so that a lane's
 tested range is never limited by which grid points have a representation in the
 format it evaluates in; `grid()` states that rule in full.
+
+The committed CSV is what every accuracy claim in this tree is measured
+against, so its bytes are a claim about what this script produces, and `--check`
+is what holds the two together: it renders the grid and compares it with the
+committed file, failing on a cell edited by hand and on a generator that moved
+without the file moving with it. Byte identity rather than a tolerance, because
+a tolerance passes a cell that moved by less than it allows, which is the drift
+this exists to catch - and identity is a claim this script can make, because
+the written columns are `gammainc` at a pinned dps and a fixed seed, with no
+quadrature and nothing machine-dependent among them. The route agreements and
+the identity residual are printed by the checking run too, so the evidence that
+the grid is right is re-measured on every run that reads it rather than only
+where it was authored.
+
+Usage:
+    python tools/gen_boys_accuracy_gate_reference.py                  # rewrite the CSV
+    python tools/gen_boys_accuracy_gate_reference.py --check          # fail if it drifted
+    python tools/gen_boys_accuracy_gate_reference.py --validate-only  # routes, write nothing
+
+Exit: 0 agree, 1 drift, 2 mpmath missing (a check that cannot run is not one
+that passed).
 """
 
 import argparse
@@ -338,37 +359,20 @@ def fmt_value(v):
     return mp.nstr(v, VALUE_DIGITS, strip_zeros=False)
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", default="tests/data/boys_accuracy_gate_reference.csv")
-    parser.add_argument("--committed", default="tests/data/boys_reference.csv")
-    parser.add_argument("--validate-only", action="store_true",
-                        help="print the route agreements and write nothing")
-    args = parser.parse_args()
+HEADER = ("n,x,value,log10abs,"
+          "xf,valuef,log10_f,"
+          "x16,value16,log10_16,"
+          "xb,valueb,log10_b")
 
-    mp.dps = DPS
-    committed = load_committed_xs(args.committed)
 
-    validation = []
-    for n in range(33):
-        for x in (0.0, 1e-12, 1e-4, 0.1, 0.5, 1.0, 1.0855252345349333, 2.0,
-                  4.897870299825657, 8.0, 11.899848152108484, 20.0,
-                  28.98933773882074, 40.0, 100.0, 1e3, 1e6):
-            validation.append((n, x))
+def render(committed):
+    """The committed grid, as the bytes of the file, and the counts the run prints.
 
-    worst_abs, worst_rel, at = reference_agreement(validation)
-    n0_abs, n0_at = n0_agreement(validation)
-    ser_abs, ser_at = series_agreement(validation)
-
-    print(f"reference route agreement (dps={DPS}, {len(validation)} points)")
-    print(f"  gamma vs quad   : max |A-B| = {mp.nstr(worst_abs, 6)}"
-          f"  max rel = {mp.nstr(worst_rel, 6)}  at (n,x)={at}")
-    print(f"  F_0 erf vs gamma: max |A-B| = {mp.nstr(n0_abs, 6)}  at x={n0_at}")
-    print(f"  series vs gamma : max |A-B| = {mp.nstr(ser_abs, 6)}  at (n,x)={ser_at}")
-
-    if args.validate_only:
-        return 0
-
+    Rendered to one string rather than straight to a file so that `--check` holds the
+    committed bytes against the output of this same function: the run that writes and the
+    run that checks are one run, and there is no second implementation of the format for
+    the two to drift apart in.
+    """
     rows = []
     xs = grid(committed)
     half_xs = [float_to_fp16(x) for x in xs]
@@ -394,21 +398,116 @@ def main():
     def decade(v):
         return int(mp.floor(mp.log10(abs(v)))) if v != 0 else 0
 
+    lines = [HEADER]
+    for n, x, xf, x16, xb, v, vf, v16, vb in rows:
+        half_field = f"{x16:.17g}" if math.isfinite(x16) else "inf"
+        lines.append(f"{n},{x:.17g},{fmt_value(v)},{decade(v)},"
+                     f"{xf:.17g},{fmt_value(vf)},{decade(vf)},"
+                     f"{half_field},{fmt_value(v16)},{decade(v16)},"
+                     f"{xb:.17g},{fmt_value(vb)},{decade(vb)}")
+    return "\n".join(lines) + "\n", rows, xs
+
+
+def first_difference(committed, rendered):
+    """The first line that differs, as (number, committed, rendered), or None."""
+    stored = committed.decode("utf-8").splitlines()
+    produced = rendered.decode("utf-8").splitlines()
+    for i in range(max(len(stored), len(produced))):
+        a = stored[i] if i < len(stored) else "<the committed file ends here>"
+        b = produced[i] if i < len(produced) else "<the rendered file ends here>"
+        if a != b:
+            return i + 1, a, b
+    return None
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--out", default="tests/data/boys_accuracy_gate_reference.csv")
+    parser.add_argument("--committed", default="tests/data/boys_reference.csv")
+    parser.add_argument("--check", action="store_true",
+                        help="exit nonzero if the committed file is not what this "
+                             "generator produces")
+    parser.add_argument("--validate-only", action="store_true",
+                        help="print the route agreements and write nothing")
+    args = parser.parse_args()
+
+    if args.check and args.validate_only:
+        parser.error("--check and --validate-only are different acts; pass one")
+
+    mp.dps = DPS
+    committed = load_committed_xs(args.committed)
+
+    validation = []
+    for n in range(33):
+        for x in (0.0, 1e-12, 1e-4, 0.1, 0.5, 1.0, 1.0855252345349333, 2.0,
+                  4.897870299825657, 8.0, 11.899848152108484, 20.0,
+                  28.98933773882074, 40.0, 100.0, 1e3, 1e6):
+            validation.append((n, x))
+
+    worst_abs, worst_rel, at = reference_agreement(validation)
+    n0_abs, n0_at = n0_agreement(validation)
+    ser_abs, ser_at = series_agreement(validation)
+
+    print(f"reference route agreement (dps={DPS}, {len(validation)} points)")
+    print(f"  gamma vs quad   : max |A-B| = {mp.nstr(worst_abs, 6)}"
+          f"  max rel = {mp.nstr(worst_rel, 6)}  at (n,x)={at}")
+    print(f"  F_0 erf vs gamma: max |A-B| = {mp.nstr(n0_abs, 6)}  at x={n0_at}")
+    print(f"  series vs gamma : max |A-B| = {mp.nstr(ser_abs, 6)}  at (n,x)={ser_at}")
+
+    if args.validate_only:
+        return 0
+
+    text, rows, xs = render(committed)
+    outside = sum(1 for x in xs if not math.isfinite(float_to_fp16(x)))
+    summary = (f"{len(rows)} rows, {len(xs)} x per order, "
+               f"{outside} arguments past the fp16 range")
+
+    # The check is a byte comparison against what this run just produced, not a
+    # tolerance on the values: a tolerance would pass a hand-edited cell that
+    # moved by less than it allows, which is exactly the drift it is here to
+    # catch. The grid is a deterministic function of mpmath at a pinned dps and
+    # a fixed seed, so identity is the claim the file's provenance makes and
+    # identity is what is checked.
+    if args.check:
+        try:
+            with open(args.out, "rb") as f:
+                stored = f.read()
+        except FileNotFoundError:
+            print(f"DRIFT: {args.out} does not exist, and this generator "
+                  f"produces it ({summary})", file=sys.stderr)
+            return 1
+
+        if stored != text.encode("utf-8"):
+            print(f"DRIFT: {args.out} is not what this generator produces",
+                  file=sys.stderr)
+            difference = first_difference(stored, text.encode("utf-8"))
+            if difference is not None:
+                number, committed_line, rendered_line = difference
+                print(f"  first difference at line {number}:", file=sys.stderr)
+                print(f"    committed: {committed_line[:120]}", file=sys.stderr)
+                print(f"    generated: {rendered_line[:120]}", file=sys.stderr)
+            else:
+                # Every line agrees, so the bytes differ outside the text: the
+                # endings, or a trailing byte. Worth naming, because this tree
+                # is developed on Windows with core.autocrlf set, and an editor
+                # or a copy that rewrote CRLF is the way a file whose values are
+                # all correct still fails to be the file this generator writes.
+                print("  every line agrees, so the difference is not in a value: "
+                      "the line endings or a trailing byte are not what this "
+                      "generator writes (.gitattributes keeps this file LF)",
+                      file=sys.stderr)
+            print(f"  Regenerate with `python {os.path.basename(__file__)}`, and "
+                  f"treat a generator that moved as a change to the reference "
+                  f"every lane is measured against", file=sys.stderr)
+            return 1
+
+        print(f"{args.out} is what this generator produces: {summary}")
+        return 0
+
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     with open(args.out, "w", encoding="utf-8", newline="\n") as f:
-        f.write("n,x,value,log10abs,"
-                "xf,valuef,log10_f,"
-                "x16,value16,log10_16,"
-                "xb,valueb,log10_b\n")
-        for n, x, xf, x16, xb, v, vf, v16, vb in rows:
-            half_field = f"{x16:.17g}" if math.isfinite(x16) else "inf"
-            f.write(f"{n},{x:.17g},{fmt_value(v)},{decade(v)},"
-                    f"{xf:.17g},{fmt_value(vf)},{decade(vf)},"
-                    f"{half_field},{fmt_value(v16)},{decade(v16)},"
-                    f"{xb:.17g},{fmt_value(vb)},{decade(vb)}\n")
-    outside = sum(1 for x in xs if not math.isfinite(float_to_fp16(x)))
-    print(f"wrote {args.out}: {len(rows)} rows, {len(xs)} x per order, "
-          f"{outside} arguments past the fp16 range")
+        f.write(text)
+    print(f"wrote {args.out}: {summary}")
     return 0
 
 

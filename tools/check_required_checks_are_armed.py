@@ -21,14 +21,26 @@ the legs from the matrix the workflow carries, and the leg names are rendered by
 `tools/gen_platform_table.py` - the same renderer that writes README's supported-platform table,
 because three renderings of one name is how this list's consumers drift apart. The checkers are
 read off the tree rather than named here: a `tools/` script is a check when its name is
-`check_*.py` or when its own argument parser declares one of the flags a run of it is meant to
-exit non-zero under, and a step carries it when its command invokes it with one of those flags. The suite run by `ctest` is
-in scope by the same argument: it is a check this tree relies on, and it is the one every leg that
-builds a binary is built around.
+`check_*.py` or when its own argument parser declares a flag whose own words say a run of it exits
+non-zero, and a step carries it when its command invokes it with one of those flags. The spelling
+of that flag is the tree's business and not this file's: most of the tools say it of `--check` and
+one of `--strict`, which is why a declaration spelling its checking mode either of those two is
+read as the check it is without saying anything itself, and a tool that spells it otherwise is
+read on the same terms - the report prints the spellings it read and how many declarations state
+each. The suite run by `ctest` is in scope by the same argument: it is a check
+this tree relies on, and it is the one every leg that builds a binary is built around.
 
 The scope is deliberately wider than the set of checks anyone has in mind: a checker added to
 `tools/` is in scope the moment it lands, and the run that would go quiet is the run this exists
 to keep from going quiet.
+
+What the reading cannot see, said here rather than left to be found by the run that goes quiet. It
+reads a tool's own declarations, so a checking mode the declaration does not state - a flag whose
+help names neither a non-zero exit nor a failure - is not read as one, and a tool that takes that
+form and is not named `check_*.py` is no check to this file. Two nets narrow that: a `check_*.py`
+that declares a mode this reader cannot name is a finding rather than a check carried by any
+invocation of it, and every script the reading puts in no check at all is named in the report,
+with the steps that invoke it, on every run.
 
 Usage:
   python3 tools/check_required_checks_are_armed.py
@@ -38,10 +50,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import ast
 import importlib.util
 import pathlib
 import re
 import sys
+from typing import NamedTuple
 
 import yaml
 
@@ -55,10 +69,13 @@ PLATFORM_TOOL = pathlib.Path(__file__).resolve().parent / "gen_platform_table.py
 # is the one check every leg that builds a binary is built around.
 SUITE = "ctest"
 
-# The flags a `tools/` script declares when a run of it is meant to exit non-zero on a difference.
-# Read as a declaration in the script's own source rather than assumed: a script that declares
-# none is carried by any invocation of it.
-VETO_FLAGS = ("--check", "--strict")
+# The words a tool's own declaration of a flag uses when a run with it is meant to exit non-zero
+# on a difference. `--check` and `--strict` are the spellings this tree settled on, and they are
+# spellings rather than a list of tools: nine declarations say "exit non-zero"/"exits nonzero" of
+# the one and one says "also fail on multiplier-unswept findings" of the other, so both are read
+# off the tree by the rule below. A tool whose checking flag is named something else enters the
+# vocabulary on the same terms, by saying the same thing of it.
+FAILING_OUTCOME = re.compile(r"non-?zero|\bfail(?:s|ed|ure)?\b", re.IGNORECASE)
 
 # A step carries a checker when its command invokes the script by its own path in this tree.
 TOOL = re.compile(r"tools/([A-Za-z0-9_]+\.py)")
@@ -179,22 +196,150 @@ def command_of(step: dict) -> str:
     return "\n".join(line for line in lines if not line.strip().startswith("#"))
 
 
-def checkers(tools: pathlib.Path) -> dict[str, tuple[str, ...]]:
-    """Every check this tree carries, as script name -> the veto flags its own source declares."""
-    found = {}
+class Declaration(NamedTuple):
+    """One `add_argument` call: the flag it declares, whether it is a mode, and its own words."""
 
-    for script in sorted(tools.glob("*.py")):
-        source = script.read_text("utf-8")
-        declared = tuple(
-            flag
-            for flag in VETO_FLAGS
-            if re.search(rf"add_argument\(\s*[\"']{re.escape(flag)}[\"']", source)
+    flag: str
+    switch: bool
+    text: str
+
+
+class Inventory(NamedTuple):
+    """What a reading of `tools/` concludes about which of its scripts are checks.
+
+    `checks` is what the rest of this file reasons about: script name -> the flags a run of it is
+    meant to exit non-zero under. `words` is where those spellings were read from, carried so the
+    report prints the derivation rather than asking a reader to trust it. `unclear` is the scripts
+    this reading cannot classify - named a check by their own name, declaring a mode, none of them
+    a mode the tree states a failing outcome for - and each is a finding, because the alternative
+    is a step whose mode nothing can check and every invocation of which reads as carried.
+    `unreadable` is the scripts whose declarations could not be read at all. `not_checks` is the
+    scripts this reading puts in no check: named in the report on every run, and never gated,
+    because a tool that regenerates a file is not a defect.
+    """
+
+    checks: dict[str, tuple[str, ...]]
+    words: dict[str, list[str]]
+    unclear: dict[str, list[str]]
+    unreadable: list[str]
+    not_checks: list[str]
+
+
+def declarations(source: str) -> list[Declaration]:
+    """Every flag a script declares, read from its own argument parser.
+
+    Read as a declaration in the script's own source rather than assumed, which is the point: the
+    flag that fails a run is whatever the tool says it is, and a tool that declares no flag at all
+    is a check carried by any invocation of it.
+    """
+    found: list[Declaration] = []
+
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+
+        if node.func.attr != "add_argument":
+            continue
+
+        flag = next(
+            (
+                argument.value
+                for argument in node.args
+                if isinstance(argument, ast.Constant)
+                and isinstance(argument.value, str)
+                and argument.value.startswith("-")
+            ),
+            None,
         )
 
-        if script.name.startswith("check_") or declared:
-            found[script.name] = declared
+        if flag is None:
+            # A positional: a value the caller supplies, never a mode the run is put into.
+            continue
+
+        action = next(
+            (
+                str(keyword.value.value)
+                for keyword in node.keywords
+                if keyword.arg == "action"
+                and isinstance(keyword.value, ast.Constant)
+                and isinstance(keyword.value.value, str)
+            ),
+            "",
+        )
+
+        found.append(
+            Declaration(
+                flag,
+                action in ("store_true", "store_false"),
+                " ".join(
+                    part.value
+                    for part in ast.walk(node)
+                    if isinstance(part, ast.Constant) and isinstance(part.value, str)
+                ),
+            )
+        )
 
     return found
+
+
+def vocabulary(declared: dict[str, list[Declaration]]) -> dict[str, list[str]]:
+    """The spellings a run of a tool exits non-zero under, as flag -> the tools that say so.
+
+    Read off the declarations themselves: a mode whose own words name a non-zero exit or a failure
+    is a spelling of the checking form whatever it is called, and the `--check` and `--strict` of
+    this tree are in the set because ten declarations say it of them rather than because they are
+    written down anywhere. A value the caller supplies is not a mode and is not read as one, so a
+    threshold whose help says a mismatch "fails the run" is not mistaken for the failing flag.
+    """
+    words: dict[str, list[str]] = {}
+
+    for name, found in declared.items():
+        for declaration in found:
+            if declaration.switch and FAILING_OUTCOME.search(declaration.text):
+                words.setdefault(declaration.flag, []).append(name)
+
+    return words
+
+
+def inventory(tools: pathlib.Path) -> Inventory:
+    """Read `tools/` for the checks it carries, and for the scripts this reading says are none."""
+    declared: dict[str, list[Declaration]] = {}
+    unreadable: list[str] = []
+
+    for script in sorted(tools.glob("*.py")):
+        try:
+            declared[script.name] = declarations(script.read_text("utf-8"))
+        except SyntaxError:
+            # A script this reader cannot parse is one whose declarations it cannot read, which is
+            # the same blindness as a mode it cannot name. A finding, not a script passed over.
+            declared[script.name] = []
+            unreadable.append(script.name)
+
+    words = vocabulary(declared)
+    checks: dict[str, tuple[str, ...]] = {}
+    unclear: dict[str, list[str]] = {}
+
+    for name, found in declared.items():
+        flags = tuple(sorted({item.flag for item in found if item.switch and item.flag in words}))
+
+        if flags:
+            checks[name] = flags
+        elif name.startswith("check_") and name not in unreadable:
+            modes = sorted({item.flag for item in found if item.switch})
+
+            if modes:
+                unclear[name] = modes
+            else:
+                # Declares nothing to be put into: every invocation of it is the checking one.
+                checks[name] = ()
+
+    return Inventory(
+        checks,
+        words,
+        unclear,
+        unreadable,
+        sorted(set(declared) - set(checks) - set(unclear) - set(unreadable)),
+    )
 
 
 def carried(
@@ -291,7 +436,8 @@ def main() -> int:
     required = required_names(args.required)
     rows = legs(workflow, platform)
     steps = steps_of(workflow, platform)
-    checks = checkers(TOOLS)
+    found = inventory(TOOLS)
+    checks = found.checks
 
     if not required or not rows or not checks:
         print(
@@ -329,6 +475,14 @@ def main() -> int:
     # --- The checks --------------------------------------------------------------------------
     print(f"\n  checks this tree carries: {len(checks)} under {TOOLS.name}/, plus the suite\n")
 
+    # The vocabulary the reading above is made of, printed: a reader who disagrees with a verdict
+    # sees the declarations it was read from rather than being asked to take it on trust.
+    stated = ", ".join(
+        f"{flag} (stated by {len(names)})" for flag, names in sorted(found.words.items())
+    )
+    print(f"    the mode a run exits non-zero under: {stated}")
+    print("    read off the tools' own declarations, and spelled by no list here\n")
+
     instruments: list[tuple[str, tuple[str, ...], list[tuple[str, str, str]]]] = [
         (SUITE, (), suite_rows(steps))
     ]
@@ -362,6 +516,37 @@ def main() -> int:
         else:
             print(f"        run by {steps_here}")
             print(f"        {listing(rows_here, required_legs)}")
+
+    # --- What this reading will not call a check ----------------------------------------------
+    # Two verdicts, and only the first is a gate. A script named a check by its own name whose
+    # modes the reader cannot name is the case that used to go quiet, so it fails here. A script
+    # this reading puts in no check at all is named and left alone: a generator is not a defect,
+    # and the reader who brought one in needs to see it said rather than infer it from silence.
+    print(f"\n  no check to this reading: {len(found.not_checks)} under {TOOLS.name}/\n")
+
+    for name in found.not_checks:
+        invoked = sorted({step for step, _, _ in carried(steps, name, ())})
+        where = f"invoked by {invoked}" if invoked else "invoked by no step"
+        print(f"    {TOOLS.name}/{name}: {where}")
+
+    if found.unclear or found.unreadable:
+        print()
+
+    for name, modes in sorted(found.unclear.items()):
+        failures.append(
+            f"{TOOLS.name}/{name} is named a check by its own name and declares {modes}, and none "
+            f"of them says a run of it exits non-zero - this reader cannot say which invocation of "
+            f"it fails, so every one of them reads as a check carried. State the failing mode in "
+            f"the flag's own help, which is the form the rest of the tree states it in"
+        )
+        print(f"    {TOOLS.name}/{name}\n        NO MODE THIS READER CAN NAME: {modes}")
+
+    for name in found.unreadable:
+        failures.append(
+            f"{TOOLS.name}/{name} could not be read: its source does not parse here, so nothing "
+            f"can say which of its modes fails, and it is not read as a check"
+        )
+        print(f"    {TOOLS.name}/{name}\n        UNREADABLE")
 
     # --- The leg arguments -------------------------------------------------------------------
     print()
