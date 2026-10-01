@@ -681,12 +681,15 @@ axes is therefore either certified and published or a device cell a host without
 cannot run**, which is the whole of the gate's arithmetic: 504 certified, none refused, 168 not
 runnable here.
 
-**The entries are a further dimension, and the gate does not cross it.** A body that reaches its
-values through a recursion over the orders has no branch that reads the uniform grid, so the batched
-entries' Chebyshev and partitioned paths refuse a policy naming that partition — with the library's
-own reason, and rather than being answered from the narrow partition's fits, which is exactly the
-substitution those guards exist to prevent. Those branches are owed work, and this page says so here
-rather than letting the arithmetic above read as a claim about the entries too.
+**The entries are a further dimension, and the gate books them apart from the cross.** A call naming
+the uniform grid through `BoysAllN`, `BoysAllNSorted`, `BoysAllNAtOrders` or `BoysFixedN` compiles
+and is served: the entry hands a policy naming the grid to its per-argument path, which reads the
+grid's own table rather than resolving the partition to a Chebyshev fit. The partitioned path is still never handed
+the grid, and that is a contract rather than an omission — it reaches its values through a recursion
+over the orders, which has no walk for a grid table, so `RefuseUniformPartition` names what that path
+cannot answer. The gate crosses the entries in a book of its own, and that book reads 28 measured,
+4 not applicable to the entry's shape and none refused, rather than letting the arithmetic above read
+as a claim about the entries too.
 
 A member that a *future* revision had not derived would still be refused where it is named, with the
 reason, rather than answered from another partition's fits — which is what the refusals this library
@@ -993,8 +996,11 @@ mistyped name cannot block every pull request.
 
 - `tests/data/boys_reference.csv` — the committed 45-digit reference grid.
 - `tools/gen_boys_coefficients.py` — regenerates the Chebyshev tables and the grid from the cited
-  formulas, using a pinned public `mpmath`. Its `--check` flag is the byte-identity proof, and every
-  CI leg runs the full regeneration protocol. The emitted header is clang-format output, so
+  formulas, using a pinned public `mpmath`. Its `--check` flag is the byte-identity proof, and one CI
+  leg runs it: the linux-x86 gcc Release leg, in the workflow's Generator consistency step, which
+  re-derives both artefacts into scratch copies and compares them byte for byte without writing
+  either committed file. The other legs build and test without it. The emitted header is
+  clang-format output, so
   `requirements-boys.txt` pins the formatter as well. The script reads `$CLANG_FORMAT` before
   searching `PATH`. Without a formatter it fails, rather than writing bytes the gate would report as
   drift.

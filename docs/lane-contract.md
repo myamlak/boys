@@ -438,19 +438,15 @@ table is derived over them — so a rung of the narrow partition on the Chebyshe
 *it* and not the shipped table truncated; the rational route's rung table, its across-orders packed
 lane over the narrow pairs and the single-precision lanes' rung tables are derived over those same
 pieces the same way, so a rung of either route, under either scheme and on either packing axis, is a
-call this build compiles rather than a table still owed. Three families of combination are still
-refused, one of them on this partition and two on other axes, each named where it is refused and each
-counted in the combinations book above: the device lane's narrow policy, whose kernels read one
-coefficient set per region and whose narrow pieces are the host lane's, so the table is one this lane
-has not generated — 56 cells, both axes at every rung; and, on the device lane alone, its orders-axis
-kernel, which its entries do not have at any rung — 28 cells — and a route or a scheme of another
-family on its arguments axis, where its degree tables are certified for the shipped family alone —
-21 cells. Those three are 105 in all, the whole of the owed count. Each is a `static_assert` with the
-reason or a configure probe that compiles the call, and each names the table or the kernel it would
-need. None falls back: the two partitions are different fits of the same function over the same
-interval, so a substitution would return the shipped numbers under the narrow partition's name. Each
-is unbuilt work rather than an unavailable option, and each is named where it is refused so that it
-can be counted.
+call this build compiles rather than a table still owed. Nothing of the axis cross is refused: the
+combinations book reads 504 certified and published of 672, none refused, and the 168 it counts
+apart are the device lane's — members this library carries and this host cannot run. That lane is
+where an earlier revision of this paragraph named a debt, and the lane's own tables answer for it
+now: its narrow partition is cut and uploaded beside the shipped one, its orders-axis entries are
+carried at every rung, and the routes and schemes of both families are served on its arguments axis.
+What no path here does is substitute: the two partitions are different fits of the same function over
+the same interval, so a call answered from one under the other's name would return the shipped
+numbers as narrow ones.
 ## float
 
 **At most 1.5e-7, absolute and everywhere.**
@@ -586,7 +582,7 @@ seed at no order at all.
 
 ## half — storing 16-bit values and computing in 32-bit
 
-**At most `m·1e-7` plus half of the last representable digit of the result**, where `m` is the same
+**At most `m·1.5e-7` plus half of the last representable digit of the result**, where `m` is the same
 multiplier as above. This is the one bound that mixes kinds: the first term is an absolute error and
 the second is proportional to the size of the result.
 
@@ -615,7 +611,7 @@ one such step on representing the result. Raising the multiplier loosens only th
 from the 32-bit arithmetic.
 
 **Below a certain size the lane returns nothing usable.** The bound holds only where the result is
-larger than `m·1e-7` plus half a representable digit. Smaller than that, the returned value becomes a
+larger than `m·1.5e-7` plus half a representable digit. Smaller than that, the returned value becomes a
 subnormal 16-bit number, and then exactly zero. **The bound is claimed over those larger arguments
 and over no others.**
 
@@ -1534,12 +1530,15 @@ per name in `include/boys/boys_build_defaults.hpp`, the file a build's defaults 
 build replaces that file with its own five rather than editing the tree, which is what lets a
 consumer set them for the machine they deploy on without touching a library header
 (`BOYS_BUILD_DEFAULTS`, CONTRIBUTING.md), and the entries that name no policy then compile those
-choices at no run-time cost. **Two of the five a build cannot move**, and both refuse at compile time
+choices at no run-time cost. **One of the five a build cannot move**, and it refuses at compile time
 with the library's own reason rather than compiling something else: the packing axis, because an
-entry that produces one order has no second order to pack into a vector lane, and the uniform member
-of the fit granularity, which four batched bodies have no branch for. A build that sets either to
-what the library already runs is fine; setting either to another member is a build that does not
-compile. The device lane's two, `boys::kBoysFullAccuracyMultiplier` in `accuracy.hpp` and
+entry that produces one order has no second order to pack into a vector lane. The uniform member of
+the fit granularity was the second until this revision: the four batched bodies that refused it now
+hand a policy naming the grid to the path that reads it, and the accuracy gate's entry book measures
+those cells as rows rather than counting them as owed. Whether a build *naming* that member compiles
+is not stated here, because it has not been measured — no fixture in this tree names it. Setting the
+packing axis to what the library already runs is fine; setting it to another member is a build that
+does not compile. The device lane's two, `boys::kBoysFullAccuracyMultiplier` in `accuracy.hpp` and
 `boys::kDefaultRegionBExp` in `boys_device_tables.hpp`, are outside that file and are set where they
 are declared — and are therefore not consumer-reachable at all, which is owed work rather than a
 design choice. *What is not claimed*, at the end of this page, names the lanes
@@ -1567,7 +1566,7 @@ reads a bound off this page relies on is that bound, and it is the lane's own at
 **The bound each name carries is the lane's own**, stated above and not restated here: the double
 single entry at most 1e-15 below x = 1.0855, 3e-14 below x = 11.899848152108484 and 5.5e-14
 everywhere, the double batch entries 5.5e-14 throughout, the float lane 1.5e-7 absolute and
-everywhere, the half lanes `m·1e-7` plus half of the last representable digit of the result. The
+everywhere, the half lanes `m·1.5e-7` plus half of the last representable digit of the result. The
 multiplier is the entry's own default, `boys::kBoysFullAccuracyMultiplier`, which is the rung every
 figure on this page is stated at. A call that names an axis is judged against that axis's section
 rather than against this table.
