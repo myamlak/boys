@@ -574,9 +574,11 @@ void NarrowOrdersBody(int nmax, double x, double* out, std::size_t stride, Degre
 /// body here - the certified split-Clenshaw sum - is a plausible one that
 /// nothing distinguishes from the scheme the caller named. A fourth scheme
 /// added to the enumeration and not named below would therefore be measured as
-/// the certified scheme, silently, under its own name. Both switches have no
-/// default arm and name the enumeration's sentinel, so such an enumerator falls
-/// to the check at the end of this block, which turns it into a failed build.
+/// the certified scheme, silently, under its own name. The check at the end of
+/// this block holds SchemeIsNamed, which is the map; what holds these dispatches
+/// is gcc's and clang's -Wswitch, which fires on them because neither carries a
+/// `default` arm, together with tools/check_enum_arms_covered.py, which is the
+/// instrument that covers them where no such warning is emitted.
 constexpr bool SchemeIsNamed(OrdersScheme scheme) noexcept {
     switch (scheme)
     {

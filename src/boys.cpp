@@ -214,8 +214,10 @@ double SingleAtTier(AccuracyTier tier, int n, double x) noexcept {
     // What the sentinel reaches, and the same fallback the batch entry takes for
     // it and for the same reason: a tier this build does not serve is evaluated
     // at the reference rung, which is never coarser than the tier named. Every
-    // enumerator of AccuracyTier is an arm above - TierRungsAreNamed is what
-    // keeps that true - so a caller's own tier never arrives here.
+    // enumerator of AccuracyTier is an arm above - held by the compiler's
+    // -Wswitch where that warning fires, and by tools/check_enum_arms_covered.py
+    // where it does not, and not by TierRungsAreNamed, which reads the map
+    // rather than these arms - so a caller's own tier never arrives here.
     return BoysSingle<kBoysFullAccuracyMultiplier, Policy>(n, x);
 }
 

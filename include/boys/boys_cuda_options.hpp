@@ -612,8 +612,12 @@ constexpr bool DeviceEntryServedAtRung(DeviceEntry entry, double multiplier) noe
         // The sentinel one past the last row this report defines, and not a row a call
         // can name, so no rung axis is owed for it. It is named rather than left to a
         // default arm: a default would swallow the next enumerator as quietly as it
-        // swallows this one. gcc's -Wswitch wants every enumerator named whether or not
-        // a default is present; MSVC's does not.
+        // swallows this one. Nothing else here catches that row: gcc and clang
+        // warn for an unhandled enumerator through -Wswitch, but only while the
+        // switch has no `default` arm. This tree builds on MSVC at /W4, which emits
+        // nothing for one either way. The assertion below the switch is what fails
+        // the build for a row this switch has not been taught, and on MSVC it is the
+        // only thing that does.
         case DeviceEntry::kCount:
             break;
     }
@@ -844,8 +848,12 @@ constexpr const char* DevicePartitionName(DeviceEntry entry) noexcept {
         // The sentinel one past the last row this report defines, and not a row a call
         // can name, so no partition member is owed for it. It is named rather than left
         // to a default arm: a default would swallow the next enumerator as quietly as it
-        // swallows this one. gcc's -Wswitch wants every enumerator named whether or not
-        // a default is present; MSVC's does not.
+        // swallows this one. Nothing else here catches that row: gcc and clang
+        // warn for an unhandled enumerator through -Wswitch, but only while the
+        // switch has no `default` arm. This tree builds on MSVC at /W4, which emits
+        // nothing for one either way. The assertion below the switch is what fails
+        // the build for a row this switch has not been taught, and on MSVC it is the
+        // only thing that does.
         case DeviceEntry::kCount:
             break;
     }
