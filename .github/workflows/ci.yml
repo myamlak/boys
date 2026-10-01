@@ -476,6 +476,32 @@ jobs:
           .venv/bin/python tools/gen_platform_table.py --check
           .venv/bin/python tools/gen_option_matrix.py --check
           .venv/bin/python tools/gen_build_facts.py --check
+      # .github/required-checks.txt is the list branch protection holds a merge
+      # on, and this workflow is what reports those names. Both are written by
+      # hand and every way they can part is silent: a required name no leg
+      # renders leaves the merge held open for a status no job ever posts; a
+      # checker under tools/ whose step was deleted, edited so it no longer
+      # invokes the tool, or scoped to a leg outside the list keeps its file,
+      # its green run and its reader while gating nothing; and a `--leg`
+      # argument naming a leg its own job does not render feeds a comparison
+      # that reports green against no row.
+      #
+      # This step holds the three to each other. The names are read from the
+      # required list, the legs from the matrix this file carries, and the
+      # checks off the tree rather than named here - so a checker is in scope
+      # the moment it lands, and a pull request adding one without the step
+      # that runs it fails here, on the leg that would have run it. That is the
+      # failure this exists for, an instrument that exists and enforces
+      # nothing, and it is the one this tool reported about itself until this
+      # step was added.
+      #
+      # It reads the workflow, the required list and tools/ and nothing else -
+      # no build, no compiler, no network - so it is scoped to one combination
+      # like the gates above it.
+      - name: Required checks (the names required against the checks armed)
+        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_required_checks_are_armed.py --check
       # The packed orders lane is a template instantiated once per cell, and its
       # cells are written out twice - as `extern template` declarations in
       # include/boys/boys_impl.hpp and as definitions in src/boys_orders_simd.cpp.
