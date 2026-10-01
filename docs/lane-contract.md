@@ -1366,7 +1366,7 @@ not a measurement.
 
 The gate crosses the whole space, prints one line per combination — its measured delivered figure
 beside the bound its lane publishes — and ends the block with its own arithmetic. A row of that
-table reads `fp64, chebyshev, split-clenshaw, shipped, orders, m = 64 | 56694 cells | 0 outside |
+table reads `fp64, chebyshev, split-clenshaw, shipped, orders, m = 64 | 170082 cells | 0 outside |
 1.54485e-12 delivered | 3.52e-12 bound | certified and published`, and a refused one carries no
 figure at all, only the library's own reason.
 The block's own last lines, from a run of the gate on this tree:
@@ -1408,13 +1408,13 @@ The gate reads both accessors for a combination in every lane and prints what ea
 the figure the row itself is judged against and the figure the whole call was measured to deliver.
 The headings name the two numbers by what they are, because they are not interchangeable: **`bound`
 is what a caller may rely on, `delivered` is what the combination's fits were measured to deliver.**
-One combination per lane, from this run:
+One combination per lane, and the grid's rational member beside them, from this run:
 
 | Combination | `bound` — `BoysAccuracyGuaranteed` | `delivered` — `BoysAccuracyDelivered` | The row's own bound | What the whole call measured | Where each figure came from |
 |---|---|---|---|---|---|
 | fp64, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 5.5e-14 | 4.45751e-14 | 5.5e-14 | 5e-14 | bound: throughout, every region. delivered: `BoysFitRoutes()`, `BoysFitGranularities()` and `BoysEvalSchemes()` |
-| fp32, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 1.5e-07 | 1.23617e-07 | 1.5e-07 | 1.08354e-07 | bound: every region, at exact division and the refined reciprocal. delivered: `BoysFitRoutesF32()` |
-| fp16, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 1.5e-07 | no figure | 1.5e-07 | 1.08354e-07 | bound: plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum. delivered: no row of this library measured a half-typed return |
+| fp32, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 1.5e-07 | 1.23617e-07 | 1.5e-07 | 1.7514e-07 | bound: every region, at exact division and the refined reciprocal. delivered: `BoysFitRoutesF32()` |
+| fp16, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 1.5e-07 | no figure | 1.5e-07 | 1.7514e-07 | bound: plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum. delivered: no row of this library measured a half-typed return |
 | fp32-device, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 2.3e-07 | 1.42109e-14 | 2.3e-07 | not measured — this host cannot run the lane | bound: the lane's documented figure, plus 8e-8 under the fast region-B exponential. delivered: `BoysFitRoutes()` |
 | fp64, rational-minimax, split-clenshaw, narrow, arguments, m = 1 | 5.5e-14 | 2.21663e-14 | 5.5e-14 | 5e-14 | bound: throughout, every region. delivered: the narrow pieces' own row |
 
@@ -1432,10 +1432,12 @@ records that its grid is the coarser of the two and reads under on a fit that eq
 today. The accessor computes its figure inside the library from a `BoysLaneContracts()` row; the
 gate computes the figure it judges the row against from that same row by its own arithmetic, and
 fails the run when the two differ in any digit. They are two paths over one source, so a change to a
-lane's figure moves both or the run goes red. The fp16 row guaranteed 1.5e-07 and measured at
-1.08354e-07 is the ceiling's half-ULP term at work: the base figure is what the accessor returns,
-and the term of the format is added by the row's own criterion — the gate counts the cells where the
-returned value falls at or below the floor rather than passing them as covered.
+lane's figure moves both or the run goes red. The fp16 row is the ceiling's half-ULP term at work:
+the base figure is what the accessor returns, and the term of the format is added by the row's own
+criterion rather than measured — the fp16 lane runs the single-precision engine's own bodies, so the
+whole call there measures 1.7514e-07, the plain reciprocal's own figure on that lane rather than the
+format's. The gate counts the cells where the returned value falls at or below the floor rather than
+passing them as covered.
 
 The device row's `delivered` figure comes from `BoysFitRoutes()` while its `bound` is the lane's own
 documented figure: the delivered accessor maximises over the fits the combination names, and the
@@ -1473,37 +1475,42 @@ that decided it rather than take it.
 
 A combination this revision does not carry is `kNotCarried` with no figure and no verdict, and the
 sentence is the accessor's own, so the two kinds of refusal stay apart here as they do at the
-accessor:
+accessor. The owed book reads zero above, so at this revision both are calls the space does not have
+rather than members of it, and the two sentences are the enumeration guard and the lane axis:
 
 | Asked of | The answer |
 |---|---|
-| fp64, rational-minimax, split-clenshaw, arguments, uniform, m = 64 — a rung of the grid's rational member | no verdict, no figure: *the uniform partition's rational member is stored and admissible at every multiplier, and its rung is not wired: the table holds one numerator/denominator pair per interval and no per-order effective-degree table, and every entry of this lane refuses a policy naming that pair at a rung. The cells are unbuilt work and not a property of the rung or of the partition* |
+| a value outside the enumerations this revision publishes — a route, a scheme, a packing axis, a partition or a rung no table of it names | no verdict, no figure: *the value named is outside the enumeration this library serves, so it names no combination: name a route, a scheme, a packing axis, a partition and a rung from the enumerations this revision publishes* |
 | a precision no lane of this library has — a combination the space does not contain | no verdict, no figure: *no lane of this library has that precision* |
 
-The first names work this library has not done and says which table is missing; the second names a
-call the space itself does not have, and no revision of this library could answer it. Both are
-refusals and neither is a figure, which is what they have in common — the sentence is what tells a
-caller which of the two it is holding.
+The first names the axis the call left the space on and hands back the enumerations to name it from;
+the second names a lane no row of this library describes. Both are refusals and neither is a figure,
+which is what they have in common — the sentence is what tells a caller which of the two it is
+holding.
 
-Checked over the whole cross, the two accessors and this entry agree: **402 combinations of this
-build are carried, 270 are refused, and 0 of them disagreed** — every carried combination asked at
+Checked over the whole cross, the two accessors and this entry agree: **672 combinations of this
+build are carried, none is refused, and 0 of them disagreed** — every carried combination asked at
 the figure its lane publishes answers inside it, asked at half of that figure answers outside it,
-and every refused combination answers with no verdict, no figure and the accessor's own reason.
+and every lane publishes a figure to halve. The owed book reads zero above, so no combination is
+left to answer with no verdict and no figure; a member a later revision has not derived would be
+asked the same question and would answer with the accessor's own reason.
 Those counts are the accuracy gate's own tolerance block, run on this tree;
 `boys-consumer-umbrella`'s accuracy section prints the same comparison, and its four requests above
 are its own.
 
 Run on this tree, the gate's own lines for the tolerance question are:
 
-    the tolerance query: 402 carried row(s) asked at the figure each row is judged by and
-                  answered inside it, 402 of them asked at half of that figure and answered
-                  outside it, 0 row(s) whose lane publishes no figure to halve, and 270
+    the tolerance query: 672 carried row(s) asked at the figure each row is judged by and
+                  answered inside it, 672 of them asked at half of that figure and answered
+                  outside it, 0 row(s) whose lane publishes no figure to halve, and 0
                   refused row(s) answered with no verdict and no figure. 0 disagreement(s)
                   with the figures the two accessors answer
 
-The 402 rows are the members of the option space the accessor carries, each at the rung it is judged
-at. The 270 it does not carry are asked the same question and answered the same way: with no verdict,
-no figure, and the accessor's own sentence rather than with a number.
+The 672 rows are every member of the option space, each at the rung it is judged at, and the block
+asks all of them: the 168 the device lane holds and this host cannot run answer from the accessor's
+own tables like the rest, because the query reads a table rather than a measurement. None is refused
+at this revision; a member a later revision has not derived would be asked the same question and
+would answer with no verdict, no figure and the accessor's own sentence rather than with a number.
 
 ## The default policy, per precision and per device
 
