@@ -1,0 +1,219 @@
+{
+  "format": "boys.host-shapes/1",
+
+  "why": [
+    "The host entry surface as shape classes, and the entry names that reach each one.",
+    "A shape is the call a caller meets, not the name it is spelled with: a run-time tier, a",
+    "route-named sibling, a sorted-argument overload and a span overload are spellings of one",
+    "shape, so a table of shapes does not grow every time an alias is added.",
+    "The axes a shape offers are derived from its tuple by check_host_entry_bijection.py and are",
+    "not written here: a one-order shape has no ladder to fill a packed register with, so its",
+    "packing axis is a single default by construction rather than by a refusal in this file.",
+    "Read by tools/check_host_entry_bijection.py, which holds this table to the headers in both",
+    "directions. Edit it when an entry moves between shapes; the check names what it cannot place."
+  ],
+
+  "sources": [
+    "include/boys/boys.hpp",
+    "include/boys/boys_span.hpp",
+    "include/boys/boys_c.h"
+  ],
+
+  "vocabulary": {
+    "orders": ["one", "ladder"],
+    "args": ["scalar", "array"],
+    "extent": ["single", "call", "per_element"],
+    "cardinality": ["one", "nmax+1", "count", "count*(nmax+1)", "count*(1+max n[i])"],
+    "protocol": ["returned", "out", "status_out"],
+    "host": ["host", "device"]
+  },
+
+  "shapes": [
+    {
+      "id": "one-scalar-returned",
+      "tuple": {"orders": "one", "args": "scalar", "extent": "single",
+                "cardinality": "one", "protocol": "returned", "host": "host"},
+      "evidence": "BoysSingle(n, x) returns F_n(x) by value: one order, one argument, no array."
+    },
+    {
+      "id": "one-scalar-status-out",
+      "tuple": {"orders": "one", "args": "scalar", "extent": "single",
+                "cardinality": "one", "protocol": "status_out", "host": "host"},
+      "evidence": "BoysDouble(n, x, out) returns an int status and writes *out: the C surface."
+    },
+    {
+      "id": "ladder-scalar-out",
+      "tuple": {"orders": "ladder", "args": "scalar", "extent": "call",
+                "cardinality": "nmax+1", "protocol": "out", "host": "host"},
+      "evidence": "BoysAllOrders(nmax, x, out): F_0..F_nmax of one argument, the top named once."
+    },
+    {
+      "id": "one-array-out",
+      "tuple": {"orders": "one", "args": "array", "extent": "single",
+                "cardinality": "count", "protocol": "out", "host": "host"},
+      "evidence": "BoysFixedN(n, x, out, count, stride): one fixed order at each argument."
+    },
+    {
+      "id": "ladder-array-planes",
+      "tuple": {"orders": "ladder", "args": "array", "extent": "call",
+                "cardinality": "count*(nmax+1)", "protocol": "out", "host": "host"},
+      "evidence": "BoysAllN(nmax, x, out, count): order-major planes, out[k*count+i], one nmax."
+    },
+    {
+      "id": "ladder-array-ragged-planes",
+      "tuple": {"orders": "ladder", "args": "array", "extent": "per_element",
+                "cardinality": "count*(1+max n[i])", "protocol": "out", "host": "host"},
+      "evidence": "BoysAllNAtOrders(n, x, out, count): each column stops at its own n[i]."
+    },
+    {
+      "id": "ladder-array-planes-status-out",
+      "tuple": {"orders": "ladder", "args": "array", "extent": "call",
+                "cardinality": "count*(nmax+1)", "protocol": "status_out", "host": "host"},
+      "evidence": "BoysDoubleBatch(nmax, count, x, out): the plane shape behind a status."
+    },
+    {
+      "id": "ladder-array-ragged-planes-status-out",
+      "tuple": {"orders": "ladder", "args": "array", "extent": "per_element",
+                "cardinality": "count*(1+max n[i])", "protocol": "status_out", "host": "host"},
+      "evidence": "BoysDoubleBatchAtOrders(n, count, x, out): per-element tops, behind a status."
+    }
+  ],
+
+  "entries": {
+    "BoysSingle": {
+      "shape": "one-scalar-returned",
+      "spelling": "template rung and policy; the double lane's entry"
+    },
+    "BoysSingleAtTier": {
+      "shape": "one-scalar-returned",
+      "spelling": "run-time tier, with route- and scheme-carrying overloads"
+    },
+    "BoysSingleF32": {
+      "shape": "one-scalar-returned",
+      "spelling": "template rung and policy; the single-precision lane"
+    },
+    "BoysSingleF32WithRoute": {
+      "shape": "one-scalar-returned",
+      "spelling": "run-time route over the float lane's own fits"
+    },
+    "BoysSingleF16": {
+      "shape": "one-scalar-returned",
+      "spelling": "template; the fp16 lane, under #if BoysFp16"
+    },
+    "BoysSingleBf16": {
+      "shape": "one-scalar-returned",
+      "spelling": "template; the bf16 lane, under #if BoysFp16"
+    },
+    "BoysDouble": {
+      "shape": "one-scalar-status-out",
+      "spelling": "C binding at the reference rung"
+    },
+    "BoysFloat": {
+      "shape": "one-scalar-status-out",
+      "spelling": "C binding at the reference rung, single precision"
+    },
+    "BoysDoubleWithMultiplier": {
+      "shape": "one-scalar-status-out",
+      "spelling": "C binding whose rung arrives as a double m"
+    },
+    "BoysFloatWithMultiplier": {
+      "shape": "one-scalar-status-out",
+      "spelling": "the multiplier binding at the float lane's bounds"
+    },
+    "BoysAllOrders": {
+      "shape": "ladder-scalar-out",
+      "spelling": "template rung and policy, with the span overload in boys_span.hpp"
+    },
+    "BoysAllOrdersWithRoute": {
+      "shape": "ladder-scalar-out",
+      "spelling": "run-time route, with a scheme-carrying overload"
+    },
+    "BoysAllOrdersAtTier": {
+      "shape": "ladder-scalar-out",
+      "spelling": "run-time tier, route/scheme overloads, a policy template"
+    },
+    "BoysAllOrdersF32": {
+      "shape": "ladder-scalar-out",
+      "spelling": "template; the float lane"
+    },
+    "BoysAllOrdersF32AtTier": {
+      "shape": "ladder-scalar-out",
+      "spelling": "policy template and run-time tier; the float lane"
+    },
+    "BoysAllOrdersF16": {
+      "shape": "ladder-scalar-out",
+      "spelling": "template; the fp16 lane, under #if BoysFp16"
+    },
+    "BoysAllOrdersBf16": {
+      "shape": "ladder-scalar-out",
+      "spelling": "template; the bf16 lane, under #if BoysFp16"
+    },
+    "BoysAllOrdersF16AtTier": {
+      "shape": "ladder-scalar-out",
+      "spelling": "policy template and run-time tier; the fp16 lane"
+    },
+    "BoysAllOrdersBf16AtTier": {
+      "shape": "ladder-scalar-out",
+      "spelling": "policy template and run-time tier; the bf16 lane"
+    },
+    "BoysAllOrdersHalf2": {
+      "shape": "ladder-scalar-out",
+      "spelling": "the native half lane, over a packed pair of arguments"
+    },
+    "BoysFixedN": {
+      "shape": "one-array-out",
+      "spelling": "template rung and policy, the span overload, a strided output"
+    },
+    "BoysAllN": {
+      "shape": "ladder-array-planes",
+      "spelling": "template rung and policy, a workspace, the sorted-args and span overloads"
+    },
+    "BoysAllNF32": {
+      "shape": "ladder-array-planes",
+      "spelling": "template; the float lane"
+    },
+    "BoysAllNF16Native": {
+      "shape": "ladder-array-planes",
+      "spelling": "the native half lane over an argument array"
+    },
+    "BoysAllNAtOrders": {
+      "shape": "ladder-array-ragged-planes",
+      "spelling": "template rung and policy, with the span overload in boys_span.hpp"
+    },
+    "BoysDoubleBatch": {
+      "shape": "ladder-array-planes-status-out",
+      "spelling": "C binding; count is the call's, the output order-major"
+    },
+    "BoysFloatBatch": {
+      "shape": "ladder-array-planes-status-out",
+      "spelling": "the same C binding in single precision"
+    },
+    "BoysDoubleBatchAtOrders": {
+      "shape": "ladder-array-ragged-planes-status-out",
+      "spelling": "C binding; the tops arrive as an array of orders"
+    }
+  },
+
+  "not_an_evaluation": {
+    "AccuracyMultiplier": "reads the multiplier a tier names; it evaluates no F_n",
+    "EvalSchemeName": "a name for an enumerator, for a report to print",
+    "BoysEvalSchemes": "the scheme rows this build carries",
+    "BoysEvalSchemeFits": "the per-fit rows a scheme was measured on",
+    "BoysEvalSchemeDelivered": "one figure read from those rows",
+    "BoysPackAxes": "the packing-axis rows",
+    "BoysDivisionForms": "the division-form rows",
+    "FitGranularityHasRoute": "a bit test on a partition row's route mask",
+    "FitGranularityHasAxis": "a bit test on a partition row's axis mask",
+    "BoysFitGranularities": "the interval-partition rows",
+    "BoysLaneContracts": "the per-lane contract rows",
+    "BoysAccuracyGuaranteed": "the figure a lane documents for a combination",
+    "BoysAccuracyDelivered": "the figure a combination's rows were measured to deliver",
+    "QueryTier": "what a tier reaches in a region, and what limits it",
+    "QueryCombination": "the verdict for a combination at a tolerance",
+    "BoysFitRoutes": "the fit-route rows of the double lane",
+    "BoysFitRoutesF32": "the fit-route rows of the single-precision lane",
+    "BoysAllNWorkspaceSize": "the workspace words BoysAllN takes; it sizes a buffer",
+    "BoysPackedLaneServes": "whether the packed region-A lane serves a scheme",
+    "BoysAvx2Available": "whether the processor carries AVX2 with FMA"
+  }
+}
