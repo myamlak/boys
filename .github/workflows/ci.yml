@@ -609,6 +609,26 @@ jobs:
         if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_recorded_run.py
+      # The two consumer documents quote what the examples print, and nothing read those runs back:
+      # the ctest legs run every example (`boys-example-*`) and compare nothing, and no tool read an
+      # example's stdout at all - so a change that moved a printed digit left README.md and
+      # docs/getting-started.md quoting a figure no program prints any more, with every leg green.
+      #
+      # This step is the reading. The programs come out of the build this job has just made, by the
+      # directory CMake resolves them into, and each quoted run is compared against what its program
+      # printed. The association between a run and its program is read out of the documents' own
+      # structure - the section that names the example, the block the document presents as a run -
+      # and a block that cannot be associated with a program fails this step too, because that is
+      # how a check like this goes quiet. (tools/check_required_checks_are_armed.py reads this step
+      # as the one that arms this tool.)
+      #
+      # One block is named and not compared: examples/07_option_probe.cpp times its own run against
+      # the host's clock, and the document says of that block that every figure in it is a property
+      # of this host and this run, so the tool reports it by name rather than comparing it.
+      - name: Examples (the runs the two documents quote)
+        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_example_transcripts.py --check --examples-dir build
       # The build-defaults seam offers a consumer five choices, and until this
       # step nothing checked that the library reads them. Three of the five were
       # read by nothing at all - the packing axis, the division form and the fit
