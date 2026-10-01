@@ -16,25 +16,25 @@
 //
 // WHAT THIS CONFIGURE MEETS BEFORE IT MEETS THE AXIS
 //
-// This build names the shipped route and the shipped scheme, and the replaced-build
-// branch of tests/boys_backend_test.cpp refuses a replacement on exactly those two:
+// The replaced-build branch of tests/boys_backend_test.cpp reads all five axes this file
+// names, so it refuses a replacement only when every one of them is the shipped value:
 //
 //   constexpr bool kShippedDefaultsInForce =
 //       boys::kDefaultFitRoute == boys::FitRoute::kChebyshev &&
-//       boys::kDefaultEvalScheme == boys::EvalScheme::kHorner;
-//   static_assert(!kShippedDefaultsInForce, "the defaults header in force names the
-//   shipped route and scheme, so this build has chosen nothing: point BOYS_BUILD_DEFAULTS
-//   at a header that moves at least one axis, or unset it to build the shipped
-//   configuration");
+//       boys::kDefaultEvalScheme == boys::EvalScheme::kHorner &&
+//       boys::kDefaultPackAxis == boys::PackAxis::kArguments &&
+//       boys::kDefaultDivisionForm == boys::DivisionForm::kRefinedReciprocal &&
+//       boys::kDefaultFitGranularity == boys::FitGranularity::kNarrow;
+//   static_assert(!kShippedDefaultsInForce, "the defaults header in force names all five
+//   shipped values, so this build has chosen nothing: point BOYS_BUILD_DEFAULTS at a header
+//   that moves at least one axis, or unset it to build the shipped configuration");
 //
-// The message says "at least one axis"; the predicate reads the route and the scheme.
-// A build that moves only this axis satisfies the message and not the predicate, so that
-// file does not compile under this fixture, and nothing this file can carry changes it:
-// it moves one axis of five, and the guard reads two of the other four. What such a
-// configure reports first is therefore the guard's answer and not this axis's, and the
-// reading for the axis itself needs the predicate widened to the five - or the route or
-// the scheme moved as well, which is what the tuned fixture does and is exactly why its
-// failures cannot be attributed.
+// Four of those five comparisons hold for the values this file names and the fifth does not:
+// kPlainReciprocal is not the committed file's kRefinedReciprocal, which is the axis this
+// file moves. The message's "at least one axis" is what the predicate reads now, and a
+// header that moved no axis at all is the only one refused, so under this fixture the guard
+// passes exactly when the division form took effect. What this configure reports first is
+// therefore the axis's own answer.
 //
 // WHAT A FAILURE IN THIS CONFIGURE IS A FINDING ABOUT
 //
