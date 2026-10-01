@@ -376,11 +376,14 @@ the gate's own constants, and `tools/check_bound_transcripts.py`, which CI runs 
 table against them, so a bound that moves on one side and not the other is a red run. The two half
 lanes are that column's one exception, and the checker names it: their figure is the half-quantum
 the gate composes at run time from the format of the value it returned, so no constant states it.
-The `Worst delivered` column is a run's own output and no instrument holds it to a constant: it
-states what one build delivered on one host, so a change that moves a lane inside its bound leaves
-the gate green and this column stale until the run that prints it is made again. A figure is one
-host's: your own run is the answer for your platform, your compiler and your arithmetic, and the
-rows are compared cell by cell rather than as one number.
+The `Worst delivered` column is a run's own output, and it is held to one. `tests/data/` carries a run
+of the gate kept as a file; `tools/check_bound_transcripts.py` reads this table against that run's
+rows, and `tools/check_recorded_run.py` asks the repository what has moved since the revision the run
+names. Both run in CI. So a change that moves a lane inside its bound leaves the gate green - the
+bound still holds - and leaves the recorded run describing an older tree, which the second check
+reports rather than passing over. The fix is a new run and a new transcription of it, never an edit to
+the figure. A figure is one host's: your own run is the answer for your platform, your compiler and
+your arithmetic, and the rows are compared cell by cell rather than as one number.
 
 Run on the committed tree, it printed this (an excerpt; the full run carries one row per lane and
 region):
