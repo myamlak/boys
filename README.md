@@ -357,9 +357,16 @@ The run ends with a verdict line and an exit status: `PASS: every documented cla
 revision`, or the numbers of the claims that did not hold, with a non-zero status. `ctest` runs this
 binary as one of its tests, but a passing `ctest` prints only how long the test took — the table is
 in this binary's own output. CI runs this gate on every platform below and fails the build if a claim
-does not hold, so these figures cannot drift from the code without a red run. A figure is one host's:
-your own run is the answer for your platform, your compiler and your arithmetic, and the rows are
-compared cell by cell rather than as one number.
+does not hold. Of the two figure columns above, that holds the `Bound claimed` one: its figures are
+the gate's own constants, and `tools/check_bound_transcripts.py`, which CI runs as well, reads this
+table against them, so a bound that moves on one side and not the other is a red run. The two half
+lanes are that column's one exception, and the checker names it: their figure is the half-quantum
+the gate composes at run time from the format of the value it returned, so no constant states it.
+The `Worst delivered` column is a run's own output and no instrument holds it to a constant: it
+states what one build delivered on one host, so a change that moves a lane inside its bound leaves
+the gate green and this column stale until the run that prints it is made again. A figure is one
+host's: your own run is the answer for your platform, your compiler and your arithmetic, and the
+rows are compared cell by cell rather than as one number.
 
 Run on the committed tree, it printed this (an excerpt; the full run carries one row per lane and
 region):
@@ -368,9 +375,9 @@ region):
 |---|---|---|---|
 | double single | A | 2.22e-16 | 1e-15 |
 | double single | band | 3.22e-15 | 3e-14 |
-| double single | B | 9.94e-15 | 3e-14 |
+| double single | B | 7.52e-16 | 3e-14 |
 | double single | C | 5e-14 | 5.5e-14 |
-| float single | all | 1.06e-07 | 1.5e-07 |
+| float single | all | 6.36e-08 | 1.5e-07 |
 | fp16 store-half | single | 0.000122 | 0.000122 |
 | bf16 store-half | single | 0.000976 | 0.000977 |
 
@@ -458,19 +465,19 @@ at all: the rational route's reading sits above that half at 18 of the 33 orders
 arithmetic and 19 under the separate one, so a search against it does not close.
 
 **`FitGranularity::kNarrow` is served by this lane too, on both its routes.** The partition cuts
-region A of this lane into 218 pieces at degree 6 and region B into two pieces at the same degree,
+region A of this lane into 218 pieces at degree 6 and region B into four pieces at the same degree,
 and each route stores its own fit on that cut: 1526 coefficients either way on the Chebyshev route
-against the shipped table's 1067, and 1238 on the rational route against 525. Region B's seed is
-where the narrowing is visible in the other direction: 14 stored on the Chebyshev route against the
-shipped seed's 11, and 11 on the rational route against its 6. The gate's single-entry policy rows read
-1.02681e-07 over region A and 1.29916e-07 over region B for the Chebyshev pair under both
-multiply-add routes, and for the rational pair 1.00057e-07 over region A under both and 2.99288e-08
-over region B with the multiply-add fused against 4.43557e-08 with it separate — every narrow row
-inside the lane's 1.5e-07 bar in both builds. The figures the generated header publishes for the
-narrow pieces are the worse of the two routes read in binary32 on the coefficients as stored —
-1.19209e-07 for the Chebyshev pieces, 1.12003e-07 over region A and 3.90533e-08 fused or 2.92450e-08
-separate over region B for the rational ones — and the route the build runs is the figure the gate
-judges the row against.
+against the shipped table's 1067, and 1241 on the rational route against 465. Region B's seed is
+where the narrowing is visible in the other direction: 28 stored on the Chebyshev route against the
+shipped seed's 11, and 18 on the rational route against its 6. The gate's single-entry policy rows,
+read in binary32 on the coefficients as stored, are 1.02681e-07 over region A and 4.51733e-08 over
+region B for the Chebyshev route's narrow rows, and 1.15993e-07 over region A and 2.95023e-08 over
+region B for the rational route's. Every narrow row is inside the lane's 1.5e-07 bar on the build
+the gate ran, whose multiply-add route is the fused one. The figures the generated header publishes
+for the narrow pieces are read the same way, at each multiply-add route: 1.19209e-07 for the narrow
+Chebyshev pieces, and 1.14376e-07 fused against 1.10598e-07 separate over region A and 3.29858e-08
+in both over region B for the rational ones. The route the build runs is the figure the gate judges
+the row against.
 
 **The Chebyshev route's fits are stored in both of the forms the two schemes read**, one monomial
 coefficient per Chebyshev coefficient: 1067 stored either way in region A and 11 in region B, the same
@@ -620,10 +627,12 @@ rung, plus three for the rational route over the narrow partition: its region-A 
 seed and the batch entry read through it — each judged against the bar the published table holds for
 the cell it ran in times the rung's multiplier, with the worst cell named. Those three rational rows
 read 2.21663e-14 against the region's 3e-14, 4.12448e-14 against the seed's 5e-14 and 5e-14 against
-the batch lane's 5.5e-14; they are the figure the generated header publishes for those fits,
-measured under both multiply-add routes with the worse taken, and the rows hold with the
-multiply-add separate as well. The block reports the trade above and the 4125493 of 5710087 axis
-cells (72.2%) that can discriminate, the rest carrying a bound at least as large as the value itself.
+the batch lane's 5.5e-14, which are the gate's own measured rows for those fits, on the run's
+multiply-add route. The figures the generated header publishes for the two fitted rows are
+2.42365e-14 over region A and 4.09566e-14 over region B, the same under both multiply-add routes,
+and both are inside their bars as well. The block reports the trade above and the 4125493 of 5710087
+axis cells (72.2%) that can discriminate, the rest carrying a bound at least as large as the value
+itself.
 Those rows are counted apart from every other book the gate reports, so nothing the library already
 published moves.
 
