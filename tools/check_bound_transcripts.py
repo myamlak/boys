@@ -18,7 +18,32 @@ This script reads the figures off both sides and compares them. The sides are:
     region in its prose, and the table of the gate's own printed run, whose `Bound claimed` column
     is the gate's row identity and its bound;
   * `src/boys.cpp`, whose `BoysLaneContracts()` rows are the library's own statement of one figure
-    per lane plus an additive term - the side the documents are a promise to.
+    per lane plus an additive term - the side the documents are a promise to;
+  * the gate's recorded run - the gate's own output, in a file - whose per-lane, per-region rows
+    carry the delivered figure each of them printed. This is the only side that carries a delivered
+    figure, and the README's printed-run table is a transcription of rows from it.
+
+THE DELIVERED COLUMN IS A RUN'S OUTPUT, and the run is what holds it. The README's printed-run
+table carries two figures per row, and this check read only one of them until the recorded run was
+added: the `Bound claimed` cell, which is a constant of the gate, and not the `Worst delivered`
+cell, which is the worst cell of a sweep and is printed rather than declared. No constant of the
+gate states a delivered figure, so a document's copy of one can be held only to a run's own output.
+The gate's recorded run is read from `--run`, which defaults to
+`tests/data/boys_accuracy_gate_run.txt`, and a row of the document's table is held to the run's row
+for the same lane and region - the words the table's own `Lane` and `Region` cells carry, which are
+the words the gate prints in the first two fields of its row. Every row of the table is held, so unlike the bound column this one has no
+cell to declare uncovered. Where no recorded run is read, the delivered column is a finding naming
+the file that is missing rather than a quiet pass: the figures are in the document either way, and a
+check that drops its subject when its evidence is absent is the failure this file exists to close.
+
+Two limits are worth stating rather than leaving to be assumed. A recorded run names the revision
+it was taken at, and the report prints it, so a reader can see which revision's output the documents
+are held to; but the tie is between two records - the document and the run - and a run that has gone
+stale relative to the code satisfies it. Holding the run itself to the code means comparing it with
+what this leg's gate prints, which is the producing and not the reading half, and this check does
+not do it. And a delivered figure is one host's, as the README says: a run recorded on one host is
+not a promise about another, which is why the file this check reads is named and given rather than
+searched for.
 
 THE CORRESPONDENCE IS NOT ONE TO ONE, and this check does not pretend it is. The header's table has
 a cell per lane and region; the README's contract table has one cell per lane holding every figure
@@ -55,9 +80,11 @@ What this check does not read, and why:
     `x = 28.984375`, `x = 1.0855`. They are the documents' own coordinates, no constant of the gate
     states them as a bound figure, and the gate's own region edges are measured elsewhere. A
     threshold edited in one document and not another is not a figure this check can see;
-  * the `Worst delivered` column of the README's printed-run table, and every other delivered
-    figure in the prose. A delivered figure is a run's own output - the gate prints it and the
-    gate's claims are what hold it - while this check reads the figures a document *states*;
+  * the delivered figures in the prose, outside the README's printed-run table. That table's
+    `Worst delivered` column is read, against the gate's own recorded run, as the paragraph above
+    says; a delivered figure written into a sentence is not, because a sentence carries no lane and
+    no region for the run's side to be identified by, and the figures in one sentence belong to the
+    document's own account rather than to a row of the gate's table;
   * the pair of CUDA rows of the README's contract table whose cells are cross-references ("same
     m-budgets as the CPU double lanes") and carry no figure at all;
   * the half-ULP figures of the fp16/bf16 rows. The README's printed-run table names them as the
@@ -76,14 +103,15 @@ What this check does not read, and why:
 Usage:
     python tools/check_bound_transcripts.py --check
     python tools/check_bound_transcripts.py --check --readme /tmp/README.md
+    python tools/check_bound_transcripts.py --check --run build/gate.log
 
-`--gate`, `--header`, `--readme` and `--library` read a side from another file, which is how a
-shifted figure is shown to fail: copy the file, edit the copy, point the flag at it. No document and
-no source is written by this script.
+`--gate`, `--header`, `--readme`, `--library` and `--run` read a side from another file, which is
+how a shifted figure is shown to fail: copy the file, edit the copy, point the flag at it. No
+document and no source is written by this script.
 
 Exit status is 0 when every tied figure agrees, and 1 when one does not, when a constant holding a
-documented figure is declared nowhere, when a figure-bearing row is held by no tie, or when a
-construct could not be read.
+documented figure is declared nowhere, when a figure-bearing row is held by no tie, when the
+document's delivered figures are held by no recorded run, or when a construct could not be read.
 """
 
 from __future__ import annotations
@@ -99,6 +127,11 @@ GATE = REPO / "tests" / "boys_accuracy_gate.cpp"
 HEADER = REPO / "include" / "boys" / "boys.hpp"
 README = REPO / "README.md"
 LIBRARY = REPO / "src" / "boys.cpp"
+# The gate's own recorded run: what it printed, kept as a file. Its rows are the
+# side the README's printed-run table is a transcription of, and the only side
+# that carries a delivered figure. The tree does not carry one yet, and the
+# finding this check raises when the path is absent says so.
+RUN = REPO / "tests" / "data" / "boys_accuracy_gate_run.txt"
 
 # The middle dot the documents write a figure after, kept as an escape so this
 # file is ASCII: `m<dot>5.5e-14` is how both documents state a multiplied bound.
@@ -121,6 +154,22 @@ DECLARATION = re.compile(
     re.M,
 )
 NUMBER = re.compile(r"^[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?$")
+# One row of the gate's own per-lane, per-region table, as `PrintClaim` writes
+# it (`tests/boys_gate_reference.hpp`): the lane and region first, then the
+# points and the real count, then `delivered / claimed`, then the location of
+# the worst cell. The last two fields are the vacuous and no-value counts. The
+# lane and the region are read off the document's own cells rather than split
+# out of this line - both are left-justified text that may hold spaces, and the
+# pair is the identity both sides already carry.
+RUN_ROW = re.compile(
+    r"^[ \t]+(?P<lead>\S.*?)[ \t]+(?P<points>\d+)[ \t]+(?P<real>\d+)[ \t]+"
+    r"(?P<delivered>\S+)[ \t]+/[ \t]+(?P<claimed>\S+)(?=[ \t]|$)",
+    re.M,
+)
+# The run names the revision it was taken at: `accuracy gate, revision <rev>`.
+RUN_REVISION = re.compile(r"^accuracy gate, revision[ \t]+(?P<rev>\S+)[ \t]*$", re.M)
+# `-` is what `PrintClaim` writes where the claim had no measured cell at all.
+NO_FIGURE = "-"
 
 # The library's own lane rows, `std::array<LaneContractInfo, N> name = {{ ... }};`.
 LANE_ROWS = re.compile(
@@ -176,6 +225,35 @@ class Table:
     line: int
     columns: tuple[str, ...]
     rows: tuple[Row, ...]
+
+
+@dataclass(frozen=True)
+class RunRow:
+    """One row of the gate's printed table, as the gate printed it."""
+
+    line: int
+    lead: str  # the lane and region fields, as printed
+    delivered: str
+    claimed: str
+
+    @property
+    def key(self) -> tuple[float, str]:
+        """The delivered figure, as the pair a comparison is made on."""
+        return (float(self.delivered), "absolute")
+
+    @property
+    def pair(self) -> str:
+        """The row's two figures, written as the gate printed them side by side."""
+        return f"{self.delivered} / {self.claimed}"
+
+
+@dataclass(frozen=True)
+class Run:
+    """A recorded run of the accuracy gate: its revision, and its printed rows."""
+
+    source: str
+    revision: str
+    rows: tuple[RunRow, ...]
 
 
 @dataclass(frozen=True)
@@ -541,14 +619,19 @@ def figures_in(text: str) -> list[tuple[float, str, str]]:
     return found
 
 
-def cell_figures(table: Table, row: Row, index: int) -> list[Figure]:
-    """The figures one cell of one row carries, with the cell's own identity."""
+def cell_text(table: Table, row: Row, index: int) -> str:
+    """One cell of one row, or an error naming the column that is not there."""
     if index >= len(row.cells):
         raise CheckError(
             f"{table.source}:{row.line}: the row holds {len(row.cells)} cells and this check reads "
             f"column {index} of the table at {table.source}:{table.line}"
         )
-    cell = row.cells[index]
+    return row.cells[index]
+
+
+def cell_figures(table: Table, row: Row, index: int) -> list[Figure]:
+    """The figures one cell of one row carries, with the cell's own identity."""
+    cell = cell_text(table, row, index)
     where = (
         f"{table.source}:{row.line} "
         f"(`{ascii_safe(row.label)}` / `{ascii_safe(table.columns[index])}`)"
@@ -732,6 +815,73 @@ def read_lanes(
     return lanes
 
 
+def read_run(path: pathlib.Path) -> Run:
+    """The gate's own output, as the per-lane rows it printed and the revision it names.
+
+    A delivered figure is a swept maximum the gate prints, so the only record
+    of one is a run of the gate: this reads that record. The row's first
+    fields are the lane and the region, and they are left in the line as
+    printed - `printed_row` matches a document's row to a run's row by that
+    pair, which is the identity both sides carry, rather than by splitting
+    fields that hold spaces and are padded to a width this reader would have
+    to transcribe as well.
+    """
+    text = read_text(path)
+    source = display(path)
+    rows: list[RunRow] = []
+    for match in RUN_ROW.finditer(text):
+        delivered = match.group("delivered")
+        claimed = match.group("claimed")
+        if delivered != NO_FIGURE and NUMBER.fullmatch(delivered) is None:
+            continue
+        if claimed != NO_FIGURE and NUMBER.fullmatch(claimed) is None:
+            continue
+        line = text.count("\n", 0, match.start()) + 1
+        rows.append(RunRow(line, match.group("lead").strip(), delivered, claimed))
+    if not rows:
+        raise CheckError(
+            f"{source}: no per-lane row of the gate's printed table was found. A row of that table "
+            f"carries the lane, the region, the points, the real count and `delivered / claimed`, "
+            f"and this reader reads the delivered figure there; a run that states it another way "
+            f"has to be told to this check rather than read as a run with no figures"
+        )
+    revision = RUN_REVISION.search(text)
+    return Run(source, revision.group("rev") if revision is not None else "unnamed", tuple(rows))
+
+
+def printed_row(run: Run, lane: str, region: str) -> RunRow | None:
+    """The one row of the recorded run printed for this lane and region, if it printed one.
+
+    The gate prints a row's lane and region in its first two fields, in the
+    same words the README's printed-run table carries in its `Lane` and
+    `Region` cells - which is the identity `region_row` reads that table by,
+    and the identity this reads the run by. Two rows for one identity is a
+    construct this reader cannot choose between and is an error; no row at all
+    is None, which the caller reports as the run not being the record of that
+    document row.
+    """
+    # The two fields are left-justified and padded, and either may hold a space
+    # of its own, so the split is made against the document's own words rather
+    # than at a column this reader would have to transcribe as well.
+    identity = re.compile(re.escape(lane) + r"\s+" + re.escape(region))
+    hits = [row for row in run.rows if identity.fullmatch(row.lead)]
+    if len(hits) > 1:
+        found = "; ".join(f"{run.source}:{row.line} `{ascii_safe(row.lead)}`" for row in hits)
+        raise CheckError(
+            f"{run.source}: {len(hits)} printed rows are for `{ascii_safe(lane)} | "
+            f"{ascii_safe(region)}` and this check reads one: {found}"
+        )
+    if not hits:
+        return None
+    if hits[0].delivered == NO_FIGURE:
+        raise CheckError(
+            f"{run.source}:{hits[0].line}: the gate printed no delivered figure for "
+            f"`{ascii_safe(lane)} | {ascii_safe(region)}` (the field reads `{NO_FIGURE}`), and a "
+            f"cell with no figure in it is not one this check can hold another to"
+        )
+    return hits[0]
+
+
 def one(figures: list[Figure], what: str) -> Figure:
     """The one figure a cell that must carry exactly one figure carries."""
     if len(figures) != 1:
@@ -754,10 +904,16 @@ def main() -> int:
     parser.add_argument("--header", default=str(HEADER), help="the public header")
     parser.add_argument("--readme", default=str(README), help="the README")
     parser.add_argument("--library", default=str(LIBRARY), help="the lane rows' translation unit")
+    parser.add_argument(
+        "--run",
+        default=str(RUN),
+        help="the gate's recorded output: the file the printed-run table is a transcription of",
+    )
     args = parser.parse_args()
 
     gate_path, header_path = pathlib.Path(args.gate), pathlib.Path(args.header)
     readme_path, library_path = pathlib.Path(args.readme), pathlib.Path(args.library)
+    run_path = pathlib.Path(args.run)
 
     findings: list[str] = []
     lines: list[str] = []
@@ -774,6 +930,13 @@ def main() -> int:
         contract_bound = column_of(contract, "Error bound")
         run_region = column_of(run, "Region")
         run_bound = column_of(run, "Bound claimed")
+        run_delivered = column_of(run, "Worst delivered")
+
+        # The recorded run is a side a tree may not carry: it is the gate's own
+        # output, kept by whoever ran it. Its absence is reported with the
+        # findings below rather than raised here, so the ties that read the
+        # sources still run and still speak.
+        recorded = read_run(run_path) if run_path.is_file() else None
 
         lines.append("the gate's transcribed constants (the figures this check is about)")
         for tie in TIES:
@@ -811,6 +974,26 @@ def main() -> int:
                 written = ", ".join(f"{figure.text} [{figure.unit}]" for figure in figures) or "-"
                 lines.append(
                     f"  {table.source}:{row.line}  {ascii_safe(row.label):<44} {written}"
+                )
+
+        if recorded is not None:
+            lines.append(
+                f"\nthe gate's recorded run ({recorded.source}), revision "
+                f"{ascii_safe(recorded.revision)}, {len(recorded.rows)} printed rows; the row it "
+                f"printed for each row of the README's printed-run table"
+            )
+            for row in run.rows:
+                lane = cell_text(run, row, 0)
+                region = cell_text(run, row, run_region)
+                printed = printed_row(recorded, lane, region)
+                where = (
+                    f"{recorded.source}:{printed.line} {printed.pair}"
+                    if printed is not None
+                    else "no row printed for this lane and region"
+                )
+                lines.append(
+                    f"  {run.source}:{row.line}  {ascii_safe(lane)} | {ascii_safe(region):<12} "
+                    f"= {where}"
                 )
 
         # --- the comparisons -------------------------------------------------
@@ -858,6 +1041,45 @@ def main() -> int:
                         f"{tie.constant} is {stated} at {figure.where}, and the README's printed "
                         f"run states {found.text} ({found.unit}) for `{lane} | {region}` at "
                         f"{found.where}"
+                    )
+
+        # The README's printed-run table states two figures per row, and the
+        # delivered one is not a constant of the gate: it is the worst cell of
+        # a sweep, printed. The side that holds it is the gate's own recorded
+        # run, and a row is held by the lane and region its own cells carry.
+        # Every row of the table is held this way, so the column has no cell to
+        # declare uncovered and a row added to the table is held the moment it
+        # is added.
+        if recorded is None:
+            findings.append(
+                f"the README's printed-run table at {run.source}:{run.line} states the delivered "
+                f"figure of every row it carries, and no recorded run of the gate was read to hold "
+                f"them: {display(run_path)} is not in the tree and no `--run` named one. A "
+                f"delivered figure is what a run of the gate printed, no constant of the gate "
+                f"states one, and a recorded run is the only side a document's copy of it can be "
+                f"held to. Record a run there, or point `--run` at one"
+            )
+        else:
+            for row in run.rows:
+                lane = cell_text(run, row, 0)
+                region = cell_text(run, row, run_region)
+                what = f"{run.source}:{row.line} (`{ascii_safe(lane)}` / `{ascii_safe(region)}`)"
+                stated = one(cell_figures(run, row, run_delivered), what)
+                printed = printed_row(recorded, lane, region)
+                if printed is None:
+                    findings.append(
+                        f"the README's printed run states {stated.text} delivered for "
+                        f"`{ascii_safe(lane)} | {ascii_safe(region)}` at {stated.where}, and the "
+                        f"recorded run at {recorded.source} printed no row for that lane and "
+                        f"region: the run is not the record this row was transcribed from"
+                    )
+                    continue
+                if stated.key != printed.key:
+                    findings.append(
+                        f"the README's printed run states {stated.text} delivered for "
+                        f"`{ascii_safe(lane)} | {ascii_safe(region)}` at {stated.where}, and the "
+                        f"gate's recorded run at {recorded.source}:{printed.line} printed "
+                        f"{printed.pair} for that row"
                     )
 
         # An alias states the primary's figure, and is held to the primary's
@@ -1056,7 +1278,11 @@ def main() -> int:
     for line in lines:
         print(ascii_safe(line), file=out)
 
-    print(f"\nties confirmed: {len(TIES)} constants and {len(LIBRARY_TIES)} library rows", file=out)
+    print(
+        f"\nties confirmed: {len(TIES)} constants, {len(LIBRARY_TIES)} library rows and the "
+        f"{len(run.rows)} rows of the README's printed run",
+        file=out,
+    )
     for tie in TIES:
         figure = declared_gate(gate, tie.constant)
         places = [f"the README's `{tie.readme}` (as a set)"]
@@ -1083,6 +1309,18 @@ def main() -> int:
             + (f" = the header's `{tie.header}` (as a set)" if tie.header else ""),
             file=out,
         )
+    if recorded is not None:
+        for row in run.rows:
+            lane = cell_text(run, row, 0)
+            region = cell_text(run, row, run_region)
+            printed = printed_row(recorded, lane, region)
+            print(
+                f"  the README's printed run {ascii_safe(lane)} | {ascii_safe(region):<12} "
+                f"{printed.pair if printed is not None else 'no row printed':<22} = "
+                f"{recorded.source}:{printed.line if printed is not None else '-'} "
+                f"(the gate's recorded run, revision {ascii_safe(recorded.revision)})",
+                file=out,
+            )
 
     print("\nnot checked, and why", file=out)
     for untied in UNTIED:
@@ -1106,16 +1344,20 @@ def main() -> int:
             "it. Changing one of them without the other leaves the gate certifying its own "
             "transcription, and every run of it green. Make the two agree, or - where they are "
             "genuinely no longer the same fact - say so in the tie table of "
-            "tools/check_bound_transcripts.py.",
+            "tools/check_bound_transcripts.py. A delivered figure is a run's own output, held to "
+            "the gate's recorded run: where that is the figure at issue, the fix is the file "
+            "`--run` reads rather than a table in this script.",
             file=out,
         )
         return 1
 
     print(
-        f"\nverdict: clean - {len(TIES)} transcribed constants and {len(LIBRARY_TIES)} library rows "
-        f"agree with the figures README.md and include/boys/boys.hpp state, over the ties above. "
-        f"{read} figures were read from the documents' tables, {len(gate)} numeric-literal "
-        f"constants from the gate and {len(lanes)} lane rows from the library",
+        f"\nverdict: clean - {len(TIES)} transcribed constants, {len(LIBRARY_TIES)} library rows "
+        f"and the {len(run.rows)} rows of the README's printed run agree with the figures "
+        f"README.md and include/boys/boys.hpp state, over the ties above. {read} figures were read "
+        f"from the documents' tables, {len(gate)} numeric-literal constants from the gate, "
+        f"{len(lanes)} lane rows from the library, and {len(recorded.rows)} printed rows from the "
+        f"gate's recorded run at {display(run_path)} (revision {ascii_safe(recorded.revision)})",
         file=out,
     )
     return 0

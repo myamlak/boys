@@ -427,19 +427,12 @@ recorded=2026-09-24
 
 ### CI legs with no recorded row yet
 
-Each of these legs prints its own row on its next run, under the step that runs the probe. Record it with
+Each of these legs prints its own row on its next run, under the step that runs the probe, and that step tees the row into an artifact of the run. Record it with
 
     python tools/gen_build_facts.py --record <the captured block>
 
 | CI leg | Runner label |
 |---|---|
-| `option-matrix (the configuration list)` | `ubuntu-latest` |
-| `option-matrix linux-gcc fused` | `ubuntu-latest` |
-| `option-matrix linux-gcc separate` | `ubuntu-latest` |
-| `option-matrix linux-clang fused` | `ubuntu-latest` |
-| `option-matrix linux-clang separate` | `ubuntu-latest` |
-| `option-matrix windows-msvc fused` | `windows-latest` |
-| `option-matrix windows-msvc separate` | `windows-latest` |
 | `windows-msvc Release` | `windows-latest` |
 | `windows-msvc Debug` | `windows-latest` |
 | `linux-x86 gcc Release` | `ubuntu-latest` |
@@ -451,5 +444,19 @@ Each of these legs prints its own row on its next run, under the step that runs 
 | `windows-arm64 msvc Release` | `windows-11-arm` |
 | `macos arm64` | `macos-latest` |
 | `macos x64` | `macos-15-intel` |
+
+### CI legs that run no probe
+
+No run of these legs prints a row, and none of them is being waited for: the option-matrix cells build the accuracy gate and nothing else, and option-plan and the clang-tidy leg build no binary at all. A row states what one build is, and these legs do not build the probe.
+
+| CI leg | Runner label |
+|---|---|
+| `option-matrix (the configuration list)` | `ubuntu-latest` |
+| `option-matrix linux-gcc fused` | `ubuntu-latest` |
+| `option-matrix linux-gcc separate` | `ubuntu-latest` |
+| `option-matrix linux-clang fused` | `ubuntu-latest` |
+| `option-matrix linux-clang separate` | `ubuntu-latest` |
+| `option-matrix windows-msvc fused` | `windows-latest` |
+| `option-matrix windows-msvc separate` | `windows-latest` |
 | `linux-x86 clang-tidy` | `ubuntu-latest` |
 <!-- build-facts:end -->

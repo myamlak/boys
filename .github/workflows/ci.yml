@@ -120,7 +120,30 @@ concurrency:
 # The step reads no clock. clang-tidy has no probe step because it builds no
 # binary; it does tidy the probe's source, like every other source in the tree.
 #
-# Action and tool versions are pinned: checkout v7.0.1, msvc-dev-cmd v1.13.0,
+# HOW A ROW GETS INTO THE TABLE. A row is a statement about one leg's build, so
+# only a run of that leg can make one, and the job log is not a file. The step
+# therefore TEES the probe's stdout - the row is the first thing the probe
+# prints, before it compares anything - into build-facts-row.txt, and the step
+# after it uploads that file as an artifact. Eight of the nineteen legs cannot
+# print a row at all - option-plan and the clang-tidy leg build no binary and the
+# seven option-matrix cells build the accuracy gate target and no probe - and the
+# eleven that carry this step are the ones that can. A maintainer downloads those
+# artifacts and folds each row in with
+# `python tools/gen_build_facts.py --record <file>`.
+#
+# This is what breaks the bootstrap loop, and it is the only thing that can. The
+# table starts with no CI leg's row, and `tools/gen_build_facts.py --check`
+# refuses such a table rather than passing with nothing to compare - correctly,
+# because a step that goes green having compared nothing is the defect. The leg
+# that runs that check is a different leg from the ones that print rows, and it
+# fails while the table holds no row; the probe's own step PASSES while its leg
+# has no recorded row, printing the row it would record. So the run that fixes
+# the table is a run like the ones that produced these artifacts, and it does not
+# have to be green anywhere else: the artifacts are written by the probe steps,
+# and every step after them is free to fail.
+#
+# Action and tool versions are pinned: checkout v7.0.1, upload-artifact v7.0.1,
+# msvc-dev-cmd v1.13.0,
 # mpmath 1.4.1 (requirements-boys.txt — the committed bytes only reproduce
 # against it), clang-format 18.1.3 (the byte-identity gate's formatter: the
 # generator must format the header with this exact formatter and must fail
@@ -281,7 +304,21 @@ jobs:
       # ephemeral. Until a leg's row is recorded the step prints the row to
       # record and passes, so a leg added here is never red for being new.
       - name: Build facts (probe vs docs/build-facts.md)
-        run: .\build\boys-build-facts.exe --leg "windows-msvc ${{ matrix.build_type }}" --check docs/build-facts.md
+        shell: bash
+        run: |
+          set -o pipefail
+          ./build/boys-build-facts.exe --leg "windows-msvc ${{ matrix.build_type }}" --check docs/build-facts.md | tee build-facts-row.txt
+      # The row this leg just printed, as a file: the capture `--record` reads.
+      # `always()` because the row is most wanted on a run whose probe failed -
+      # a fact that moved is a row to re-record, not one to lose.
+      - name: Build facts row (the block to record)
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: build-facts-row-windows-msvc-${{ matrix.build_type }}
+          path: build-facts-row.txt
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Test (full suite + dispatch assertion)
         run: ctest --test-dir build --output-on-failure
       # ctest prints a test's output only when the test FAILS, so on a green
@@ -337,9 +374,16 @@ jobs:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
     steps:
+      # Full history, unlike every other job here: one step below holds the
+      # gate's recorded run to the revision the run names, which is an ancestor
+      # of the commit being checked out. A depth-1 checkout carries neither that
+      # commit nor its files, so the step could only report that it cannot tell
+      # - and a check that cannot tell is not one that may pass. The repository
+      # is small enough that this costs seconds.
       - uses: actions/checkout@v7.0.1
         with:
           submodules: true
+          fetch-depth: 0
       # The source-integrity gates below answer questions about the SOURCES:
       # whether the committed coefficient tables are what the generator
       # produces, whether the generated pages are what their generators render,
@@ -367,7 +411,20 @@ jobs:
       # The build's own facts against this leg's recorded row: see the note in
       # the windows-msvc job for what it gates.
       - name: Build facts (probe vs docs/build-facts.md)
-        run: ./build/boys-build-facts --leg "linux-x86 ${{ matrix.compiler }} ${{ matrix.build_type }}" --check docs/build-facts.md
+        run: |
+          set -o pipefail
+          ./build/boys-build-facts --leg "linux-x86 ${{ matrix.compiler }} ${{ matrix.build_type }}" --check docs/build-facts.md | tee build-facts-row.txt
+      # The row this leg just printed, as a file: the capture `--record` reads.
+      # `always()` because the row is most wanted on a run whose probe failed -
+      # a fact that moved is a row to re-record, not one to lose.
+      - name: Build facts row (the block to record)
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: build-facts-row-linux-x86-${{ matrix.compiler }}-${{ matrix.build_type }}
+          path: build-facts-row.txt
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Test (full suite + dispatch assertion)
         run: ctest --test-dir build --output-on-failure
       # ctest prints a test's output only when the test FAILS, so on a green
@@ -514,6 +571,18 @@ jobs:
         if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_bound_transcripts.py --check
+      # The step above holds the README's printed-run table to the gate's
+      # recorded run, and a run is a record of one revision: taken before a
+      # change to the library, it still satisfies that tie while the document
+      # states figures this tree's gate may no longer print. This step is the
+      # other half - the record against the code - and it reads the revision out
+      # of the run and asks git what has changed since, over the files the gate
+      # prints from. It cannot see a difference only a build would show, and it
+      # says so; what it can see is a record of a tree that has moved.
+      - name: Docs (the gate's recorded run, against this revision)
+        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_recorded_run.py
       # The build-defaults seam offers a consumer five choices, and until this
       # step nothing checked that the library reads them. Three of the five were
       # read by nothing at all - the packing axis, the division form and the fit
@@ -631,7 +700,20 @@ jobs:
       # here, so this leg also states that reading the build's own facts is
       # clean under them.
       - name: Build facts (probe vs docs/build-facts.md)
-        run: ./build/boys-build-facts --leg "linux-sanitizers asan+ubsan" --check docs/build-facts.md
+        run: |
+          set -o pipefail
+          ./build/boys-build-facts --leg "linux-sanitizers asan+ubsan" --check docs/build-facts.md | tee build-facts-row.txt
+      # The row this leg just printed, as a file: the capture `--record` reads.
+      # `always()` because the row is most wanted on a run whose probe failed -
+      # a fact that moved is a row to re-record, not one to lose.
+      - name: Build facts row (the block to record)
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: build-facts-row-linux-sanitizers
+          path: build-facts-row.txt
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Test (full suite + dispatch assertion, under the sanitizers)
         run: ctest --test-dir build --output-on-failure
       # ctest prints a test's output only when the test FAILS, so on a green
@@ -663,7 +745,20 @@ jobs:
       # whether the arithmetic contracts, and what the library's own report says
       # about the multiply-add it carries. See the note in the windows-msvc job.
       - name: Build facts (probe vs docs/build-facts.md)
-        run: ./build/boys-build-facts --leg "linux-arm64 gcc Release" --check docs/build-facts.md
+        run: |
+          set -o pipefail
+          ./build/boys-build-facts --leg "linux-arm64 gcc Release" --check docs/build-facts.md | tee build-facts-row.txt
+      # The row this leg just printed, as a file: the capture `--record` reads.
+      # `always()` because the row is most wanted on a run whose probe failed -
+      # a fact that moved is a row to re-record, not one to lose.
+      - name: Build facts row (the block to record)
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: build-facts-row-linux-arm64
+          path: build-facts-row.txt
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Test (full suite + dispatch assertion)
         run: ctest --test-dir build --output-on-failure
       # ctest prints a test's output only when the test FAILS, so on a green
@@ -702,7 +797,21 @@ jobs:
       # and the build would not compile if it asked - so the processor line is
       # the operating system's report. See the note in the windows-msvc job.
       - name: Build facts (probe vs docs/build-facts.md)
-        run: .\build\boys-build-facts.exe --leg "windows-arm64 msvc Release" --check docs/build-facts.md
+        shell: bash
+        run: |
+          set -o pipefail
+          ./build/boys-build-facts.exe --leg "windows-arm64 msvc Release" --check docs/build-facts.md | tee build-facts-row.txt
+      # The row this leg just printed, as a file: the capture `--record` reads.
+      # `always()` because the row is most wanted on a run whose probe failed -
+      # a fact that moved is a row to re-record, not one to lose.
+      - name: Build facts row (the block to record)
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: build-facts-row-windows-arm64
+          path: build-facts-row.txt
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Test (full suite + dispatch assertion)
         run: ctest --test-dir build --output-on-failure
       # ctest prints a test's output only when the test FAILS, so on a green
@@ -751,7 +860,20 @@ jobs:
       # whether std::fma survives as a call on a target that has the
       # instruction. See the note in the windows-msvc job.
       - name: Build facts (probe vs docs/build-facts.md)
-        run: ./build/boys-build-facts --leg "macos ${{ matrix.label }}" --check docs/build-facts.md
+        run: |
+          set -o pipefail
+          ./build/boys-build-facts --leg "macos ${{ matrix.label }}" --check docs/build-facts.md | tee build-facts-row.txt
+      # The row this leg just printed, as a file: the capture `--record` reads.
+      # `always()` because the row is most wanted on a run whose probe failed -
+      # a fact that moved is a row to re-record, not one to lose.
+      - name: Build facts row (the block to record)
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: build-facts-row-macos-${{ matrix.label }}
+          path: build-facts-row.txt
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Test (full suite + dispatch assertion)
         run: ctest --test-dir build --output-on-failure
       # ctest prints a test's output only when the test FAILS, so on a green
