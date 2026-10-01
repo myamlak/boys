@@ -49,6 +49,10 @@ enum class OrdersScheme {
     /// Horner over the monomial form of the same fit, the second certified
     /// scheme: one multiply-add per stored coefficient.
     kHorner,
+    /// One past the last scheme this enumeration names, and not a scheme: the
+    /// bound a check reads to walk the enumerators above and prove it has named
+    /// every one of them.
+    kCount,
 };
 
 /// Fills out[l * stride] with F_l(x) for l = 0..nmax, by the named scheme.

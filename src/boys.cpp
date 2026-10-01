@@ -110,6 +110,78 @@ void BoysAllOrdersAtTier(AccuracyTier tier, int nmax, double x, double* out) noe
 
 namespace {
 
+// The rung a tier names, in one place for every dispatch of this file that
+// reads a tier, and 0.0 for an enumerator no arm below names.
+//
+// It exists beside those dispatches for the reason DevicePartitionName exists
+// beside the device rows: a switch whose last arm is `default` answers an
+// enumerator it does not name with the value that arm holds, and the answer
+// here - the reference rung - is a plausible one that nothing distinguishes
+// from a true answer. A tier added to the enumeration and not named below would
+// therefore be served as the slowest arithmetic on the surface, silently. The
+// switch has no default arm and names the enumeration's sentinel, so such an
+// enumerator falls to the zero, and the check at the end of this block is what
+// turns that into a failed build.
+constexpr double TierRung(AccuracyTier tier) noexcept {
+    switch (tier)
+    {
+    case AccuracyTier::kReference:
+    case AccuracyTier::kRelaxed64:
+    case AccuracyTier::kRelaxed256:
+    case AccuracyTier::kRelaxed1024:
+    case AccuracyTier::kRelaxed4096:
+    case AccuracyTier::kRelaxed16384:
+    case AccuracyTier::kRelaxed65536:
+        // The multiplier is the library's own statement of the rung (boys.hpp),
+        // not a second copy of the numbers written here.
+        return AccuracyMultiplier(tier);
+
+    // The sentinel one past the last rung, and not a rung a caller can name. It
+    // is named rather than left to a default arm: a default would swallow the
+    // next tier as quietly as it swallows this one.
+    case AccuracyTier::kCount:
+        break;
+    }
+
+    // A tier no arm above names. No rung is zero, so a zero is not a rung a
+    // dispatch may take: it is the statement that nothing above named one.
+    return 0.0;
+}
+
+// The rung a tier names as the multiplier an entry takes as its template
+// argument: naming a tier here that TierRung does not name is the compile error
+// below rather than an entry instantiated at a rung nobody asked for.
+template <AccuracyTier kTier>
+struct Rung
+{
+    static constexpr double kValue = TierRung(kTier);
+    static_assert(kValue >= 1.0,
+                  "an enumerator of AccuracyTier names no rung: name it in TierRung (boys.cpp) "
+                  "beside the tier dispatch of this file, and read the rung it names at every "
+                  "entry that dispatches on a tier");
+};
+
+// Whether TierRung names a rung for every enumerator of AccuracyTier, read over
+// the enumeration's own count. An enumerator added to AccuracyTier and not
+// named there falls through that switch's last return, this sees the zero, and
+// the assertion below stops the build - the omission is the error, rather than
+// a default arm quietly answering the slowest arithmetic.
+constexpr bool TierRungsAreNamed() noexcept {
+    for (int i = 0; i < static_cast<int>(AccuracyTier::kCount); ++i)
+    {
+        if (TierRung(static_cast<AccuracyTier>(i)) < 1.0)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static_assert(TierRungsAreNamed(),
+              "an enumerator of AccuracyTier names no rung: name it in TierRung (boys.cpp) as "
+              "the rung it asks for, in every file that dispatches on a tier");
+
 // The single-order tier dispatch, the same shape as the batch one above: the
 // policy is the compile-time choice and the tier stays the switch. It exists
 // because the shape is a different call - an engine that reads one order at a
@@ -120,26 +192,30 @@ double SingleAtTier(AccuracyTier tier, int n, double x) noexcept {
     switch (tier)
     {
     case AccuracyTier::kReference:
-        return BoysSingle<kBoysFullAccuracyMultiplier, Policy>(n, x);
+        return BoysSingle<Rung<AccuracyTier::kReference>::kValue, Policy>(n, x);
     case AccuracyTier::kRelaxed64:
-        return BoysSingle<64.0, Policy>(n, x);
+        return BoysSingle<Rung<AccuracyTier::kRelaxed64>::kValue, Policy>(n, x);
     case AccuracyTier::kRelaxed256:
-        return BoysSingle<256.0, Policy>(n, x);
+        return BoysSingle<Rung<AccuracyTier::kRelaxed256>::kValue, Policy>(n, x);
     case AccuracyTier::kRelaxed1024:
-        return BoysSingle<1024.0, Policy>(n, x);
+        return BoysSingle<Rung<AccuracyTier::kRelaxed1024>::kValue, Policy>(n, x);
     case AccuracyTier::kRelaxed4096:
-        return BoysSingle<4096.0, Policy>(n, x);
+        return BoysSingle<Rung<AccuracyTier::kRelaxed4096>::kValue, Policy>(n, x);
     case AccuracyTier::kRelaxed16384:
-        return BoysSingle<16384.0, Policy>(n, x);
+        return BoysSingle<Rung<AccuracyTier::kRelaxed16384>::kValue, Policy>(n, x);
     case AccuracyTier::kRelaxed65536:
-        return BoysSingle<65536.0, Policy>(n, x);
+        return BoysSingle<Rung<AccuracyTier::kRelaxed65536>::kValue, Policy>(n, x);
 
-    default:
+    // The sentinel one past the last rung, and not a rung a caller can name.
+    case AccuracyTier::kCount:
         break;
     }
 
-    // A tier this build does not serve: the same fallback the batch entry takes
-    // and for the same reason.
+    // What the sentinel reaches, and the same fallback the batch entry takes for
+    // it and for the same reason: a tier this build does not serve is evaluated
+    // at the reference rung, which is never coarser than the tier named. Every
+    // enumerator of AccuracyTier is an arm above - TierRungsAreNamed is what
+    // keeps that true - so a caller's own tier never arrives here.
     return BoysSingle<kBoysFullAccuracyMultiplier, Policy>(n, x);
 }
 

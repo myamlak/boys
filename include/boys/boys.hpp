@@ -194,6 +194,10 @@ enum class AccuracyTier : int {
     kRelaxed16384,
     /// m = 65536
     kRelaxed65536,
+    /// One past the last rung this enumeration names, and not a rung: the bound a
+    /// check reads to walk the enumerators above and prove it has named every one
+    /// of them.
+    kCount,
 };
 
 /// The three evaluation regions of the kernel (contract table in the file
@@ -241,6 +245,13 @@ constexpr double AccuracyMultiplier(AccuracyTier tier) noexcept {
         return 16384.0;
     case AccuracyTier::kRelaxed65536:
         return 65536.0;
+
+    // The sentinel one past the last rung, and not a rung a caller can name. It
+    // is named rather than left to the return below: this switch has no default
+    // arm, so -Wswitch wants every enumerator of the index named, and naming it
+    // is also what keeps a new rung from arriving here unremarked.
+    case AccuracyTier::kCount:
+        break;
     }
 
     return kBoysFullAccuracyMultiplier;
@@ -1290,7 +1301,12 @@ constexpr std::size_t BoysAllNWorkspaceSize(std::size_t count) noexcept
 ///         read from, so a call naming the rational route takes the
 ///         per-argument path, whose body is the all-orders entry's own and takes
 ///         its fit from the policy; both shapes answer inside this entry's own
-///         bound
+///         bound. The partition is a property of the table a value is read from
+///         in the same way, so a call naming the uniform grid takes that same
+///         path: its body reads the grid below the join and the asymptotic form
+///         above it, while the partitioned path - which reads the shipped and
+///         narrow pieces through a recursion the grid has no walk for - is never
+///         handed the grid
 ///
 ///         The orders axis is the shape this entry's layout already has:
 ///         out[k * count + i] is F_k of one argument, so the per-argument path is

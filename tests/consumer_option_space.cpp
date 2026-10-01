@@ -381,6 +381,12 @@ void AtRung(AccuracyTier tier, Call&& call) noexcept {
     case AccuracyTier::kRelaxed65536:
         call.template operator()<boys::AccuracyMultiplier(AccuracyTier::kRelaxed65536)>();
         return;
+
+    // The sentinel one past the last rung, and not a rung a caller can name: it
+    // is the bound the enumeration's own count gives, and no arm above owes it a
+    // statement.
+    case AccuracyTier::kCount:
+        break;
     }
 
     call.template operator()<boys::AccuracyMultiplier(AccuracyTier::kReference)>();

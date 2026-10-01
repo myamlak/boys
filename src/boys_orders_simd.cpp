@@ -565,6 +565,57 @@ void NarrowOrdersBody(int nmax, double x, double* out, std::size_t stride, Degre
     }
 }
 
+/// Whether the dispatches below name a summation for an enumerator of
+/// OrdersScheme, in one place for both of them.
+///
+/// It exists beside those dispatches for the reason DevicePartitionName exists
+/// beside the device rows: a switch whose last arm is merged with `default`
+/// answers an enumerator it does not name with the body that arm holds, and the
+/// body here - the certified split-Clenshaw sum - is a plausible one that
+/// nothing distinguishes from the scheme the caller named. A fourth scheme
+/// added to the enumeration and not named below would therefore be measured as
+/// the certified scheme, silently, under its own name. Both switches have no
+/// default arm and name the enumeration's sentinel, so such an enumerator falls
+/// to the check at the end of this block, which turns it into a failed build.
+constexpr bool SchemeIsNamed(OrdersScheme scheme) noexcept {
+    switch (scheme)
+    {
+    case OrdersScheme::kSplitClenshaw:
+    case OrdersScheme::kDirectSum:
+    case OrdersScheme::kHorner:
+        return true;
+
+    // The sentinel one past the last scheme, and not a scheme a caller can
+    // name. It is named rather than left to a default arm: a default would
+    // swallow the next scheme as quietly as it swallows this one.
+    case OrdersScheme::kCount:
+        break;
+    }
+
+    return false;
+}
+
+/// Whether SchemeIsNamed names every enumerator of OrdersScheme, read over the
+/// enumeration's own count. A scheme added to the enumeration and not named
+/// there falls through that switch's last return, this sees it, and the
+/// assertion below stops the build - the omission is the error, rather than a
+/// `default` arm quietly summing the certified scheme.
+constexpr bool SchemesAllNamed() noexcept {
+    for (int i = 0; i < static_cast<int>(OrdersScheme::kCount); ++i)
+    {
+        if (!SchemeIsNamed(static_cast<OrdersScheme>(i)))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static_assert(SchemesAllNamed(),
+              "an enumerator of OrdersScheme names no summation: name it in SchemeIsNamed "
+              "(boys_orders_simd.cpp), in both dispatches of this file");
+
 template <bool kComposed>
 void OrdersByScheme(OrdersScheme scheme, int nmax, double x, double* out, std::size_t stride) {
     const StoredDegree degrees{};
@@ -573,17 +624,29 @@ void OrdersByScheme(OrdersScheme scheme, int nmax, double x, double* out, std::s
     {
     case OrdersScheme::kDirectSum:
         OrdersBody<OrdersScheme::kDirectSum, kComposed>(nmax, x, out, stride, degrees);
-        break;
+        return;
 
     case OrdersScheme::kHorner:
         OrdersBody<OrdersScheme::kHorner, kComposed>(nmax, x, out, stride, degrees);
+        return;
+
+    // Named, so that a scheme added to the enumeration is this switch's
+    // business rather than the fall-through's: the certified sum is what runs
+    // below, and it is named here as the arm that takes it.
+    case OrdersScheme::kSplitClenshaw:
         break;
 
-    case OrdersScheme::kSplitClenshaw:
-    default:
-        OrdersBody<OrdersScheme::kSplitClenshaw, kComposed>(nmax, x, out, stride, degrees);
+    // The sentinel one past the last scheme, and not a scheme a caller can name.
+    case OrdersScheme::kCount:
         break;
     }
+
+    // What a scheme this build does not serve takes, and what the sentinel
+    // reaches: the certified split-Clenshaw sum, the arithmetic boys_impl.hpp's
+    // own ClenshawSplit runs. Every enumerator of OrdersScheme is an arm above -
+    // SchemesAllNamed is what keeps that true - so a scheme a caller can name
+    // never arrives here.
+    OrdersBody<OrdersScheme::kSplitClenshaw, kComposed>(nmax, x, out, stride, degrees);
 }
 
 // --- The rational route on the orders axis ----------------------------------
@@ -1647,17 +1710,30 @@ void F32OrdersByRoute(OrdersScheme scheme, FitRoute route, int nmax, float x, fl
     {
     case OrdersScheme::kDirectSum:
         F32OrdersBody<OrdersScheme::kDirectSum, kComposed>(nmax, x, out, F32StoredDegree{});
-        break;
+        return;
 
     case OrdersScheme::kHorner:
         F32OrdersBody<OrdersScheme::kHorner, kComposed>(nmax, x, out, F32StoredDegree{});
+        return;
+
+    // Named, so that a scheme added to the enumeration is this switch's
+    // business rather than the fall-through's: the certified sum is what runs
+    // below, and it is named here as the arm that takes it.
+    case OrdersScheme::kSplitClenshaw:
         break;
 
-    case OrdersScheme::kSplitClenshaw:
-    default:
-        F32OrdersBody<OrdersScheme::kSplitClenshaw, kComposed>(nmax, x, out, F32StoredDegree{});
+    // The sentinel one past the last scheme, and not a scheme a caller can name.
+    case OrdersScheme::kCount:
         break;
     }
+
+    // What a scheme this build does not serve takes, and what the sentinel
+    // reaches: the certified split-Clenshaw sum of this lane's own width, the
+    // same fallback the double-lane dispatch above takes and for the same
+    // reason. Every enumerator of OrdersScheme is an arm above - SchemesAllNamed
+    // is what keeps that true - so a scheme a caller can name never arrives
+    // here.
+    F32OrdersBody<OrdersScheme::kSplitClenshaw, kComposed>(nmax, x, out, F32StoredDegree{});
 }
 
 } // namespace

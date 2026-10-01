@@ -1520,6 +1520,87 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
 
 // --- one option's values ----------------------------------------------------
 
+/// The rung a tier names, in one place for every dispatch of this file that
+/// reads a tier, and 0.0 for an enumerator no arm below names.
+///
+/// It exists beside those dispatches for the reason DevicePartitionName exists
+/// beside the device rows: a switch whose last arm is `default` answers an
+/// enumerator it does not name with the value that arm holds, and the answer
+/// here - the reference rung - is a plausible one that nothing distinguishes
+/// from a true answer. A tier added to the enumeration and not named below would
+/// therefore be served as the slowest arithmetic on the surface, silently, and
+/// the probe would report the cell as measured. The switch has no default arm
+/// and names the enumeration's sentinel, so such an enumerator falls to the
+/// zero, and the check at the end of this block is what turns that into a
+/// failed build.
+///
+/// \param tier the tier
+///
+/// \returns the rung it names, or 0.0 for an enumerator no arm above names
+constexpr double TierRung(AccuracyTier tier) noexcept {
+    switch (tier)
+    {
+    case AccuracyTier::kReference:
+    case AccuracyTier::kRelaxed64:
+    case AccuracyTier::kRelaxed256:
+    case AccuracyTier::kRelaxed1024:
+    case AccuracyTier::kRelaxed4096:
+    case AccuracyTier::kRelaxed16384:
+    case AccuracyTier::kRelaxed65536:
+        // The multiplier is the library's own statement of the rung (boys.hpp),
+        // not a second copy of the numbers written here.
+        return AccuracyMultiplier(tier);
+
+    // The sentinel one past the last rung, and not a rung a caller can name. It
+    // is named rather than left to a default arm: a default would swallow the
+    // next tier as quietly as it swallows this one.
+    case AccuracyTier::kCount:
+        break;
+    }
+
+    // A tier no arm above names. No rung is zero, so a zero is not a rung a
+    // dispatch may take: it is the statement that nothing above named one.
+    return 0.0;
+}
+
+/// The rung a tier names as the multiplier an entry takes as its template
+/// argument: naming a tier here that TierRung does not name is the compile error
+/// below rather than an entry instantiated at a rung nobody asked for.
+///
+/// \tparam kTier the tier
+template <AccuracyTier kTier>
+struct Rung
+{
+    static constexpr double kValue = TierRung(kTier);
+    static_assert(kValue >= 1.0,
+                  "an enumerator of AccuracyTier names no rung: name it in TierRung "
+                  "(boys_probe.cpp) beside the tier dispatches of this file, and read the rung "
+                  "it names at every entry that dispatches on a tier");
+};
+
+/// Whether TierRung names a rung for every enumerator of AccuracyTier, read over
+/// the enumeration's own count. An enumerator added to AccuracyTier and not
+/// named there falls through that switch's last return, this sees the zero, and
+/// the assertion below stops the build - the omission is the error, rather than
+/// a default arm quietly answering the slowest arithmetic.
+///
+/// \returns true when every enumerator of \c AccuracyTier is named there
+constexpr bool TierRungsAreNamed() noexcept {
+    for (int i = 0; i < static_cast<int>(AccuracyTier::kCount); ++i)
+    {
+        if (TierRung(static_cast<AccuracyTier>(i)) < 1.0)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static_assert(TierRungsAreNamed(),
+              "an enumerator of AccuracyTier names no rung: name it in TierRung (boys_probe.cpp) "
+              "as the rung it asks for, in every file that dispatches on a tier");
+
 /// One cell's own entry at one rung, as the cell's routes, schemes, partition,
 /// packing axis and division form select it.
 ///
@@ -1544,29 +1625,40 @@ void CellRung(AccuracyTier tier, int nmax, double x, double* out) noexcept {
 
     switch (tier)
     {
+    case AccuracyTier::kReference:
+        BoysAllOrders<Rung<AccuracyTier::kReference>::kValue, Policy>(nmax, x, out);
+        return;
     case AccuracyTier::kRelaxed64:
-        BoysAllOrders<64.0, Policy>(nmax, x, out);
+        BoysAllOrders<Rung<AccuracyTier::kRelaxed64>::kValue, Policy>(nmax, x, out);
         return;
     case AccuracyTier::kRelaxed256:
-        BoysAllOrders<256.0, Policy>(nmax, x, out);
+        BoysAllOrders<Rung<AccuracyTier::kRelaxed256>::kValue, Policy>(nmax, x, out);
         return;
     case AccuracyTier::kRelaxed1024:
-        BoysAllOrders<1024.0, Policy>(nmax, x, out);
+        BoysAllOrders<Rung<AccuracyTier::kRelaxed1024>::kValue, Policy>(nmax, x, out);
         return;
     case AccuracyTier::kRelaxed4096:
-        BoysAllOrders<4096.0, Policy>(nmax, x, out);
+        BoysAllOrders<Rung<AccuracyTier::kRelaxed4096>::kValue, Policy>(nmax, x, out);
         return;
     case AccuracyTier::kRelaxed16384:
-        BoysAllOrders<16384.0, Policy>(nmax, x, out);
+        BoysAllOrders<Rung<AccuracyTier::kRelaxed16384>::kValue, Policy>(nmax, x, out);
         return;
     case AccuracyTier::kRelaxed65536:
-        BoysAllOrders<65536.0, Policy>(nmax, x, out);
+        BoysAllOrders<Rung<AccuracyTier::kRelaxed65536>::kValue, Policy>(nmax, x, out);
         return;
 
-    default:
-        BoysAllOrders<kBoysFullAccuracyMultiplier, Policy>(nmax, x, out);
-        return;
+    // The sentinel one past the last rung, and not a rung a caller can name.
+    case AccuracyTier::kCount:
+        break;
     }
+
+    // What the sentinel reaches, and the same fallback these entries take for a
+    // tier this build does not serve: it is evaluated at the reference rung,
+    // which is never coarser than the tier named. Every enumerator of
+    // AccuracyTier is an arm above - TierRungsAreNamed is what keeps that true -
+    // so a tier a caller can name never arrives here, and a cell this probe
+    // reports as served is a cell its own rung evaluates.
+    BoysAllOrders<kBoysFullAccuracyMultiplier, Policy>(nmax, x, out);
 }
 
 /// One uniform-partition cell of the option space, at either route, at any rung
@@ -1807,29 +1899,40 @@ void CellRungSingle(AccuracyTier tier, int nmax, float x, float* out) noexcept {
 
     switch (tier)
     {
+    case AccuracyTier::kReference:
+        BoysAllOrdersF32<Rung<AccuracyTier::kReference>::kValue, Policy>(nmax, x, out);
+        return;
     case AccuracyTier::kRelaxed64:
-        BoysAllOrdersF32<64.0, Policy>(nmax, x, out);
+        BoysAllOrdersF32<Rung<AccuracyTier::kRelaxed64>::kValue, Policy>(nmax, x, out);
         return;
     case AccuracyTier::kRelaxed256:
-        BoysAllOrdersF32<256.0, Policy>(nmax, x, out);
+        BoysAllOrdersF32<Rung<AccuracyTier::kRelaxed256>::kValue, Policy>(nmax, x, out);
         return;
     case AccuracyTier::kRelaxed1024:
-        BoysAllOrdersF32<1024.0, Policy>(nmax, x, out);
+        BoysAllOrdersF32<Rung<AccuracyTier::kRelaxed1024>::kValue, Policy>(nmax, x, out);
         return;
     case AccuracyTier::kRelaxed4096:
-        BoysAllOrdersF32<4096.0, Policy>(nmax, x, out);
+        BoysAllOrdersF32<Rung<AccuracyTier::kRelaxed4096>::kValue, Policy>(nmax, x, out);
         return;
     case AccuracyTier::kRelaxed16384:
-        BoysAllOrdersF32<16384.0, Policy>(nmax, x, out);
+        BoysAllOrdersF32<Rung<AccuracyTier::kRelaxed16384>::kValue, Policy>(nmax, x, out);
         return;
     case AccuracyTier::kRelaxed65536:
-        BoysAllOrdersF32<65536.0, Policy>(nmax, x, out);
+        BoysAllOrdersF32<Rung<AccuracyTier::kRelaxed65536>::kValue, Policy>(nmax, x, out);
         return;
 
-    default:
-        BoysAllOrdersF32<kBoysFullAccuracyMultiplier, Policy>(nmax, x, out);
-        return;
+    // The sentinel one past the last rung, and not a rung a caller can name.
+    case AccuracyTier::kCount:
+        break;
     }
+
+    // What the sentinel reaches, and the same fallback these entries take for a
+    // tier this build does not serve: it is evaluated at the reference rung,
+    // which is never coarser than the tier named. Every enumerator of
+    // AccuracyTier is an arm above - TierRungsAreNamed is what keeps that true -
+    // so a tier a caller can name never arrives here, and a cell this probe
+    // reports as served is a cell its own rung evaluates.
+    BoysAllOrdersF32<kBoysFullAccuracyMultiplier, Policy>(nmax, x, out);
 }
 
 /// A single-precision uniform-partition cell.
@@ -1877,28 +1980,42 @@ void CellUniformSingle(BoysBudget budget,
 
             switch (tier)
             {
+            case AccuracyTier::kReference:
+                BoysAllOrdersF32<Rung<AccuracyTier::kReference>::kValue, Policy>(nmax, x, out);
+                return;
             case AccuracyTier::kRelaxed64:
-                BoysAllOrdersF32<64.0, Policy>(nmax, x, out);
+                BoysAllOrdersF32<Rung<AccuracyTier::kRelaxed64>::kValue, Policy>(nmax, x, out);
                 return;
             case AccuracyTier::kRelaxed256:
-                BoysAllOrdersF32<256.0, Policy>(nmax, x, out);
+                BoysAllOrdersF32<Rung<AccuracyTier::kRelaxed256>::kValue, Policy>(nmax, x, out);
                 return;
             case AccuracyTier::kRelaxed1024:
-                BoysAllOrdersF32<1024.0, Policy>(nmax, x, out);
+                BoysAllOrdersF32<Rung<AccuracyTier::kRelaxed1024>::kValue, Policy>(nmax, x, out);
                 return;
             case AccuracyTier::kRelaxed4096:
-                BoysAllOrdersF32<4096.0, Policy>(nmax, x, out);
+                BoysAllOrdersF32<Rung<AccuracyTier::kRelaxed4096>::kValue, Policy>(nmax, x, out);
                 return;
             case AccuracyTier::kRelaxed16384:
-                BoysAllOrdersF32<16384.0, Policy>(nmax, x, out);
+                BoysAllOrdersF32<Rung<AccuracyTier::kRelaxed16384>::kValue, Policy>(nmax, x, out);
                 return;
             case AccuracyTier::kRelaxed65536:
-                BoysAllOrdersF32<65536.0, Policy>(nmax, x, out);
+                BoysAllOrdersF32<Rung<AccuracyTier::kRelaxed65536>::kValue, Policy>(nmax, x, out);
                 return;
-            default:
-                BoysAllOrdersF32<kBoysFullAccuracyMultiplier, Policy>(nmax, x, out);
-                return;
+
+            // The sentinel one past the last rung, and not a rung a caller can
+            // name.
+            case AccuracyTier::kCount:
+                break;
             }
+
+            // What the sentinel reaches, and the same fallback these entries
+            // take for a tier this build does not serve: it is evaluated at the
+            // reference rung, which is never coarser than the tier named. Every
+            // enumerator of AccuracyTier is an arm above - TierRungsAreNamed is
+            // what keeps that true - so a tier a caller can name never arrives
+            // here, and a cell this probe reports as served is a cell its own
+            // rung evaluates.
+            BoysAllOrdersF32<kBoysFullAccuracyMultiplier, Policy>(nmax, x, out);
         };
 
         const auto with_scheme = [&]<EvalScheme kScheme>() {
