@@ -13598,6 +13598,318 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // ---- the uniform grid's carriage on the batched entries -----------------
+    // Every row of the entry book above is an accuracy reading, and the uniform
+    // partition and the narrow member hold the same bound over the same
+    // interval - so an entry that answered a policy naming the grid out of the
+    // narrow tables would print the same numbers, inside the same bound, and
+    // every row of that book would stay green. That is the substitution the
+    // partition axis exists to prevent, and no bound can see it: the two
+    // readings are the same size, and the entry that returns the wrong one
+    // returns it at the right accuracy.
+    //
+    // A difference sees it. The two partitions are different fits of the same
+    // function over the same interval, so where both read a fit their values
+    // differ by far more than the last place. A row below reads its entry twice
+    // in one pass - once under a policy naming the grid, once under a policy
+    // naming the narrow member - and counts the cells where the two readings
+    // differ. Both sides are computed on this leg by this compiler in the same
+    // pass, so a route that moves a value moves both: this cannot go red on an
+    // arithmetic difference between legs, and it goes red the day a policy
+    // naming the grid is answered from the narrow member's fits.
+    //
+    // The reference the rows are held to is the per-argument entry's own
+    // separation, region by region - the reference the scheme carriage table
+    // uses, and for the same reason. A region where the per-argument entry's
+    // two readings agree is a region where no cell can discriminate and no row
+    // is held to it: region C is what that looks like, because above the grid's
+    // top edge both partitions reach the asymptotic form, which reads no table
+    // at all.
+    //
+    // It is asked per region rather than once over the whole grid, because
+    // "differs somewhere" is not the property a substitution detector needs.
+    // The uniform decision is one branch per entry, but the body that branch
+    // hands the call to dispatches on the region again, so a body reading the
+    // grid below its join and the narrow fits above it would differ somewhere
+    // and still be a substitution over part of the line. A region where the
+    // per-argument entry separates and this row does not is a region this row
+    // answered from the other partition's fits, whatever its accuracy says.
+    //
+    // One arm per entry, and that is the axis rather than a sample of it. At the
+    // shipped route and the arguments axis the uniform policy takes the branch
+    // written for it; every other arm of the route, scheme and packing axes
+    // reaches one of the same two bodies by a branch taken for another reason.
+    // The partitioned path, which is the one body with no uniform branch in it,
+    // is reached only from the shipped arm, and the guard stands on it - a
+    // revision that sent a uniform policy there would fail to build this file
+    // rather than print a red row. So an arm added to any of those three axes is
+    // this same call with another coefficient table or another gather, over the
+    // same two bodies, and the row below already covers it.
+    std::array<std::size_t, 4> partitionRefDiffer{};
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        for (int n = 0; n <= nmax; ++n)
+        {
+            const double got =
+                boys::BoysSingle<1.0,
+                                 GranularityPolicy<boys::EvalScheme::kSplitClenshaw,
+                                                   boys::FitGranularity::kUniform>>(n, ref.x[i]);
+            const double other =
+                boys::BoysSingle<1.0,
+                                 GranularityPolicy<boys::EvalScheme::kSplitClenshaw,
+                                                   boys::FitGranularity::kNarrow>>(n, ref.x[i]);
+
+            if (std::memcmp(&got, &other, sizeof(double)) != 0)
+            {
+                ++partitionRefDiffer[static_cast<std::size_t>(SingleClaim(ref.x[i]))];
+            }
+        }
+    }
+
+    // What one entry answered with, per region, under each of the two policies.
+    struct PartitionCarriageRow {
+        const char* entry = "";
+        std::array<std::size_t, 4> cells{};
+        std::array<std::size_t, 4> differ{};
+        double worstAbs = 0.0;
+        int worstN = -1;
+        double worstX = 0.0;
+    };
+
+    std::vector<PartitionCarriageRow> partitionRows;
+
+    const auto sweepPartitionCarriage = [&](BatchEntry kind, const char* entryName) {
+        using GridReading =
+            GranularityPolicy<boys::EvalScheme::kSplitClenshaw, boys::FitGranularity::kUniform>;
+        using NarrowReading =
+            GranularityPolicy<boys::EvalScheme::kSplitClenshaw, boys::FitGranularity::kNarrow>;
+
+        PartitionCarriageRow row;
+        row.entry = entryName;
+
+        const auto record = [&row](int n, double x, double got, double other) {
+            const std::size_t region = static_cast<std::size_t>(SingleClaim(x));
+            ++row.cells[region];
+
+            if (std::memcmp(&got, &other, sizeof(double)) == 0)
+            {
+                return;
+            }
+
+            ++row.differ[region];
+
+            const double d = std::fabs(got - other);
+
+            if (d > row.worstAbs)
+            {
+                row.worstAbs = d;
+                row.worstN = n;
+                row.worstX = x;
+            }
+        };
+
+        const std::size_t grid = count * (static_cast<std::size_t>(nmax) + 1);
+
+        if (kind == BatchEntry::kPlane || kind == BatchEntry::kPlaneSorted)
+        {
+            const bool sorted = kind == BatchEntry::kPlaneSorted;
+            const std::vector<double>& args = sorted ? refSorted : ref.x;
+            std::vector<double> u(grid);
+            std::vector<double> v(grid);
+
+            if (sorted)
+            {
+                boys::BoysAllN<1.0, GridReading>(nmax, args.data(), u.data(), count,
+                                                 boys::BoysSortedArgs{});
+                boys::BoysAllN<1.0, NarrowReading>(nmax, args.data(), v.data(), count,
+                                                   boys::BoysSortedArgs{});
+            } else
+            {
+                boys::BoysAllN<1.0, GridReading>(nmax, args.data(), u.data(), count);
+                boys::BoysAllN<1.0, NarrowReading>(nmax, args.data(), v.data(), count);
+            }
+
+            for (int n = 0; n <= nmax; ++n)
+            {
+                for (std::size_t j = 0; j < count; ++j)
+                {
+                    // The sorted call lays its planes out in its own argument
+                    // order, so a position maps back through the permutation.
+                    const std::size_t i = sorted ? sortedPerm[j] : j;
+                    const std::size_t k = static_cast<std::size_t>(n) * count + j;
+
+                    record(n, ref.x[i], u[k], v[k]);
+                }
+            }
+        } else if (kind == BatchEntry::kAtOrders)
+        {
+            std::vector<int> tops(count);
+
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                tops[i] = nmax - static_cast<int>(i % static_cast<std::size_t>(nmax + 1));
+            }
+
+            std::vector<double> u(grid);
+            std::vector<double> v(grid);
+            boys::BoysAllNAtOrders<1.0, GridReading>(tops.data(), ref.x.data(), u.data(), count);
+            boys::BoysAllNAtOrders<1.0, NarrowReading>(tops.data(), ref.x.data(), v.data(), count);
+
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                for (int n = 0; n <= tops[i]; ++n)
+                {
+                    const std::size_t k = static_cast<std::size_t>(n) * count + i;
+
+                    record(n, ref.x[i], u[k], v[k]);
+                }
+            }
+        } else
+        {
+            std::vector<double> u(count);
+            std::vector<double> v(count);
+
+            for (int n = 0; n <= nmax; ++n)
+            {
+                boys::BoysFixedN<1.0, GridReading>(n, ref.x.data(), u.data(), count);
+                boys::BoysFixedN<1.0, NarrowReading>(n, ref.x.data(), v.data(), count);
+
+                for (std::size_t i = 0; i < count; ++i)
+                {
+                    record(n, ref.x[i], u[i], v[i]);
+                }
+            }
+        }
+
+        partitionRows.push_back(std::move(row));
+    };
+
+    sweepPartitionCarriage(BatchEntry::kPlane, "plane entry");
+    sweepPartitionCarriage(BatchEntry::kPlaneSorted, "plane entry, sorted");
+    sweepPartitionCarriage(BatchEntry::kAtOrders, "per-element tops");
+    sweepPartitionCarriage(BatchEntry::kFixedN, "fixed-order entry");
+
+    std::printf("\nthe uniform grid's carriage on the batched entries: each entry is read twice "
+                "in one\npass, once under a policy naming the grid and once under a policy naming "
+                "the narrow\nmember, and the cells where the two readings differ are counted per "
+                "region. The two\npartitions hold the same bound over the same interval, so an "
+                "accuracy row cannot tell\nthem apart; a difference can, and a region where the "
+                "per-argument entry's two readings\ndiffer and this entry's do not is a region "
+                "this entry answered from the other\npartition's fits.\n");
+    std::printf("  the per-argument entry's own separation, the reference these rows are held "
+                "to: A %zu, band %zu, B %zu, C %zu cell(s)\n",
+                partitionRefDiffer[0],
+                partitionRefDiffer[1],
+                partitionRefDiffer[2],
+                partitionRefDiffer[3]);
+    std::printf("  %-22s %9s %9s  %-14s %-12s %-18s %s\n",
+                "entry",
+                "cells",
+                "differ",
+                "A/band/B/C",
+                "worst |d|",
+                "worst cell",
+                "verdict");
+    std::printf("  %s\n", std::string(132, '-').c_str());
+
+    std::size_t partitionRowsMet = 0;
+    std::vector<std::string> partitionNotMet;
+
+    for (const PartitionCarriageRow& row : partitionRows)
+    {
+        std::size_t cells = 0;
+        std::size_t differ = 0;
+        std::size_t missed = 0;
+        char tokens[24];
+        std::size_t at = 0;
+
+        for (std::size_t r = 0; r < 4; ++r)
+        {
+            const char* tok = row.cells[r] == 0 ? "-" : (row.differ[r] > 0 ? "yes" : "NO");
+            at += static_cast<std::size_t>(std::snprintf(
+                tokens + at, sizeof(tokens) - at, "%s%s", r == 0 ? "" : "/", tok));
+
+            if (partitionRefDiffer[r] > 0 && row.cells[r] > 0 && row.differ[r] == 0)
+            {
+                ++missed;
+            }
+
+            cells += row.cells[r];
+            differ += row.differ[r];
+        }
+
+        char where[64];
+        std::snprintf(where, sizeof(where), "n=%d, x=%.6g", row.worstN, row.worstX);
+
+        if (missed == 0)
+        {
+            ++partitionRowsMet;
+            std::printf("  %-22s %9zu %9zu  %-14s %-12.6g %-18s %s\n",
+                        row.entry,
+                        cells,
+                        differ,
+                        tokens,
+                        row.worstAbs,
+                        where,
+                        "answers with the grid's own values");
+            continue;
+        }
+
+        partitionNotMet.push_back(std::string("carriage of the grid by the ") + row.entry);
+        char which[24];
+        std::size_t wat = 0;
+
+        // Every region is named here, region C included: unlike the scheme
+        // carriage table's rows, a row of this one is held to C as well, because
+        // the two partitions do separate over the cells of C that read a fit.
+        for (std::size_t r = 0; r < 4; ++r)
+        {
+            if (partitionRefDiffer[r] > 0 && row.cells[r] > 0 && row.differ[r] == 0)
+            {
+                wat += static_cast<std::size_t>(std::snprintf(which + wat,
+                                                              sizeof(which) - wat,
+                                                              "%s%s",
+                                                              wat == 0 ? "" : " and ",
+                                                              kRegionTag[r]));
+            }
+        }
+
+        std::printf("  %-22s %9zu %9zu  %-14s %-12.6g %-18s NOT CARRIED - region %s separates "
+                    "on the\n      per-argument entry and nowhere on this one, so this entry "
+                    "answered it\n      from the narrow member's fits\n",
+                    row.entry,
+                    cells,
+                    differ,
+                    tokens,
+                    row.worstAbs,
+                    where,
+                    which);
+    }
+
+    std::printf("  %s\n", std::string(132, '-').c_str());
+    std::printf("  PARTITION RESULT: %zu of %zu batched entr(ies) answer a policy naming the "
+                "uniform grid\n                    with a reading the narrow member does not "
+                "answer with, in every region where\nthe two readings can differ\n",
+                partitionRowsMet,
+                partitionRows.size());
+
+    if (!partitionNotMet.empty())
+    {
+        std::printf("  NOT MET at this revision:");
+
+        for (const std::string& id : partitionNotMet)
+        {
+            std::printf(" [%s]", id.c_str());
+        }
+
+        std::printf("\n  FAIL (exit status 1; the uniform grid's carriage on the batched entries "
+                    "is judged\n  with the entry book above, and a row that fails it is an entry "
+                    "answering a\n  uniform policy from the narrow member's fits - the "
+                    "substitution the partition\n  axis exists to prevent)\n");
+        return 1;
+    }
+
     // The last line, and the only one a caller that reads nothing else sees. It
     // says what was checked and what was not: a build that does not carry some
     // of the book has claims it never judged, and a PASS that read as though it
