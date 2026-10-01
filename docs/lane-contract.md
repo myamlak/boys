@@ -424,7 +424,7 @@ existed: 39 of 39 claims and 44 of 44 scheme rows at the revision of that run, w
 then read 336 certified and published of 448 with none refused — **the space has since grown a third
 partition and its own book is the current one**. What does move is the option space, which reads 36 of
 36 members supported, bounded and reachable: the piecewise partitions are two of them, each measured over 2819824 cells at both
-schemes with 1543999 of them reading differently under the other partition and none over the bar its
+schemes with 1543994 of them reading differently under the other partition and none over the bar its
 row is judged at. The block reports its own carrying fraction, 4125493 of 5710087 cells (72.2%), as
 the cells able to discriminate; the other 1584594 carry a bound at least as large as the value
 itself, so no error can exceed them, and they are not counted in the rows above.
@@ -488,11 +488,11 @@ policy names. The gate measures every pair on both entries, at the tier's first 
 and again at the fp16/bf16 budget, as thirty-six rows judged against `m · 1.5e-7`: 530442 comparison
 cells, none of them outside the row's bar and no row measured over no argument, at the fused
 multiply-add route and at the separate one alike. The tightest row is the single entry's Horner row at
-`m = 65536`, 9.82766e-03 against 9.8304e-03, which is 0.9997 of that rung's bar at order 7,
-x = 1e-12; the separate route delivers the same figure, so that is the criterion's own cut —
+`m = 65536`, 9.69544e-03 against 9.8304e-03, which is 0.9863 of that rung's bar at order 2,
+x = 2.98175; that is the criterion's own cut —
 `(m − 1) · 1.5e-7` aimed at the truncation and the remainder left to the fit's `m = 1` error — and not
-a rounding. Every other row is at or below 0.98 of its bar, and the worst of the relaxed pair is
-0.977, the single entry's split Clenshaw row over region B at `m = 64`.
+a rounding. Every other row is at or below 0.98 of its bar, and the next worst is 0.977, the single
+entry's split Clenshaw row over region A at `m = 65536`.
 
 | Route | Region | Interval | Stored | Measured | Bar |
 |---|---|---|---|---|---|
@@ -511,19 +511,19 @@ order from its own fit across the region, so it has no band boundary at which a 
 over, and the row does not name one.
 
 **Both routes are open at the narrow partition as well**, which is a second cut of the same two
-regions at degree 6: 218 pieces over region A and two over region B, with each route storing its own
-fit on that cut. The Chebyshev route stores 1526 coefficients either way over region A and 14 over
-region B, the rational route 1238 over region A and 11 over region B, and the gate's single-entry
-policy rows measure them at 1.02681e-07 and 1.29916e-07 for the Chebyshev pair and 1.00057e-07 and
-2.99288e-08 for the rational pair, over region A and region B respectively, against the lane's
-1.5e-07 bar. The narrow rows are the same figures under the two multiply-add routes with one
-exception, the rational route's region-B row, which reads 2.99288e-08 with the multiply-add fused and
-4.43557e-08 with it separate — the figure the generated header publishes for that seed is the worse of
-the two, 3.90533e-08 fused and 2.92450e-08 separate, and the gate reads the route the build actually
-runs. Region B's seed is where the narrowing costs rather than saves: 14 stored against the shipped
-seed's 11 on the Chebyshev route, and 11 against 6 on the rational one, and a call there reads 7
-coefficients where the shipped seed reads 11. All four narrow rows are inside their bar under either
-route.
+regions at degree 6: 218 pieces over region A and four over region B, with each route storing
+its own fit on that cut. The Chebyshev route stores 1526 coefficients either way over region A
+and 28 over region B, the rational route 1241 over region A and 18 over region B, and the gate's
+single-entry policy rows measure them at 1.02681e-07 and 4.51733e-08 for the Chebyshev pair and
+1.15993e-07 and 2.95023e-08 for the rational pair, over region A and region B respectively,
+against the lane's 1.5e-07 bar. Every narrow row is inside that bar on the build the gate ran,
+whose multiply-add route is the fused one. The figures the generated header publishes for
+those fits are read the same way at each route: 1.19209e-07 over region A and 5.96046e-08 over
+region B for the narrow Chebyshev pieces, both the same under either route, and 1.14376e-07
+fused against 1.10598e-07 separate over region A and 3.29858e-08 under both over region B for
+the rational ones. Region B's seed is where the narrowing costs rather than saves: 28 stored
+against the shipped seed's 11 on the Chebyshev route, and 18 against 6 on the rational one, and
+a call there reads 7 coefficients where the shipped seed reads 11.
 
 **The stored counts are upper bounds, not minima.** Each count is the first the degree scan found
 holding the target, not the family's minimum, so a cheaper cover may exist. **The two routes are a
@@ -720,15 +720,15 @@ library on another compiler is a second measurement rather than a confirmation o
 |---|---|---|---|---|
 | double, single | x < 1.0855252345349333 | 2.22e-16 | 2.22e-16 | 1e-15 |
 | double, single | 1.0855252345349333 ≤ x < 11.899848152108484 | 3.22e-15 | 3.07e-15 | 3e-14 |
-| double, single | 11.899848152108484 ≤ x < 28.98933773882074 | 9.94e-15 | 9.94e-15 | 3e-14 |
+| double, single | 11.899848152108484 ≤ x < 28.98933773882074 | 7.52e-16 | 9.94e-15 | 3e-14 |
 | double, single | x ≥ 28.98933773882074 | 5e-14 | 5e-14 | 5.5e-14 |
-| float, single | all arguments | 1.06e-07 | 1.24e-07 | 1.5e-07 |
+| float, single | all arguments | 6.36e-08 | 1.24e-07 | 1.5e-07 |
 | float, batch | all arguments | 1.08e-07 | 1.08e-07 | 1.5e-07 |
 
 **No lane is held back on the fused route.** Every scalar lane holds its published bound at both
 routes, so the alternative is offered everywhere and no lane's figure is withdrawn. The float single
-entry is the one that moves furthest, from 0.705 of its bound to 0.824 at the default multiplier: a
-rise of 0.12 of a bound that is m·1.5e-7 and nothing else, which leaves 0.176 of it in hand. That is
+entry is the one that moves furthest, from 0.424 of its bound to 0.824 at the default multiplier: a
+rise of 0.40 of a bound that is m·1.5e-7 and nothing else, which leaves 0.176 of it in hand. That is
 the tightest margin on this page and the one to watch if the float fits ever change.
 
 **Where a lane does not move, the reason differs.** Above x = 28.98933773882074 the closed form
@@ -779,9 +779,9 @@ whole of it, at the default multiplier, against the same reference the table abo
 |---|---|---|---|---|
 | double, single | x < 1.0855252345349333 | 2.22e-16 | 2.22e-16 | 1e-15 |
 | double, single | 1.0855252345349333 ≤ x < 11.899848152108484 | 3.29e-15 | 3.22e-15 | 3e-14 |
-| double, single | 11.899848152108484 ≤ x < 28.98933773882074 | 9.94e-15 | 9.94e-15 | 3e-14 |
+| double, single | 11.899848152108484 ≤ x < 28.98933773882074 | 9.94e-15 | 7.52e-16 | 3e-14 |
 | double, single | x ≥ 28.98933773882074 | 5e-14 | 5e-14 | 5.5e-14 |
-| float, single | all arguments | 1.29e-07 | 1.06e-07 | 1.5e-07 |
+| float, single | all arguments | 1.29e-07 | 6.36e-08 | 1.5e-07 |
 | float, batch | all arguments | 1.29e-07 | 1.08e-07 | 1.5e-07 |
 
 The double lane's first, third and fourth rows do not move at all: the same worst cell, to the digit,
@@ -1163,10 +1163,9 @@ On the fused build, which is the default, the packed lane's own error is 1.297e-
 route and 1.309e-07 on the rational one, both inside the bar, and the per-order lane's is the same
 number because the two lanes are one arithmetic there. The gate's float book carries a row for this
 axis at m = 1, measured against the committed mpmath reference grid at the lane's own bar: **56,694
-cells**, delivered **1.06e-07** against **1.5e-07**, a ratio of **0.705**, with the worst cell at
-`n = 0, x = 0.072854` — the same figure on both multiply-add routes. The per-order entry's row over
-the same cells delivers 1.08e-07, so the axis moves which lane evaluates and not the figure the entry
-meets.
+cells**, delivered **1.03e-07** against **1.5e-07**, a ratio of **0.685**, with the worst cell at
+`n = 0, x = 0.684828`. The per-order entry's row over the same cells delivers 1.08e-07, so the axis
+moves which lane evaluates and not the figure the entry meets.
 
 **Outside region A the axis is not what is running.** Past `x = 11.8998` the entry answers from the
 certified scalar single lane at the policy the caller named, one order at a time, which is the same
