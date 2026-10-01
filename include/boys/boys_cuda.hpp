@@ -1357,6 +1357,17 @@ public:
     /// of \c AllOrdersF32UniformHornerAtRung: every rung of \c kDeviceRungs is
     /// served, a call at one makes that rung resident and queues the same kernel,
     /// and a multiplier that is not a rung of the lane is refused.
+    ///
+    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kSuccess after the launch is queued; kInvalidArgument when
+    /// \c multiplier is not a rung of this lane, nothing launched and nothing
+    /// written; kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF32UniformRatAtRung(
         double multiplier, const int* n, const double* x, float* out, std::size_t count,
         void* stream);
@@ -1365,11 +1376,30 @@ public:
     /// not a second row over a second table: the rational member is stored in one
     /// form, so both scheme names reach one arithmetic — the same relation the
     /// lane's shipped and narrow rational pairs stand in.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns what \c AllOrdersF32UniformRat returns, and its refusals with it:
+    /// this name is that entry's and adds none of its own.
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF32UniformRatHorner(
         const int* n, const double* x, float* out, std::size_t count, void* stream);
 
     /// \c AllOrdersF32UniformRatHorner at a rung named in the call.
+    ///
+    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns what \c AllOrdersF32UniformRatAtRung returns, and its refusals
+    /// with it: this name is that entry's and adds none of its own.
     static BoysStatus AllOrdersF32UniformRatHornerAtRung(
         double multiplier, const int* n, const double* x, float* out, std::size_t count,
         void* stream);
@@ -1377,21 +1407,59 @@ public:
     /// The same four on the double lane's grid, whose rational member is the
     /// double lane's own pair per interval over that lane's intervals. The
     /// contract, the rungs and the Horner relation are the float lane's above.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64UniformRat(
         const int* n, const double* x, double* out, std::size_t count, void* stream);
 
     /// \c AllOrdersF64UniformRat at a rung named in the call.
+    ///
+    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns kSuccess after the launch is queued; kInvalidArgument when
+    /// \c multiplier is not a rung of this lane, nothing launched and nothing
+    /// written; kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF64UniformRatAtRung(
         double multiplier, const int* n, const double* x, double* out, std::size_t count,
         void* stream);
 
     /// \c AllOrdersF64UniformRat under the Horner scheme name.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns what \c AllOrdersF64UniformRat returns, and its refusals with it:
+    /// this name is that entry's and adds none of its own.
     template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64UniformRatHorner(
         const int* n, const double* x, double* out, std::size_t count, void* stream);
 
     /// \c AllOrdersF64UniformRatHorner at a rung named in the call.
+    ///
+    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    ///
+    /// \returns what \c AllOrdersF64UniformRatAtRung returns, and its refusals
+    /// with it: this name is that entry's and adds none of its own.
     static BoysStatus AllOrdersF64UniformRatHornerAtRung(
         double multiplier, const int* n, const double* x, double* out, std::size_t count,
         void* stream);

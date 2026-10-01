@@ -1269,6 +1269,16 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64UniformRat(const BoysDeviceTab
 /// A forwarder and not a second body, for the reason its float counterpart
 /// gives: the rational member is stored in one form, so both scheme names reach
 /// one arithmetic.
+///
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the top order, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive doubles
+/// \param capacity   the number of doubles \c out holds
+/// \param multiplier the accuracy multiplier, as BoysDeviceSingleF64 states
+///
+/// \returns what BoysDeviceAllOrdersF64UniformRat returns, and its refusals with
+/// it: this name is that entry's and adds none of its own.
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64UniformRatHorner(
     const BoysDeviceTables& tables,
     int order,
@@ -1707,6 +1717,16 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformRat(const BoysDeviceTab
 /// so both scheme names a caller may use reach one arithmetic - the same relation
 /// the lane's shipped and narrow rational pairs stand in. Contract, bound and
 /// refusals are BoysDeviceAllOrdersF32UniformRat's.
+///
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the top order, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive floats
+/// \param capacity   the number of floats \c out holds
+/// \param multiplier the accuracy multiplier, as BoysDeviceSingleF32 states
+///
+/// \returns what BoysDeviceAllOrdersF32UniformRat returns, and its refusals with
+/// it: this name is that entry's and adds none of its own.
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformRatHorner(
     const BoysDeviceTables& tables,
     int order,

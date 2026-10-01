@@ -376,8 +376,8 @@ struct BoysDeviceTables {
     /// [interval] the two degrees of that interval's pair and the count one row
     /// stores, which is numDeg + 1 + denDeg.
     const int* flatRatNumDeg = nullptr;
-    const int* flatRatDenDeg = nullptr;
-    const int* flatRatStored = nullptr;
+    const int* flatRatDenDeg = nullptr; ///< [interval] the denominator's degree
+    const int* flatRatStored = nullptr; ///< [interval] the count one row stores
     /// [interval + 1] the interval's first coefficient; the last entry is the
     /// pool's stored count, so a block never runs past the end of the table.
     const int* flatRatOffsets = nullptr;
@@ -390,9 +390,9 @@ struct BoysDeviceTables {
     /// The four per-interval columns of the float grid, the same layout and the
     /// same meaning as the double grid's above.
     const int* flatRatNumDeg32 = nullptr;
-    const int* flatRatDenDeg32 = nullptr;
-    const int* flatRatStored32 = nullptr;
-    const int* flatRatOffsets32 = nullptr;
+    const int* flatRatDenDeg32 = nullptr; ///< [interval] the denominator's degree, as above
+    const int* flatRatStored32 = nullptr; ///< [interval] the count one row stores, as above
+    const int* flatRatOffsets32 = nullptr; ///< [interval + 1] the first coefficient, as above
 };
 
 /// The number of addresses the handle's tail export writes: one for every symbol
