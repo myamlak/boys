@@ -54,6 +54,12 @@
 // the fit granularity took effect. What this configure reports first is therefore the axis's
 // own answer.
 
+// The name below is this fixture's identity: a guard says which block of a test is read, while
+// this says which fixture the build carries, and tests/boys_fixture_pins_test.cpp opens a block
+// on it and pins the five values below to this file's.
+
+#define BOYS_BUILD_DEFAULTS_TEST_FIXTURE_FIT_GRANULARITY 1
+
 // Moved: the partition the certified lanes are defined by, in place of the narrow
 // partition the committed file names.
 #define BOYS_BUILD_DEFAULT_FIT_GRANULARITY FitGranularity::kShipped

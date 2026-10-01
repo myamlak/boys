@@ -46,6 +46,12 @@
 // naming one (boys/boys_impl.hpp's BOYS_ORD_* blocks, src/boys_orders_simd.cpp's
 // BOYS_ORDERS_*_INSTANTIATIONS).
 
+// The name below is this fixture's identity: a guard says which block of a test is read, while
+// this says which fixture the build carries, and tests/boys_fixture_pins_test.cpp opens a block
+// on it and pins the five values below to this file's.
+
+#define BOYS_BUILD_DEFAULTS_TEST_FIXTURE_DIVISION_FORM 1
+
 // Moved: one reciprocal per divisor and one product per step, in place of the refined
 // form's quotient recovered from the product's error.
 #define BOYS_BUILD_DEFAULT_DIVISION_FORM DivisionForm::kPlainReciprocal

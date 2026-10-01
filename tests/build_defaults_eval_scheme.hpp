@@ -36,6 +36,12 @@
 // therefore reads the scheme on the cells it reaches and leaves the others where they
 // were - which is a fact about the axis and not a hole in the fixture.
 
+// The name below is this fixture's identity: a guard says which block of a test is read, while
+// this says which fixture the build carries, and tests/boys_fixture_pins_test.cpp opens a block
+// on it and pins the five values below to this file's.
+
+#define BOYS_BUILD_DEFAULTS_TEST_FIXTURE_EVAL_SCHEME 1
+
 // Moved: the same fits, summed by the even/odd split Clenshaw recurrence on the
 // Chebyshev form instead of by Horner's rule on the monomial form. Different rounding,
 // so the values move in their last places rather than by any amount a bound reads.

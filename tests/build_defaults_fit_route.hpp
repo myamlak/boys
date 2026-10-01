@@ -48,6 +48,12 @@
 // What the pin refuses is therefore a fixture that moves an axis and claims the tuned
 // fixture's five values; the route itself is an axis a build can move, and this is the
 // file that moves it alone.
+//
+// The name below is this file's identity and neither of those two: a guard says which block of a
+// test is read, while this says which fixture the build carries, and
+// tests/boys_fixture_pins_test.cpp opens a block on it and pins the five values to this file's.
+
+#define BOYS_BUILD_DEFAULTS_TEST_FIXTURE_FIT_ROUTE 1
 
 // Moved: the rational minimax fits of region A's pieces and of region B's seed, in
 // place of the Chebyshev fits every committed bound in this repository was measured at.
