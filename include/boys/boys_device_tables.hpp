@@ -100,6 +100,11 @@ enum class BoysDeviceLane : int {
     /// The three fp16 family entries: as kF32Batch, under the fp16 lane's
     /// budget.
     kF16Batch,
+
+    /// Lanes this build defines; one past the last. Named by no arm of a switch
+    /// over \c BoysDeviceLane, and owed no lane's name, so a report of the
+    /// lanes has nothing to say about it.
+    kCount,
 };
 
 /// The tables a device-callable entry reads.

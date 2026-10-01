@@ -348,7 +348,13 @@ std::string FormatBytes(std::size_t bytes) {
 
 /// The status in words, so a caller reading the text does not have to know the
 /// enumerators to see why nothing was measured.
-const char* StatusName(DeviceProbeStatus status) {
+///
+/// Every enumerator of \c DeviceProbeStatus is named below and the switch has no default
+/// arm, so a status added to the enumeration without words of its own is a compile error
+/// rather than a status reported under the sentence belonging to another. That check is
+/// what does the work here: MSVC emits no -Wswitch, and the sentence an unstated status
+/// would take is itself a plausible one a reader accepts.
+constexpr const char* StatusName(DeviceProbeStatus status) noexcept {
     switch (status)
     {
         case DeviceProbeStatus::kSuccess:
@@ -357,12 +363,36 @@ const char* StatusName(DeviceProbeStatus status) {
             return "this machine has no CUDA device";
         case DeviceProbeStatus::kDeviceNotFound:
             return "the device asked for is not one this machine has";
+        case DeviceProbeStatus::kDeviceError:
+            return "a CUDA operation failed";
         case DeviceProbeStatus::kInvalidArgument:
             return "the request named no entry this library has";
-        default:
-            return "a CUDA operation failed";
+        case DeviceProbeStatus::kCount:
+            break;
     }
+
+    // A value no arm above names, which the check below turns into a compile error.
+    return nullptr;
 }
+
+/// Whether the switch above names every enumerator of \c DeviceProbeStatus, read over
+/// the enumeration's own count. The compilation of this file is what keeps the two in
+/// step.
+constexpr bool StatusesAllNameThemselves() noexcept {
+    for (int i = 0; i < static_cast<int>(DeviceProbeStatus::kCount); ++i)
+    {
+        if (StatusName(static_cast<DeviceProbeStatus>(i)) == nullptr)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static_assert(StatusesAllNameThemselves(),
+              "an enumerator of DeviceProbeStatus names no status: name it in StatusName "
+              "(src/boys_cuda_probe.cpp)");
 
 // ---------------------------------------------------------------------------
 // The entries this build offers, as the library reports them.
@@ -537,46 +567,86 @@ bool RungIsResident(double multiplier, BoysDeviceTables& handle) {
     return false;
 }
 
-const char* QuestionName(ProbeQuestion question) {
+constexpr const char* QuestionName(ProbeQuestion question) noexcept {
     switch (question)
     {
         case ProbeQuestion::kSingle:
             return "single";
         case ProbeQuestion::kAllOrders:
             return "all-orders";
-        default:
+        case ProbeQuestion::kAllN:
             return "all-n";
+        case ProbeQuestion::kCount:
+            break;
     }
+
+    return nullptr;
 }
 
 /// The library's question, said in full: what the option produces for one
 /// argument, which is what makes two of them the same question.
-const char* QuestionAsked(ProbeQuestion question) {
+constexpr const char* QuestionAsked(ProbeQuestion question) noexcept {
     switch (question)
     {
         case ProbeQuestion::kSingle:
             return "one value per argument: F_n(x) at that argument's own order n";
         case ProbeQuestion::kAllOrders:
             return "a ladder per argument: F_0(x)..F_n(x) at that argument's own order n";
-        default:
+        case ProbeQuestion::kAllN:
             return "one common ladder for the whole batch: F_0(x)..F_nmax(x) for every argument";
+        case ProbeQuestion::kCount:
+            break;
     }
+
+    return nullptr;
 }
 
+/// Whether both namers above name every enumerator of \c DeviceOptionQuestion, read
+/// over the enumeration's own count. One predicate for the question and its full
+/// sentence, because a question named by one of them and not the other is the same
+/// defect twice.
+constexpr bool QuestionsAllNameThemselves() noexcept {
+    for (int i = 0; i < static_cast<int>(DeviceOptionQuestion::kCount); ++i)
+    {
+        const DeviceOptionQuestion question = static_cast<DeviceOptionQuestion>(i);
+
+        if (QuestionName(question) == nullptr || QuestionAsked(question) == nullptr)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static_assert(QuestionsAllNameThemselves(),
+              "an enumerator of DeviceOptionQuestion names no question: name it in both "
+              "QuestionName and QuestionAsked (src/boys_cuda_probe.cpp)");
+
 /// The precision as the report spells it.
-const char* PrecisionName(DeviceOptionPrecision precision) {
+///
+/// Every enumerator of \c DeviceOptionPrecision is named, and the switch has no default
+/// arm. The default this replaced returned the half lane's own name, so the next format
+/// added to that lane would have been reported as the one already there — and a bound is
+/// read off the precision a row prints, which makes a wrong name here a wrong bound one
+/// step later.
+constexpr const char* PrecisionName(DeviceOptionPrecision precision) noexcept {
     switch (precision)
     {
         case DeviceOptionPrecision::kFp64:
             return "fp64";
         case DeviceOptionPrecision::kFp32:
             return "fp32";
-        default:
+        case DeviceOptionPrecision::kFp16:
             return "fp16";
+        case DeviceOptionPrecision::kCount:
+            break;
     }
+
+    return nullptr;
 }
 
-const char* ShapeName(DeviceOptionShape shape) {
+constexpr const char* ShapeName(DeviceOptionShape shape) noexcept {
     switch (shape)
     {
         case DeviceOptionShape::kSingle:
@@ -585,13 +655,56 @@ const char* ShapeName(DeviceOptionShape shape) {
             return "all-orders";
         case DeviceOptionShape::kAllN:
             return "all-n";
-        default:
+        case DeviceOptionShape::kEachOrder:
             return "each-order";
+        case DeviceOptionShape::kCount:
+            break;
     }
+
+    return nullptr;
 }
 
-const char* GroupName(DeviceOptionGroup group) {
-    return group == DeviceOptionGroup::kLaunched ? "launched" : "device";
+/// Whether the two namers above name every enumerator of their own enumeration, read
+/// over each enumeration's count.
+constexpr bool PrecisionsAndShapesAllNameThemselves() noexcept {
+    for (int i = 0; i < static_cast<int>(DeviceOptionPrecision::kCount); ++i)
+    {
+        if (PrecisionName(static_cast<DeviceOptionPrecision>(i)) == nullptr)
+        {
+            return false;
+        }
+    }
+
+    for (int i = 0; i < static_cast<int>(DeviceOptionShape::kCount); ++i)
+    {
+        if (ShapeName(static_cast<DeviceOptionShape>(i)) == nullptr)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static_assert(PrecisionsAndShapesAllNameThemselves(),
+              "an enumerator of DeviceOptionPrecision or DeviceOptionShape names no member: "
+              "name it in PrecisionName or ShapeName (src/boys_cuda_probe.cpp)");
+
+/// The group as the report spells it. Written as a switch rather than the two-way test it
+/// was, which answered "device" to every group but the launched one and would have gone on
+/// answering it to a third.
+constexpr const char* GroupName(DeviceOptionGroup group) noexcept {
+    switch (group)
+    {
+        case DeviceOptionGroup::kLaunched:
+            return "launched";
+        case DeviceOptionGroup::kDeviceCallable:
+            return "device";
+        case DeviceOptionGroup::kCount:
+            break;
+    }
+
+    return nullptr;
 }
 
 /// The axis a row varies, with the member it is. A row with no axis states the one thing its entry
@@ -626,7 +739,7 @@ std::string AxisName(const DeviceOptionInfo& option) {
 /// The degree tables a row reads. The lane is what makes two rows of one precision different
 /// arithmetic - the seed amplification it carries is the lane's - so a report that names the
 /// precision and not the lane has not said which arithmetic it measured.
-const char* LaneName(BoysDeviceLane lane) {
+constexpr const char* LaneName(BoysDeviceLane lane) noexcept {
     switch (lane)
     {
         case BoysDeviceLane::kF64Single:
@@ -639,10 +752,40 @@ const char* LaneName(BoysDeviceLane lane) {
             return "f32-batch";
         case BoysDeviceLane::kF16Single:
             return "f16-single";
-        default:
+        case BoysDeviceLane::kF16Batch:
             return "f16-batch";
+        case BoysDeviceLane::kCount:
+            break;
     }
+
+    return nullptr;
 }
+
+/// Whether the two namers above name every enumerator of their own enumeration, read
+/// over each enumeration's count.
+constexpr bool GroupsAndLanesAllNameThemselves() noexcept {
+    for (int i = 0; i < static_cast<int>(DeviceOptionGroup::kCount); ++i)
+    {
+        if (GroupName(static_cast<DeviceOptionGroup>(i)) == nullptr)
+        {
+            return false;
+        }
+    }
+
+    for (int i = 0; i < static_cast<int>(BoysDeviceLane::kCount); ++i)
+    {
+        if (LaneName(static_cast<BoysDeviceLane>(i)) == nullptr)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static_assert(GroupsAndLanesAllNameThemselves(),
+              "an enumerator of DeviceOptionGroup or BoysDeviceLane names no member: name it in "
+              "GroupName or LaneName (src/boys_cuda_probe.cpp)");
 
 /// The sentence a class opens with: what a class is, and what its winner is therefore a claim
 /// about.
@@ -2124,7 +2267,7 @@ std::string BuildCaveat(const DeviceProbeDevice& device) {
 
 } // namespace
 
-const char* DeviceProbeDefaultHowName(DeviceProbeDefaultHow how) {
+constexpr const char* DeviceProbeDefaultHowName(DeviceProbeDefaultHow how) noexcept {
     switch (how)
     {
         case DeviceProbeDefaultHow::kOrdered:
@@ -2137,10 +2280,37 @@ const char* DeviceProbeDefaultHowName(DeviceProbeDefaultHow how) {
             return "vote";
         case DeviceProbeDefaultHow::kChosenAmongEquals:
             return "chosen-among-equals";
-        default:
+        case DeviceProbeDefaultHow::kNone:
             return "none";
+        case DeviceProbeDefaultHow::kCount:
+            break;
     }
+
+    // A value no arm above names, which the check below turns into a compile error.
+    return nullptr;
 }
+
+namespace {
+
+/// Whether the switch above names every enumerator of \c DeviceProbeDefaultHow, read
+/// over the enumeration's own count.
+constexpr bool DefaultHowsAllNameThemselves() noexcept {
+    for (int i = 0; i < static_cast<int>(DeviceProbeDefaultHow::kCount); ++i)
+    {
+        if (DeviceProbeDefaultHowName(static_cast<DeviceProbeDefaultHow>(i)) == nullptr)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static_assert(DefaultHowsAllNameThemselves(),
+              "an enumerator of DeviceProbeDefaultHow names no state: name it in "
+              "DeviceProbeDefaultHowName (src/boys_cuda_probe.cpp)");
+
+} // namespace
 
 DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
     DeviceProbeReport report;

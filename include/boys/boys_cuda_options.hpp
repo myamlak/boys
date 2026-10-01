@@ -187,6 +187,8 @@ enum class DeviceEntry : int {
 enum class DeviceOptionGroup : int {
     kLaunched = 0, ///< an entry of BoysCuda, queued by this library
     kDeviceCallable, ///< a function of boys_cuda_device.hpp, inlined into the caller's kernel
+
+    kCount, ///< groups this report defines; one past the last
 };
 
 /// The precision an option computes in: the choice a caller has already made
@@ -214,6 +216,8 @@ enum class DeviceOptionPrecision : int {
     kFp64 = 0, ///< the double lane
     kFp32, ///< the float lane
     kFp16, ///< the half lane: the fp16 entries this build serves, and the bfloat16 ones it owes
+
+    kCount, ///< precisions this report defines; one past the last
 };
 
 /// The output shape an option answers with: how much it produces for one
@@ -225,6 +229,8 @@ enum class DeviceOptionShape : int {
     kAllOrders, ///< F_0(x)..F_n(x) at the argument's own order, written to an array
     kAllN, ///< F_0(x)..F_nmax(x) for every argument, one common top order
     kEachOrder, ///< F_0(x)..F_n(x) at the argument's own order, delivered to a sink
+
+    kCount, ///< shapes this report defines; one past the last
 };
 
 /// The question an option answers, which is the shape with the sink/array
@@ -235,6 +241,8 @@ enum class DeviceOptionQuestion : int {
     kSingle = 0, ///< one value per argument
     kAllOrders, ///< a ladder per argument, to that argument's own order
     kAllN, ///< one common ladder for the whole batch
+
+    kCount, ///< questions this report defines; one past the last
 };
 
 /// The axis an option varies, where it varies one. Every other axis of this

@@ -244,6 +244,8 @@ enum class DeviceProbeStatus : int {
     kDeviceNotFound,   ///< the ordinal asked for is not a device this machine has
     kDeviceError,      ///< a CUDA operation failed; the CUDA runtime reports the detail
     kInvalidArgument,  ///< the request named no entry this library has; see the report
+
+    kCount, ///< statuses this report defines; one past the last
 };
 
 /// What the probe concluded for one question shape, and the two ways it can end.
@@ -303,18 +305,30 @@ enum class DeviceProbeDefaultHow : int {
     /// tell apart — named as that, with the vote and both figures printed, and
     /// not as a ranking.
     kChosenAmongEquals,
+
+    kCount, ///< states this report defines; one past the last
 };
 
 /// The name of one of those, as one token a script or a report can print beside
 /// a recommendation: "ordered", "only-entry", "refined", "vote",
 /// "chosen-among-equals" or "none".
 ///
+/// Every enumerator of \c DeviceProbeDefaultHow is named by the definition, and
+/// its switch has no default arm: a state added to the enumeration without a
+/// name is a compile error rather than a state quietly reported under the name
+/// of another. That sentence is load-bearing here and not a formality — the
+/// name an unstated state would take, \c "none", is itself a plausible answer a
+/// report prints and a reader accepts, so before the check beside the definition
+/// an omission was indistinguishable from a true answer.
+///
 /// \param how the state to name
 ///
-/// \returns the name, which is never empty
+/// \returns the name, which is never empty for an enumerator of the
+///          enumeration; \c nullptr only for a value no arm names, which the
+///          check beside the definition turns into a compile error
 ///
 /// \ingroup boys
-const char* DeviceProbeDefaultHowName(DeviceProbeDefaultHow how);
+constexpr const char* DeviceProbeDefaultHowName(DeviceProbeDefaultHow how) noexcept;
 
 /// The workload and the pass protocol the device probe runs, with the defaults
 /// a caller who wants a representative answer should leave alone.

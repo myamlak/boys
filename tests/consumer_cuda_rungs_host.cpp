@@ -757,6 +757,11 @@ const char* PrecisionName(boys::DeviceOptionPrecision precision) {
         return "fp32";
     case boys::DeviceOptionPrecision::kFp16:
         return "fp16";
+    case boys::DeviceOptionPrecision::kCount:
+        // Not a precision: one past the last, named here so that the switch stays
+        // exhaustive over the enumeration and a precision added to it without a name
+        // is a warning this build refuses rather than a row reported as fp16.
+        break;
     }
 
     return "?";
