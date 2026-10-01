@@ -51,13 +51,17 @@
 //     `.github/workflows/ci.yml` points the option at that file on the
 //     linux-x86 gcc Release leg and runs the suite there, so the loud failure is
 //     one CI reports as well as one a person can run.
-//   - two of the members the five axes offer cannot be named by a build at all,
-//     so no check of this shape can have teeth on them: PackAxis::kOrders, which
+//   - one of the members the five axes offer cannot be named by a build at all,
+//     so no check of this shape can have teeth on it: PackAxis::kOrders, which
 //     the single-order entry refuses because a call that produces one order has
 //     no second order to put in a vector lane (include/boys/boys_impl.hpp,
-//     BoysSingleImpl), and FitGranularity::kUniform, which the batched bodies
-//     have no branch for (RefuseUniformPartition in the same header). The tuned
-//     fixture leaves both at the shipped value and quotes those refusals.
+//     BoysSingleImpl). FitGranularity::kUniform was the second until this
+//     revision: the batched bodies that refused it now hand a policy naming the
+//     grid to the path that reads it, and the accuracy gate's entry book measures
+//     their six cells (tests/boys_accuracy_gate.cpp). The tuned fixture leaves the
+//     packing axis at the shipped value and quotes that refusal; no fixture in
+//     this tree names the uniform member, so what a build naming it compiles to is
+//     not measured here.
 //   - whether the bodies use the policy they are handed is not a text or a type
 //     fact: a body reading another partition's table under this policy's name is
 //     the accuracy gate's business (tests/boys_accuracy_gate.cpp), not this

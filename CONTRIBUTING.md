@@ -61,12 +61,16 @@ Optional: `-DBUILD_BENCHMARKS=ON` for the benchmark drivers, which are default O
 that names no policy resolves to, in place of the shipped ones: the fit route, the evaluation
 scheme, the packing axis, the division form and the fit granularity. They are compile-time values,
 so the build compiles them into every call that names none, and pays nothing for them at run time.
-The choice was a template argument before and is one still. **Two of the five a build cannot move**,
-and both refuse at compile time with the library's own reason rather than compiling something else:
+The choice was a template argument before and is one still. **One of the five a build cannot move**,
+and it refuses at compile time with the library's own reason rather than compiling something else:
 the packing axis, because an entry that produces one order has no second order to pack into a vector
-lane, and the uniform member of the fit granularity, which four batched bodies have no branch for.
-Setting either to what the library already runs is fine; setting either to another member is a build
-that does not compile, and that is the answer rather than a defect. The file is
+lane. The uniform member of the fit granularity was the second until this revision: the four batched
+bodies that refused it now hand a policy naming the grid to the path that reads it, and the accuracy
+gate's entry book measures the six cells they cover over the committed grid. Whether a build naming
+that member now compiles is not stated here, because it has not been measured - no fixture in this
+tree names it, and a configure that did would be the first reading of that configuration.
+Setting the packing axis to what the library already runs is fine; setting it to another member is a
+build that does not compile, and that is the answer rather than a defect. The file is
 `include/boys/boys_build_defaults.hpp`. Its own comment is the contract a replacement satisfies: the
 five names, and beside them the machine, the date and the option probe's own figures, because a
 choice made there is a measurement taken on one host and a reader has to be able to tell a tuned

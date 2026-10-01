@@ -29,11 +29,15 @@
 //
 // WHAT IT LEAVES AT THE SHIPPED VALUE, AND WHY
 //
-// Two axes are unmovable: the packing axis and the uniform member of the fit
-// granularity, each refused by the library in its own words at the place a build
-// naming it would fail. The third is movable and is held here by a pin in the
-// seam test, which is a debt this file names rather than a property of the
-// library. Each is quoted where its value is defined below.
+// One axis is unmovable: the packing axis, refused by the library in its own
+// words at the place a build naming it would fail. The uniform member of the fit
+// granularity was the second until this revision, when the batched bodies that
+// refused it began handing it to the path that reads the grid (the accuracy
+// gate's entry book measures their six cells); no fixture in this tree names it,
+// so what a build naming it compiles to is not measured. The third is movable and
+// is held here by a pin in the seam test, which is a debt this file names rather
+// than a property of the library. Each is quoted where its value is defined
+// below.
 
 #define BOYS_BUILD_DEFAULTS_TEST_FIXTURE 1
 
@@ -78,16 +82,17 @@
 #define BOYS_BUILD_DEFAULT_DIVISION_FORM DivisionForm::kPlainReciprocal
 
 // Moved: the partition the certified lanes are defined by, in place of the
-// narrow partition the shipped header names. It is not one of the two the build
-// cannot move: CONTRIBUTING.md states of the granularity that what a build
-// cannot move is "the uniform member", and the refusals agree - the uniform
-// member is the one the batched bodies have no branch for
-// (include/boys/boys_impl.hpp, RefuseUniformPartition in the batched bodies) and
-// the one the rational route's rung selector has no pair to cut for (the
-// static_assert in RationalRouteFitAtRung, the same header). kShipped is the
-// reference partition: the accuracy gate reads it (tests/boys_accuracy_gate.cpp),
-// the packed lane carries it at every rung beside the narrow one, and the
-// entries' own fallbacks name it.
+// narrow partition the shipped header names. It is not the member the build
+// cannot move: that is the packing axis, and CONTRIBUTING.md says so. The
+// granularity's uniform member was refused by the batched bodies until this
+// revision and those bodies now hand it to the path that reads the grid, so that
+// refusal is gone; what remains of the member's own refusal is the rational
+// route's rung selector, which refuses a rung of it at compile time (the
+// static_assert in RationalRouteFitAtRung, include/boys/boys_impl.hpp). No
+// fixture in this tree names the member, so a build naming it is unmeasured
+// here. kShipped is the reference partition: the accuracy gate reads it
+// (tests/boys_accuracy_gate.cpp), the packed lane carries it at every rung beside
+// the narrow one, and the entries' own fallbacks name it.
 #define BOYS_BUILD_DEFAULT_FIT_GRANULARITY FitGranularity::kShipped
 
 // The moves above are the compile-time half of the seam check, and this file's

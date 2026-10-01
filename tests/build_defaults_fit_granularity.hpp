@@ -21,14 +21,15 @@
 // tables carry. It is the value the tuned fixture names on this axis too, so a configure
 // of this file reads one of the three axes that fixture crosses.
 //
-// The member no build can name is kUniform and not this one: the batched bodies have no
-// branch for it (RefuseUniformPartition, include/boys/boys_impl.hpp) and the rational
-// route's rung selector has no pair to cut for it (the static_assert in
-// RationalRouteFitAtRung, the same header). What that refuses is one of the three values
-// this axis offers, and not the axis: kNarrow and kShipped are both reachable, and
-// CONTRIBUTING.md states the same two refusals where it says which choices a build cannot
-// move. The shipped partition is also the one the library reads back most often - the
-// accuracy gate is defined at it, the packed lane carries it at every rung beside the
+// The member this file does not name is kUniform: the batched bodies refused it until this
+// revision and now hand it to the path that reads the grid (the accuracy gate's entry
+// book measures their six cells), so what remains of that member's refusal is the rational
+// route's rung selector, which refuses a rung of it at compile time (the static_assert in
+// RationalRouteFitAtRung, include/boys/boys_impl.hpp). Nothing in this tree names it, so a
+// build naming it is unmeasured rather than refused. This axis offers three values and not
+// one: kNarrow and kShipped are both reachable, and CONTRIBUTING.md states which choice a
+// build cannot move. The shipped partition is also the one the library reads back most
+// often - the accuracy gate is defined at it, the packed lane carries it at every rung beside the
 // narrow one, and the entries' own fallbacks name it - so a build resolving it is a
 // configuration the library already exercises rather than a path this file invents.
 //
