@@ -2,10 +2,10 @@
 //
 //   c++ -std=c++20 -I include examples/00_first_call.cpp -L build -lboys -o first && ./first
 //
-// Three calls cover most of what a program does with this function: one order
-// at one argument, every order at one argument, and one order over an array of
-// arguments. Everything else in this directory is one of these three, asked
-// about more precisely.
+// Four calls cover most of what a program does with this function: one order
+// at one argument, every order at one argument, one order over an array of
+// arguments, and every order over an array of arguments. Everything else in
+// this directory is one of these four, asked about more precisely.
 //
 // The entries take a pointer and a count, which is what a kernel wants at the
 // call. Including boys/boys_span.hpp adds an overload of each for a caller
@@ -40,9 +40,21 @@ int main()
     std::printf("F_2(4)     = %.17g\n", out[1]);
     std::printf("F_2(30)    = %.17g\n", out[2]);
 
+    // Every order over an array of arguments - the batch shape an integral
+    // engine actually calls, and the one entry that groups the arguments once
+    // for the whole call rather than a ladder at a time. The result is
+    // order-major: out[k * count + i] is F_k(x[i]), one plane per order.
+    const std::array<double, 4> batch{0.0, 0.25, 4.0, 30.0};
+    constexpr int kBatchTop = 6;
+    std::array<double, batch.size() * (kBatchTop + 1)> grid{};
+    boys::BoysAllN(kBatchTop, batch, grid);
+    std::printf("F_0(30)    = %.17g\n", grid[0 * batch.size() + 3]);
+    std::printf("F_6(30)    = %.17g\n", grid[6 * batch.size() + 3]);
+
     // F is positive and falls off with x; a batch of zeros or a negative
     // value would mean the call did not do what it says.
-    const bool sane = out[0] > 0.0 && out[0] > out[1] && out[1] > out[2] && ladder[0] > ladder[6];
+    const bool sane = out[0] > 0.0 && out[0] > out[1] && out[1] > out[2] && ladder[0] > ladder[6] &&
+                      grid[0 * batch.size() + 3] > grid[6 * batch.size() + 3];
     if (!sane)
     {
         std::printf("FAIL: F is not positive and decreasing in x\n");

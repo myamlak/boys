@@ -41,9 +41,21 @@ int main()
     std::printf("F_2(4)     = %.17g\n", out[1]);
     std::printf("F_2(30)    = %.17g\n", out[2]);
 
+    // Every order over an array of arguments - the batch shape an integral
+    // engine actually calls, and the one entry that groups the arguments once
+    // for the whole call rather than a ladder at a time. The result is
+    // order-major: out[k * count + i] is F_k(x[i]), one plane per order.
+    const std::array<double, 4> batch{0.0, 0.25, 4.0, 30.0};
+    constexpr int kBatchTop = 6;
+    std::array<double, batch.size() * (kBatchTop + 1)> grid{};
+    boys::BoysAllN(kBatchTop, batch, grid);
+    std::printf("F_0(30)    = %.17g\n", grid[0 * batch.size() + 3]);
+    std::printf("F_6(30)    = %.17g\n", grid[6 * batch.size() + 3]);
+
     // F is positive and falls off with x; a batch of zeros or a negative
     // value would mean the call did not do what it says.
-    const bool sane = out[0] > 0.0 && out[0] > out[1] && out[1] > out[2] && ladder[0] > ladder[6];
+    const bool sane = out[0] > 0.0 && out[0] > out[1] && out[1] > out[2] && ladder[0] > ladder[6] &&
+                      grid[0 * batch.size() + 3] > grid[6 * batch.size() + 3];
     if (!sane)
     {
         std::printf("FAIL: F is not positive and decreasing in x\n");
@@ -75,6 +87,8 @@ F_6(3.5)   = 0.0040954447623731674
 F_2(0.25)  = 0.1675331909073505
 F_2(4)     = 0.017525782161993068
 F_2(30)    = 0.00013483513281636802
+F_0(30)    = 0.1618021593796416
+F_6(30)    = 3.6049670926598394e-08
 ```
 
 The three `OFF`s are there so this builds the library and nothing else, which needs no compiler past
@@ -86,7 +100,7 @@ On Windows with the Visual Studio generator the library lands in `build/Release/
 `ctest` runs it, along with every other program this README and the guide quote, so the transcript
 above cannot rot silently.
 
-**[docs/getting-started.md](docs/getting-started.md)** takes these three calls one at a time, then
+**[docs/getting-started.md](docs/getting-started.md)** takes these four calls one at a time, then
 the questions that follow them: how to ask for less accuracy when your calculation can afford it, how
 to name a specific evaluation, how to ask what the library guarantees before you rely on it, and how
 to find out which of the available options is fastest on your machine. Every figure in it is the

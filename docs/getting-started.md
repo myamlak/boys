@@ -33,7 +33,7 @@ is the one that finds it without flags.
 
 ## What does it look like to call this?
 
-`examples/00_first_call.cpp` — three calls cover most of what a program does with this function.
+`examples/00_first_call.cpp` — four calls cover most of what a program does with this function.
 
 ```cpp
 double ladder[boys::kMaxBoysOrder + 1] = {};
@@ -42,6 +42,10 @@ boys::BoysAllOrders(6, 3.5, ladder);          // F_0..F_6 at x = 3.5
 const double x[3] = {0.25, 4.0, 30.0};
 double out[3] = {};
 boys::BoysFixedN(2, x, out, 3);               // out[i] = F_2(x[i])
+
+const double batch[4] = {0.0, 0.25, 4.0, 30.0};
+double grid[4 * 7] = {};
+boys::BoysAllN(6, batch, grid, 4);            // grid[k * 4 + i] = F_k(x[i])
 
 boys::BoysSingle(3, 1.25);                    // F_3(1.25)
 ```
@@ -53,10 +57,12 @@ boys::BoysSingle(3, 1.25);                    // F_3(1.25)
     F_2(0.25)  = 0.1675331909073505
     F_2(4)     = 0.017525782161993068
     F_2(30)    = 0.00013483513281636802
+    F_0(30)    = 0.1618021593796416
+    F_6(30)    = 3.6049670926598394e-08
 
-All three are `noexcept` and total. The requirements on the values are `n` in `[0, 32]` and `x >= 0`,
-and both hold for anything a basis set produces. The two calls that write into an array ask one thing
-more: the buffer has to hold the values the call writes. Nothing checks it.
+All four are `noexcept` and total. The requirements on the values are `n` in `[0, 32]` and `x >= 0`,
+and both hold for anything a basis set produces. The three calls that write into an array ask one
+thing more: the buffer has to hold the values the call writes. Nothing checks it.
 
 **Next:** if you want one of these three shapes specifically, read on. If you want the whole
 catalogue at once, jump to [Which entry do I call?](#which-entry-do-i-call).
@@ -135,8 +141,44 @@ boys::BoysFixedN(n, x, column, count, stride);   // column[i * stride] = F_n(x[i
 The stride is why the entry exists: the answer can go straight into a column of a larger structure,
 with no intermediate copy. Leave it out and it defaults to 1.
 
-**Next:** all three calls so far are as accurate as the library gets. If that is more than your
-calculation needs, the next section turns that into speed.
+**Next:** every order over many arguments at once — the batch shape — which is the next section.
+
+---
+
+## I want every order over many arguments
+
+`examples/08_shell_quartet_batch.cpp` — the batch shape an integral engine calls: a whole shell
+quartet's arguments at once, every order at each of them.
+
+```cpp
+boys::BoysAllN(nmax, x, out, count);            // out[k * count + i] = F_k(x[i])
+boys::BoysAllNAtOrders(n, x, out, count);       // each argument at its own top order
+```
+
+    five arguments, each at its own top order
+      F_3(0.5) = 0.097222024416930064
+      F_6(2) = 0.014008835839082863
+      F_2(7.5) = 0.0042700136194305542
+      F_8(0.125) = 0.052602850434881922
+      F_4(20) = 8.1278555493588482e-06
+    values the per-argument call produces: 28
+    values the padded call produces:        45
+    produced for nothing:                   17
+    cells compared against the padded call:  28, worst difference 0
+    guaranteed error per value:             5.5e-14  (throughout, every region)
+    every value positive and at most one
+
+This is the entry to reach for when the arguments are the batch and the orders are the ladder: it
+groups the arguments once for the whole call rather than a ladder at a time, which the header records
+as considerably cheaper than `nmax + 1` single evaluations. The planes come out order-major, so
+nothing has to be transposed afterwards, and the arguments may arrive in any order.
+
+When the arguments do not share a top order — a quartet whose four shells differ — the padded call
+pays for cells nobody asked for, 17 of the 45 in the run above. `BoysAllNAtOrders` writes only the
+values you asked for, and it is the column the padded call is checked against.
+
+**Next:** every call so far is as accurate as the library gets. If that is more than your calculation
+needs, the next section turns that into speed.
 
 ---
 

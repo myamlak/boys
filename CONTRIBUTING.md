@@ -195,6 +195,25 @@ them asking whether the entry existed. Run it after touching the enumeration or 
 command runs as a CI step. `--options` and `--header` read the two sides from elsewhere, which is how
 a deleted member is shown to fail as a negative control.
 
+The host surface has the same exposure, and the same check:
+
+```
+python3 tools/check_host_entry_bijection.py --check
+```
+
+It reads the names the headers declare and the shapes `tools/host-shapes.json` places them in, and
+requires each side to carry exactly the other's. A declared name the table does not place is a call
+whose shape nothing states; a name the table places that no header declares is a shape described for
+a call that does not exist, which a later reader takes for a decision. The unit is the shape rather
+than the name - a run-time tier, a route-named sibling, a sorted-argument overload and a span overload
+are spellings of one shape - and what a shape offers is derived from its tuple rather than written in
+the table, so a one-order shape has a packing axis of one value by construction rather than by a
+refusal in the file. Names are read from the headers rather than from a second list, so the check
+cannot agree with itself while disagreeing with the code. Run it after touching a declaration in
+`include/boys/` or the shape table. The same command runs as a CI step. `--header` and `--table` read
+the two sides from elsewhere, which is how a deleted declaration is shown to fail as a negative
+control.
+
 CI runs the full platform matrix listed in the README on every push to `main` and every pull request.
 A pull request that breaks any leg fails. A maintainer run of the native toolchain gate is expected
 before merge.
