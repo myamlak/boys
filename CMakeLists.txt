@@ -445,6 +445,7 @@ if (BOYS_BUILD_TESTS)
         tests/f16_test.cpp
         tests/boys_half_native_test.cpp
         tests/boys_backend_test.cpp
+        tests/boys_fixture_pins_test.cpp
         tests/boys_probe_test.cpp
         tests/boys_build_defaults_test.cpp
         tests/boys_transform_test.cpp)
@@ -1113,6 +1114,36 @@ int main() {
         foreach (example IN LISTS boysExamples)
             add_test(NAME boys-example-${example} COMMAND boys-example-${example})
         endforeach()
+
+        # The documents quote what these programs print, and the loop above runs them and compares
+        # nothing: a change that moves a printed digit used to leave README.md and
+        # docs/getting-started.md quoting the old one with every leg green. This test is the
+        # reading step - it runs each program and compares what it printed against the block the
+        # documents quote, and it fails both on a block that no longer matches and on a block it
+        # cannot associate with a program, which is how a check like this goes quiet.
+        #
+        # The programs come from the targets this build just made, through a generator expression,
+        # rather than from a path spelled here - so the test reads this configuration's binaries on
+        # whatever generator and platform is running it.
+        #
+        # Scoped to a build whose defaults are the shipped ones. The quoted figures are what the
+        # evaluation an unnamed call resolves to prints, so a build that replaced that resolution
+        # through BOYS_BUILD_DEFAULTS prints other digits by construction - the tuned fixture moves
+        # F_3(1.25) from the quoted 0.055476132923077535 to 0.055476132923077695 - and the claim is
+        # not one that tree makes. Registering it there would be a leg that is red for being the
+        # configuration it declares itself to be.
+        find_package(Python3 COMPONENTS Interpreter QUIET)
+        if (Python3_FOUND AND NOT BOYS_BUILD_DEFAULTS)
+            list(GET boysExamples 0 boysFirstExample)
+            add_test(NAME boys-example-transcripts
+                COMMAND ${Python3_EXECUTABLE}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tools/check_example_transcripts.py" --check
+                    --root "${CMAKE_CURRENT_SOURCE_DIR}"
+                    --examples-dir "$<TARGET_FILE_DIR:boys-example-${boysFirstExample}>")
+        elseif (NOT Python3_FOUND)
+            message(STATUS "boys: the example-transcript check is not registered with ctest - "
+                "no Python3 interpreter was found, and a check that is not run is not a check")
+        endif()
     endif()
 
     # The option probe's driver: measures this build's evaluation options on
