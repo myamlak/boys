@@ -2909,6 +2909,14 @@ double SingleOrder(int n, double x) noexcept {
 // are answered by the narrow fits, so the call returns certified numbers from a
 // partition the caller never named and reports nothing. The all-n entry did exactly
 // that; this refuses the combination where it is named.
+//
+// Every batched entry now routes the partition to those two bodies instead of
+// asking this guard's question: the plane entry and its sorted overload on the
+// arguments axis, and the fixed-order entry, all hand a uniform policy to the
+// per-argument path, which reads the grid. What is left under the guard is the
+// partitioned path, which no policy naming the grid reaches - so the assertion
+// below is a contract on the path rather than a cell an entry refuses, and a
+// revision that routed the partition back into it would be refused here by name.
 template <EvalPolicyLike Policy>
 constexpr void RefuseUniformPartition() noexcept
 {
@@ -3217,7 +3225,8 @@ void BoysFixedNImpl(
     assert(out != nullptr);
     assert(stride >= 1);
 
-    if constexpr (Policy::kRoute != FitRoute::kChebyshev)
+    if constexpr (Policy::kRoute != FitRoute::kChebyshev ||
+                  Policy::kGranularity == FitGranularity::kUniform)
     {
         // The fixed-order entry carries the route too, and by the entry that
         // takes its fit from the policy: one order at every argument of an
@@ -3227,6 +3236,21 @@ void BoysFixedNImpl(
         // documentation already claims exact by construction rather than by
         // inspection. The shaped body below is the bit-identity pin's, and the
         // shipped route keeps it.
+        //
+        // The uniform partition takes this path for the reason the route does.
+        // The two Chebyshev branches below reach their values through
+        // PolicyRegionAValue and PolicyRegionBSeed, and those resolve the
+        // partition to ChebyshevFit, whose else branch is the NARROW member - so
+        // a uniform policy sent down either of them would be answered from
+        // another partition's fits under the grid's name. BoysSingleImpl carries
+        // the partition's own branch instead: the grid's table below its join,
+        // read at every multiplier, and the region tests above it.
+        //
+        // What this costs the caller is the shaped body's own arithmetic: this
+        // path is one order at one argument per call, so it does not run the
+        // region dispatch the block below is. A caller naming the grid has
+        // already chosen a partition whose every order is its own fit, so the
+        // recurrence the shaped body is built around is not one of its costs.
         for (std::size_t i = 0; i < count; ++i)
         {
             assert(x[i] >= 0.0);
@@ -3246,8 +3270,14 @@ void BoysFixedNImpl(
         // and PolicyRegionBSeed, which resolve the partition to ChebyshevFit, and
         // that family's else branch reads the NARROW tables - so a uniform policy
         // here would be answered from another partition's fits under the uniform
-        // name. The route branch above needs no guard: it hands each argument to
+        // name. The branch above needs no guard: it hands each argument to
         // BoysSingleImpl, which reads the grid.
+        //
+        // The assertion stands as this branch's own contract rather than as a
+        // cell this entry refuses: the branch above takes the uniform partition
+        // too, so no policy naming the grid reaches here. It stays because this
+        // body genuinely cannot answer the grid - the two reads above are the
+        // recursion's, and the grid has no next order to build from this one.
         RefuseUniformPartition<Policy>();
 
         for (std::size_t i = 0; i < count; ++i)
@@ -3312,7 +3342,9 @@ void BoysFixedNImpl(
         // As in the m = 1 branch above: this path reaches its values through
         // PolicyRegionAValueAtRung and PolicyRegionBSeedAtRung, whose partition
         // resolution is the same ChebyshevFit family, so a uniform policy would
-        // be answered from the narrow tables.
+        // be answered from the narrow tables. The uniform partition does not
+        // reach it for the reason the branch above states, and the assertion is
+        // this branch's contract in the same way.
         RefuseUniformPartition<Policy>();
 
         for (std::size_t i = 0; i < count; ++i)
@@ -4725,8 +4757,12 @@ void BoysAllNSortedPartitionedImpl(int nmax,
 //                       so an argument's whole order vector is already what the entry
 //                       writes - and a route other than the shipped one is carried by
 //                       the all-orders entry's body, which takes its fit from the
-//                       policy. Both are the per-argument path, and neither has
-//                       anything for the region grouping to group.
+//                       policy. The uniform partition is here too: the grid is read one
+//                       order at a time from its own interval's coefficients, so there
+//                       is no region walk for the grouping to sort by, and the body it
+//                       reaches carries the partition's own branch. All three are the
+//                       per-argument path, and none of them has anything for the region
+//                       grouping to group.
 //
 // Every value either shape returns is inside the bound the entry documents: the
 // partitioned shape's region-A lane answers at the per-order region-A bar, and the
@@ -4759,13 +4795,27 @@ void BoysAllNImpl(int nmax,
         static_cast<void>(workspace);
         BoysAllNRunPerArgument<kAccuracyMultiplier, Policy>(nmax, x, out, count);
     }
+    else if constexpr (Policy::kGranularity == FitGranularity::kUniform)
+    {
+        // The grid is served by the path above's body, not by the partitioned one.
+        // This entry groups arguments by the region walk each of them takes, and
+        // the grid has no walk to group: an order is read from its own interval's
+        // coefficients and nothing is built from another order, so there is no
+        // seed to share across a run and no rung to cut. The body it reaches
+        // carries the partition's own branch - the grid's table below its join,
+        // the asymptotic form above it - which is what makes the cells this
+        // branch serves the grid's numbers rather than another partition's.
+        static_cast<void>(workspace);
+        BoysAllNRunPerArgument<kAccuracyMultiplier, Policy>(nmax, x, out, count);
+    }
     else
     {
         // The guard belongs here and not at the top of the function. This path
         // reads the shipped and narrow tables directly and has no uniform branch,
         // so a uniform policy would be answered from another partition's fits -
-        // the substitution this refuses. The path above needs no guard: it hands
-        // every argument to BoysAllOrdersImpl, which reads the grid.
+        // the substitution this refuses. Neither path above needs a guard: both
+        // hand every argument to BoysAllOrdersImpl, which reads the grid where the
+        // policy names it.
         RefuseUniformPartition<Policy>();
         BoysAllNPartitionedImpl<kAccuracyMultiplier, Policy>(nmax, x, out, count, workspace);
     }
@@ -4882,10 +4932,18 @@ void BoysAllNSortedImpl(int nmax,
     {
         BoysAllNRunPerArgument<kAccuracyMultiplier, Policy>(nmax, x, out, count);
     }
+    else if constexpr (Policy::kGranularity == FitGranularity::kUniform)
+    {
+        // As in BoysAllNImpl, and for the same reason: the grid has no walk for
+        // this entry's grouping to sort by, and the body the path above reaches -
+        // BoysAllOrdersImpl - carries the partition's own branch, so the grid is
+        // read where the policy names it.
+        BoysAllNRunPerArgument<kAccuracyMultiplier, Policy>(nmax, x, out, count);
+    }
     else
     {
         // As in BoysAllNImpl: the guard covers the path that reads the shipped and
-        // narrow tables with no uniform branch, and not the one that delegates.
+        // narrow tables with no uniform branch, and not the two that delegate.
         RefuseUniformPartition<Policy>();
         BoysAllNSortedPartitionedImpl<kAccuracyMultiplier, Policy>(nmax, x, out, count);
     }

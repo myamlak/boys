@@ -6978,7 +6978,11 @@ int main(int argc, char** argv) {
     //                   the entry's body has no branch for the grid on that path
     //                   and refuses the policy where it is named. The row prints
     //                   the library's own assertion, so a refusal is a named
-    //                   reason on the row and not an absence.
+    //                   reason on the row and not an absence. No combination of
+    //                   this book is in this state at this revision: the three
+    //                   entries that refused the grid - the plane entry, its
+    //                   sorted overload and the fixed-order entry - serve it now,
+    //                   and their six cells are measurements below.
     //   not applicable to the entry's shape
     //                   the call shape cannot form the axis at all. No branch and
     //                   no revision of that entry changes it, which is what
@@ -6987,21 +6991,22 @@ int main(int argc, char** argv) {
     // The refused state is the one this book cannot measure by calling: the call
     // it would make does not build, and not building is the property. It is
     // measured the way every other refusal in this file is - by compiling the
-    // call in a configure probe - and every refused cell has a probe of its own,
-    // named for the cell, entry and scheme together (CMakeLists.txt, the
-    // BOYS_GATE_*_ACCEPTS_UNIFORM tests). A row prints the refusal only where its
-    // own probe found the call does not build; where a probe compiled one, the
-    // row says so on its own line and the run fails rather than printing a
-    // refusal that is no longer true. What keeps a refusal from being merely the
-    // entry's is the rows beside it: the same route, scheme, axis and partition
-    // measured through an entry that does serve them, which is what says the
-    // refusal belongs to the entry's body and not to the combination's tables.
+    // call in a configure probe - and every refused cell would have a probe of
+    // its own, named for the cell, entry and scheme together. The six probes that
+    // stood here came out with the refusals they measured, because these rows
+    // call the entries: a revision that put one of those guards back would fail
+    // to build this gate, which is a louder reading than a probe's. What keeps a
+    // refusal from being merely the entry's is the rows beside it: the same
+    // route, scheme, axis and partition measured through an entry that does serve
+    // them, which is what said the refusal belonged to the entry's body and not
+    // to the combination's tables - and the rows beside it are what says the six
+    // cells are served now.
     //
     // The partition and the rung are not axes of this book: it is the uniform
-    // member of the partition axis that the batched bodies do not read, and the
-    // grid stores one degree for every order and every interval and reads no
-    // multiplier, so every rung of it is the route's own arithmetic rather than a
-    // cut of it (src/boys.cpp, the uniform row's rungs field) - the other two
+    // member of the partition axis that the batched entries are crossed against,
+    // and the grid stores one degree for every order and every interval and reads
+    // no multiplier, so every rung of it is the route's own arithmetic rather than
+    // a cut of it (src/boys.cpp, the uniform row's rungs field) - the other two
     // partitions are swept at every rung by the two books above.
     enum class BatchEntry : std::uint8_t {
         kPlane,       // BoysAllN: every order over an array of arguments
@@ -7050,28 +7055,17 @@ int main(int argc, char** argv) {
         BatchEntry kind = BatchEntry::kPlane;
         EntryState state = EntryState::kShapeLimit;
         const char* reason = "";
-        // Whether this refused row's own probe compiled the call. The row is
-        // still owed - what is owed is a measurement of the cell, and a guard
-        // that is gone does not write one - and it is the fact the printing
-        // below states on the row and fails on.
-        bool lifted = false;
         double bound = 0.0;
         int slot = -1;
     };
 
-    // The two assertions the refused and shape-limit rows print, quoted from the
-    // library. They are the library's sentences and not this book's, so a reader
-    // of a refused row reads the reason the library states where the call is
-    // named rather than one written here beside it.
-    constexpr const char* kEntryUniformGuard =
-        "this body has no uniform branch: it reaches its values through a recursion "
-        "over the orders, and the uniform table is fitted per order with no "
-        "recurrence to enter. A policy naming that partition here would be answered "
-        "by another partition's fits under the uniform name. Either give this body "
-        "a branch that reads the uniform table, or refuse the partition here - do "
-        "not leave it to the policy's contract members"
-        " (boys_impl.hpp, RefuseUniformPartition, the assertion at :2915)";
-
+    // The assertion a shape-limit row prints, quoted from the library. It is the
+    // library's sentence and not this book's, so a reader of such a row reads the
+    // reason the library states where the call is named rather than one written
+    // here beside it. The uniform guard's own sentence stood here beside this one
+    // until the six cells it named were served; no row of this book reaches it
+    // now, and the guard itself stays in the library as the contract of the
+    // bodies that cannot answer the grid.
     constexpr const char* kEntryOrdersShapeLimit =
         "the orders axis cannot be formed on this entry: a packed lane keeps four "
         "orders of one argument in a register, and this call produces exactly one "
@@ -7080,82 +7074,13 @@ int main(int argc, char** argv) {
         "arguments axis"
         " (boys_impl.hpp, BoysFixedNImpl, the assertion at :3209)";
 
-    // What a refused row prints where its probe COMPILED the call: the guard the
-    // row books is not in this revision, so the refusal is not either. It is
-    // stated as what the probe found rather than as a claim about the header,
-    // which is the rule the refusal above is held to as well.
-    constexpr const char* kEntryUniformLifted =
-        "the configure probe compiles this call at this revision: the entry's path does "
-        "not refuse the uniform partition here, so the combination is one the entry "
-        "serves and this book has no row that measures it"
-        " (CMakeLists.txt, the BOYS_GATE_*_ACCEPTS_UNIFORM test that names this call)";
-
-    // The six probes' verdicts, one per refused cell of this book and each named
-    // for the cell it measures. True is the probe's refusal, which is the reading
-    // the row prints; false is a guard this revision does not have, and a row
-    // that books one says so on its own line and fails this run. The probes are
-    // in CMakeLists.txt, one per cell because a row prints one cell's verdict:
-    // the guard covers both schemes of an entry, but a probe naming one of them
-    // could report one row refused while the row beside it had been compiled.
-    constexpr bool kRefusedPlaneSplitClenshaw =
-#ifdef BOYS_GATE_PLANE_SPLITCLENSHAW_REFUSES_UNIFORM
-        true;
-#else
-        false;
-#endif
-    constexpr bool kRefusedPlaneHorner =
-#ifdef BOYS_GATE_PLANE_HORNER_REFUSES_UNIFORM
-        true;
-#else
-        false;
-#endif
-    constexpr bool kRefusedPlaneSortedSplitClenshaw =
-#ifdef BOYS_GATE_PLANE_SORTED_SPLITCLENSHAW_REFUSES_UNIFORM
-        true;
-#else
-        false;
-#endif
-    constexpr bool kRefusedPlaneSortedHorner =
-#ifdef BOYS_GATE_PLANE_SORTED_HORNER_REFUSES_UNIFORM
-        true;
-#else
-        false;
-#endif
-    constexpr bool kRefusedFixedNSplitClenshaw =
-#ifdef BOYS_GATE_FIXEDN_SPLITCLENSHAW_REFUSES_UNIFORM
-        true;
-#else
-        false;
-#endif
-    constexpr bool kRefusedFixedNHorner =
-#ifdef BOYS_GATE_FIXEDN_HORNER_REFUSES_UNIFORM
-        true;
-#else
-        false;
-#endif
-
-    // The verdict for the cell one refused row is, read off the six probes.
-    // Every refused cell is a call named by one probe and by no other, so a row
-    // reads the probe for its own cell and nothing else.
-    constexpr auto uniformRefusalProbed = [](BatchEntry kind, boys::EvalScheme scheme) {
-        const bool first = scheme == boys::EvalScheme::kSplitClenshaw;
-
-        switch (kind)
-        {
-        case BatchEntry::kPlane:
-            return first ? kRefusedPlaneSplitClenshaw : kRefusedPlaneHorner;
-        case BatchEntry::kPlaneSorted:
-            return first ? kRefusedPlaneSortedSplitClenshaw : kRefusedPlaneSortedHorner;
-        case BatchEntry::kFixedN:
-            return first ? kRefusedFixedNSplitClenshaw : kRefusedFixedNHorner;
-        case BatchEntry::kAtOrders:
-            break;
-        }
-
-        // The per-element-tops entry carries no guard and no probe: every cell
-        // of it is measured, so no row reads this arm.
-        return false;
-    };
+    // What a refused row prints here is the library's own assertion and nothing
+    // else. The book carried six configure probes until the cells they named were
+    // served, each probe compiling one cell's call to say whether the guard was
+    // still there; the probes came out with the refusals they measured, because a
+    // row that measures a cell calls it, so a revision that put one of those
+    // guards back would fail to build this file rather than print a refusal no
+    // probe stands behind any more.
 
     // One combination at one policy. The refused and shape-limit states are
     // decided by `if constexpr` on the entry's own branch condition - the same two
@@ -7176,67 +7101,58 @@ int main(int argc, char** argv) {
             {
             case BatchEntry::kPlane:
             case BatchEntry::kPlaneSorted:
-                // The partitioned path is the arguments axis of the shipped
-                // route, and that path is the one with no uniform branch: its
-                // body reads the shipped and narrow tables through ChebyshevFit
-                // and would answer a uniform policy from the narrow fits. Every
-                // other combination of this entry delegates to BoysAllOrdersImpl,
-                // which reads the grid, and is served - which is why the refusal
-                // is the entry's and not the partition's.
-                if constexpr (kRoute == boys::FitRoute::kChebyshev &&
-                              kAxis == boys::PackAxis::kArguments)
+                // Every combination of this entry is served at this revision, the
+                // uniform partition among them, so the row is a measurement. The
+                // partitioned path is the shipped route's arguments axis and
+                // carries no uniform branch - its region bodies reach
+                // ChebyshevFit<scheme, kUniform>, whose else branch is the NARROW
+                // member - so the entry hands a uniform policy to its per-argument
+                // path instead, the path the orders axis and every route other
+                // than the shipped one already take. That path hands every
+                // argument to BoysAllOrdersImpl, whose uniform branch reads the
+                // grid's own table below the join and the asymptotic form above
+                // it, at every multiplier.
+            {
+                open();
+
+                const bool sorted = kind == BatchEntry::kPlaneSorted;
+                const std::vector<double>& args = sorted ? refSorted : ref.x;
+                std::vector<double> planes(count * (static_cast<std::size_t>(nmax) + 1));
+
+                if (sorted)
                 {
-                    // The cell this row is, read off the probe that names it and
-                    // not off this file's memory of the guard. A revision that
-                    // compiled that call prints the row's own line and fails the
-                    // run below rather than leaving the refusal standing.
-                    row.lifted = !uniformRefusalProbed(kind, kScheme);
-                    row.state = EntryState::kRefused;
-                    row.reason = row.lifted ? kEntryUniformLifted : kEntryUniformGuard;
+                    boys::BoysAllN<1.0, Policy>(nmax, args.data(), planes.data(), count,
+                                                boys::BoysSortedArgs{});
                 }
                 else
                 {
-                    open();
-
-                    const bool sorted = kind == BatchEntry::kPlaneSorted;
-                    const std::vector<double>& args = sorted ? refSorted : ref.x;
-                    std::vector<double> planes(count * (static_cast<std::size_t>(nmax) + 1));
-
-                    if (sorted)
-                    {
-                        boys::BoysAllN<1.0, Policy>(nmax, args.data(), planes.data(), count,
-                                                    boys::BoysSortedArgs{});
-                    }
-                    else
-                    {
-                        boys::BoysAllN<1.0, Policy>(nmax, args.data(), planes.data(), count);
-                    }
-
-                    for (int n = 0; n <= nmax; ++n)
-                    {
-                        for (std::size_t j = 0; j < count; ++j)
-                        {
-                            // The sorted call lays its planes out in its own
-                            // argument order, so a position in them maps back
-                            // through the permutation rather than being the
-                            // reference's own index.
-                            const std::size_t i = sorted ? sortedPerm[j] : j;
-                            const std::size_t k = ref.Index(n, i);
-                            const double got = planes[static_cast<std::size_t>(n) * count + j];
-
-                            MeasureAt(EntryClaims()[static_cast<std::size_t>(row.slot)],
-                                      n,
-                                      ref.x[i],
-                                      got,
-                                      ref.v[k],
-                                      ref.decade[k],
-                                      kBoundDoubleBatch,
-                                      Unrepresentable(got, -1022));
-                        }
-                    }
+                    boys::BoysAllN<1.0, Policy>(nmax, args.data(), planes.data(), count);
                 }
 
-                break;
+                for (int n = 0; n <= nmax; ++n)
+                {
+                    for (std::size_t j = 0; j < count; ++j)
+                    {
+                        // The sorted call lays its planes out in its own argument
+                        // order, so a position in them maps back through the
+                        // permutation rather than being the reference's own index.
+                        const std::size_t i = sorted ? sortedPerm[j] : j;
+                        const std::size_t k = ref.Index(n, i);
+                        const double got = planes[static_cast<std::size_t>(n) * count + j];
+
+                        MeasureAt(EntryClaims()[static_cast<std::size_t>(row.slot)],
+                                  n,
+                                  ref.x[i],
+                                  got,
+                                  ref.v[k],
+                                  ref.decade[k],
+                                  kBoundDoubleBatch,
+                                  Unrepresentable(got, -1022));
+                    }
+                }
+            }
+
+            break;
 
             case BatchEntry::kAtOrders:
             {
@@ -7244,8 +7160,9 @@ int main(int argc, char** argv) {
                 // hands every element to BoysAllOrdersImpl at that element's own
                 // top order, and that body reads the grid where the policy names
                 // it. The row is measured rather than excused for exactly that
-                // reason - this is the entry the refused rows beside it are
-                // compared against.
+                // reason - it is the entry the two beside it take their values
+                // from, so a row of theirs that parted from this one's numbers
+                // would be a partition's fits under another partition's name.
                 open();
 
                 std::vector<int> tops(count);
@@ -7290,20 +7207,18 @@ int main(int argc, char** argv) {
                     row.state = EntryState::kShapeLimit;
                     row.reason = kEntryOrdersShapeLimit;
                 }
-                else if constexpr (kRoute == boys::FitRoute::kChebyshev)
-                {
-                    // As in the two many-argument cases above: the refusal is the
-                    // probe's that names this cell, and a lifted guard prints the
-                    // row's own line and fails the run.
-                    row.lifted = !uniformRefusalProbed(kind, kScheme);
-                    row.state = EntryState::kRefused;
-                    row.reason = row.lifted ? kEntryUniformLifted : kEntryUniformGuard;
-                }
                 else
                 {
-                    // The route branch delegates to BoysSingleImpl, which reads
-                    // the grid, so the same combination this entry refuses on the
-                    // shipped route is served on the other one.
+                    // Every remaining combination of this entry is served at this
+                    // revision, the uniform partition among them, so the row is a
+                    // measurement. The reference-rung Chebyshev branch reaches its
+                    // values through PolicyRegionAValue and PolicyRegionBSeed,
+                    // and those resolve the partition to ChebyshevFit, whose else
+                    // branch is the NARROW member - so the entry hands a uniform
+                    // policy to BoysSingleImpl instead, the same delegation a
+                    // route other than the shipped one already takes. That body
+                    // reads the grid's own table below the join and the region
+                    // tests above it, at every multiplier.
                     open();
 
                     std::vector<double> values(count);
@@ -7560,12 +7475,6 @@ int main(int argc, char** argv) {
     std::size_t entryBookMeasured = 0;
     std::size_t entryBookRefused = 0;
     std::size_t entryBookShapeLimit = 0;
-    // The refused rows whose probe compiled the call. They are counted among the
-    // refused rows above and not beside them - what this book owes is a row that
-    // measures the cell, and a lifted guard does not write one - and they are
-    // counted apart here because they are the only rows whose reason is not the
-    // library's refusal and the only ones that fail the run.
-    std::size_t entryBookLifted = 0;
 
     for (const EntryBookRow& row : entryBook)
     {
@@ -7583,11 +7492,6 @@ int main(int argc, char** argv) {
             ++entryBookShapeLimit;
 
             break;
-        }
-
-        if (row.lifted)
-        {
-            ++entryBookLifted;
         }
     }
 
@@ -13634,8 +13538,7 @@ int main(int argc, char** argv) {
                         "n/a",
                         "",
                         row.state == EntryState::kRefused
-                            ? (row.lifted ? "LIFTED: the guard is gone"
-                                          : "refused, and owed")
+                            ? "refused, and owed"
                             : "not applicable to the entry's shape");
             std::printf("    %s\n", row.axes.c_str());
             std::printf("    %s\n", row.reason);
@@ -13657,28 +13560,6 @@ int main(int argc, char** argv) {
                 entryBookRefused,
                 entryBookShapeLimit,
                 entryBookRows);
-
-    // The direction a row that named an assertion could not take. A probe that
-    // COMPILED one of these calls has found a guard this revision does not have,
-    // and the row above would otherwise print a refusal that is no longer true.
-    // The cell stays in the owed count - what is owed is a row that measures it,
-    // and a lifted guard does not write one - so the arithmetic above closes the
-    // same way in both directions, and the difference is this line and the run's
-    // status. The cell it names is a combination this book has to measure before
-    // it can go green again.
-    if (entryBookLifted > 0)
-    {
-        std::printf("\n  ENTRY BOOK FAIL: %zu of the %zu refused row(s) name a guard the probe "
-                    "did not\n  find. The probe compiles that call, so the entry serves the "
-                    "combination at this\n  revision and no row of this book measures it: a "
-                    "refused cell is refused only where\n  its own probe says so. The owed count "
-                    "above is the same either way - what is owed\n  is a row, and lifting the "
-                    "guard does not write one - and the cells those rows name\n  have to be "
-                    "measured before this book is green\n",
-                    entryBookLifted,
-                    entryBookRefused);
-        return 1;
-    }
 
     if (entryArmsUnnamed == 0 && entryTableUncovered == 0)
     {

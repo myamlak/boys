@@ -1211,7 +1211,11 @@ void BoysAllOrders(int nmax, double x, double* out) noexcept;
 /// \tparam Policy see BoysSingle. A call naming a route other than the shipped
 ///         one is answered by the per-argument single entry, once per argument,
 ///         whose body this entry's own m = 1 path already mirrors region for
-///         region
+///         region. A call naming the uniform grid is answered the same way, for
+///         the same reason: the grid is a table read one order at a time, and
+///         the shaped body below is a walk over the regions the grid does not
+///         have. Both keep this entry's documented accuracy - the path costs the
+///         shaped body's region dispatch, not a value
 ///
 ///         The packing axis is not an axis of this shape, and that is the
 ///         entry's signature rather than a body nobody built: a packed lane keeps
