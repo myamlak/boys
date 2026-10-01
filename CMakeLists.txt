@@ -1361,8 +1361,9 @@ endif()
 # boys_coefficients.hpp and tests/data/boys_reference.csv — spelled out here and
 # in CI). The generator is deterministic (mpmath pinned in
 # requirements-boys.txt), so --check over the committed files is the
-# identity proof; CI additionally runs the no-args in-place regeneration
-# plus git diff --exit-code.
+# identity proof. A regeneration writes the committed files and is local-only,
+# which CONTRIBUTING.md states as a rule; CI runs the checks and never the
+# writes.
 if (BOYS_TOP_LEVEL)
     find_package(Python3 COMPONENTS Interpreter)
     if (Python3_FOUND)

@@ -77,8 +77,9 @@ concurrency:
 # assertion, and the two CONSUMER checks - a translation unit that includes
 # only <boys/boys.hpp> and exercises the whole documented surface, and one that
 # names multipliers the library does not pre-instantiate and links no library
-# at all), the generator byte-identity protocol (no-args in-place regeneration
-# + --check + git diff --exit-code over the two generated files), and the
+# at all), the generator byte-identity protocol (each generator's own --check
+# over the committed files; the writes a regeneration makes stay local, which
+# CONTRIBUTING.md states as a rule), and the
 # zero-warning Doxygen build. The two original legs (windows-msvc-release,
 # linux-gcc-release) keep all of it verbatim; the new x86 legs carry the same
 # set so the retention is per-leg rather than workflow-wide.
