@@ -4,8 +4,11 @@
 // double batch, float single, float batch}, assert |F_hat_m - ref| <= m * B_region per
 // region on the committed reference grid (region bucketing: A x < kX0, B kX0 <= x < kX1,
 // C x >= kX1), with the asserted bounds B: double single 1e-15/3e-14/5.5e-14, double
-// batch 5.5e-14 per region, float 1.5e-7 per region. The m = 1 rows re-assert the
-// certified pins.
+// batch 5.5e-14 per region, float single 1.5e-7 per region, and float batch the figure
+// the lane publishes for the division form the entries divide in - 1.5e-7 at exact
+// division and at the refined reciprocal, plus the row's plain-reciprocal term where the
+// build compiles that form, which is the term that form spends on the downward ladder the
+// batch shape reads. The m = 1 rows re-assert the certified pins.
 //
 // The effective-degree tables are non-increasing in m (a larger budget may only truncate
 // further) over all six lane roles and both regions; the m = 1 tables are the full
@@ -179,6 +182,32 @@ double RegionBound(BoysRegion region, LaneKind lane) {
     return 0.0; // unreachable
 }
 
+// The figure the float lane publishes for the division form the entries below run. Those
+// entries name no policy, so the form they divide in is the build's default one, and the
+// figure to read is the one the lane publishes for that form: the lane's own contract row
+// - the row the README's table, BoysAccuracyGuaranteed and both gates read - plus the term
+// the row carries beside its base for the plain reciprocal where that is the form in force.
+// The row's own scaling is the multiplier times that sum, this lane's additive term being
+// zero, so the sweeps below read the figure the accessor would answer at each sampled m.
+//
+// It is not the same number as the float base above, and the difference is the point: the
+// base is what the lane's two other forms deliver, and the row's term is what the plain
+// form spends on the downward ladder, which is inside the batch shape and not inside the
+// single one. So the batch sweeps are read at this figure and the single shape at the base.
+double FloatLanePublishedFigure() {
+    for (const boys::LaneContractInfo& row : boys::BoysLaneContracts())
+    {
+        if (row.precision == boys::Precision::kFp32)
+        {
+            return row.bound + (boys::kDefaultDivisionForm == boys::DivisionForm::kPlainReciprocal
+                                    ? row.plainAdditive
+                                    : 0.0);
+        }
+    }
+
+    return 0.0;
+}
+
 // Runs the callable once per sampled multiplier, the multiplier passed as a compile-time
 // constant - the NTTP surface is the contract under test.
 template <typename Fn> void ForEachSampledMultiplier(Fn&& fn) {
@@ -283,6 +312,9 @@ template <double kM> void SweepFloatSingle() {
     for (const ReferenceRow& row : gReference)
     {
         const float value = BoysSingleF32<kM>(row.n, static_cast<float>(row.x));
+        // The base and not the lane's published figure for the form in force: this shape
+        // evaluates one order from one fit and reads no downward step, which is where the
+        // row's plain-reciprocal term is spent (FloatLanePublishedFigure above).
         const double bound = kM * RegionBound(RegionOf(row.x), LaneKind::kFloatSingle);
         const double error = std::abs(static_cast<double>(value) - row.value);
         EXPECT_LE(error, bound) << "m=" << kM << " n=" << row.n << " x=" << row.x
@@ -311,6 +343,8 @@ template <double kM> void SweepFloatSingleFp16Budget() {
     for (const ReferenceRow& row : gReference)
     {
         const float value = BoysSingleF32<kM, Fp16Budget>(row.n, static_cast<float>(row.x));
+        // The base, for the reason the default entry's sweep above states: the single shape
+        // reads no downward step, and the budget the policy names moves no division form.
         const double bound = kM * RegionBound(RegionOf(row.x), LaneKind::kFloatSingle);
         const double error = std::abs(static_cast<double>(value) - row.value);
         EXPECT_LE(error, bound) << "m=" << kM << " n=" << row.n << " x=" << row.x
@@ -345,7 +379,10 @@ template <double kM> void SweepFloatBatchFp16Budget() {
         for (int k = 0; k <= row.n; ++k)
         {
             const double reference = gGrid.Value(k, row.x);
-            const double bound = kM * RegionBound(RegionOf(row.x), LaneKind::kFloatBatch);
+            // The lane's published figure for the form in force and not the shape's base:
+            // this entry's downward ladder divides in the form the build compiles, and the
+            // budget the policy names moves no division form.
+            const double bound = kM * FloatLanePublishedFigure();
             const double error =
                 std::abs(static_cast<double>(batch[static_cast<std::size_t>(k)]) - reference);
             EXPECT_LE(error, bound) << "m=" << kM << " batch F" << k << " at x=" << row.x;
@@ -372,7 +409,10 @@ template <double kM> void SweepFloatBatch() {    RegionWorsts worst;
         for (int k = 0; k <= row.n; ++k)
         {
             const double reference = gGrid.Value(k, row.x);
-            const double bound = kM * RegionBound(RegionOf(row.x), LaneKind::kFloatBatch);
+            // The lane's published figure for the form in force and not the shape's base:
+            // this entry's downward ladder divides in the form the build compiles, so the
+            // bar is the one the lane states for that form.
+            const double bound = kM * FloatLanePublishedFigure();
             const double error =
                 std::abs(static_cast<double>(batch[static_cast<std::size_t>(k)]) - reference);
             EXPECT_LE(error, bound)

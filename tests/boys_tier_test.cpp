@@ -142,6 +142,62 @@ constexpr std::array<AccuracyRegion, 3> kRegions{{
     AccuracyRegion::kC,
 }};
 
+// The five choices a build's defaults header names, as one configuration: the tier entry
+// runs the default policy when it is called with a tier alone, so what a rung delivers is
+// a property of the configuration as well as of the rung, and a recorded ratio describes
+// the configuration it was measured at.
+struct Defaults {
+    const char* name;
+    boys::FitRoute route;
+    boys::EvalScheme scheme;
+    boys::PackAxis pack;
+    boys::FitGranularity granularity;
+    boys::DivisionForm division;
+};
+
+// The two configurations this file carries a table for: the committed header's five, and
+// the test fixture's (tests/build_defaults_tuned.hpp, the header CI points
+// BOYS_BUILD_DEFAULTS at on its own configure). They are two arithmetics and not one
+// arithmetic spelled two ways - a different partition, a different summation and a
+// different division form - so their ratios are different numbers, and neither table
+// applies to the other configuration.
+constexpr std::array<Defaults, 2> kRecordedConfigurations{{
+    {"the shipped defaults",
+     boys::FitRoute::kChebyshev,
+     boys::EvalScheme::kHorner,
+     boys::PackAxis::kArguments,
+     boys::FitGranularity::kNarrow,
+     boys::DivisionForm::kRefinedReciprocal},
+    {"the test fixture's tuned defaults",
+     boys::FitRoute::kChebyshev,
+     boys::EvalScheme::kSplitClenshaw,
+     boys::PackAxis::kArguments,
+     boys::FitGranularity::kShipped,
+     boys::DivisionForm::kPlainReciprocal},
+}};
+
+// The index in kRecordedConfigurations of the configuration this build resolves, or the
+// size of that array where the build resolves neither of them. Read from the constants
+// rather than from the seam macros, so a replacement that reached the library through any
+// route is recognized by what it resolves rather than by how it arrived.
+constexpr std::size_t ConfigurationInForce() {
+    for (std::size_t i = 0; i < kRecordedConfigurations.size(); ++i)
+    {
+        const Defaults& configuration = kRecordedConfigurations[i];
+
+        if (configuration.route == boys::kDefaultFitRoute &&
+            configuration.scheme == boys::kDefaultEvalScheme &&
+            configuration.pack == boys::kDefaultPackAxis &&
+            configuration.granularity == boys::kDefaultFitGranularity &&
+            configuration.division == boys::kDefaultDivisionForm)
+        {
+            return i;
+        }
+    }
+
+    return kRecordedConfigurations.size();
+}
+
 // The compile-time path at a multiplier, compiled by the library and reached
 // through the library's exported instantiation.
 template <double M> void LibraryPath(int nmax, double x, double* out) noexcept {
@@ -1294,9 +1350,12 @@ TEST(Tier, DeliveredErrorRatiosArePinnedSoASilentRegressionIsVisible) {
     // the ratio the code actually delivers, as an UPPER bound at 5% above the
     // recorded value - a further improvement passes, a regression does not.
     //
-    // The ratios are specific to this reference and this sweep, so they are pinned
-    // only when the accuracy gate's grid is the reference; on the suite grid the
-    // sweep is too thin and the pin is not asserted.
+    // The ratios are specific to this reference, to this sweep AND to the default
+    // policy the tier entry runs, so they are pinned where all three are the ones
+    // the table was recorded at: the accuracy gate's grid, which the suite grid is
+    // too thin for, and a build resolving the configuration that table names. The
+    // two conditions are stated in the printed lines rather than left to a reader,
+    // and each is a scope this test can see rather than an assumption.
     const Grid& grid = Reference();
 
     if (grid.xs.empty())
@@ -1311,12 +1370,26 @@ TEST(Tier, DeliveredErrorRatiosArePinnedSoASilentRegressionIsVisible) {
     };
 
     // Measured at the library's default policy, which is the policy the tier entry
-    // runs when it is called with a tier alone: the rungs below are read off the
-    // narrow partition at Horner's rule, and every figure moved when the defaults
-    // did. The table a previous revision recorded - the shipped partition under
-    // the split Clenshaw recurrence - is not recoverable by a caller who names
-    // neither axis, because naming neither is what now reads these tables.
-    constexpr std::array<Recorded, 7> kRecorded{{
+    // runs when it is called with a tier alone - so the ratios are the DEFAULT
+    // policy's, and a build whose defaults differ delivers different numbers. One
+    // table per configuration this file carries (kRecordedConfigurations), in that
+    // order, each recorded on the run that measured the configuration it names: the
+    // shipped table from the suite runs every bound in this repository was measured
+    // with, and the fixture's from the configure that first built
+    // tests/build_defaults_tuned.hpp, whose own printed column these values are.
+    //
+    // The shipped table is the narrow partition at Horner's rule: the table a
+    // previous revision recorded - the shipped partition under the split Clenshaw
+    // recurrence - is not the configuration the committed header resolves, because
+    // the rung tables a caller reaches by naming neither axis are these.
+    //
+    // The fixture's table is that other configuration, which is what a tuned build
+    // resolves: the shipped partition under the split Clenshaw recurrence, its
+    // divisions in the plain reciprocal. A build resolving neither configuration
+    // gets no pin rather than another configuration's numbers - the figures are
+    // measurements of one arithmetic, and the bound test above still holds every
+    // rung in such a build to its declared bound.
+    constexpr std::array<Recorded, 7> kRatiosShipped{{
         {"kReference", {0.0585, 0.0137, 0.9091}},
         {"kRelaxed64", {0.9121, 0.3202, 0.9091}},
         {"kRelaxed256", {0.8781, 0.0800, 0.9091}},
@@ -1325,11 +1398,36 @@ TEST(Tier, DeliveredErrorRatiosArePinnedSoASilentRegressionIsVisible) {
         {"kRelaxed16384", {0.8302, 0.0926, 0.9091}},
         {"kRelaxed65536", {0.9687, 0.3627, 0.9091}},
     }};
+    constexpr std::array<Recorded, 7> kRatiosTunedFixture{{
+        {"kReference", {0.1017, 0.1807, 0.9091}},
+        {"kRelaxed64", {0.7049, 0.0743, 0.9091}},
+        {"kRelaxed256", {0.7841, 0.5211, 0.9091}},
+        {"kRelaxed1024", {0.9759, 0.1303, 0.9091}},
+        {"kRelaxed4096", {0.8015, 0.8419, 0.9091}},
+        {"kRelaxed16384", {0.6249, 0.2105, 0.9091}},
+        {"kRelaxed65536", {0.9786, 0.0526, 0.9091}},
+    }};
 
     // 5% above the recorded value: an improvement is a smaller ratio and
     // passes; a regression beyond 5% is a change to report, not to absorb.
     constexpr double kPin = 1.05;
-    const bool pinned = grid.provenance.find("accuracy-gate") != std::string::npos;
+    const std::size_t configuration = ConfigurationInForce();
+    const bool hasTable = configuration < kRecordedConfigurations.size();
+    const std::array<Recorded, 7>& ratios =
+        configuration == 1 ? kRatiosTunedFixture : kRatiosShipped;
+    const bool pinned = hasTable && grid.provenance.find("accuracy-gate") != std::string::npos;
+
+    if (hasTable)
+    {
+        std::printf("\nthe recorded column is the table measured at %s\n",
+                    kRecordedConfigurations[configuration].name);
+    } else
+    {
+        std::printf("\nthis build resolves neither of the %zu configurations this test "
+                    "carries a table for, so no ratio below is pinned: the recorded column is "
+                    "the shipped table, printed for scale\n",
+                    kRecordedConfigurations.size());
+    }
 
     std::printf("\n%-15s %-7s %12s %12s %8s\n", "rung", "region", "measured", "recorded", "of pin");
 
@@ -1340,26 +1438,27 @@ TEST(Tier, DeliveredErrorRatiosArePinnedSoASilentRegressionIsVisible) {
             const double declared = DeclaredReachable(kRungs[r].tier, kRegions[g]);
             const double measured =
                 declared > 0.0 ? SweepFor(r, kRegions[g]).worst / declared : 0.0;
-            const double recorded = kRecorded[r].ratio[g];
+            const double baseline = ratios[r].ratio[g];
 
             std::printf("%-15s %-7s %12.4f %12.4f %8.4f\n",
                         kRungs[r].name,
                         RegionName(kRegions[g]),
                         measured,
-                        recorded,
-                        measured / recorded);
+                        baseline,
+                        measured / baseline);
 
             if (!pinned)
             {
                 continue;
             }
 
-            EXPECT_LE(measured, recorded * kPin)
+            EXPECT_LE(measured, baseline * kPin)
                 << kRungs[r].name << " region " << RegionName(kRegions[g]) << " now delivers "
-                << measured << " of its declared bound, against a recorded " << recorded
-                << ". If the reference grid or the sweep changed, re-baseline the "
-                << "table in this test; otherwise a rung got worse inside a bound loose enough "
-                << "to hide it.";
+                << measured << " of its declared bound, against a "
+                << kRecordedConfigurations[configuration].name << " recorded " << baseline
+                << ". If the reference grid, the sweep or the build's defaults changed, "
+                << "re-baseline that configuration's table in this test; otherwise a rung got "
+                << "worse inside a bound loose enough to hide it.";
         }
     }
 }

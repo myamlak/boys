@@ -600,11 +600,14 @@ TEST(BackendTest, TheDivisionFormAxisNamesItsMembers) {
 //  - the plain form reaches the downward ladder, whose divisor is the step's constant rather
 //    than the argument. A caller naming the plain form was once served exact division there
 //    and nothing reported it, so a zero count here is that back again;
-//  - the plain form does NOT reach the single-precision lane's downward ladder. That lane's
-//    figure is one number for every form, and the plain form's reciprocal at that step takes
-//    it outside that number. The lane's upward ladders do take the form (the fourth count),
-//    so the two together separate "not applied on this lane" from "not applied on this
-//    ladder".
+//  - the plain form reaches the single-precision lane's downward ladder too, and the figure
+//    that lane publishes for the form covers what it delivers there. The lane used to keep
+//    exact division on that ladder, because it published one number for every form and the
+//    reciprocal at that step took it outside that number; it now publishes the plain form's
+//    own figure beside its base, so the form is served and held to that figure. Both halves
+//    are measured: the counts below say the form is reached, and the outside count says the
+//    lane's figure for it covers every cell the sweep read. A carve-out put back would show
+//    as a zero count, and a form served outside its figure as a nonzero one.
 //
 // The counts are printed because a count is the measurement; the assertions are on relations
 // between them and not on the values.
@@ -626,18 +629,37 @@ TEST(BackendTest, TheDivisionFormReachesTheLaddersItDocuments) {
         EvalPolicy<kRoute, kScheme, kBudget, kPack, kGran, DivisionForm::kRefinedReciprocal>;
 
     // Arguments below each lane's kX0, where the downward recursion runs, and above it, where
-    // the upward ladders do. The largest downward argument is the accuracy gate's own cell
-    // where the plain form's reciprocal leaves the float lane's figure, so the carve-out is
-    // asserted where it was found rather than at a convenient point.
+    // the upward ladders do. The downward set carries both of the accuracy gate's own cells
+    // where the plain form's reciprocal reaches furthest on the single-precision lane - x = 7
+    // and x = 9.74054909 - so the figure that form is held to is read where it was found
+    // rather than at a convenient point.
     constexpr double kDown[] = {0.01, 0.1, 0.5, 1.0, 2.0, 5.0, 7.0, 9.74054909, 11.5};
     constexpr double kUp[] = {12.0, 15.0, 20.0, 28.9, 29.0, 40.0, 60.0, 120.0};
     constexpr int kNmax = boys::kMaxBoysOrder;
+
+    // The figure a lane publishes for the plain reciprocal, read off the library's own
+    // contract row - the row the accuracy accessor, the accessor's documentation and the
+    // gates all read - plus the term that row carries beside its base for this form. It is
+    // not a tolerance chosen here: it is the number the library publishes for the arithmetic
+    // the sweep below runs, and a lane that delivers outside it has broken its own contract.
+    const auto plainFormFigure = [](boys::Precision precision) {
+        for (const boys::LaneContractInfo& row : boys::BoysLaneContracts()) {
+            if (row.precision == precision) {
+                return row.bound + row.plainAdditive;
+            }
+        }
+
+        return 0.0;
+    };
+
+    const double kFloatPlainFigure = plainFormFigure(boys::Precision::kFp32);
 
     std::size_t refinedMoved = 0;
     std::size_t doubleDownMoved = 0;
     std::size_t doubleUpMoved = 0;
     std::size_t floatDownMoved = 0;
     std::size_t floatUpMoved = 0;
+    std::size_t floatOutsideFigure = 0;
     std::size_t cells = 0;
 
     std::array<double, kNmax + 1> dExact{};
@@ -646,6 +668,7 @@ TEST(BackendTest, TheDivisionFormReachesTheLaddersItDocuments) {
     std::array<float, kNmax + 1> fExact{};
     std::array<float, kNmax + 1> fPlain{};
     std::array<float, kNmax + 1> fRefined{};
+    std::array<double, kNmax + 1> dReference{};
 
     const auto sweepDouble = [&](double x, bool downward) {
         BoysAllOrders<boys::kBoysFullAccuracyMultiplier, DExact>(kNmax, x, dExact.data());
@@ -673,6 +696,15 @@ TEST(BackendTest, TheDivisionFormReachesTheLaddersItDocuments) {
         BoysAllOrdersF32<boys::kBoysFullAccuracyMultiplier, DPlain>(kNmax, x, fPlain.data());
         BoysAllOrdersF32<boys::kBoysFullAccuracyMultiplier, DRefined>(kNmax, x, fRefined.data());
 
+        // The reference this lane's plain form is measured against: the double lane at the
+        // same argument, whose own published figure is 5.5e-14 - five to six digits inside
+        // the bar the single lane is read at, so a difference between the two is this lane's
+        // error and not the reference's. The argument is the float one widened rather than
+        // the double the sweep walked in with, so no part of the difference is the float
+        // argument's own rounding.
+        BoysAllOrders<boys::kBoysFullAccuracyMultiplier, DExact>(
+            kNmax, static_cast<double>(x), dReference.data());
+
         for (int n = 0; n <= kNmax; ++n) {
             const std::size_t sn = static_cast<std::size_t>(n);
             ++cells;
@@ -685,6 +717,15 @@ TEST(BackendTest, TheDivisionFormReachesTheLaddersItDocuments) {
             if (std::bit_cast<std::uint32_t>(fPlain[sn]) !=
                 std::bit_cast<std::uint32_t>(fExact[sn])) {
                 (downward ? floatDownMoved : floatUpMoved) += 1;
+            }
+
+            // The plain form's own cells, held to the figure the lane publishes for that form:
+            // measured on every cell and not only on the cells the form moved, because the
+            // claim is that what the form returns is inside the number the lane states for it,
+            // and a cell the form did not move is a cell it still answered.
+            if (std::abs(static_cast<double>(fPlain[sn]) - dReference[sn]) > kFloatPlainFigure)
+            {
+                ++floatOutsideFigure;
             }
         }
     };
@@ -702,13 +743,16 @@ TEST(BackendTest, TheDivisionFormReachesTheLaddersItDocuments) {
     std::printf("boys: the division form over %zu cell(s) per pair - refined against exact moved "
                 "%zu;\n  the plain form against exact moved %zu in the double lane's downward "
                 "ladder and %zu\n  in its upward ones, %zu in the single lane's downward ladder "
-                "and %zu in its upward ones\n",
+                "and %zu in its upward ones;\n  the single lane's plain form is outside the %g "
+                "the lane publishes for it at %zu cell(s)\n",
                 cells,
                 refinedMoved,
                 doubleDownMoved,
                 doubleUpMoved,
                 floatDownMoved,
-                floatUpMoved);
+                floatUpMoved,
+                kFloatPlainFigure,
+                floatOutsideFigure);
 
     EXPECT_EQ(refinedMoved, 0u)
         << "the refined form is documented as bit-identical to exact division, and it is not";
@@ -721,13 +765,18 @@ TEST(BackendTest, TheDivisionFormReachesTheLaddersItDocuments) {
     EXPECT_GT(doubleUpMoved, 0u) << "the plain form reaches no cell of the double lane's upward "
                                     "ladders, so the axis selects no arithmetic there";
 
-    EXPECT_EQ(floatDownMoved, 0u)
-        << "the plain form has reached the single lane's downward ladder, which the axis's "
-           "documentation says it does not - and does not because serving it there takes the "
-           "ladder outside the 1.5e-7 the lane publishes. Removing this carve-out is a "
-           "measurement and not an edit: the lane's figure has to gain a form dimension first";
+    EXPECT_GT(floatDownMoved, 0u)
+        << "the plain form reaches no cell of the single lane's downward ladder, which is the "
+           "carve-out that ladder used to keep: that lane names the form it divides in, and a "
+           "caller naming this one was served exact division there with nothing reporting it";
 
     EXPECT_GT(floatUpMoved, 0u)
-        << "the plain form reaches no cell of the single lane either, so the two counts above "
-           "would both be zero for want of an axis rather than for a carve-out";
+        << "the plain form reaches no cell of the single lane's upward ladders either, so the two "
+           "counts above would both be zero for want of an axis rather than for a carve-out";
+
+    EXPECT_EQ(floatOutsideFigure, 0u)
+        << "the single lane's plain form delivered outside the figure the lane publishes for it ("
+        << kFloatPlainFigure << ") at " << floatOutsideFigure
+        << " cell(s): the form is served on that lane, so what it returns has to be inside the "
+           "lane's own figure for it, and that figure is what a caller reads";
 }

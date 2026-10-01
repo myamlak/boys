@@ -2503,17 +2503,18 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
                 "a batch call naming no policy is the pair the library's defaults name, bit "
                 "for bit");
 
-        // The other scheme is reachable from both entries, and they agree with
-        // each other: the batch entry is not a second, differently-wired way in.
+        // The unnamed call reads the scheme this build's defaults header names, and
+        // the reading that says so is the other scheme's: the two sum one fit, so they
+        // agree to within their own bounds and part somewhere, and the part is what
+        // makes the unnamed call's scheme a reading rather than the only one there is.
         // Which word the other scheme is belongs to the build, so this names the
         // member the defaults header leaves at the other rather than the split
-        // Clenshaw recurrence; in a build whose default is that recurrence the
-        // three readings below are the same three about Horner's rule.
+        // Clenshaw recurrence; a build whose default is that recurrence reads the same
+        // three lines below about Horner's rule.
         const double byOtherScheme =
             boys::BoysSingle<boys::kBoysFullAccuracyMultiplier, OtherSchemePolicy>(cell.n, cell.x);
-        Require(report,
-                std::isfinite(byOtherScheme),
-                "the other scheme answers a finite value");
+        schemePartsFromOther += (byDefault != byOtherScheme) ? 1 : 0;
+        Require(report, std::isfinite(byOtherScheme), "the other scheme answers a finite value");
 
         std::array<double, 33> otherSchemeOut = {};
         boys::BoysAllOrders<boys::kBoysFullAccuracyMultiplier, OtherSchemePolicy>(

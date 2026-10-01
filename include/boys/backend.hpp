@@ -173,7 +173,9 @@ enum class DivisionForm : std::uint8_t {
     /// One reciprocal per divisor and one product per step: the argument's
     /// reciprocal, formed once and multiplied through the ladder, and the step
     /// constant's, read from a compile-time table and multiplied the same way.
-    /// Not the single-precision lane's downward ladder; see above.
+    /// It governs every division of a chain, the single-precision lane's
+    /// downward ladder included: that lane publishes a figure of its own for
+    /// this form rather than substituting another arithmetic for it.
     kPlainReciprocal = 1,
 
     /// The plain form with the correctly rounded quotient recovered from it, by
@@ -803,6 +805,15 @@ namespace detail {
 /// The fused multiply-add of one scalar type, spelled for that type: the
 /// single-precision form is the single-precision operation, not the
 /// double-precision one narrowed afterwards.
+///
+/// One rounding on every build. The standard function is the operation, and
+/// what it costs is the build's: a translation unit compiled without the fused
+/// instruction set calls the runtime for it, and one compiled with the set does
+/// not - MSVC stops referencing the runtime's `fma` under /arch:AVX2, which the
+/// build facts record per leg as `fma.route`. Naming the intrinsic here was
+/// measured to change nothing: the units that pay the call are exactly those
+/// compiled without the flag, so the branch could never be taken where it
+/// mattered.
 ///
 /// \param a the multiplicand
 /// \param b the multiplier
