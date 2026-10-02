@@ -659,10 +659,14 @@ jobs:
       # cannot be checked against a build it does not describe, so this runs where the figures came
       # from. It is deliberately NOT loosened to a tolerance: that would stop it catching a stale
       # figure, which is the only thing it is for. The ctest registration carries the same scope.
+      # `python3`, not the venv's interpreter: this tool imports stdlib only, and the venv is set up
+      # on the gcc Release leg alone (`if:` on the "Set up Python" step above). Naming
+      # `.venv/bin/python` here exits 127 - command not found - because on a Debug leg there is no
+      # venv at all, which is what the first version of this step did on CI run 3.
       - name: Examples (the runs the two documents quote)
         if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Debug' }}
         run: |
-          .venv/bin/python tools/check_example_transcripts.py --check --examples-dir build
+          python3 tools/check_example_transcripts.py --check --examples-dir build
       # The build-defaults seam offers a consumer five choices, and until this
       # step nothing checked that the library reads them. Three of the five were
       # read by nothing at all - the packing axis, the division form and the fit
