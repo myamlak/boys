@@ -140,41 +140,70 @@ def host_space() -> tuple[str, list[str], bool]:
 
 
 def device_space() -> tuple[str, list[str], bool]:
-    """The device option space, from the newest probe log on disk."""
+    """The device option space, from the probe report that carries its closure arithmetic.
+
+    The probe prints the closure as its last block: the space's total read off the library's own
+    tables (`BoysDeviceOptions().size()` x `kDeviceRungs.size()`), the states each member can be in,
+    the arithmetic summing them, and a verdict. A log written before that block existed carries no
+    closure at all - which is a fact about the log, not about the library - so the search is for the
+    block, and the absence of it is reported as the absence of a RUN rather than of a space.
+    """
     directory = os.path.join(REPO, ".claude", "tmp")
-    logs = []
     try:
-        for name in os.listdir(directory):
-            if name.startswith("gpuprobe-") and name.endswith(".log"):
-                logs.append(os.path.join(directory, name))
+        names = [n for n in os.listdir(directory)
+                 if n.startswith("gpuprobe-") and n.endswith(".log")]
     except OSError:
-        pass
-    if not logs:
+        names = []
+    if not names:
         return ("ABSENT: no device probe log under .claude/tmp/", [], False)
 
-    newest = max(logs, key=os.path.getmtime)
+    carrying = [os.path.join(directory, n) for n in names]
+    carrying = [p for p in carrying if "the arithmetic:" in read(p)]
+    if not carrying:
+        return (f"ABSENT: none of the {len(names)} probe log(s) on disk carries the closure block",
+                [f"  the probe prints a closure (MEMBERS / the arithmetic / the verdict);",
+                 f"  no log under .claude/tmp/ was written by a build that had it, so the device",
+                 f"  space cannot be closed from what is on disk. Re-run the probe.",
+                 f"  logs present: {len(names)}"], False)
+
+    newest = max(carrying, key=os.path.getmtime)
     text = read(newest)
 
-    # DISTINCT names, not matching lines: the probe reprints its tables in several sections (the
-    # measurement, the refinement, the inventory), so counting lines counts one entry many times.
-    # A count that inflates with the number of sections is not a count of anything.
-    named = set(re.findall(
-        r"^\s{2}((?:device-)?(?:all-orders|all-n|single|each-order)[a-z0-9-]*)"
-        r"\s+\d+\s+(?:fp\d+|bf16)\s", text, re.M))
-    winners = set(re.findall(r"recommended entry:\s*'?([a-z0-9-]+)'?", text))
-    classes = set(re.findall(r"^CLASS\s+(.*)$", text, re.M))
+    members = re.search(r"MEMBERS:\s*(\d+)\s+of\s+(\d+)\s+member\(s\)", text)
+    arith = re.search(r"the arithmetic:\s*([\d\s+]+)=\s*(\d+)", text)
+    total = re.search(r"the space's own total:\s*(\d+)\s+member\(s\)\s*=\s*the\s*(\d+)\s+above\s*\+"
+                      r"\s*(\d+)\s+in no state", text)
+    verdict = re.search(r"the verdict:\s*(PASS|FAIL)", text)
+
+    if not (members and arith and total and verdict):
+        return ("ABSENT: the closure block is present but not in the shape this reads",
+                [f"  source {os.path.basename(newest)}",
+                 "  found: MEMBERS" if members else "  MISSING: MEMBERS",
+                 "  found: the arithmetic" if arith else "  MISSING: the arithmetic",
+                 "  found: the space's own total" if total else "  MISSING: the space's own total",
+                 "  found: the verdict" if verdict else "  MISSING: the verdict"], False)
+
+    measured, space = int(members.group(1)), int(members.group(2))
+    parts = [int(n) for n in re.findall(r"\d+", arith.group(1))]
+    unaccounted = int(total.group(3))
+    closed = (sum(parts) == int(arith.group(2)) == int(total.group(1))
+              and unaccounted == 0 and verdict.group(1) == "PASS")
 
     lines = [
         f"  source                 {os.path.basename(newest)}",
-        f"  distinct entries named {len(named):>6}",
-        f"  winners named          {len(winners):>6}",
-        f"  class headings printed {len(classes):>6}   (may double-count across sections)",
-        "  served/refused/not-runnable/unaccounted: NO ARITHMETIC PRINTED",
-        "  the device probe prints no coverage arithmetic, so this space does not close",
-        "  because nothing closes it - not because it is complete",
+        f"  measured               {parts[0]:>6}",
+        f"  refused and owed       {parts[1]:>6}",
+        f"  refused at a rung      {parts[2]:>6}",
+        f"  not runnable on card   {parts[3]:>6}",
+        f"  offered, no figure     {parts[4]:>6}",
+        f"  not asked by this run  {parts[5]:>6}",
+        f"  unaccounted            {unaccounted:>6}",
+        f"  ----------------------------------",
+        f"  total                  {space:>6}",
+        f"  the probe's own arithmetic {arith.group(1).strip()} = {arith.group(2)}",
+        f"  the verdict as printed: {'PASS' if verdict.group(1) == 'PASS' else 'FAIL'}",
     ]
-    return (f"{len(named)} distinct entries, {len(winners)} winners, no closure arithmetic",
-            lines, False)
+    return (f"{measured} of {space} measured, {unaccounted} in no state", lines, closed)
 
 
 def main() -> int:
