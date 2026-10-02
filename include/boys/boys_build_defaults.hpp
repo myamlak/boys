@@ -158,7 +158,7 @@
 #define BOYS_BUILD_DEFAULT_ROWS(X)\
     /* measured: m = 1 all-orders ladder, 92.89 ns per argument */\
     X(kHost, kFp64, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kOrders, FitGranularity::kUniform, DivisionForm::kPlainReciprocal)\
+      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal)\
     /* measured: m = 1 all-orders ladder, the refinement vote's winner */\
     X(kHost, kFp32, kAllOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
