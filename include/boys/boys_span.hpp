@@ -44,7 +44,7 @@ namespace boys {
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicyFp64>
+          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllOrders>>
 inline void BoysAllOrders(int nmax, double x, std::span<double> out) noexcept
 {
     BoysAllOrders<kAccuracyMultiplier, Policy>(nmax, x, out.data());
@@ -59,7 +59,7 @@ inline void BoysAllOrders(int nmax, double x, std::span<double> out) noexcept
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicyFp64>
+          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kFixedN>>
 inline void BoysFixedN(int n, std::span<const double> x, std::span<double> out,
                        std::size_t stride = 1) noexcept
 {
@@ -75,7 +75,7 @@ inline void BoysFixedN(int n, std::span<const double> x, std::span<double> out,
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicyFp64>
+          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllN>>
 inline void BoysAllN(int nmax, std::span<const double> x, std::span<double> out,
                      std::span<std::size_t> workspace = {}) noexcept
 {
@@ -92,7 +92,7 @@ inline void BoysAllN(int nmax, std::span<const double> x, std::span<double> out,
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicyFp64>
+          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllNAtOrders>>
 inline void BoysAllNAtOrders(std::span<const int> n, std::span<const double> x,
                              std::span<double> out) noexcept
 {
