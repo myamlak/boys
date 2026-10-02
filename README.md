@@ -12,7 +12,9 @@ the C++ standard library and the optional CUDA toolkit.
 
 ## Your first call
 
-Copy this into `try.cpp`, build it, run it. It prints exactly the numbers below.
+Copy this into `try.cpp`, build it, run it. It prints the numbers below. They are a build that does not
+contract the multiply-add; a compiler that does may differ in the last digit of a value and nowhere
+else, which is what `docs/build-facts.md` records per CI leg.
 
 ```cpp
 #include <boys/boys_span.hpp>

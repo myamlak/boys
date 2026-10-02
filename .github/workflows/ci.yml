@@ -652,8 +652,15 @@ jobs:
       # One block is named and not compared: examples/07_option_probe.cpp times its own run against
       # the host's clock, and the document says of that block that every figure in it is a property
       # of this host and this run, so the tool reports it by name rather than comparing it.
+      # Scoped to a build that does not contract the multiply-add, because the quoted figures are
+      # such a build's. Measured on CI rather than assumed: every Release leg on gcc, clang and macOS
+      # failed this test on the last digit of F_3(1.25), while every Debug leg passed and MSVC passed
+      # at both - Release contracts, Debug does not, and MSVC does not at these settings. A document
+      # cannot be checked against a build it does not describe, so this runs where the figures came
+      # from. It is deliberately NOT loosened to a tolerance: that would stop it catching a stale
+      # figure, which is the only thing it is for. The ctest registration carries the same scope.
       - name: Examples (the runs the two documents quote)
-        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Debug' }}
         run: |
           .venv/bin/python tools/check_example_transcripts.py --check --examples-dir build
       # The build-defaults seam offers a consumer five choices, and until this
