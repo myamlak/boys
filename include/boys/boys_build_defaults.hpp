@@ -177,19 +177,9 @@
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal)\
     X(kHost, kFp32, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal)\
-    X(kHost, kFp32, kFixedN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal)\
     X(kHost, kFp32, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal)\
-    X(kHost, kFp32, kAllNAtOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal)\
     X(kHost, kFp16, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal)\
-    X(kHost, kFp16, kFixedN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal)\
-    X(kHost, kFp16, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal)\
-    X(kHost, kFp16, kAllNAtOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal)\
     /* the half lane is one lane for both half formats: `Precision::kFp16` is
        where the fp16 and bfloat16 entries live, so there is one row per shape

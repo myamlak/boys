@@ -2089,20 +2089,13 @@ extern template void BoysAllN<kBoysFullAccuracyMultiplier>(
     int nmax, const double* x, double* out, std::size_t count, BoysSortedArgs) noexcept;
 extern template void BoysAllNAtOrders<kBoysFullAccuracyMultiplier>(
     const int* n, const double* x, double* out, std::size_t count) noexcept;
-// Spelled as the class's own default rather than as the five macros: the entry's
-// policy parameter defaults to the table's row for this class, and naming the macros
-// here would declare an instantiation the default call site no longer selects the
-// moment the row and the macros differ - a declaration that resolves to nothing,
-// leaving the default instantiation to be compiled again in every translation unit.
-extern template float BoysSingleF32<kBoysFullAccuracyMultiplier,
-                                    DefaultPolicy<Precision::kFp32, Shape::kSingle>>(
-    int n, float x) noexcept;
-extern template void BoysAllOrdersF32<kBoysFullAccuracyMultiplier,
-                                      DefaultPolicy<Precision::kFp32, Shape::kAllOrders>>(
-    int nmax, float x, float* out) noexcept;
-extern template void BoysAllNF32<kBoysFullAccuracyMultiplier,
-                                 DefaultPolicy<Precision::kFp32, Shape::kAllN>>(
-    int nmax, const float* x, float* out, std::size_t count) noexcept;
+// The single-precision entries are NOT declared extern here, and the reason is the
+// one the paragraph above gives. An extern declaration PROMISES that this translation
+// unit's instantiation is defined elsewhere; the library defines a fixed list of them
+// (src/boys_orders_simd.cpp), and since a default call site now resolves its policy
+// from the table, the instantiation it selects is not knowably in that list.
+// Declaring it anyway turned four consumer targets into unresolved externals on gcc.
+// Their definitions are in this header, so a consumer instantiates what it names.
 
 #if BoysFp16
 extern template F16 BoysSingleF16<kBoysFullAccuracyMultiplier>(int n, F16 x) noexcept;
