@@ -709,8 +709,8 @@ TEST(BoysAcrossOrders, TheRationalRouteOnTheAxisIsTheRoutesOwnReading) {
 }
 
 // The narrow partition on the axis. The shipped lane's fetch steps from one order's
-// coefficients to the next at a fixed stride, which the shipped region-A table has
-// because every order's pieces share their intervals and degrees. The narrow
+// coefficients to the next at a fixed stride, which the double lane's shipped region-A
+// table has because every order's pieces share their intervals and degrees. The narrow
 // partition's pieces are cut per order, so there is no such stride: the lane fetches
 // each of the four orders it packs its own piece and coefficients.
 //

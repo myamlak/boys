@@ -225,15 +225,22 @@ reads, not the size of the table: a narrower piece needs a lower degree, and the
 The choice is therefore between work per call and storage plus a piece lookup per call, and neither
 partition is a rung of the other.
 
-**The shipped partition.** Region A: two equal-width bands per order, at degree 20 and degree 18 —
-40 stored coefficients per order, 1320 across the whole table. Region B: one seed fit, degree 18,
-19 stored. The extended band is its own fit at degree 24 and is not a choice either member makes.
+**The shipped partition's shape is the double lane's; the single-precision lane cuts the same
+regions differently.** On the double lane, region A is two equal-width bands per order, at degree 20
+and degree 18 — 40 stored coefficients per order, 1320 across the whole table — and region B is one
+seed fit at degree 18, 19 stored. The single-precision lane's region A is per order again but two to
+four pieces an order, all at degree 10 — 1067 stored across its table — and its region B is one seed
+at degree 10, 11 stored. What the partition names is the structure the two lanes share: a per-order
+piecewise region A and a single-seed region B. What it does not name is the piece count or the
+degree, and those differ by lane.
+
+The extended band is its own fit at degree 24 and is not a choice either member makes.
 Read against the a-priori truncation bound below at the quantum-chemistry target of
-1e-14: region A's two bands hold 3.14e-18 and 2.58e-18, and the extended-band seed holds 5.98e-18 —
-all far inside the target. **The region-B seed is the one piece the bound does not cover: 1.36e-13,
-above the target**, and the piece's *measured* truncation is 9.92e-15, inside it. So the shipped
-seed meets the target by measurement and misses it by the bound, and that gap is the honest
-statement of where the shipped design stands against a 1e-14 target.
+1e-14, the double lane's region A holds 3.14e-18 and 2.58e-18 across its two bands, and the
+extended-band seed holds 5.98e-18 — all far inside the target. **The region-B seed is the one piece
+the bound does not cover: 1.36e-13, above the target**, and the piece's *measured* truncation is
+9.92e-15, inside it. So the shipped seed meets the target by measurement and misses it by the bound,
+and that gap is the honest statement of where the shipped design stands against a 1e-14 target.
 
 **Region A's pieces are held to a second reading, and it is not the bound above.** A region-A piece
 is read two ways. The single-order lane reads it at its own size, where region A is documented at
@@ -1556,8 +1563,8 @@ nothing here was measured on.
 
 The route column is the lane's Chebyshev table; the scheme reads the fits the lane sums by Horner's
 rule on their monomial form; the granularity is the narrow partition, a piece cut to the width the
-proved truncation bound supports at the bar it is read under rather than region A's two equal-width
-bands per order and region B's one seed; and the packing axis is the arguments axis, the one a call
+proved truncation bound supports at the bar it is read under rather than the committed partition's
+per-order region-A pieces and its single region-B seed; and the packing axis is the arguments axis, the one a call
 has whether or not anybody names it. What the other member of each axis costs and buys is in *The
 two fit routes*, *Interval granularity*, *The evaluation scheme* and *The packing axis* above.
 

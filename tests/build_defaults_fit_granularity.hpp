@@ -17,9 +17,10 @@
 // WHICH MEMBER MOVES, AND WHICH ONE NO BUILD CAN NAME
 //
 // Moved: the narrow partition, the committed file's value, to the shipped partition -
-// region A's two bands per order and region B's single seed, at the degrees the committed
-// tables carry. It is the value the tuned fixture names on this axis too, so a configure
-// of this file reads one of the three axes that fixture crosses.
+// region A's per-order pieces and region B's single seed, at the degrees the committed
+// tables carry: two equal bands an order on the double lane, two to four pieces an order
+// on the single-precision one. It is the value the tuned fixture names on this axis too,
+// so a configure of this file reads one of the three axes that fixture crosses.
 //
 // The member this file does not name is kUniform: the batched bodies refused it until this
 // revision and now hand it to the path that reads the grid (the accuracy gate's entry

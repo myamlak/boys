@@ -34,10 +34,12 @@ inline constexpr double kBoysFullAccuracyMultiplier = 1.0;
 /// Region A and region B each carry two tables of fitted coefficients, placed
 /// against the same bar over the same interval, and this names which one a call
 /// evaluates: region B's is one lowest-order seed per route that the higher
-/// orders are reached from, and region A's is a fit of every order over each of
-/// the region's two bands. They are alternatives rather than rungs of one
-/// design: naming the rational one changes the fits that serve the intervals it
-/// covers and nothing else.
+/// orders are reached from, and region A's is a piecewise fit of every order
+/// over each of the pieces its lane's tables cut the region into - two equal
+/// bands an order on the double lane, each order's own pieces on the
+/// single-precision one. They are alternatives rather than rungs of one design:
+/// naming the rational one changes the fits that serve the intervals it covers
+/// and nothing else.
 ///
 /// What each route promises, over what interval, and from which argument naming
 /// it changes anything, is BoysFitRoutes' report rather than this enumeration's:

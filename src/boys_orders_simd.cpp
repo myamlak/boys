@@ -83,10 +83,10 @@ bool UniformPieces() noexcept {
 
 // --- The premise the narrow partition's lane rests on ------------------------
 //
-// These pieces are cut per order - 8 to 11 an order, against the shipped
-// partition's single shared shape - so a fixed argument lands in a different piece
-// in each of the four lanes; that is the difference between the two fetching rules
-// below.
+// These pieces are cut per order - 8 to 11 an order, against the double lane's
+// shipped partition, whose two bands every order shares - so a fixed argument lands
+// in a different piece in each of the four lanes; that is the difference between the
+// two fetching rules below.
 //
 // What they do share, and what the lane needs, is that every piece is stored to the
 // SAME degree: a group is read at the largest of its four lanes' certified degrees,
@@ -467,10 +467,10 @@ void UniformOrdersBody(int nmax, double x, double* out, std::size_t stride) noex
 // --- The narrow partition on the orders axis ---------------------------------
 //
 // Four orders of one argument still share a vector register; what changes is where
-// each lane's coefficients come from. The shipped fetch is a stride through one
-// shared piece, and these pieces are cut per order, so at one argument the four
-// lanes are routinely in four different pieces, of four different degrees, with
-// four different mapped arguments.
+// each lane's coefficients come from. The double lane's shipped fetch is a stride
+// through one shared piece, and these pieces are cut per order, so at one argument
+// the four lanes are routinely in four different pieces, of four different degrees,
+// with four different mapped arguments.
 //
 // So the fetch is per lane: each lane's own piece is looked up, each lane's own
 // interval maps the argument, and the four coefficients a step reads are gathered
@@ -1964,10 +1964,12 @@ void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
             return;
         }
 
-        // The lane's premise is the partition's: the shipped cover lets a fixed argument
-        // step one order's coefficients to the next at a stride, the narrow one does not.
-        // Past the interval, and where the condition fails, the entry is the certified
-        // scalar single lane at the policy the caller named - same partition, same rung.
+        // The lane's premise is the partition's: both covers are cut per order, so each
+        // is looked up per order, and the narrow one carries one condition more - every
+        // piece stored to the same degree, which is what lets one recurrence serve a
+        // group read at its widest lane's degree. Past the interval, and where the
+        // condition fails, the entry is the certified scalar single lane at the policy
+        // the caller named - same partition, same rung.
         const bool laneApplies = (kGranularity == FitGranularity::kShipped)
                                      ? F32OrdersLaneApplies(x)
                                      : (!(x >= static_cast<float>(kX0)) && BoysAvx2Available() &&
@@ -2281,10 +2283,10 @@ BOYS_ORDERS_F32_PACKED_UNIFORM(EvalScheme::kHorner, BoysBudget::kFp16,          
 //
 // The accuracy multiplier picks the degree a fit is read at - the stored degree at the
 // reference rung, the truncation criterion's at a relaxed one - and the partition picks
-// the table it is read from: the shipped pieces, whose shared shape lets one stride fetch
-// four orders' coefficients, or the narrow ones, cut per order. The division form selects
-// nothing here; it is carried for the certified scalar single lane each fallback hands its
-// orders to, which divides at every step.
+// the table it is read from: the double lane's shipped pieces, whose shared shape lets one
+// stride fetch four orders' coefficients, or the narrow ones, cut per order. The division
+// form selects nothing here; it is carried for the certified scalar single lane each
+// fallback hands its orders to, which divides at every step.
 //
 // The stored fit is summed composed rather than gathered: the two fetches are the same
 // lane value for value, and composed is the cheaper in retired slots on the machine this

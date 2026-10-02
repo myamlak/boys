@@ -270,9 +270,12 @@ const char* DivisionFormName(DivisionForm form) noexcept;
 ///
 /// \ingroup boys
 enum class FitGranularity : std::uint8_t {
-    /// The partition the certified lanes are defined by: region A's two bands per
-    /// order and region B's single seed, at the degrees the committed tables
-    /// carry. A caller names it to read those tables.
+    /// The partition the certified lanes are defined by: region A's per-order
+    /// pieces and region B's single seed, at the degrees the committed tables
+    /// carry. Region A's pieces are two equal bands an order, at degree 20 and
+    /// 18, on the double lane, and two to four pieces an order, all at degree 10,
+    /// on the single-precision lane; region B is one seed on both. A caller names
+    /// it to read those tables.
     kShipped = 0,
 
     /// A narrower partition of both fitted regions, at the degrees the proved

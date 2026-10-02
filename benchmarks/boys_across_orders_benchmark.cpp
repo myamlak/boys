@@ -15,10 +15,11 @@
 //     orders (an argument-major loop) and pays the plane's order stride on the
 //     store because AVX2 has no scatter.
 //
-//   * THE PARTITION. The shipped region-A pieces share their intervals and
-//     degrees across orders, which is what lets the lane fetch one piece's
-//     coefficients at a fixed stride and hold four orders of ONE piece. The
-//     narrow partition is cut per order, so no such stride exists: its lane
+//   * THE PARTITION. The double lane's shipped region-A pieces share their
+//     intervals and degrees across orders, which is what lets its lane fetch one
+//     piece's coefficients at a fixed stride and hold four orders of ONE piece.
+//     The float lane's do not, so its lane looks each order's own piece up. The
+//     narrow partition is cut per order too, so no such stride exists: its lane
 //     fetches each of the four orders it packs its own piece and coefficients,
 //     so one group is four different pieces evaluated together. The per-order
 //     loop beside it is that partition read one order at a time by the
