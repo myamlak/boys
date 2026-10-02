@@ -360,11 +360,13 @@ TEST(BackendTest, TheUnnamedCallIsTheDefaultThisBuildWasCompiledWith) {
 #endif
 }
 
-// Naming the narrow partition is answered from its own tables; combinations with no narrow
-// table are refused where they are named rather than answered from the shipped one. Those
-// refusals are static_asserts inside RouteFit, the relaxed rungs' RequireShippedPartition
-// and the single-precision lanes, so a test that has to compile cannot exercise one: what
-// is pinned here is the default. The member itself is measured in the accuracy gate.
+// Naming the narrow partition is answered from its own tables; combinations with no
+// table for the named partition are refused where they are named rather than answered
+// from another partition's fits. Those refusals are static_asserts inside RouteFit
+// (include/boys/backend.hpp:487) and RationalRouteFitAtRung
+// (include/boys/boys_impl.hpp:1282), so a test that has to compile cannot exercise
+// one: what is pinned here is the default. The member itself is measured in the
+// accuracy gate.
 TEST(BackendTest, ThePartitionNamesRoundTrip) {
     EXPECT_STREQ(boys::GranularityName(boys::FitGranularity::kShipped), "shipped");
     EXPECT_STREQ(boys::GranularityName(boys::FitGranularity::kNarrow), "narrow");
