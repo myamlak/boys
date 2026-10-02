@@ -43,7 +43,7 @@
 //   boys-across-orders-benchmark --variant=orders-narrow-clenshaw --reps=20000
 //   boys-across-orders-benchmark --variant=orders-narrow-scalar-clenshaw --reps=20000
 //   boys-across-orders-benchmark --variant=orders-f32-orders-axis --reps=2000
-//   (and the same line with --variant=orders-f32-shipped,
+//   (and the same line with --variant=orders-f32-committed,
 //    --variant=orders-f32-scalar-fits, --variant=orders-f32-across-clenshaw,
 //    --variant=orders-f32-across-composed)
 
@@ -99,9 +99,9 @@ struct Variant {
 };
 
 constexpr Variant kVariants[] = {
-    {"orders-shipped",
+    {"orders-committed",
      "BoysAllOrders(nmax, x)",
-     "the shipped entry: one seed fit and a recursion across the orders"},
+     "the committed entry: one seed fit and a recursion across the orders"},
     {"orders-scalar-fits",
      "BoysAllOrders(nmax, x)",
      "the certified scalar region-A fit per order, no recursion"},
@@ -124,7 +124,7 @@ constexpr Variant kVariants[] = {
     {"orders-across-horner-composed",
      "BoysAllOrders(nmax, x)",
      "the across-orders lane, Horner, coefficients composed not gathered"},
-    {"balln-shipped", "BoysAllN(nmax, x[], count)", "the shipped plane entry, across arguments"},
+    {"balln-committed", "BoysAllN(nmax, x[], count)", "the committed plane entry, across arguments"},
     {"balln-across-clenshaw",
      "BoysAllN(nmax, x[], count)",
      "the across-orders lane per argument, split Clenshaw"},
@@ -155,9 +155,9 @@ constexpr Variant kVariants[] = {
     // four. Its baseline is the per-order fit loop over the float lane's own
     // tables - the same baseline the double lane is measured against above, so
     // the two widths are read off the same comparison.
-    {"orders-f32-shipped",
+    {"orders-f32-committed",
      "BoysAllOrdersF32(nmax, x)",
-     "the shipped float entry: one seed fit and a recursion across the orders"},
+     "the committed float entry: one seed fit and a recursion across the orders"},
     {"orders-f32-scalar-fits",
      "BoysAllOrdersF32(nmax, x)",
      "the certified scalar float region-A fit per order, no recursion"},
@@ -318,7 +318,7 @@ double Run(const Config& config) {
 
     const auto start = std::chrono::steady_clock::now();
 
-    if (name == "orders-shipped")
+    if (name == "orders-committed")
     {
         values = Drive(config, [&](const std::vector<double>& x, std::vector<double>& out) {
             for (double xi : x)
@@ -408,7 +408,7 @@ double Run(const Config& config) {
 
             return x.size() * orders;
         });
-    } else if (name == "balln-shipped")
+    } else if (name == "balln-committed")
     {
         // The workspace is the caller's and is reused: a per-call allocation
         // would put the allocator's instructions in the counter column.
@@ -455,7 +455,7 @@ double Run(const Config& config) {
             {
                 const float x32 = static_cast<float>(xi);
 
-                if (name == "orders-f32-shipped")
+                if (name == "orders-f32-committed")
                 {
                     boys::BoysAllOrdersF32(nmax, x32, fout.data());
                 } else if (name == "orders-f32-scalar-fits")
