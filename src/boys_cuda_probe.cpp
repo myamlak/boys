@@ -31,6 +31,7 @@
 #include "boys_cuda_probe_entries.hpp"
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <chrono>
 #include <cmath>
@@ -2727,6 +2728,10 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
         if (!RungIsResident(kProbeRungs[block.rung].multiplier, handle))
         {
             block.measured = false;
+            // The same rung as data: the space's closure counts the members of a rung
+            // this card would not hold, and a count taken off the sentence below would
+            // be a parse of the report's own prose.
+            report.refusedRungMultipliers.push_back(kProbeRungs[block.rung].multiplier);
             report.refusedRungs.push_back(Text(
                 "m = %s: the device would not hold this rung's degree tables "
                 "(BoysCuda::DeviceTables), so its %zu row(s) measured nothing. The classes that "
@@ -3864,6 +3869,330 @@ std::string RungNames(DeviceRungMask mask) {
     return names;
 }
 
+/// The place this run's grid carries for one member of the space, or nullptr where it
+/// carries none.
+///
+/// The cell is identified by the entry and the rung, which is what a measurement row is
+/// one of: a name alone is one entry at every rung it was measured at, so a lookup by
+/// name would answer the first rung's place for every rung's.
+const DeviceProbeMeasurement* GridPlaceOf(const DeviceProbeReport& report,
+                                          DeviceEntry entry,
+                                          double multiplier) {
+    for (const DeviceProbeMeasurement& place : report.measurements)
+    {
+        if (place.entry == entry && place.rung == multiplier)
+        {
+            return &place;
+        }
+    }
+
+    return nullptr;
+}
+
+DeviceOptionClosure DeviceOptionSpaceClosure(const DeviceProbeReport& report) noexcept {
+    const std::span<const DeviceOptionInfo> space = BoysDeviceOptions();
+
+    DeviceOptionClosure closure;
+    closure.rows = space.size();
+    closure.rungs = kDeviceRungCount;
+    closure.total = closure.rows * closure.rungs;
+
+    // One bit per (precision, rung, question) the space admits: a table of rung masks and
+    // not a list of keys, so that the third reading of the space below allocates nothing.
+    // A class the space admits and the report does not carry is a shape of this surface
+    // that nothing reports on.
+    constexpr std::size_t kPrecisions = static_cast<std::size_t>(DeviceOptionPrecision::kCount);
+    constexpr std::size_t kQuestions = static_cast<std::size_t>(DeviceOptionQuestion::kCount);
+    std::array<DeviceRungMask, kPrecisions * kQuestions> classes = {};
+
+    for (const DeviceOptionInfo& row : space)
+    {
+        // Whether this run's own request named the row. A request that names nothing
+        // asks for the whole space; one that names entries asks for those.
+        const bool asked = report.options.only.empty() ||
+                           std::find(report.options.only.begin(),
+                                     report.options.only.end(),
+                                     std::string(row.name)) != report.options.only.end();
+
+        if (row.built && asked)
+        {
+            closure.gridPlacesOwed += kDeviceRungCount;
+        }
+
+        for (std::size_t i = 0; i < kDeviceRungCount; ++i)
+        {
+            const double multiplier = kDeviceRungs[i];
+
+            // The order is the space's own: a row the build does not serve is refused
+            // whatever its entry's rung axis states (its mask is empty for that very
+            // reason), and a row it serves is refused at a rung only by the entry.
+            if (!row.built)
+            {
+                ++closure.refusedAndOwed;
+                continue;
+            }
+
+            if (!DeviceEntryServedAtRung(row.entry, multiplier))
+            {
+                ++closure.refusedAtRung;
+                continue;
+            }
+
+            // A member the space serves is a member of one class of the report, keyed on
+            // the precision, the rung and the question: this is the space's own count of
+            // the classes a run of this request has to print, and it is read off the rows
+            // rather than off the report it is held to.
+            if (asked)
+            {
+                const std::size_t slot =
+                    static_cast<std::size_t>(row.precision) * kQuestions +
+                    static_cast<std::size_t>(row.question);
+                classes[slot] |= DeviceRungMask{1} << i;
+            }
+
+            if (std::find(report.refusedRungMultipliers.begin(),
+                          report.refusedRungMultipliers.end(),
+                          multiplier) != report.refusedRungMultipliers.end())
+            {
+                ++closure.notRunnable;
+                continue;
+            }
+
+            const DeviceProbeMeasurement* place = GridPlaceOf(report, row.entry, multiplier);
+
+            if (place != nullptr)
+            {
+                (place->measured ? closure.measured : closure.offeredNoFigure) += 1;
+                continue;
+            }
+
+            // No place in this run's grid for a member this build serves. A run that
+            // built its grid and did not name this row was asked for another set; one
+            // that never built a grid never reached the space at all, and a member it
+            // never presented is in no state and is counted as that.
+            if (!report.measurements.empty() && !asked)
+            {
+                ++closure.notAsked;
+                continue;
+            }
+
+            ++closure.unaccounted;
+        }
+    }
+
+    closure.states = closure.measured + closure.offeredNoFigure + closure.refusedAndOwed +
+                     closure.refusedAtRung + closure.notRunnable + closure.notAsked;
+    closure.gridPlaces = report.measurements.size();
+
+    for (const DeviceRungMask rungs : classes)
+    {
+        closure.classesAdmitted += static_cast<std::size_t>(std::popcount(rungs));
+    }
+
+    closure.classesPrinted = report.classes.size();
+    closure.closed = closure.unaccounted == 0 && closure.states == closure.total &&
+                     closure.gridPlaces == closure.gridPlacesOwed &&
+                     closure.classesPrinted == closure.classesAdmitted &&
+                     report.status == DeviceProbeStatus::kSuccess;
+    return closure;
+}
+
+/// The rows this build refuses, grouped by the library's own reason: one entry per
+/// distinct reason, with the rows it refuses, so the closure block states a reason once
+/// and every row it covers.
+std::vector<std::pair<std::string, std::vector<std::string>>> RefusalsByReason() {
+    std::vector<std::pair<std::string, std::vector<std::string>>> groups;
+
+    for (const DeviceOptionInfo& row : BoysDeviceOptions())
+    {
+        if (row.built)
+        {
+            continue;
+        }
+
+        const std::string reason =
+            row.refusedBecause != nullptr ? std::string(row.refusedBecause)
+                                          : std::string("this build serves it and the row names no "
+                                                        "reason");
+
+        bool placed = false;
+
+        for (auto& group : groups)
+        {
+            if (group.first == reason)
+            {
+                group.second.push_back(row.name);
+                placed = true;
+                break;
+            }
+        }
+
+        if (!placed)
+        {
+            groups.push_back({reason, {row.name}});
+        }
+    }
+
+    return groups;
+}
+
+/// A comma-separated list of names, wrapped into lines no wider than the report's own
+/// column so that a list of every row one reason refuses is a paragraph and not a line
+/// off the edge of a terminal.
+std::string WrappedNames(const std::vector<std::string>& names, const std::string& indent) {
+    constexpr std::size_t kWidth = 96;
+    std::string text;
+    std::size_t lineWidth = 0;
+
+    for (const std::string& name : names)
+    {
+        const std::string piece = text.empty() ? name : ", " + name;
+
+        if (!text.empty() && lineWidth + piece.size() > kWidth)
+        {
+            text += ",\n" + indent + name;
+            lineWidth = indent.size() + name.size();
+            continue;
+        }
+
+        text += piece;
+        lineWidth += piece.size();
+    }
+
+    return text;
+}
+
+/// The option space's closure, printed: the space, one count per state a member of it
+/// can be in, the arithmetic over those counts, and the verdict.
+///
+/// It is the last block of the report on every path, a run that measured nothing
+/// included: what a run did with the space is a fact about the run, and a run that
+/// reached none of it says so here rather than leaving a reader to infer it from the
+/// absence of figures. `DeviceOptionClosure` is what the two readings of one total are,
+/// and the counts below are printed with the tables they were read from.
+void AppendOptionClosure(std::string& text, const DeviceProbeReport& report) {
+    const DeviceOptionClosure closure = DeviceOptionSpaceClosure(report);
+    const std::vector<std::pair<std::string, std::vector<std::string>>> refusals =
+        RefusalsByReason();
+
+    text += "\n\nthe closure - the space above counted, every member of it in one state of this "
+            "run and no\n  member in two, so that a member the report does not account for is "
+            "visible as a missing\n  number rather than as an absence:\n";
+    text += Text("  the space: %zu row(s) of this library's own option table (BoysDeviceOptions,\n"
+                 "  include/boys/boys_cuda_options.hpp) at the %zu rung(s) of the lane's own rung "
+                 "table\n  (kDeviceRungs, the same header): %zu x %zu = %zu member(s). Both "
+                 "factors are the\n  library's own and neither is listed here.\n",
+                 closure.rows,
+                 closure.rungs,
+                 closure.rows,
+                 closure.rungs,
+                 closure.total);
+
+    text += Text("\n  MEMBERS: %zu of %zu member(s) of the option space are measured on this card "
+                 "and\n                published\n",
+                 closure.measured,
+                 closure.total);
+    text += Text("                %zu refused with the library's own reason and owed\n",
+                 closure.refusedAndOwed);
+
+    for (const auto& group : refusals)
+    {
+        text += Text("                    %s: %s\n",
+                     group.first.c_str(),
+                     WrappedNames(group.second, "                      ").c_str());
+    }
+
+    text += Text("                %zu refused at a rung the row's own entry does not answer at\n"
+                 "                (DeviceEntryServedAtRung): the entry's statement and not this "
+                 "card's\n",
+                 closure.refusedAtRung);
+    text += Text("                %zu not runnable on this card, counted apart and not against the "
+                 "library: the\n                device would not hold the rung's degree tables, so "
+                 "no member of those rungs was\n                presented to it. Each such rung is "
+                 "named with the library's answer above\n",
+                 closure.notRunnable);
+    text += Text("                %zu offered at a rung this run carried a place for and "
+                 "producing no figure\n",
+                 closure.offeredNoFigure);
+    text += Text("                %zu not asked for by this run's request: the space is stated "
+                 "whole and this\n                run measured the entries its request named\n",
+                 closure.notAsked);
+    text += Text("  the arithmetic: %zu + %zu + %zu + %zu + %zu + %zu = %zu\n",
+                 closure.measured,
+                 closure.refusedAndOwed,
+                 closure.refusedAtRung,
+                 closure.notRunnable,
+                 closure.offeredNoFigure,
+                 closure.notAsked,
+                 closure.states);
+    text += Text("                 the space's own total: %zu member(s) = the %zu above + %zu in "
+                 "no state\n",
+                 closure.total,
+                 closure.states,
+                 closure.unaccounted);
+    text += Text("                 the run's own grid: %zu place(s), against the %zu a run of this "
+                 "request owes\n                 the space (%zu row(s) it serves and this request "
+                 "named, x %zu rung(s))\n",
+                 closure.gridPlaces,
+                 closure.gridPlacesOwed,
+                 closure.gridPlacesOwed / closure.rungs,
+                 closure.rungs);
+    text += Text("                 the classes the space admits: %zu, one per (precision, rung, "
+                 "question) the\n                 rows this request named fall into; this report "
+                 "carries %zu class(es)\n",
+                 closure.classesAdmitted,
+                 closure.classesPrinted);
+
+    if (closure.closed)
+    {
+        text += Text("  the verdict: PASS - every one of the space's %zu member(s) is in one state "
+                     "above and\n                none is in two\n",
+                     closure.total);
+        return;
+    }
+
+    text += "  the verdict: FAIL - the closure does not hold, and this run's exit status says "
+            "so:\n";
+
+    if (report.status != DeviceProbeStatus::kSuccess)
+    {
+        text += Text("                the run did not succeed: %s\n"
+                     "                The members above are the space this build serves and this "
+                     "run did not present\n                to a device\n",
+                     StatusName(report.status));
+    }
+
+    if (closure.states != closure.total)
+    {
+        text += Text("                the states sum to %zu and the space has %zu member(s)\n",
+                     closure.states,
+                     closure.total);
+    }
+
+    if (closure.gridPlaces != closure.gridPlacesOwed)
+    {
+        text += Text("                the run's own grid carries %zu place(s) where a run of this "
+                     "request\n                owes %zu\n",
+                     closure.gridPlaces,
+                     closure.gridPlacesOwed);
+    }
+
+    if (closure.classesPrinted != closure.classesAdmitted)
+    {
+        text += Text("                the report carries %zu class(es) where the space admits %zu "
+                     "over the\n                rows this request named\n",
+                     closure.classesPrinted,
+                     closure.classesAdmitted);
+    }
+
+    if (closure.unaccounted > 0)
+    {
+        text += Text("                %zu member(s) are in no state above: rows of the library's "
+                     "own report\n                that no part of this run stands behind\n",
+                     closure.unaccounted);
+    }
+}
+
 /// The library's report of its device option space, row by row, with the row this probe carries for
 /// each beside it.
 ///
@@ -4099,6 +4428,10 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
         // refuses and which cells of the space they are, and what is missing is
         // the measurement.
         AppendOptionSpace(text, std::vector<std::string>(), 0);
+        // And counted, which is where a failed run's coverage stands: the members
+        // this run did not present to the device are in no state, and the verdict
+        // names that rather than leaving the space uncounted.
+        AppendOptionClosure(text, report);
         return text;
     }
 
@@ -5207,6 +5540,11 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
             "report measures).\n  The accuracy rungs are measured here: each of the lane's twelve "
             "is a class key of its\n  own, the m = 1 classes are where a default is read from, "
             "and the relaxed rungs are\n  reported under their own heading above.\n";
+
+    // The last block of the report, on every path: the space counted, so that what
+    // this run did with it is a number a reader can check rather than an inference
+    // from the sections above.
+    AppendOptionClosure(text, report);
 
     return text;
 }

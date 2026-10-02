@@ -1234,6 +1234,18 @@ struct DeviceProbeReport {
     /// rung is missing and why.
     std::vector<std::string> refusedRungs;
 
+    /// The same rungs as the multipliers themselves, in the order \c refusedRungs
+    /// names them: the member of \c kDeviceRungs whose degree tables the device
+    /// would not hold.
+    ///
+    /// Carried as data and not only as the sentences above because the option
+    /// space's closure counts members of a rung from it
+    /// (DeviceOptionSpaceClosure): a cell of a rung that is not here was offered
+    /// to the device, and a cell of one that is is not a cell this card can run.
+    /// Empty is every rung resident, which is what a report that never reached the
+    /// tables also carries.
+    std::vector<double> refusedRungMultipliers;
+
     /// The control on the launched route: the fastest launched row timed at two
     /// very different repetition counts.
     DeviceProbeRepetitionControl control;
@@ -1320,11 +1332,109 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options = {});
 /// how that name was reached, so a reader never has to guess whether the name was
 /// measured. It is written for a reader who has nothing but this output.
 ///
+/// **Its last block is the option space's closure** (\c DeviceOptionClosure):
+/// the space counted, one count per state a member of it can be in, the
+/// arithmetic over those counts and the verdict on it. It is printed on every
+/// path, a report whose run measured nothing included, so that the number of
+/// members the space has and the number this run accounted for are both in the
+/// output rather than one of them being an inference from the other.
+///
 /// \param report a report, from RunDeviceOptionProbe
 ///
 /// \returns the report as text, newline-terminated
 ///
 /// \ingroup boys
 std::string FormatDeviceOptionProbe(const DeviceProbeReport& report);
+
+/// The device option space counted: every member of it in the state one run
+/// established for it, and the arithmetic that has to close.
+///
+/// A member is one (row, rung) cell of the space — a row of \c BoysDeviceOptions()
+/// (boys_cuda_options.hpp) at one multiplier of \c kDeviceRungs — so the total is the
+/// two tables' own sizes multiplied, a projection of the library that cannot fall
+/// behind it. The states are what the run did with that member, and a member is in
+/// exactly one of them:
+///
+///   * \c measured — the run took a figure for the cell;
+///   * \c refusedAndOwed — the row is one this build does not serve, refused with the
+///     library's own reason (\c DeviceOptionInfo::refusedBecause) and outstanding work;
+///   * \c refusedAtRung — the row's entry answers at no such rung, which is
+///     \c DeviceEntryServedAtRung saying no and the library's own statement rather
+///     than a card's;
+///   * \c notRunnable — the row is served at that rung and this card would not hold
+///     the rung's degree tables, so nothing of it was timed; which rungs they are is
+///     \c DeviceProbeReport::refusedRungMultipliers;
+///   * \c offeredNoFigure — the run carried a place for the cell and no round of it
+///     produced a figure;
+///   * \c notAsked — this run's own request (\c DeviceProbeOptions::only) named no such
+///     entry, so the cell was never presented to the device; a run that never reached
+///     the grid at all places no member here.
+///
+/// **Nothing else is a state, and \c unaccounted counts the members in none of
+/// them.** A member there is a row of the library's own report that no part of the
+/// run stands behind: the closure says so rather than counting it into the nearest
+/// state, and the report's last line fails on it.
+///
+/// \c closed is the verdict that line prints: the six states sum to \c total,
+/// \c unaccounted is zero, the run's own grid holds exactly the places the request
+/// owes (\c gridPlaces equals \c gridPlacesOwed), the report carries every class the
+/// space admits (\c classesPrinted equals \c classesAdmitted), and the run succeeded.
+/// It is what the probe's driver returns its exit status from, so a closure that does
+/// not close is a failed run and not a printed remark.
+///
+/// \ingroup boys
+struct DeviceOptionClosure {
+    std::size_t rows = 0; ///< rows of the library's own option table, BoysDeviceOptions()
+    std::size_t rungs = 0; ///< rungs of the lane's own table, kDeviceRungs
+    std::size_t total = 0; ///< the two multiplied: the members of the space
+
+    std::size_t measured = 0; ///< members this run took a figure for
+    std::size_t refusedAndOwed = 0; ///< members of a row this build does not serve
+    std::size_t refusedAtRung = 0; ///< members of a rung the row's own entry refuses
+    std::size_t notRunnable = 0; ///< members of a rung this card would not hold
+    std::size_t offeredNoFigure = 0; ///< places of this run's grid that produced no figure
+    std::size_t notAsked = 0; ///< members this run's request never named
+
+    /// The six states above summed, which is the left-hand side the report prints and
+    /// the bar the space's own total is held to.
+    std::size_t states = 0;
+
+    /// Members in no state above. Zero for every run whose closure closes, and the
+    /// count the verdict fails on.
+    std::size_t unaccounted = 0;
+
+    /// Places this run's own measurement table carries, and the number a run of this
+    /// request owes the space: one per (row it serves and the request named, rung). The
+    /// two are read from different sources — the run's grid and the library's tables —
+    /// and they have to agree.
+    std::size_t gridPlaces = 0;
+    std::size_t gridPlacesOwed = 0;
+
+    /// The classes the space admits, and the classes the report carries.
+    ///
+    /// A class is one precision, one rung and one question, and which of them the space
+    /// admits is read off the rows the request named — not off the report those rows are
+    /// held to. \c classesPrinted is \c DeviceProbeReport::classes, and the two have to
+    /// agree: a class the space admits and the report does not carry is a shape of this
+    /// surface that nothing in the run reports on.
+    std::size_t classesAdmitted = 0;
+    std::size_t classesPrinted = 0;
+
+    /// Whether the closure holds; see this struct's own note.
+    bool closed = false;
+};
+
+/// Counts the option space one report was taken over; see \c DeviceOptionClosure.
+///
+/// It reads the library's own tables and the report's own record of the run and
+/// nothing else, so a report built by hand is counted the same way a measured one is
+/// — which is what lets a test hold the counting without a card.
+///
+/// \param report the report to count
+///
+/// \returns the counts, with \c closed the verdict on them
+///
+/// \ingroup boys
+DeviceOptionClosure DeviceOptionSpaceClosure(const DeviceProbeReport& report) noexcept;
 
 } // namespace boys

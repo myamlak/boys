@@ -358,7 +358,7 @@ counts, the reasons, the two figures side by side and the tolerance table are in
 
 ### Check the figures yourself
 
-Every figure above is measured, and the measurement ships in this tree. Build the gate and run it:
+Every figure above is measured, and the measurement is in this tree. Build the gate and run it:
 
     cmake -S . -B build
     cmake --build build --target boys-accuracy-gate
@@ -531,9 +531,9 @@ and the same bars the scalar region-A path holds, ≤ m·1e-15 on those fits and
 extended band, and naming it changes the region-A values a caller receives — the shipped entry reaches
 most orders by a recursion from a seed where this lane evaluates each order's own fit — with both
 inside the bound. Both partitions of region A are carried
-on it: the shipped table's pieces are shared across the orders of a piece, which lets the lane fetch
-one piece's coefficients at a fixed stride, and the narrow partition's are cut per order, which the
-lane reaches with a gathered fetch that reads each of the four orders it holds its own piece.
+on it: the double lane's shipped pieces are shared across the orders of a piece, which lets the lane
+fetch one piece's coefficients at a fixed stride, and the narrow partition's are cut per order, which
+the lane reaches with a gathered fetch that reads each of the four orders it holds its own piece.
 
 [docs/lane-contract.md](docs/lane-contract.md#the-packing-axis-which-of-a-calls-values-share-a-vector)
 carries the axis in full: which entries carry it, which two calls cannot form it and why they are
@@ -763,7 +763,7 @@ For what each lane guarantees, where it stops and why, see
 
 The fastest entry depends on the host and the build flags rather than on the library: whether the
 vector tier is present, whether a bare `a * b + c` is one rounding or two in your compiler's hands,
-and how your arguments arrive all move the ranking. The library ships the measurement instead of a
+and how your arguments arrive all move the ranking. The library carries the measurement instead of a
 recommendation — a probe you build and run where you deploy:
 
     cmake -S . -B build
@@ -837,7 +837,7 @@ to use — or call `boys::BoysCuda::InitializeTables` — and time everything af
 A CUDA ranking is a statement about a card, not about the library: a part whose documented ratio of
 single- to double-precision throughput is 2 orders the fp64 and fp32 lanes differently from one whose
 ratio is 32, and a card whose compute capability predates the bf16 tensor instructions has no tensor
-path at all. So the CUDA lane ships the same kind of measurement. `boys::RunDeviceOptionProbe` takes
+path at all. So the CUDA lane carries the same kind of measurement. `boys::RunDeviceOptionProbe` takes
 a device ordinal, establishes that device's context before it allocates anything, and returns a
 `boys::DeviceProbeReport` — the card's name and compute capability in the returned data, one figure
 per entry at every accuracy rung the lane serves, one class per precision, accuracy rung and question
@@ -887,7 +887,7 @@ part of the term it is meant to remove.
 Such a figure is checked against the protocol that produced it as well. The rows a shape's answer leans
 on are re-timed at a much smaller and a much larger number of launches inside the region —
 `controlRepetitionsLow` and `controlRepetitionsHigh`, four and sixty-four by default — and each is
-reduced at both counts to the count-independent figure the table ships, which is the quantity the check
+reduced at both counts to the count-independent figure the table carries, which is the quantity the check
 is on rather than a reading beside it. Those two figures are compared against the resolution this run
 measured: a figure that moves between them by more than that is a cost paid per region rather than per
 call, and the row is set aside instead of named. The report prints the two figures, their signed
@@ -932,6 +932,16 @@ the entries.
 
 `boys::DeviceProbeStatus` is how a bad device is reported — an ordinal that does not exist is a
 status and not a crash, and the call does not throw for it.
+
+The report's last block counts the option space rather than describing it: every member — a row of
+`boys::BoysDeviceOptions()` at a rung of `kDeviceRungs` — is placed in one state of the run
+(measured, refused by this build with the library's reason and owed, refused by the entry's own rung
+axis, not runnable on this card, offered and producing no figure, or not asked for by the run's
+request), the states are summed against the space's own total, and the classes the space admits are
+held against the classes the report carries. `boys::DeviceOptionSpaceClosure` answers those counts
+to a program, and `boys-device-probe` exits non-zero when they do not close: a member of the space
+in no state is a failed run and not a remark, so the device half is auditable the way the host
+gate's combination block makes the host half auditable.
 
 Measuring a device other than the one the caller has been using does not disturb the caller's. The
 probe sets its device before it allocates or uploads anything, and puts the calling thread's device

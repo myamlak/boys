@@ -1247,6 +1247,280 @@ TEST(DeviceProbe, ARowStatesTheRungsItIsServedAtAndTheCellsAreCountedFromTheRows
     EXPECT_EQ(text.find("row(s) hold less than the whole of that axis"), std::string::npos) << text;
 }
 
+/// The report's own spelling of a precision and of a question, as a class of it carries
+/// them. Written here because the closures below count classes and never name one: a test
+/// that had to read the probe's own spelling would be reading the thing it is holding.
+const char* PrecisionSpelling(boys::DeviceOptionPrecision precision) {
+    switch (precision) {
+        case boys::DeviceOptionPrecision::kFp64:
+            return "fp64";
+        case boys::DeviceOptionPrecision::kFp32:
+            return "fp32";
+        case boys::DeviceOptionPrecision::kFp16:
+            return "fp16";
+        case boys::DeviceOptionPrecision::kCount:
+            break;
+    }
+
+    return "unnamed";
+}
+
+const char* QuestionSpelling(boys::DeviceOptionQuestion question) {
+    switch (question) {
+        case boys::DeviceOptionQuestion::kSingle:
+            return "single";
+        case boys::DeviceOptionQuestion::kAllOrders:
+            return "all-orders";
+        case boys::DeviceOptionQuestion::kAllN:
+            return "all-n";
+        case boys::DeviceOptionQuestion::kCount:
+            break;
+    }
+
+    return "unnamed";
+}
+
+/// A report whose measurement grid is the one the probe builds — a place per (row, rung)
+/// of a row this build serves, none of them measured, and one class per precision, rung
+/// and question those places fall into — so the closure can be counted, and the text
+/// rendered, without a card or a clock. \p servedCells comes back as the places the space
+/// itself serves, which is a place for every rung an entry answers at.
+DeviceProbeReport GriddedReport(std::size_t& servedCells) {
+    DeviceProbeReport report;
+    report.status = DeviceProbeStatus::kSuccess;
+    report.device.name = "a device";
+    servedCells = 0;
+
+    for (const boys::DeviceOptionInfo& row : boys::BoysDeviceOptions()) {
+        if (!row.built) {
+            continue;
+        }
+
+        for (std::size_t i = 0; i < boys::kDeviceRungCount; ++i) {
+            DeviceProbeMeasurement place;
+            place.name = row.name;
+            place.entry = row.entry;
+            place.rung = boys::kDeviceRungs[i];
+            place.precision = PrecisionSpelling(row.precision);
+            place.question = QuestionSpelling(row.question);
+            report.measurements.push_back(place);
+
+            // The run's grid carries a place for every rung of a row it serves; the
+            // space counts a member at a rung the entry answers at. The two differ for a
+            // row holding part of the axis, and only there.
+            if (boys::DeviceEntryServedAtRung(row.entry, boys::kDeviceRungs[i])) {
+                ++servedCells;
+            }
+        }
+    }
+
+    // One class per precision, rung and question the places above fall into, which is what
+    // the probe's own conclusion loop builds over its grid.
+    for (const DeviceProbeMeasurement& place : report.measurements) {
+        bool held = false;
+
+        for (const DeviceProbeClass& clause : report.classes) {
+            held = held || (clause.precision == place.precision && clause.rung == place.rung &&
+                            clause.question == place.question);
+        }
+
+        if (held) {
+            continue;
+        }
+
+        DeviceProbeClass fresh;
+        fresh.precision = place.precision;
+        fresh.rung = place.rung;
+        fresh.rungName = place.rungName;
+        fresh.question = place.question;
+        report.classes.push_back(fresh);
+    }
+
+    return report;
+}
+
+/// The closure is the space counted, and every member of it is in exactly one state: the
+/// total is the library's own two tables multiplied, the states add up to it, and the
+/// verdict the report's last line prints is that arithmetic's.
+TEST(DeviceProbe, TheClosurePutsEveryMemberOfTheSpaceInOneState) {
+    std::size_t servedCells = 0;
+    DeviceProbeReport report = GriddedReport(servedCells);
+
+    ASSERT_GT(servedCells, 0u);
+
+    const std::size_t rows = boys::BoysDeviceOptions().size();
+    const std::size_t total = rows * boys::kDeviceRungCount;
+
+    // The grid is the run's own, and the total is the library's: the two are read from
+    // different sources and the closure demands they agree.
+    const boys::DeviceOptionClosure offered = boys::DeviceOptionSpaceClosure(report);
+    EXPECT_EQ(offered.rows, rows);
+    EXPECT_EQ(offered.rungs, boys::kDeviceRungCount);
+    EXPECT_EQ(offered.total, total);
+    EXPECT_EQ(offered.states, total);
+    EXPECT_EQ(offered.measured, 0u);
+    EXPECT_EQ(offered.offeredNoFigure, servedCells);
+    EXPECT_EQ(offered.refusedAndOwed + offered.refusedAtRung, total - servedCells);
+    EXPECT_EQ(offered.notRunnable, 0u);
+    EXPECT_EQ(offered.notAsked, 0u);
+    EXPECT_EQ(offered.unaccounted, 0u);
+    EXPECT_EQ(offered.gridPlaces, servedCells);
+    EXPECT_EQ(offered.gridPlacesOwed, servedCells);
+
+    // The third reading: every class the space admits over these rows is one the report
+    // carries, and the grid's places are what makes a class, not the figures in them.
+    EXPECT_EQ(offered.classesAdmitted, offered.classesPrinted);
+    EXPECT_GT(offered.classesAdmitted, 0u);
+    EXPECT_EQ(offered.classesAdmitted % boys::kDeviceRungCount, 0u);
+    EXPECT_TRUE(offered.closed);
+
+    // A place the run offered and no round of which produced a figure is not a failure of
+    // the closure: it is a state, and the arithmetic says which.
+    const std::string offeredText = boys::FormatDeviceOptionProbe(report);
+    EXPECT_NE(offeredText.find("the arithmetic: 0 + "), std::string::npos) << offeredText;
+    EXPECT_NE(offeredText.find("the verdict: PASS"), std::string::npos) << offeredText;
+
+    for (DeviceProbeMeasurement& place : report.measurements) {
+        place.measured = true;
+    }
+
+    const boys::DeviceOptionClosure measured = boys::DeviceOptionSpaceClosure(report);
+    EXPECT_EQ(measured.measured, servedCells);
+    EXPECT_EQ(measured.offeredNoFigure, 0u);
+    EXPECT_EQ(measured.unaccounted, 0u);
+    EXPECT_TRUE(measured.closed);
+    EXPECT_NE(boys::FormatDeviceOptionProbe(report).find(
+                  "MEMBERS: " + std::to_string(servedCells) + " of " + std::to_string(total) +
+                      " member(s) of the option space are measured"),
+              std::string::npos);
+
+    // A rung this card would not hold takes its members out of the measured count and
+    // into its own, and the arithmetic still closes: the members of that rung were
+    // presented to the device and it would not hold the tables they need.
+    report.refusedRungMultipliers.push_back(boys::kDeviceRungs[3]);
+    report.refusedRungs.push_back("m = 64: the device would not hold this rung's degree tables");
+
+    std::size_t ofThatRung = 0;
+
+    for (const DeviceProbeMeasurement& place : report.measurements) {
+        ofThatRung += place.rung == boys::kDeviceRungs[3] ? 1u : 0u;
+    }
+
+    const boys::DeviceOptionClosure held = boys::DeviceOptionSpaceClosure(report);
+    EXPECT_EQ(held.notRunnable, ofThatRung);
+    EXPECT_EQ(held.measured, servedCells - ofThatRung);
+    EXPECT_EQ(held.unaccounted, 0u);
+    EXPECT_TRUE(held.closed);
+
+    const std::string heldText = boys::FormatDeviceOptionProbe(report);
+    EXPECT_NE(heldText.find(std::to_string(ofThatRung) + " not runnable on this card"),
+              std::string::npos)
+        << heldText;
+    EXPECT_NE(heldText.find("the verdict: PASS"), std::string::npos) << heldText;
+}
+
+/// A run that never reached the space closes on nothing. Its members are in no state of
+/// it, the arithmetic carries the count, and the verdict fails — a closure that could not
+/// fail would be a decoration.
+TEST(DeviceProbe, AClosureOverARunThatMeasuredNothingFails) {
+    DeviceProbeReport report;
+    report.status = DeviceProbeStatus::kNoDevice;
+    report.failure = "this machine has no CUDA device, so there is no device option to measure";
+
+    std::size_t servedCells = 0;
+    const DeviceProbeReport grid = GriddedReport(servedCells);
+
+    const boys::DeviceOptionClosure closure = boys::DeviceOptionSpaceClosure(report);
+
+    // The members this build serves and the run never presented: in no state at all, and
+    // counted as that rather than into the nearest state above.
+    EXPECT_EQ(closure.unaccounted, servedCells);
+    EXPECT_EQ(closure.measured, 0u);
+    EXPECT_EQ(closure.offeredNoFigure, 0u);
+    EXPECT_EQ(closure.notAsked, 0u);
+    EXPECT_EQ(closure.states + closure.unaccounted, closure.total);
+    EXPECT_GT(closure.classesAdmitted, closure.classesPrinted);
+    EXPECT_FALSE(closure.closed);
+
+    const std::string text = boys::FormatDeviceOptionProbe(report);
+    EXPECT_NE(text.find("the verdict: FAIL"), std::string::npos) << text;
+    EXPECT_NE(text.find("class(es) where the space admits"), std::string::npos) << text;
+    EXPECT_NE(text.find(std::to_string(servedCells) + " member(s) are in no state above"),
+              std::string::npos)
+        << text;
+    EXPECT_EQ(text.find("the verdict: PASS"), std::string::npos) << text;
+
+    // The same report with the run succeeded and the grid it builds: the closure holds,
+    // so the failure above is the run's state and not a verdict the counting cannot give.
+    const boys::DeviceOptionClosure closed = boys::DeviceOptionSpaceClosure(grid);
+    EXPECT_TRUE(closed.closed);
+}
+
+/// A request that named a set is closed with the rest of the space stated: the members no
+/// name was given for are counted as not asked for rather than as members nothing
+/// accounts for, and the grid the run owes is the places of the rows it named.
+TEST(DeviceProbe, ARequestForOneEntryIsClosedWithTheRestOfTheSpaceStated) {
+    std::string named;
+    std::string namedPrecision;
+    std::string namedQuestion;
+
+    for (const boys::DeviceOptionInfo& row : boys::BoysDeviceOptions()) {
+        if (row.built) {
+            named = row.name;
+            namedPrecision = PrecisionSpelling(row.precision);
+            namedQuestion = QuestionSpelling(row.question);
+            break;
+        }
+    }
+
+    ASSERT_FALSE(named.empty());
+
+    // The whole space's grid, for the members the space serves, and the grid a request for
+    // one entry builds: the probe builds its grid from the entries a request names, so
+    // every other row's places — and their classes — are absent from it.
+    std::size_t servedCells = 0;
+    const DeviceProbeReport wholeSpace = GriddedReport(servedCells);
+
+    DeviceProbeReport report;
+    report.status = DeviceProbeStatus::kSuccess;
+    report.device.name = "a device";
+    report.options.only = {named};
+
+    for (const DeviceProbeMeasurement& place : wholeSpace.measurements) {
+        if (place.name == named) {
+            DeviceProbeMeasurement measured = place;
+            measured.measured = true;
+            report.measurements.push_back(measured);
+        }
+    }
+
+    for (const DeviceProbeClass& clause : wholeSpace.classes) {
+        if (clause.precision == namedPrecision && clause.question == namedQuestion) {
+            report.classes.push_back(clause);
+        }
+    }
+
+    const std::size_t placesOfTheNamedRow = report.measurements.size();
+
+    ASSERT_GT(placesOfTheNamedRow, 0u);
+    ASSERT_LT(placesOfTheNamedRow, servedCells);
+
+    const boys::DeviceOptionClosure closure = boys::DeviceOptionSpaceClosure(report);
+
+    EXPECT_EQ(closure.notAsked, servedCells - placesOfTheNamedRow);
+    EXPECT_EQ(closure.measured, placesOfTheNamedRow);
+    EXPECT_EQ(closure.gridPlaces, placesOfTheNamedRow);
+    EXPECT_EQ(closure.gridPlacesOwed, placesOfTheNamedRow);
+    EXPECT_EQ(closure.classesAdmitted, boys::kDeviceRungCount);
+    EXPECT_EQ(closure.classesPrinted, boys::kDeviceRungCount);
+    EXPECT_EQ(closure.unaccounted, 0u);
+    EXPECT_TRUE(closure.closed);
+
+    const std::string text = boys::FormatDeviceOptionProbe(report);
+    EXPECT_NE(text.find("not asked for by this run's request"), std::string::npos) << text;
+    EXPECT_NE(text.find("the verdict: PASS"), std::string::npos) << text;
+}
+
 /// The book's rung axis is whole, and this is where a reader meets that statement.
 ///
 /// A row of the space states the rungs it is served at and the entry it names answers at

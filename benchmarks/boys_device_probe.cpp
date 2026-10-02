@@ -1,7 +1,10 @@
 // The device option probe's driver. There is no measurement in this file —
 // every number printed came out of the library call, including the card's own
 // name. The exit status is 0 whether or not a winner was named; a status that
-// is not kSuccess is reported and exits 1.
+// is not kSuccess, and an option space whose closure does not close, are
+// reported and exit 1. The closure is the report's last block and the verdict
+// it prints is the one this program returns: a member of the space in no state
+// is a failure here and not a paragraph.
 #include "boys/boys_cuda_probe.hpp"
 
 #include <cstddef>
@@ -193,5 +196,8 @@ int main(int argc, char** argv) {
     const std::string text = boys::FormatDeviceOptionProbe(report);
     std::fputs(text.c_str(), stdout);
 
-    return report.status == boys::DeviceProbeStatus::kSuccess ? 0 : 1;
+    // The report's own last block, read back as the exit status: the closure holds, or
+    // a member of the option space is in no state and this run says so with a non-zero
+    // status rather than with a line a script has to parse.
+    return boys::DeviceOptionSpaceClosure(report).closed ? 0 : 1;
 }
