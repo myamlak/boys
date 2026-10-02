@@ -21,7 +21,7 @@ Seven words carry the design. Each means something narrower here than it means e
 - **region** — an interval of the argument x. There are three. **A** is below
   x = 11.899848152108484, **B** runs from there to x = 28.98933773882074, **C** is at or above it.
   Each is evaluated differently, so a bound is stated per lane *and* region.
-- **route** — a table of stored fits serving a region. The double lane ships two, the default
+- **route** — a table of stored fits serving a region. The double lane carries two, the default
   Chebyshev fits and a rational minimax alternative. Naming one with
   \ref boys::BoysAllOrdersWithRoute changes only the fits that serve the intervals its rows report.
 - **rung** (also **tier**) — how far a call's stored fit is cut. A call names a multiplier: 1 by
@@ -162,7 +162,7 @@ accuracy multiplier. It defaults to 1 and runs to 65536. Every figure holds for 
 | CUDA fp32, `RegionBExp::kFast` | ≤ m·1.5e-7 + 8e-8, the lane's budget plus the corrected seed's contribution |
 
 The CUDA fp32 lane's single entry is the one device entry that takes a second, certified axis: which
-region-B exponential it evaluates (see \ref boys::RegionBExp). Both options ship with a bound of
+region-B exponential it evaluates (see \ref boys::RegionBExp). Both options carry a bound of
 their own, derived from the condition number of the region-B recurrence and confirmed by the device
 gate's sweep. The bare hardware approximation, whose relative error grows with the argument, is not
 offered at any multiplier. The batch single entry takes the option as an argument; the

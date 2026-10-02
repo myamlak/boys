@@ -114,13 +114,13 @@ not asked to.
 
 **Where the recommendation comes from: a measurement taken where you deploy.** Which combination is
 cheapest depends on the machine, on whether your compiler fuses a product-plus-add into one
-rounding, and on how your arguments arrive. So the library ships the measurement rather than a
+rounding, and on how your arguments arrive. So the library carries the measurement rather than a
 recommendation. The probe in this tree (`boys-option-probe`) ranks the combinations your build
 offers and prints the accuracy each one delivered beside its cost. You can then see whether a faster
 row was faster at the same accuracy or at a lower one. Choosing is a development-time act: run it
 once, read the row it puts first for your precision, your rung and the shape of your question, and
 write that combination's name into the call site. **The figures belong to the host they were taken
-on** — a ranking taken somewhere else is not evidence about your machine. The device lane ships a
+on** — a ranking taken somewhere else is not evidence about your machine. The device lane carries a
 probe of the same kind for a card (`boys-device-probe`), because which entry is cheapest on a card
 is a property of the card.
 
@@ -128,7 +128,7 @@ is a property of the card.
 axis carry the settings this build compiles by default. The scheme and the partition were set from
 the probe's own runs, and those runs did not separate the rows of either axis. The three leading rows
 of the double lane's full-accuracy all-orders ranking came out closer together than any one of them
-moves between two runs of the same probe. The settings this library ships are one of those three,
+moves between two runs of the same probe. The settings this build compiles by default are one of those three,
 not the cheapest of them. That costs nothing in accuracy — the two schemes sum one fit and the
 committed and narrow partitions cut one fit, each certified to a bound of its own — but it is what the
 default is. A reader told the default was a measured win would have been told something the
