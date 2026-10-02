@@ -1,0 +1,186 @@
+#!/usr/bin/env python
+"""The completion status: one closed arithmetic per option space, or the reason it does not close.
+
+WHY THIS EXISTS. The owner has been given "nearly done" for days and each time a question found a
+dimension that was never in the answer. The mechanism was not carelessness: a status composed from
+memory is a summary of the spaces I happen to be thinking about, and a space nobody has touched is
+absent from that summary rather than visible in it as a hole. On 2026-10-02 the host space closed
+exactly - 504 + 0 + 168 + 0 + 0 = 672 - while the device's classes were in no arithmetic at all,
+and every GPU question asked that day was a gap in the enumeration, not in my prose.
+
+So the status is not written. It is printed, by this, over EVERY space, and a message that claims
+anything about completion quotes it.
+
+THE CONTRACT, per space:
+  * every space the library has is a row, whether or not a number exists for it;
+  * a space whose parts do not sum to its total is printed NOT CLOSED and exits nonzero;
+  * a space with no arithmetic at all is printed ABSENT - never omitted, because a space missing
+    from a status is indistinguishable from a space that is complete;
+  * the revision each figure was taken at is printed beside it, so a stale figure is visible as
+    one rather than inherited as current.
+
+Failures print and exit nonzero; the tool never reports success it did not read.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import subprocess
+import sys
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# The four states and no fifth. A member is served, refused with the library's own reason and owed,
+# not runnable on this host, or unaccounted - and unaccounted is the one that must be zero.
+STATES = ("certified/served", "refused and owed", "not runnable on this host", "unaccounted")
+
+RUN = os.path.join(REPO, "tests", "data", "boys_accuracy_gate_run.txt")
+
+# The gate's coverage block, as the gate prints it.
+COMBINATIONS = re.compile(
+    r"COMBINATIONS:\s*(\d+)\s+of\s+(\d+)\s+member\(s\) of the option space")
+REFUSED = re.compile(r"^\s*(\d+)\s+refused with the library's own reason and owed", re.M)
+NOT_RUNNABLE = re.compile(
+    r"^\s*(\d+)\s+not runnable on this host, counted apart and not against the library", re.M)
+UNCOVERED = re.compile(r"^\s*(\d+)\s+offered and covered by no cell of this block", re.M)
+ARITHMETIC = re.compile(r"the arithmetic:\s*([\d\s+]+)=\s*(\d+)")
+REVISION = re.compile(r"accuracy gate,\s*revision\s+([0-9a-f]{7,40})")
+
+
+def head_revision() -> str:
+    try:
+        done = subprocess.run(["git", "-C", REPO, "rev-parse", "HEAD"],
+                              capture_output=True, text=True, timeout=20)
+    except Exception:
+        return ""
+    return done.stdout.strip() if done.returncode == 0 else ""
+
+
+def read(path: str) -> str:
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            return handle.read()
+    except OSError:
+        return ""
+
+
+def host_space() -> tuple[str, list[str], bool]:
+    """The host option space, from the recorded gate run. Returns (summary, lines, closed)."""
+    text = read(RUN)
+    if not text:
+        return ("ABSENT: no recorded gate run at tests/data/boys_accuracy_gate_run.txt",
+                [], False)
+
+    match = COMBINATIONS.search(text)
+    if not match:
+        return ("ABSENT: the recorded run carries no COMBINATIONS block", [], False)
+
+    served, total = int(match.group(1)), int(match.group(2))
+    refused = int((REFUSED.search(text) or [0, 0])[1])
+    not_runnable = int((NOT_RUNNABLE.search(text) or [0, 0])[1])
+    unaccounted = int((UNCOVERED.search(text) or [0, 0])[1])
+
+    revision = (REVISION.search(text) or [None, "unknown"])[1]
+    head = head_revision()
+    stale = "" if not head or head.startswith(revision) or revision.startswith(head) else \
+            f"   STALE: this run is {revision[:9]}, HEAD is {head[:9]}"
+
+    lines = [
+        f"  served                 {served:>6}",
+        f"  refused and owed       {refused:>6}",
+        f"  not runnable here      {not_runnable:>6}",
+        f"  unaccounted            {unaccounted:>6}",
+        f"  ----------------------------------",
+        f"  total                  {total:>6}",
+    ]
+
+    found = ARITHMETIC.search(text)
+    if found:
+        parts = [int(n) for n in re.findall(r"\d+", found.group(1))]
+        summed = sum(parts)
+        agrees = summed == total and parts[0] == served
+        lines.append(
+            f"  the run's own arithmetic {found.group(1).strip()} = {found.group(2)}"
+            f"   {'agrees' if agrees else 'DISAGREES with the counts above'}")
+        closed = agrees and unaccounted == 0
+    else:
+        lines.append("  the run prints no arithmetic line")
+        closed = False
+
+    if stale:
+        lines.append(stale)
+        closed = False
+
+    summary = f"{served} of {total} served, {unaccounted} unaccounted"
+    return (summary, lines, closed)
+
+
+def device_space() -> tuple[str, list[str], bool]:
+    """The device option space, from the newest probe log on disk."""
+    directory = os.path.join(REPO, ".claude", "tmp")
+    logs = []
+    try:
+        for name in os.listdir(directory):
+            if name.startswith("gpuprobe-") and name.endswith(".log"):
+                logs.append(os.path.join(directory, name))
+    except OSError:
+        pass
+    if not logs:
+        return ("ABSENT: no device probe log under .claude/tmp/", [], False)
+
+    newest = max(logs, key=os.path.getmtime)
+    text = read(newest)
+
+    # DISTINCT names, not matching lines: the probe reprints its tables in several sections (the
+    # measurement, the refinement, the inventory), so counting lines counts one entry many times.
+    # A count that inflates with the number of sections is not a count of anything.
+    named = set(re.findall(
+        r"^\s{2}((?:device-)?(?:all-orders|all-n|single|each-order)[a-z0-9-]*)"
+        r"\s+\d+\s+(?:fp\d+|bf16)\s", text, re.M))
+    winners = set(re.findall(r"recommended entry:\s*'?([a-z0-9-]+)'?", text))
+    classes = set(re.findall(r"^CLASS\s+(.*)$", text, re.M))
+
+    lines = [
+        f"  source                 {os.path.basename(newest)}",
+        f"  distinct entries named {len(named):>6}",
+        f"  winners named          {len(winners):>6}",
+        f"  class headings printed {len(classes):>6}   (may double-count across sections)",
+        "  served/refused/not-runnable/unaccounted: NO ARITHMETIC PRINTED",
+        "  the device probe prints no coverage arithmetic, so this space does not close",
+        "  because nothing closes it - not because it is complete",
+    ]
+    return (f"{len(named)} distinct entries, {len(winners)} winners, no closure arithmetic",
+            lines, False)
+
+
+def main() -> int:
+    print("COMPLETION STATUS - one arithmetic per option space")
+    print(f"HEAD {head_revision()[:12] or 'unknown'}")
+    print()
+
+    overall = True
+    for name, fn in (("HOST   (four lanes x route x scheme x partition x packing x rung)", host_space),
+                     ("DEVICE (classes over precision x shape x rung)", device_space)):
+        summary, lines, closed = fn()
+        print(f"{name}")
+        print(f"  {summary}")
+        for line in lines:
+            print(line)
+        print(f"  => {'CLOSED' if closed else 'NOT CLOSED'}")
+        print()
+        overall = overall and closed
+
+    print("SPACES THIS REPORT DOES NOT COVER")
+    for space in ("the 32-cell entry book (accounted separately by the gate)",
+                  "the m != 1 rungs (only m = 1 decides a default)",
+                  "any space a build configuration other than the recorded one would have"):
+        print(f"  - {space}")
+    print()
+    print("VERDICT:", "every space above closes" if overall else
+          "at least one space does not close - the counts above are the status, not a summary of it")
+    return 0 if overall else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
