@@ -493,6 +493,20 @@ if (BOYS_BUILD_TESTS)
         BoysGateRevision="${BOYS_GATE_REVISION}")
     boys_strict_warnings(boys-accuracy-gate)
 
+    # The DEVICE LANE's arm of that cross. The gate measures the device lane
+    # where the build carries it, through the CUDA surface's own entries, so
+    # this target links boys-cuda and states BOYS_GATE_CUDA in exactly the
+    # configuration that defines boys-cuda: the two conditions are one, and a
+    # build without the lane gets neither the arm nor the link. What the arm
+    # needs beyond the sources is what boys-cuda already carries - the toolkit's
+    # include directories (PUBLIC on that target) and the CUDA runtime the
+    # target's own objects are linked against - so nothing about the toolkit is
+    # repeated here.
+    if (BUILD_CUDA)
+        target_link_libraries(boys-accuracy-gate PRIVATE boys-cuda)
+        target_compile_definitions(boys-accuracy-gate PRIVATE BOYS_GATE_CUDA=1)
+    endif()
+
     # The run-time accuracy tier (BoysAllOrdersAtTier / QueryTier) arrives on a
     # branch of its own, so the gate compiles its tier claims only where the
     # headers this revision ships declare those entries. Asked of the compiler,

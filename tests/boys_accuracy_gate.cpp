@@ -123,6 +123,17 @@ constexpr const char* kNativeHalfAbsent =
 #define BOYS_GATE_TRANSFORM 1
 #endif
 
+// The device lane's arm is compiled where the build carries the CUDA lane, and
+// only there: the entries it calls are the CUDA surface's, the figure it reads
+// back is the card's, and the library they live in is the one CMake links when
+// BUILD_CUDA is ON. CMake states BOYS_GATE_CUDA and links boys-cuda together,
+// so a build without the lane carries no arm, no CUDA header and no device call
+// - and its cross counts the device members apart with the build's own reason
+// rather than with a claim about this host.
+#ifdef BOYS_GATE_CUDA
+#include <boys/boys_cuda.hpp>
+#endif
+
 #include "boys/boys_impl.hpp" // the region kernels and the relaxed bodies
 #include "boys_gate_reference.hpp" // the committed reference, the row shape
 
@@ -134,6 +145,9 @@ constexpr const char* kNativeHalfAbsent =
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#ifdef BOYS_GATE_CUDA
+#include <cuda_runtime.h>
+#endif
 #include <fstream>
 #include <iterator>
 #include <limits>
@@ -1355,6 +1369,183 @@ void MeasureF32RungCross(const Reference& ref,
     }
 }
 
+#ifdef BOYS_GATE_CUDA
+// --- the device lane's arm: the entry a member is read through --------------
+//
+// The cross reaches a member of a lane through the entry that lane measures its
+// combinations through. On the three host lanes that is one entry per lane with
+// the four axes as template arguments: the entry's own dispatch reads them. The
+// device lane is not one entry but a surface of them, one name per (route,
+// partition, packing axis) and a second name over the rows whose scheme axis it
+// carries, so the axes of the cross are mapped to the entry that serves them
+// here - once, in one place - and the mapping is the library's own rather than
+// this gate's: src/boys.cpp's CarriesDevice states, route by route and
+// partition by partition, which entry of the lane a combination is reached
+// through, and the entries' rows in BoysDeviceOptions() (with the entry names
+// in src/boys_cuda.cpp) are the surface those statements are made of.
+//
+// Two members of the cross share an entry with a member beside them, and the
+// reason is the library's: the shipped float ladder is stored once and summed
+// one way, so both of its scheme names reach one entry - "the shipped
+// partition's row is one row for both scheme names, exactly as kAllOrdersF32
+// is" (boys_cuda_options.hpp, the orders-axis rows) - and the two members are
+// measured and published all the same, because a member of the cross is a
+// claim a caller can name, and the reading of it is one reading whatever the
+// second name reaches. A reader sees the two rows carry one figure.
+
+/// The entry one member of the device lane's cross is measured through, at the
+/// accuracy multiplier \c kM.
+///
+/// \param route     the member's fit route: the shipped float ladder or the
+///                  rational pair over the same pieces
+/// \param scheme    the member's summation; the names reach one entry on the
+///                  rows the library states are one row for both
+/// \param partition the member's partition: the shipped ladder, the narrow
+///                  pieces or the uniform grid
+/// \param axis      the member's packing axis: per argument or across orders
+///
+/// \returns the launched entry that serves the member, or \c nullptr for a
+///          partition this library does not carry - which the cross never
+///          names, because it enumerates BoysFitGranularities()
+template <double kM>
+constexpr auto GateDeviceEntry(boys::FitRoute route,
+                               boys::EvalScheme scheme,
+                               boys::FitGranularity partition,
+                               boys::PackAxis axis) noexcept
+    -> boys::BoysStatus (*)(const int*, const double*, float*, std::size_t, void*) {
+    const bool orders = axis == boys::PackAxis::kOrders;
+    const bool horner = scheme == boys::EvalScheme::kHorner;
+    const bool rational = route == boys::FitRoute::kRationalMinimax;
+
+    if (partition == boys::FitGranularity::kShipped)
+    {
+        // Both scheme names reach one entry on each packing axis of this
+        // partition: AllOrdersF32 and its orders-axis sibling are the shipped
+        // float ladder, summed the one way the library stores it.
+        if (rational)
+        {
+            if (orders)
+            {
+                return horner ? &boys::BoysCuda::AllOrdersF32OrdersRatHorner<kM>
+                              : &boys::BoysCuda::AllOrdersF32OrdersRat<kM>;
+            }
+
+            return horner ? &boys::BoysCuda::AllOrdersF32RatHorner<kM>
+                          : &boys::BoysCuda::AllOrdersF32Rat<kM>;
+        }
+
+        return orders ? &boys::BoysCuda::AllOrdersF32Orders<kM>
+                      : &boys::BoysCuda::AllOrdersF32<kM>;
+    }
+
+    if (partition == boys::FitGranularity::kNarrow)
+    {
+        // The narrow pieces are stored in two bases and the scheme names the
+        // one a row sums (the monomial name), and the route's pair is stored in
+        // one and reached by two names of its own.
+        if (rational)
+        {
+            if (orders)
+            {
+                return horner ? &boys::BoysCuda::AllOrdersF32NarrowOrdersRatHorner<kM>
+                              : &boys::BoysCuda::AllOrdersF32NarrowOrdersRat<kM>;
+            }
+
+            return horner ? &boys::BoysCuda::AllOrdersF32NarrowRatHorner<kM>
+                          : &boys::BoysCuda::AllOrdersF32NarrowRat<kM>;
+        }
+
+        if (orders)
+        {
+            return horner ? &boys::BoysCuda::AllOrdersF32NarrowOrdersMono<kM>
+                          : &boys::BoysCuda::AllOrdersF32NarrowOrders<kM>;
+        }
+
+        return horner ? &boys::BoysCuda::AllOrdersF32NarrowMono<kM>
+                      : &boys::BoysCuda::AllOrdersF32Narrow<kM>;
+    }
+
+    if (partition == boys::FitGranularity::kUniform)
+    {
+        if (rational)
+        {
+            if (orders)
+            {
+                return horner ? &boys::BoysCuda::AllOrdersF32OrdersUniformRatHorner<kM>
+                              : &boys::BoysCuda::AllOrdersF32OrdersUniformRat<kM>;
+            }
+
+            return horner ? &boys::BoysCuda::AllOrdersF32UniformRatHorner<kM>
+                          : &boys::BoysCuda::AllOrdersF32UniformRat<kM>;
+        }
+
+        if (orders)
+        {
+            return horner ? &boys::BoysCuda::AllOrdersF32OrdersUniformHorner<kM>
+                          : &boys::BoysCuda::AllOrdersF32OrdersUniform<kM>;
+        }
+
+        return horner ? &boys::BoysCuda::AllOrdersF32UniformHorner<kM>
+                      : &boys::BoysCuda::AllOrdersF32Uniform<kM>;
+    }
+
+    return nullptr;
+}
+
+/// One device allocation the arm owns for the length of the sweep: allocated
+/// on construction, freed on the way out, and reporting what it could not do
+/// rather than ending the run - a host whose device refuses the allocation
+/// measures no member of the lane, and the cross counts them apart with the
+/// reason the arm records.
+///
+/// The shape is tests/boys_cuda_accuracy_gate.cpp's buffer, which is this same
+/// allocation for the same reason and is not shared because the two gates are
+/// separate programs.
+template <typename T> class GateDeviceBuffer {
+public:
+    explicit GateDeviceBuffer(std::size_t count) : mCount(count) {
+        if (cudaMalloc(reinterpret_cast<void**>(&mPtr), count * sizeof(T)) != cudaSuccess)
+        {
+            mPtr = nullptr;
+        }
+    }
+
+    ~GateDeviceBuffer() {
+        if (mPtr != nullptr)
+        {
+            cudaFree(mPtr);
+        }
+    }
+
+    GateDeviceBuffer(const GateDeviceBuffer&) = delete;
+    GateDeviceBuffer& operator=(const GateDeviceBuffer&) = delete;
+
+    T* get() const {
+        return mPtr;
+    }
+
+    bool ok() const {
+        return mPtr != nullptr;
+    }
+
+    bool Upload(const std::vector<T>& src) {
+        return mPtr != nullptr &&
+               cudaMemcpy(mPtr, src.data(), mCount * sizeof(T), cudaMemcpyHostToDevice) ==
+                   cudaSuccess;
+    }
+
+    bool Download(std::vector<T>& dst) const {
+        return mPtr != nullptr &&
+               cudaMemcpy(dst.data(), mPtr, mCount * sizeof(T), cudaMemcpyDeviceToHost) ==
+                   cudaSuccess;
+    }
+
+private:
+    T* mPtr = nullptr;
+    std::size_t mCount = 0;
+};
+#endif // BOYS_GATE_CUDA
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1397,6 +1588,32 @@ int main(int argc, char** argv) {
     }
 
     // Claim slots, in report order.
+    // The figure the float lane publishes for the division form its own entries
+    // run. The claims below measure BoysSingleF32, BoysAllOrdersF32, BoysAllNF32
+    // and the orders-axis policy, every one of which names no division form, so
+    // the form they divide in is the build's default one - and README's contract
+    // row states the lane's figure for that form and not for one form: "float
+    // single / batch | <= m*1.5e-7, or <= m*2.5e-7 in the plain-reciprocal
+    // form". Read as one figure the row is the shipped build's, and the bar was
+    // judged against entries that may be in another form's arithmetic. The base
+    // is the transcribed constant the documents are held to; the term beside it
+    // is the library's own contract row for this lane, read here rather than
+    // transcribed a second time.
+    const double floatLaneFigure = [&] {
+        for (const boys::LaneContractInfo& row : boys::BoysLaneContracts())
+        {
+            if (row.precision == boys::Precision::kFp32)
+            {
+                return kBoundFloat + (boys::kDefaultDivisionForm ==
+                                              boys::DivisionForm::kPlainReciprocal
+                                          ? row.plainAdditive
+                                          : 0.0);
+            }
+        }
+
+        return kBoundFloat;
+    }();
+
     const int kSingleA = AddClaim("double single", "A", kBoundSingleA);
     const int kSingleBand = AddClaim("double single", "band", kBoundSingleBand);
     const int kSingleB = AddClaim("double single", "B", kBoundSingleB);
@@ -1405,10 +1622,10 @@ int main(int argc, char** argv) {
     const int kFixedN = AddClaim("double batch", "fixed-n", kBoundDoubleBatch);
     const int kAllN = AddClaim("double batch", "all-n", kBoundDoubleBatch);
     const int kAllNAtOrders = AddClaim("double batch", "all-n at-orders", kBoundDoubleBatch);
-    const int kFloatSingle = AddClaim("float single", "all", kBoundFloat);
-    const int kFloatOrders = AddClaim("float batch", "all", kBoundFloat);
-    const int kFloatOrdersPacked = AddClaim("float batch", "all, orders axis", kBoundFloat);
-    const int kFloatAllN = AddClaim("float batch", "all-n", kBoundFloat);
+    const int kFloatSingle = AddClaim("float single", "all", floatLaneFigure);
+    const int kFloatOrders = AddClaim("float batch", "all", floatLaneFigure);
+    const int kFloatOrdersPacked = AddClaim("float batch", "all, orders axis", floatLaneFigure);
+    const int kFloatAllN = AddClaim("float batch", "all-n", floatLaneFigure);
     const int kF16Single = AddClaim("fp16 store-half", "single", kBoundHalfBase);
     const int kF16Orders = AddClaim("fp16 store-half", "batch", kBoundHalfBase);
     const int kBf16Single = AddClaim("bf16 store-half", "single", kBoundHalfBase);
@@ -1433,8 +1650,8 @@ int main(int argc, char** argv) {
     const int kSingle65536 = AddClaim("double single m=65536", "A..C", 0.0);
     const int kBatch64 = AddClaim("double batch m=64", "all", 64.0 * kBoundDoubleBatch);
     const int kBatch65536 = AddClaim("double batch m=65536", "all", 65536.0 * kBoundDoubleBatch);
-    const int kFloat64 = AddClaim("float single m=64", "all", 64.0 * kBoundFloat);
-    const int kFloat65536 = AddClaim("float single m=65536", "all", 65536.0 * kBoundFloat);
+    const int kFloat64 = AddClaim("float single m=64", "all", 64.0 * floatLaneFigure);
+    const int kFloat65536 = AddClaim("float single m=65536", "all", 65536.0 * floatLaneFigure);
     const int kHalf64 = AddClaim("fp16 store-half m=64", "all", 64.0 * kBoundHalfBase);
     const int kHalf65536 = AddClaim("fp16 store-half m=65536", "all", 65536.0 * kBoundHalfBase);
     // The native packed half lane: region C only, and its bound is in ULP of the
@@ -2544,7 +2761,7 @@ int main(int argc, char** argv) {
                         asDouble,
                         ref.vf[k],
                         ref.decadeF[k],
-                        kBoundFloat,
+                        floatLaneFigure,
                         got == 0.0f || std::fabs(asDouble) < std::numeric_limits<float>::min());
             }
         }
@@ -2563,7 +2780,7 @@ int main(int argc, char** argv) {
                         asDouble,
                         ref.vf[k],
                         ref.decadeF[k],
-                        kBoundFloat,
+                        floatLaneFigure,
                         out[static_cast<std::size_t>(n)] == 0.0f ||
                             std::fabs(asDouble) < std::numeric_limits<float>::min());
             }
@@ -2597,7 +2814,7 @@ int main(int argc, char** argv) {
                             asDouble,
                             ref.vf[k],
                             ref.decadeF[k],
-                            kBoundFloat,
+                            floatLaneFigure,
                             out[static_cast<std::size_t>(n)] == 0.0f ||
                                 std::fabs(asDouble) < std::numeric_limits<float>::min());
                 }
@@ -2628,7 +2845,7 @@ int main(int argc, char** argv) {
                         asDouble,
                         ref.vf[k],
                         ref.decadeF[k],
-                        kBoundFloat,
+                        floatLaneFigure,
                         allN[k] == 0.0f || std::fabs(asDouble) < std::numeric_limits<float>::min());
             }
         }
@@ -2943,24 +3160,37 @@ int main(int argc, char** argv) {
         // default would differ from the policy it is read against in that axis
         // as well, and a move of the default would make it a policy this block
         // already has a row for.
+        //
+        // THE DIVISION FORM IS NAMED TOO, and it is the axis this sentence was
+        // written for and did not cover: leaving it out put the build's own
+        // default form under five policies that claim to name every axis. On a
+        // build whose default is the plain reciprocal that is not a spelling -
+        // the single-precision lane publishes 2.5e-7 for that form where it
+        // publishes 1.5e-7 for this one - so the five rows would have measured
+        // another form's arithmetic against this one's bar. The form named is
+        // the shipped build's, which is the configuration the figures this
+        // block judges against were measured at.
         using ShippedPair =
             boys::EvalPolicy<boys::FitRoute::kChebyshev,
                              boys::EvalScheme::kSplitClenshaw,
                              boys::BoysBudget::kFloat,
                              boys::PackAxis::kArguments,
-                             boys::FitGranularity::kShipped>;
+                             boys::FitGranularity::kShipped,
+                             boys::DivisionForm::kRefinedReciprocal>;
         using HornerPair =
             boys::EvalPolicy<boys::FitRoute::kChebyshev,
                              boys::EvalScheme::kHorner,
                              boys::BoysBudget::kFloat,
                              boys::PackAxis::kArguments,
-                             boys::FitGranularity::kShipped>;
+                             boys::FitGranularity::kShipped,
+                             boys::DivisionForm::kRefinedReciprocal>;
         using RationalPair =
             boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
                              boys::EvalScheme::kSplitClenshaw,
                              boys::BoysBudget::kFloat,
                              boys::PackAxis::kArguments,
-                             boys::FitGranularity::kShipped>;
+                             boys::FitGranularity::kShipped,
+                             boys::DivisionForm::kRefinedReciprocal>;
         // The same two fits at the narrow partition of region A and its own
         // region-B seed: the partition is the only difference from the pairs
         // above, and naming it is the whole of that axis.
@@ -2969,13 +3199,15 @@ int main(int argc, char** argv) {
                              boys::EvalScheme::kSplitClenshaw,
                              boys::BoysBudget::kFloat,
                              boys::PackAxis::kArguments,
-                             boys::FitGranularity::kNarrow>;
+                             boys::FitGranularity::kNarrow,
+                             boys::DivisionForm::kRefinedReciprocal>;
         using NarrowRationalPair =
             boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
                              boys::EvalScheme::kSplitClenshaw,
                              boys::BoysBudget::kFloat,
                              boys::PackAxis::kArguments,
-                             boys::FitGranularity::kNarrow>;
+                             boys::FitGranularity::kNarrow,
+                             boys::DivisionForm::kRefinedReciprocal>;
 
         constexpr int kEntries = 2;
         constexpr int kPolicies = 5;
@@ -5107,7 +5339,7 @@ int main(int argc, char** argv) {
                             static_cast<double>(got),
                             ref.vf[k],
                             ref.decadeF[k],
-                            M * kBoundFloat,
+                            M * floatLaneFigure,
                             got == 0.0f);
 
 #ifdef BOYS_GATE_FP16
@@ -11344,11 +11576,12 @@ int main(int argc, char** argv) {
     // outstanding work for one unbuilt table, which is the arithmetic a reader
     // is entitled to trust.
     //
-    // What it multiplies instead is the measurement. Every cell below is
-    // evaluated at every form the accessor answers, each form is judged against
-    // the figure its own lane publishes for that form, and the delivered figure
-    // the row prints is the worst of the three. A form that leaves its figure
-    // fails the row it belongs to. A lane whose plain reciprocal rounds once
+    // What it multiplies instead is the measurement. Every cell below on a lane
+    // whose entries carry the axis is evaluated at every form the accessor
+    // answers, each form is judged against the figure its own lane publishes for
+    // that form, and the delivered figure the row prints is the worst of the
+    // forms it was read at. A form that leaves its figure fails the row it
+    // belongs to. A lane whose plain reciprocal rounds once
     // more per step publishes the term that costs apart from its base, and this
     // block reads it: the alternative is a lane judged against a figure it never
     // claimed for that arithmetic, which fails a correct implementation. Where the forms deliver one value the row says that
@@ -11371,11 +11604,14 @@ int main(int argc, char** argv) {
     //                              impossibility, each is a table or a body
     //                              nobody has built, so each is counted as a
     //                              debt with the work item on the row.
-    //   not runnable on this host  the library carries it and this host cannot
-    //                              run it - the device lane's entries need a
-    //                              CUDA device and a CUDA build, and this target
-    //                              is the host build. A fact about the machine,
-    //                              counted apart, and it does not fail.
+    //   not runnable on this host  the library carries it and this run cannot
+    //                              execute it: a build without the CUDA lane has
+    //                              none of the device lane's entries in its
+    //                              binary, and a build that has them needs a
+    //                              device to run them on. A fact about the build
+    //                              and the machine rather than about the lane -
+    //                              the row carries which of the two it is - and
+    //                              it is counted apart rather than failing.
     //
     // The arithmetic the block prints is the thing that makes a missing cell
     // visible rather than a smaller number nobody notices:
@@ -11438,6 +11674,13 @@ int main(int argc, char** argv) {
         // a contradiction.
         double judgedBound = 0.0;
         double accessorBound = 0.0;
+        // The same answer for the form this build's unnamed calls divide in,
+        // which is the form the tolerance query and BoysAccuracyDelivered read:
+        // neither names one, so both read the build's default. The query's
+        // `bound` is this figure and not `accessorBound` wherever the two forms
+        // publish different figures for the lane, and the check below holds the
+        // query to the answer it is the same question as.
+        double accessorFormBound = 0.0;
         double accessorDelivered = 0.0;
         bool accessorDeliveredKnown = false;
         boys::ToleranceVerdict atBound = boys::ToleranceVerdict::kNotCarried;
@@ -12158,6 +12401,323 @@ int main(int argc, char** argv) {
                                        boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
                                        boys::FitGranularity::kUniform>(combHalfLane);
 
+#ifdef BOYS_GATE_CUDA
+    // ---- the device lane's arm ----------------------------------------------
+    //
+    // The fourth lane's reading, taken on the card this build was compiled for.
+    // It is the reading the three arms above take - the committed grid, cell by
+    // cell, each value judged against the figure this row of the cross is
+    // claimed at - and it is taken through the lane's own entries, because this
+    // lane has no host entry to call: the CUDA surface is device pointers and a
+    // stream, and the figure that comes back is the card's. A host lane
+    // standing in for it would measure another arithmetic and report it under
+    // this lane's name, which is the substitution this whole block exists to
+    // refuse.
+    //
+    // The argument the entries are handed is the float the F32 lane evaluates
+    // at (the reference's `xf`), and the cells are judged against that rounded
+    // argument's own column (`vf`): the lane's fp32 kernels take x as a double
+    // and cast it to float (src/boys_cuda.cu, the fp32 launchers), so xf is the
+    // argument the arithmetic actually sees. The single-precision arm above
+    // reads the same pair, and the two lanes' figures are then comparable cell
+    // by cell rather than only in the aggregate.
+    //
+    // A host that answers no device, or whose device cannot be opened, measures
+    // no member of the lane: the arm does not run, the cross counts the 168
+    // members apart, and the sentence they are counted apart with is the one
+    // recorded here - which is this host's, and not a statement about the
+    // library or about a CUDA build in general.
+    bool deviceLaneUsable = false;
+    std::string deviceLaneAbsence =
+        "this build carries the CUDA lane (BUILD_CUDA=ON) and the arm did not run: the device "
+        "was neither opened nor refused, which is a state no path of this gate reaches";
+
+    {
+        int combDeviceCount = 0;
+
+        if (cudaGetDeviceCount(&combDeviceCount) != cudaSuccess)
+        {
+            deviceLaneAbsence =
+                "this build carries the CUDA lane (BUILD_CUDA=ON) and the CUDA runtime did not "
+                "report a device on this host (cudaGetDeviceCount failed), so the entries that "
+                "would have been measured on the card were not run";
+        }
+        else if (combDeviceCount == 0)
+        {
+            deviceLaneAbsence =
+                "this build carries the CUDA lane (BUILD_CUDA=ON) and this host answers no CUDA "
+                "device, so the lane's entries are in the binary and there is no card to run "
+                "them on";
+        }
+        else if (cudaSetDevice(0) != cudaSuccess ||
+                 boys::BoysCuda::InitializeTables() != boys::BoysStatus::kSuccess)
+        {
+            deviceLaneAbsence =
+                "this build carries the CUDA lane (BUILD_CUDA=ON) and the lane's degree tables "
+                "could not be made resident on this host's device (BoysCuda::InitializeTables), "
+                "so no entry of the lane was measured";
+        }
+        else
+        {
+            deviceLaneUsable = true;
+        }
+    }
+
+    const std::size_t combDeviceCells = ref.count * static_cast<std::size_t>(nmax + 1);
+    const std::vector<int> combDeviceTops(ref.count, nmax);
+    GateDeviceBuffer<int> combDeviceN(ref.count);
+    GateDeviceBuffer<double> combDeviceX(ref.count);
+    GateDeviceBuffer<float> combDeviceValues(combDeviceCells);
+    std::vector<float> combDeviceOut(combDeviceCells);
+
+    // The buffers are the sweep's own and the arm below reads them, so what
+    // they could not do is asked once, here, rather than inside the sweep: a
+    // device that refuses an allocation or an upload is a device that measures
+    // nothing, and the cross says so in the same words the three cases above
+    // are said in.
+    if (deviceLaneUsable &&
+        (!combDeviceN.Upload(combDeviceTops) || !combDeviceX.Upload(ref.xf) ||
+         !combDeviceValues.ok()))
+    {
+        deviceLaneUsable = false;
+        deviceLaneAbsence =
+            "this build carries the CUDA lane (BUILD_CUDA=ON) and the device refused an "
+            "allocation or the argument upload the measurement needs, so no entry of the lane "
+            "was measured";
+    }
+
+    // The arm: one reading per (route, scheme, partition, packing axis) at each
+    // of the seven rungs, the same shape as the two rung-sweeping arms above
+    // with the entry selected by the map rather than by a policy template.
+    //
+    // Each cell carries one figure and not three. The device lane has no
+    // division-form axis - DivisionForm is a field of the host policy and is
+    // named in no device header - so no cell here has a second form to be
+    // compared against, and the worst-form column of a row this arm measured
+    // holds the sentinel the report reads as "no form was recorded" rather than
+    // one of the three host form names: naming one of them for a value this
+    // lane returned would be a claim about arithmetic the lane does not run.
+    const int kDeviceForm = -1;
+
+    const auto combDeviceRungs =
+        [&]<boys::FitRoute kRoute, boys::EvalScheme kScheme, boys::PackAxis kAxis,
+            boys::FitGranularity kGran>(int lane) {
+            const double laneBound = combLaneRows[static_cast<std::size_t>(lane)].bound;
+            const double laneAdd = combLaneRows[static_cast<std::size_t>(lane)].additive;
+
+            [&]<std::size_t... kStep>(std::index_sequence<kStep...>) {
+                (void)std::initializer_list<int>{
+                    ([&] {
+                        constexpr int kRung = static_cast<int>(kStep);
+                        constexpr double kM =
+                            kRung == 0
+                                ? boys::kBoysFullAccuracyMultiplier
+                                : boys::AccuracyMultiplier(static_cast<boys::AccuracyTier>(kRung));
+                        constexpr auto kEntry =
+                            GateDeviceEntry<kM>(kRoute, kScheme, kGran, kAxis);
+
+                        if (kEntry == nullptr)
+                        {
+                            std::printf("  the device lane: no entry of this build's CUDA surface "
+                                        "serves a member the cross names, so no cell here "
+                                        "measures it\n");
+                            failed = true;
+
+                            return;
+                        }
+
+                        CombAccum a;
+
+                        // The figure the row is judged by, computed the way the
+                        // accessor computes it (src/boys.cpp, BoysAccuracyGuaranteed):
+                        // the lane's base at the rung, plus the term the lane adds
+                        // beside it - on this lane the fast region-B exponential's
+                        // corrected seed, which no rung scales.
+                        a.bound = kM * laneBound + laneAdd;
+
+                        const boys::BoysStatus status = kEntry(combDeviceN.get(),
+                                                               combDeviceX.get(),
+                                                               combDeviceValues.get(),
+                                                               ref.count,
+                                                               nullptr);
+
+                        if (status != boys::BoysStatus::kSuccess ||
+                            cudaDeviceSynchronize() != cudaSuccess ||
+                            !combDeviceValues.Download(combDeviceOut))
+                        {
+                            std::printf("  the device lane: the entry for one member of the cross "
+                                        "did not run at m = %g (BoysStatus %d), so that member "
+                                        "is measured by no cell here\n",
+                                        kM,
+                                        static_cast<int>(status));
+                            failed = true;
+
+                            return;
+                        }
+
+                        for (int n = 0; n <= nmax; ++n)
+                        {
+                            for (std::size_t i = 0; i < ref.count; ++i)
+                            {
+                                const std::size_t e = ref.Index(n, i);
+                                const double got[1] = {
+                                    static_cast<double>(combDeviceOut[e])};
+
+                                a.addAtForms(n, ref.xf[i], got, 1, ref.vf[e]);
+                            }
+                        }
+
+                        combMeasured.push_back({lane,
+                                                kRung,
+                                                static_cast<int>(kRoute),
+                                                static_cast<int>(kScheme),
+                                                static_cast<int>(kGran),
+                                                static_cast<int>(kAxis),
+                                                a.cells,
+                                                a.below,
+                                                a.over,
+                                                a.worst,
+                                                a.bound,
+                                                a.judgedTo,
+                                                a.worstN,
+                                                a.worstX,
+                                                kDeviceForm,
+                                                a.forms,
+                                                a.moved,
+                                                a.compared,
+                                                {a.movedByForm[0], a.movedByForm[1],
+                                                 a.movedByForm[2]}});
+                    }(),
+                    0)...};
+            }(std::make_index_sequence<7>{});
+        };
+
+    // The arm, over every member of the cross the device lane claims: four
+    // axes of the space read off the same tables the cross enumerates them
+    // from, each at the seven rungs. The count is the cross's own arithmetic
+    // for this lane (routes x schemes x partitions x axes x rungs) and the
+    // claim side below is what holds this list to it.
+    if (deviceLaneUsable)
+    {
+        combDeviceRungs.template operator()<boys::FitRoute::kChebyshev,
+                                            boys::EvalScheme::kSplitClenshaw,
+                                            boys::PackAxis::kArguments,
+                                            boys::FitGranularity::kShipped>(combDeviceLane);
+        combDeviceRungs.template operator()<boys::FitRoute::kChebyshev,
+                                            boys::EvalScheme::kHorner,
+                                            boys::PackAxis::kArguments,
+                                            boys::FitGranularity::kShipped>(combDeviceLane);
+        combDeviceRungs.template operator()<boys::FitRoute::kRationalMinimax,
+                                            boys::EvalScheme::kSplitClenshaw,
+                                            boys::PackAxis::kArguments,
+                                            boys::FitGranularity::kShipped>(combDeviceLane);
+        combDeviceRungs.template operator()<boys::FitRoute::kRationalMinimax,
+                                            boys::EvalScheme::kHorner,
+                                            boys::PackAxis::kArguments,
+                                            boys::FitGranularity::kShipped>(combDeviceLane);
+        combDeviceRungs.template operator()<boys::FitRoute::kChebyshev,
+                                            boys::EvalScheme::kSplitClenshaw,
+                                            boys::PackAxis::kOrders,
+                                            boys::FitGranularity::kShipped>(combDeviceLane);
+        combDeviceRungs.template operator()<boys::FitRoute::kChebyshev,
+                                            boys::EvalScheme::kHorner,
+                                            boys::PackAxis::kOrders,
+                                            boys::FitGranularity::kShipped>(combDeviceLane);
+        combDeviceRungs.template operator()<boys::FitRoute::kRationalMinimax,
+                                            boys::EvalScheme::kSplitClenshaw,
+                                            boys::PackAxis::kOrders,
+                                            boys::FitGranularity::kShipped>(combDeviceLane);
+        combDeviceRungs.template operator()<boys::FitRoute::kRationalMinimax,
+                                            boys::EvalScheme::kHorner,
+                                            boys::PackAxis::kOrders,
+                                            boys::FitGranularity::kShipped>(combDeviceLane);
+
+        combDeviceRungs.template operator()<boys::FitRoute::kChebyshev,
+                                            boys::EvalScheme::kSplitClenshaw,
+                                            boys::PackAxis::kArguments,
+                                            boys::FitGranularity::kNarrow>(combDeviceLane);
+        combDeviceRungs.template operator()<boys::FitRoute::kChebyshev,
+                                            boys::EvalScheme::kHorner,
+                                            boys::PackAxis::kArguments,
+                                            boys::FitGranularity::kNarrow>(combDeviceLane);
+        combDeviceRungs.template operator()<boys::FitRoute::kRationalMinimax,
+                                            boys::EvalScheme::kSplitClenshaw,
+                                            boys::PackAxis::kArguments,
+                                            boys::FitGranularity::kNarrow>(combDeviceLane);
+        combDeviceRungs.template operator()<boys::FitRoute::kRationalMinimax,
+                                            boys::EvalScheme::kHorner,
+                                            boys::PackAxis::kArguments,
+                                            boys::FitGranularity::kNarrow>(combDeviceLane);
+        combDeviceRungs.template operator()<boys::FitRoute::kChebyshev,
+                                            boys::EvalScheme::kSplitClenshaw,
+                                            boys::PackAxis::kOrders,
+                                            boys::FitGranularity::kNarrow>(combDeviceLane);
+        combDeviceRungs.template operator()<boys::FitRoute::kChebyshev,
+                                            boys::EvalScheme::kHorner,
+                                            boys::PackAxis::kOrders,
+                                            boys::FitGranularity::kNarrow>(combDeviceLane);
+        combDeviceRungs.template operator()<boys::FitRoute::kRationalMinimax,
+                                            boys::EvalScheme::kSplitClenshaw,
+                                            boys::PackAxis::kOrders,
+                                            boys::FitGranularity::kNarrow>(combDeviceLane);
+        combDeviceRungs.template operator()<boys::FitRoute::kRationalMinimax,
+                                            boys::EvalScheme::kHorner,
+                                            boys::PackAxis::kOrders,
+                                            boys::FitGranularity::kNarrow>(combDeviceLane);
+
+        combDeviceRungs.template operator()<boys::FitRoute::kChebyshev,
+                                            boys::EvalScheme::kSplitClenshaw,
+                                            boys::PackAxis::kArguments,
+                                            boys::FitGranularity::kUniform>(combDeviceLane);
+        combDeviceRungs.template operator()<boys::FitRoute::kChebyshev,
+                                            boys::EvalScheme::kHorner,
+                                            boys::PackAxis::kArguments,
+                                            boys::FitGranularity::kUniform>(combDeviceLane);
+        combDeviceRungs.template operator()<boys::FitRoute::kRationalMinimax,
+                                            boys::EvalScheme::kSplitClenshaw,
+                                            boys::PackAxis::kArguments,
+                                            boys::FitGranularity::kUniform>(combDeviceLane);
+        combDeviceRungs.template operator()<boys::FitRoute::kRationalMinimax,
+                                            boys::EvalScheme::kHorner,
+                                            boys::PackAxis::kArguments,
+                                            boys::FitGranularity::kUniform>(combDeviceLane);
+        combDeviceRungs.template operator()<boys::FitRoute::kChebyshev,
+                                            boys::EvalScheme::kSplitClenshaw,
+                                            boys::PackAxis::kOrders,
+                                            boys::FitGranularity::kUniform>(combDeviceLane);
+        combDeviceRungs.template operator()<boys::FitRoute::kChebyshev,
+                                            boys::EvalScheme::kHorner,
+                                            boys::PackAxis::kOrders,
+                                            boys::FitGranularity::kUniform>(combDeviceLane);
+        combDeviceRungs.template operator()<boys::FitRoute::kRationalMinimax,
+                                            boys::EvalScheme::kSplitClenshaw,
+                                            boys::PackAxis::kOrders,
+                                            boys::FitGranularity::kUniform>(combDeviceLane);
+        combDeviceRungs.template operator()<boys::FitRoute::kRationalMinimax,
+                                            boys::EvalScheme::kHorner,
+                                            boys::PackAxis::kOrders,
+                                            boys::FitGranularity::kUniform>(combDeviceLane);
+    }
+#endif // BOYS_GATE_CUDA
+
+    // Whether the device lane was measured here, and the sentence its members
+    // are counted apart with where it was not. The two are one statement: a
+    // member of that lane is either a row this run measured on the card, or it
+    // is counted apart for a reason this build and this host can be asked
+    // about - and never for the lane's identity, which is what the reason used
+    // to be.
+#ifdef BOYS_GATE_CUDA
+    const bool deviceLaneMeasured = deviceLaneUsable;
+    const std::string deviceLaneReason = deviceLaneAbsence;
+#else
+    const bool deviceLaneMeasured = false;
+    const std::string deviceLaneReason =
+        "this build has no CUDA lane (BUILD_CUDA=OFF), so the device lane's entries are not in "
+        "this binary and no cell here can run them. A build with BUILD_CUDA=ON carries the lane "
+        "and measures these members on the card, and this sentence is replaced there by the "
+        "card's own reading";
+#endif
+
     // ---- the cross, judged against what the accessor answers ----------------
     std::vector<Combination> combinations;
     std::size_t combClaimedCarried = 0;
@@ -12199,13 +12759,44 @@ int main(int argc, char** argv) {
                         {
                             const boys::PackAxisInfo& axisRow =
                                 boys::BoysPackAxes()[static_cast<std::size_t>(ai)];
+                            // The division form is named, and it is the one
+                            // argument this call was leaving to the build. The
+                            // accessor answers the figure for the form it is
+                            // given - the single-precision lane publishes
+                            // 2.5e-7 for the plain reciprocal where it publishes
+                            // 1.5e-7 for the other two - and the figure this row
+                            // is judged by, `c.bound` below, is the lane's base:
+                            // the form named here is the one that base belongs
+                            // to, so the two are one number rather than two that
+                            // agree whenever the build's default happens to be a
+                            // base form. A build whose default is the plain
+                            // reciprocal moved this answer and not the bound,
+                            // and the check below read that as a disagreement.
                             const boys::AccuracyFigure guaranteed = boys::BoysAccuracyGuaranteed(
                                 static_cast<boys::Precision>(lane),
                                 route,
                                 scheme,
                                 axisRow.axis,
                                 partition.granularity,
-                                tier);
+                                tier,
+                                boys::DivisionForm::kRefinedReciprocal);
+                            // The same figure for the form this build's unnamed
+                            // calls divide in, which is what the two entries
+                            // below answer for: neither BoysAccuracyDelivered nor
+                            // QueryCombination takes a form, so both read the
+                            // build's default one, and the tolerance query's own
+                            // `bound` is this figure. It is held here rather than
+                            // left implicit because the query is asked at a
+                            // tolerance and answers a bound, and a query asked at
+                            // one form's figure while answering another's has
+                            // been given a request no bound of its own can meet.
+                            const boys::AccuracyFigure guaranteedForm =
+                                boys::BoysAccuracyGuaranteed(static_cast<boys::Precision>(lane),
+                                                             route,
+                                                             scheme,
+                                                             axisRow.axis,
+                                                             partition.granularity,
+                                                             tier);
                             const boys::AccuracyFigure delivered = boys::BoysAccuracyDelivered(
                                 static_cast<boys::Precision>(lane),
                                 route,
@@ -12223,6 +12814,7 @@ int main(int argc, char** argv) {
                                          axisRow.name,
                                          boys::AccuracyMultiplier(tier));
                             c.accessorBound = guaranteed.value;
+                            c.accessorFormBound = guaranteedForm.value;
                             c.accessorDelivered = delivered.value;
                             c.accessorDeliveredKnown = delivered.available;
 
@@ -12235,6 +12827,15 @@ int main(int argc, char** argv) {
                             // answering from somewhere else; a refused row is
                             // asked the same two questions and must answer
                             // neither, with no figures at all.
+                            //
+                            // The figure the request is made at is the one the
+                            // query answers with - `guaranteedForm`, the accessor
+                            // read the way the query reads it - and not the
+                            // figure this row's bound belongs to: a query asked
+                            // at one form's bound and answering another's would
+                            // be asked a question about itself and answer about
+                            // the build, which is the shape of a check that
+                            // cannot pass.
                             const boys::CombinationCoverage askedAtBound =
                                 boys::QueryCombination(static_cast<boys::Precision>(lane),
                                                        route,
@@ -12242,7 +12843,7 @@ int main(int argc, char** argv) {
                                                        axisRow.axis,
                                                        partition.granularity,
                                                        tier,
-                                                       guaranteed.value);
+                                                       guaranteedForm.value);
                             const boys::CombinationCoverage askedAtHalf =
                                 boys::QueryCombination(static_cast<boys::Precision>(lane),
                                                        route,
@@ -12250,7 +12851,7 @@ int main(int argc, char** argv) {
                                                        axisRow.axis,
                                                        partition.granularity,
                                                        tier,
-                                                       guaranteed.value * 0.5);
+                                                       guaranteedForm.value * 0.5);
 
                             c.atBound = askedAtBound.verdict;
                             c.atHalf = askedAtHalf.verdict;
@@ -12302,12 +12903,15 @@ int main(int argc, char** argv) {
                             {
                                 c.state = "refused - owed";
                                 c.source = guaranteed.reason;
-                            } else if (lane == combDeviceLane)
+                            } else if (lane == combDeviceLane && !deviceLaneMeasured)
                             {
+                                // Not "the lane is a device lane": the lane is
+                                // counted apart only where nothing here could
+                                // run it, and the sentence says which of the
+                                // two - no CUDA in this build, or no device
+                                // this build can open - is this run's.
                                 c.state = "not runnable on this host";
-                                c.source =
-                                    "the device lane's entries need a CUDA device and a CUDA "
-                                    "build; this target is the host build";
+                                c.source = deviceLaneReason;
                                 c.bound = guaranteed.value;
                             } else
                             {
@@ -12451,7 +13055,7 @@ int main(int argc, char** argv) {
         ++combToleranceCarried;
 
         if (c.atBound != boys::ToleranceVerdict::kGuaranteedInside ||
-            c.toleranceBound != c.accessorBound ||
+            c.toleranceBound != c.accessorFormBound ||
             c.toleranceDeliveredKnown != c.accessorDeliveredKnown ||
             c.toleranceDelivered != c.accessorDelivered)
         {
@@ -12459,17 +13063,17 @@ int main(int argc, char** argv) {
             std::printf("  %-58s asked at %g the tolerance query answers %g/%g, not the "
                         "accessor's %g/%g\n",
                         c.axes.c_str(),
-                        c.accessorBound,
+                        c.accessorFormBound,
                         c.toleranceBound,
                         c.toleranceDelivered,
-                        c.accessorBound,
+                        c.accessorFormBound,
                         c.accessorDelivered);
         }
 
         // Asked at half the figure the row is judged by, nothing that carries
         // that figure is inside the request. The answer may be the measured
         // figure or no - both are honest - and it may not be the guarantee.
-        if (c.accessorBound > 0.0)
+        if (c.accessorFormBound > 0.0)
         {
             ++combToleranceHalfAsked;
 
@@ -12479,7 +13083,7 @@ int main(int argc, char** argv) {
                 std::printf("  %-58s asked at half of %g the tolerance query answers inside on "
                             "the guarantee\n",
                             c.axes.c_str(),
-                            c.accessorBound);
+                            c.accessorFormBound);
             }
         } else
         {
@@ -12560,9 +13164,16 @@ int main(int argc, char** argv) {
                     deliveredText.c_str(),
                     rowBoundText.c_str(),
                     measuredText.c_str(),
+                    // A row this run measured prints its lane's own source for
+                    // the figures. A row it did not prints the row's own
+                    // reason - which is the reason that row was counted apart
+                    // with, and not a sentence about the lane: the device lane
+                    // is measured on the card in a build that carries it, and
+                    // "this host cannot run the lane" was a claim about every
+                    // such build rather than about this run.
                     shown->state.rfind("certified", 0) == 0
                         ? combLaneRows[static_cast<std::size_t>(lane)].source
-                        : "documented figure; this host cannot run the lane");
+                        : shown->source.c_str());
     }
 
     // One combination the library refuses, so that what the accessors do
@@ -12861,14 +13472,17 @@ int main(int argc, char** argv) {
             }
         }
 
-        std::printf("\n  the division form: every cell of the cross above was read at each of the "
-                    "%zu form(s)\n  BoysDivisionForms() answers, each form judged against the "
-                    "figure the row's own\n  lane publishes. The columns after the compared count "
-                    "are the values each form\n  past the first delivered differently from the "
-                    "first form's at the same order\n  and argument, against the values it was "
-                    "asked for. A lane whose column is zero\n  for every form is a lane the axis "
-                    "selects no arithmetic on: its three names reach\n  one body, and one is what "
-                    "it was certified at\n",
+        std::printf("\n  the division form: every cell of the cross above on a lane whose entries "
+                    "carry the\n  axis was read at each of the %zu form(s) BoysDivisionForms() "
+                    "answers, each form\n  judged against the figure the row's own lane "
+                    "publishes. The columns after the\n  compared count are the values each form "
+                    "past the first delivered differently from\n  the first form's at the same "
+                    "order and argument, against the values it was asked\n  for. A lane whose "
+                    "column is zero for every form is a lane the axis selects no\n  arithmetic "
+                    "on: its three names reach one body, and one is what it was certified at. "
+                    "The\n  device lane's entries name no form at all (DivisionForm is a field of "
+                    "the host\n  policy and is named in no device header), so its rows carry one "
+                    "reading and no\n  comparison, and their form(s) column reads 1\n",
                     combForms);
         std::printf("    %-27s %-11s %10s %9s %11s", "lane", "axis", "cell(s)", "form(s)",
                     "compared");
