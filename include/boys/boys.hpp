@@ -533,6 +533,179 @@ enum class Precision : std::uint8_t {
     kFp32Device, ///< single precision as the device lane runs it
 };
 
+/// The device a call runs on: the first key of the default-policy table.
+///
+/// The host lanes are the entries of this header; the device lane is the CUDA
+/// surface (`boys/boys_cuda.hpp`), which a build carries only where it is
+/// configured for it. A row of the table names one of these, because the two
+/// lanes do not choose the same things: a host row names the five axes an
+/// \c EvalPolicy holds, and the device lane's own two - its accuracy multiplier
+/// and its region-B exponential (`boys/boys_device_tables.hpp`) - are not among
+/// them.
+///
+/// \ingroup boys
+enum class Device : std::uint8_t {
+    kHost = 0, ///< the CPU lanes: every entry of this header
+    kDevice, ///< the CUDA lane: \c BoysCuda, where a build carries it
+};
+
+/// The question an entry answers: how much of the ladder a call produces, and
+/// for how many arguments.
+///
+/// A shape is what makes two calls comparable questions or not, and it is the
+/// entry rather than a parameter of it: \c BoysAllOrders *is* the ladder shape
+/// at one argument and \c BoysAllN *is* the ladder shape over an array, so a
+/// caller never names a shape separately - the entry supplies it. It is named
+/// here because the default-policy table is keyed by it: an entry that produces
+/// one order has no second order to pack into a vector lane, so the packing
+/// axis is a property of the call shape and a per-shape row is what states it
+/// per shape rather than once for the whole build.
+///
+/// \ingroup boys
+enum class Shape : std::uint8_t {
+    kSingle = 0, ///< one order at one argument: \c BoysSingle, \c BoysSingleF32, ...
+    kAllOrders, ///< the ladder at one argument, to that argument's own top order
+    kFixedN, ///< one order at every argument of an array: \c BoysFixedN
+    kAllN, ///< the ladder at every argument of an array, at one common top order
+    kAllNAtOrders, ///< the ladder at every argument, each stopping at its own top order
+};
+
+namespace detail {
+
+/// The budget a class of this lane falls back to when the table names no row
+/// for it: the half lanes' own budget, and the float budget every other lane's
+/// default policy carries.
+///
+/// It is why the fallback is not one tuple imposed on every lane: a class of
+/// the half lane that no row names compiles the half budget, which is the axis
+/// those lanes' degrees are cut for and their figures stated at.
+///
+/// \param lane the precision lane
+/// \returns the budget a class of that lane falls back to
+constexpr BoysBudget LaneFallbackBudget(Precision lane) noexcept
+{
+    switch (lane)
+    {
+    case Precision::kFp64:
+    case Precision::kFp32:
+    case Precision::kFp32Device:
+        return BoysBudget::kFloat;
+    case Precision::kFp16:
+        return BoysBudget::kFp16;
+    }
+
+    return BoysBudget::kFloat; // no enumerator reaches this
+}
+
+/// One row of the default-policy table, resolved: the policy a (device,
+/// precision, shape) class compiles when its call site names no policy.
+///
+/// A row the table carries is an explicit specialization of this template. The
+/// primary template below carries **no** \c Type, so a class the table does not
+/// name has no default policy at all, and asking for one is a compile error
+/// rather than a call answered by choices nobody made. There is nothing to fall
+/// back to: the table *is* the defaults, and a class it omits is a row someone
+/// has not written yet. **Nothing here is looked up**: the class is a template
+/// argument, the row is the specialization the compiler selects for it, and no
+/// run-time search, table read, function pointer or branch on anything a caller
+/// chose is in it.
+template <Device kDevice, Precision kPrecision, Shape kShape>
+struct DefaultPolicyRow {
+    /// No row names this class. The absence of \c Type is the whole of what is
+    /// said here, and it is what turns a missing row into a build error.
+    static constexpr bool kCarried = false;
+};
+
+// The seam's rows, one explicit specialization per row. The cells are names the
+// compiler resolves against the enumerators of the axes they belong to at this
+// point, so a cell naming an enumerator another axis owns is an error here
+// rather than a default that is read as something else. A row naming a
+// combination its shape cannot carry is caught where that class's entries are
+// instantiated, which is the reading that makes a row which cannot compile a
+// build error rather than a surprise at a consumer's call site.
+#define BOYS_DEFAULT_POLICY_ROW(kDevice, kPrecision, kShape, kRoute, kScheme, kBudget, kPack,  \
+                                kGranularity, kDivision)                                       \
+    template <>                                                                                \
+    struct DefaultPolicyRow<Device::kDevice, Precision::kPrecision, Shape::kShape> {            \
+        using Type = EvalPolicy<kRoute, kScheme, kBudget, kPack, kGranularity, kDivision>;      \
+        static_assert(EvalPolicyLike<Type>,                                                     \
+                      "a row of the default-policy table does not name an evaluation policy: " \
+                      "one of its cells is not an axis of the combination it is read as");      \
+        static constexpr bool kCarried = true;                                                  \
+    };
+
+#if defined(BOYS_BUILD_DEFAULT_ROWS)
+BOYS_BUILD_DEFAULT_ROWS(BOYS_DEFAULT_POLICY_ROW)
+#endif
+
+#undef BOYS_DEFAULT_POLICY_ROW
+
+} // namespace detail
+
+/// The default policy of a class, resolved at compile time from the table the
+/// build's seam file carries.
+///
+/// The class is a (device, precision, shape) triple. The entry supplies the
+/// precision and the shape of the call it is declared on; \c kDevice defaults
+/// to \c Device::kHost, which is what a name that does not spell one resolves
+/// on, and a device entry spells \c Device::kDevice. The table itself is
+/// `include/boys/boys_build_defaults.hpp` - one row per class, hand-editable,
+/// and replaceable whole through the \c BOYS_BUILD_DEFAULTS CMake option.
+///
+/// **A class the table does not name has no default, and that is a build
+/// error.** There is no fallback row and no tuple to fall back to: a table with
+/// a hole in it would otherwise answer that class's callers with choices nobody
+/// made, silently, while a reader saw a complete table. The assertion below is
+/// what makes the hole loud, and it is deliberately a hard error in this class
+/// body rather than a constraint on the alias - a substitution failure in a
+/// default template argument would drop the entry from overload resolution
+/// instead, and a different overload would answer the call.
+///
+/// **The rung is not a key.** One row serves every accuracy multiplier a caller
+/// can name: naming a rung changes the bound a call carries and never which
+/// implementation runs, so the row a class resolves to is the one its own m = 1
+/// class measured.
+///
+/// **This costs nothing at run time.** \c Type is a type, selected by the
+/// compiler for a class it knows; there is no registry in it, no string key, no
+/// function pointer, and no branch on anything a caller chose. A call that
+/// names no policy compiles to one fully specialised body, exactly as it did
+/// when the four \c DefaultPolicy* names were the whole of the seam.
+///
+/// \tparam kPrecision the precision lane
+/// \tparam kShape the question shape
+///
+/// \ingroup boys
+template <Precision kPrecision, Shape kShape, Device kDevice = Device::kHost>
+struct DefaultPolicyFor {
+    static_assert(detail::DefaultPolicyRow<kDevice, kPrecision, kShape>::kCarried,
+                  "this build's default-policy table carries no row for this class. Add the row "
+                  "to BOYS_BUILD_DEFAULT_ROWS in boys/boys_build_defaults.hpp, or name the policy "
+                  "explicitly at the call site. A class the table does not name has no default: "
+                  "answering it with one nobody chose is the defect this table exists to remove.");
+
+    /// The policy this class compiles when its call site names no policy.
+    using Type = typename detail::DefaultPolicyRow<kDevice, kPrecision, kShape>::Type;
+
+    /// Whether the table named this class. Always true where this class is
+    /// instantiated at all - the assertion above is what a false would hit -
+    /// and read by the report that prints what a build will do.
+    static constexpr bool kCarried =
+        detail::DefaultPolicyRow<kDevice, kPrecision, kShape>::kCarried;
+};
+
+/// The policy a class compiles when its call site names no policy: the name an
+/// entry's policy parameter defaults to, and the name a caller writes to ask
+/// for what it would have got by naming none.
+///
+/// \tparam kPrecision the precision lane
+/// \tparam kShape the question shape
+/// \tparam kDevice which side of the interface the class is on; \c Device::kHost
+///         where a call site does not spell one
+///
+/// \ingroup boys
+template <Precision kPrecision, Shape kShape, Device kDevice = Device::kHost>
+using DefaultPolicy = typename DefaultPolicyFor<kPrecision, kShape, kDevice>::Type;
 /// One precision lane's contract, as a report states it.
 ///
 /// \c bound is the base figure the lane documents for one value at the
@@ -644,6 +817,38 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
                                       FitGranularity granularity,
                                       AccuracyTier tier,
                                       DivisionForm form = kDefaultDivisionForm) noexcept;
+
+/// The bound a class's default policy carries: what a caller holding the
+/// default has, without reconstructing the axes to ask about it.
+///
+/// The axes it asks the accessor above with are the ones
+/// \c DefaultPolicy<kPrecision, kShape> resolves to - the row the table carries
+/// for the class, or the seam's own five where it carries none - so this is the
+/// same figure, from the same table, as a caller gets by naming the policy's
+/// five axes by hand. It is a table read and not a measurement: nothing is
+/// evaluated and nothing is timed.
+///
+/// **A class is a (device, precision, shape) triple and this reads a host
+/// class.** The device lane's own two choices are outside the seam - the
+/// accuracy multiplier and the region-B exponential are declared where they are
+/// used - so there is no device row for this accessor to read yet, which is
+/// owed work rather than a design choice.
+///
+/// \tparam kPrecision the precision lane
+/// \tparam kShape the question shape
+/// \param tier the accuracy rung the call will be made at; the reference rung
+///        by default, which is the rung every published figure is stated at
+/// \returns the figure, and whether this build carries the combination
+///
+/// \ingroup boys
+template <Precision kPrecision, Shape kShape>
+inline AccuracyFigure DefaultGuarantee(AccuracyTier tier = AccuracyTier::kReference) noexcept
+{
+    using Policy = DefaultPolicy<kPrecision, kShape>;
+
+    return BoysAccuracyGuaranteed(kPrecision, Policy::kRoute, Policy::kScheme, Policy::kPack,
+                                  Policy::kGranularity, tier, Policy::kDivision);
+}
 
 /// The accuracy a combination was measured to deliver, which is the figure that
 /// ranks two combinations against each other.
@@ -1152,7 +1357,7 @@ double BoysSingleAtTier(AccuracyTier tier, int n, double x) noexcept;
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicyFp64>
+          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kSingle>>
 double BoysSingle(int n, double x) noexcept;
 
 /// F_0(x)..F_nmax(x) in double precision; the batch entry's contract — the
@@ -1179,7 +1384,7 @@ double BoysSingle(int n, double x) noexcept;
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicyFp64>
+          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllOrders>>
 void BoysAllOrders(int nmax, double x, double* out) noexcept;
 
 /// F_n(x_i) for an array of arguments at one fixed order n, double
@@ -1233,7 +1438,7 @@ void BoysAllOrders(int nmax, double x, double* out) noexcept;
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicyFp64>
+          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kFixedN>>
 void BoysFixedN(
     int n, const double* x, double* out, std::size_t count, std::size_t stride = 1) noexcept;
 
@@ -1333,7 +1538,7 @@ constexpr std::size_t BoysAllNWorkspaceSize(std::size_t count) noexcept
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicyFp64>
+          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllN>>
 void BoysAllN(int nmax,
               const double* x,
               double* out,
@@ -1361,7 +1566,7 @@ void BoysAllN(int nmax,
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicyFp64>
+          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllN>>
 void BoysAllN(
     int nmax, const double* x, double* out, std::size_t count, BoysSortedArgs) noexcept;
 
@@ -1413,7 +1618,7 @@ void BoysAllN(
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicyFp64>
+          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllNAtOrders>>
 void BoysAllNAtOrders(const int* n, const double* x, double* out, std::size_t count) noexcept;
 
 /// Whether the packed region-A lane serves a call whose policy names this
@@ -1480,7 +1685,7 @@ constexpr bool BoysPackedLaneServes(EvalScheme scheme) noexcept
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicyFp32>
+          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp32, Shape::kSingle>>
 float BoysSingleF32(int n, float x) noexcept;
 
 /// F_0(x)..F_nmax(x) in single precision, |F̂ − F| ≤ m·1.5e-7 per value.
@@ -1508,7 +1713,7 @@ float BoysSingleF32(int n, float x) noexcept;
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicyFp32>
+          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp32, Shape::kAllOrders>>
 void BoysAllOrdersF32(int nmax, float x, float* out) noexcept;
 
 /// F_0(x_i)..F_nmax(x_i) for an array of arguments, single precision — the
@@ -1549,7 +1754,7 @@ void BoysAllOrdersF32(int nmax, float x, float* out) noexcept;
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicyFp32>
+          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp32, Shape::kAllN>>
 void BoysAllNF32(int nmax, const float* x, float* out, std::size_t count) noexcept;
 
 /// F_n(x) in single precision at a run-time-selected fit route — the
@@ -1680,7 +1885,7 @@ bool BoysAvx2Available() noexcept;
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicyFp16>
+          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp16, Shape::kSingle>>
 F16 BoysSingleF16(int n, F16 x) noexcept;
 
 /// F_0(x)..F_nmax(x) in fp16, same certified-boundary contract as
@@ -1694,7 +1899,7 @@ F16 BoysSingleF16(int n, F16 x) noexcept;
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicyFp16>
+          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp16, Shape::kAllOrders>>
 void BoysAllOrdersF16(int nmax, F16 x, F16* out) noexcept;
 
 /// F_n(x) in bfloat16 — the Bf16 lane of the certified mixed-precision
@@ -1711,7 +1916,7 @@ void BoysAllOrdersF16(int nmax, F16 x, F16* out) noexcept;
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicyBf16>
+          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp16, Shape::kSingle>>
 Bf16 BoysSingleBf16(int n, Bf16 x) noexcept;
 
 /// F_0(x)..F_nmax(x) in bf16, same contract as BoysAllOrdersF16 per value.
@@ -1724,7 +1929,7 @@ Bf16 BoysSingleBf16(int n, Bf16 x) noexcept;
 ///
 /// \ingroup boys
 template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicyBf16>
+          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp16, Shape::kAllOrders>>
 void BoysAllOrdersBf16(int nmax, Bf16 x, Bf16* out) noexcept;
 
 /// F_0(x)..F_nmax(x) in fp16 at a combination named in the type and a rung named
@@ -1842,6 +2047,14 @@ void BoysAllNF16Native(int nmax, const F16* x, F16* out, std::size_t count) noex
 // instead of compiling the kernel again in their own translation unit; a
 // caller that names another multiplier, or another policy, compiles the rung
 // or the route it asks for from the definition below.
+//
+// Declared only for the table this build carries. A build that supplies its own
+// through BOYS_BUILD_DEFAULTS has its own policy types - the table is read by
+// value, so a different row is a different instantiation with a different
+// mangled name - and the library carries no definition for those. Declaring
+// them here would promise a definition that does not exist and turn a working
+// consumer build into an unresolved external.
+#if !defined(BOYS_BUILD_DEFAULTS_REPLACED)
 extern template double BoysSingle<kBoysFullAccuracyMultiplier>(int n, double x) noexcept;
 extern template void BoysAllOrders<kBoysFullAccuracyMultiplier>(
     int nmax, double x, double* out) noexcept;
@@ -1853,11 +2066,19 @@ extern template void BoysAllN<kBoysFullAccuracyMultiplier>(
     int nmax, const double* x, double* out, std::size_t count, BoysSortedArgs) noexcept;
 extern template void BoysAllNAtOrders<kBoysFullAccuracyMultiplier>(
     const int* n, const double* x, double* out, std::size_t count) noexcept;
-extern template float BoysSingleF32<kBoysFullAccuracyMultiplier, EvalPolicy<>>(
+// Spelled as the class's own default rather than as the five macros: the entry's
+// policy parameter defaults to the table's row for this class, and naming the macros
+// here would declare an instantiation the default call site no longer selects the
+// moment the row and the macros differ - a declaration that resolves to nothing,
+// leaving the default instantiation to be compiled again in every translation unit.
+extern template float BoysSingleF32<kBoysFullAccuracyMultiplier,
+                                    DefaultPolicy<Precision::kFp32, Shape::kSingle>>(
     int n, float x) noexcept;
-extern template void BoysAllOrdersF32<kBoysFullAccuracyMultiplier, EvalPolicy<>>(
+extern template void BoysAllOrdersF32<kBoysFullAccuracyMultiplier,
+                                      DefaultPolicy<Precision::kFp32, Shape::kAllOrders>>(
     int nmax, float x, float* out) noexcept;
-extern template void BoysAllNF32<kBoysFullAccuracyMultiplier, EvalPolicy<>>(
+extern template void BoysAllNF32<kBoysFullAccuracyMultiplier,
+                                 DefaultPolicy<Precision::kFp32, Shape::kAllN>>(
     int nmax, const float* x, float* out, std::size_t count) noexcept;
 
 #if BoysFp16
@@ -1868,6 +2089,7 @@ extern template Bf16 BoysSingleBf16<kBoysFullAccuracyMultiplier>(int n, Bf16 x) 
 extern template void BoysAllOrdersBf16<kBoysFullAccuracyMultiplier>(
     int nmax, Bf16 x, Bf16* out) noexcept;
 #endif // BoysFp16
+#endif // !BOYS_BUILD_DEFAULTS_REPLACED
 /// \endcond
 
 } // namespace boys
