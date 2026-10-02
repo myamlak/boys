@@ -3172,39 +3172,39 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
     } else
     {
         // The class could not be ordered, so the run has a tie to report and not a
-        // ranking. The default is still the class's fastest row by the printed
-        // figure, and the vote says whether the longer protocol named that row or
-        // another one: a vote for another row is the run stating that it cannot
-        // separate the class's top entries.
-        report.recommended = fastest.name;
-
+        // ranking. Where the longer protocol ran, it decides: options this run cannot
+        // separate are settled by which was fastest in most runs, so the vote's row is
+        // the default and the row the printed figures put first is the record of what
+        // the shorter protocol said. With no vote to consult, the printed figure is
+        // all there is to go on.
         const bool voted = stage != nullptr && stage->ran && !stage->winner.empty();
 
+        report.recommended = voted ? stage->winner : fastest.name;
+
         report.defaultHow =
-            (voted && stage->winner == fastest.name)
-                ? (stage->unanimous
-                       ? OptionProbeDefaultHow::kRefined
-                       : (stage->plurality ? OptionProbeDefaultHow::kVote
-                                           : OptionProbeDefaultHow::kChosenAmongEquals))
-                : OptionProbeDefaultHow::kChosenAmongEquals;
+            voted ? (stage->unanimous
+                         ? OptionProbeDefaultHow::kRefined
+                         : (stage->plurality ? OptionProbeDefaultHow::kVote
+                                             : OptionProbeDefaultHow::kChosenAmongEquals))
+                  : OptionProbeDefaultHow::kChosenAmongEquals;
     }
 
-    // Whether the vote confirmed the row the report names or named another one,
+    // Whether the vote named the row the report names or the printed figures did,
     // the reason and the confidence say so: the class's top entries could not be
-    // separated, and what the vote preferred is on the record beside the figure
-    // the default is printed with.
-    const bool vote_differs = stage != nullptr && stage->ran && !stage->winner.empty() &&
-                              stage->winner != report.recommended;
+    // separated, and what the other evidence preferred is on the record beside the
+    // figure the default is printed with.
+    const bool row_differs = stage != nullptr && stage->ran && !stage->winner.empty() &&
+                             fastest.name != report.recommended;
 
-    const OptionProbeMeasurement* voted_row = nullptr;
+    const OptionProbeMeasurement* other_row = nullptr;
 
-    if (vote_differs)
+    if (row_differs)
     {
         for (const OptionProbeMeasurement& measurement : report.measurements)
         {
-            if (measurement.measured && measurement.name == stage->winner)
+            if (measurement.measured && measurement.name == fastest.name)
             {
-                voted_row = &measurement;
+                other_row = &measurement;
             }
         }
     }
@@ -3294,17 +3294,16 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
             note += Text(". The entry this class names is '%s', reached by %s", named.c_str(),
                          HowText(record.entry.how));
         }
-        else if (defaultClass && vote_differs && stage != nullptr)
+        else if (defaultClass && row_differs && stage != nullptr)
         {
-            // The class the default is taken from, with the vote behind it naming
-            // another of the class's tied rows: the row this class names is still
-            // the one its own figures put first, and the class says here that the
-            // two could not be separated.
-            note += Text(". The refinement runs named '%s' instead, and those two rows cannot be "
-                         "separated by this run: what is measured about them is that no pair of the "
-                         "class placed one behind the other, and neither is reported as the "
-                         "fastest",
-                         stage->winner.c_str());
+            // The class the default is taken from, where the vote named the default and
+            // the class's own printed figures put another of its tied rows first: the
+            // class says here that the two could not be separated.
+            note += Text(". The report's own figures put '%s' first instead, and those two rows "
+                         "cannot be separated by this run: what is measured about them is that no "
+                         "pair of the class placed one behind the other, and neither is reported as "
+                         "the fastest",
+                         fastest.name.c_str());
         }
 
         if (!record.entry.differingBounds.empty())
@@ -3498,17 +3497,16 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
                              "options was made without one. ";
         }
 
-        if (vote_differs && voted_row != nullptr)
+        if (row_differs && other_row != nullptr)
         {
             report.reason += Text(
-                "The refinement runs named '%s' and this report names '%s': those two cannot be "
-                "separated by this run, so the class's top entries are reported as what they are - "
-                "entries no pair of the class placed one behind the other - and the default is the "
-                "one the report's own figures put first, '%s' at %.2f ns/argument against '%s' at "
-                "%.2f. Neither is offered as the fastest: what this run measured about them is that "
-                "it could not tell them apart. ",
-                stage->winner.c_str(), report.recommended.c_str(), report.recommended.c_str(),
-                fastest.nsPerArgument, stage->winner.c_str(), voted_row->nsPerArgument);
+                "The report's own figures put '%s' first, at %.2f ns/argument; the vote over the "
+                "refinement runs named '%s', and that is the default. Those two cannot be separated "
+                "by this run, so the class's top entries are reported as what they are - entries no "
+                "pair of the class placed one behind the other - and neither is offered as the "
+                "fastest: what this run measured about them is that it could not tell them "
+                "apart. ",
+                fastest.name.c_str(), other_row->nsPerArgument, stage->winner.c_str());
         }
 
         report.reason += "The default is named with the way it was reached - " +
@@ -3571,12 +3569,13 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
 
         if (stage != nullptr && stage->ran && !stage->winner.empty())
         {
-            if (vote_differs)
+            if (row_differs)
             {
-                voteClause = Text("; the refinement runs named '%s' instead, at %.2f ns/argument "
-                                  "against its %.2f, and those two cannot be separated by this run",
-                                  stage->winner.c_str(),
-                                  voted_row != nullptr ? voted_row->nsPerArgument : 0.0,
+                voteClause = Text("; the report's own figures put '%s' first instead, at %.2f "
+                                  "ns/argument against its %.2f, and those two cannot be separated "
+                                  "by this run",
+                                  fastest.name.c_str(),
+                                  other_row != nullptr ? other_row->nsPerArgument : 0.0,
                                   fastest.nsPerArgument);
             }
             else
