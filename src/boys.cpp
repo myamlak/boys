@@ -1031,7 +1031,9 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
     static const std::array<LaneContractInfo, 4> rows = {{
         {Precision::kFp64, "fp64", 5.5e-14, 0.0, 0.0, "throughout, every region"},
         {Precision::kFp32, "fp32", 1.5e-7, 0.0, 1e-7,
-         "every region, at exact division and the refined reciprocal"},
+         "every region, at exact division and the refined reciprocal",
+         "every region under the plain reciprocal, whose extra rounding adds that form's own term "
+         "beside the base"},
         {Precision::kFp16, "fp16", 1.5e-7, 0.0, 1e-7,
          "the single-precision lane's own figure, plus half of the last representable digit of the "
          "returned value and claimed only where the value exceeds the sum. The half lane computes "
@@ -1369,7 +1371,13 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
 
     figure.available = true;
     figure.value = AccuracyMultiplier(tier) * (lane.bound + formTerm) + lane.additive;
-    figure.source = lane.source;
+
+    // The sentence moves with the figure. `source` names the forms the base is for, so on a lane
+    // whose plain form carries its own term the figure above is not the one that sentence describes;
+    // the row states the plain form's sentence separately and it is read here. A lane whose source
+    // already covers every form states none, and the base's sentence is the whole claim.
+    figure.source =
+        (formTerm == 0.0 || lane.plainSource[0] == '\0') ? lane.source : lane.plainSource;
 
     return figure;
 }
