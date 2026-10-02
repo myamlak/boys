@@ -6,13 +6,13 @@ Three measured pieces, none of them a theory:
                      simulating the mode's arithmetic - the operands are
                      rounded, the products are exact, the accumulation rounds
                      as that mode's does;
-  R(lane, nmax, x)   the recursion's own rounding, taken from the SHIPPED
+  R(lane, nmax, x)   the recursion's own rounding, taken from the COMMITTED
                      library's values on the same grid (a double seed through
                      the float recursion, so what is left is the recursion);
-  the amplification, the shipped design's own seed weight: prod x/(j + 1/2)
+  the amplification, the committed design's own seed weight: prod x/(j + 1/2)
                      downward, prod (j - 1/2)/x upward.
 
-Two shapes, as the shipped dispatch has them. Below kTierThresholds[0] one
+Two shapes, as the committed dispatch has them. Below kTierThresholds[0] one
 transform carries the whole ladder, so its error arrives at order 0 multiplied
 by the full weight. At or above it the extended F0 seed carries the orders a
 recursion reaches and the rest are transform values delivered as they stand.
