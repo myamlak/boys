@@ -832,20 +832,20 @@ TEST(ProbeTest, ATiedClassIsReRunAloneAndVotedOn) {
     EXPECT_EQ(stage.runLeaders.size(), 6u) << "a run of the vote placed no leader";
     EXPECT_FALSE(stage.winner.empty()) << "the vote ended with no entry to name";
 
-    // The default is the class's own fastest row by the figure the report prints, and the
-    // vote is the longer protocol's reading of the same question: it either names that row
-    // - and then the report says the vote is what carried it - or it names another, and
-    // then the report prints both figures and says the two cannot be separated.
+    // The vote names the default. Options a class cannot separate are settled by which was
+    // fastest in most runs, so the row the refinement named is what the report recommends -
+    // and the class's own fastest figure is the record of what the shorter protocol put
+    // first. Both are printed, and where they differ the difference is what says the two
+    // cannot be separated.
     const OptionProbeMeasurement* classLeader = ReferenceLeader(report);
     ASSERT_NE(classLeader, nullptr);
-    EXPECT_EQ(report.recommended, classLeader->name);
+    EXPECT_EQ(report.recommended, stage.winner)
+        << "the default is not the row the vote named";
     EXPECT_EQ(report.defaultHow,
-              stage.winner == report.recommended
-                  ? (stage.unanimous
-                         ? OptionProbeDefaultHow::kRefined
-                         : (stage.plurality ? OptionProbeDefaultHow::kVote
-                                            : OptionProbeDefaultHow::kChosenAmongEquals))
-                  : OptionProbeDefaultHow::kChosenAmongEquals)
+              stage.unanimous
+                  ? OptionProbeDefaultHow::kRefined
+                  : (stage.plurality ? OptionProbeDefaultHow::kVote
+                                     : OptionProbeDefaultHow::kChosenAmongEquals))
         << "the way-it-was-reached does not match what the vote named";
 
     EXPECT_GT(stage.rounds, report.pairedRounds)

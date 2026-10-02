@@ -1913,10 +1913,10 @@ void RefineShape(DeviceProbeRanking& clause,
                  const DeviceProbeOptions& clamped,
                  double rung,
                  BoysDeviceTables& handle) {
-    // The name is fixed here, before the stage can run: a report that left it to
-    // this stage would name none at all on the runs where the stage cannot be
-    // taken. What the stage decides is how that row was reached, never which row it
-    // is.
+    // A name is fixed here, before the stage can run, so that a report on a run where
+    // the stage cannot be taken still names a row rather than none. It is the fallback
+    // and not the answer: where the stage does run, the vote names the default and this
+    // one becomes the record of what the shape's own figures put first.
     if (!clause.fastestOverall.empty())
     {
         clause.verdict = DeviceProbeVerdict::kRecommend;
@@ -2194,24 +2194,31 @@ void RefineShape(DeviceProbeRanking& clause,
         }
     }
 
-    // The route, and only the route: the vote either named the entry the shape's
-    // figures put first, or another one, which is the stage saying it cannot
-    // separate the shape's top entries. Neither moves the name set above.
+    // The vote decides the name where it ran. The rule is that options a class cannot
+    // separate are settled by which was fastest in most runs, so the row the vote named
+    // is the default and the row this shape's own figures put first is the record of what
+    // the shorter protocol said. The name fixed above stands only where no vote was
+    // taken, which is what keeps a report from naming nothing.
+    const bool voted = !stage.winner.empty();
+
+    if (voted)
+    {
+        clause.recommended = stage.winner;
+    }
+
     clause.defaultHow =
-        (!stage.winner.empty() && stage.winner == clause.fastestOverall)
-            ? (stage.unanimous ? DeviceProbeDefaultHow::kRefined
-                               : (stage.plurality ? DeviceProbeDefaultHow::kVote
-                                                  : DeviceProbeDefaultHow::kChosenAmongEquals))
-            : DeviceProbeDefaultHow::kChosenAmongEquals;
+        voted ? (stage.unanimous ? DeviceProbeDefaultHow::kRefined
+                                 : (stage.plurality ? DeviceProbeDefaultHow::kVote
+                                                    : DeviceProbeDefaultHow::kChosenAmongEquals))
+              : DeviceProbeDefaultHow::kChosenAmongEquals;
 
     clause.reason += Text(" The entries this shape did not place behind one leader were then "
                           "re-run on their own, %zu of them, %d run(s) at %d passes by %d rounds: "
-                          "%s. The entry this shape names is the one its own figures put first, "
-                          "'%s', named with the way it was reached - %s - and not as an ordering "
-                          "this shape's own rounds established. The stage named '%s'; where those "
-                          "two differ this report still names the entry its own figures put first, "
-                          "because a default is read beside the table it is printed in, and the "
-                          "difference is what says the shape's top entries cannot be separated.",
+                          "%s. The default is the entry the vote named, '%s', named with the way it "
+                          "was reached - %s. This shape's own figures put '%s' first; where those "
+                          "two differ, the difference is what says the shape's top entries cannot "
+                          "be separated, and the vote is what settles a tie this shape's own rounds "
+                          "could not.",
                           stage.pool.size(),
                           stage.runs,
                           stage.passes,
@@ -2219,7 +2226,7 @@ void RefineShape(DeviceProbeRanking& clause,
                           stage.note.c_str(),
                           clause.recommended.c_str(),
                           DeviceProbeDefaultHowName(clause.defaultHow),
-                          stage.winner.empty() ? "no entry" : stage.winner.c_str());
+                          clause.fastestOverall.empty() ? "no entry" : clause.fastestOverall.c_str());
 
     clause.confidence += Text(". The refinement stage re-ran the %zu entry(s) it was given, alone, "
                               "at %d passes by %d rounds, %d time(s), and %s",
