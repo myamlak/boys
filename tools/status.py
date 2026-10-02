@@ -95,6 +95,29 @@ def host_space() -> tuple[str, list[str], bool]:
         f"  total                  {total:>6}",
     ]
 
+    # WHY EVERY NON-SERVED ROW IS NON-SERVED, taken from the run itself. A count with no reason
+    # beside it is a number this tool would be laundering: on 2026-10-02 the run booked 168 rows
+    # "not runnable on this host" on a machine that has the device and a CUDA build, because the
+    # classifier decides by lane identity. Printing the reason is what makes a false one visible
+    # here rather than inherited from the run.
+    # Only the combination rows: a line whose first field is a lane the cross enumerates. Every
+    # other table in the run prints its own trailing column, and counting those as "reasons" buries
+    # the one that matters under noise.
+    LANE = r"(?:fp64|fp32|fp16|fp32-device)"
+    reasons: dict[str, int] = {}
+    for row in re.findall(rf"^\s{{2,}}({LANE},.*?)\s{{2,}}([a-z][a-z0-9 -]+?)\s*$", text, re.M):
+        state = row[1].strip()
+        if state.startswith("certified"):
+            continue
+        reasons[state] = reasons.get(state, 0) + 1
+    if reasons:
+        lines.append("  the run states these reasons for the rows it did not serve:")
+        for state, count in sorted(reasons.items(), key=lambda kv: -kv[1])[:6]:
+            lines.append(f"    {count:>6}  {state[:96]}")
+    else:
+        lines.append("  the run records NO reason for any non-served row: whatever put those rows "
+                     "in their states cannot be checked from this artifact")
+
     found = ARITHMETIC.search(text)
     if found:
         parts = [int(n) for n in re.findall(r"\d+", found.group(1))]
