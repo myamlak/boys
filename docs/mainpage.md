@@ -31,7 +31,7 @@ Seven words carry the design. Each means something narrower here than it means e
 - **scheme** — the summation a stored Chebyshev fit is read in: split Clenshaw or Horner. It is the
   second field of \ref boys::EvalPolicy, and changes values only where the default fit answers.
 - **axis** (the packing axis) — which of a call's values share a vector register: four arguments at
-  one order, the shipped axis, or four orders at one argument (\ref boys::PackAxis).
+  one order, the committed axis, or four orders at one argument (\ref boys::PackAxis).
 - **gate** — a program in this tree that measures the documented claims against the committed
   reference and fails when one does not hold. `boys-accuracy-gate` is the accuracy one; the platform,
   option-matrix and device legs have gates of their own.

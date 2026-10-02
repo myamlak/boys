@@ -218,8 +218,8 @@ chosen against its axis at all: those runs are dated 2026-09-28, every partition
 is one partition, and the uniform partition reached the host lanes on 2026-09-29 and every lane on
 2026-09-30, so re-deriving that default with the whole axis is owed. On the scheme axis the runs did
 compare both rows and did not separate them.
-The route and the packing axis carry the settings the library has always shipped and have not been
-ranked against a timing. The fifth choice, the accuracy rung, carries no shipped default at all: a call
+The route and the packing axis carry the settings this build compiles by default and have not been
+ranked against a timing. The fifth choice, the accuracy rung, carries no committed default at all: a call
 that names nothing evaluates at the reference multiplier, the finest of the seven, and a caller names a
 coarser one at the call. The option probe below is what ranks any of them, on the machine it is run on.
 **Each default is a choice between two ways of computing one answer and not between two accuracies**, so
@@ -486,9 +486,9 @@ arithmetic and 19 under the separate one, so a search against it does not close.
 **`FitGranularity::kNarrow` is served by this lane too, on both its routes.** The partition cuts
 region A of this lane into 218 pieces at degree 6 and region B into four pieces at the same degree,
 and each route stores its own fit on that cut: 1526 coefficients either way on the Chebyshev route
-against the shipped table's 1067, and 1241 on the rational route against 465. Region B's seed is
+against the committed table's 1067, and 1241 on the rational route against 465. Region B's seed is
 where the narrowing is visible in the other direction: 28 stored on the Chebyshev route against the
-shipped seed's 11, and 18 on the rational route against its 6. The gate's single-entry policy rows,
+committed seed's 11, and 18 on the rational route against its 6. The gate's single-entry policy rows,
 read in binary32 on the coefficients as stored, are 1.02681e-07 over region A and 4.51733e-08 over
 region B for the Chebyshev route's narrow rows, and 1.15993e-07 over region A and 2.95023e-08 over
 region B for the rational route's. Every narrow row is inside the lane's 1.5e-07 bar on the build
@@ -523,15 +523,15 @@ accuracy should read the two measured figures and pick; the default is unchanged
 
 A packed lane keeps four doubles in a register and the call has to supply four of something. That
 something is a choice, and it is the fourth field of `EvalPolicy`: `PackAxis::kArguments`, the
-shipped axis, puts four arguments at one order in a register, and `PackAxis::kOrders` puts four
+committed axis, puts four arguments at one order in a register, and `PackAxis::kOrders` puts four
 orders at one argument there — which is the axis `BoysAllOrders(nmax, x, out)` actually has, since
 that entry computes every order at a single argument. `BoysPackAxes()` reports both, with the
 interval each one's packed lane evaluates. The orders axis covers region A at the same per-order fits
 and the same bars the scalar region-A path holds, ≤ m·1e-15 on those fits and ≤ m·3e-14 on the
-extended band, and naming it changes the region-A values a caller receives — the shipped entry reaches
+extended band, and naming it changes the region-A values a caller receives — the committed entry reaches
 most orders by a recursion from a seed where this lane evaluates each order's own fit — with both
 inside the bound. Both partitions of region A are carried
-on it: the shipped table's pieces are shared across the orders of a piece, which lets the lane fetch
+on it: the committed table's pieces are shared across the orders of a piece, which lets the lane fetch
 one piece's coefficients at a fixed stride, and the narrow partition's are cut per order, which the
 lane reaches with a gathered fetch that reads each of the four orders it holds its own piece.
 
@@ -570,8 +570,8 @@ command that reproduces them are in [docs/lane-contract.md](docs/lane-contract.m
 
 Every other combination the axis names is built and measured. A relaxed multiplier is answered by the
 same effective-degree cut this library's other rungs are truncated by, applied at the degree the lane
-reads; a route other than the shipped one is answered by that route's own region-A fits, whose pieces
-cover the same per-order intervals as the shipped table; and the narrow partition is answered by the
+reads; a route other than the committed one is answered by that route's own region-A fits, whose pieces
+cover the same per-order intervals as the committed table; and the narrow partition is answered by the
 very fits the scalar entry reads there, fetched one order at a time instead of by a stride. The gate's
 packing book carries a measured
 row for every rung the tier enumeration declares, on both routes, at both schemes, through both
@@ -639,8 +639,8 @@ size it is.
 
 **The member is certified, and at every rung.** Measured against the committed high-precision
 reference over the interval its own pieces cover, `FitGranularity::kNarrow` delivers a worst absolute
-error of 2.22e-16 over region A at region A's published 1e-15 bar — the shipped table's own figure —
-and 7.21645e-16 over region B against the shipped seed's 9.9365e-15, a factor of 13.8. The gate's
+error of 2.22e-16 over region A at region A's published 1e-15 bar — the committed table's own figure —
+and 7.21645e-16 over region B against the committed seed's 9.9365e-15, a factor of 13.8. The gate's
 granularity block carries all 255 of its rows — one per partition, scheme, call shape and accuracy
 rung, plus three for the rational route over the narrow partition: its region-A pieces, its region-B
 seed and the batch entry read through it — each judged against the bar the published table holds for
@@ -655,10 +655,10 @@ itself.
 Those rows are counted apart from every other book the gate reports, so nothing the library already
 published moves.
 
-**A relaxed rung on this partition is the same cut the shipped one gets, made on its own table.** The
+**A relaxed rung on this partition is the same cut the committed one gets, made on its own table.** The
 effective-degree criterion is a compile-time derivation over the coefficients the generated header
 already stores, so naming `kNarrow` with a multiplier reads the narrow pieces' own degrees and reads
-nothing from the shipped table; no coefficient had to be generated for it. The gate measures the
+nothing from the committed table; no coefficient had to be generated for it. The gate measures the
 result at every rung: the worst any row comes in at is 0.909 of the bar it promised at `m = 1`, 0.997
 at `m = 256` and 0.991 at `m = 65536`, with every rung inside its budget on every row.
 
@@ -670,7 +670,7 @@ that is not theirs.
 
 **Where a combination has no table or kernel it is refused where it is named**, with the reason,
 rather than answered from another partition's fits. The rational minimax route has a narrow fit over
-both regions and a fit over the shipped partition's; the single-precision lanes serve narrow tables on
+both regions and a fit over the committed partition's; the single-precision lanes serve narrow tables on
 both their routes; every partition's rungs are cut from that partition's own pieces, on either packing
 axis, and the across-orders entries reach a per-order cut by fetching each order's own piece.
 
@@ -740,7 +740,7 @@ without one the fused step is a library call per recurrence step, and this optio
 `docs/lane-contract.md` states lane by lane. `BoysBackends()` reports which route is in force.
 `-DBOYS_WERROR=OFF` drops `-WX` for a consumer whose compiler warning noise this tree has not been
 made clean for. `-DBOYS_BUILD_DEFAULTS=<header>` compiles the five choices an entry that names no
-policy resolves to from a header of your own instead of the shipped ones — the choices are
+policy resolves to from a header of your own instead of the committed ones — the choices are
 compile-time values, so an unnamed call costs what it costs either way. CONTRIBUTING.md states what
 such a header carries and what the option does not do.
 
@@ -800,7 +800,7 @@ the other shape is a different class and never a default candidate. Within that 
 the row the run's own figures put first, so the name it prints and the table it prints it beside
 never disagree about which option is cheapest. **A class that held no row for a member of an axis
 prints a `NOT COMPARED:` line naming that member**, because a default read as a race it never ran is
-worse than no default: the partition axis is the one this library's shipped default states as a
+worse than no default: the partition axis is the one this library's committed default states as a
 comparison, and a run whose rows are all one partition has not compared partitions at all.
 
 When a class cannot be ordered — a pair whose within-round ratio band straddles one, or too few

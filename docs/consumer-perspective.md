@@ -44,7 +44,7 @@ What it *can* serve is work that does not need accuracy.
   several cycles, so an error of a part in a thousand in the integrals cannot reach the answer.
 - **Anything recomputed in double precision afterwards** — a preconditioner, a trial step, a guess.
 
-The shipped half lanes convert each value to sixteen bits on the way in and back on the way out, so
+The committed half lanes convert each value to sixteen bits on the way in and back on the way out, so
 the conversion is their cost. If you are calling them one value at a time, that conversion is what
 you are paying for. The arithmetic is not the bottleneck.
 
@@ -81,7 +81,7 @@ axes. Each of them is a decision a caller can make:
   storing different things;
 - **the evaluation scheme** — a fit's coefficients are summed either by the split Clenshaw
   recurrence on its Chebyshev form, or by Horner's rule on the monomial form of the same fit;
-- **the interval partition** — how the fitted intervals are cut: as the shipped tables cut them; more
+- **the interval partition** — how the fitted intervals are cut: as the committed tables cut them; more
   narrowly, into pieces the proved truncation bound places where the function needs them, holding the
   bar at a lower degree; or into a fixed grid of equal cells over the whole fitted domain, every
   order fitted independently at one degree;
@@ -125,12 +125,12 @@ probe of the same kind for a card (`boys-device-probe`), because which entry is 
 is a property of the card.
 
 **What you get by naming nothing is a tie rather than a measured win.** The route and the packing
-axis carry the settings the library has always shipped. The scheme and the partition were set from
+axis carry the settings this build compiles by default. The scheme and the partition were set from
 the probe's own runs, and those runs did not separate the rows of either axis. The three leading rows
 of the double lane's full-accuracy all-orders ranking came out closer together than any one of them
 moves between two runs of the same probe. The settings this library ships are one of those three,
 not the cheapest of them. That costs nothing in accuracy — the two schemes sum one fit and the
-shipped and narrow partitions cut one fit, each certified to a bound of its own — but it is what the
+committed and narrow partitions cut one fit, each certified to a bound of its own — but it is what the
 default is. A reader told the default was a measured win would have been told something the
 measurement does not say.
 
