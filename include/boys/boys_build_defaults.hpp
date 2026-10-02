@@ -105,11 +105,12 @@
 /// format-specific default would need a format key that `Precision` does not
 /// have.
 ///
-/// **The rung is not a key.** One row serves every accuracy multiplier a caller
-/// can name, and the row a class is given is the one its own m = 1 class
-/// measured: naming a rung changes the bound a call carries and never which
-/// implementation runs, so a table keyed by rung would be seven rows of one
-/// answer per class.
+/// **The rung is not a key, because the rung is the caller's and not the library's.** A caller
+/// chooses the accuracy before the call and this table answers what the library then picks, so a
+/// table keyed by rung would be seven rows of one answer per class. The row a class is given is
+/// the one its own m = 1 class measured. The device's fastest entry does move with the rung, and
+/// the option probe keys its classes by it - the two keys differ because they key different
+/// things, a measurement there and the library's own choice here.
 ///
 /// **The axes are names, checked where they are read.** Each cell is written as
 /// the enumerator it means, unqualified by any prefix because the types are not
@@ -142,6 +143,13 @@
 /// does not rank has no measurement to carry. They are written out rather than
 /// left to anything implicit: a row written here is a default that has been
 /// decided and can be read, and the marker above it says on what.
+///
+/// **A row a probe named by there being no rival is a choice, not a measurement.** The option
+/// probes separate the two in the data they emit - a class whose winner won an ordering and a class
+/// whose winner was simply the last entry left standing are different values of the probe's own
+/// `how`, and its report says of the second that it is "an answer, and not the winner of a
+/// comparison". A row written from the second is written with the marker a choice carries, never
+/// with the one a measurement carries: a walkover recorded as a win is a default nobody measured.
 ///
 /// What each row resolves to, and the bound it carries, is `boys::DefaultPolicy`
 /// and `boys::DefaultGuarantee` in `boys/boys.hpp`. The probe writes this block

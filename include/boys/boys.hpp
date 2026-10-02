@@ -673,10 +673,14 @@ BOYS_DEFAULT_POLICY_BUILD_ROWS(BOYS_DEFAULT_POLICY_BUILD_ROW)
 /// default template argument would drop the entry from overload resolution
 /// instead, and a different overload would answer the call.
 ///
-/// **The rung is not a key.** One row serves every accuracy multiplier a caller
-/// can name: naming a rung changes the bound a call carries and never which
-/// implementation runs, so the row a class resolves to is the one its own m = 1
-/// class measured.
+/// **The rung is not a key, because the rung is the caller's and not the library's.** A caller
+/// chooses the accuracy before the call; what this table answers is what the library then picks,
+/// so naming a rung changes the bound a call carries and never which row applies. The row a class
+/// resolves to is the one its own m = 1 class measured. The *fastest entry* does move with the
+/// rung - measured on the device, three of nine m = 1 classes pick a different entry at a relaxed
+/// rung - and that is the same fact seen from the other side, since a caller at another rung has
+/// asked a different question. The option probe keys its classes by the rung for that reason; what
+/// this table keys is the library's choice, and the probe's key is the caller's.
 ///
 /// **This costs nothing at run time.** \c Type is a type, selected by the
 /// compiler for a class it knows; there is no registry in it, no string key, no
@@ -755,6 +759,13 @@ struct LaneContractInfo {
     double additive = 0.0; ///< a term the lane adds beside the base, 0.0 where it has none
     double plainAdditive = 0.0; ///< a term the plain reciprocal adds beside the base, 0.0 where the forms share one figure
     const char* source = ""; ///< the figures beside the base, empty where the base is the whole claim
+    /// The sentence for the figure the plain reciprocal gives, where that figure is not the base and
+    /// `source` does not already describe it. A figure and its sentence are handed out together, so a
+    /// row whose `source` names the forms its base is for - the float row reads "every region, at
+    /// exact division and the refined reciprocal" - must not hand that sentence beside a figure that
+    /// carries the plain form's own term. Empty where `source` already covers every form, which is
+    /// what the half lane's row does.
+    const char* plainSource = "";
 };
 
 /// The precision lanes this build carries, each with the figure it documents.
