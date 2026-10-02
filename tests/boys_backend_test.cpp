@@ -360,11 +360,13 @@ TEST(BackendTest, TheUnnamedCallIsTheDefaultThisBuildWasCompiledWith) {
 #endif
 }
 
-// Naming the narrow partition is answered from its own tables; combinations with no narrow
-// table are refused where they are named rather than answered from the shipped one. Those
-// refusals are static_asserts inside RouteFit, the relaxed rungs' RequireShippedPartition
-// and the single-precision lanes, so a test that has to compile cannot exercise one: what
-// is pinned here is the default. The member itself is measured in the accuracy gate.
+// Naming the narrow partition is answered from its own tables; combinations with no
+// table for the named partition are refused where they are named rather than answered
+// from another partition's fits. Those refusals are static_asserts inside `RouteFit`
+// and `RationalRouteFitAtRung`, so a test that has to compile cannot exercise one:
+// what is pinned here is the default. The member itself is measured in the accuracy
+// gate. The two are named and not numbered on purpose - a line number into a header
+// this tree is still moving rots, and a reader who needs the site greps the symbol.
 TEST(BackendTest, ThePartitionNamesRoundTrip) {
     EXPECT_STREQ(boys::GranularityName(boys::FitGranularity::kShipped), "shipped");
     EXPECT_STREQ(boys::GranularityName(boys::FitGranularity::kNarrow), "narrow");
@@ -789,4 +791,155 @@ TEST(BackendTest, TheDivisionFormReachesTheLaddersItDocuments) {
         << kFloatPlainFigure << ") at " << floatOutsideFigure
         << " cell(s): the form is served on that lane, so what it returns has to be inside the "
            "lane's own figure for it, and that figure is what a caller reads";
+}
+
+// The partition question, asked of a fit rather than of a run: which fits carry the uniform
+// grid's own table, and at which partitions a fit answers from a table of its own.
+//
+// The derived families are written against two partitions. Their granularity parameter is a
+// two-case conditional and the grid is the third value it has no answer for, so a path that
+// resolves a policy's partition through one of them answers a policy naming the grid out of
+// the narrow member - certified numbers, under the grid's name, with nothing reporting it.
+// Every one of this library's three substitution defects had that shape, and each was found
+// by a person reading code rather than by a call.
+//
+// detail::FitAnswersPartition is that question asked once, and it is what the paths that
+// resolve a partition now ask rather than each restating the check where it stands. The
+// assertions below are the predicate's own answers, on this build's families; the test under
+// them is the part a static assertion cannot state, because the guard bites at a call site.
+static_assert(boys::detail::kFitCarriesUniform<boys::detail::UniformFit<boys::EvalScheme::kHorner>>,
+              "the Chebyshev member over the grid is the one fit that carries it");
+static_assert(boys::detail::kFitCarriesUniform<boys::detail::RationalFitUniform>,
+              "the rational member over the grid is the other fit that carries it");
+
+static_assert(!boys::detail::kFitCarriesUniform<
+                  boys::detail::ChebyshevFit<boys::EvalScheme::kHorner,
+                                             boys::FitGranularity::kShipped>>,
+              "the derived Chebyshev family has no grid table: its granularity parameter is a "
+              "two-case conditional, and an answer for the grid here is the substitution the "
+              "trait exists to catch");
+static_assert(!boys::detail::kFitCarriesUniform<boys::detail::RationalFit>,
+              "the shipped rational member has no grid table");
+static_assert(!boys::detail::kFitCarriesUniform<boys::detail::RationalFitNarrow>,
+              "the narrow rational member has no grid table");
+static_assert(!boys::detail::kFitCarriesUniform<boys::detail::RationalFitNarrowAtRung<1.0>>,
+              "a rung form of the derived rational family has no grid table either: a rung of "
+              "the grid is the stored cells read uncut and not a cut of another partition's "
+              "pairs");
+
+namespace {
+
+using GridFit = boys::detail::UniformFit<boys::EvalScheme::kHorner>;
+using DerivedFit =
+    boys::detail::ChebyshevFit<boys::EvalScheme::kHorner, boys::FitGranularity::kShipped>;
+
+static_assert(boys::detail::FitAnswersPartition<GridFit>(boys::FitGranularity::kUniform),
+              "the grid's member answers the grid");
+
+// A grid member answers the grid and nothing else: reading it as the shipped or the narrow
+// partition would be a substitution in the other direction, and the same one.
+static_assert(!boys::detail::FitAnswersPartition<GridFit>(boys::FitGranularity::kShipped));
+static_assert(!boys::detail::FitAnswersPartition<GridFit>(boys::FitGranularity::kNarrow));
+
+static_assert(boys::detail::FitAnswersPartition<DerivedFit>(boys::FitGranularity::kShipped),
+              "the derived family's own two partitions are what it answers");
+static_assert(boys::detail::FitAnswersPartition<DerivedFit>(boys::FitGranularity::kNarrow));
+static_assert(!boys::detail::FitAnswersPartition<DerivedFit>(boys::FitGranularity::kUniform),
+              "the derived family does not answer the grid, and a path resolving a policy "
+              "naming the grid through it must say so rather than read the narrow member");
+
+// A value outside the enumeration fails closed at both members. A two-case conditional would
+// hand it to the arm its `else` names - the narrow member for the derived families, the
+// shipped one for the float lane's twins - so the predicate's answer is the one that turns
+// such a value into a refusal wherever a partition is resolved rather than into a fit.
+static_assert(!boys::detail::FitAnswersPartition<DerivedFit>(
+                  static_cast<boys::FitGranularity>(200)),
+              "a granularity outside the enumeration is answered by no fit");
+static_assert(!boys::detail::FitAnswersPartition<GridFit>(static_cast<boys::FitGranularity>(200)),
+              "a granularity outside the enumeration is answered by no fit");
+
+} // namespace
+
+// The guard's bite, at the entries whose routing asks it: a policy naming the grid is served
+// by the batched shapes only because each routes it to the per-argument body, which reads the
+// grid's own table, and the partitioned body the guard keeps out refuses the grid by name at
+// its own contract.
+//
+// This file therefore fails to compile if that routing is removed, and it fails to compile if
+// the predicate answering it is weakened - or answered "yes" - because the call below then
+// reaches the partitioned path and its assertion fires. That is the property a run-time test
+// cannot have: a substitution that compiles is measured here as a value, but one that should
+// not compile is caught in this translation unit before anything is measured.
+TEST(BackendTest, TheGuardedBatchedEntriesReadTheGridsOwnTable) {
+    using UniformPolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                           boys::EvalScheme::kHorner,
+                                           boys::BoysBudget::kFloat,
+                                           boys::PackAxis::kArguments,
+                                           boys::FitGranularity::kUniform>;
+    using NarrowPolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                          boys::EvalScheme::kHorner,
+                                          boys::BoysBudget::kFloat,
+                                          boys::PackAxis::kArguments,
+                                          boys::FitGranularity::kNarrow>;
+
+    // One argument under the grid's join, one inside region B below it, and two above it -
+    // where the double lane's grid reaches past the end of region B, so the entry there is
+    // the asymptotic form and reads no fit at all.
+    constexpr std::array<double, 5> kArguments = {0.25, 1.0, 5.5, 12.0, 27.0};
+    constexpr int kNmax = boys::kMaxBoysOrder;
+
+    std::vector<double> planes(kArguments.size() * static_cast<std::size_t>(kNmax + 1), 0.0);
+    std::vector<std::size_t> workspace(boys::BoysAllNWorkspaceSize(kArguments.size()));
+
+    boys::BoysAllN<1.0, UniformPolicy>(kNmax,
+                                       kArguments.data(),
+                                       planes.data(),
+                                       kArguments.size(),
+                                       workspace.data());
+
+    std::size_t moved = 0;
+
+    for (std::size_t i = 0; i < kArguments.size(); ++i)
+    {
+        std::array<double, kNmax + 1> perOrder{};
+        std::array<double, kNmax + 1> narrow{};
+
+        boys::BoysAllOrders<1.0, UniformPolicy>(kNmax, kArguments[i], perOrder.data());
+        boys::BoysAllOrders<1.0, NarrowPolicy>(kNmax, kArguments[i], narrow.data());
+
+        for (int n = 0; n <= kNmax; ++n)
+        {
+            const double plane = planes[static_cast<std::size_t>(n) * kArguments.size() + i];
+
+            EXPECT_EQ(plane, perOrder[static_cast<std::size_t>(n)])
+                << "the batched entry's grid path is the per-argument body's own reading, and "
+                << "at n = " << n << ", x = " << kArguments[i] << " the two part: the entry a "
+                << "policy naming the grid is served by is not the body that reads the grid";
+
+            moved += plane != narrow[static_cast<std::size_t>(n)] ? 1u : 0u;
+        }
+    }
+
+    EXPECT_GT(moved, 0u)
+        << "every value of the batched entry's grid path is the narrow partition's bit for bit, "
+        << "over " << kArguments.size() << " arguments and " << (kNmax + 1)
+        << " orders: a policy naming the grid is being answered from another partition's tables";
+
+    // The fixed-order entry, whose routing asks the same question of the same read: one order
+    // at every argument of the array.
+    std::vector<double> fixed(kArguments.size(), 0.0);
+
+    boys::BoysFixedN<1.0, UniformPolicy>(kNmax / 2,
+                                         kArguments.data(),
+                                         fixed.data(),
+                                         kArguments.size());
+
+    for (std::size_t i = 0; i < kArguments.size(); ++i)
+    {
+        // Parenthesised: the template argument list carries a comma, which the assertion's
+        // own macro would otherwise read as a second argument of its own.
+        EXPECT_EQ(fixed[i], (boys::BoysSingle<1.0, UniformPolicy>(kNmax / 2, kArguments[i])))
+            << "the fixed-order entry's grid path is the single-order body's own reading, and "
+            << "they part at x = " << kArguments[i];
+    }
 }
