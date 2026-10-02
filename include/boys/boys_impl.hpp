@@ -54,6 +54,99 @@ constexpr double kBoysHalfSqrtPi = 0.886226925452758014; // sqrt(pi)/2
 constexpr float kBoysHalfSqrtPiF32 = 0.88622693f; // sqrt(pi)/2, single lane
 
 // ---------------------------------------------------------------------------
+// Which partition a fit answers
+// ---------------------------------------------------------------------------
+// Every fit family in this file is written against a set of partitions and reads
+// every other granularity as one of them. The derived families - the Chebyshev
+// family, the rational route's derived members, and the rung forms of both - carry
+// the shipped and the narrow partition: their granularity parameter selects the
+// shipped tables and reads everything else as the narrow ones. The grid's own two
+// members carry the grid and nothing else.
+//
+// That two-case conditional is what the uniform-substitution defects this library
+// has had have in common. A body that resolves a policy's partition through a
+// derived family answers a policy naming the grid out of the narrow pieces, at a
+// certified bound, under the grid's name, with nothing reporting it - the read
+// succeeds and the numbers are another partition's. Each defect was found by a
+// person reading code, and each was closed where it happened to be.
+//
+// The question is one question at every one of them: does the fit this path will
+// read answer the partition it was named with? It is answered once, below, and
+// every path that resolves a partition for an answer asks it rather than restating
+// the check where it stands - so a further path fails to compile where it reads
+// instead of where somebody remembered to look.
+
+/// Whether the fit \c Fit carries the uniform grid's own table.
+///
+/// The derived families do not carry it: their granularity parameter is a two-case
+/// conditional over the shipped and the narrow partition, and the grid is a third
+/// value it has no answer for. What a path naming the grid through one of them gets
+/// is the narrow member, read under the grid's name. The specializations below are
+/// the two families that do carry it - the two members \c RouteFit resolves a policy
+/// naming the grid to, one per route - and both are named here because a fact about
+/// which fits carry the grid that named one of the two would be the same kind of
+/// omission as a two-case conditional that forgot a third partition.
+template <typename Fit>
+inline constexpr bool kFitCarriesUniform = false;
+
+template <EvalScheme kScheme>
+inline constexpr bool kFitCarriesUniform<UniformFit<kScheme>> = true;
+
+template <>
+inline constexpr bool kFitCarriesUniform<RationalFitUniform> = true;
+
+/// Whether the fit \c Fit answers an argument at the partition \c kGranularity from
+/// that partition's own table, rather than from another partition's fit under its
+/// name.
+///
+/// \param kGranularity the partition a policy or a body named
+///
+/// \returns true where \c Fit's stored tables are a cut of that partition
+///
+/// The switch carries no `default:` arm on purpose: gcc and clang warn for an
+/// enumerator it does not name, and this tree builds with -Werror, so a partition
+/// added to the enumeration is a failed build at every site that asks this question
+/// rather than a site somebody has to remember. MSVC emits no -Wswitch, and what
+/// carries the same fact there is the assertion each caller writes on the answer.
+template <typename Fit>
+constexpr bool FitAnswersPartition(FitGranularity kGranularity) noexcept
+{
+    switch (kGranularity)
+    {
+    case FitGranularity::kShipped:
+    case FitGranularity::kNarrow:
+        // The derived families' own two. The grid's members carry neither: they are
+        // read over the grid's intervals and have no shipped or narrow fit at all.
+        return !kFitCarriesUniform<Fit>;
+
+    case FitGranularity::kUniform:
+        return kFitCarriesUniform<Fit>;
+    }
+
+    // A value outside the enumeration, which no family here is written against and
+    // no fit answers from a table of its own. The answer is no, so that a partition
+    // named through such a value fails closed wherever a path asks this rather than
+    // being resolved to the narrow tables as the bodies' own conditionals would.
+    return false;
+}
+
+/// The granularity a body was named with, carried as a type so that the dependent
+/// false below can be instantiated on it at the arm that refuses.
+template <FitGranularity kGranularity>
+struct GranularityTag {};
+
+/// A false that depends on what it is instantiated with.
+///
+/// The arm a granularity switch keeps for the enumerators it does not name: an
+/// assertion on this is evaluated where the arm it stands in is instantiated and
+/// nowhere else, so a fourth partition added to FitGranularity fails the build at
+/// every such switch rather than being answered out of the last arm's table under
+/// its own name. The parameter is what makes the assertion dependent - a bare
+/// `false` would be rejected where the arm is written.
+template <typename>
+inline constexpr bool kAlwaysFalse = false;
+
+// ---------------------------------------------------------------------------
 // Scalar double lane helpers
 // ---------------------------------------------------------------------------
 // Piece containing x for this order; the pieces partition [0, kX0).
@@ -517,6 +610,20 @@ inline double NarrowRegionBSeed(double x) noexcept {
                                                 t);
 }
 
+// Region B's seed from the shipped partition: one polynomial over the whole of
+// [kX0, kX1), at the degree the table carries. Region B's seed is this one fit at
+// every granularity except the narrow one - the grid's member stores no seed of its
+// own, and the extended band is the same fit because nothing amplifies it - so the
+// shipped and the uniform partition read the table this returns, and only the narrow
+// one has pieces to cut it into.
+template <EvalScheme kScheme>
+inline double ShippedRegionBSeed(double x) noexcept {
+    const double t = 2.0 * (x - kX0) / (kX1 - kX0) - 1.0;
+
+    return FitSum<kScheme, backend::ScalarFp64>(
+        detail::kBcoeffs.data(), detail::kMonoBcoeffs.data(), detail::kBDeg, t);
+}
+
 // The Chebyshev route, at the scheme its coefficients are summed in: the shipped
 // family, and the one holding both stored forms - the Chebyshev table the split
 // Clenshaw recurrence reads and the monomial table Horner reads, over the same
@@ -526,8 +633,22 @@ inline double NarrowRegionBSeed(double x) noexcept {
 // way. See FitGranularity for what the axis is and is not.
 template <EvalScheme kScheme, FitGranularity kGranularity>
 struct ChebyshevFit {
+    // This family stores the shipped and the narrow partition and no uniform one: its
+    // region-A read is piece-indexed, and the grid's cells are interval-major, read at
+    // the degrees they were fitted at through UniformFit's own locator. A uniform
+    // instantiation would therefore answer every read of it out of the narrow pieces
+    // under the grid's name - which is why the third name is refused here, at the
+    // alias that would otherwise resolve it, rather than by that alias.
+    static_assert(kGranularity != FitGranularity::kUniform,
+                  "ChebyshevFit carries the shipped and the narrow partition and no uniform "
+                  "table: the grid's cells are not pieces of this family, and a uniform "
+                  "instantiation of it answers every read out of the narrow pieces under the "
+                  "grid's name. The grid's own read is UniformFit's");
+
     // The region-A partition this fit reads; the bodies ask for it rather than
-    // for the table, so a route over the fit does not have to know which.
+    // for the table, so a route over the fit does not have to know which. The two
+    // values the assertion above leaves are the two this alias names, in the
+    // enumeration's order.
     using Partition = std::conditional_t<kGranularity == FitGranularity::kShipped,
                                          ShippedRegionAPartition,
                                          NarrowRegionAPartition>;
@@ -544,7 +665,8 @@ struct ChebyshevFit {
                                                         detail::kMonoCoeffs.data() + piece.offset,
                                                         piece.deg,
                                                         t);
-        } else
+        }
+        else if constexpr (kGranularity == FitGranularity::kNarrow)
         {
             const detail::OrderPiece& piece = detail::kNarrowAPieces[index];
             return FitSum<kScheme, backend::ScalarFp64>(
@@ -553,17 +675,52 @@ struct ChebyshevFit {
                 piece.deg,
                 t);
         }
+        else if constexpr (kGranularity == FitGranularity::kUniform)
+        {
+            // Region A is where the three partitions differ, and this one has no table
+            // of this shape: it is piece-indexed, and the grid's cells are interval-major
+            // with a degree of their own. The arm stands rather than falling through to
+            // the narrow pieces, so a uniform instantiation that reaches it is a build
+            // failure and not a value read out of another partition's rows.
+            static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                          "ChebyshevFit's region-A read is piece-indexed and the uniform grid "
+                          "is not: its cells are interval-major and are summed at the degree "
+                          "each was fitted at, through UniformFit's own locator. Read the grid "
+                          "there instead of routing it to this family");
+        }
+        else
+        {
+            static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                          "this switch enumerates the three fit partitions: a fourth value "
+                          "added to FitGranularity must be given its own arm here rather than "
+                          "inheriting the last one's table");
+        }
     }
 
     static double RegionBSeed(double x) noexcept {
         if constexpr (kGranularity == FitGranularity::kShipped)
         {
-            const double t = 2.0 * (x - kX0) / (kX1 - kX0) - 1.0;
-            return FitSum<kScheme, backend::ScalarFp64>(
-                detail::kBcoeffs.data(), detail::kMonoBcoeffs.data(), detail::kBDeg, t);
-        } else
+            return ShippedRegionBSeed<kScheme>(x);
+        }
+        else if constexpr (kGranularity == FitGranularity::kNarrow)
         {
             return NarrowRegionBSeed<kScheme>(x);
+        }
+        else if constexpr (kGranularity == FitGranularity::kUniform)
+        {
+            // The same fit as the shipped arm, by construction and not by fallback:
+            // region B's seed is one fit over [kX0, kX1) at every granularity except
+            // the narrow one, and the extended band is that same fit because nothing
+            // amplifies its seed. The grid has no seed of its own to store, so the two
+            // arms above and here name one table of the table's own rows.
+            return ShippedRegionBSeed<kScheme>(x);
+        }
+        else
+        {
+            static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                          "this switch enumerates the three fit partitions: a fourth value "
+                          "added to FitGranularity must be given its own arm here rather than "
+                          "inheriting the last one's table");
         }
     }
 
@@ -1278,10 +1435,16 @@ struct RationalFitNarrowAtRung {
 // pairs under the grid's name. The barrier is this template's and not the entry
 // guard's, because a revision that wired the member's rung down this path would
 // resolve it silently.
+//
+// The conditional is the shared question and not a second statement of it: a rung
+// body reads the fit this template resolves to, and the two ordinary cases resolve
+// to a fit that answers the partition the rung was named with - the shipped pairs
+// and the narrow pairs respectively. The grid's case resolves to the narrow member
+// as well, which is the substitution, so the answer turns on the fit and not on
+// which of the three was written.
 template <double kAccuracyMultiplier, FitGranularity kGranularity>
 struct RationalRouteFitAtRung {
-    static_assert(kGranularity == FitGranularity::kShipped ||
-                      kGranularity == FitGranularity::kNarrow,
+    static_assert(FitAnswersPartition<RationalFitNarrowAtRung<kAccuracyMultiplier>>(kGranularity),
                   "the uniform partition's rational member stores one pair per interval and no "
                   "per-order effective-degree table, so a rung of it has no pair to cut: name "
                   "the shipped or the narrow partition at a rung, or the uniform partition at "
@@ -1321,8 +1484,24 @@ inline double RegionBSeed(double x) noexcept {
 // read the Chebyshev family's seed by construction - they are region B's own
 // bodies - and it exists so that a region-B seed read from a policy is the
 // partition that policy names rather than always the shipped one.
+//
+// It is a read that resolves a policy's partition through a fit family, so it asks
+// whether that family answers the partition the policy names - the question every
+// uniform-partition guard in this file is asking - and refuses where it does not.
+// This is the barrier and not a restatement of one elsewhere: a body that reaches
+// the derived family from a policy reaches it here, and a body written later that
+// does the same fails to compile where it reads rather than where somebody
+// remembered to look.
 template <EvalPolicyLike Policy>
 inline double PolicyRegionBSeed(double x) noexcept {
+    static_assert(FitAnswersPartition<ChebyshevFit<Policy::kScheme, Policy::kGranularity>>(
+                      Policy::kGranularity),
+                  "this read resolves the policy's partition through the Chebyshev family, which "
+                  "carries the shipped and the narrow partition and reads every other "
+                  "granularity as the narrow one: a policy naming the uniform grid here is "
+                  "answered from the narrow tables under the grid's name. Give this body a "
+                  "branch that reads the grid's own table, or route a policy naming the grid to "
+                  "one that has it");
     return ChebyshevFit<Policy::kScheme, Policy::kGranularity>::RegionBSeed(x);
 }
 
@@ -1335,8 +1514,27 @@ inline double PolicyRegionBSeed(double x) noexcept {
 // partition as well: below each route's fits-first crossover the value a policy
 // answers with is the Chebyshev lane's, which is the lane that region is documented
 // at on both partitions.
+//
+// **This read carries the same assertion PolicyRegionBSeed carries.** It was the one
+// read of the pair that could not: it is reached from the `x < kX0` block of SingleOrder
+// and of AllOrdersBody, and those blocks are instantiated for a policy naming the grid
+// even though the grid's own branch has returned for every argument they cover - below
+// kFlatHi the grid's body answers, and kFlatHi is above kX1 and so above kX0. An
+// assertion here refused those two served bodies for a read they cannot take, which is
+// a refusal of something that compiles and is served. The blocks are now conditionally
+// dead, on this same question of this same family, so the barrier stands here too: what
+// keeps them dead is the ordering asserted above AllOrdersBody, and what keeps a read
+// from being answered by another partition's tables is this assertion, at the read.
 template <EvalPolicyLike Policy>
 inline double PolicyRegionAValue(int order, double x) noexcept {
+    static_assert(FitAnswersPartition<ChebyshevFit<Policy::kScheme, Policy::kGranularity>>(
+                      Policy::kGranularity),
+                  "this read resolves the policy's partition through the Chebyshev family, "
+                  "which carries the shipped and the narrow partition and reads every other "
+                  "granularity as the narrow one: a policy naming the uniform grid here is "
+                  "answered from the narrow tables under the grid's name. Give this body a "
+                  "branch that reads the grid's own table, or route a policy naming the grid "
+                  "to one that has it");
     return RegionAValue<ChebyshevFit<Policy::kScheme, Policy::kGranularity>>(order, x);
 }
 
@@ -1446,20 +1644,39 @@ inline const detail::f32::RatPiece& FindNarrowRatBPieceF32(float x) noexcept {
 template <EvalScheme kScheme = kDefaultEvalScheme,
           FitGranularity kGranularity = kDefaultFitGranularity>
 BoysForceInline float ChebyshevValueF32(int order, float x) noexcept {
-    if constexpr (kGranularity == FitGranularity::kNarrow)
-    {
-        const detail::f32::OrderPiece& piece = FindNarrowPieceF32(order, x);
-        const float* c = detail::f32::kNarrowACoeffsF32.data() + piece.offset;
-        const float* m = detail::f32::kNarrowAMonoCoeffsF32.data() + piece.offset;
-        const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
-        return FitSum<kScheme, backend::ScalarFp32>(c, m, piece.deg, t);
-    } else
+    if constexpr (kGranularity == FitGranularity::kShipped)
     {
         const detail::f32::OrderPiece& piece = FindPieceF32(order, x);
         const float* c = detail::f32::kCoeffs.data() + piece.offset;
         const float* m = detail::f32::kMonoCoeffs.data() + piece.offset;
         const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
         return FitSum<kScheme, backend::ScalarFp32>(c, m, piece.deg, t);
+    }
+    else if constexpr (kGranularity == FitGranularity::kNarrow)
+    {
+        const detail::f32::OrderPiece& piece = FindNarrowPieceF32(order, x);
+        const float* c = detail::f32::kNarrowACoeffsF32.data() + piece.offset;
+        const float* m = detail::f32::kNarrowAMonoCoeffsF32.data() + piece.offset;
+        const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
+        return FitSum<kScheme, backend::ScalarFp32>(c, m, piece.deg, t);
+    }
+    else if constexpr (kGranularity == FitGranularity::kUniform)
+    {
+        // Region A of a piece-indexed family has no uniform table: the grid's cells
+        // are interval-major and read at their own degrees. The arm refuses rather
+        // than reading the narrow pieces under the grid's name.
+        static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                      "this is the piece-indexed region-A read, and the uniform grid has no "
+                      "piece-indexed table: its cells are summed interval-major, at the degree "
+                      "each was fitted at, by the grid's own locator. Route the grid there "
+                      "rather than to this family");
+    }
+    else
+    {
+        static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                      "this switch enumerates the three fit partitions: a fourth value added "
+                      "to FitGranularity must be given its own arm here rather than inheriting "
+                      "the last one's table");
     }
 }
 
@@ -1729,11 +1946,28 @@ float UniformSingleOrderF32(int n, float x) noexcept {
     return UniformOrderAtF32<Policy>(FlatLocateF32(x), n);
 }
 
+// This lane's shipped region-B seed: one polynomial over [kX0, kX1), the fit the
+// shipped and the uniform partition read between them; see ShippedRegionBSeed for why
+// the two coincide.
+template <EvalScheme kScheme>
+inline float ShippedRegionBSeedF32(float x) noexcept {
+    const float t = 2.0f * (x - static_cast<float>(kX0)) / static_cast<float>(kX1 - kX0) - 1.0f;
+
+    return FitSum<kScheme, backend::ScalarFp32>(detail::f32::kBcoeffs.data(),
+                                                detail::f32::kMonoBcoeffs.data(),
+                                                detail::f32::kBDeg,
+                                                t);
+}
+
 // Float-lane region-B seed; see RegionBSeed.
 template <EvalScheme kScheme = kDefaultEvalScheme,
           FitGranularity kGranularity = kDefaultFitGranularity>
 inline float RegionBSeedF32(float x) noexcept {
-    if constexpr (kGranularity == FitGranularity::kNarrow)
+    if constexpr (kGranularity == FitGranularity::kShipped)
+    {
+        return ShippedRegionBSeedF32<kScheme>(x);
+    }
+    else if constexpr (kGranularity == FitGranularity::kNarrow)
     {
         const int index = NarrowBPieceF32(x);
         const float a = detail::f32::kNarrowBEdgesF32[static_cast<std::size_t>(index)];
@@ -1746,13 +1980,21 @@ inline float RegionBSeedF32(float x) noexcept {
                          + static_cast<std::size_t>(index)
                                * static_cast<std::size_t>(detail::f32::kNarrowBDegF32 + 1);
         return FitSum<kScheme, backend::ScalarFp32>(c, m, detail::f32::kNarrowBDegF32, t);
-    } else
+    }
+    else if constexpr (kGranularity == FitGranularity::kUniform)
     {
-        const float t = 2.0f * (x - static_cast<float>(kX0)) / static_cast<float>(kX1 - kX0) - 1.0f;
-        return FitSum<kScheme, backend::ScalarFp32>(detail::f32::kBcoeffs.data(),
-                                                    detail::f32::kMonoBcoeffs.data(),
-                                                    detail::f32::kBDeg,
-                                                    t);
+        // The same fit as the shipped arm, by construction and not by fallback: region
+        // B's seed is one fit over [kX0, kX1) at every granularity except the narrow
+        // one, and the extended band is that same fit because nothing amplifies its
+        // seed. This lane is no exception, and the grid has no seed of its own to store.
+        return ShippedRegionBSeedF32<kScheme>(x);
+    }
+    else
+    {
+        static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                      "this switch enumerates the three fit partitions: a fourth value added "
+                      "to FitGranularity must be given its own arm here rather than inheriting "
+                      "the last one's table");
     }
 }
 
@@ -1787,7 +2029,8 @@ double ChebyshevValueWithDegrees(int order, double x, const DegreesArray& degree
                                                     detail::kMonoCoeffs.data() + piece.offset,
                                                     deg,
                                                     t);
-    } else
+    }
+    else if constexpr (kGranularity == FitGranularity::kNarrow)
     {
         const detail::OrderPiece& piece = FindNarrowAPiece(order, x);
         const std::ptrdiff_t index = &piece - detail::kNarrowAPieces.data();
@@ -1799,6 +2042,43 @@ double ChebyshevValueWithDegrees(int order, double x, const DegreesArray& degree
             deg,
             t);
     }
+    else if constexpr (kGranularity == FitGranularity::kUniform)
+    {
+        // Region A is where the three partitions differ, and this read is piece-indexed
+        // off a per-order effective-degree table: the grid has neither. Its cells are
+        // interval-major, summed at the degree each was fitted at and located by index
+        // arithmetic rather than by a piece scan, so the arm refuses rather than reading
+        // the narrow pieces under the grid's name.
+        static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                      "this region-A read takes a piece index and a per-order degree, and the "
+                      "uniform grid has neither: its cells are read interval-major at the "
+                      "degree each was fitted at. Route the grid to its own read rather than "
+                      "here");
+    }
+    else
+    {
+        static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                      "this switch enumerates the three fit partitions: a fourth value added "
+                      "to FitGranularity must be given its own arm here rather than inheriting "
+                      "the last one's table");
+    }
+}
+
+// The shipped region-B seed at a cut degree: one polynomial over [kX0, kX1), read at
+// the degree the caller's table certifies for the peak order. The shipped and the
+// uniform partition read this fit between them - see ShippedRegionBSeed - so the two
+// arms of RegionBSeedWithDegrees below reach the table through here.
+template <EvalScheme kScheme, typename DegreesArray>
+inline double ShippedRegionBSeedWithDegrees(double x,
+                                            const DegreesArray& degrees,
+                                            int peakOrder) noexcept {
+    const double t = 2.0 * (x - kX0) / (kX1 - kX0) - 1.0;
+
+    return FitSum<kScheme, backend::ScalarFp64>(
+        detail::kBcoeffs.data(),
+        detail::kMonoBcoeffs.data(),
+        degrees[static_cast<std::size_t>(peakOrder)],
+        t);
 }
 
 // The region-B seed at the degree the rung certifies for the peak order the
@@ -1815,12 +2095,9 @@ inline double RegionBSeedWithDegrees(double x,
                                      int peakOrder) noexcept {
     if constexpr (kGranularity == FitGranularity::kShipped)
     {
-        const double t = 2.0 * (x - kX0) / (kX1 - kX0) - 1.0;
-        return FitSum<kScheme, backend::ScalarFp64>(detail::kBcoeffs.data(),
-                                                    detail::kMonoBcoeffs.data(),
-                                                    degrees[static_cast<std::size_t>(peakOrder)],
-                                                    t);
-    } else
+        return ShippedRegionBSeedWithDegrees<kScheme>(x, degrees, peakOrder);
+    }
+    else if constexpr (kGranularity == FitGranularity::kNarrow)
     {
         const std::size_t piece = static_cast<std::size_t>(NarrowBPieceOf(x));
         const double a = detail::kNarrowBEdges[piece];
@@ -1835,35 +2112,107 @@ inline double RegionBSeedWithDegrees(double x,
                                                     static_cast<int>(degree),
                                                     t);
     }
+    else if constexpr (kGranularity == FitGranularity::kUniform)
+    {
+        // The same fit as the shipped arm, by construction and not by fallback: region
+        // B's seed is one fit over [kX0, kX1) at every granularity except the narrow
+        // one, so the degree this read is cut at is the shipped table's own. The arm is
+        // written rather than left to an `else`, so a reader sees that the two coincide
+        // rather than inferring it from what one arm's `else` happens to mean.
+        return ShippedRegionBSeedWithDegrees<kScheme>(x, degrees, peakOrder);
+    }
+    else
+    {
+        static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                      "this switch enumerates the three fit partitions: a fourth value added "
+                      "to FitGranularity must be given its own arm here rather than inheriting "
+                      "the last one's table");
+    }
 }
 
 // The effective-degree tables a policy's rung reads, over the partition the
 // policy names. The criterion is the same one either way; the table it is
 // measured against is the partition's own, which is what makes a rung a
 // reading of the partition the caller chose rather than of the shipped one.
+//
+// Both bodies ask the shared question first, and each then names its own two or three
+// partitions rather than resolving the rest through an `else`: which table a partition
+// reads is a fact about the partition, and a partition the arms do not name must fail
+// the read rather than be answered out of the last arm's table. The callers today are
+// the two rung reads below, and the assertions hold for a body written later that
+// reaches a table directly.
 template <double kAccuracyMultiplier, EvalPolicyLike Policy, BoysRole kRole>
 constexpr auto RegionADegreeTableOf() noexcept {
+    static_assert(FitAnswersPartition<ChebyshevFit<Policy::kScheme, Policy::kGranularity>>(
+                      Policy::kGranularity),
+                  "this table is what a rung cuts the Chebyshev family's region-A fit with, and "
+                  "a policy naming the uniform grid has no rung of it: the grid's cells are "
+                  "read interval-major at the degrees they were fitted at, so there is no "
+                  "piece-indexed degree of this shape to cut them at");
     if constexpr (Policy::kGranularity == FitGranularity::kShipped)
     {
         return RegionADegrees<kAccuracyMultiplier, kRole, SchemeTailBasis<Policy::kScheme>()>();
-    } else
+    }
+    else if constexpr (Policy::kGranularity == FitGranularity::kNarrow)
     {
         return NarrowRegionADegrees<kAccuracyMultiplier,
                                     kRole,
                                     SchemeTailBasis<Policy::kScheme>()>();
     }
+    else if constexpr (Policy::kGranularity == FitGranularity::kUniform)
+    {
+        // Refused by the assertion above, and refused again here so that the arm stands
+        // where the partition is named: the grid's degree table is not this family's,
+        // and answering with the narrow rows under the grid's name is the substitution
+        // every guard in this file exists to stop.
+        static_assert(kAlwaysFalse<GranularityTag<Policy::kGranularity>>,
+                      "region A is where the three partitions differ, and the uniform grid has "
+                      "no piece-indexed fit in this family to cut: its cells carry the degree "
+                      "they were fitted at. Read the grid at its own table rather than through "
+                      "this one");
+    }
+    else
+    {
+        static_assert(kAlwaysFalse<GranularityTag<Policy::kGranularity>>,
+                      "this switch enumerates the three fit partitions: a fourth value added "
+                      "to FitGranularity must be given its own arm here rather than inheriting "
+                      "the last one's table");
+    }
 }
 
 template <double kAccuracyMultiplier, EvalPolicyLike Policy, BoysRole kRole>
 constexpr auto RegionBDegreeTableOf() noexcept {
+    static_assert(FitAnswersPartition<ChebyshevFit<Policy::kScheme, Policy::kGranularity>>(
+                      Policy::kGranularity),
+                  "this table is what a rung cuts the Chebyshev family's region-B fit with, and "
+                  "a policy naming the uniform grid has no rung of it: the grid reads its own "
+                  "cells at the degrees they were fitted at. The degrees below are the shipped "
+                  "partition's, which the grid's region-B read shares by construction");
     if constexpr (Policy::kGranularity == FitGranularity::kShipped)
     {
         return RegionBDegrees<kAccuracyMultiplier, kRole, SchemeTailBasis<Policy::kScheme>()>();
-    } else
+    }
+    else if constexpr (Policy::kGranularity == FitGranularity::kNarrow)
     {
         return NarrowRegionBDegrees<kAccuracyMultiplier,
                                     kRole,
                                     SchemeTailBasis<Policy::kScheme>()>();
+    }
+    else if constexpr (Policy::kGranularity == FitGranularity::kUniform)
+    {
+        // The same fit as the shipped arm, by construction and not by fallback: region
+        // B's seed is one fit over [kX0, kX1) at every granularity except the narrow
+        // one, so the table a rung would cut it with is the shipped table's. The arm is
+        // written rather than left to an `else`; the assertion above is what keeps a
+        // policy naming the grid from reaching a rung at all.
+        return RegionBDegrees<kAccuracyMultiplier, kRole, SchemeTailBasis<Policy::kScheme>()>();
+    }
+    else
+    {
+        static_assert(kAlwaysFalse<GranularityTag<Policy::kGranularity>>,
+                      "this switch enumerates the three fit partitions: a fourth value added "
+                      "to FitGranularity must be given its own arm here rather than inheriting "
+                      "the last one's table");
     }
 }
 
@@ -1924,7 +2273,8 @@ float ChebyshevValueF32WithDegrees(int order, float x, const DegreesArray& degre
                                                     detail::f32::kMonoCoeffs.data() + piece.offset,
                                                     degrees[static_cast<std::size_t>(index)],
                                                     t);
-    } else
+    }
+    else if constexpr (kGranularity == FitGranularity::kNarrow)
     {
         const detail::f32::OrderPiece& piece = FindNarrowPieceF32(order, x);
         const std::ptrdiff_t index = &piece - detail::f32::kNarrowAPiecesF32.data();
@@ -1935,6 +2285,25 @@ float ChebyshevValueF32WithDegrees(int order, float x, const DegreesArray& degre
             degrees[static_cast<std::size_t>(index)],
             t);
     }
+    else if constexpr (kGranularity == FitGranularity::kUniform)
+    {
+        // Region A is where the three partitions differ, and this read is piece-indexed
+        // off a per-order effective-degree table: the grid has neither. Its cells are
+        // interval-major, summed at the degree each was fitted at, so the arm refuses
+        // rather than reading the narrow pieces under the grid's name.
+        static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                      "this region-A read takes a piece index and a per-order degree, and the "
+                      "uniform grid has neither: its cells are read interval-major at the "
+                      "degree each was fitted at. Route the grid to its own read rather than "
+                      "here");
+    }
+    else
+    {
+        static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                      "this switch enumerates the three fit partitions: a fourth value added "
+                      "to FitGranularity must be given its own arm here rather than inheriting "
+                      "the last one's table");
+    }
 }
 
 // The region-B seed at the degree the rung certifies for the peak order the
@@ -1942,6 +2311,22 @@ float ChebyshevValueF32WithDegrees(int order, float x, const DegreesArray& degre
 // of the double lane's pair above, with the same two shapes: one polynomial
 // over the whole region for the shipped partition, one polynomial per piece for
 // the narrow one, whose table carries the order beside the piece.
+// This lane's shipped region-B seed at a cut degree; the counterpart of
+// ShippedRegionBSeedWithDegrees, and the fit the shipped and the uniform partition read
+// between them.
+template <EvalScheme kScheme, typename DegreesArray>
+inline float ShippedRegionBSeedF32WithDegrees(float x,
+                                              const DegreesArray& degrees,
+                                              int peakOrder) noexcept {
+    const float t = 2.0f * (x - static_cast<float>(kX0)) / static_cast<float>(kX1 - kX0) - 1.0f;
+
+    return FitSum<kScheme, backend::ScalarFp32>(
+        detail::f32::kBcoeffs.data(),
+        detail::f32::kMonoBcoeffs.data(),
+        degrees[static_cast<std::size_t>(peakOrder)],
+        t);
+}
+
 template <EvalScheme kScheme = kDefaultEvalScheme,
           FitGranularity kGranularity = kDefaultFitGranularity,
           typename DegreesArray>
@@ -1950,13 +2335,9 @@ inline float RegionBSeedF32WithDegrees(float x,
                                        int peakOrder) noexcept {
     if constexpr (kGranularity == FitGranularity::kShipped)
     {
-        const float t = 2.0f * (x - static_cast<float>(kX0)) / static_cast<float>(kX1 - kX0) - 1.0f;
-        return FitSum<kScheme, backend::ScalarFp32>(
-            detail::f32::kBcoeffs.data(),
-            detail::f32::kMonoBcoeffs.data(),
-            degrees[static_cast<std::size_t>(peakOrder)],
-            t);
-    } else
+        return ShippedRegionBSeedF32WithDegrees<kScheme>(x, degrees, peakOrder);
+    }
+    else if constexpr (kGranularity == FitGranularity::kNarrow)
     {
         const std::size_t piece = static_cast<std::size_t>(NarrowBPieceF32(x));
         const float a = detail::f32::kNarrowBEdgesF32[piece];
@@ -1971,6 +2352,21 @@ inline float RegionBSeedF32WithDegrees(float x,
                     + static_cast<std::size_t>(peakOrder)],
             t);
     }
+    else if constexpr (kGranularity == FitGranularity::kUniform)
+    {
+        // The same fit as the shipped arm, by construction and not by fallback: region
+        // B's seed is one fit over [kX0, kX1) at every granularity except the narrow
+        // one, so the degree this read is cut at is the shipped table's own. See
+        // ShippedRegionBSeed for why the two coincide.
+        return ShippedRegionBSeedF32WithDegrees<kScheme>(x, degrees, peakOrder);
+    }
+    else
+    {
+        static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                      "this switch enumerates the three fit partitions: a fourth value added "
+                      "to FitGranularity must be given its own arm here rather than inheriting "
+                      "the last one's table");
+    }
 }
 
 // A relaxed rung's two region reads, as one call: the degree table and the
@@ -1982,8 +2378,20 @@ inline float RegionBSeedF32WithDegrees(float x,
 // The role is the body's own: the single-order shapes read the per-order
 // amplification and the batch shapes the recursion's, and the criterion that
 // turns a tail into a degree differs between them.
+//
+// The rung's reads resolve the policy's partition the way the m = 1 ones do - at a
+// cut degree rather than a stored one, which changes the degree and not the family -
+// so they ask the same question of the same family and refuse on the same answer.
 template <EvalPolicyLike Policy, double kAccuracyMultiplier, BoysRole kRole>
 inline double PolicyRegionAValueAtRung(int order, double x) noexcept {
+    static_assert(FitAnswersPartition<ChebyshevFit<Policy::kScheme, Policy::kGranularity>>(
+                      Policy::kGranularity),
+                  "this read resolves the policy's partition through the Chebyshev family, which "
+                  "carries the shipped and the narrow partition and reads every other "
+                  "granularity as the narrow one: a policy naming the uniform grid here is "
+                  "answered from the narrow tables under the grid's name. Give this body a "
+                  "branch that reads the grid's own table, or route a policy naming the grid to "
+                  "one that has it");
     static constexpr auto kDegrees = RegionADegreeTableOf<kAccuracyMultiplier, Policy, kRole>();
     return ChebyshevValueWithDegrees<Policy::kScheme, Policy::kGranularity>(order, x, kDegrees);
 }
@@ -2007,6 +2415,14 @@ inline double PartitionRegionAValueAtRung(int order, double x) noexcept {
 
 template <EvalPolicyLike Policy, double kAccuracyMultiplier, BoysRole kRole>
 inline double PolicyRegionBSeedAtRung(double x, int order) noexcept {
+    static_assert(FitAnswersPartition<ChebyshevFit<Policy::kScheme, Policy::kGranularity>>(
+                      Policy::kGranularity),
+                  "this read resolves the policy's partition through the Chebyshev family, which "
+                  "carries the shipped and the narrow partition and reads every other "
+                  "granularity as the narrow one: a policy naming the uniform grid here is "
+                  "answered from the narrow tables under the grid's name. Give this body a "
+                  "branch that reads the grid's own table, or route a policy naming the grid to "
+                  "one that has it");
     static constexpr auto kDegrees = RegionBDegreeTableOf<kAccuracyMultiplier, Policy, kRole>();
     return RegionBSeedWithDegrees<Policy::kScheme, Policy::kGranularity>(x, kDegrees, order);
 }
@@ -2103,15 +2519,13 @@ inline float RegionBSeedRationalF32(float x) noexcept {
 // The partition names the table the index belongs to, and the caller has
 // already looked the piece up in that partition and mapped t in it, so the two
 // readings differ in the table alone.
-template <FitGranularity kGranularity = kDefaultFitGranularity>
-inline float RationalPieceF32AtCut(std::size_t index, int numDeg, int denDeg, float t) noexcept {
-    const detail::f32::RatPiece& piece =
-        (kGranularity == FitGranularity::kShipped) ? detail::f32::kRatAPieces[index]
-                                                 : detail::f32::kNarrowRatAPiecesF32[index];
-    const float* c =
-        (kGranularity == FitGranularity::kShipped)
-            ? detail::f32::kRatACoeffs.data() + piece.offset
-            : detail::f32::kNarrowRatACoeffsF32.data() + piece.offset;
+// The summation itself, over the row the partition's own table named: the cut degree
+// and the stored numerator degree are all the body reads besides the coefficients.
+inline float RationalPieceF32AtCutBody(const float* c,
+                                       int storedNumDeg,
+                                       int numDeg,
+                                       int denDeg,
+                                       float t) noexcept {
     float num = c[numDeg];
 
     for (int j = numDeg - 1; j >= 0; --j)
@@ -2124,14 +2538,55 @@ inline float RationalPieceF32AtCut(std::size_t index, int numDeg, int denDeg, fl
         return num;
     }
 
-    float den = c[piece.numdeg + denDeg];
+    float den = c[storedNumDeg + denDeg];
 
     for (int j = denDeg - 1; j >= 1; --j)
     {
-        den = backend::ScalarFp32::MulAdd(den, t, c[piece.numdeg + j]);
+        den = backend::ScalarFp32::MulAdd(den, t, c[storedNumDeg + j]);
     }
 
     return num / backend::ScalarFp32::MulAdd(den, t, 1.0f);
+}
+
+template <FitGranularity kGranularity = kDefaultFitGranularity>
+inline float RationalPieceF32AtCut(std::size_t index, int numDeg, int denDeg, float t) noexcept {
+    if constexpr (kGranularity == FitGranularity::kShipped)
+    {
+        const detail::f32::RatPiece& piece = detail::f32::kRatAPieces[index];
+        return RationalPieceF32AtCutBody(detail::f32::kRatACoeffs.data() + piece.offset,
+                                         piece.numdeg,
+                                         numDeg,
+                                         denDeg,
+                                         t);
+    }
+    else if constexpr (kGranularity == FitGranularity::kNarrow)
+    {
+        const detail::f32::RatPiece& piece = detail::f32::kNarrowRatAPiecesF32[index];
+        return RationalPieceF32AtCutBody(detail::f32::kNarrowRatACoeffsF32.data() + piece.offset,
+                                         piece.numdeg,
+                                         numDeg,
+                                         denDeg,
+                                         t);
+    }
+    else if constexpr (kGranularity == FitGranularity::kUniform)
+    {
+        // Region A of this family, where the three partitions differ and this one has no
+        // row of this shape: the grid's numerator and denominator are one pair per
+        // interval, reached by the interval's own offset, so the arm refuses rather than
+        // summing the narrow pieces' rows under the grid's name.
+        static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                      "the rational family's piece-indexed region-A read has no uniform table: "
+                      "the grid's numerator and denominator are one pair per interval, reached "
+                      "by the interval's own offset. Read the grid through its own order entry "
+                      "rather than here");
+    }
+    else
+    {
+        static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                      "this switch enumerates the three fit partitions: a fourth value added "
+                      "to FitGranularity must be given its own arm here rather than inheriting "
+                      "the last one's table");
+    }
 }
 
 // The region-B seed of this lane at a cut pair; same reading as
@@ -2140,31 +2595,38 @@ inline float RationalPieceF32AtCut(std::size_t index, int numDeg, int denDeg, fl
 // The shipped region holds one pair over the whole interval, the narrow one a
 // pair per piece, so the narrow branch takes the row's own stored degrees and
 // the cut above them.
+// This lane's shipped region-B pair at a cut; the fit the shipped and the uniform
+// partition read between them (see ShippedRegionBSeed).
+inline float RationalSeedF32ShippedAtCut(int numDeg, int denDeg, float t) noexcept {
+    float num = detail::f32::kRatBnum[numDeg];
+
+    for (int j = numDeg - 1; j >= 0; --j)
+    {
+        num = backend::ScalarFp32::MulAdd(num, t, detail::f32::kRatBnum[j]);
+    }
+
+    if (denDeg == 0)
+    {
+        return num;
+    }
+
+    float den = detail::f32::kRatBden[denDeg - 1];
+
+    for (int j = denDeg - 2; j >= 0; --j)
+    {
+        den = backend::ScalarFp32::MulAdd(den, t, detail::f32::kRatBden[j]);
+    }
+
+    return num / backend::ScalarFp32::MulAdd(den, t, 1.0f);
+}
+
 template <FitGranularity kGranularity = kDefaultFitGranularity>
 inline float RationalSeedF32AtCut(std::size_t index, int numDeg, int denDeg, float t) noexcept {
     if constexpr (kGranularity == FitGranularity::kShipped)
     {
-        float num = detail::f32::kRatBnum[numDeg];
-
-        for (int j = numDeg - 1; j >= 0; --j)
-        {
-            num = backend::ScalarFp32::MulAdd(num, t, detail::f32::kRatBnum[j]);
-        }
-
-        if (denDeg == 0)
-        {
-            return num;
-        }
-
-        float den = detail::f32::kRatBden[denDeg - 1];
-
-        for (int j = denDeg - 2; j >= 0; --j)
-        {
-            den = backend::ScalarFp32::MulAdd(den, t, detail::f32::kRatBden[j]);
-        }
-
-        return num / backend::ScalarFp32::MulAdd(den, t, 1.0f);
-    } else
+        return RationalSeedF32ShippedAtCut(numDeg, denDeg, t);
+    }
+    else if constexpr (kGranularity == FitGranularity::kNarrow)
     {
         const detail::f32::RatPiece& piece = detail::f32::kNarrowRatBPiecesF32[index];
         const float* c = detail::f32::kNarrowRatBCoeffsF32.data() + piece.offset;
@@ -2188,6 +2650,21 @@ inline float RationalSeedF32AtCut(std::size_t index, int numDeg, int denDeg, flo
         }
 
         return num / backend::ScalarFp32::MulAdd(den, t, 1.0f);
+    }
+    else if constexpr (kGranularity == FitGranularity::kUniform)
+    {
+        // The same pair as the shipped arm, by construction and not by fallback: region
+        // B's seed is one fit over [kX0, kX1) at every granularity except the narrow
+        // one. The arm is written rather than left to an `else`, so the sharing is
+        // visible here rather than inferred.
+        return RationalSeedF32ShippedAtCut(numDeg, denDeg, t);
+    }
+    else
+    {
+        static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                      "this switch enumerates the three fit partitions: a fourth value added "
+                      "to FitGranularity must be given its own arm here rather than inheriting "
+                      "the last one's table");
     }
 }
 
@@ -2327,6 +2804,11 @@ inline float RegionBSeedRationalNarrowF32(float x) noexcept {
 template <EvalScheme kScheme = kDefaultEvalScheme,
           FitGranularity kGranularity = kDefaultFitGranularity>
 struct ChebyshevFit32 {
+    /// The partition this fit was named with. A body that reads a fit and has to know
+    /// whether the fit answers that partition asks the shared question here rather than
+    /// re-deriving it from the type.
+    static constexpr FitGranularity kPartition = kGranularity;
+
     static float EvalOrder(int n, float x) noexcept {
         return ChebyshevValueF32<kScheme, kGranularity>(n, x);
     }
@@ -2350,24 +2832,62 @@ struct RationalFit32 {
     // the double lane's rational route hands over at.
     static constexpr double kRegionAFitsFrom = detail::kRatARouteLo;
 
+    /// The partition this fit was named with; see ChebyshevFit32::kPartition.
+    static constexpr FitGranularity kPartition = kGranularity;
+
     static float EvalOrder(int n, float x) noexcept {
-        if constexpr (kGranularity == FitGranularity::kNarrow)
-        {
-            return RationalValueNarrowF32(n, x);
-        } else
+        if constexpr (kGranularity == FitGranularity::kShipped)
         {
             return RationalValueF32(n, x);
+        }
+        else if constexpr (kGranularity == FitGranularity::kNarrow)
+        {
+            return RationalValueNarrowF32(n, x);
+        }
+        else if constexpr (kGranularity == FitGranularity::kUniform)
+        {
+            // Region A of this family, and the grid has no order of this shape: its
+            // pairs are one per interval of a fixed grid, reached by the interval's own
+            // offset. The arm refuses rather than reading the narrow pairs under the
+            // grid's name.
+            static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                          "this is the rational family's piece-indexed region-A read, and the "
+                          "uniform grid has no piece-indexed pair: its numerator and "
+                          "denominator are one per interval. Read the grid through its own "
+                          "order entry rather than here");
+        }
+        else
+        {
+            static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                          "this switch enumerates the three fit partitions: a fourth value "
+                          "added to FitGranularity must be given its own arm here rather than "
+                          "inheriting the last one's table");
         }
     }
 
     // One pair for the whole region, so the order is not read.
     static float RegionBSeed(float x, int /*order*/) noexcept {
-        if constexpr (kGranularity == FitGranularity::kNarrow)
-        {
-            return RegionBSeedRationalNarrowF32(x);
-        } else
+        if constexpr (kGranularity == FitGranularity::kShipped)
         {
             return RegionBSeedRationalF32(x);
+        }
+        else if constexpr (kGranularity == FitGranularity::kNarrow)
+        {
+            return RegionBSeedRationalNarrowF32(x);
+        }
+        else if constexpr (kGranularity == FitGranularity::kUniform)
+        {
+            // The same pair as the shipped arm, by construction and not by fallback:
+            // region B's seed is one fit over [kX0, kX1) at every granularity except the
+            // narrow one, and this route's shipped region B is one pair over the interval.
+            return RegionBSeedRationalF32(x);
+        }
+        else
+        {
+            static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                          "this switch enumerates the three fit partitions: a fourth value "
+                          "added to FitGranularity must be given its own arm here rather than "
+                          "inheriting the last one's table");
         }
     }
 };
@@ -2414,14 +2934,36 @@ struct ChebyshevFit32AtRung {
     static constexpr auto kNarrowDegreesB =
         detail::NarrowRegionBDegrees<kAccuracyMultiplier, kRole, SchemeTailBasis<kScheme>()>();
 
+    /// The partition this fit was named with; see ChebyshevFit32::kPartition.
+    static constexpr FitGranularity kPartition = kGranularity;
+
     // One piece of one order, at that piece's effective degree.
     static float EvalOrder(int n, float x) noexcept {
         if constexpr (kGranularity == FitGranularity::kShipped)
         {
             return ChebyshevValueF32WithDegrees<kScheme, kGranularity>(n, x, kDegreesA);
-        } else
+        }
+        else if constexpr (kGranularity == FitGranularity::kNarrow)
         {
             return ChebyshevValueF32WithDegrees<kScheme, kGranularity>(n, x, kNarrowDegreesA);
+        }
+        else if constexpr (kGranularity == FitGranularity::kUniform)
+        {
+            // Region A of a rung: the grid's cells are stored at the degrees they were
+            // fitted at, so there is no cut of them to read and no piece of this family
+            // to read it over. The arm refuses rather than cutting the narrow pieces
+            // under the grid's name.
+            static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                          "a rung is a cut of a stored fit, and the uniform grid stores its "
+                          "cells at the degree each was fitted at: there is no region-A cut of "
+                          "it to take. Read the grid at its own degrees");
+        }
+        else
+        {
+            static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                          "this switch enumerates the three fit partitions: a fourth value "
+                          "added to FitGranularity must be given its own arm here rather than "
+                          "inheriting the last one's table");
         }
     }
 
@@ -2432,9 +2974,24 @@ struct ChebyshevFit32AtRung {
         if constexpr (kGranularity == FitGranularity::kShipped)
         {
             return RegionBSeedF32WithDegrees<kScheme, kGranularity>(x, kDegreesB, order);
-        } else
+        }
+        else if constexpr (kGranularity == FitGranularity::kNarrow)
         {
             return RegionBSeedF32WithDegrees<kScheme, kGranularity>(x, kNarrowDegreesB, order);
+        }
+        else if constexpr (kGranularity == FitGranularity::kUniform)
+        {
+            // The shipped degrees, by construction and not by fallback: region B's seed
+            // is one fit over [kX0, kX1) at every granularity except the narrow one, so
+            // the table this read is cut at is the shipped table's own.
+            return RegionBSeedF32WithDegrees<kScheme, kGranularity>(x, kDegreesB, order);
+        }
+        else
+        {
+            static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                          "this switch enumerates the three fit partitions: a fourth value "
+                          "added to FitGranularity must be given its own arm here rather than "
+                          "inheriting the last one's table");
         }
     }
 };
@@ -2460,6 +3017,9 @@ struct RationalFit32AtRung {
     static constexpr detail::NarrowRationalRegionBF32Pairs kNarrowPairsB =
         detail::NarrowRationalRegionBF32Degrees<kAccuracyMultiplier, kRole>();
 
+    /// The partition this fit was named with; see ChebyshevFit32::kPartition.
+    static constexpr FitGranularity kPartition = kGranularity;
+
     // This route's cover of an order's interval is its own, not the Chebyshev
     // table's breaks, so the piece is looked up in the rational table and the
     // pair is read at that piece's cut. The narrow partition is the family's
@@ -2473,7 +3033,8 @@ struct RationalFit32AtRung {
             const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
             return RationalPieceF32AtCut<kGranularity>(
                 index, kPairsA.num[index], kPairsA.den[index], t);
-        } else
+        }
+        else if constexpr (kGranularity == FitGranularity::kNarrow)
         {
             const detail::f32::RatPiece& piece = FindNarrowRatPieceF32(n, x);
             const std::size_t index =
@@ -2481,6 +3042,24 @@ struct RationalFit32AtRung {
             const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
             return RationalPieceF32AtCut<kGranularity>(
                 index, kNarrowPairsA.num[index], kNarrowPairsA.den[index], t);
+        }
+        else if constexpr (kGranularity == FitGranularity::kUniform)
+        {
+            // Region A of a rung: the grid's pairs are one per interval, read at the
+            // degrees the derivation fitted them at, so there is no cut of them and no
+            // piece of this family to cut. The arm refuses rather than cutting the narrow
+            // pieces under the grid's name.
+            static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                          "a rung is a cut of a stored fit, and the uniform grid stores its "
+                          "cells at the degree each was fitted at: there is no region-A cut of "
+                          "it to take. Read the grid through its own order entry");
+        }
+        else
+        {
+            static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                          "this switch enumerates the three fit partitions: a fourth value "
+                          "added to FitGranularity must be given its own arm here rather than "
+                          "inheriting the last one's table");
         }
     }
 
@@ -2495,7 +3074,8 @@ struct RationalFit32AtRung {
                 2.0f * (x - static_cast<float>(kX0)) / static_cast<float>(kX1 - kX0) - 1.0f;
             return RationalSeedF32AtCut<kGranularity>(
                 0, kPairsB.num[0], kPairsB.den[0], t);
-        } else
+        }
+        else if constexpr (kGranularity == FitGranularity::kNarrow)
         {
             const detail::f32::RatPiece& piece = FindNarrowRatBPieceF32(x);
             const std::size_t index =
@@ -2503,6 +3083,23 @@ struct RationalFit32AtRung {
             const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
             return RationalSeedF32AtCut<kGranularity>(
                 index, kNarrowPairsB.num[index], kNarrowPairsB.den[index], t);
+        }
+        else if constexpr (kGranularity == FitGranularity::kUniform)
+        {
+            // The shipped pair, by construction and not by fallback: region B's seed is
+            // one fit over [kX0, kX1) at every granularity except the narrow one, and the
+            // table here is that fit's shipped pair.
+            const float t =
+                2.0f * (x - static_cast<float>(kX0)) / static_cast<float>(kX1 - kX0) - 1.0f;
+            return RationalSeedF32AtCut<kGranularity>(
+                0, kPairsB.num[0], kPairsB.den[0], t);
+        }
+        else
+        {
+            static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                          "this switch enumerates the three fit partitions: a fourth value "
+                          "added to FitGranularity must be given its own arm here rather than "
+                          "inheriting the last one's table");
         }
     }
 };
@@ -2530,18 +3127,44 @@ template <FitRoute kRoute, EvalScheme kScheme,
 double FloatBatchRegionASeed(int order, double x) noexcept {
     if constexpr (kRoute == FitRoute::kRationalMinimax)
     {
-        if constexpr (kGranularity == FitGranularity::kNarrow)
+        if constexpr (kGranularity == FitGranularity::kShipped)
+        {
+            if (x >= RationalFit::kRegionAFitsFrom)
+            {
+                return RegionAValue<RationalFit>(order, x);
+            }
+        }
+        else if constexpr (kGranularity == FitGranularity::kNarrow)
         {
             if (x >= RationalFitNarrow::kRegionAFitsFrom)
             {
                 return RegionAValue<RationalFitNarrow>(order, x);
             }
-        } else if (x >= RationalFit::kRegionAFitsFrom)
+        }
+        else if constexpr (kGranularity == FitGranularity::kUniform)
         {
-            return RegionAValue<RationalFit>(order, x);
+            // Region A of the float batch's seed is read through the double lane's
+            // piece-indexed families, and the grid has no piece-indexed fit: its cells are
+            // read interval-major by the grid's own body, which answers this shape before
+            // this body is reached. The arm refuses rather than reading the narrow pieces
+            // under the grid's name.
+            static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                          "region A of the float batch's seed is read through the piece-indexed "
+                          "families, and the uniform grid has no piece-indexed fit: its cells "
+                          "are read interval-major at the degrees they were fitted at");
+        }
+        else
+        {
+            static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                          "this switch enumerates the three fit partitions: a fourth value "
+                          "added to FitGranularity must be given its own arm here rather than "
+                          "inheriting the last one's table");
         }
     }
 
+    // The Chebyshev family, below the route's own selector and over the whole of region A
+    // on the Chebyshev route. It answers the shipped and the narrow partition; the grid
+    // is refused by the family itself, at the read.
     return RegionAValue<ChebyshevFit<kScheme, kGranularity>>(order, x);
 }
 
@@ -2574,7 +3197,8 @@ double FloatBatchRegionASeedAtRung(int order, double x) noexcept {
                 const double t = 2.0 * (x - piece.a) / (piece.b - piece.a) - 1.0;
                 return RationalPieceAtCut(index, kPairsA.num[index], kPairsA.den[index], t);
             }
-        } else
+        }
+        else if constexpr (kGranularity == FitGranularity::kNarrow)
         {
             if (x >= RationalFitNarrow::kRegionAFitsFrom)
             {
@@ -2589,6 +3213,23 @@ double FloatBatchRegionASeedAtRung(int order, double x) noexcept {
                                                   t);
             }
         }
+        else if constexpr (kGranularity == FitGranularity::kUniform)
+        {
+            // Region A of a rung, read through the double lane's piece-indexed pairs:
+            // the grid has no piece-indexed pair and no cut to take of one. The arm
+            // refuses rather than reading the narrow pieces under the grid's name.
+            static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                          "a rung of the float batch's seed is a cut of a piece-indexed fit, and "
+                          "the uniform grid has no piece-indexed pair: its cells are read "
+                          "interval-major at the degrees they were fitted at");
+        }
+        else
+        {
+            static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                          "this switch enumerates the three fit partitions: a fourth value "
+                          "added to FitGranularity must be given its own arm here rather than "
+                          "inheriting the last one's table");
+        }
     }
 
     if constexpr (kGranularity == FitGranularity::kShipped)
@@ -2596,11 +3237,30 @@ double FloatBatchRegionASeedAtRung(int order, double x) noexcept {
         static constexpr auto kDegreesA =
             RegionADegrees<kAccuracyMultiplier, kRole, SchemeTailBasis<kScheme>()>();
         return ChebyshevValueWithDegrees<kScheme, kGranularity>(order, x, kDegreesA);
-    } else
+    }
+    else if constexpr (kGranularity == FitGranularity::kNarrow)
     {
         static constexpr auto kDegreesA =
             detail::NarrowRegionADegrees<kAccuracyMultiplier, kRole, SchemeTailBasis<kScheme>()>();
         return ChebyshevValueWithDegrees<kScheme, kGranularity>(order, x, kDegreesA);
+    }
+    else if constexpr (kGranularity == FitGranularity::kUniform)
+    {
+        // Region A of a rung, in the Chebyshev family's shape: the grid's cells are
+        // stored at the degrees they were fitted at, so there is no cut of them this
+        // body could take. The arm refuses rather than cutting the narrow pieces under
+        // the grid's name.
+        static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                      "a rung is a cut of a stored fit, and the uniform grid stores its cells "
+                      "at the degree each was fitted at: there is no region-A cut of it to "
+                      "take. Read the grid at its own degrees");
+    }
+    else
+    {
+        static_assert(kAlwaysFalse<GranularityTag<kGranularity>>,
+                      "this switch enumerates the three fit partitions: a fourth value added "
+                      "to FitGranularity must be given its own arm here rather than inheriting "
+                      "the last one's table");
     }
 }
 
@@ -2621,9 +3281,18 @@ float SingleOrderF32Body(int n, float x) noexcept {
     const float x0 = static_cast<float>(kX0);
     const float x1 = static_cast<float>(kX1);
 
-    if (x < x0)
+    // The region-A read goes through the fit's own stored pieces, which the uniform grid
+    // does not have: its cells are interval-major and are read by UniformSingleOrderF32.
+    // The read is dropped for a partition the fit does not answer rather than answered
+    // from the narrow pieces under the grid's name - and it is dead where it is dropped,
+    // because the entry that routes a uniform policy here has already answered every
+    // argument below the grid's join and returned.
+    if constexpr (FitAnswersPartition<Fit>(Fit::kPartition))
     {
-        return Fit::EvalOrder(n, x);
+        if (x < x0)
+        {
+            return Fit::EvalOrder(n, x);
+        }
     }
 
     float f = Fit::RegionBSeed(x, n);
@@ -2677,6 +3346,25 @@ float SingleOrderF32Body(int n, float x) noexcept {
 // one (see RationalFitAtRung); everything else about the body - the zero
 // argument, the region split, the per-order rule, the domains - is the same
 // under either, which is why the rung is a parameter here and not a second body.
+//
+// **What the two grid branches rest on, asserted once for both bodies.** A policy
+// naming the grid is answered by the grid's own branch, which returns for every
+// argument below kFlatHi; the region-A and region-B blocks beneath that branch
+// resolve the policy's partition through the Chebyshev family, which does not carry
+// the grid. The blocks are therefore dead for such a policy - and this is why: the
+// grid's join is above the end of region B, so every argument the blocks cover has
+// already been answered above them. The blocks are dropped for a partition that
+// family does not answer (an `if constexpr` on the same question, in AllOrdersBody
+// and in SingleOrder below), so the reads inside them are not instantiated for such
+// a policy and carry the assertion of every other read of that family. A grid whose
+// join fell inside the fitted domain would make both facts false at once - the drop
+// would compile and the reads would be live - which is what this asserts against.
+static_assert(kX0 < kX1 && kX1 < kFlatHi,
+              "the double lane's grid must reach past the end of region B: below kFlatHi the "
+              "grid's own branch answers and returns, so a policy naming it never reaches the "
+              "region-A and region-B reads that resolve through the Chebyshev family. A grid "
+              "stopping inside the fitted regions would leave those reads live for that policy "
+              "and answer it from another partition's tables under the grid's name");
 template <EvalPolicyLike Policy,
           typename Fit = typename Policy::Fit,
           double kAccuracyMultiplier = 1.0>
@@ -2709,73 +3397,85 @@ void AllOrdersBody(int nmax, double x, double* out) noexcept {
         }
     }
 
-    if (x < kX0)
+    if constexpr (FitAnswersPartition<ChebyshevFit<Policy::kScheme, Policy::kGranularity>>(
+                      Policy::kGranularity))
     {
-        // The pure per-(n, x) dispatch, driven by the n-indexed threshold table: the
-        // orders k with x >= kTierThresholds[k] are a prefix (the thresholds are
-        // non-decreasing in n) and are read from this route's own band answer; the
-        // tail orders keep the per-order piece value at the partition the policy
-        // names - below its own end an order is documented at the per-order 1e-15,
-        // and a route whose fits hold the wider bar does not answer there. On the
-        // Chebyshev route at or above the band's left edge out[k] is bit-identical to
-        // the single-order entry's value for every k.
-        //
-        // The fallback below, taken when x is under the band's left edge and no
-        // order takes the band's answer at all, is the one dispatch that is not: it
-        // seeds the downward recursion once, at nmax, and pays one fit for the batch
-        // where the per-order reading would pay one per order. So out[nmax] is still
-        // the single-order entry's value for nmax bit for bit at the reference
-        // multiplier, where the two roles read one stored table; at a rung the seed
-        // is read at the batch role's cut degrees and the single entry answers at the
-        // single role's, so the two part by up to 8.27e-09 relative at m = 1024, each
-        // reading still inside its own bound. out[k] for k < nmax carries the
-        // recurrence's value rather than the fit's, and the two readings of one cell
-        // differ by a fixed absolute amount and not a fixed number of last places:
-        // swept over the accuracy gate's committed grid at every nmax, the worst is
-        // 3.33e-16 absolute (nmax = 1, k = 0, x = 0.91067553232796428), 3 ULP of
-        // that result, while the worst in ULP is 140 (nmax = 29, k = 27,
-        // x = 1.0418128089831911), where the result is 6.66e-3. Both readings are
-        // inside the bound this entry documents.
-        int served = 0;
-
-        while (served < nmax &&
-               x >= detail::kTierThresholds[static_cast<std::size_t>(served + 1)])
+        // The block below resolves the policy's partition through the Chebyshev family,
+        // which carries the shipped and the narrow partition and does not answer the grid,
+        // so it is dropped for a partition that family does not answer: the reads inside it
+        // are then not instantiated for such a policy, and the assertion they carry cannot
+        // refuse the grid's own served bodies. Dropping it changes nothing a served call
+        // runs - the grid's branch above returned for every argument this block covers, by
+        // the ordering asserted above AllOrdersBody - and it is what makes the barrier in
+        // PolicyRegionAValue the same one PolicyRegionBSeed carries.
+        if (x < kX0)
         {
-            ++served;
-        }
+            // The pure per-(n, x) dispatch, driven by the n-indexed threshold table: the
+            // orders k with x >= kTierThresholds[k] are a prefix (the thresholds are
+            // non-decreasing in n) and are read from this route's own band answer; the
+            // tail orders keep the per-order piece value at the partition the policy
+            // names - below its own end an order is documented at the per-order 1e-15,
+            // and a route whose fits hold the wider bar does not answer there. On the
+            // Chebyshev route at or above the band's left edge out[k] is bit-identical to
+            // the single-order entry's value for every k.
+            //
+            // The fallback below, taken when x is under the band's left edge and no
+            // order takes the band's answer at all, is the one dispatch that is not: it
+            // seeds the downward recursion once, at nmax, and pays one fit for the batch
+            // where the per-order reading would pay one per order. So out[nmax] is still
+            // the single-order entry's value for nmax bit for bit at the reference
+            // multiplier, where the two roles read one stored table; at a rung the seed
+            // is read at the batch role's cut degrees and the single entry answers at the
+            // single role's, so the two part by up to 8.27e-09 relative at m = 1024, each
+            // reading still inside its own bound. out[k] for k < nmax carries the
+            // recurrence's value rather than the fit's, and the two readings of one cell
+            // differ by a fixed absolute amount and not a fixed number of last places:
+            // swept over the accuracy gate's committed grid at every nmax, the worst is
+            // 3.33e-16 absolute (nmax = 1, k = 0, x = 0.91067553232796428), 3 ULP of
+            // that result, while the worst in ULP is 140 (nmax = 29, k = 27,
+            // x = 1.0418128089831911), where the result is 6.66e-3. Both readings are
+            // inside the bound this entry documents.
+            int served = 0;
 
-        if (x >= Fit::kRegionAFitsFrom)
-        {
-            typename Fit::template BandSource<Policy::kDivision> source(x);
-
-            for (int l = 0; l <= served; ++l)
+            while (served < nmax &&
+                   x >= detail::kTierThresholds[static_cast<std::size_t>(served + 1)])
             {
-                out[l] = source.Next(l, x);
+                ++served;
             }
 
-            for (int l = served + 1; l <= nmax; ++l)
+            if (x >= Fit::kRegionAFitsFrom)
             {
-                out[l] = PartitionRegionAValueAtRung<Policy, kAccuracyMultiplier,
-                                                     BoysRole::kDoubleSingle>(l, x);
+                typename Fit::template BandSource<Policy::kDivision> source(x);
+
+                for (int l = 0; l <= served; ++l)
+                {
+                    out[l] = source.Next(l, x);
+                }
+
+                for (int l = served + 1; l <= nmax; ++l)
+                {
+                    out[l] = PartitionRegionAValueAtRung<Policy, kAccuracyMultiplier,
+                                                         BoysRole::kDoubleSingle>(l, x);
+                }
+
+                return;
+            }
+
+            // Seeds the downward recursion, so its error is the batch's: the degree
+            // is the batch role's, as it is in the Chebyshev rung's own batch body.
+            double f = PartitionRegionAValueAtRung<Policy, kAccuracyMultiplier,
+                                                   BoysRole::kDoubleBatch>(nmax, x);
+            out[nmax] = f;
+            const double expx = 0.5 * std::exp(-x);
+
+            for (int l = nmax - 1; l >= 0; --l)
+            {
+                f = DivideDownwardStep<Policy::kDivision>(l, x * f + expx);
+                out[l] = f;
             }
 
             return;
         }
-
-        // Seeds the downward recursion, so its error is the batch's: the degree
-        // is the batch role's, as it is in the Chebyshev rung's own batch body.
-        double f = PartitionRegionAValueAtRung<Policy, kAccuracyMultiplier,
-                                               BoysRole::kDoubleBatch>(nmax, x);
-        out[nmax] = f;
-        const double expx = 0.5 * std::exp(-x);
-
-        for (int l = nmax - 1; l >= 0; --l)
-        {
-            f = DivideDownwardStep<Policy::kDivision>(l, x * f + expx);
-            out[l] = f;
-        }
-
-        return;
     }
 
     if (x < kX1)
@@ -2832,28 +3532,40 @@ double SingleOrder(int n, double x) noexcept {
         }
     }
 
-    if (x < kX0)
+    if constexpr (FitAnswersPartition<ChebyshevFit<Policy::kScheme, Policy::kGranularity>>(
+                      Policy::kGranularity))
     {
-        if (x >= detail::kTierThresholds[static_cast<std::size_t>(n)])
+        // The block below resolves the policy's partition through the Chebyshev family,
+        // which carries the shipped and the narrow partition and does not answer the grid,
+        // so it is dropped for a partition that family does not answer: the reads inside it
+        // are then not instantiated for such a policy, and the assertion they carry cannot
+        // refuse the grid's own served bodies. Dropping it changes nothing a served call
+        // runs - the grid's branch above returned for every argument this block covers, by
+        // the ordering asserted above AllOrdersBody - and it is what makes the barrier in
+        // PolicyRegionAValue the same one PolicyRegionBSeed carries.
+        if (x < kX0)
         {
-            typename Fit::template BandSource<Policy::kDivision> source(x);
-            double f = 0.0;
-
-            // The order is at most kMaxBoysOrder, and bounding the walk by it
-            // as well as by n is what lets a compiler see the induction
-            // terminate: on an order outside the contract the walk is defined
-            // rather than an overflow waiting to happen, and for every order
-            // inside it the two bounds agree.
-            for (int l = 0; l <= n && l <= kMaxBoysOrder; ++l)
+            if (x >= detail::kTierThresholds[static_cast<std::size_t>(n)])
             {
-                f = source.Next(l, x);
+                typename Fit::template BandSource<Policy::kDivision> source(x);
+                double f = 0.0;
+
+                // The order is at most kMaxBoysOrder, and bounding the walk by it
+                // as well as by n is what lets a compiler see the induction
+                // terminate: on an order outside the contract the walk is defined
+                // rather than an overflow waiting to happen, and for every order
+                // inside it the two bounds agree.
+                for (int l = 0; l <= n && l <= kMaxBoysOrder; ++l)
+                {
+                    f = source.Next(l, x);
+                }
+
+                return f;
             }
 
-            return f;
+            return PartitionRegionAValueAtRung<Policy, kAccuracyMultiplier, BoysRole::kDoubleSingle>(
+                n, x);
         }
-
-        return PartitionRegionAValueAtRung<Policy, kAccuracyMultiplier, BoysRole::kDoubleSingle>(
-            n, x);
     }
 
     if (x < kX1)
@@ -2917,10 +3629,18 @@ double SingleOrder(int n, double x) noexcept {
 // partitioned path, which no policy naming the grid reaches - so the assertion
 // below is a contract on the path rather than a cell an entry refuses, and a
 // revision that routed the partition back into it would be refused here by name.
+//
+// The condition is the shared question and not a second statement of it: these
+// bodies reach their values through PolicyRegionAValue, PolicyRegionBSeed and the
+// two rung reads, which resolve the policy's partition through the Chebyshev
+// family, so what this refuses is the family not answering the partition the
+// policy named. A partition that family does not carry is refused by name here
+// before the read is reached, which is what makes the refusal this body's own.
 template <EvalPolicyLike Policy>
 constexpr void RefuseUniformPartition() noexcept
 {
-    static_assert(Policy::kGranularity != FitGranularity::kUniform,
+    static_assert(FitAnswersPartition<ChebyshevFit<Policy::kScheme, Policy::kGranularity>>(
+                      Policy::kGranularity),
                   "this body has no uniform branch: it reaches its values through a recursion "
                   "over the orders, and the uniform table is fitted per order with no "
                   "recurrence to enter. A policy naming that partition here would be answered "
@@ -3225,8 +3945,15 @@ void BoysFixedNImpl(
     assert(out != nullptr);
     assert(stride >= 1);
 
+    // The partition clause is the shared question rather than a statement that this
+    // entry refuses the grid: the shaped body below reads PolicyRegionAValue and
+    // PolicyRegionBSeed, which resolve the policy's partition through the Chebyshev
+    // family, so what sends a policy past this branch is that family not answering
+    // the partition it named - and a further partition the derived families do not
+    // carry is routed the same way rather than being read as the narrow one.
     if constexpr (Policy::kRoute != FitRoute::kChebyshev ||
-                  Policy::kGranularity == FitGranularity::kUniform)
+                  !FitAnswersPartition<ChebyshevFit<Policy::kScheme, Policy::kGranularity>>(
+                      Policy::kGranularity))
     {
         // The fixed-order entry carries the route too, and by the entry that
         // takes its fit from the policy: one order at every argument of an
@@ -3570,6 +4297,14 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
         const float x0 = static_cast<float>(kX0);
         const float x1 = static_cast<float>(kX1);
 
+        // Region A of the batch, through the double lane's piece-indexed families, which
+        // the uniform grid does not have: the entry above answers every argument below
+        // the grid's join and returns, so this block is dead for a policy naming the
+        // grid - and it is dropped for one, so the read inside it is not instantiated
+        // and the family's own refusal cannot be raised by a call that never runs.
+        if constexpr (FitAnswersPartition<ChebyshevFit<Policy::kScheme, Policy::kGranularity>>(
+                          Policy::kGranularity))
+        {
         if (x < x0)
         {
             // The seed must be double precision: the downward recursion amplifies
@@ -3591,6 +4326,7 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
             }
 
             return;
+        }
         }
 
         float f = FloatRouteFit<Policy::kRoute, Policy::kScheme, Policy::kGranularity>::RegionBSeed(x, 0);
@@ -4795,9 +5531,14 @@ void BoysAllNImpl(int nmax,
         static_cast<void>(workspace);
         BoysAllNRunPerArgument<kAccuracyMultiplier, Policy>(nmax, x, out, count);
     }
-    else if constexpr (Policy::kGranularity == FitGranularity::kUniform)
+    else if constexpr (!FitAnswersPartition<ChebyshevFit<Policy::kScheme, Policy::kGranularity>>(
+                           Policy::kGranularity))
     {
-        // The grid is served by the path above's body, not by the partitioned one.
+        // The partition clause is the shared question: the partitioned body this
+        // branch keeps out reaches its values through PolicyRegionAValue and
+        // PolicyRegionBSeed, so a partition the Chebyshev family does not answer is
+        // one that path would read out of the narrow tables under the name it was
+        // given. It is served by the path above's body, not by the partitioned one.
         // This entry groups arguments by the region walk each of them takes, and
         // the grid has no walk to group: an order is read from its own interval's
         // coefficients and nothing is built from another order, so there is no
@@ -4827,6 +5568,22 @@ void BoysAllNPartitionedImpl(int nmax,
                              double* out,
                              std::size_t count,
                              std::size_t* workspace) noexcept {
+    // The path's own contract, one level below the entry's guard: every read below
+    // resolves the policy's partition through the Chebyshev family - the region
+    // bodies reach PolicyRegionAValue, PolicyRegionBSeed and the two rung reads -
+    // and that family does not answer the grid. The entry routes such a policy to
+    // the per-argument path and asks RefuseUniformPartition before delegating here,
+    // so this refuses nothing the entry serves; what it refuses is a call that
+    // reaches the partitioned shapes without that routing, which is the shape every
+    // one of the three substitution defects had.
+    static_assert(FitAnswersPartition<ChebyshevFit<Policy::kScheme, Policy::kGranularity>>(
+                      Policy::kGranularity),
+                  "this is the partitioned path: it groups its arguments by the region walk "
+                  "each of them takes and reads each group through the Chebyshev family, which "
+                  "carries the shipped and the narrow partition and reads every other "
+                  "granularity as the narrow one. A policy naming the uniform grid here is "
+                  "answered from the narrow tables under the grid's name. Route it to the "
+                  "per-argument path, which reads the grid's own table");
     RequireShippedRoute<Policy>();
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
@@ -4932,12 +5689,13 @@ void BoysAllNSortedImpl(int nmax,
     {
         BoysAllNRunPerArgument<kAccuracyMultiplier, Policy>(nmax, x, out, count);
     }
-    else if constexpr (Policy::kGranularity == FitGranularity::kUniform)
+    else if constexpr (!FitAnswersPartition<ChebyshevFit<Policy::kScheme, Policy::kGranularity>>(
+                           Policy::kGranularity))
     {
-        // As in BoysAllNImpl, and for the same reason: the grid has no walk for
-        // this entry's grouping to sort by, and the body the path above reaches -
-        // BoysAllOrdersImpl - carries the partition's own branch, so the grid is
-        // read where the policy names it.
+        // As in BoysAllNImpl, and for the same reason: the partition clause is the
+        // shared question, the grid has no walk for this entry's grouping to sort
+        // by, and the body the path above reaches - BoysAllOrdersImpl - carries the
+        // partition's own branch, so the grid is read where the policy names it.
         BoysAllNRunPerArgument<kAccuracyMultiplier, Policy>(nmax, x, out, count);
     }
     else
@@ -4954,6 +5712,17 @@ void BoysAllNSortedPartitionedImpl(int nmax,
                                    const double* x,
                                    double* out,
                                    std::size_t count) noexcept {
+    // As in BoysAllNPartitionedImpl, and for the same reason: the path's own
+    // contract one level below the entry's guard, on the same read of the same
+    // family.
+    static_assert(FitAnswersPartition<ChebyshevFit<Policy::kScheme, Policy::kGranularity>>(
+                      Policy::kGranularity),
+                  "this is the partitioned path: it groups its arguments by the region walk "
+                  "each of them takes and reads each group through the Chebyshev family, which "
+                  "carries the shipped and the narrow partition and reads every other "
+                  "granularity as the narrow one. A policy naming the uniform grid here is "
+                  "answered from the narrow tables under the grid's name. Route it to the "
+                  "per-argument path, which reads the grid's own table");
     RequireShippedRoute<Policy>();
     static_assert(kAccuracyMultiplier >= 1.0,
                   "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
