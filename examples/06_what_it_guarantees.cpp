@@ -34,7 +34,7 @@ int main()
 {
     const std::array<double, 3> wanted{1e-12, 1e-10, 1e-8};
 
-    std::printf("the double entry, every order, as it ships:\n");
+    std::printf("the double entry, every order, as it stands:\n");
     std::printf("  requested    verdict                  guaranteed   measured\n");
     for (const double tolerance : wanted)
     {

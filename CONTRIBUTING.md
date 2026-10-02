@@ -59,7 +59,7 @@ Optional: `-DBUILD_BENCHMARKS=ON` for the benchmark drivers, which are default O
 `-DBUILD_CUDA=ON` for the CUDA lane, which needs the CUDA toolkit and is local-only.
 
 `-DBOYS_BUILD_DEFAULTS=<header>` builds with a header of your own carrying the five choices an entry
-that names no policy resolves to, in place of the shipped ones: the fit route, the evaluation
+that names no policy resolves to, in place of the committed ones: the fit route, the evaluation
 scheme, the packing axis, the division form and the fit granularity. They are compile-time values,
 so the build compiles them into every call that names none, and pays nothing for them at run time.
 The choice was a template argument before and is one still. **One of the five a build cannot move**,
@@ -75,7 +75,7 @@ build that does not compile, and that is the answer rather than a defect. The fi
 `include/boys/boys_build_defaults.hpp`. Its own comment is the contract a replacement satisfies: the
 five names, and beside them the machine, the date and the option probe's own figures, because a
 choice made there is a measurement taken on one host and a reader has to be able to tell a tuned
-build from a shipped one. The default is OFF. An untuned build is the shipped configuration, the one
+build from a committed one. The default is OFF. An untuned build is the committed configuration, the one
 every bound in this repository was measured at. **Nothing in this tree writes such a header**:
 running `boys-option-probe` at configure time and emitting your machine's ranking is not part of the
 build. So this option takes a header you already have.

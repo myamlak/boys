@@ -7,7 +7,7 @@ over the band and over the orders that band serves.
 
 Two calibrations bracket the table:
 
-  * the shipped coefficients evaluated EXACTLY (mpmath, 50 digits, the stored
+  * the committed coefficients evaluated EXACTLY (mpmath, 50 digits, the stored
     doubles taken as exact reals) give the fit residual: what the polynomial
     itself delivers when the storage is free;
   * the same coefficients through an fp64 product give the delivered double
@@ -79,7 +79,7 @@ def basis(t, K):
 
 
 def exact_polynomial(cs, a, b, xs):
-    """The shipped polynomial evaluated exactly: the fit residual."""
+    """The committed polynomial evaluated exactly: the fit residual."""
     import mpmath as mp
     out = []
     with mp.workdps(50):

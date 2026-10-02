@@ -44,7 +44,7 @@ What it *can* serve is work that does not need accuracy.
   several cycles, so an error of a part in a thousand in the integrals cannot reach the answer.
 - **Anything recomputed in double precision afterwards** — a preconditioner, a trial step, a guess.
 
-The shipped half lanes convert each value to sixteen bits on the way in and back on the way out, so
+The committed half lanes convert each value to sixteen bits on the way in and back on the way out, so
 the conversion is their cost. If you are calling them one value at a time, that conversion is what
 you are paying for. The arithmetic is not the bottleneck.
 
@@ -81,7 +81,7 @@ axes. Each of them is a decision a caller can make:
   storing different things;
 - **the evaluation scheme** — a fit's coefficients are summed either by the split Clenshaw
   recurrence on its Chebyshev form, or by Horner's rule on the monomial form of the same fit;
-- **the interval partition** — how the fitted intervals are cut: as the shipped tables cut them; more
+- **the interval partition** — how the fitted intervals are cut: as the committed tables cut them; more
   narrowly, into pieces the proved truncation bound places where the function needs them, holding the
   bar at a lower degree; or into a fixed grid of equal cells over the whole fitted domain, every
   order fitted independently at one degree;
@@ -114,23 +114,23 @@ not asked to.
 
 **Where the recommendation comes from: a measurement taken where you deploy.** Which combination is
 cheapest depends on the machine, on whether your compiler fuses a product-plus-add into one
-rounding, and on how your arguments arrive. So the library ships the measurement rather than a
+rounding, and on how your arguments arrive. So the library carries the measurement rather than a
 recommendation. The probe in this tree (`boys-option-probe`) ranks the combinations your build
 offers and prints the accuracy each one delivered beside its cost. You can then see whether a faster
 row was faster at the same accuracy or at a lower one. Choosing is a development-time act: run it
 once, read the row it puts first for your precision, your rung and the shape of your question, and
 write that combination's name into the call site. **The figures belong to the host they were taken
-on** — a ranking taken somewhere else is not evidence about your machine. The device lane ships a
+on** — a ranking taken somewhere else is not evidence about your machine. The device lane carries a
 probe of the same kind for a card (`boys-device-probe`), because which entry is cheapest on a card
 is a property of the card.
 
 **What you get by naming nothing is a tie rather than a measured win.** The route and the packing
-axis carry the settings the library has always shipped. The scheme and the partition were set from
+axis carry the settings this build compiles by default. The scheme and the partition were set from
 the probe's own runs, and those runs did not separate the rows of either axis. The three leading rows
 of the double lane's full-accuracy all-orders ranking came out closer together than any one of them
-moves between two runs of the same probe. The settings this library ships are one of those three,
+moves between two runs of the same probe. The settings this build compiles by default are one of those three,
 not the cheapest of them. That costs nothing in accuracy — the two schemes sum one fit and the
-shipped and narrow partitions cut one fit, each certified to a bound of its own — but it is what the
+committed and narrow partitions cut one fit, each certified to a bound of its own — but it is what the
 default is. A reader told the default was a measured win would have been told something the
 measurement does not say.
 
