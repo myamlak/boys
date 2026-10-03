@@ -12607,6 +12607,357 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // ---- the uniform grid's carriage on the single-precision entries -------
+    // The block above asks this question of the double lane's batched entries,
+    // and the float lane's cells on the same partition are measured in the
+    // combination book above by rows that ask it of nothing. An entry that
+    // answered a policy naming the grid out of the narrow member's tables would
+    // print the same numbers, inside the same bound, because the two partitions
+    // hold the same bar over the same interval - so no accuracy row can tell
+    // them apart, and the rows of that book would stay green while a certified
+    // figure was published under a name it did not earn.
+    //
+    // The rows below are that question asked of the single-precision entries, in
+    // the shape the block above uses: each entry is read twice in one pass, once
+    // under a policy naming the grid and once under a policy naming the narrow
+    // member, and the cells where the two readings differ are counted per region
+    // against the per-argument entry's own separation at the same budget, route
+    // and scheme. The reference is the per-argument single entry's two readings
+    // for the reason the block above gives: a region where they agree is a region
+    // where no cell can discriminate, and no row is held to it.
+    //
+    // The sweep is every host arm the combination book above holds a row for,
+    // rather than one arm standing for the partition. The float lane's
+    // policy-taking entries are the per-argument single entry, which is the
+    // reference below, and the two the rows carry: the per-argument all-orders
+    // entry and the all-N plane entry. Each is read on both packing axes, on both
+    // routes, at both schemes and at both engine budgets - the axis names which of
+    // the lane's two bodies runs past the join, the packed orders lane and the
+    // scalar per-argument one, and below it the grid's own branch answers either
+    // axis - and an arm left out of this sweep would be a host row of that book
+    // nothing below asks this of.
+    //
+    // Region C is where this lane's two readings agree by construction rather
+    // than by their tables: the float lane's grid ends at kFlatHiF32 = 18.625,
+    // inside region B rather than above it, so past the join a policy naming the
+    // grid is answered by the route's shipped region-B seed - the narrow member's
+    // own body reads its own seed over that same band, which is why the
+    // per-argument entry separates there - and above kX1 by the asymptotic form
+    // and a recurrence that read no coefficient of either partition, the same
+    // lines under either. So the per-argument entry separates nowhere in C at any
+    // arm, which each arm's own reference line below reports as C 0, and no row is
+    // held to C; the rows are held to every region that entry does separate in -
+    // A, the band and B.
+    struct PartitionCarriageRowF32 {
+        std::string entry;
+        std::array<std::size_t, 4> refDiffer{};
+        std::array<std::size_t, 4> cells{};
+        std::array<std::size_t, 4> differ{};
+        double worstAbs = 0.0;
+        int worstN = -1;
+        float worstX = 0.0f;
+    };
+
+    struct PartitionCarriageRefF32 {
+        std::string axes;
+        std::array<std::size_t, 4> differ{};
+    };
+
+    std::vector<PartitionCarriageRowF32> partitionRowsF32;
+    std::vector<PartitionCarriageRefF32> partitionRefsF32;
+
+    const auto recordPartitionF32 =
+        [](PartitionCarriageRowF32& row, int n, float x, float got, float other) {
+            const std::size_t region =
+                static_cast<std::size_t>(SingleClaim(static_cast<double>(x)));
+            ++row.cells[region];
+
+            if (std::memcmp(&got, &other, sizeof(float)) == 0)
+            {
+                return;
+            }
+
+            ++row.differ[region];
+
+            const double d = std::fabs(static_cast<double>(got) - static_cast<double>(other));
+
+            if (d > row.worstAbs)
+            {
+                row.worstAbs = d;
+                row.worstN = n;
+                row.worstX = x;
+            }
+        };
+
+    const auto laneOfBudget = [](boys::BoysBudget budget) {
+        return budget == boys::BoysBudget::kFp16 ? combHalfLane : kLaneSingle;
+    };
+
+    const auto sweepPartitionCarriageF32 =
+        [&]<boys::BoysBudget kBudget, boys::FitRoute kRoute, boys::EvalScheme kScheme,
+            boys::PackAxis kAxis>(const std::array<std::size_t, 4>& refDiffer,
+                                  bool plane,
+                                  const char* entryName) {
+            using GridReading = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis,
+                                                 boys::FitGranularity::kUniform>;
+            using NarrowReading = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis,
+                                                   boys::FitGranularity::kNarrow>;
+
+            PartitionCarriageRowF32 row;
+            row.entry = Fmt("%s, %s, %s, %s, %s",
+                            entryName,
+                            combLaneRows[static_cast<std::size_t>(laneOfBudget(kBudget))].name,
+                            entryArmRouteName(kRoute).c_str(),
+                            boys::EvalSchemeName(kScheme),
+                            entryArmAxisName(kAxis).c_str());
+            row.refDiffer = refDiffer;
+
+            std::vector<float> argsF(count);
+
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                argsF[i] = static_cast<float>(ref.xf[i]);
+            }
+
+            const std::size_t grid = count * (static_cast<std::size_t>(nmax) + 1);
+
+            if (plane)
+            {
+                std::vector<float> u(grid);
+                std::vector<float> v(grid);
+                boys::BoysAllNF32< GridReading>(nmax, argsF.data(), u.data(), count);
+                boys::BoysAllNF32< NarrowReading>(nmax, argsF.data(), v.data(), count);
+
+                for (int n = 0; n <= nmax; ++n)
+                {
+                    for (std::size_t i = 0; i < count; ++i)
+                    {
+                        const std::size_t k = static_cast<std::size_t>(n) * count + i;
+
+                        recordPartitionF32(row, n, argsF[i], u[k], v[k]);
+                    }
+                }
+            } else
+            {
+                std::array<float, 33> u{};
+                std::array<float, 33> v{};
+
+                for (std::size_t i = 0; i < count; ++i)
+                {
+                    boys::BoysAllOrdersF32< GridReading>(nmax, argsF[i], u.data());
+                    boys::BoysAllOrdersF32< NarrowReading>(nmax, argsF[i], v.data());
+
+                    for (int n = 0; n <= nmax; ++n)
+                    {
+                        const std::size_t sn = static_cast<std::size_t>(n);
+
+                        recordPartitionF32(row, n, argsF[i], u[sn], v[sn]);
+                    }
+                }
+            }
+
+            partitionRowsF32.push_back(std::move(row));
+        };
+
+    // One row set per (budget, route, scheme): the reference is that arm's own,
+    // and the two entries are swept on both axes under it.
+    const auto sweepPartitionF32Arm =
+        [&]<boys::BoysBudget kBudget, boys::FitRoute kRoute, boys::EvalScheme kScheme>() {
+            using GridReading = boys::EvalPolicy<kRoute, kScheme, kBudget,
+                                                 boys::PackAxis::kArguments,
+                                                 boys::FitGranularity::kUniform>;
+            using NarrowReading = boys::EvalPolicy<kRoute, kScheme, kBudget,
+                                                   boys::PackAxis::kArguments,
+                                                   boys::FitGranularity::kNarrow>;
+
+            PartitionCarriageRefF32 reference;
+            reference.axes = Fmt("%s, %s, %s",
+                                 combLaneRows[static_cast<std::size_t>(laneOfBudget(kBudget))].name,
+                                 entryArmRouteName(kRoute).c_str(),
+                                 boys::EvalSchemeName(kScheme));
+
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                const float xf = static_cast<float>(ref.xf[i]);
+                const std::size_t region =
+                    static_cast<std::size_t>(SingleClaim(static_cast<double>(xf)));
+
+                for (int n = 0; n <= nmax; ++n)
+                {
+                    const float got = boys::BoysSingleF32< GridReading>(n, xf);
+                    const float other = boys::BoysSingleF32< NarrowReading>(n, xf);
+
+                    if (std::memcmp(&got, &other, sizeof(float)) != 0)
+                    {
+                        ++reference.differ[region];
+                    }
+                }
+            }
+
+            partitionRefsF32.push_back(reference);
+
+            sweepPartitionCarriageF32.template operator()<kBudget, kRoute, kScheme,
+                                                          boys::PackAxis::kArguments>(
+                reference.differ, false, "all-orders entry");
+            sweepPartitionCarriageF32.template operator()<kBudget, kRoute, kScheme,
+                                                          boys::PackAxis::kOrders>(
+                reference.differ, false, "all-orders entry");
+            sweepPartitionCarriageF32.template operator()<kBudget, kRoute, kScheme,
+                                                          boys::PackAxis::kArguments>(
+                reference.differ, true, "plane entry");
+            sweepPartitionCarriageF32.template operator()<kBudget, kRoute, kScheme,
+                                                          boys::PackAxis::kOrders>(
+                reference.differ, true, "plane entry");
+        };
+
+    sweepPartitionF32Arm.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kChebyshev,
+                                             boys::EvalScheme::kSplitClenshaw>();
+    sweepPartitionF32Arm.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kChebyshev,
+                                             boys::EvalScheme::kHorner>();
+    sweepPartitionF32Arm.template operator()<boys::BoysBudget::kFloat,
+                                             boys::FitRoute::kRationalMinimax,
+                                             boys::EvalScheme::kSplitClenshaw>();
+    sweepPartitionF32Arm.template operator()<boys::BoysBudget::kFloat,
+                                             boys::FitRoute::kRationalMinimax,
+                                             boys::EvalScheme::kHorner>();
+    sweepPartitionF32Arm.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kChebyshev,
+                                             boys::EvalScheme::kSplitClenshaw>();
+    sweepPartitionF32Arm.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kChebyshev,
+                                             boys::EvalScheme::kHorner>();
+    sweepPartitionF32Arm.template operator()<boys::BoysBudget::kFp16,
+                                             boys::FitRoute::kRationalMinimax,
+                                             boys::EvalScheme::kSplitClenshaw>();
+    sweepPartitionF32Arm.template operator()<boys::BoysBudget::kFp16,
+                                             boys::FitRoute::kRationalMinimax,
+                                             boys::EvalScheme::kHorner>();
+
+    std::printf("\nthe uniform grid's carriage on the single-precision entries: each of the "
+                "float lane's\ntwo policy-taking entries is read twice in one pass, once under a "
+                "policy naming the\ngrid and once under a policy naming the narrow member, at "
+                "each budget, route and\nscheme the combination book above holds a row for, and "
+                "the cells where the two\nreadings differ are counted per region. A region where "
+                "the per-argument entry's\ntwo readings differ and this entry's do not is a "
+                "region this entry answered from the\nnarrow member's fits.\n");
+    std::printf("  the per-argument entry's own separation, the reference each arm's rows are "
+                "held to:\n");
+
+    for (const PartitionCarriageRefF32& armRef : partitionRefsF32)
+    {
+        std::printf("    %-40s A %zu, band %zu, B %zu, C %zu cell(s)\n",
+                    armRef.axes.c_str(),
+                    armRef.differ[0],
+                    armRef.differ[1],
+                    armRef.differ[2],
+                    armRef.differ[3]);
+    }
+
+    std::printf("  %-58s %9s %9s  %-14s %-12s %-18s %s\n",
+                "entry",
+                "cells",
+                "differ",
+                "A/band/B/C",
+                "worst |d|",
+                "worst cell",
+                "verdict");
+    std::printf("  %s\n", std::string(150, '-').c_str());
+
+    std::size_t partitionRowsMetF32 = 0;
+    std::vector<std::string> partitionNotMetF32;
+
+    for (const PartitionCarriageRowF32& row : partitionRowsF32)
+    {
+        std::size_t cells = 0;
+        std::size_t differ = 0;
+        std::size_t missed = 0;
+        char tokens[24];
+        std::size_t at = 0;
+
+        for (std::size_t r = 0; r < 4; ++r)
+        {
+            const char* tok = row.cells[r] == 0 ? "-" : (row.differ[r] > 0 ? "yes" : "NO");
+            at += static_cast<std::size_t>(std::snprintf(
+                tokens + at, sizeof(tokens) - at, "%s%s", r == 0 ? "" : "/", tok));
+
+            if (row.refDiffer[r] > 0 && row.cells[r] > 0 && row.differ[r] == 0)
+            {
+                ++missed;
+            }
+
+            cells += row.cells[r];
+            differ += row.differ[r];
+        }
+
+        char where[64];
+        std::snprintf(where, sizeof(where), "n=%d, x=%.6g", row.worstN,
+                      static_cast<double>(row.worstX));
+
+        if (missed == 0)
+        {
+            ++partitionRowsMetF32;
+            std::printf("  %-58s %9zu %9zu  %-14s %-12.6g %-18s %s\n",
+                        row.entry.c_str(),
+                        cells,
+                        differ,
+                        tokens,
+                        row.worstAbs,
+                        where,
+                        "answers with the grid's own values");
+            continue;
+        }
+
+        partitionNotMetF32.push_back(row.entry);
+        char which[24];
+        std::size_t wat = 0;
+
+        for (std::size_t r = 0; r < 4; ++r)
+        {
+            if (row.refDiffer[r] > 0 && row.cells[r] > 0 && row.differ[r] == 0)
+            {
+                wat += static_cast<std::size_t>(std::snprintf(which + wat,
+                                                              sizeof(which) - wat,
+                                                              "%s%s",
+                                                              wat == 0 ? "" : " and ",
+                                                              kRegionTag[r]));
+            }
+        }
+
+        std::printf("  %-58s %9zu %9zu  %-14s %-12.6g %-18s NOT CARRIED - region %s separates "
+                    "on the\n      per-argument entry and nowhere on this one, so this entry "
+                    "answered it\n      from the narrow member's fits\n",
+                    row.entry.c_str(),
+                    cells,
+                    differ,
+                    tokens,
+                    row.worstAbs,
+                    where,
+                    which);
+    }
+
+    std::printf("  %s\n", std::string(150, '-').c_str());
+    std::printf("  PARTITION RESULT: %zu of %zu single-precision entr(ies) answer a policy "
+                "naming the\n                    uniform grid with a reading the narrow member "
+                "does not answer with, in every\n                    region where the two "
+                "readings can differ\n",
+                partitionRowsMetF32,
+                partitionRowsF32.size());
+
+    if (!partitionNotMetF32.empty())
+    {
+        std::printf("  NOT MET at this revision:");
+
+        for (const std::string& id : partitionNotMetF32)
+        {
+            std::printf(" [%s]", id.c_str());
+        }
+
+        std::printf("\n  FAIL (exit status 1; the uniform grid's carriage on the "
+                    "single-precision entries\n  is judged with the combination book above, and "
+                    "a row that fails it is an entry\n  answering a uniform policy from the "
+                    "narrow member's fits - the substitution the\n  partition axis exists to "
+                    "prevent)\n");
+        return 1;
+    }
+
     // The last line, and the only one a caller that reads nothing else sees. It
     // says what was checked and what was not: a build that does not carry some
     // of the book has claims it never judged, and a PASS that read as though it
