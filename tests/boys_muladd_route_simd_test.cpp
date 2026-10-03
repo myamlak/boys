@@ -360,6 +360,8 @@ TEST(BoysMulAddRouteSimd, TheReportNamesTheseInstantiations) {
     EXPECT_EQ(Avx2Fp32<>::Contracts(), bdetail::MeasureContraction<float>());
 }
 
+} // namespace
+
 #else
 
 TEST(BoysMulAddRouteSimd, PackedBackendsAreNotBuiltOnThisTarget) {
@@ -369,5 +371,3 @@ TEST(BoysMulAddRouteSimd, PackedBackendsAreNotBuiltOnThisTarget) {
 }
 
 #endif // BOYS_SIMD_X86
-
-} // namespace
