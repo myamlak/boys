@@ -110,10 +110,13 @@ constexpr boys::PackAxis kSeamPackAxis = BOYS_BUILD_DEFAULT_PACK_AXIS;
 constexpr boys::DivisionForm kSeamDivisionForm = BOYS_BUILD_DEFAULT_DIVISION_FORM;
 constexpr boys::FitGranularity kSeamFitGranularity = BOYS_BUILD_DEFAULT_FIT_GRANULARITY;
 
-// The policy the seam's own five values compose, and the type an entry that names
-// no policy resolves to. The two are asserted equal below rather than assumed:
-// naming the values here is what makes the equality a claim about the build's
-// header and not about this line.
+// The policy the seam's own five values compose: the point a class the table carries
+// no row for resolves to, and the type EvalPolicy<> names. It is NOT what every entry
+// that names no policy resolves to - an entry resolves to its class's row, which is
+// this combination only where that row spells it (include/boys/boys.hpp expands the
+// row list or the five, never both), and the unnamed-call test at the end of this file
+// is where that is read. Naming the values here is what makes the assertions below
+// claims about the build's header and not about this line.
 using SeamPolicy = boys::EvalPolicy<BOYS_BUILD_DEFAULT_FIT_ROUTE,
                                     BOYS_BUILD_DEFAULT_EVAL_SCHEME,
                                     boys::BoysBudget::kFloat,
@@ -144,11 +147,14 @@ static_assert(kSeamFitGranularity == boys::kDefaultFitGranularity,
               "the seam names a fit granularity the library does not read: "
               "boys::kDefaultFitGranularity is not BOYS_BUILD_DEFAULT_FIT_GRANULARITY");
 
-// --- Link two: the policy an entry that names no policy resolves to -----------
-// EvalPolicy's template defaults are the five constants, and an entry that names
-// no policy is the entry at EvalPolicy<>. A default that stopped reading the
-// constants would keep every constant correct and answer a caller from another
-// policy - the same silent substitution one step further down.
+// --- Link two: the policy the five constants compose --------------------------
+// EvalPolicy's template defaults are the five constants, so EvalPolicy<> is the
+// combination the seam names and the point a class the table carries no row for
+// resolves to. A default that stopped reading the constants would keep every
+// constant correct and answer a caller from another policy - the same silent
+// substitution one step further down. What an entry that names no policy resolves
+// to is its class's row rather than this name, which is the last test below's
+// claim rather than this block's.
 static_assert(kSeamFitRoute == boys::EvalPolicy<>::kRoute,
               "an entry that names no fit route does not resolve to the one the seam names: "
               "EvalPolicy<>'s default route reads another value");
@@ -165,8 +171,7 @@ static_assert(kSeamFitGranularity == boys::EvalPolicy<>::kGranularity,
               "an entry that names no fit granularity does not resolve to the one the seam names: "
               "EvalPolicy<>'s default partition reads another value");
 static_assert(std::is_same_v<boys::EvalPolicy<>, SeamPolicy>,
-              "the seam's own five values are not the policy an entry that names no policy "
-              "resolves to");
+              "EvalPolicy<> does not compose the seam's own five values");
 
 // --- Link three: the four names a precision is selected by --------------------
 // Each name is what the entries of that precision run when the call site names no
@@ -297,30 +302,68 @@ TEST(BuildDefaultsTest, TheSeamNamesAreTheValuesThisBuildResolves) {
     EXPECT_TRUE(granularitiesAgree);
 }
 
-// The entry, not only the policy type: the static asserts above hold EvalPolicy<>
-// to the seam, and this holds an entry to EvalPolicy<>. That is a different
-// claim - an entry whose default argument stopped being that alias would keep
-// every assert above true and answer a caller from another policy - and it is
-// made at the call a caller writes, so the unnamed call and the seam policy's
-// call have to return the same bits at every argument and order this sweep
-// reaches.
-TEST(BuildDefaultsTest, AnUnnamedCallIsTheSeamPolicysCall) {
+// The entry, not only the policy type: the static asserts above hold EvalPolicy<> to the
+// seam, and this holds an entry to the policy its own CLASS resolves to. That is a
+// different claim - an entry whose default argument stopped being that alias would keep
+// every assert above true and answer a caller from another policy - and it is made at the
+// call a caller writes, so the unnamed call and the class default's call have to return the
+// same bits at every argument and order this sweep reaches.
+//
+// THE CLASS DEFAULT IS THE TABLE'S ROW, WHICH IS THE SEAM'S FIVE ONLY WHERE THE ROW SPELLS
+// THEM. A replacement that defines BOYS_BUILD_DEFAULT_ROWS is read INSTEAD of the
+// five-composed table (include/boys/boys.hpp expands one branch or the other, never both),
+// so where its list carries a row for a class that row is the answer for that class and the
+// seam's five are not. The sweep below reads which of the two this build's table holds for
+// each entry's class and asserts the entry follows it: the class default everywhere, and
+// the seam's five exactly where the row that carries the class spells them. A build whose
+// row moves the class is therefore the configuration in which the second half has teeth,
+// and the configuration a check written against the five alone answers wrongly.
+TEST(BuildDefaultsTest, AnUnnamedCallIsItsClasssDefault) {
+    using boys::BoysAllOrders;
+    using boys::BoysSingle;
+
+    // The class each entry belongs to, as the policy it resolves to. Named through the
+    // library's own alias rather than spelled here: this is the name an entry that names no
+    // policy resolves to (boys/boys.hpp, DefaultPolicy), so naming it is what makes the
+    // comparison a claim about the build's table and not about this line.
+    using OrdersClass = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>;
+    using SingleClass = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kSingle>;
+
+    // Which of the two the table answers each class with. Read from the class's own policy,
+    // so it is the build's answer and not this line's. The budget is not one of the five and
+    // is compared as the fp64 lane's: the seam's five name no budget.
+    constexpr bool kOrdersClassIsTheSeamFive =
+        OrdersClass::kRoute == kSeamFitRoute && OrdersClass::kScheme == kSeamEvalScheme &&
+        OrdersClass::kPack == kSeamPackAxis &&
+        OrdersClass::kGranularity == kSeamFitGranularity &&
+        OrdersClass::kDivision == kSeamDivisionForm &&
+        OrdersClass::kBudget == boys::BoysBudget::kFloat;
+    constexpr bool kSingleClassIsTheSeamFive =
+        SingleClass::kRoute == kSeamFitRoute && SingleClass::kScheme == kSeamEvalScheme &&
+        SingleClass::kPack == kSeamPackAxis &&
+        SingleClass::kGranularity == kSeamFitGranularity &&
+        SingleClass::kDivision == kSeamDivisionForm &&
+        SingleClass::kBudget == boys::BoysBudget::kFloat;
+
     constexpr int kOrders[] = {0, 1, 4, 12, boys::kMaxBoysOrder};
     constexpr double kArguments[] = {0.0, 1e-12, 1e-3, 0.5, 1.0, 3.0, 11.9, 12.0, 60.0, 120.0};
 
-    std::size_t batchMoved = 0;
+    std::size_t batchClassMoved = 0;
+    std::size_t batchSeamMoved = 0;
     std::size_t batchCells = 0;
-    std::size_t singleMoved = 0;
+    std::size_t singleClassMoved = 0;
+    std::size_t singleSeamMoved = 0;
     std::size_t singleCells = 0;
 
     for (const int nmax : kOrders) {
         for (const double x : kArguments) {
             std::array<double, boys::kMaxBoysOrder + 1> unnamed{};
-            std::array<double, boys::kMaxBoysOrder + 1> named{};
+            std::array<double, boys::kMaxBoysOrder + 1> classDefault{};
+            std::array<double, boys::kMaxBoysOrder + 1> seam{};
 
             boys::BoysAllOrders(nmax, x, unnamed.data());
-            boys::BoysAllOrders<SeamPolicy>(
-                nmax, x, named.data());
+            boys::BoysAllOrders<OrdersClass>(nmax, x, classDefault.data());
+            boys::BoysAllOrders<SeamPolicy>(nmax, x, seam.data());
 
             for (int order = 0; order <= nmax; ++order) {
                 const std::size_t sorder = static_cast<std::size_t>(order);
@@ -328,30 +371,59 @@ TEST(BuildDefaultsTest, AnUnnamedCallIsTheSeamPolicysCall) {
                 ++batchCells;
 
                 if (std::bit_cast<std::uint64_t>(unnamed[sorder]) !=
-                    std::bit_cast<std::uint64_t>(named[sorder])) {
-                    ++batchMoved;
+                    std::bit_cast<std::uint64_t>(classDefault[sorder])) {
+                    ++batchClassMoved;
+                }
+
+                if (std::bit_cast<std::uint64_t>(unnamed[sorder]) !=
+                    std::bit_cast<std::uint64_t>(seam[sorder])) {
+                    ++batchSeamMoved;
                 }
             }
 
             ++singleCells;
 
-            if (boys::BoysSingle(4, x) !=
-                boys::BoysSingle<SeamPolicy>(4, x)) {
-                ++singleMoved;
+            if (boys::BoysSingle(4, x) != boys::BoysSingle<SingleClass>(4, x)) {
+                ++singleClassMoved;
+            }
+
+            if (boys::BoysSingle(4, x) != boys::BoysSingle<SeamPolicy>(4, x)) {
+                ++singleSeamMoved;
             }
         }
     }
 
-    std::printf("boys: the unnamed call and the seam policy's call differ in %zu of %zu batch "
-                "values and %zu of %zu single values\n",
-                batchMoved,
+    std::printf("boys: the fp64 all-orders class's row is %s the seam's five, and the fp64 "
+                "single class's row is %s them\n",
+                kOrdersClassIsTheSeamFive ? "the same as" : "not",
+                kSingleClassIsTheSeamFive ? "the same as" : "not");
+    std::printf("boys: the unnamed call differs from its class default's call in %zu of %zu batch "
+                "values and %zu of %zu single values, and from the seam policy's call in %zu and "
+                "%zu of them\n",
+                batchClassMoved,
                 batchCells,
-                singleMoved,
-                singleCells);
+                singleClassMoved,
+                singleCells,
+                batchSeamMoved,
+                singleSeamMoved);
 
-    EXPECT_EQ(batchMoved, 0u) << "an entry that names no policy does not resolve to the policy "
-                                 "the seam header names, so a build replacing that header is "
-                                 "answered by a policy it did not choose";
-    EXPECT_EQ(singleMoved, 0u) << "the single-order entry that names no policy does not resolve "
-                                  "to the policy the seam header names";
+    EXPECT_EQ(batchClassMoved, 0u) << "an entry that names no policy does not resolve to its own "
+                                      "class's default policy, so a caller that names none is "
+                                      "answered by a policy the build's table does not name for "
+                                      "that class";
+    EXPECT_EQ(singleClassMoved, 0u) << "the single-order entry that names no policy does not "
+                                       "resolve to its own class's default policy";
+
+    // The table's own precedence, at the call a caller writes: the unnamed call equals the
+    // seam's five's call exactly where the row that carries the class spells the five. An
+    // entry resolving through the five where the table's row moves the class agrees here
+    // when it must not, and one resolving through the row where the row is the five agrees
+    // when it must.
+    EXPECT_EQ(batchSeamMoved == 0u, kOrdersClassIsTheSeamFive)
+        << "the unnamed call and the seam policy's call differ where the table's row for the "
+           "class spells the seam's five, or agree where the row moves the class: the entry is "
+           "not resolving through the row the build's table carries for it";
+    EXPECT_EQ(singleSeamMoved == 0u, kSingleClassIsTheSeamFive)
+        << "the single-order entry resolves through the five rather than through the row the "
+           "build's table carries for its class, or the other way round";
 }
