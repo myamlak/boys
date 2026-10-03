@@ -123,12 +123,16 @@ enum class BoysDeviceLane : int {
 ///
 /// The degree tables are the handle's own fields, resident from the first upload.
 /// The accuracy axis has one member — m = 1 is the whole of it — so there is no
-/// second, relaxed set beside them and no call that makes one resident. The fields
-/// named for a relaxed reading (\c relaxedRung, \c relaxedDegA, \c relaxedDegB and
-/// the partitions' \c *Relaxed* tables) are filled with null: no entry of this
-/// revision reads one, and they are declared beside the tables they once described
-/// rather than removed, because the slot order BoysCuda::DeviceTables fills is the
-/// order a caller's build already reads.
+/// second, relaxed set beside them and no call that makes one resident.
+///
+/// The fields named for a relaxed reading — \c relaxedRung, \c relaxedDegA,
+/// \c relaxedDegB, the partitions' \c *Relaxed* tables and the two seed cuts
+/// (\c ratSeedDeg, \c narrowRatSeedDeg) — are placeholders: null in every handle,
+/// and read by no entry of this revision. They are placeholders and not deletions
+/// because each holds one slot of the address order the device image exports, and
+/// that order is positional — the reserved slots sit between live ones, so a slot
+/// dropped renumbers every slot after it and a caller's build reads another
+/// table's addresses. Each one's comment below says which table vacated it.
 ///
 /// \ingroup boys
 struct BoysDeviceTables {
@@ -156,18 +160,18 @@ struct BoysDeviceTables {
     const float* bSeedCoeffs32 = nullptr; ///< the region-B seed's coefficients
     int bSeedDeg32 = 0;                   ///< the region-B seed's degree
 
-    /// The accuracy multiplier the relaxed degree tables are currently cut for,
-    /// read per call. Zero when no relaxed rung has been made resident; the
-    /// library owns the value and no caller writes it.
+    /// Reserved: the removed accuracy rung's residency scalar. Always null — the
+    /// device image exports null into this slot and this handle leaves the field at
+    /// the default its type gives it — and read by no entry of this revision.
     const double* relaxedRung = nullptr;
-    /// [lane] The relaxed region-A effective degrees, in the indexing the piece
-    /// tables above use: piece \c p of order \c n is the entry
-    /// \c pieceStart[n] + \c p, and the lane's own piece-start table is the one
-    /// its region-A seed reads its coefficients with. Indexed by BoysDeviceLane.
+    /// [lane] Reserved: the removed rung's region-A effective degrees, in the
+    /// indexing the piece tables above use — piece \c p of order \c n is the entry
+    /// \c pieceStart[n] + \c p. Always null, read by no entry, indexed by
+    /// BoysDeviceLane as every per-lane table here is.
     const int* relaxedDegA[6] = {};
-    /// [lane] The relaxed region-B effective degrees, kMaxBoysOrder + 1 per lane,
-    /// indexed by BoysDeviceLane. The single lanes read the entry for the order the
-    /// recursion has reached and the batch lanes the order-0 entry.
+    /// [lane] Reserved: the removed rung's region-B effective degrees, of the shape
+    /// a per-lane table takes here — kMaxBoysOrder + 1 entries per lane, indexed by
+    /// BoysDeviceLane. Always null and read by no entry of this revision.
     const int* relaxedDegB[6] = {};
 
     /// The uniform route's table: one grid of equal intervals over [0, kFlatHi),
@@ -195,9 +199,9 @@ struct BoysDeviceTables {
     /// partition's do; region B's seed is piecewise, which is why it carries its
     /// own edge table rather than the two edges of one fit.
     ///
-    /// The degree fields hold the partition's own cut of a rung: a stored degree
-    /// per piece for region A, and one per piece and per order for region B,
-    /// whose seed's degree is read at the order the calling lane has reached.
+    /// \c narrowStoredDeg holds the fit's degree per piece, which is the degree
+    /// region A's pieces are read at. The rung's own cuts that stood beside it are
+    /// the reserved fields below: null in every handle, read by no entry.
     const int* narrowPieceStart = nullptr;
     /// [piece] the index of the piece's first coefficient in \c narrowCoeffs
     const int* narrowPieceOffset = nullptr;
@@ -210,21 +214,24 @@ struct BoysDeviceTables {
     const double* narrowBEdges = nullptr;
     const double* narrowBCoeffs = nullptr;     ///< region B's seed, Chebyshev form
     const double* narrowBMonoCoeffs = nullptr; ///< region B's seed, monomial form
-    /// [piece] region A's relaxed degree for the resident rung
+    /// [piece] Reserved: region A's degree at the removed rung. Always null, read
+    /// by no entry.
     const int* narrowRelaxedDegA = nullptr;
-    /// [piece * (kMaxBoysOrder + 1) + order] region B's relaxed degrees, the
-    /// degree of the piece's seed fit at that order
+    /// [piece * (kMaxBoysOrder + 1) + order] Reserved: region B's degrees at the
+    /// removed rung. Always null, read by no entry.
     const int* narrowRelaxedDegB = nullptr;
-    /// [piece] the monomial form of region A's relaxed degree
+    /// [piece] The monomial form of the same reserved field. Always null, read by
+    /// no entry.
     const int* narrowMonoRelaxedDegA = nullptr;
-    /// [piece * (kMaxBoysOrder + 1) + order], the monomial form of region B's
+    /// [piece * (kMaxBoysOrder + 1) + order] The monomial form of the same reserved
+    /// field. Always null, read by no entry.
     const int* narrowMonoRelaxedDegB = nullptr;
 
     /// The same partition one lane down. Its region B is the float lane's own
     /// piecewise seed; its region A is the double lane's narrow pieces above —
-    /// the one seed lane the float entries seed from. So a rung of this partition
-    /// reads the double lane's region-A cut above and this lane's own region-B cut
-    /// below, one table per basis.
+    /// the one seed lane the float entries seed from. So an entry of this partition
+    /// reads the double lane's region-A pieces above and this lane's own region-B
+    /// pieces below, one table per basis.
     const int* narrowPieceStart32 = nullptr;
     /// [piece] the index of the piece's first coefficient in \c narrowCoeffs32
     const int* narrowPieceOffset32 = nullptr;
@@ -243,14 +250,14 @@ struct BoysDeviceTables {
     /// numerator and a denominator summed apart and divided once.
     ///
     /// The route's degree tables come in pairs — the numerator's degree then the
-    /// denominator's — and at two resolutions: \c ratNumDeg and \c ratDenDeg hold
-    /// the degrees the table was stored at, and \c ratSeedDeg the resident rung's
-    /// cut of the reading the consuming entry makes, which is the reading of the
-    /// ladder shape every device-callable entry of this lane carries. Every one of
-    /// them is read at the flat piece index \c pieceStart[order] + \c piece.
+    /// denominator's — and \c ratNumDeg and \c ratDenDeg hold the degrees the table
+    /// was stored at, which is the reading the consuming entry makes. Both are read
+    /// at the flat piece index \c pieceStart[order] + \c piece. The rung's cuts that
+    /// stood beside them (\c ratSeedDeg, \c ratRelaxedDegB and their siblings below)
+    /// are reserved fields: null in every handle, read by no entry.
     ///
     /// \c ratBNum and \c ratBDen are region B's single seed pair, read whole at
-    /// every order, and \c ratRelaxedDegB its degrees at the resident rung.
+    /// every order.
     const double* ratCoeffs = nullptr; ///< the numerator and denominator pool
     /// [piece] the numerator's first coefficient in \c ratCoeffs
     const int* ratOffset = nullptr;
@@ -258,11 +265,13 @@ struct BoysDeviceTables {
     const int* ratDenOffset = nullptr;
     const int* ratNumDeg = nullptr; ///< [piece] the stored numerator degree
     const int* ratDenDeg = nullptr; ///< [piece] the stored denominator degree
-    /// [2 * piece] the resident rung's cut of the seed's own reading
+    /// [2 * piece] Reserved: the seed's own reading at the removed rung. Always
+    /// null, read by no entry.
     const int* ratSeedDeg = nullptr;
     const double* ratBNum = nullptr; ///< region B's seed numerator
     const double* ratBDen = nullptr; ///< region B's seed denominator
-    /// [2] region B's seed degrees at the resident rung: numerator, denominator
+    /// [2] Reserved: region B's seed degrees at the removed rung, numerator then
+    /// denominator. Always null, read by no entry.
     const int* ratRelaxedDegB = nullptr;
     const float* ratBNum32 = nullptr; ///< region B's seed numerator, float lane
     const float* ratBDen32 = nullptr; ///< region B's seed denominator, float lane
@@ -277,40 +286,43 @@ struct BoysDeviceTables {
     const int* narrowRatDenOffset = nullptr; ///< [piece] denominator's first index
     const int* narrowRatNumDeg = nullptr;   ///< [piece] the stored numerator degree
     const int* narrowRatDenDeg = nullptr;   ///< [piece] the stored denominator degree
-    /// [2 * piece] the resident rung's cut of the seed's own reading
+    /// [2 * piece] Reserved: the same seed cut on the narrow partition. Always
+    /// null, read by no entry.
     const int* narrowRatSeedDeg = nullptr;
     const double* narrowRatBCoeffs = nullptr; ///< region B's numerator and denominator
     /// [piece] the piece's first coefficient in \c narrowRatBCoeffs
     const int* narrowRatBOffset = nullptr;
     const int* narrowRatBStoredNumDeg = nullptr; ///< [piece] the stored numerator degree
     const int* narrowRatBDenDeg = nullptr;       ///< [piece] the stored denominator degree
-    /// [2 * piece] region B's degrees at the resident rung
+    /// [2 * piece] Reserved: region B's degrees at the removed rung. Always null,
+    /// read by no entry.
     const int* narrowRatRelaxedDegB = nullptr;
 
     /// The rational route on the narrow partition one lane down: region B's
     /// piecewise pair in the float lane's own pieces, over the double lane's
-    /// narrow pair above. A rung cuts it in \c narrowRatRelaxedDegB32 below.
+    /// narrow pair above.
     const float* narrowRatBCoeffs32 = nullptr;
     /// [piece] the piece's first coefficient in \c narrowRatBCoeffs32
     const int* narrowRatBOffset32 = nullptr;
     const int* narrowRatBStoredNumDeg32 = nullptr; ///< [piece] numerator degree
     const int* narrowRatBDenDeg32 = nullptr;       ///< [piece] denominator degree
 
-    /// [piece * (kMaxBoysOrder + 1) + order] the float narrow partition's own cut
-    /// of region B's seed at the resident rung, in the Chebyshev form of that
-    /// seed: the degree the piece's fit is read to, the same cut the launched rows
-    /// of that partition take. Region A carries no table beside it — the seed lane
-    /// is the double lane's narrow pieces, whose cut is \c narrowRelaxedDegA above.
+    /// [piece * (kMaxBoysOrder + 1) + order] Reserved: the float narrow
+    /// partition's cut of region B's seed at the removed rung, in the Chebyshev
+    /// form of that seed. Always null, read by no entry. Region A carries no table
+    /// beside it — the seed lane is the double lane's narrow pieces, whose reserved
+    /// cut is \c narrowRelaxedDegA above.
     const int* narrowRelaxedDegB32 = nullptr;
-    /// The same table for the monomial form of the same seed, which is what a
-    /// Horner call at that rung reads.
+    /// The same table for the monomial form of the same seed. Always null, read by
+    /// no entry.
     const int* narrowMonoRelaxedDegB32 = nullptr;
-    /// [2] the float lane's fit route on the coarsest partition: its region-B
-    /// pair's degrees at the resident rung, the numerator's first. The route's
-    /// float pair is that lane's own fit, so the double lane's pair above
-    /// (ratRelaxedDegB) is a cut of other coefficients and is not read here.
+    /// [2] Reserved: the float lane's fit route on the coarsest partition had its
+    /// own region-B cut here, the numerator's degree first. Always null, read by no
+    /// entry. The route's float pair is that lane's own fit, so the double lane's
+    /// pair above is a cut of other coefficients and is not read here.
     const int* ratRelaxedDegB32 = nullptr;
-    /// [2 * piece] the same pair's degrees on the narrow partition.
+    /// [2 * piece] Reserved: the same pair's degrees on the narrow partition.
+    /// Always null, read by no entry.
     const int* narrowRatRelaxedDegB32 = nullptr;
 
     /// The uniform grid's cells, one entry per interval, read by the route's

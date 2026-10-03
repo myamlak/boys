@@ -130,8 +130,8 @@ struct ReferenceCell {
 std::vector<ReferenceCell> LoadReference() {
     std::vector<ReferenceCell> cells;
 
-#ifdef BoysTierReference
-    std::ifstream file(BoysTierReference);
+    const std::string path = std::string(BoysDataDir) + "/boys_accuracy_gate_reference.csv";
+    std::ifstream file(path);
 
     if (!file)
     {
@@ -169,7 +169,6 @@ std::vector<ReferenceCell> LoadReference() {
             cells.push_back(ReferenceCell{static_cast<int>(order), arg, value});
         }
     }
-#endif
 
     return cells;
 }

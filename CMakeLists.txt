@@ -455,11 +455,10 @@ if (BOYS_BUILD_TESTS)
     target_link_libraries(boys-tests PRIVATE boys gtest gtest_main)
     target_include_directories(boys-tests PRIVATE src)
     target_compile_features(boys-tests PRIVATE cxx_std_23)
-    # BoysTierReference is the accuracy gate lane's 80-digit grid when the
-    # tree carries it; a test that reads it skips when the grid is absent.
+    # The directory the suite's reference grids are read from, the accuracy gate's
+    # 80-digit grid among them; a test that reads one skips when it is absent.
     target_compile_definitions(boys-tests PRIVATE
-        BoysDataDir="${CMAKE_CURRENT_SOURCE_DIR}/tests/data"
-        BoysTierReference="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/boys_accuracy_gate_reference.csv")
+        BoysDataDir="${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
     boys_strict_warnings(boys-tests)
 
     # The ACCURACY GATE (tests/boys_accuracy_gate.cpp) measures every
