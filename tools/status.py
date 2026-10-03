@@ -151,7 +151,7 @@ def device_space() -> tuple[str, list[str], bool]:
     directory = os.path.join(REPO, ".claude", "tmp")
     try:
         names = [n for n in os.listdir(directory)
-                 if n.startswith("gpuprobe-") and n.endswith(".log")]
+                 if n.endswith(".log") and ("probe" in n.lower())]
     except OSError:
         names = []
     if not names:
@@ -189,14 +189,20 @@ def device_space() -> tuple[str, list[str], bool]:
     closed = (sum(parts) == int(arith.group(2)) == int(total.group(1))
               and unaccounted == 0 and verdict.group(1) == "PASS")
 
-    lines = [
-        f"  source                 {os.path.basename(newest)}",
-        f"  measured               {parts[0]:>6}",
-        f"  refused and owed       {parts[1]:>6}",
-        f"  refused at a rung      {parts[2]:>6}",
-        f"  not runnable on card   {parts[3]:>6}",
-        f"  offered, no figure     {parts[4]:>6}",
-        f"  not asked by this run  {parts[5]:>6}",
+    # The labels are READ FROM THE RUN, not written here. The probe's arithmetic has as many terms
+    # as the states that exist, and that number is not fixed: removing the accuracy rung took the
+    # rung state out and the arithmetic went from six terms to five. A reader that hard-codes the
+    # count breaks on the next state the library gains or loses - which is what this one did.
+    labels = [state.strip() for _, state in re.findall(
+        r"^ {10,}(\d+)\s+([A-Za-z].{6,70})$", text, re.M)
+        if not state.strip().startswith(("member(s", "cell(s"))]
+    if len(labels) != len(parts):
+        labels = [f"state {i + 1}" for i in range(len(parts))]
+
+    lines = [f"  source                 {os.path.basename(newest)}"]
+    for label, value in zip(labels, parts):
+        lines.append(f"  {label[:22]:<22} {value:>6}")
+    lines += [
         f"  unaccounted            {unaccounted:>6}",
         f"  ----------------------------------",
         f"  total                  {space:>6}",
