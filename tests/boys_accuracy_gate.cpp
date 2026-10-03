@@ -1182,6 +1182,15 @@ DD DivDD(DD a, DD b)
 // claim a caller can name, and the reading of it is one reading whatever the
 // second name reaches. A reader sees the two rows carry one figure.
 
+/// The division form this gate's device cells are launched at. Every entry of the
+/// surface takes the form as a trailing argument and the device option space
+/// crosses each of them with all three, but a bound is stated for a lane and a
+/// region and there is no device figure per form, so the cells here are read at
+/// the arithmetic the library's own default names - the one every published device
+/// figure was measured at. Crossing the forms here would be a second option space
+/// beside the probe's, and this gate is not that instrument.
+constexpr boys::DivisionForm kGateDivisionForm = boys::kDefaultDivisionForm;
+
 /// The entry one member of the device lane's cross is measured through, read at
 /// each entry's default policy.
 ///
@@ -1200,7 +1209,8 @@ constexpr auto GateDeviceEntry(boys::FitRoute route,
                                boys::EvalScheme scheme,
                                boys::FitGranularity partition,
                                boys::PackAxis axis) noexcept
-    -> boys::BoysStatus (*)(const int*, const double*, float*, std::size_t, void*) {
+    -> boys::BoysStatus (*)(const int*, const double*, float*, std::size_t, void*,
+                            boys::DivisionForm) {
     const bool orders = axis == boys::PackAxis::kOrders;
     const bool horner = scheme == boys::EvalScheme::kHorner;
     const bool rational = route == boys::FitRoute::kRationalMinimax;
@@ -9923,18 +9933,34 @@ int main(int argc, char** argv) {
         int worstForm = -1; // the division form that delivered the worst value
     };
 
-    // The lanes, in the order BoysLaneContracts() reports them. The device lane
-    // is the one this target cannot run: its entries need a CUDA device.
+    // The lanes, in the order BoysLaneContracts() reports them. Three of them are the device's -
+    // kFp64Device, kFp32Device and kFp16Device (boys/boys.hpp, Precision) - and the arm below
+    // launches the fp32 one: a device cell is counted apart where nothing here could run it,
+    // which off a CUDA build is every cell of all three lanes.
     const std::span<const boys::LaneContractInfo> combLaneRows = boys::BoysLaneContracts();
     const int combLaneCount = static_cast<int>(combLaneRows.size());
     const int combDeviceLane = static_cast<int>(boys::Precision::kFp32Device);
     const int combHalfLane = static_cast<int>(boys::Precision::kFp16);
 
+    /// Whether a lane is one of the device's three, which are the three precisions the device
+    /// surface's entries are built at (boys/boys_device_tables.hpp, BoysDeviceLane). A cell of
+    /// one of them is a cell no host entry answers, so the three are classified together.
+    const auto combIsDeviceLane = [](int lane) {
+        return lane == static_cast<int>(boys::Precision::kFp32Device) ||
+               lane == static_cast<int>(boys::Precision::kFp64Device) ||
+               lane == static_cast<int>(boys::Precision::kFp16Device);
+    };
+
     // Each lane's route axis: the distinct routes that lane's own report names,
     // in the order the report first names them.
+    // The device's lanes read the double lane's table for region A - the fp16 one included, whose
+    // own lane states that its region A is still the double piece table - so the device's three
+    // enumerate their routes from BoysFitRoutes() with the double lane.
     const auto combRoutesFor = [](int lane) {
         return lane == static_cast<int>(boys::Precision::kFp64) ||
-                       lane == static_cast<int>(boys::Precision::kFp32Device)
+                       lane == static_cast<int>(boys::Precision::kFp32Device) ||
+                       lane == static_cast<int>(boys::Precision::kFp64Device) ||
+                       lane == static_cast<int>(boys::Precision::kFp16Device)
                    ? boys::BoysFitRoutes()
                    : boys::BoysFitRoutesF32();
     };
@@ -10674,13 +10700,19 @@ int main(int argc, char** argv) {
     // same shape as the two arms above with the entry selected by the map
     // rather than by a policy template.
     //
-    // Each cell carries one figure and not three. The device lane has no
-    // division-form axis - DivisionForm is a field of the host policy and is
-    // named in no device header - so no cell here has a second form to be
-    // compared against, and the worst-form column of a row this arm measured
-    // holds the sentinel the report reads as "no form was recorded" rather than
-    // one of the three host form names: naming one of them for a value this
-    // lane returned would be a claim about arithmetic the lane does not run.
+    // Each cell carries one figure and not three, and the reason is a figure
+    // rather than a surface. The device lane's entries DO carry the division-form
+    // axis: DivisionForm is a trailing parameter of every launched entry, the
+    // device option space crosses each entry with all three (boys_cuda_options.hpp,
+    // DeviceOptionAxis::kDivision), and this arm launches each cell at
+    // kGateDivisionForm - the arithmetic every published device figure was
+    // measured at. What this lane does not have is a bound per form: a bound is
+    // stated for a lane and a region, and a second reading of the same entry at
+    // another form would be certifying a figure this gate does not hold. So the
+    // worst-form column of a row this arm measured holds the sentinel the report
+    // reads as "no form was recorded" rather than one of the three form names:
+    // naming one of them for a value this lane returned at another would be a
+    // claim about arithmetic the reading was not taken at.
     const int kDeviceForm = -1;
 
     const auto combDeviceSweep =
@@ -10714,7 +10746,8 @@ int main(int argc, char** argv) {
                                                    combDeviceX.get(),
                                                    combDeviceValues.get(),
                                                    ref.count,
-                                                   nullptr);
+                                                   nullptr,
+                                                   kGateDivisionForm);
 
             if (status != boys::BoysStatus::kSuccess ||
                 cudaDeviceSynchronize() != cudaSuccess ||
@@ -11063,13 +11096,19 @@ int main(int argc, char** argv) {
                         {
                             c.state = "refused - owed";
                             c.source = guaranteed.reason;
-                        } else if (lane == combDeviceLane && !deviceLaneMeasured)
+                        } else if (combIsDeviceLane(lane) &&
+                                   !(lane == combDeviceLane && deviceLaneMeasured))
                         {
-                            // Not "the lane is a device lane": the lane is
-                            // counted apart only where nothing here could
-                            // run it, and the sentence says which of the
-                            // two - no CUDA in this build, or no device
-                            // this build can open - is this run's.
+                            // Not "the lane is a device lane": a cell is
+                            // counted apart only where nothing here could run
+                            // it, and the sentence says which of the two - no
+                            // CUDA in this build, or no device this build can
+                            // open - is this run's. The arm this condition
+                            // names is the fp32 device lane's, so a build whose
+                            // arm ran leaves the fp64 and fp16 device lanes to
+                            // the hole below: that is the debt of an arm for
+                            // those two lanes, and this block will not cover a
+                            // cell of either with another lane's figure.
                             c.state = "not runnable on this host";
                             c.source = deviceLaneReason;
                             c.bound = guaranteed.value;
@@ -11635,9 +11674,10 @@ int main(int argc, char** argv) {
                     "order and argument, against the values it was asked\n  for. A lane whose "
                     "column is zero for every form is a lane the axis selects no\n  arithmetic "
                     "on: its three names reach one body, and one is what it was certified at. "
-                    "The\n  device lane's entries name no form at all (DivisionForm is a field of "
-                    "the host\n  policy and is named in no device header), so its rows carry one "
-                    "reading and no\n  comparison, and their form(s) column reads 1\n",
+                    "The\n  device lane's rows carry one reading here: its entries carry the axis "
+                    "and every\n  one of them runs every form, but this gate launches each cell at "
+                    "the default\n  form, and no device bound is published per form, so there is "
+                    "no second figure\n  to compare against and their form(s) column reads 1\n",
                     combForms);
         std::printf("    %-27s %-11s %10s %9s %11s", "lane", "axis", "cell(s)", "form(s)",
                     "compared");

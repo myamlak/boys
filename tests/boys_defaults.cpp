@@ -165,7 +165,8 @@ constexpr const char* BudgetName(BoysBudget budget) noexcept {
 // which is why the report prints how many classes it scanned and what the table
 // answered rather than only the classes it found.
 #define BOYS_DEFAULTS_DEVICES(X) X(kHost) X(kDevice)
-#define BOYS_DEFAULTS_PRECISIONS(X) X(kFp64) X(kFp32) X(kFp16) X(kFp32Device)
+#define BOYS_DEFAULTS_PRECISIONS(X)                        \
+    X(kFp64) X(kFp32) X(kFp16) X(kFp32Device) X(kFp64Device) X(kFp16Device)
 #define BOYS_DEFAULTS_SHAPES(X) X(kSingle) X(kAllOrders) X(kFixedN) X(kAllN) X(kAllNAtOrders)
 
 /// One enumerator of \c Device that \c DeviceName spells no name for.
@@ -189,7 +190,7 @@ constexpr std::array<Device, 2> kDevices{BOYS_DEFAULTS_DEVICES(BOYS_DEFAULTS_DEV
 #undef BOYS_DEFAULTS_DEVICE_ENTRY
 
 #define BOYS_DEFAULTS_PRECISION_ENTRY(Enumerator) Precision::Enumerator,
-constexpr std::array<Precision, 4> kPrecisions{BOYS_DEFAULTS_PRECISIONS(BOYS_DEFAULTS_PRECISION_ENTRY)};
+constexpr std::array<Precision, 6> kPrecisions{BOYS_DEFAULTS_PRECISIONS(BOYS_DEFAULTS_PRECISION_ENTRY)};
 #undef BOYS_DEFAULTS_PRECISION_ENTRY
 
 #define BOYS_DEFAULTS_SHAPE_ENTRY(Enumerator) Shape::Enumerator,

@@ -128,13 +128,39 @@ TEST(BackendTest, ReportedMulAddRouteMatchesTheArithmetic) {
     EXPECT_EQ(backends[0].route, boys::backend::detail::RouteInForce<double>());
     EXPECT_EQ(backends[1].route, boys::backend::detail::RouteInForce<float>());
 
-    // A route in force is the selection unless the build contracts the bare form, so a
-    // reported separate route is printed only where the two roundings happen.
-    for (const BackendInfo& info : backends) {
-        if (info.route == MulAddRoute::kSeparate) {
-            EXPECT_FALSE(info.contracts) << info.name;
+    // A route in force is the selection unless the build contracts the bare form, and
+    // that filtering is the SCALAR pair's, because the scalar separate route is a bare
+    // expression the build may contract. The packed pair names two instructions instead,
+    // so it runs its separate route whether the build contracts a bare form or not, and
+    // asking it the contraction question would demand an answer it does not have. What
+    // the packed rows owe is that their reported route is the one they run, which is
+    // asserted below.
+    for (std::size_t i = 0; i < 2; ++i) {
+        if (backends[i].route == MulAddRoute::kSeparate) {
+            EXPECT_FALSE(backends[i].contracts) << backends[i].name;
         }
     }
+}
+
+// The packed pair runs the route this build selected. The two routes are two spellings
+// there rather than two readings of one bare expression, so the reported route is the
+// selection with nothing measured away from it: a build asked for the separate route
+// whose packed lanes reported fused would be reporting an arithmetic whose kernels were
+// never compiled into it.
+TEST(BackendTest, ThePackedLanesRunTheSelectedRoute) {
+    if (!boys::BoysAvx2Available()) {
+        GTEST_SKIP() << "the AVX2 tier is not available on this target";
+    }
+
+    const std::span<const BackendInfo> backends = BoysBackends();
+    ASSERT_EQ(backends.size(), 4u);
+
+    EXPECT_EQ(backends[2].route, boys::backend::detail::kSelectedRoute)
+        << backends[2].name << " reports " << MulAddRouteName(backends[2].route)
+        << ", the build selected " << MulAddRouteName(boys::backend::detail::kSelectedRoute);
+    EXPECT_EQ(backends[3].route, boys::backend::detail::kSelectedRoute)
+        << backends[3].name << " reports " << MulAddRouteName(backends[3].route)
+        << ", the build selected " << MulAddRouteName(boys::backend::detail::kSelectedRoute);
 }
 
 // The route is a name a report can print, and no row answers with the placeholder.

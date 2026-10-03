@@ -324,6 +324,32 @@ struct DivisionFormInfo {
 /// \ingroup boys
 std::span<const DivisionFormInfo> BoysDivisionForms() noexcept;
 
+/// What one region-B exponential is, as a report names it.
+///
+/// The member is the arithmetic a region-B ladder's seed is evaluated in, so it is
+/// a property of the arithmetic and not of a call shape: a row states which of the
+/// two arithmetics it is, and every entry that has a region-B ladder runs both of
+/// them. That is why these rows carry no coverage fields where the packing axis and
+/// the partition rows do - there is no cell this axis is refused on - and what each
+/// member costs on a given host is what the option probe measures there.
+///
+/// \ingroup boys
+struct RegionBExpInfo {
+    RegionBExp exp = RegionBExp::kAccurate; ///< the selector value this row describes
+    const char* name = ""; ///< the name a report prints it under
+};
+
+/// The region-B exponentials this build carries, as a report prints them.
+///
+/// Which member a call runs is a template argument of its policy, so a caller
+/// choosing one names an enumerator; this answers which enumerators this build has,
+/// in the library's own spelling, without a caller writing the list out again.
+///
+/// \returns one row per member, in enumerator order
+///
+/// \ingroup boys
+std::span<const RegionBExpInfo> BoysRegionBExps() noexcept;
+
 /// One partition of the fitted regions, and what this build promises about it.
 ///
 /// The partition is how narrowly the fitted domain is cut into pieces, and it is
@@ -432,17 +458,38 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept;
 /// and the figure it delivers differs by lane because the fits and the
 /// arithmetic do. \c kFp16 is the fp16 and bfloat16 entries, which round a
 /// 32-bit engine's result to the format at the boundary and are compiled behind
-/// this build's fp16 seam; \c kFp32Device is the device lane, whose entries a
-/// host without a CUDA device cannot run - both are named here because a caller
-/// choosing a combination has to be able to name the combination it chose, and
+/// this build's fp16 seam. \c kFp64Device, \c kFp32Device and \c kFp16Device are
+/// the device lane's own three, whose entries a host without a CUDA device
+/// cannot run - every one of them is named here because a caller choosing a
+/// combination has to be able to name the combination it chose, and
 /// \c BoysLaneContracts says where each lane's figure comes from.
+///
+/// **The device's three are three lanes and not one lane named three ways.**
+/// The key of the default-policy table is a (device, precision, shape) class,
+/// and a device class is one of those three precisions: the device probe ranks a
+/// class per (precision, question) pair, so a table whose device half carried one
+/// precision member could state a row for one of the device's three classes per
+/// shape and none for the other two. The three members are the three lanes the
+/// device surface declares - a double lane, a float lane and a half lane
+/// (`boys/boys_device_tables.hpp`, \c BoysDeviceLane), which read different
+/// degree tables and are built at different budgets - and not three spellings of
+/// one lane.
+///
+/// **The members are appended, and the order is the history rather than the
+/// family.** \c kFp32Device was the device lane's only member before the other
+/// two existed and its value is read by name in the accuracy gate, so it keeps
+/// the value it had. \c BoysLaneContracts is indexed by this enumeration with one
+/// row per member, so a member added here without its row there reads a row that
+/// does not exist.
 ///
 /// \ingroup boys
 enum class Precision : std::uint8_t {
     kFp64 = 0, ///< double precision, the certified lane every other is measured against
     kFp32, ///< single precision, the host's fp32 engine
     kFp16, ///< half precision: the fp16 and bfloat16 entries, whose figure carries a term of the format
-    kFp32Device, ///< single precision as the device lane runs it
+    kFp32Device, ///< single precision as the device lane runs it: the float lane, under the fast exponential's term
+    kFp64Device, ///< the device's double lane: the double pieces, region A read by the seeded recurrence
+    kFp16Device, ///< the device's half lane: the float lane's bodies, stored half and under the half budget
 };
 
 /// The device a call runs on: the first key of the default-policy table.
@@ -500,8 +547,10 @@ constexpr BoysBudget LaneFallbackBudget(Precision lane) noexcept
     case Precision::kFp64:
     case Precision::kFp32:
     case Precision::kFp32Device:
+    case Precision::kFp64Device:
         return BoysBudget::kFloat;
     case Precision::kFp16:
+    case Precision::kFp16Device:
         return BoysBudget::kFp16;
     }
 
@@ -750,26 +799,31 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
 /// default has, without reconstructing the axes to ask about it.
 ///
 /// The axes it asks the accessor above with are the ones
-/// \c DefaultPolicy<kPrecision, kShape> resolves to - the row the table carries
-/// for the class, or the seam's own five where it carries none - so this is the
-/// same figure, from the same table, as a caller gets by naming the policy's
-/// five axes by hand. It is a table read and not a measurement: nothing is
-/// evaluated and nothing is timed.
+/// \c DefaultPolicy<kPrecision, kShape, kDevice> resolves to - the row the table
+/// carries for the class, or the seam's own five where it carries none - so this
+/// is the same figure, from the same table, as a caller gets by naming the
+/// policy's five axes by hand. It is a table read and not a measurement: nothing
+/// is evaluated and nothing is timed.
 ///
-/// **A class is a (device, precision, shape) triple and this reads a host
-/// class.** The device lane's own choice is outside the seam - the region-B
-/// exponential is declared where it is used - so there is no device row for
-/// this accessor to read yet, which is owed work rather than a design choice.
+/// **A class is a (device, precision, shape) triple, and this reads the class the
+/// caller names.** \c kDevice defaults to \c Device::kHost, which is what a name
+/// that does not spell a device resolves on, so a host class is read as it was;
+/// a caller naming \c Device::kDevice and one of the device's lanes reads that
+/// class's own row, and the figure is that lane's - the device's three precisions
+/// are three lanes of this table (\c Precision::kFp64Device, \c kFp32Device and
+/// \c kFp16Device), and each carries its own row of \c BoysLaneContracts.
 ///
 /// \tparam kPrecision the precision lane
 /// \tparam kShape the question shape
+/// \tparam kDevice which side of the interface the class is on; \c Device::kHost
+///         where a caller does not spell one
 /// \returns the figure, and whether this build carries the combination
 ///
 /// \ingroup boys
-template <Precision kPrecision, Shape kShape>
+template <Precision kPrecision, Shape kShape, Device kDevice = Device::kHost>
 inline AccuracyFigure DefaultGuarantee() noexcept
 {
-    using Policy = DefaultPolicy<kPrecision, kShape>;
+    using Policy = DefaultPolicy<kPrecision, kShape, kDevice>;
 
     return BoysAccuracyGuaranteed(kPrecision, Policy::kRoute, Policy::kScheme, Policy::kPack,
                                   Policy::kGranularity, Policy::kDivision);

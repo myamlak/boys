@@ -22,6 +22,8 @@
 #include "boys/boys_probe.hpp"
 
 #include <algorithm>
+#include <bit>
+#include <cstdint>
 #include <cstdio>
 #include <gtest/gtest.h>
 #include <limits>
@@ -1497,7 +1499,7 @@ TEST(ProbeTest, TheOptionSpaceIsTheLibrarysOwnProduct) {
 
         expected += routes_of(sample->lane).size() * boys::BoysEvalSchemes().size() *
                     report.granularities.size() * boys::BoysPackAxes().size() *
-                    boys::BoysDivisionForms().size();
+                    boys::BoysDivisionForms().size() * boys::BoysRegionBExps().size();
     }
 
     EXPECT_EQ(report.cells.size(), expected)
@@ -1521,6 +1523,7 @@ TEST(ProbeTest, TheOptionSpaceIsTheLibrarysOwnProduct) {
             EXPECT_EQ(measurement->granularity, cell.granularity) << cell.name;
             EXPECT_EQ(measurement->pack, cell.pack) << cell.name;
             EXPECT_EQ(measurement->division, cell.division) << cell.name;
+            EXPECT_EQ(measurement->regionBExp, cell.regionBExp) << cell.name;
             continue;
         }
 
@@ -1595,6 +1598,88 @@ TEST(ProbeTest, TheDivisionFormAxisIsEnumeratedAndRanked) {
     EXPECT_EQ(ranked.size(), forms.size())
         << "the class the default is chosen from ranks fewer division forms than the library "
            "reports, so the axis is carried and not compared";
+}
+
+// The region-B exponential is an axis of the option space like the others: the members are
+// read from the library rather than written out in the probe, every combination of the
+// other axes is enumerated at each of them, a cell of the member that is not the host
+// default carries the library's own name for it, and the members are ranked against each
+// other inside one class rather than in a class apiece.
+//
+// The defect this pins is the one this axis was found by: a member that exists on one
+// target and not the other reads, in a report, exactly like a member the library does not
+// have - and a member the instrument carries but never varies reads like one that is not
+// there. The last check below is the one that cannot pass by construction: the two members
+// are two arithmetics, so at an argument where they must part they are compared as values
+// and not only as names.
+//
+// The protocol is the measuring one, because a class is made where a run produced figures
+// and the one-round run carries no classes at all.
+TEST(ProbeTest, TheRegionBExpAxisIsEnumeratedAndRanked) {
+    const OptionProbeReport report = boys::RunOptionProbe(Timed());
+    const std::span<const boys::RegionBExpInfo> exps = boys::BoysRegionBExps();
+
+    ASSERT_EQ(exps.size(), 2u) << "this build reports a region-B exponential axis of another size";
+
+    for (std::size_t i = 0; i < exps.size(); ++i) {
+        EXPECT_EQ(static_cast<std::size_t>(exps[i].exp), i) << "the rows are not in enumerator order";
+        EXPECT_STREQ(exps[i].name, boys::RegionBExpName(exps[i].exp));
+    }
+
+    // The no-axis cell of the double lane, at each member: the host default's carries the name
+    // the shape row has always had, because that row runs the default policy and therefore
+    // seeds its ladders with it, and the other carries the library's own spelling of the
+    // member beside it. The two names differ.
+    std::set<std::string> names;
+
+    for (const boys::RegionBExpInfo& exp : exps) {
+        const std::string name = exp.exp == boys::kDefaultHostRegionBExp
+                                     ? std::string("batch-fp64")
+                                     : std::string("batch-") + exp.name + "-fp64";
+
+        EXPECT_TRUE(names.insert(name).second) << name << " names two different cells";
+
+        const OptionProbeMeasurement* row = Find(report, name);
+
+        ASSERT_NE(row, nullptr) << name << " is not an option this run measured";
+        EXPECT_EQ(row->regionBExp, exp.exp) << name << " is measured at a member it does not name";
+        EXPECT_EQ(row->granularity, boys::FitGranularity::kCoarsest) << name;
+    }
+
+    // Ranked against each other, not in two classes of their own: this is the class the
+    // default is chosen from, and a row of each member is in it.
+    const boys::OptionProbeClass* certified =
+        ClassOf(report, boys::OptionPrecision::kFp64, boys::OptionProbeShape::kAllOrders);
+
+    ASSERT_NE(certified, nullptr) << "the certified double lane's class is not in the report";
+
+    std::set<boys::RegionBExp> ranked;
+
+    for (const std::string& name : certified->ranked) {
+        const OptionProbeMeasurement* row = Find(report, name);
+
+        ASSERT_NE(row, nullptr) << name << " is ranked by a class yet not measured";
+        ranked.insert(row->regionBExp);
+    }
+
+    EXPECT_EQ(ranked.size(), exps.size())
+        << "the class the default is chosen from ranks fewer region-B exponentials than the "
+           "library reports, so the axis is carried and not compared";
+
+    // The two members are two arithmetics and not two spellings of one. The argument is
+    // inside region B and above the cut the fast member's reduced-argument polynomial takes
+    // over at, which is the one stretch of the domain where the two must part: below the cut
+    // the fast member calls the same library routine the accurate member does.
+    const double x = 0.5 * (boys::detail::kRegionBExpCheapFrom + boys::detail::kX1);
+    const std::uint64_t fast =
+        std::bit_cast<std::uint64_t>(boys::detail::RegionBHalfExp<boys::RegionBExp::kFast>(x));
+    const std::uint64_t accurate =
+        std::bit_cast<std::uint64_t>(boys::detail::RegionBHalfExp<boys::RegionBExp::kAccurate>(x));
+
+    EXPECT_NE(fast, accurate)
+        << "the two members of the axis return one value at x = " << x
+        << ": one instantiation would satisfy both rows, and the axis would be carried and "
+           "never varied";
 }
 
 // A partition the library serves is a cell of the space this probe enumerates, measured
@@ -1911,7 +1996,7 @@ TEST(ProbeTest, TheClosurePutsEveryCellOfTheSpaceInOneState) {
 
         expected += DistinctRoutes(lane).size() * boys::BoysEvalSchemes().size() *
                     boys::BoysFitGranularities().size() * boys::BoysPackAxes().size() *
-                    boys::BoysDivisionForms().size();
+                    boys::BoysDivisionForms().size() * boys::BoysRegionBExps().size();
     }
 
     EXPECT_EQ(closure.admitted, expected)
@@ -2030,7 +2115,9 @@ TEST(ProbeTest, TheClosureCountsTheRowsThatAreNoCellOfTheSpace) {
         const std::size_t perClass = DistinctRoutes(boys::Precision::kFp64).size() *
                                      boys::BoysEvalSchemes().size() *
                                      boys::BoysFitGranularities().size() *
-                                     boys::BoysPackAxes().size() * boys::BoysDivisionForms().size();
+                                     boys::BoysPackAxes().size() *
+                                     boys::BoysDivisionForms().size() *
+                                     boys::BoysRegionBExps().size();
         if (row.precision == OptionPrecision::kFp64) {
             crossed += perClass - 1;
         }
