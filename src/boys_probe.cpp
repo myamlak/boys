@@ -2691,10 +2691,14 @@ const char* HowText(OptionProbeDefaultHow how) {
     case OptionProbeDefaultHow::kChosenAmongEquals:
         return "a choice among options the run could not separate";
     case OptionProbeDefaultHow::kNone:
-        break;
+        return "nothing named";
     }
 
-    return "nothing named";
+    // A value no arm above names: a member a newer header carries and this revision has not been
+    // taught, or a value cast in from outside the enumeration. "nothing named" is one member's
+    // own phrase, so it is not the answer here: a reader of it cannot tell that value from the
+    // member that means this run named no default.
+    return "(not a way this revision names)";
 }
 
 /// The figure the report prints for each column of the round table, indexed by
@@ -3299,7 +3303,10 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
             report.recommended.c_str(), fastest.nsPerArgument, report.pairedRounds,
             fastest.maxError);
         break;
-    default:
+    case OptionProbeDefaultHow::kRefined:
+    case OptionProbeDefaultHow::kVote:
+    case OptionProbeDefaultHow::kChosenAmongEquals:
+    case OptionProbeDefaultHow::kNone:
         report.reason = Text(
             "'%s' is the default: the certified double lane's own class - built at m=1, for "
             "the all-orders question this workload asks - holds %zu measured option(s), and its "
@@ -3350,6 +3357,20 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
         report.reason += "The default is named with the way it was reached - " +
                          std::string(HowText(report.defaultHow)) +
                          " - and not as a measured ordering, which this run did not establish.";
+        break;
+    default:
+        // A way of reaching a default that no arm above names: a value cast in from outside
+        // the enumeration, or an enumerator this revision has not been taught. Neither is a
+        // way this run walked, so the reason above is not stated for it: naming the class's
+        // fastest entry "the default" here would be a sentence about a choice this run did
+        // not make, which is the one thing this field exists not to say.
+        report.reason = Text(
+            "No default is named for this class and no reason for one is stated: the way this "
+            "run records for its own figure is not one the enumeration names, so there is no "
+            "way to state here and nothing this run measured about one. The %zu option(s) of "
+            "the class are this run's own measurements and are reported as what they are; "
+            "which of them is the default is not something this run settles.",
+            pool.size());
         break;
     }
 
@@ -3436,6 +3457,16 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
             "the whole of what this run measured about it");
         break;
     case OptionProbeDefaultHow::kNone:
+        break;
+    default:
+        // The same value the reason above refuses, and refused here in the same terms: a
+        // confidence is about a default this run named, and this run names none for a way it
+        // did not walk. Left unsaid, this field would open with the measured sentence below
+        // and read as a run that concluded something.
+        confidence = Text(
+            "No confidence is stated: this run names no default for the class - the way it "
+            "reached its own figure is not one the enumeration names - so there is nothing a "
+            "confidence here would be about");
         break;
     }
 
@@ -5015,6 +5046,28 @@ SeamFive FileFive() {
     return SeamFive{};
 }
 
+/// A lane the seam's own precision cell can name, with the budget the library states for it.
+///
+/// The budget is resolved here, at compile time and beside the lane it belongs to, because the
+/// library states one per lane of the enumeration and has none for a value outside it: the
+/// table is keyed by the enumeration, so a row this file writes carries the same budget cell
+/// the library's own macro would write for that lane, and a lane no enumerator names has no
+/// budget to be written rather than the nearest one to it.
+struct SeamLaneBudget {
+    Precision lane;   ///< the precision lane, as the library's own enumeration names it
+    BoysBudget budget; ///< the budget a class of that lane falls back to
+};
+
+/// The seam lanes, in the order the library enumerates them.
+constexpr SeamLaneBudget kSeamLaneBudgets[] = {
+    {Precision::kFp64, detail::LaneFallbackBudget<Precision::kFp64>()},
+    {Precision::kFp32, detail::LaneFallbackBudget<Precision::kFp32>()},
+    {Precision::kFp16, detail::LaneFallbackBudget<Precision::kFp16>()},
+    {Precision::kFp32Device, detail::LaneFallbackBudget<Precision::kFp32Device>()},
+    {Precision::kFp64Device, detail::LaneFallbackBudget<Precision::kFp64Device>()},
+    {Precision::kFp16Device, detail::LaneFallbackBudget<Precision::kFp16Device>()},
+};
+
 /// The `X(...)` call as the seam writes it: the cells in the seam's own order, broken after
 /// the budget cell and continued under it, each line ending in the macro's backslash.
 ///
@@ -5024,7 +5077,7 @@ SeamFive FileFive() {
 /// disagree with the seam about which class it is for.
 std::string SeamRowCall(const std::string& precisionToken,
                         const std::string& shapeToken,
-                        Precision lane,
+                        BoysBudget budget,
                         FitRoute route,
                         EvalScheme scheme,
                         PackAxis pack,
@@ -5033,8 +5086,8 @@ std::string SeamRowCall(const std::string& precisionToken,
     return Text("    X(kHost, %s, %s, %s, %s, %s,\\\n"
                 "      %s, %s, %s)\\\n",
                 precisionToken.c_str(), shapeToken.c_str(), RouteCell(route), SchemeCell(scheme),
-                BudgetCell(detail::LaneFallbackBudget(lane)), PackCell(pack),
-                GranularityCell(granularity), DivisionCell(division));
+                BudgetCell(budget), PackCell(pack), GranularityCell(granularity),
+                DivisionCell(division));
 }
 
 /// The rows this run's own rankings imply, one per class the seam in force carries, in the
@@ -5054,14 +5107,15 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
         EmittedSeamRow row;
         bool laneFound = false;
         Precision lane = Precision::kFp64;
+        BoysBudget budget = detail::LaneFallbackBudget<Precision::kFp64>();
         Shape shape = Shape::kAllOrders;
 
-        for (const Precision candidate : {Precision::kFp64, Precision::kFp32, Precision::kFp16,
-                                          Precision::kFp32Device})
+        for (const SeamLaneBudget& candidate : kSeamLaneBudgets)
         {
-            if (klass.precision == PrecisionToken(candidate))
+            if (klass.precision == PrecisionToken(candidate.lane))
             {
-                lane = candidate;
+                lane = candidate.lane;
+                budget = candidate.budget;
                 laneFound = true;
             }
         }
@@ -5129,7 +5183,7 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
                                   OptionProbeDefaultHowName(winner.how).c_str());
             }
 
-            row.cells = SeamRowCall(klass.precision, klass.shape, lane, written->route,
+            row.cells = SeamRowCall(klass.precision, klass.shape, budget, written->route,
                                     written->scheme, written->pack, written->granularity,
                                     written->division);
             rows.push_back(std::move(row));
@@ -5147,7 +5201,7 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
                          "       ladders with the accurate exponential, which this file's row "
                          "format carries no\n"
                          "       cell for */\\\n";
-            row.cells = SeamRowCall(klass.precision, klass.shape, lane, five.route, five.scheme,
+            row.cells = SeamRowCall(klass.precision, klass.shape, budget, five.route, five.scheme,
                                     five.pack, five.granularity, five.division);
             rows.push_back(std::move(row));
             continue;
@@ -5155,7 +5209,7 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
 
         row.marker = "    /* a choice, not a measurement: this run ranked no cell of this\n"
                      "       class, so the row states the five above at this lane's budget */\\\n";
-        row.cells = SeamRowCall(klass.precision, klass.shape, lane, five.route, five.scheme,
+        row.cells = SeamRowCall(klass.precision, klass.shape, budget, five.route, five.scheme,
                                 five.pack, five.granularity, five.division);
         rows.push_back(std::move(row));
     }
@@ -5351,10 +5405,14 @@ std::string OptionProbeDefaultHowName(OptionProbeDefaultHow how) {
     case OptionProbeDefaultHow::kChosenAmongEquals:
         return "chosen-among-equals";
     case OptionProbeDefaultHow::kNone:
-        break;
+        return "none";
     }
 
-    return "none";
+    // A value no arm above names: a member a newer header carries and this revision has not been
+    // taught, or a value cast in from outside the enumeration. "none" is one member's own name,
+    // so it is not the answer here: a reader of it cannot tell that value from the member that
+    // means no default was named.
+    return "(not a way this revision names)";
 }
 
 std::string FormatOptionProbe(const OptionProbeReport& report) {
@@ -6308,13 +6366,23 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
                          report.recommended.c_str(),
                          doublesClass != nullptr ? doublesClass->leaderNsPerArgument : 0.0);
             text += "                about the two is that it could not tell them apart\n";
-        } else
+        } else if (report.defaultHow == OptionProbeDefaultHow::kRefined ||
+                   report.defaultHow == OptionProbeDefaultHow::kVote ||
+                   report.defaultHow == OptionProbeDefaultHow::kChosenAmongEquals)
         {
             text += Text("    reached by: %s. This is not a measured ordering: the options the "
                          "class left tied\n",
                          HowText(report.defaultHow));
             text += "                were re-run alone and the run above says which of them this "
                     "is\n";
+        } else
+        {
+            // The sentence above states a tie and a re-run of it. A report whose own field is
+            // none of the ways this revision names has neither, and printing it here would state
+            // a run that did not happen.
+            text += "    reached by: (not a way this revision names) — this report's own field is "
+                    "not one of\n";
+            text += "                the enumeration's members, so there is no way to state here\n";
         }
     }
 

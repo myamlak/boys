@@ -538,23 +538,35 @@ namespace detail {
 /// the half lane that no row names compiles the half budget, which is the axis
 /// those lanes' degrees are cut for and their figures stated at.
 ///
-/// \param lane the precision lane
+/// The lane is a template argument rather than a parameter, so a value outside
+/// the enumeration has no budget to be answered with: there is no lane here to
+/// answer for, and a caller that named one - a replacement seam spelling a
+/// precision its own list does not carry - is refused where it is named instead
+/// of being handed the float lane's budget, which is a member this function
+/// does carry and a choice that caller did not make. The assertion states the
+/// lanes the library carries a budget for, so an enumerator added to \c
+/// Precision and given no budget here is a build error rather than a class
+/// answered with another lane's.
+///
+/// \tparam kLane the precision lane
 /// \returns the budget a class of that lane falls back to
-constexpr BoysBudget LaneFallbackBudget(Precision lane) noexcept
+template <Precision kLane>
+constexpr BoysBudget LaneFallbackBudget() noexcept
 {
-    switch (lane)
+    static_assert(kLane == Precision::kFp64 || kLane == Precision::kFp32 ||
+                      kLane == Precision::kFp16 || kLane == Precision::kFp32Device ||
+                      kLane == Precision::kFp64Device || kLane == Precision::kFp16Device,
+                  "no budget: the library carries one for each enumerator of Precision and for "
+                  "none besides");
+
+    if constexpr (kLane == Precision::kFp16 || kLane == Precision::kFp16Device)
     {
-    case Precision::kFp64:
-    case Precision::kFp32:
-    case Precision::kFp32Device:
-    case Precision::kFp64Device:
-        return BoysBudget::kFloat;
-    case Precision::kFp16:
-    case Precision::kFp16Device:
         return BoysBudget::kFp16;
     }
-
-    return BoysBudget::kFloat; // no enumerator reaches this
+    else
+    {
+        return BoysBudget::kFloat;
+    }
 }
 
 /// One row of the default-policy table, resolved: the policy a (device,
@@ -604,7 +616,7 @@ BOYS_BUILD_DEFAULT_ROWS(BOYS_DEFAULT_POLICY_ROW)
 // are written out by this list rather than looked up, and a build that writes its own table and
 // omits a class still fails to compile for it. The distinction is what the row *is*: a written row
 // whose cells come from the build's own five names, not an absent row answered by something else.
-#define BOYS_DEFAULT_POLICY_BUILD_ROW(kPrecision, kShape)                                           BOYS_DEFAULT_POLICY_ROW(kHost, kPrecision, kShape, kDefaultFitRoute, kDefaultEvalScheme,                                LaneFallbackBudget(Precision::kPrecision), kDefaultPackAxis,                                               kDefaultFitGranularity, kDefaultDivisionForm)
+#define BOYS_DEFAULT_POLICY_BUILD_ROW(kPrecision, kShape)                                           BOYS_DEFAULT_POLICY_ROW(kHost, kPrecision, kShape, kDefaultFitRoute, kDefaultEvalScheme,                                LaneFallbackBudget<Precision::kPrecision>(), kDefaultPackAxis,                                               kDefaultFitGranularity, kDefaultDivisionForm)
 #define BOYS_DEFAULT_POLICY_BUILD_ROWS(X)                                                           X(kFp64, kSingle) X(kFp64, kFixedN) X(kFp64, kAllN) X(kFp64, kAllNAtOrders)                     X(kFp64, kAllOrders) X(kFp32, kSingle) X(kFp32, kFixedN) X(kFp32, kAllN)                        X(kFp32, kAllNAtOrders) X(kFp32, kAllOrders) X(kFp16, kSingle) X(kFp16, kFixedN)                X(kFp16, kAllN) X(kFp16, kAllNAtOrders) X(kFp16, kAllOrders)
 BOYS_DEFAULT_POLICY_BUILD_ROWS(BOYS_DEFAULT_POLICY_BUILD_ROW)
 #undef BOYS_DEFAULT_POLICY_BUILD_ROWS

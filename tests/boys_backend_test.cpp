@@ -332,7 +332,7 @@ constexpr bool ClassIsTheShippedCombination() noexcept
 
         return Policy::kRoute == boys::FitRoute::kChebyshev &&
                Policy::kScheme == boys::EvalScheme::kHorner &&
-               Policy::kBudget == boys::detail::LaneFallbackBudget(kLane) &&
+               Policy::kBudget == boys::detail::LaneFallbackBudget<kLane>() &&
                Policy::kPack == boys::PackAxis::kArguments &&
                Policy::kGranularity == boys::FitGranularity::kNarrow &&
                Policy::kDivision == boys::DivisionForm::kRefinedReciprocal;

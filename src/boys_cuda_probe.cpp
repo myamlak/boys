@@ -724,10 +724,14 @@ std::string AxisName(const DeviceOptionInfo& option) {
         case DeviceOptionAxis::kRoute:
             break;
         default:
-            // An axis named by a newer header: the row is still printed, under
-            // the enumerator it was written with rather than under a member of
-            // some other axis.
-            text = Text("axis:%d ", static_cast<int>(option.axis));
+            // An axis no arm above names: a value cast in from outside the enumeration, or a
+            // member a newer header carries and this revision has not been taught. The row is
+            // still printed, because a row the library carries that this probe cannot place is
+            // a fact about the space; the cell refuses to write the enumerator down as a
+            // member, because a reader can look a member of an axis up and there is nothing
+            // for this value to be looked up in. It is not printed as a number beside the
+            // named members for that reason: a number in this column reads as one of them.
+            text = "axis:(not one this probe names) ";
             break;
     }
 
@@ -5175,7 +5179,15 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
                         "answer, and not the winner of a\n    comparison\n";
                 return;
             default:
-                break;
+                // A value no case above names: a member a newer header carries and this revision
+                // has not been taught, or a value cast in from outside the enumeration. The lines
+                // below state a stage, the entries it re-ran and how its vote came out, and a
+                // ranking whose way of being reached is not one the enumeration names has none of
+                // those to state.
+                text += "\n  reached by: (not a way this revision names) — this shape's ranking "
+                        "carries a value\n    outside the enumeration, so how its entry was "
+                        "reached cannot be stated here\n";
+                return;
         }
 
         const DeviceProbeRefinement& stage = ranking.refinement;
