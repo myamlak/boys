@@ -49,12 +49,16 @@ FORMAT = "boys.option-matrix/1"
 # against CMakeLists.txt below, so the name cannot go stale unnoticed.
 ROUTE_OPTION = "BOYS_MULADD_SEPARATE"
 
-# The hosts the option matrix configures on: the x86_64 legs this repository
-# already runs, where the AVX2 tier is present and the gate's lane book is
-# therefore judged at the cell count it is certified at. Each is checked
-# against ci.yml's own legs - a host no leg builds on is a hard error. The
-# compiler is named on the configure line rather than through CC/CXX, an empty
-# CC in the environment being a different thing from no CC at all.
+# The hosts the option matrix configures on: the legs this repository already
+# runs, where the accuracy gate is judged as that leg's architecture delivers
+# it. Each is checked against ci.yml's own legs - a host no leg builds on is a
+# hard error - and each carries the tier its leg asserts, which is what the
+# configuration passes to BOYS_EXPECT_AVX2: 1 where the AVX2 tier is present and
+# the gate's lane book is judged at the cell count it is certified at, 0 on the
+# arm64 legs, where the tier is absent by construction and the gate names the
+# rows it does not carry and fails nothing. The compiler is named on the
+# configure line rather than through CC/CXX, an empty CC in the environment
+# being a different thing from no CC at all.
 #
 # `contract_guard` keeps a separate-route configuration from being vacuous: the
 # route in force is MEASURED, not declared -- backend.hpp's RouteInForce()
@@ -63,13 +67,16 @@ ROUTE_OPTION = "BOYS_MULADD_SEPARATE"
 # would deliver fused arithmetic and the entry would judge nothing. Every
 # configuration that selects the separate route carries its host's guard; MSVC
 # needs none, contracting only under /fp:fast or an explicit /fp:contract while
-# this tree builds at /fp:precise.
+# this tree builds at /fp:precise. aarch64 needs one for the reason it is
+# arm64's: the fused instruction is in its baseline and gcc contracts by
+# default there, so the arm64 separate cell without -ffp-contract=off would
+# measure the fused arithmetic twice and assert nothing.
 HOSTS = (
     {"member": "linux-gcc", "runner": "ubuntu-latest", "toolchain": "gcc",
-     "compiler": "-DCMAKE_CXX_COMPILER=g++", "generator": "",
+     "compiler": "-DCMAKE_CXX_COMPILER=g++", "generator": "", "expect_avx2": 1,
      "contract_guard": "-ffp-contract=off"},
     {"member": "linux-clang", "runner": "ubuntu-latest", "toolchain": "clang",
-     "compiler": "-DCMAKE_CXX_COMPILER=clang++", "generator": "",
+     "compiler": "-DCMAKE_CXX_COMPILER=clang++", "generator": "", "expect_avx2": 1,
      "contract_guard": "-ffp-contract=off"},
     # MSVC has no guard here because it needs none, and that was measured
     # rather than assumed. Contraction on this toolchain is OPT-IN: /fp:precise
@@ -85,7 +92,18 @@ HOSTS = (
     # runs it verbosely, so a runner whose compiler contracts anyway says so in
     # its log rather than passing quietly.
     {"member": "windows-msvc", "runner": "windows-latest", "toolchain": "msvc",
-     "compiler": "", "generator": "-G Ninja", "contract_guard": ""},
+     "compiler": "", "generator": "-G Ninja", "expect_avx2": 1,
+     "contract_guard": ""},
+    # The arm64 leg: the host whose separate cell the guard is load-bearing on
+    # for a reason the x86 hosts do not have. aarch64 has the fused step in its
+    # baseline and gcc contracts a bare product-plus-add by default there, so
+    # without -ffp-contract=off this cell would measure the fused arithmetic
+    # under the separate name. The tier is 0 because the AVX2 intrinsics do not
+    # exist there - the dispatch assertion expects that absence, and the gate
+    # names the lane book this host does not carry.
+    {"member": "linux-arm64", "runner": "ubuntu-24.04-arm", "toolchain": "gcc",
+     "compiler": "-DCMAKE_CXX_COMPILER=g++", "generator": "", "expect_avx2": 0,
+     "contract_guard": "-ffp-contract=off"},
 )
 
 # The axes, and where the members of each are declared. `build` axes are
@@ -93,7 +111,7 @@ HOSTS = (
 # judged by the accuracy gate in the same run.
 AXES = (
     {"key": "device", "kind": "build",
-     "source": "the x86_64 legs of .github/workflows/ci.yml"},
+     "source": "the legs of .github/workflows/ci.yml"},
     {"key": "route", "kind": "build",
      "source": "backend.hpp: MulAddRoute"},
     {"key": "precision", "kind": "carried",
@@ -218,20 +236,31 @@ def ci_legs():
 def host_members():
     """The device axis's members, each checked against the workflow.
 
-    A host is legal here only if the workflow builds a leg on its runner whose
-    dispatch assertion expects the AVX2 tier present: the lane book's cell count
-    is a property of that tier.
+    A host is legal here only if the workflow builds a leg on its runner that
+    declares the tier its dispatch assertion expects, and declares the tier this
+    table carries for that host: the configuration passes that tier to
+    BOYS_EXPECT_AVX2, so a configuration that asserted the AVX2 tier present on
+    a runner whose own leg asserts it absent would fail against a dispatch
+    answer the leg had already measured, and one that asserted it absent where
+    the leg asserts it present would stop judging the tier the leg is there for.
     """
     legs = ci_legs()
     members = []
     for host in HOSTS:
-        found = [name for name, runner, avx2 in legs
-                 if runner == host["runner"] and avx2 and int(avx2) != 0]
+        found = [(name, avx2) for name, runner, avx2 in legs
+                 if runner == host["runner"] and avx2 is not None]
         if not found:
             raise SystemExit(
                 f"gen_option_matrix: no leg of ci.yml builds on "
-                f"{host['runner']} with the AVX2 tier present, so "
+                f"{host['runner']} and declares the AVX2 tier it expects, so "
                 f"{host['member']} is not a host this matrix may configure on")
+        asserted = sorted({int(avx2) for _, avx2 in found})
+        if host["expect_avx2"] not in asserted:
+            raise SystemExit(
+                f"gen_option_matrix: the legs of ci.yml on {host['runner']} "
+                f"assert the AVX2 tier as {asserted}, and {host['member']} "
+                f"carries {host['expect_avx2']} - the configuration would tell "
+                "a build to expect a tier its own leg does not")
         members.append(host["member"])
     return members
 
@@ -267,7 +296,7 @@ def configurations(members):
     out = []
     for host in HOSTS:
         for route in members["route"]:
-            cmake = ["-DBOYS_EXPECT_AVX2=1",
+            cmake = [f"-DBOYS_EXPECT_AVX2={host['expect_avx2']}",
                      f"-D{route_option_name}=" + ("ON" if route == "separate" else "OFF")]
             if host["compiler"]:
                 cmake.append(host["compiler"])
@@ -280,7 +309,7 @@ def configurations(members):
                 "toolchain": host["toolchain"],
                 "generator": host["generator"],
                 "build_jobs": "" if host["toolchain"] == "msvc" else "-j 4",
-                "expect_avx2": 1,
+                "expect_avx2": host["expect_avx2"],
                 "cmake_args": " ".join(cmake),
                 # The members this configuration names, per axis. A build axis
                 # names one member; a carried axis names every member in force,

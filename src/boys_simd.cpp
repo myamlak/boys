@@ -229,7 +229,7 @@ typename B::Packed RegionBClenshaw(const typename B::Value* c,
 
 // 4-wide split Clenshaw for one piece; even deg >= 4 only.
 inline __m256d Clenshaw4SplitDeg(const detail::OrderPiece& piece, int deg, __m256d xv) noexcept {
-    return RegionAClenshaw<backend::Avx2Fp64>(detail::kCoeffs.data(), piece, deg, xv);
+    return RegionAClenshaw<backend::Avx2Fp64<>>(detail::kCoeffs.data(), piece, deg, xv);
 }
 
 // The m = 1 entry: the piece's full degree.
@@ -239,7 +239,7 @@ inline __m256d Clenshaw4Split(const detail::OrderPiece& piece, __m256d xv) noexc
 
 // The m = 1 entry: the fit's full degree, known at compile time.
 inline __m256d ClenshawB4(__m256d xv) noexcept {
-    return RegionBClenshaw<backend::Avx2Fp64, detail::kBDeg>(detail::kBcoeffs.data(), 0, xv);
+    return RegionBClenshaw<backend::Avx2Fp64<>, detail::kBDeg>(detail::kBcoeffs.data(), 0, xv);
 }
 
 // 4-wide region-B F0 seed at a runtime degree, for the relaxed RegionB loop
@@ -249,7 +249,7 @@ inline __m256d ClenshawB4(__m256d xv) noexcept {
 // that caller sits in the discarded arm of an `if constexpr` and GCC/Clang see
 // a defined-but-unused internal function; a relaxed instantiation would use it.
 [[maybe_unused]] inline __m256d ClenshawB4Deg(int deg, __m256d xv) noexcept {
-    return RegionBClenshaw<backend::Avx2Fp64, -1>(detail::kBcoeffs.data(), deg, xv);
+    return RegionBClenshaw<backend::Avx2Fp64<>, -1>(detail::kBcoeffs.data(), deg, xv);
 }
 
 } // namespace
@@ -405,7 +405,7 @@ bool DetectF16c() noexcept {
 inline __m256 Clenshaw8SplitF32Deg(const detail::f32::OrderPiece& piece,
                                    int deg,
                                    __m256 xv) noexcept {
-    return RegionAClenshaw<backend::Avx2Fp32>(detail::f32::kCoeffs.data(), piece, deg, xv);
+    return RegionAClenshaw<backend::Avx2Fp32<>>(detail::f32::kCoeffs.data(), piece, deg, xv);
 }
 
 // The m = 1 entry: the piece's full degree.
@@ -415,13 +415,13 @@ inline __m256 Clenshaw8SplitF32(const detail::f32::OrderPiece& piece, __m256 xv)
 
 // The m = 1 entry: the fit's full degree, known at compile time.
 inline __m256 ClenshawB8F32(__m256 xv) noexcept {
-    return RegionBClenshaw<backend::Avx2Fp32, detail::f32::kBDeg>(
+    return RegionBClenshaw<backend::Avx2Fp32<>, detail::f32::kBDeg>(
         detail::f32::kBcoeffs.data(), 0, xv);
 }
 
 // The relaxed entry: the caller's degree; see ClenshawB4Deg.
 [[maybe_unused]] inline __m256 ClenshawB8F32Deg(int deg, __m256 xv) noexcept {
-    return RegionBClenshaw<backend::Avx2Fp32, -1>(
+    return RegionBClenshaw<backend::Avx2Fp32<>, -1>(
         detail::f32::kBcoeffs.data(), deg, xv);
 }
 
@@ -883,6 +883,14 @@ namespace boys::detail {
 // contraction answer different from the scalar one, so the pair is measured
 // here; it is listed only where the tier is both compiled in and available at
 // run time, because the probe executes the instructions it measures.
+//
+// The route reported is the instantiation's own, and here it is the selection
+// unfiltered by the contraction question: the packed steps name two
+// instructions where the scalar separate route names a bare expression, so a
+// build that contracts is still a build whose packed lanes make the two
+// roundings the separate route promises. Filtering this through the
+// contraction answer, as the scalar pair does through RouteInForce(), would
+// report an arithmetic these kernels do not run.
 namespace boys::backend {
 namespace detail {
 
@@ -893,8 +901,8 @@ std::size_t AppendPackedBackends(BackendInfo* out) noexcept {
         return 0;
     }
 
-    out[0] = BackendInfo{Avx2Fp64::kName, Avx2Fp64::Contracts(), Avx2Fp64::kRoute};
-    out[1] = BackendInfo{Avx2Fp32::kName, Avx2Fp32::Contracts(), Avx2Fp32::kRoute};
+    out[0] = BackendInfo{Avx2Fp64<>::kName, Avx2Fp64<>::Contracts(), Avx2Fp64<>::kRoute};
+    out[1] = BackendInfo{Avx2Fp32<>::kName, Avx2Fp32<>::Contracts(), Avx2Fp32<>::kRoute};
     return 2;
 #else
     (void)out;
