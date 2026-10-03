@@ -255,7 +255,14 @@ BarShortfall PolicyAgainstReference(const std::vector<ReferenceCell>& cells, Bar
 } // namespace
 
 // The axis's own correctness claim: with the certified scheme the lane's value
-// for an order is the across-arguments lane's for that order, bit for bit.
+// for an order is the across-arguments lane's for that order.
+//
+// At the fused route the two bodies run one arithmetic and the claim is bit for
+// bit. At the separate route they are two arithmetics: this lane spells its own
+// `vfmadd` and is one-rounding whatever the build says, while the across-arguments
+// lane now carries the route the build selected. The claim there is how far the
+// two part, which is a rounding's — each body is inside the region's budget, so
+// the two are within twice it — and the count and the parting print either way.
 TEST(BoysAcrossOrders, SplitClenshawIsTheAcrossArgumentsLaneBitForBit) {
     if (!VectorTier())
     {
@@ -268,6 +275,7 @@ TEST(BoysAcrossOrders, SplitClenshawIsTheAcrossArgumentsLaneBitForBit) {
     std::vector<double> duplicate(4);
     std::size_t compared = 0;
     std::size_t differing = 0;
+    double worst = 0.0;
 
     for (double x : grid)
     {
@@ -292,17 +300,29 @@ TEST(BoysAcrossOrders, SplitClenshawIsTheAcrossArgumentsLaneBitForBit) {
                                 lanes[0]);
                 }
 
+                const double gap = std::abs(ours[static_cast<std::size_t>(l)] - lanes[0]);
+
+                worst = gap > worst ? gap : worst;
                 ++differing;
             }
         }
     }
 
     std::printf("\n  across-orders split Clenshaw against the across-arguments lane: "
-                "%zu of %zu order values bit-identical over %zu arguments\n",
+                "%zu of %zu order values bit-identical over %zu arguments, worst parting "
+                "%.3e\n",
                 compared - differing,
                 compared,
-                grid.size());
+                grid.size(),
+                worst);
+
+#if defined(BOYS_MULADD_SEPARATE) && BOYS_MULADD_SEPARATE
+    EXPECT_LE(worst, 2.0 * boys::detail::RegionABudget(boys::detail::BoysRole::kDoubleSingle))
+        << "the two bodies have parted further than two roundings of one scheme: worst "
+        << worst << " over " << compared << " values";
+#else
     EXPECT_EQ(differing, 0u) << "the two bodies have parted";
+#endif
 }
 
 // The two coefficient fetches are the same lane: a difference between them is a
