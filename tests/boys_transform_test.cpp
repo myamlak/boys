@@ -1,11 +1,8 @@
-// The region-A transform lane (boys/boys_transform.hpp): F_0..F_nmax for a
-// batch of arguments in one band, by one matrix product in the named mode's
-// arithmetic.
+// The region-A transform lane (boys/boys_transform.hpp): F_0..F_nmax for a batch
+// of arguments in one band, by one matrix product in the named mode's arithmetic.
 //
-// The suite measures every mode's delivered error against the committed
-// 45-digit reference grid and holds it to that mode's asserted bound (the
-// public header's table). It reports each mode's worst alongside the bound, so
-// a change that eats the margin is visible rather than silent.
+// Every mode's delivered error is held to the bound the public header's table
+// asserts for it, and reported beside that bound.
 
 #include "boys/boys.hpp"
 #include "boys/boys_transform.hpp"
@@ -67,7 +64,7 @@ std::vector<ReferenceRow> LoadReference() {
 
 const std::vector<ReferenceRow> gReference = LoadReference();
 
-// The reference arguments, ascending and distinct, and the band each is in.
+// The reference arguments in one band, ascending and distinct.
 std::vector<double> BandArguments(boys::RegionABand band) {
     std::vector<double> xs;
 
@@ -100,7 +97,6 @@ double Reference(int n, double x) {
     return 0.0;
 }
 
-// The worst delivered error of one mode over one band, and where it sits.
 struct Worst {
     double error = 0.0;
     int order = 0;
@@ -150,26 +146,18 @@ std::string Report(const char* mode, boys::RegionABand band, const Worst& worst,
     return ss.str();
 }
 
-// The asserted bounds, from the public header's table. kFp64's is the double
-// single lane's region-A budget; the two split modes' is their fp32
-// accumulator's floor with a margin over the worst a dense sweep of the lower
-// band finds - they are not the float lane's 1.5e-7, which they miss by 1.3x at
-// m = 1 and hold from m = 2, when that lane's own budget is 3e-7.
+// The asserted bounds, from the public header's table: the double single lane's
+// region-A budget and the split modes' fp32 accumulator floor.
 constexpr double kFp64Bound = 1e-15;
 constexpr double kSplitBound = 2.5e-7;
-// The single-pass narrow modes' floors, from the same table. They are three
-// orders looser than the split modes' and the header says so: one product per
-// degree at an 11- or 8-bit operand is what a card computes without a split,
-// and what the split exists to avoid.
+// The single-pass narrow modes' floors, from the same table: one product per
+// degree at an 11- or 8-bit operand, where the split modes carry three or six.
 constexpr double kTf32Bound = 5e-4;
 constexpr double kBf16Bound = 3e-3;
 constexpr double kFp16Bound = 5e-4;
 
 } // namespace
 
-// The modes' delivered error, held to their asserted bounds. The margin is the
-// point of the report: it is what a later change has to eat before it shows up
-// as a failure.
 TEST(BoysTransform, DeliveredErrorPerMode) {
     for (boys::RegionABand band : {boys::RegionABand::kA1, boys::RegionABand::kA2})
     {
@@ -187,11 +175,6 @@ TEST(BoysTransform, DeliveredErrorPerMode) {
     }
 }
 
-// The single-pass narrow modes, held to their own floors in the same sweep. The
-// floors are three orders looser than the split modes' and are what the modes
-// cost: one product per degree instead of three or six. The mode is offered at
-// that error, not at the split's, and the header's table says which is which -
-// so a row here that read like the split modes' would be the failure.
 TEST(BoysTransform, DeliveredErrorPerSinglePassMode) {
     for (boys::RegionABand band : {boys::RegionABand::kA1, boys::RegionABand::kA2})
     {
@@ -209,12 +192,8 @@ TEST(BoysTransform, DeliveredErrorPerSinglePassMode) {
     }
 }
 
-// tf32 and fp16 carry the same significand, and the band's operands are all
-// well inside binary16's exponent range, so the two modes are the same
-// arithmetic here and must return the same bits. The header claims the
-// coincidence in prose; this is the artifact behind it. A difference means
-// either the operand rounding or the accumulate format stopped being the same,
-// and either would make one of the two published floors wrong.
+// tf32 and fp16 carry the same significand, and the band's operands sit well
+// inside binary16's exponent range, so the two modes return the same bits here.
 TEST(BoysTransform, Tf32AndFp16CoincideOnRegionA) {
     for (boys::RegionABand band : {boys::RegionABand::kA1, boys::RegionABand::kA2})
     {
@@ -235,12 +214,7 @@ TEST(BoysTransform, Tf32AndFp16CoincideOnRegionA) {
 }
 
 // The mode report a consumer reads, held to the header's table and to the
-// enumeration: one row per enumerator, in order, with the delivered figure and
-// the floor the header publishes, and the certification column saying which
-// rows a card is held to. The single-pass modes and the split modes are
-// uncertified - their bounds are arithmetic on a model of an fp32 accumulator -
-// and kFp64 alone is certified, because an fp64 accumulator is an ordinary IEEE
-// double sum and that is the arithmetic the row's measurement ran.
+// enumeration: one row per enumerator, in order, with figure and published floor.
 TEST(BoysTransform, ModeReportMatchesTheHeaderTable) {
     const std::span<const boys::ProductModeInfo> rows = boys::BoysProductModes();
 
@@ -314,9 +288,7 @@ TEST(BoysTransform, ModeReportMatchesTheHeaderTable) {
         EXPECT_NE(rows[i].model, nullptr);
     }
 
-    // The rows are the enumeration's order and one per enumerator, so a mode
-    // added to the enumeration without a row is caught here rather than by a
-    // consumer finding it missing.
+    // One row per enumerator, in order: a mode added without a row fails here.
     EXPECT_EQ(static_cast<int>(rows.back().mode) + 1, 6);
     EXPECT_EQ(static_cast<int>(boys::ProductMode::kFp16) + 1, 6);
 
@@ -335,10 +307,8 @@ TEST(BoysTransform, ModeReportMatchesTheHeaderTable) {
     EXPECT_EQ(certified, 1);
 }
 
-// The accumulate format is the wall, not the operand: the split modes reuse the
-// double lane's table at fp32 precision, and no split reaches the double budget
-// however many parts it carries. A split mode that quietly started reaching
-// 1e-15 would be a different claim, not a better number.
+// The accumulate format is the wall, not the operand: no number of split parts
+// reaches the double budget.
 TEST(BoysTransform, SplitModesDoNotReachTheDoubleBudget) {    const Worst tf32 = SweepBand<boys::ProductMode::kTf32x3>(boys::RegionABand::kA1);
     const Worst bf16 = SweepBand<boys::ProductMode::kBf16x6>(boys::RegionABand::kA1);
 
@@ -346,10 +316,8 @@ TEST(BoysTransform, SplitModesDoNotReachTheDoubleBudget) {    const Worst tf32 =
     EXPECT_GT(bf16.error, 1e-9);
 }
 
-// The fp64 mode is the double lane's own arithmetic in the product's shape, so
-// its delivered error is the coefficient table's truncation and nothing
-// measurable more. Held against the shipped per-order fit at the same argument:
-// the two schemes differ, and neither may leave the lane's budget.
+// The fp64 mode is the double lane's own arithmetic in the product's shape, held
+// against the shipped per-order fit at the same argument: two schemes, one budget.
 TEST(BoysTransform, Fp64MatchesTheShippedFitWithinTheBudget) {
     constexpr int kNmax = boys::kMaxBoysOrder;
     const std::vector<double> xs = BandArguments(boys::RegionABand::kA1);
@@ -368,8 +336,7 @@ TEST(BoysTransform, Fp64MatchesTheShippedFitWithinTheBudget) {
     }
 
     std::cout << "kFp64 vs BoysSingle, region A: worst " << worst << std::endl;
-    // Two different schemes, each inside its own bound; the difference is
-    // bounded by their sum and is not expected to be zero.
+    // Two schemes each inside its own bound: the difference is bounded by their sum, not zero.
     EXPECT_LE(worst, 3.1e-14);
 }
 
@@ -398,9 +365,7 @@ TEST(BoysTransform, LayoutIsOrderMajorPlanes) {
 // The result does not depend on the batch tile: the same arguments in one call
 // and split across calls that straddle the tile boundary agree bit for bit.
 TEST(BoysTransform, ResultIsIndependentOfBatching) {
-    // A pitch inside the upper band: the tiling check is about the call
-    // pattern, not about accuracy, so a synthetic sweep is the right argument
-    // set - it is denser than the reference grid.
+    // A synthetic sweep inside the upper band: the check is the call pattern, not accuracy.
     std::vector<double> xs;
     for (int i = 0; i < 100; ++i)
     {
@@ -451,13 +416,12 @@ TEST(BoysTransform, DegenerateAndBoundaryCases) {
                                                        out.data(), 1);
     EXPECT_NEAR(out[0], Reference(0, xs[0]), 1e-15);
 
-    // The join between the bands: kRegionA1Edge is the upper band's first
-    // argument, not the lower band's last.
+    // The bands are half-open: kRegionA1Edge is the upper band's first argument,
+    // not the lower band's last.
     EXPECT_LT(boys::kRegionA1Edge, boys::kRegionAEnd);
 }
 
-// The mode set: the three named modes are the ones that carry a usable bound,
-// and the enumerators are distinct - a future mode is added here beside them.
+// The three named modes carry a usable bound and their enumerators are distinct.
 TEST(BoysTransform, ModeSetIsTheUsableOne) {
     EXPECT_NE(static_cast<int>(boys::ProductMode::kFp64),
               static_cast<int>(boys::ProductMode::kTf32x3));
@@ -467,12 +431,9 @@ TEST(BoysTransform, ModeSetIsTheUsableOne) {
               static_cast<int>(boys::ProductMode::kBf16x6));
 }
 
-// The two split modes are worst where the band's own polynomial oscillates
-// fastest - the left end of the lower band - and the reference grid's samples
-// understate them there by about 1.5 times. This holds them to their bound on a
-// sweep dense enough to find that, against the shipped per-order fit, whose own
-// error at these orders and arguments is 1e-16 and so does not enter the
-// figure.
+// The split modes are worst at the left end of the lower band, where the band's
+// polynomial oscillates fastest and the reference grid's samples understate them,
+// so this sweeps densely against the shipped per-order fit (own error 1e-16 here).
 TEST(BoysTransform, SplitModesAreInsideTheirBoundOnADenseSweep) {
     std::vector<double> xs;
     // u stays below 1: the band is half-open, so its right end belongs to the
@@ -518,38 +479,4 @@ TEST(BoysTransform, SplitModesAreInsideTheirBoundOnADenseSweep) {
 
     EXPECT_LE(sweep(boys::ProductMode::kTf32x3), kSplitBound);
     EXPECT_LE(sweep(boys::ProductMode::kBf16x6), kSplitBound);
-}
-
-// The multiplier's path: the band's fits truncate to one width every order in
-// the band admits, and the relaxed product stays inside the same bound. For
-// kFp64 the multiplier is live from m = 2 upward, so this is where a relaxed
-// width can be seen at all; the two split modes' floors are four orders above
-// the fit term and no documented multiplier moves them.
-TEST(BoysTransform, RelaxedMultiplierStaysInsideTheBound) {
-    constexpr double kMultiplier = 1024.0;
-    const std::vector<double> xs = BandArguments(boys::RegionABand::kA1);
-    constexpr int kNmax = boys::kMaxBoysOrder;
-
-    std::vector<double> out(xs.size() * (kNmax + 1));
-    boys::BoysRegionAProduct<boys::ProductMode::kFp64, kMultiplier>(
-        boys::RegionABand::kA1, kNmax, xs.data(), out.data(), xs.size());
-
-    double worst = 0.0;
-
-    for (std::size_t i = 0; i < xs.size(); ++i)
-    {
-        for (int n = 0; n <= kNmax; ++n)
-        {
-            worst = std::max(worst, std::abs(out[n * xs.size() + i] - Reference(n, xs[i])));
-        }
-    }
-
-    std::cout << "kFp64 at m = " << kMultiplier << ": worst " << worst << " (bound "
-              << kMultiplier * kFp64Bound << ")" << std::endl;
-    EXPECT_LE(worst, kMultiplier * kFp64Bound);
-
-    // The relaxed width is a compile-time fact of the instantiation, not a
-    // runtime switch: the two instantiations are different code.
-    EXPECT_LT(boys::detail::BandDegreeAtMultiplier<0>(kMultiplier),
-              boys::detail::BandDegreeAtMultiplier<0>(1.0));
 }

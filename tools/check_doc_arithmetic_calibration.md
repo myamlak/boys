@@ -9,6 +9,11 @@ The sentences are left wrong on purpose, and are deliberately not corrected
 here: a calibration corpus that is right is a corpus that calibrates nothing.
 The prose the check runs on in this tree carries none of these shapes.
 
+Two of the sections near the end are right on purpose. They pin a *parse*
+rather than a defect - a spelled number that is a quantity, and a margin whose
+ratio to the bound is printed - and they are here so that a later tightening of
+the rules cannot quietly stop reading them.
+
 ## A fraction, two values, one system size
 
 For the 586-basis-function case the screened set is 4.59% of the shell
@@ -48,3 +53,41 @@ The lane is bounded by m·1e-7 plus half of the last representable digit of the
 result. The worst case sits at 0.9999 of the bound — a margin of thousandths of
 a per cent, not a per cent. At that distance, half of one representable digit of
 the result is 99% of the whole bound.
+
+## A spelled number that is prose and not a quantity
+
+The three rows came out within 0.9% of one another, against the 5.6 to 7.4
+points one of them moves by from one run to the next, and two of these axes
+have been measured while two have not.
+
+## A spelled number that is a quantity
+
+The measured worst cell is 4.243 of those digits against the half-ULP the other
+lane budgets, which is 8.5 times its representation allowance.
+
+## A ratio stated between two named lanes
+
+It retires 3.06 times fewer instructions than the loop it replaces, and 3.13
+times fewer retired slots than the float lane's default entry, which serves all
+33 orders from one seed fit.
+
+## Figures separated by thousands
+
+The packed variant retires 6,061,196,228 instructions against the loop's
+2,568,303,487, which is 2.36 times fewer.
+
+## A margin whose ratio to the bound is printed
+
+For the 16-bit format the worst case is 0.9993 of the bound, a margin of 0.07
+per cent.
+
+## A share of a bound the sentence names
+
+The two lanes parted by at most 4.04e-09 at the worst, which is 2.7% of the
+lane's bar.
+
+## A run of digits inside an identifier
+
+The table is regenerated from the digest 9f18e45f, which is 2 times the earlier
+key. The lane is documented for 32bit and 64bit builds, which is 2 times the
+count the earlier one covered.

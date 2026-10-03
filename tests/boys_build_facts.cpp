@@ -1,45 +1,22 @@
 // The build-fact probe: what this build is, one line per fact, in the stable
 // form docs/build-facts.md records and diffs.
 //
-// Every fact here is deterministic - a preprocessor fact, a compile-time
-// constant, a binary fact read out of the library's own object code, or an
-// operating-system report of the machine the process is on. There is no
-// timing in this program and there must not be: a duration taken on a shared
-// build machine is a distribution across ephemeral runners, not a fact, and
-// the decisions these facts feed do not need one. The two that decide the
-// arithmetic - whether a bare `a * b + c` in this build is a single rounding,
-// and whether the compiled library calls an out-of-line fma - are read, not
-// measured against a clock.
-//
-// Why a consumer should care: those two facts are what make one multiply-add
-// route faster than another, and they belong to the build rather than to the
-// source. A kernel whose fastest option is the fused route on one build can
-// have a different fastest option on another, because the same source is two
-// different arithmetics on a target that contracts and one that does not, and
-// because std::fma is an instruction on a target that has one and a call into
-// the runtime on a target that does not. docs/build-facts.md carries the
-// recorded answers per CI leg and says what each fact means.
-//
-// Modes:
 //   boys-build-facts [--leg NAME]               print this build's facts
 //   boys-build-facts [--leg NAME] --check <doc> print the facts, then compare
 //                                               them with the row <doc> records
-//                                               for this leg
 //
-// --leg names the leg this build belongs to (CI passes the job's own check
-// name, which is what docs/build-facts.md is keyed by, and what
-// .github/required-checks.txt already lists). Without it the probe derives a
-// name for a developer build that cannot be mistaken for a CI leg.
+// Every fact is deterministic - a preprocessor fact, a compile-time constant, a
+// binary fact read out of the library's own object code, or an operating-system
+// report of the machine. No timing, and there must not be: a duration taken on a
+// shared build machine is a distribution across ephemeral runners, not a fact.
 //
-// --check gates on a FACT and never on the runner's identity: the CPU model,
-// the logical processor count, the compiler version and the recording date are
-// tags, reported when they move and never failed, because a runner is
-// ephemeral and the same leg draws different hardware. A fact that moves is a
-// different build and fails the leg, which is the point of recording them.
+// --leg is the key the recorded table is keyed by; CI passes the job's own check
+// name. Without it the probe derives a name for a developer build that no CI leg
+// can be mistaken for.
 //
-// It is built as the boys-build-facts target by every CI leg that builds
-// anything (CMake option BOYS_BUILD_TESTS, ON for this tree as top level), so
-// the leg states its own build facts rather than being told them.
+// --check gates on a fact and never on the runner's identity: the CPU model, the
+// processor count, the compiler version and the recording date are tags, reported
+// when they move and never failed - a leg draws different hardware each run.
 
 #include <boys/boys.hpp>
 
@@ -56,19 +33,16 @@
 #include <utility>
 #include <vector>
 
-// CPUID exists only where the target has it, and that is a property of the
-// architecture rather than of the compiler: MSVC's <intrin.h> declares __cpuid
-// for x86 targets alone, so an arm64 build of this program that asked for it
-// would not compile - the one outcome this probe must never produce on a leg.
+// <intrin.h> declares __cpuid for x86 targets alone, so an arm64 build of this
+// program that asked for it would not compile.
 #if defined(_M_IX86) || defined(_M_X64)
 #include <intrin.h>
 #elif defined(__x86_64__) || defined(__i386__)
 #include <cpuid.h>
 #endif
 
-// What the build itself supplies at configure time: the artifact to inspect and
-// the tool that reads its symbol table. Both are optional - a build that
-// supplies neither reports the route as unestablished rather than guessing.
+// Supplied at configure time: the artifact to inspect and the tool that reads its symbol
+// table. Both optional - a build supplying neither reports the route as unestablished.
 #ifndef BOYS_FACTS_LIB
 #define BOYS_FACTS_LIB ""
 #endif
@@ -89,8 +63,7 @@ struct Fact {
     std::string value;
 };
 
-/// Collapses whitespace runs and trims, so a value is one line whatever the
-/// source's padding was (CPU brand strings arrive padded).
+/// Collapses whitespace runs and trims, so a value is one line (CPU brands arrive padded).
 std::string Trim(const std::string& text) {
     std::string out;
     bool pending = false;
@@ -132,8 +105,7 @@ bool ReadLine(std::istream& in, std::string& line) {
 
 #if defined(__linux__)
 /// The value of a `key<sep>value` line, trimmed, or empty when absent. Only the
-/// /proc reader below reads one, so a tree that has no /proc must not compile
-/// it: an unreferenced helper here is a warning, and this tree makes it an error.
+/// /proc reader calls it, and an unreferenced helper here is a build error.
 std::string ValueAfter(const std::string& line, char separator) {
     const std::size_t at = line.find(separator);
     if (at == std::string::npos)
@@ -147,11 +119,8 @@ std::string ValueAfter(const std::string& line, char separator) {
 // --- the CPU the process is running on --------------------------------------
 
 /// The value of an environment variable, trimmed, empty when it is not set.
-/// The MSVC branch is not stylistic: this tree promotes warnings to errors and
-/// MSVC deprecates getenv (C4996) in favour of the allocating form.
-///
-/// maybe_unused because only the platforms whose report needs it call it, and
-/// this tree promotes an unused function to a build failure.
+/// The MSVC branch is not stylistic - this tree promotes warnings to errors and MSVC
+/// deprecates getenv (C4996). maybe_unused: only some platforms call it.
 [[maybe_unused]] std::string Environment(const char* name) {
 #if defined(_MSC_VER)
     char* value = nullptr;
@@ -170,9 +139,7 @@ std::string ValueAfter(const std::string& line, char separator) {
 }
 
 /// The brand string of an x86 processor, from the CPUID leaves that carry it.
-/// Empty when the target has no CPUID or the leaves are absent, which is the
-/// answer every arm64 build gives and the reason the model falls back to what
-/// the operating system reports.
+/// Empty where the target has no CPUID, which is every arm64 build's answer.
 std::string X86BrandString() {
 #if defined(_M_IX86) || defined(_M_X64)
     int regs[4] = {0, 0, 0, 0};
@@ -211,24 +178,19 @@ std::string X86BrandString() {
 }
 
 /// A path in the working directory no two probe runs share. The suffix is this
-/// process's stack address: two probes running at once must not write the same
-/// file, and no clock reading is allowed in this program.
+/// process's stack address: no clock reading is allowed in this program.
 std::string ScratchPath(const char* prefix) {
     std::uintptr_t marker = 0;
     return std::string(prefix) +
            std::to_string(reinterpret_cast<std::uintptr_t>(&marker)) + ".tmp";
 }
 
-/// Runs `command` with its standard output redirected to `path`.
+/// Runs `command` with its standard output redirected to `path`; true when it exited zero.
 ///
-/// The Windows form is not decoration: cmd.exe strips the leading and the last
-/// quote character off the remainder of a `cmd /c` line when that remainder
-/// starts with a quote and carries more than two of them - the shape of any
-/// command whose tool and arguments both need quoting, such as a path under
-/// "C:\Program Files" - and the line then runs as a broken path. An explicit
-/// nested `cmd /c` with the whole line quoted is what survives it.
-///
-/// \returns whether the command exited zero
+/// The Windows form is not decoration: cmd.exe strips the first and last quote off a `cmd /c`
+/// line that starts with a quote and carries more than two, so a command whose tool and
+/// arguments both need quoting runs as a broken path. The nested `cmd /c` with the whole line
+/// quoted is what survives it.
 bool RunToFile(const std::string& command, const std::string& path) {
 #if defined(_WIN32)
     const std::string line = "cmd /c \"" + command + " > \"" + path + "\" 2>nul\"";
@@ -238,13 +200,9 @@ bool RunToFile(const std::string& command, const std::string& path) {
     return std::system(line.c_str()) == 0;
 }
 
-/// Runs a command with its standard output redirected to a temporary file and
-/// returns the first line it wrote. Empty on any failure, and it never throws:
-/// a fact this raises is reported as unestablished, which is the honest answer,
-/// rather than failing the leg for a reason that has nothing to do with boys.
-///
-/// maybe_unused: it is the path to a fact on the platforms that need a system
-/// query, and on the others there is none to raise.
+/// The first line a command wrote to its standard output, empty on any failure.
+/// It never throws: a fact this raises is reported as unestablished rather than
+/// failing the leg. maybe_unused: only some platforms need a system query.
 [[maybe_unused]] std::string FirstLineOfCommand(const std::string& command) {
     const std::string path = ScratchPath("boys-build-facts-out-");
     if (!RunToFile(command, path))
@@ -260,10 +218,8 @@ bool RunToFile(const std::string& command, const std::string& path) {
     return read ? Trim(line) : std::string{};
 }
 
-/// What the operating system reports as this machine's processor, and where
-/// that came from. A brand string is not available everywhere - an arm64 Linux
-/// kernel reports implementer and part numbers instead - so the source is a
-/// fact of its own and an unavailable model is reported as such.
+/// What the operating system reports as this machine's processor, and where that came from:
+/// a brand string is not available everywhere, and an unavailable model is reported as such.
 void AddCpuModel(std::vector<Fact>& facts) {
     std::string model = X86BrandString();
     if (!model.empty())
@@ -396,14 +352,10 @@ std::string Architecture() {
 #endif
 }
 
-/// The packed arithmetic the target's ISA provides, and its width in bits.
-/// This is the target the compiler was asked for, read off the macros the
-/// compiler defines for it, not the width this program happens to use: a build
-/// that names none has no packed arithmetic to target at all (width 0).
-///
-/// Two of the entries are the target's own baseline rather than a macro's
-/// presence: MSVC defines no __SSE2__ and no __ARM_NEON, and both x86-64 and
-/// arm64 require the packed set they are named for.
+/// The packed arithmetic the target's ISA provides, and its width in bits - the target the
+/// compiler was asked for, not the width this program uses. A build that names none has no
+/// packed arithmetic at all (width 0). Two entries are the target's own baseline rather than
+/// a macro's presence: MSVC defines neither __SSE2__ nor __ARM_NEON, and both require them.
 std::pair<std::string, unsigned> SimdTarget() {
 #if defined(__AVX512F__)
     return {"avx512", 512};
@@ -442,17 +394,10 @@ std::string Sanitizers() {
     return found.empty() ? "none" : found;
 }
 
-/// The name a developer build records under. CI supplies its own leg name, so
-/// this one is only ever reached where no leg was named, and it is spelled so
-/// that no CI leg can be mistaken for it.
-///
-/// The packed arithmetic the build targets is part of the name because it is
-/// part of what the row says: the same compiler and configuration asked for a
-/// different ISA is a different build, with a different answer to whether its
-/// arithmetic contracts, and two such builds must not record under one name.
-/// The sanitizers are there for the same reason: they are a property of the
-/// build, so a sanitized build and a plain one under one name would record over
-/// each other.
+/// The name a developer build records under, reached only where no leg was named, and
+/// spelled so that no CI leg can be mistaken for it. The target's packed arithmetic and
+/// the sanitizers are part of it, both being properties of the build: builds differing
+/// in either must not record over each other.
 std::string DerivedLegName() {
     std::string name = "local-" + OperatingSystem() + "-" + Architecture() +
                        "-" + SimdTarget().first + " " + CompilerId() + "-" +
@@ -467,12 +412,9 @@ std::string DerivedLegName() {
 
 // --- the library's own facts ------------------------------------------------
 
-/// Reads the library artifact's symbol table for a reference to an out-of-line
-/// fma. A binary fact, not a timing: when the compiler fuses a multiply-add
-/// into an instruction there is nothing left to call, and when it does not,
-/// the object carries an undefined reference to the runtime's fma.
-///
-/// \param facts where the route facts are appended
+/// Reads the library artifact's symbol table for a reference to an out-of-line fma.
+/// A binary fact, not a timing: a fused multiply-add leaves nothing to call, and one the
+/// compiler did not fuse leaves an undefined reference to the runtime's fma.
 void AddFmaRoute(std::vector<Fact>& facts) {
     const std::string tool = BOYS_FACTS_SYMBOL_TOOL;
     const std::string mode = BOYS_FACTS_SYMBOL_MODE;
@@ -520,19 +462,12 @@ void AddFmaRoute(std::vector<Fact>& facts) {
         return;
     }
 
-    // The undefined-symbol view differs per tool: msvc-dump marks the line
-    // UNDEF and names the symbol after a `|`, nm marks it `U` and objdump marks
-    // it `*UND*`. All three are read here as "does this object reference fma",
-    // so the parser looks for the marker and the name rather than a layout.
-    //
-    // The name arrives decorated, and every decoration is stripped here rather
-    // than one of them: Mach-O (and some COFF symbols) prefix an underscore, and
-    // a COFF object that reaches the runtime through an import library - the
-    // shape a Debug build of this tree produces, linking the debug CRT - names
-    // the thunk __imp_fma instead of the function. Read as written, that last
-    // one is not "fma" and a build that calls the runtime would be reported as
-    // one that does not, which is the one answer this fact must never give
-    // wrongly.
+    // The undefined-symbol view differs per tool: msvc-dump marks the line UNDEF and names the
+    // symbol after a `|`, nm marks it `U`, objdump `*UND*`; the parser looks for the marker and
+    // the name, not for a layout. Every decoration is stripped: Mach-O (and some COFF symbols)
+    // prefixes an underscore, and a COFF object reaching the runtime through an import library -
+    // the shape a Debug build produces - names the thunk __imp_fma. Read as written, that is
+    // not "fma", so a build that calls the runtime is reported as one that does not.
     bool undefinedFma = false;
     bool undefinedFmaf = false;
     {
@@ -592,9 +527,8 @@ void AddFmaRoute(std::vector<Fact>& facts) {
         facts.push_back({"fma.route.symbols", symbols});
     } else
     {
-        // No reference to call: the multiply-add is in the code as a fused
-        // instruction, or the build emitted none at all, and the contraction
-        // and backend facts above say which of those this build has.
+        // Nothing left to call: the multiply-add is a fused instruction, or the
+        // build emitted none; contract.* and the backends say which.
         facts.push_back({"fma.route", "no-call"});
         facts.push_back({"fma.route.symbols", "none"});
     }
@@ -610,9 +544,8 @@ std::vector<Fact> Gather(const std::string& leg) {
     facts.push_back({"leg", leg});
     facts.push_back({"config", BOYS_FACTS_CONFIG});
 
-    // The machine this ran on: a tag, never a gate. A runner is ephemeral and
-    // the same leg draws different hardware, so the recorded table is a
-    // per-architecture statement that names where each row was observed.
+    // The machine this ran on: a tag, never a gate, since a runner is ephemeral
+    // and the same leg draws different hardware.
     AddCpuModel(facts);
     {
         const unsigned logical = std::thread::hardware_concurrency();
@@ -628,9 +561,7 @@ std::vector<Fact> Gather(const std::string& leg) {
 
     facts.push_back({"compiler.id", CompilerId()});
     facts.push_back({"compiler.version", CompilerVersion()});
-    // _MSVC_LANG where the compiler has it: MSVC reports __cplusplus as
-    // 199711L unless /Zc:__cplusplus is passed, so the source macro would
-    // understate every MSVC standard this tree builds at.
+    // MSVC reports __cplusplus as 199711L without /Zc:__cplusplus, understating the standard.
 #if defined(_MSVC_LANG)
     facts.push_back({"compiler.standard", std::to_string(_MSVC_LANG)});
 #else
@@ -638,11 +569,10 @@ std::vector<Fact> Gather(const std::string& leg) {
 #endif
     facts.push_back({"sanitizers", Sanitizers()});
 
-    // The instruction sets the target was asked for, as the preprocessor
-    // reports them. These are preprocessor facts and not capability facts: a
-    // compiler may enable an instruction set without defining a macro for it
-    // (MSVC defines __AVX2__ for /arch:AVX2 and no __FMA__), so the arithmetic
-    // is what contract.*, fma.route and the backends below measure.
+    // The instruction sets the target was asked for, as the preprocessor reports
+    // them. Preprocessor facts, not capability facts: a compiler may enable an
+    // instruction set without defining a macro for it (MSVC defines __AVX2__ for
+    // /arch:AVX2 and no __FMA__), so what the build does is contract.* below.
     struct Macro {
         const char* name;
         bool defined;
@@ -733,10 +663,8 @@ std::vector<Fact> Gather(const std::string& leg) {
         facts.push_back({"simd.lanes.fp16", std::to_string(simd.second / 16u)});
     }
 
-    // The multiply-add route in force, from the library's own report, which
-    // answers per backend because contraction belongs to the flags a
-    // translation unit was compiled with and the library compiles its packed
-    // arithmetic under different flags than its scalar arithmetic.
+    // The multiply-add route in force, from the library's own report, which answers per backend:
+    // contraction belongs to a translation unit's flags, the packed arithmetic under others.
     const std::span<const boys::backend::BackendInfo> backends =
         boys::backend::BoysBackends();
     for (const boys::backend::BackendInfo& backend : backends)
@@ -745,9 +673,8 @@ std::vector<Fact> Gather(const std::string& leg) {
                          backend.contracts ? "1" : "0"});
     }
 
-    // The same question asked by this translation unit, which is the flags a
-    // consumer of this build gets. Contracts() is a template answered where it
-    // is called, so this line is this unit's answer and not the library's.
+    // The same question asked by this translation unit, whose flags are what a
+    // consumer of this build gets. Contracts() is answered where it is called.
     facts.push_back({"contract.this-tu.fp64",
                      boys::backend::ScalarFp64::Contracts() ? "1" : "0"});
     facts.push_back({"contract.this-tu.fp32",
@@ -761,9 +688,8 @@ std::vector<Fact> Gather(const std::string& leg) {
 
 // --- the recorded table -----------------------------------------------------
 
-/// The tag a recorded row opens with, and the version of the format it is
-/// written in. A fenced block that does not open with it is prose, so the
-/// document can show the format without showing a row.
+/// The tag a recorded row opens with, and the version of the format: a fenced block that
+/// does not open with it is prose, so the document can show the format without a row.
 constexpr const char* kFormatTag = "boys.build-facts/1";
 
 /// The keys that carry where and by whom a row was observed rather than what
@@ -784,10 +710,8 @@ bool IsTag(const std::string& key) {
     return false;
 }
 
-/// Every row the table records, in document order. A row is a fenced block
-/// whose first line is the format tag; anything else in the document is prose
-/// and is skipped, so a block that merely looks like key=value lines is never
-/// mistaken for a recorded fact.
+/// Every row the table records, in document order: a row is a fenced block opening with the
+/// format tag; anything else is prose and skipped, never mistaken for a fact.
 std::vector<std::vector<Fact>> TableRows(const std::string& path, bool& tableFound) {
     std::vector<std::vector<Fact>> rows;
     std::ifstream table(path);
@@ -836,7 +760,7 @@ std::vector<std::vector<Fact>> TableRows(const std::string& path, bool& tableFou
     return rows;
 }
 
-/// The leg a row belongs to, or an empty string when it names none.
+/// The leg a row belongs to, or empty when it names none.
 std::string LegOf(const std::vector<Fact>& row) {
     for (const Fact& fact : row)
     {
@@ -878,10 +802,8 @@ int CheckAgainst(const std::vector<Fact>& facts, const std::string& path) {
     }
     if (row.empty())
     {
-        // Not a failure: until a leg's row is recorded there is nothing to
-        // differ from, and the block above is the row to record. The legs the
-        // table does carry are listed so a leg name that no row will ever match
-        // is visible in the log rather than silently unchecked.
+        // No row recorded yet is not a failure: the block above is that row. The legs the table
+        // does carry are listed, so a leg name nothing will ever match is not silently unchecked.
         std::printf("\nbuild facts: the table records no row for `%s`. The block "
                     "above is that row:\nrecord it with\n"
                     "    python tools/gen_build_facts.py --record <file>\n",

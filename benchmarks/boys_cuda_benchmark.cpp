@@ -1,32 +1,26 @@
-// The GPU throughput rows,
-// on the same uniform (n, x) workload as the CPU benchmark. Lanes:
+// The GPU throughput rows, on the same uniform (n, x) workload as the CPU
+// benchmark. Lanes:
 //   cheb-f64   - BoysCuda::SingleF64 (the certified double lane)
 //   cheb-f32   - BoysCuda::SingleF32 (the recommended GPU lane)
-//   erf-f64    - erf-F0 + upward recursion (competitor scheme, kernels in
-//                the companion kernels file)
+//   erf-f64    - erf-F0 + upward recursion (competitor; kernels in the
+//                companion kernels file)
 //   lut-f64    - Tsuji-style gridded LUT + Taylor corrections (competitor)
-//   fp16-single - BoysCuda::SingleF16 (I/O-only lane; device-pointer and
-//                asynchronous like the other lanes, so the measured time is
-//                the pure device-side cost on the same event protocol)
+//   fp16-single - BoysCuda::SingleF16 (I/O-only lane, device-pointer and
+//                asynchronous like the others: the time is device-side cost)
 //
 // Custom main(): --self-check runs the verifier against the CPU references
-// and exits; the default mode runs the measurement protocol (warmup + 3
-// passes, min/median/max, median = the cell the run reports).
+// and exits; otherwise the measurement protocol runs (warmup + 3 passes,
+// min/median/max, median = the cell the run reports).
 //
 // Self-check budgets (the lanes are compared against the CPU references):
-//   cheb-f64      |out - BoysSingle|    <= 5.5e-14   (the GPU double row)
-//   cheb-f32      |out - BoysSingleF32| <= 3.5e-7    (the GPU float row)
+//   cheb-f64      |out - BoysSingle|    <= 5.5e-14
+//   cheb-f32      |out - BoysSingleF32| <= 3.5e-7
 //   erf-f64       <= 1e-13 for x >= 10.0 (asserted device-lane domain;
-//                    the k_max = 32 boundary is 9.70 on the CPU,
-//                    the device lane's turning-point rounding is ~2.3e-13 at
-//                    x = 9.73, so the gate takes headroom; off-domain errors
-//                    are recorded as the scheme's honest cost)
-//   lut-f64       <= 1e-12               (LUT values <= 5.5e-14 plus
-//                    degree-5 Taylor truncation ~1e-15)
-//   fp16-single   GPU vs the shipped CPU fp16 lane, <= 3.5e-7 + 1 full ULP
-//                    (the GPU-vs-CPU comparison contract; the absolute
-//                    contract is the CPU lane's own, m * 1e-7 + half a ULP
-//                    against the exact value)
+//                    off-domain errors are recorded as the scheme's honest cost)
+//   lut-f64       <= 1e-12 (LUT values <= 5.5e-14 plus degree-5 Taylor
+//                    truncation ~1e-15)
+//   fp16-single   GPU vs the coarsest CPU fp16 lane, <= 3.5e-7 + 1 full ULP
+//                    (the GPU-vs-CPU comparison contract)
 #include "boys/boys.hpp"
 #include "boys/boys_cuda.hpp"
 #include "boys_cuda_benchmark_kernels.hpp"
@@ -69,10 +63,9 @@ std::vector<Item> UniformInputs() {
     return items;
 }
 
-// The reference series for the LUT rows beyond the shipped range:
-// F_n(x) = 0.5 * e^{-x} * sum_l x^l / prod_{j=0}^{l} (n + j + 1/2)
-// (all-positive terms, no cancellation; F_n(0) = 1/(2n+1) follows from the
-// l = 0 term).
+// The reference series for the LUT rows beyond the coarsest range:
+// F_n(x) = 0.5 * e^{-x} * sum_l x^l / prod_{j=0}^{l} (n + j + 1/2).
+// All-positive terms, no cancellation; F_n(0) = 1/(2n+1) at the l = 0 term.
 double StableSeriesF(int n, double x) {
     double sum = 1.0 / (n + 0.5);
     double term = sum;
@@ -87,12 +80,11 @@ double StableSeriesF(int n, double x) {
 }
 
 // Builds the 38 x 1025 LUT: rows 0..32 from BoysCuda::AllNF64 on the grid
-// (certified <= 5.5e-14), rows 33..37 via the stable series above (the
+// (certified <= 5.5e-14), rows 33..37 from the stable series above (the
 // degree-5 corrections of order-32 inputs reach F_37). The batch entry takes
-// DEVICE pointers (boys_cuda.hpp), so the grid travels through device
-// memory for the 1025-point batch (once per process); one nmax covers the
-// whole grid, so the sorted-argument entry applies and no order array is
-// uploaded.
+// DEVICE pointers (boys_cuda.hpp), so the grid travels through device memory
+// (once per process); one nmax covers the grid, so the sorted-argument entry
+// applies and no order array is uploaded.
 bool BuildLutRows(std::vector<double>& rows) {
     rows.assign(38 * 1025, 0.0);
     std::vector<double> grid(1025);
@@ -138,8 +130,7 @@ bool BuildLutRows(std::vector<double>& rows) {
         return false;
     }
 
-    // The entry is asynchronous: the readback below is stream-ordered after
-    // the batch kernel on the default stream.
+    // The entry is asynchronous: the readback below is stream-ordered after the kernel.
     e = cudaMemcpy(batch.data(), dBatch, 33 * 1025 * sizeof(double), cudaMemcpyDeviceToHost);
     cudaFree(dGrid);
     cudaFree(dBatch);
@@ -185,12 +176,10 @@ Timing TimeLane(const char* name,
                 boys::F16* dF16In,
                 boys::F16* dF16Out
 #else
-                // The fp16 lane is declared behind the BoysFp16 seam, so a build
-                // with it closed has no fp16 buffer to pass and no fp16 type to
-                // pass it as. The two parameters stay, as the raw device pointers
-                // the buffers would have been, so every call below reads the same
-                // in both builds; the fp16-single branch is their only reader and
-                // it says there that this build does not carry the lane.
+                // Closed BoysFp16 seam: no fp16 buffer and no fp16 type to pass.
+                // The parameters stay as the raw pointers the buffers would have
+                // been, so every call below reads the same in both builds; the
+                // fp16-single branch is their only reader.
                 void* dF16In,
                 void* dF16Out
 #endif
@@ -237,8 +226,7 @@ Timing TimeLane(const char* name,
             }
 #else
             // No fp16 lane in this build: no entry to time and no buffer to
-            // pass. A run that asks for the lane by name is told so rather than
-            // handed a time for work that never ran.
+            // pass. A run asking for it by name is told rather than handed a time.
             (void)dF16In;
             (void)dF16Out;
             std::fprintf(
@@ -268,9 +256,8 @@ Timing TimeLane(const char* name,
 
     std::sort(passes.begin(), passes.end());
     Timing timing{passes.front(), passes[1], passes.back()};
-    // count/median is items per millisecond = 1e3 items/s; the /1e3 below is
-    // what makes the printed value the unit its field names (Mvals/s), at the
-    // three decimals this driver's rows carry.
+    // count/median is items per millisecond = 1e3 items/s; the /1e3 below makes
+    // the printed value the unit its field names (Mvals/s).
     std::printf("kernel: %s | workload: uniform-n32-x40 | count: %zu | passes: %d | "
                 "min_ms: %.3f | median_ms: %.3f | max_ms: %.3f | median_Mvals_per_s: %.3f\n",
                 name,
@@ -293,10 +280,9 @@ int SelfCheck(const std::vector<Item>& items,
               boys::F16* dF16In,
               boys::F16* dF16Out,
 #else
-              // As in TimeLane: a closed seam leaves no fp16 host values and no
-              // fp16 device buffers, so the host vector is not a parameter here
-              // and the device pointers stay as the raw addresses they would
-              // have been.
+              // As in TimeLane: a closed seam leaves no fp16 host values, so the
+              // host vector is not a parameter and the pointers stay as the raw
+              // addresses they would have been.
               void* dF16In,
               void* dF16Out,
 #endif
@@ -363,13 +349,11 @@ int SelfCheck(const std::vector<Item>& items,
         failed += !pass;
     }
 
-    // erf-f64 (competitor lane). The upward recursion from an F0 seed is the
-    // measured-boundary phenomenon: for k_max = 32
-    // the reference recursion stays within 5e-14 for x >= 9.70 (measured on
-    // the CPU). The device lane's own rounding near the turning point is a
-    // little worse (2.3e-13 measured at x = 9.73, n = 32 on this T1000), so
-    // the asserted domain takes headroom: x >= 10.0 at the 1e-13 budget. The
-    // x >= 5 worst is recorded as the scheme's honest off-domain behavior.
+    // erf-f64 (competitor lane). The upward recursion from an F0 seed stays
+    // within 5e-14 for x >= 9.70 at k_max = 32 on the CPU; the device lane's
+    // rounding near the turning point is worse (2.3e-13 at x = 9.73, n = 32 on
+    // this T1000), so the asserted domain takes headroom. The x >= 5 worst is
+    // the scheme's honest off-domain behavior.
     {
         constexpr double kErfBoundary32 = 10.0; // asserted domain (device lane)
         BoysBenchLaunchErfF64(dN, dX, dOutF64, kInputCount, blocks, kThreads, nullptr);
@@ -431,8 +415,7 @@ int SelfCheck(const std::vector<Item>& items,
         failed += !pass;
     }
 
-    // lut-f64 (Tsuji scheme; the gridded-Taylor region and the asymptotic
-    // region are both exercised by the uniform workload)
+    // lut-f64 (Tsuji scheme; the uniform workload exercises both its regions)
     {
         BoysBenchLaunchLutF64(dN, dX, dOutF64, kInputCount, blocks, kThreads, nullptr);
         cudaDeviceSynchronize();
@@ -453,12 +436,10 @@ int SelfCheck(const std::vector<Item>& items,
         failed += !pass;
     }
 
-    // fp16-single: GPU vs the shipped CPU fp16 lane on the same fp16 inputs
-    // (BoysSingleF16, the CPU reference lane), budget 3.5e-7 + one full fp16
-    // ULP of the CPU value — the GPU-vs-CPU comparison of the accompanying
-    // test suite (the full-ULP term absorbs the fp16 rounding-boundary flips
-    // between the two float engines). The absolute contract (m * 1e-7 + 1/2
-    // ULP vs the exact value) is the CPU lane's own, asserted by its tests.
+    // fp16-single: GPU vs the coarsest CPU fp16 lane (BoysSingleF16) on the same
+    // fp16 inputs; the ULP term absorbs the rounding-boundary flips between the
+    // two float engines. The absolute contract (m * 1e-7 + 1/2 ULP against the
+    // exact value) is the CPU lane's own.
 #if BoysFp16
     {
         const auto status = boys::BoysCuda::SingleF16(dN, dF16In, dF16Out, kInputCount, nullptr);
@@ -494,10 +475,9 @@ int SelfCheck(const std::vector<Item>& items,
         failed += !pass;
     }
 #else
-    // The row above is not measured here and not reported as a pass: a closed
-    // seam means there is no fp16 entry on either side to compare. It is named
-    // so a reader of this output sees a row this build does not carry rather
-    // than an output with a row missing from it.
+    // Not measured here and not reported as a pass: a closed seam leaves no
+    // fp16 entry on either side to compare. The row is named so a reader sees
+    // one this build does not carry rather than an output missing a row.
     (void)dF16In;
     (void)dF16Out;
     std::printf("self-check: fp16-single | not carried: this build's BoysFp16 seam is closed\n");
@@ -535,8 +515,7 @@ int main(int argc, char** argv) {
 
     const auto items = UniformInputs();
 
-    // LUT rows: rows 0..32 from the certified batch lane, rows 33..37 from
-    // the reference series.
+    // LUT rows: 0..32 from the certified batch lane, 33..37 from the series above.
     std::vector<double> lutRows;
 
     if (!BuildLutRows(lutRows))
@@ -569,9 +548,8 @@ int main(int argc, char** argv) {
     boys::F16* dF16In = nullptr;
     boys::F16* dF16Out = nullptr;
 #else
-    // A closed seam carries no fp16 lane to feed, so there is no fp16 buffer to
-    // allocate. The names stay, as the raw device pointers the buffers would
-    // have been, so the calls below read the same in both builds.
+    // A closed seam carries no fp16 lane to feed, so there is no buffer to
+    // allocate; the names stay as the raw pointers the buffers would have been.
     void* dF16In = nullptr;
     void* dF16Out = nullptr;
 #endif

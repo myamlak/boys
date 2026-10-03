@@ -16,10 +16,15 @@
 // reachable from outside through the entries that carry the orders axis
 // (PackAxis::kOrders), which dispatch to BoysAllOrdersPacked below.
 //
-// Region A only (argument below kX0), where the per-order piecewise fits are
-// stored. The other two regions evaluate one seed and reach every order from
-// it by recursion, which is one fit for all of them; the fits are the cost
-// this lane exists to spread over a vector.
+// The derived routes' region A only (argument below kX0), where the per-order
+// piecewise fits are stored. The other two regions evaluate one seed and reach
+// every order from it by recursion, which is one fit for all of them; the fits
+// are the cost this lane exists to spread over a vector.
+//
+// The uniform partition is the exception to the interval and not to the shape:
+// its table is one fixed grid over the whole fitted domain rather than a cut of
+// region A, so the lane reads it to that grid's own end, which is above kX0,
+// and falls to the certified scalar lane past it.
 
 #include "boys/backend.hpp"
 
@@ -44,6 +49,10 @@ enum class OrdersScheme {
     /// Horner over the monomial form of the same fit, the second certified
     /// scheme: one multiply-add per stored coefficient.
     kHorner,
+    /// One past the last scheme this enumeration names, and not a scheme: the
+    /// bound a check reads to walk the enumerators above and prove it has named
+    /// every one of them.
+    kCount,
 };
 
 /// Fills out[l * stride] with F_l(x) for l = 0..nmax, by the named scheme.

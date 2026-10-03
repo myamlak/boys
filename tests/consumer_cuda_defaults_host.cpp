@@ -1,38 +1,10 @@
-// The host half of the consumer check on the CUDA lane's default.
+// The host half of the consumer check on the CUDA lane's default. The static
+// assertions below hold the entry's template default and the value it names to
+// be one instantiation, with the lane's other region-B exponential as a negative
+// control, so the equality is not a name against itself.
 //
-// A consumer of the device lane with a chosen precision writes one call and is
-// done: `boys::BoysCuda::SingleF32<>(n, x, out, count, stream)` for the batch
-// entry, `boys::BoysDeviceSingleF32(tables, n, x, out)` inside their own kernel.
-// Both take `boys::kBoysFullAccuracyMultiplier` and `boys::kDefaultRegionBExp`
-// by default, and this file shows that naming the names and naming nothing are
-// one call rather than two that agree.
-//
-// This is the half of the check that can include <boys/boys_cuda.hpp>: the
-// batch entry is declared there, and that header is a host header. The device
-// half, tests/consumer_cuda_defaults.cu, holds the kernel and the device entry;
-// the two are one executable, and each prints its own rows. The lane's own gate
-// and device demo are split the same way.
-//
-// The compile-time statements come first:
-//
-//  * two spellings of one entry compare equal as function addresses exactly
-//    when they are one instantiation, and two instantiations of one entry share
-//    a function-pointer type, so `SameCall` below says the entry's own template
-//    default is the name;
-//
-//  * the negative control says naming the lane's other region-B exponential is
-//    a different instantiation, so the equalities above are not equalities of a
-//    name with itself;
-//
-//  * the handle's own default is checked the same way, since a caller that
-//    wants the tables writes `BoysCuda::DeviceTables(&tables)` with no
-//    argument.
-//
-// Then the batch entry is run on the card in both spellings over a sweep of
-// orders and arguments, and the last row runs it once more with
-// `RegionBExp::kFast` so the run shows which arithmetic the default selected.
-// That row is expected to differ — the two options carry different bounds — and
-// is not counted as a failure.
+// This is the half that can include <boys/boys_cuda.hpp>, a host header. The
+// kernel and the device entry are in tests/consumer_cuda_defaults.cu.
 //
 // Run:  cmake --build <build> --target boys-consumer-cuda-defaults   (BUILD_CUDA=ON)
 //       <build>/boys-consumer-cuda-defaults
@@ -52,19 +24,13 @@ static_assert(boys::kDefaultRegionBExp == boys::RegionBExp::kAccurate);
 
 template <auto Left, auto Right> constexpr bool SameCall = (Left == Right);
 
-static_assert(SameCall<&boys::BoysCuda::SingleF32<boys::kBoysFullAccuracyMultiplier>,
-                       &boys::BoysCuda::SingleF32<boys::kBoysFullAccuracyMultiplier,
-                                                  boys::kDefaultRegionBExp>>);
-static_assert(SameCall<&boys::BoysCuda::DeviceTables<>,
-                       &boys::BoysCuda::DeviceTables<boys::kBoysFullAccuracyMultiplier>>);
-static_assert(
-    !SameCall<
-        &boys::BoysCuda::SingleF32<boys::kBoysFullAccuracyMultiplier, boys::kDefaultRegionBExp>,
-        &boys::BoysCuda::SingleF32<boys::kBoysFullAccuracyMultiplier, boys::RegionBExp::kFast>>);
+static_assert(SameCall<&boys::BoysCuda::SingleF32<>, &boys::BoysCuda::SingleF32<
+                                                            boys::kDefaultRegionBExp>>);
+static_assert(!SameCall<&boys::BoysCuda::SingleF32<boys::kDefaultRegionBExp>,
+                        &boys::BoysCuda::SingleF32<boys::RegionBExp::kFast>>);
 
-// Defined in tests/consumer_cuda_defaults.cu; C linkage, so the two sides are
-// one signature and a drift between them is a link error rather than a silent
-// second reading.
+// C linkage, so a drift between the two sides is a link error rather than a
+// silent second reading. Defined in tests/consumer_cuda_defaults.cu.
 extern "C" int BoysConsumerCudaDefaultsDeviceRows(const boys::BoysDeviceTables* tables,
                                                   const int* n,
                                                   const double* xs,
@@ -75,8 +41,7 @@ namespace {
 
 constexpr std::size_t kCount = 33u * 128u;
 
-/// One row of the report: the cells compared, how many differed, and the
-/// furthest apart the two values were.
+/// One row of the report: cells compared, differing cells, and the worst gap.
 struct Row {
     const char* name = "";
     std::size_t cells = 0;
@@ -135,8 +100,7 @@ int main() {
         return 2;
     }
 
-    // Orders 0..32 against a sweep of arguments, with the four arguments the
-    // CPU check singles out among them.
+    // Orders 0..32 against a sweep of arguments, with four arguments pinned below.
     std::vector<int> hostN(kCount);
     std::vector<double> hostX(kCount);
 
@@ -198,8 +162,7 @@ int main() {
     // --- the batch entry, both spellings --------------------------------------
     const boys::BoysStatus plain = boys::BoysCuda::SingleF32<>(n, xs, outPlain, kCount, nullptr);
     const boys::BoysStatus named =
-        boys::BoysCuda::SingleF32<boys::kBoysFullAccuracyMultiplier, boys::kDefaultRegionBExp>(
-            n, xs, outNamed, kCount, nullptr);
+        boys::BoysCuda::SingleF32<boys::kDefaultRegionBExp>(n, xs, outNamed, kCount, nullptr);
 
     if (plain != boys::BoysStatus::kSuccess || named != boys::BoysStatus::kSuccess)
     {
@@ -219,8 +182,7 @@ int main() {
 
     // --- the default beside the lane's other exponential ----------------------
     const boys::BoysStatus fast =
-        boys::BoysCuda::SingleF32<boys::kBoysFullAccuracyMultiplier, boys::RegionBExp::kFast>(
-            n, xs, outFast, kCount, nullptr);
+        boys::BoysCuda::SingleF32<boys::RegionBExp::kFast>(n, xs, outFast, kCount, nullptr);
 
     if (fast != boys::BoysStatus::kSuccess)
     {
@@ -244,10 +206,9 @@ int main() {
     cudaFreeHost(hostNamed);
     cudaFreeHost(hostFast);
 
-    // The device half returns its two rows' difference and the number of
-    // elements whose calls disagreed on the status, so the three identity
-    // comparisons this run makes are the batch row, the device row and the
-    // statuses.
+    // The device half returns its own differing elements and the calls that
+    // disagreed on the status; the three identity comparisons are those two and
+    // the statuses.
     const std::size_t identityDiffering =
         batch.differing + static_cast<std::size_t>(deviceDiffering);
 
@@ -256,8 +217,7 @@ int main() {
                 identityDiffering,
                 3);
 
-    // No row above fails on the option row: kFast carries its own bound, and
-    // how far it sits from the default is what this run prints rather than
-    // something it judges.
+    // The option row does not fail the run: kFast carries its own bound, and how
+    // far it sits from the default is printed rather than judged.
     return identityDiffering == 0 ? 0 : 1;
 }

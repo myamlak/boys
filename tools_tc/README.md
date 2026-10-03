@@ -45,7 +45,7 @@ slightly finer sweep than the one that number was taken from.
 
 Two properties of the reduction are worth knowing before reading any row here.
 The degrees may be summed into one running total from the constant term up, or
-laid out high to low and reduced pairwise; the shipped kernel does the second,
+laid out high to low and reduced pairwise; the committed kernel does the second,
 and the two differ by about three times at `kFp64` and at the split modes'
 formats. `modes.gemm` defaults to the running total, so `measure.py`'s own
 logs record that family — `measure2.log`'s 3.331e-16, 1.871e-07 and 1.972e-07
@@ -61,19 +61,19 @@ side for that reason.
 | `parse_tables.py` | Reads `include/boys/boys_coefficients.hpp` as data: per order, the region-A pieces `(a, b, degree, coefficients)`. Never imports the library. |
 | `modes.py` | The modes. Operand rounding by round-to-nearest-even on the significand with fp16's exponent range enforced, exact products, one rounding per accumulation step, and both degree-reduction orders. |
 | `measure.py` | The delivered error of the region-A transform per mode, over both bands and every order, against the 50-digit reference. Writes `res_double.json`, `res_float.json`; its printed table is `measure2.log`. |
-| `bound.py` | The bound each mode could claim per order count, folding in the recursion's own rounding taken from the shipped library's values on the same grid. |
-| `contract.py` | What a mode delivers *after* the recursion it feeds, reproducing each shipped dispatch path with the mode's transform in place of the shipped one. |
-| `scheme.py` | The shipped split Clenshaw against the GEMM-shaped dot product at the same precision, so the mode's precision and the evaluation scheme can be told apart. |
-| `share.py` | The Chebyshev transform's share of a ladder's fused-op cost, counted from the shipped dispatch. |
+| `bound.py` | The bound each mode could claim per order count, folding in the recursion's own rounding taken from the committed library's values on the same grid. |
+| `contract.py` | What a mode delivers *after* the recursion it feeds, reproducing each committed dispatch path with the mode's transform in place of the committed one. |
+| `scheme.py` | The committed split Clenshaw against the GEMM-shaped dot product at the same precision, so the mode's precision and the evaluation scheme can be told apart. |
+| `share.py` | The Chebyshev transform's share of a ladder's fused-op cost, counted from the committed dispatch. |
 | `workload.py` | That share weighted by a measured Boys-call workload. The call counts and the ladder are pinned into the file from that measurement, which is taken outside this tree; they are not regenerated here. |
 | `compare.py` | The published bounds against the measurement — the entry point. |
-| `dump_values.cpp` | Cross-check driver: the shipped library's region-A values, both lanes, on an argument list from a file. |
+| `dump_values.cpp` | Cross-check driver: the committed library's region-A values, both lanes, on an argument list from a file. |
 
 ## The data
 
 | File | What it is |
 | --- | --- |
-| `shipped_grid.txt` | The shipped library's region-A values on `xgrid.txt`: 7 order counts × 61 arguments × both lanes. Produced by `dump_values`. |
+| `shipped_grid.txt` | The committed library's region-A values on `xgrid.txt`: 7 order counts × 61 arguments × both lanes. Produced by `dump_values`. |
 | `shipped_values.txt` | The same dump at a coarser argument set and orders 8, 16 and 32. |
 | `xgrid.txt` | The argument list `shipped_grid.txt` was taken on. |
 | `res_double.json`, `res_float.json` | `measure.py`'s raw output, keyed `mode\|band\|order` → the worst absolute and relative error and the argument each was found at. |

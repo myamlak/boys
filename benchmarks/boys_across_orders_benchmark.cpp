@@ -1,61 +1,50 @@
 // The across-orders packed lane against the across-arguments lane, on the
 // workload the all-orders entrance actually has.
 //
-// The two lanes vectorise different axes of the same call, and the call shape
-// decides which axis there is anything to fill:
+// The two lanes vectorise different axes of the same call, so the call shape
+// decides which axis has anything to fill:
 //
 //   * BoysAllOrders(nmax, x, out) is ONE argument and nmax + 1 orders, so the
-//     across-arguments lane has one argument to put in its four lanes - the
-//     baseline below runs it over four copies of x, which is what it costs to
-//     serve this shape with that axis. The across-orders lane fills its lanes
-//     with the orders.
+//     across-arguments lane has one argument for its four lanes - the baseline
+//     below runs it over four copies of x, which is what serving this shape on
+//     that axis costs. The across-orders lane fills its lanes with the orders.
 //
 //   * BoysAllN(nmax, x, out, count) is count arguments by nmax + 1 orders, so
 //     both axes are available. The shipped entry takes the arguments (an
 //     order-major loop of the region-A lane); the across-orders lane takes the
-//     orders (an argument-major loop), and pays the plane's order stride on
-//     the store because AVX2 has no scatter.
+//     orders (an argument-major loop) and pays the plane's order stride on the
+//     store because AVX2 has no scatter.
 //
-//   * THE PARTITION. Both readings above are of the shipped region-A pieces,
-//     whose every order shares its intervals and degrees. That is what lets the
-//     lane fetch one piece's coefficients at a fixed stride and hold four orders
-//     of ONE piece. The narrow partition is cut per order, so no such stride
-//     exists: the narrow lane fetches each of the four orders it packs its own
-//     piece and coefficients, and one group is four different pieces evaluated
-//     together. The per-order loop beside it is that partition read one order at
-//     a time by the library's own single-order entry - the shape a fallback onto
-//     scalar calls would have - and the pair's two counts are what says whether
-//     the packed form is a vector path or four scalar calls carrying its name.
+//   * THE PARTITION. The double lane's shipped region-A pieces share their
+//     intervals and degrees across orders, which is what lets its lane fetch one
+//     piece's coefficients at a fixed stride and hold four orders of ONE piece.
+//     The float lane's do not, so its lane looks each order's own piece up. The
+//     narrow partition is cut per order too, so no such stride exists: its lane
+//     fetches each of the four orders it packs its own piece and coefficients,
+//     so one group is four different pieces evaluated together. The per-order
+//     loop beside it is that partition read one order at a time by the
+//     library's own single-order entry, and the pair's two counts say whether
+//     the packed form is a vector path or four scalar calls.
 //
-// WHAT THIS PROGRAM REPORTS. It drives one variant at a time over a fixed
-// workload and prints the work it did - calls, output values, and the worst
-// deviation from the shipped entry, so a measurement can never be of a broken
-// variant. It does not report a time as a result: instruction and operation
-// counts are what it is for, and they are read from the counter the platform
-// exposes (perf stat) or from the compiled code, not from a clock. --time
-// exists for a reader who wants one, and says in its own output why the number
-// it prints is not a measurement on a loaded machine.
+// WHAT THIS PROGRAM REPORTS. One variant at a time over a fixed workload, with
+// the work it did printed - calls, output values and the worst deviation from
+// the shipped entry, so a measurement can never be of a broken variant. It
+// reports instruction and operation counts, not a time: those come from the
+// counter the platform exposes (perf stat) or from the compiled code, not from a
+// clock. --time prints why its number is not a measurement on a loaded machine.
 //
 // Usage:
 //   boys-across-orders-benchmark --list
 //   boys-across-orders-benchmark [--variant=NAME] [--reps=N] [--count=N]
 //                                [--nmax=N] [--time]
 //
-// Reproducing an instruction count, one variant per run:
-//   perf stat -e instructions:u,uops_retired.retire_slots:u
-//     boys-across-orders-benchmark --variant=orders-across-direct --reps=20000
-//
-// The narrow partition's packed lane against the per-order loop it replaces,
-// one run each and both counters read:
-//   perf stat -e instructions:u,uops_retired.retire_slots:u
-//     boys-across-orders-benchmark --variant=orders-narrow-clenshaw --reps=20000
-//   perf stat -e instructions:u,uops_retired.retire_slots:u
-//     boys-across-orders-benchmark --variant=orders-narrow-scalar-clenshaw --reps=20000
-// The single-precision lane's figures are read the same way, over the workload
-// they are quoted with, one variant per run:
-//   perf stat -e instructions:u,uops_retired.retire_slots:u
-//     boys-across-orders-benchmark --variant=orders-f32-orders-axis --reps=2000
-//   (and the same line with --variant=orders-f32-shipped,
+// Reproducing an instruction count, one variant per run, under
+// perf stat -e instructions:u,uops_retired.retire_slots:u:
+//   boys-across-orders-benchmark --variant=orders-across-direct --reps=20000
+//   boys-across-orders-benchmark --variant=orders-narrow-clenshaw --reps=20000
+//   boys-across-orders-benchmark --variant=orders-narrow-scalar-clenshaw --reps=20000
+//   boys-across-orders-benchmark --variant=orders-f32-orders-axis --reps=2000
+//   (and the same line with --variant=orders-f32-committed,
 //    --variant=orders-f32-scalar-fits, --variant=orders-f32-across-clenshaw,
 //    --variant=orders-f32-across-composed)
 
@@ -78,9 +67,8 @@ namespace {
 
 constexpr double kX0 = boys::detail::kX0;
 
-// The workload's arguments: log-uniform over region A, where the per-order
-// fits live and where this lane is defined. Deterministic, from a fixed
-// formula rather than a generator, so two runs measure the same arguments.
+// The workload's arguments, log-uniform over region A where the per-order fits
+// and this lane live; a fixed formula rather than a generator, so runs agree.
 std::vector<double> MakeArguments(std::size_t count) {
     std::vector<double> x(count);
     const double lo = std::log(1e-3);
@@ -112,9 +100,9 @@ struct Variant {
 };
 
 constexpr Variant kVariants[] = {
-    {"orders-shipped",
+    {"orders-committed",
      "BoysAllOrders(nmax, x)",
-     "the shipped entry: one seed fit and a recursion across the orders"},
+     "the committed entry: one seed fit and a recursion across the orders"},
     {"orders-scalar-fits",
      "BoysAllOrders(nmax, x)",
      "the certified scalar region-A fit per order, no recursion"},
@@ -137,7 +125,7 @@ constexpr Variant kVariants[] = {
     {"orders-across-horner-composed",
      "BoysAllOrders(nmax, x)",
      "the across-orders lane, Horner, coefficients composed not gathered"},
-    {"balln-shipped", "BoysAllN(nmax, x[], count)", "the shipped plane entry, across arguments"},
+    {"balln-committed", "BoysAllN(nmax, x[], count)", "the committed plane entry, across arguments"},
     {"balln-across-clenshaw",
      "BoysAllN(nmax, x[], count)",
      "the across-orders lane per argument, split Clenshaw"},
@@ -164,14 +152,13 @@ constexpr Variant kVariants[] = {
      "BoysAllOrders(nmax, x)",
      "the same per-order loop at the Horner scheme"},
 
-    // The single-precision lane, where a register holds eight orders rather
-    // than four. The baseline is the per-order fit loop the float lane's own
-    // tables are read by one order at a time - the same baseline the double
-    // lane is measured against above, so the two widths are read off the same
-    // comparison.
-    {"orders-f32-shipped",
+    // The single-precision lane, where a register holds eight orders rather than
+    // four. Its baseline is the per-order fit loop over the float lane's own
+    // tables - the same baseline the double lane is measured against above, so
+    // the two widths are read off the same comparison.
+    {"orders-f32-committed",
      "BoysAllOrdersF32(nmax, x)",
-     "the shipped float entry: one seed fit and a recursion across the orders"},
+     "the committed float entry: one seed fit and a recursion across the orders"},
     {"orders-f32-scalar-fits",
      "BoysAllOrdersF32(nmax, x)",
      "the certified scalar float region-A fit per order, no recursion"},
@@ -215,56 +202,48 @@ template <class Work> std::size_t Drive(const Config& config, Work work) {
     return values;
 }
 
-// The worst absolute and relative deviation from the shipped route, over the
-// whole workload: the check that what is being measured is a correct lane.
+// The worst absolute and relative deviation from the shipped route over the
+// workload: the check that what is measured is a correct lane.
 struct Deviation {
     double absolute = 0.0;
     double relative = 0.0;
 };
 
-// The narrow partition's lane at one argument, at the scheme the variant
-// names: the four orders of a group fetch each its own piece and coefficients,
-// because the narrow pieces are cut per order and do not share a stride.
-//
+// The narrow partition's lane at one argument, at the scheme the variant names.
 // The library's packed entry carries the two certified schemes on this
-// partition. The direct Chebyshev sum is this driver's own extra reading of the
+// partition; the direct Chebyshev sum is this driver's own extra reading of the
 // shipped lane and is not a scheme of the library's, so this partition has no
 // direct-sum variant rather than one answered with another scheme's numbers.
 void NarrowLane(boys::EvalScheme scheme, int nmax, double x, double* out) noexcept {
     if (scheme == boys::EvalScheme::kHorner)
     {
         boys::detail::BoysAllOrdersPacked<boys::EvalScheme::kHorner,
-                                          1.0,
                                           boys::FitRoute::kChebyshev,
                                           boys::FitGranularity::kNarrow>(nmax, x, out);
     } else
     {
         boys::detail::BoysAllOrdersPacked<boys::EvalScheme::kSplitClenshaw,
-                                          1.0,
                                           boys::FitRoute::kChebyshev,
                                           boys::FitGranularity::kNarrow>(nmax, x, out);
     }
 }
 
-// The lane the refusal would have left a caller with: the same partition's
-// certified single-order fit, called once per order in a loop, with no vector
-// group anywhere. The library's own entry, not a restatement of the body, so
-// the two columns of a count are the same arithmetic over the same pieces.
+// The narrow partition's certified single-order fit, called once per order in a
+// loop: the library's own entry, not a restatement of the body, so the two
+// columns of a count are the same arithmetic over the same pieces.
 void NarrowPerOrderFits(boys::EvalScheme scheme, int nmax, double x, double* out) noexcept {
     for (int l = 0; l <= nmax; ++l)
     {
         if (scheme == boys::EvalScheme::kHorner)
         {
-            out[l] = boys::BoysSingle<1.0,
-                                      boys::EvalPolicy<boys::FitRoute::kChebyshev,
+            out[l] = boys::BoysSingle<boys::EvalPolicy<boys::FitRoute::kChebyshev,
                                                        boys::EvalScheme::kHorner,
                                                        boys::BoysBudget::kFloat,
                                                        boys::PackAxis::kArguments,
                                                        boys::FitGranularity::kNarrow>>(l, x);
         } else
         {
-            out[l] = boys::BoysSingle<1.0,
-                                      boys::EvalPolicy<boys::FitRoute::kChebyshev,
+            out[l] = boys::BoysSingle<boys::EvalPolicy<boys::FitRoute::kChebyshev,
                                                        boys::EvalScheme::kSplitClenshaw,
                                                        boys::BoysBudget::kFloat,
                                                        boys::PackAxis::kArguments,
@@ -282,8 +261,7 @@ Deviation CompareToShipped(const std::string& variant,
     std::vector<double> shipped(orders, 0.0);
     Deviation worst;
 
-    // The variant's own scheme and fetch, so that the deviation reported
-    // beside a measurement is the deviation of what was measured.
+    // The variant's own scheme and fetch, so the deviation reported is the one measured.
     const bool composed = (variant.find("-composed") != std::string::npos);
     const bool direct = (variant.find("direct") != std::string::npos);
     const bool horner = (variant.find("horner") != std::string::npos);
@@ -337,7 +315,7 @@ double Run(const Config& config) {
 
     const auto start = std::chrono::steady_clock::now();
 
-    if (name == "orders-shipped")
+    if (name == "orders-committed")
     {
         values = Drive(config, [&](const std::vector<double>& x, std::vector<double>& out) {
             for (double xi : x)
@@ -375,7 +353,7 @@ double Run(const Config& config) {
 
                 for (std::size_t l = 0; l < orders; ++l)
                 {
-                    boys::detail::BoysRegionASimd<boys::kBoysFullAccuracyMultiplier>(
+                    boys::detail::BoysRegionASimd(
                         static_cast<int>(l), duplicate, lanes, 4);
                     out[l] = lanes[0];
                 }
@@ -427,11 +405,10 @@ double Run(const Config& config) {
 
             return x.size() * orders;
         });
-    } else if (name == "balln-shipped")
+    } else if (name == "balln-committed")
     {
         // The workspace is the caller's and is reused: a per-call allocation
-        // would put the allocator's instructions in the counter column beside
-        // the kernel's, which is not what this driver is measuring.
+        // would put the allocator's instructions in the counter column.
         std::vector<std::size_t> workspace(boys::BoysAllNWorkspaceSize(config.count));
 
         values = Drive(config, [&](const std::vector<double>& x, std::vector<double>& out) {
@@ -464,9 +441,8 @@ double Run(const Config& config) {
         });
     } else if (name.rfind("orders-f32-", 0) == 0)
     {
-        // The float lane's variants. The buffer is the caller's and is
-        // constructed once, outside the rep loop, so the allocator's
-        // instructions are not counted beside the kernel's.
+        // The buffer is the caller's and is built once, outside the rep loop, so
+        // the allocator's instructions are not counted beside the kernel's.
         std::vector<float> fout(orders, 0.0f);
 
         values = Drive(config, [&](const std::vector<double>& x, std::vector<double>& out) {
@@ -476,7 +452,7 @@ double Run(const Config& config) {
             {
                 const float x32 = static_cast<float>(xi);
 
-                if (name == "orders-f32-shipped")
+                if (name == "orders-f32-committed")
                 {
                     boys::BoysAllOrdersF32(nmax, x32, fout.data());
                 } else if (name == "orders-f32-scalar-fits")
@@ -503,7 +479,7 @@ double Run(const Config& config) {
                                           boys::BoysBudget::kFloat,
                                           boys::PackAxis::kOrders>;
 
-                    boys::BoysAllOrdersF32<1.0, OrdersAxis>(nmax, x32, fout.data());
+                    boys::BoysAllOrdersF32<OrdersAxis>(nmax, x32, fout.data());
                 } else
                 {
                     boys::detail::BoysAllOrdersF32Simd(boys::detail::OrdersScheme::kSplitClenshaw,
@@ -657,7 +633,7 @@ int main(int argc, char** argv) {
                                       boys::BoysBudget::kFloat,
                                       boys::PackAxis::kOrders>;
 
-                boys::BoysAllOrdersF32<1.0, OrdersAxis>(config.nmax, x32, mine.data());
+                boys::BoysAllOrdersF32<OrdersAxis>(config.nmax, x32, mine.data());
             } else
             {
                 boys::detail::BoysAllOrdersF32Simd(boys::detail::OrdersScheme::kSplitClenshaw,
