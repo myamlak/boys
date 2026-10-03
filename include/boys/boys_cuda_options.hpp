@@ -261,42 +261,67 @@ enum class DeviceOptionAxis : int {
     kPacking,
     kScheme, ///< which basis the entry sums its stored fits in; its member is \c scheme
     kRoute, ///< which family of fit the entry's pieces are; its member is \c route
+    /// How the entry's ladder steps divide; its member is \c division, and the
+    /// forms it names are \c DivisionForm's - the same three the host's calls are
+    /// ranked on (boys/accuracy.hpp), because the recurrence is one arithmetic on
+    /// both sides of the device boundary.
+    kDivision,
 };
 
-/// The partition member an entry reads, as the name a report prints, or the
-/// stated name of an entry that reads no member at all.
+/// The cut of the domain \c DevicePartitionOf answers for an enumerator its switch
+/// has not been taught: not a cut and never a row's value.
 ///
-/// The space carries the partition axis for the rows that take it but not yet a field
-/// for its member, so the entries that read a partition are told apart here — once,
-/// beside the rows they are rows of. The member is a property of the *entry* and not
-/// of the axis a row states: the narrow partition's pieces are read by the rows whose
-/// axis is the partition, by the rows whose axis is the scheme inside it and by the
-/// rows whose axis is the route inside it, and all three read that one partition. The
-/// same holds of the grid.
+/// FitGranularity is the host's enumeration and carries no sentinel of its own, so
+/// the out-of-enum value is stated here, beside the one switch that can answer it,
+/// and the assertion below that switch turns it into a compile error. The packing
+/// axis, whose type this header owns, states its own sentinel as a member instead;
+/// this constant is that member's counterpart for a type this header does not own.
+inline constexpr FitGranularity kUnstatedPartition = static_cast<FitGranularity>(0xFF);
+
+/// The cut of the domain an entry reads its fits from, read from that entry's own
+/// implementation and stated once, as the row unit's own field.
 ///
-/// The last arm is not a member and says so: an entry whose row carries no partition
-/// axis — the single entries, the coarsest partition's own ladders, the all-N and
-/// each-order shapes, and the device-callable generics, which read whatever partition
-/// their handle's tables name — reads no partition this function could name, and
-/// answering one of the two members for it would state a partition the entry does not
-/// read.
+/// **The member is the host's FitGranularity and not a device enumeration of its
+/// own.** The CPU lane names the same three cuts, and this axis is one axis on both
+/// sides of the device boundary: the axis's own entry states that the route the CPU
+/// lane names \c FitGranularity::kUniform is this member, and the coarsest cut and
+/// the narrow one are the same three tables the CPU's rungs read. Where the two
+/// sides name one thing, they name it once, with one type — a second enumeration
+/// would be a second statement that could come to disagree with the first.
+///
+/// The entries that read a partition are told apart here — once, beside the rows
+/// they are rows of — and the row states the answer rather than a report deriving
+/// it: \c DeviceOptionInfo::partition is this function's answer, so a report and a
+/// chooser read one statement of which cut an entry reads. The cut is a
+/// property of the *entry* and not of the axis a row states: the narrow
+/// partition's pieces are read by the rows whose axis is the partition, by the
+/// rows whose axis is the scheme inside it and by the rows whose axis is the route
+/// inside it, and all three read that one partition. The same holds of the grid.
+///
+/// **Every entry reads one of the three cuts, so every arm names one.** The rows
+/// whose partition axis is kNone are not entries that read no partition: the single
+/// entries, the coarsest partition's own ladders, the all-N and each-order shapes
+/// and the device-callable generics all read the shipped cut — the device-callable
+/// generics read the coarsest slices of the handle their caller was given
+/// (boys_cuda_device.hpp, TableLane64) — and the arm below says so rather than
+/// answering a statement about the axis's membership in a field that states a cut.
 ///
 /// Every enumerator of \c DeviceEntry is named below, and the switch has no default
-/// arm: an option added to the enumeration without a statement of which partition it
-/// reads is a compile error rather than an option silently reported as reading none.
+/// arm: an option added to the enumeration without a statement of which cut it
+/// reads is a compile error rather than an option silently reported as reading one.
 /// That sentence is load-bearing here and not a formality — the answer this function
-/// gives for an unstated entry, \c "no partition member", is itself a plausible one
-/// that a report prints and a reader accepts, so before the assertion below an
-/// omission was indistinguishable from a true answer.
+/// gives for an unstated entry, \c kUnstatedPartition, carries the same out-of-enum
+/// value the packing axis's \c kUnstated does, so the assertion below can tell an
+/// omission from an answer.
 ///
 /// \param entry the entry of a row of this space
 ///
-/// \returns the name of the partition it reads, or the statement that it reads
-///          none; \c nullptr only for an enumerator no arm above names, which the
-///          check below turns into a compile error
+/// \returns the cut it reads, as the host's FitGranularity; \c kUnstatedPartition
+///          only for an enumerator no arm above names, which the check below turns
+///          into a compile error
 ///
 /// \ingroup boys
-constexpr const char* DevicePartitionName(DeviceEntry entry) noexcept {
+constexpr FitGranularity DevicePartitionOf(DeviceEntry entry) noexcept {
     switch (entry)
     {
         // The uniform grid: one table of equal intervals over [0, kFlatHi), the
@@ -327,7 +352,7 @@ constexpr const char* DevicePartitionName(DeviceEntry entry) noexcept {
         case DeviceEntry::kDeviceAllOrdersF64UniformRatHorner:
         case DeviceEntry::kDeviceAllOrdersF32UniformRat:
         case DeviceEntry::kDeviceAllOrdersF32UniformRatHorner:
-            return "uniform";
+            return FitGranularity::kUniform;
 
         // The narrow partition, whose pieces are cut per order: the rows of the
         // partition axis, of the scheme axis inside it and of the route axis
@@ -357,14 +382,15 @@ constexpr const char* DevicePartitionName(DeviceEntry entry) noexcept {
         case DeviceEntry::kDeviceAllOrdersF32NarrowMono:
         case DeviceEntry::kDeviceAllOrdersF32NarrowRat:
         case DeviceEntry::kDeviceAllOrdersF32NarrowRatHorner:
-            return "narrow";
+            return FitGranularity::kNarrow;
 
-        // The entries that read no member of either partition, and the device-callable
-        // generics, which read whatever partition their handle's tables name. Answering
-        // one of the two members for any of these would state a partition the entry does
-        // not read: the single entries and the batch generics are the entry and carry no
-        // partition axis at all, and the coarsest partition's own ladders are a third cut
-        // that is neither of the two named members.
+        // The entries whose row carries no partition axis, and which read the shipped
+        // cut: the single entries and the batch generics are the coarsest fit read whole,
+        // the coarsest partition's own ladders are that cut's pieces, and the all-N and
+        // each-order shapes seed the coarsest ladder at one top order. Naming kUniform or
+        // kNarrow for any of these would state a cut the entry does not read; the shipped
+        // cut is the one it does, and the device-callable generics reach it through the
+        // handle they were given (boys_cuda_device.hpp, TableLane64).
         case DeviceEntry::kSingleF64:
         case DeviceEntry::kSingleF32:
         case DeviceEntry::kSingleF32Fast:
@@ -409,7 +435,7 @@ constexpr const char* DevicePartitionName(DeviceEntry entry) noexcept {
         case DeviceEntry::kDeviceAllOrdersF64RatHorner:
         case DeviceEntry::kDeviceAllOrdersF32Rat:
         case DeviceEntry::kDeviceAllOrdersF32RatHorner:
-            return "no partition member";
+            return FitGranularity::kCoarsest;
 
         // The sentinel one past the last row this report defines, and not a row a call
         // can name, so no partition member is owed for it. It is named rather than left
@@ -425,26 +451,68 @@ constexpr const char* DevicePartitionName(DeviceEntry entry) noexcept {
     }
 
     // An enumerator no arm above names, which the check below turns into a compile
-    // error. Nothing here names a partition for an option that has not stated one.
+    // error. Nothing here names a cut for an option that has not stated one.
+    return kUnstatedPartition;
+}
+
+/// The name a report prints a cut of the domain under.
+///
+/// The strings are the host's: \c GranularityName (backend.hpp) prints the same
+/// three cuts under these three names, and a device report that printed others
+/// would be a second vocabulary for one axis. This function is the device
+/// header's copy of that one because the header it stands in has to stay
+/// compilable by nvcc, which backend.hpp is not.
+///
+/// \param partition the cut
+///
+/// \returns a string literal naming it: "shipped", "narrow" or "uniform"; \c
+///          nullptr for a value outside the enumerators, which is not a cut and
+///          has no name
+///
+/// \ingroup boys
+constexpr const char* DevicePartitionName(FitGranularity partition) noexcept {
+    switch (partition)
+    {
+        case FitGranularity::kCoarsest:
+            return "shipped";
+        case FitGranularity::kNarrow:
+            return "narrow";
+        case FitGranularity::kUniform:
+            return "uniform";
+    }
+
     return nullptr;
 }
 
-/// Whether the switch above states a partition for every enumerator of
+/// The name a report prints the cut an entry reads its fits from under, read
+/// through the two functions above.
+///
+/// \param entry the entry of a row of this space
+///
+/// \returns the name of the cut it reads, or \c nullptr for an enumerator
+///          \c DevicePartitionOf has not been taught
+///
+/// \ingroup boys
+constexpr const char* DevicePartitionName(DeviceEntry entry) noexcept {
+    return DevicePartitionName(DevicePartitionOf(entry));
+}
+
+/// Whether the switch above states a cut for every enumerator of
 /// \c DeviceEntry, read over the enumeration's own count.
 ///
 /// The compilation of this header is what keeps the two in step: an enumerator
 /// added to \c DeviceEntry and not named above falls through that switch's last
 /// return, this predicate sees it, and the assertion below stops the build. A
 /// new option therefore cannot arrive in the space without a statement of which
-/// partition it reads — the omission is the error, rather than a default arm
-/// quietly reporting it as reading none.
+/// cut it reads — the omission is the error, rather than a default arm quietly
+/// reporting it as reading one.
 ///
 /// \returns true when every enumerator of \c DeviceEntry is named by the switch
 ///          above
 constexpr bool DeviceEntriesAllNameTheirPartition() noexcept {
     for (int i = 0; i < static_cast<int>(DeviceEntry::kCount); ++i)
     {
-        if (DevicePartitionName(static_cast<DeviceEntry>(i)) == nullptr)
+        if (DevicePartitionOf(static_cast<DeviceEntry>(i)) == kUnstatedPartition)
         {
             return false;
         }
@@ -455,8 +523,7 @@ constexpr bool DeviceEntriesAllNameTheirPartition() noexcept {
 
 static_assert(DeviceEntriesAllNameTheirPartition(),
               "an enumerator of DeviceEntry names no partition member: name it in "
-              "DevicePartitionName (boys_cuda_options.hpp) as the member its entry reads, or as "
-              "the statement that it reads none");
+              "DevicePartitionOf (boys_cuda_options.hpp) as the cut its entry reads");
 
 /// How an entry reads the fits of region A: as one ladder, seeded at the top
 /// order and stepped down, or as one fit per order — or neither, for the shape
@@ -466,6 +533,22 @@ static_assert(DeviceEntriesAllNameTheirPartition(),
 /// and nothing else: past the region's edge every shape runs the certified body its
 /// own declaration names, which is the interval a row of this axis states its claim
 /// over (boys_cuda_arithmetic.hpp, DeviceOrdersF64).
+///
+/// **It is this header's own enumeration, and the one axis whose member set the two
+/// sides of the device boundary do not share.** The other four axes name the host's
+/// types — \c FitRoute, \c EvalScheme, \c FitGranularity and \c DivisionForm — because
+/// the members the host offers for them are the members the device rows run. This one
+/// is not that case, and the member sets are what say so: the host's \c PackAxis names
+/// the axis a packed lane packs and carries two members, where a single-order shape
+/// has no second order to pack and fixes no reading at all, so this enumeration adds
+/// \c kNotApplicable beside the two readings both sides name, and \c kUnstated as its
+/// out-of-enum sentinel — two members \c PackAxis has none of. The device probe's seam
+/// translates the readings the two do share into the host's cells, where that third
+/// member has no cell of its own (src/boys_cuda_probe.cpp, SeamPackCell).
+///
+/// The split is therefore a decision and not an oversight: where the member sets
+/// genuinely differ the device lane states its own, and where they do not it names the
+/// host's type rather than a mirror of it.
 ///
 /// \ingroup boys
 enum class DevicePacking : int {
@@ -488,14 +571,42 @@ enum class DevicePacking : int {
     kUnstated,
 };
 
-/// The three axes an entry's arithmetic fixes: the family its fits are cut from,
-/// the summation its stored coefficients are read by, and its reading of region A.
+/// The form \c DeviceEntryAxesOf answers for the division axis of an enumerator its
+/// switch has not been taught: not a form and never a row's value.
+///
+/// \c DivisionForm is the host's enumeration and carries no sentinel of its own, so the
+/// out-of-enum value is stated here, beside the one switch that can answer it, as
+/// \c kUnstatedPartition is stated beside the partition's. The assertion below that
+/// switch turns the value into a compile error rather than a form a report prints.
+inline constexpr DivisionForm kUnstatedDivisionForm = static_cast<DivisionForm>(0xFF);
+
+/// The four axes an entry's arithmetic fixes: the family its fits are cut from,
+/// the summation its stored coefficients are read by, its reading of region A, and
+/// the form its ladder's divisions are performed in.
+///
+/// The constructor is the caller's rather than the compiler's so that an arm stating
+/// fewer than all four is a compile error. A left-out member of an aggregate would be
+/// value-initialized, and \c DivisionForm's first enumerator is \c kExactDivision: an
+/// arm that forgot the form would state exact division for an entry that may run
+/// another, which is a wrong answer a report prints rather than an error.
 ///
 /// \ingroup boys
 struct DeviceEntryAxes {
     FitRoute route; ///< the family its fits are of
     EvalScheme scheme; ///< the summation its stored coefficients are read by
     DevicePacking packing; ///< its reading of region A, or kNotApplicable
+    DivisionForm division; ///< the form its ladder's divisions are performed in
+
+    /// States an entry's four axes.
+    ///
+    /// \param r the family its fits are of
+    /// \param s the summation its stored coefficients are read by
+    /// \param p its reading of region A
+    /// \param d the form its ladder's divisions are performed in
+    constexpr DeviceEntryAxes(FitRoute r, EvalScheme s, DevicePacking p, DivisionForm d) noexcept
+        : route(r), scheme(s), packing(p), division(d)
+    {
+    }
 };
 
 /// The axes one entry of the device option space runs, read from that entry's own
@@ -513,14 +624,25 @@ struct DeviceEntryAxes {
 /// rational route's pairs — the two names are two rows and each states the name it was
 /// reached by, which is the one thing about such a row its kernel does not decide.
 ///
+/// **The division is the build's default form and not a per-entry property.** No
+/// entry of this space names a form: the bodies every kernel of them hands its lane
+/// take the form as a compile-time parameter, and the kernels instantiate it from this
+/// switch, so what an entry runs is \c kDefaultDivisionForm —
+/// \c BOYS_BUILD_DEFAULT_DIVISION_FORM, the same value the device probe's seam writes
+/// into that file's device half (src/boys_cuda_probe.cpp), which is what keeps the
+/// build's one statement of the default and the arithmetic its entries run from coming
+/// apart. An entry that ran another form would be a row of the option probe's cross,
+/// where the form it ran is the form the run named rather than this field.
+///
 /// The report's rows read this and do not list it beside it: two statements of one
 /// arithmetic can come apart, and the row a chooser places is the one that must not.
 ///
 /// \param entry the option
 ///
-/// \returns its three axes, or \c DevicePacking::kUnstated in \c packing when this
-///          switch has not been taught the entry — which the assertion below turns
-///          into a compile error rather than a default
+/// \returns its four axes, or \c DevicePacking::kUnstated in \c packing and
+///          \c kUnstatedDivisionForm in \c division when this switch has not been
+///          taught the entry — which the assertion below turns into a compile error
+///          rather than a default
 ///
 /// \ingroup boys
 constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
@@ -543,8 +665,8 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kDeviceSingleF32:
         case DeviceEntry::kDeviceSingleF32Fast:
         case DeviceEntry::kDeviceSingleF16:
-            return {FitRoute::kChebyshev, EvalScheme::kSplitClenshaw,
-                    DevicePacking::kNotApplicable};
+            return {FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, DevicePacking::kNotApplicable,
+                    kDefaultDivisionForm};
 
         // The ladder read on the Chebyshev pieces: the coarsest partition's ladders on
         // both lanes and in both formats, the all-N and each-order shapes, the
@@ -571,7 +693,8 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kDeviceEachOrderF16:
         case DeviceEntry::kDeviceAllOrdersF64Narrow:
         case DeviceEntry::kDeviceAllOrdersF32Narrow:
-            return {FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, DevicePacking::kLadder};
+            return {FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, DevicePacking::kLadder,
+                    kDefaultDivisionForm};
 
         // The same pieces and the same summation read the other way: each order's own
         // fit, through DeviceOrdersBody and DeviceOrdersBody32 over a Chebyshev lane.
@@ -579,7 +702,8 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kAllOrdersF64NarrowOrders:
         case DeviceEntry::kAllOrdersF32Orders:
         case DeviceEntry::kAllOrdersF32NarrowOrders:
-            return {FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, DevicePacking::kPerOrder};
+            return {FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, DevicePacking::kPerOrder,
+                    kDefaultDivisionForm};
 
         // The monomial form of the same fits: Lane64MonoFull, Lane64MonoEff, the narrow
         // partition's monomial lanes and their float lane counterparts state kMonomial,
@@ -590,12 +714,14 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kAllOrdersF32NarrowMono:
         case DeviceEntry::kDeviceAllOrdersF64NarrowMono:
         case DeviceEntry::kDeviceAllOrdersF32NarrowMono:
-            return {FitRoute::kChebyshev, EvalScheme::kHorner, DevicePacking::kLadder};
+            return {FitRoute::kChebyshev, EvalScheme::kHorner, DevicePacking::kLadder,
+                    kDefaultDivisionForm};
 
         case DeviceEntry::kAllOrdersF64OrdersMono:
         case DeviceEntry::kAllOrdersF64NarrowOrdersMono:
         case DeviceEntry::kAllOrdersF32NarrowOrdersMono:
-            return {FitRoute::kChebyshev, EvalScheme::kHorner, DevicePacking::kPerOrder};
+            return {FitRoute::kChebyshev, EvalScheme::kHorner, DevicePacking::kPerOrder,
+                    kDefaultDivisionForm};
 
         // The uniform grid, whose every block is one order's own fit at the interval's
         // own degree: every order is read from its own block and none is built from
@@ -609,7 +735,8 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kAllOrdersF32OrdersUniform:
         case DeviceEntry::kDeviceAllOrdersF64Uniform:
         case DeviceEntry::kDeviceAllOrdersF32Uniform:
-            return {FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, DevicePacking::kPerOrder};
+            return {FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, DevicePacking::kPerOrder,
+                    kDefaultDivisionForm};
 
         case DeviceEntry::kAllOrdersF64UniformHorner:
         case DeviceEntry::kAllOrdersF64OrdersUniformHorner:
@@ -617,7 +744,8 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kAllOrdersF32OrdersUniformHorner:
         case DeviceEntry::kDeviceAllOrdersF64UniformHorner:
         case DeviceEntry::kDeviceAllOrdersF32UniformHorner:
-            return {FitRoute::kChebyshev, EvalScheme::kHorner, DevicePacking::kPerOrder};
+            return {FitRoute::kChebyshev, EvalScheme::kHorner, DevicePacking::kPerOrder,
+                    kDefaultDivisionForm};
 
         // The fit route: the same partitions, region structure and shapes with a piece
         // stored as a numerator and a denominator, which is a family of its own and the
@@ -635,7 +763,8 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kDeviceAllOrdersF64NarrowRat:
         case DeviceEntry::kDeviceAllOrdersF32Rat:
         case DeviceEntry::kDeviceAllOrdersF32NarrowRat:
-            return {FitRoute::kRationalMinimax, EvalScheme::kSplitClenshaw, DevicePacking::kLadder};
+            return {FitRoute::kRationalMinimax, EvalScheme::kSplitClenshaw, DevicePacking::kLadder,
+                    kDefaultDivisionForm};
 
         case DeviceEntry::kAllOrdersF64RatHorner:
         case DeviceEntry::kAllOrdersF64NarrowRatHorner:
@@ -645,7 +774,8 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kDeviceAllOrdersF64NarrowRatHorner:
         case DeviceEntry::kDeviceAllOrdersF32RatHorner:
         case DeviceEntry::kDeviceAllOrdersF32NarrowRatHorner:
-            return {FitRoute::kRationalMinimax, EvalScheme::kHorner, DevicePacking::kLadder};
+            return {FitRoute::kRationalMinimax, EvalScheme::kHorner, DevicePacking::kLadder,
+                    kDefaultDivisionForm};
 
         // The route's pieces on its orders reading: each order's own piece at A = 1,
         // through the same bodies the Chebyshev rows of that axis use
@@ -654,14 +784,15 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kAllOrdersF64NarrowOrdersRat:
         case DeviceEntry::kAllOrdersF32OrdersRat:
         case DeviceEntry::kAllOrdersF32NarrowOrdersRat:
-            return {FitRoute::kRationalMinimax, EvalScheme::kSplitClenshaw,
-                    DevicePacking::kPerOrder};
+            return {FitRoute::kRationalMinimax, EvalScheme::kSplitClenshaw, DevicePacking::kPerOrder,
+                    kDefaultDivisionForm};
 
         case DeviceEntry::kAllOrdersF64OrdersRatHorner:
         case DeviceEntry::kAllOrdersF64NarrowOrdersRatHorner:
         case DeviceEntry::kAllOrdersF32OrdersRatHorner:
         case DeviceEntry::kAllOrdersF32NarrowOrdersRatHorner:
-            return {FitRoute::kRationalMinimax, EvalScheme::kHorner, DevicePacking::kPerOrder};
+            return {FitRoute::kRationalMinimax, EvalScheme::kHorner, DevicePacking::kPerOrder,
+                    kDefaultDivisionForm};
 
         // The grid on the rational route: one pair per interval at the interval's own
         // stored count, read by the two Horner sums every pair of this family is read by
@@ -673,8 +804,8 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kAllOrdersF32OrdersUniformRat:
         case DeviceEntry::kDeviceAllOrdersF64UniformRat:
         case DeviceEntry::kDeviceAllOrdersF32UniformRat:
-            return {FitRoute::kRationalMinimax, EvalScheme::kSplitClenshaw,
-                    DevicePacking::kPerOrder};
+            return {FitRoute::kRationalMinimax, EvalScheme::kSplitClenshaw, DevicePacking::kPerOrder,
+                    kDefaultDivisionForm};
 
         case DeviceEntry::kAllOrdersF64UniformRatHorner:
         case DeviceEntry::kAllOrdersF64OrdersUniformRatHorner:
@@ -682,11 +813,12 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kAllOrdersF32OrdersUniformRatHorner:
         case DeviceEntry::kDeviceAllOrdersF64UniformRatHorner:
         case DeviceEntry::kDeviceAllOrdersF32UniformRatHorner:
-            return {FitRoute::kRationalMinimax, EvalScheme::kHorner, DevicePacking::kPerOrder};
+            return {FitRoute::kRationalMinimax, EvalScheme::kHorner, DevicePacking::kPerOrder,
+                    kDefaultDivisionForm};
 
         // The sentinel one past the last row this report defines, and not a row a call
         // can name. It is named rather than left to a default arm for the reason
-        // DevicePartitionName's kCount arm states: a default would swallow the next
+        // DevicePartitionOf's kCount arm gives: a default would swallow the next
         // enumerator as quietly as it swallows this one, and the assertion below is what
         // fails the build for a row this switch has not been taught.
         case DeviceEntry::kCount:
@@ -695,24 +827,33 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
 
     // An enumerator no arm above names, which the check below turns into a compile
     // error. Nothing here states an arithmetic for an option that has not named one.
-    return {FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, DevicePacking::kUnstated};
+    return {FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, DevicePacking::kUnstated,
+            kUnstatedDivisionForm};
 }
 
-/// Whether the switch above states the three axes for every enumerator of
+/// Whether the switch above states the four axes for every enumerator of
 /// \c DeviceEntry, read over the enumeration's own count.
 ///
 /// The compilation of this header is what keeps the two in step: an enumerator added to
 /// \c DeviceEntry and not named above falls through that switch, this predicate sees the
-/// unstated packing it answered, and the assertion below stops the build. A new option
-/// therefore cannot arrive in the space without a statement of the route, the scheme and
-/// the packing its entry runs — the omission is the error, rather than a row quietly
-/// reporting the build's defaults for arithmetic it does not run.
+/// unstated value it answered, and the assertion below stops the build. A new option
+/// therefore cannot arrive in the space without a statement of the route, the scheme,
+/// the packing and the division its entry runs — the omission is the error, rather than
+/// a row quietly reporting the build's defaults for arithmetic it does not run.
+///
+/// Both sentinels are read and not only the packing's: a predicate that tested one axis
+/// would pass an arm that stated every axis but the other, which is the omission it
+/// exists to catch. The division's sentinel carries a value outside \c DivisionForm's
+/// enumerators — the axis has no member of its own for it, because its type is the
+/// host's — and \c kUnstatedDivisionForm is that value (boys_cuda_options.hpp).
 ///
 /// \returns true when every enumerator of \c DeviceEntry states its axes above
 constexpr bool DeviceEntriesAllStateTheirAxes() noexcept {
     for (int i = 0; i < static_cast<int>(DeviceEntry::kCount); ++i)
     {
-        if (DeviceEntryAxesOf(static_cast<DeviceEntry>(i)).packing == DevicePacking::kUnstated)
+        const DeviceEntryAxes axes = DeviceEntryAxesOf(static_cast<DeviceEntry>(i));
+
+        if (axes.packing == DevicePacking::kUnstated || axes.division == kUnstatedDivisionForm)
         {
             return false;
         }
@@ -723,7 +864,8 @@ constexpr bool DeviceEntriesAllStateTheirAxes() noexcept {
 
 static_assert(DeviceEntriesAllStateTheirAxes(),
               "an enumerator of DeviceEntry states no axes: name it in DeviceEntryAxesOf "
-              "(boys_cuda_options.hpp) as the route, the scheme and the packing its entry runs");
+              "(boys_cuda_options.hpp) as the route, the scheme, the packing and the division "
+              "its entry runs");
 
 /// One row of the device option space: an option this surface offers, with
 /// what a chooser needs to place it.
@@ -752,14 +894,16 @@ struct DeviceOptionInfo {
     const char* refusedBecause; ///< why not, when \c built is false; nullptr otherwise
 
     /// The fit route the entry's pieces are cut from, the summation its stored
-    /// coefficients are read by, and its reading of region A.
+    /// coefficients are read by, its reading of region A, and the form its ladder's
+    /// divisions are performed in.
     ///
-    /// Stated on every row and not only on the rows that move them: the three name the
+    /// Stated on every row and not only on the rows that move them: the four name the
     /// arithmetic a row is, so a chooser placing two rows side by side reads whether
     /// they are the same arithmetic off the rows themselves, and a winner's identity is
     /// its own tuple rather than something a reader recovers from its name. The member
     /// of a row whose \c axis is kRoute is \c route, of one whose axis is kScheme
-    /// \c scheme, of one whose axis is kPacking \c packing.
+    /// \c scheme, of one whose axis is kPacking \c packing, and of one whose axis is
+    /// kDivision \c division.
     ///
     /// Read from the row's own entry and never listed beside it:
     /// \c DeviceEntryAxesOf is the one statement of what an entry runs, read off the
@@ -771,6 +915,23 @@ struct DeviceOptionInfo {
     FitRoute route = DeviceEntryAxesOf(entry).route;
     EvalScheme scheme = DeviceEntryAxesOf(entry).scheme;
     DevicePacking packing = DeviceEntryAxesOf(entry).packing;
+    DivisionForm division = DeviceEntryAxesOf(entry).division;
+
+    /// The cut of the domain the entry reads its fits from.
+    ///
+    /// Stated on every row, as the four axes above are: the cut a row reads is a
+    /// property of the arithmetic and not of the axis it varies, so the rows whose
+    /// \c axis is the partition, those whose axis is the scheme inside it and those
+    /// whose axis is the route inside it all state the cut they read here, and a
+    /// chooser placing two rows side by side sees whether they read the same tables.
+    /// The member of a row whose \c axis is kPartition is this field.
+    ///
+    /// Read from the row's own entry and never listed beside it:
+    /// \c DevicePartitionOf is the one statement of which cut an entry reads, read off
+    /// the structure of the kernel bodies and the tables they are handed
+    /// (boys_cuda_device.hpp, BoysDeviceTables), so a copy written here could disagree
+    /// with the arithmetic the row reports.
+    FitGranularity partition = DevicePartitionOf(entry);
 
 };
 
@@ -781,9 +942,10 @@ struct DeviceOptionInfo {
 /// behind it: a precision, a shape or an axis member added to the surface appears here
 /// as a row, and a row no build-time seam serves is carried with the reason. What a
 /// chooser gets from a row is the entry, the precision it computes in, the question it
-/// answers, the axis it varies where it has one, the route, the summation and the
-/// packing its entry runs, the degree tables it reads, and the bound it is documented
-/// at — the same facts the accuracy gate certifies the entry at.
+/// answers, the axis it varies where it has one, the route, the summation, the packing
+/// and the division its entry runs, the cut of the domain it reads its fits from, the
+/// degree tables it reads, and the bound it is documented at — the same facts the
+/// accuracy gate certifies the entry at.
 ///
 /// The bound is the documented figure, over the whole argument range the entry serves;
 /// \c boundForm states the shape the documentation gives it. Where that form carries a

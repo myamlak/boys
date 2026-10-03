@@ -1062,6 +1062,27 @@ if (BUILD_CUDA)
         boys_strict_warnings(boys-cuda-tests)
         add_test(NAME boys-cuda-tests COMMAND boys-cuda-tests)
 
+        # The NEGATIVE CONTROL for the division-form check, and the same source
+        # file: BOYS_CUDA_TEST_DROP_DIVISION_FORM makes every launch run
+        # kExactDivision whatever form it asked for, so the check that demands the
+        # plain reciprocal differ from exact division somewhere has no difference
+        # to find. The control is registered on what that run PRINTS rather than on
+        # its exit status, because the whole point of the fixture is that the check
+        # fails: a run that matches the line below is a run in which the check was
+        # shown to be falsifiable, and a crash or a hang matches nothing.
+        add_executable(boys-cuda-tests-divform-control tests/boys_cuda_test.cpp)
+        target_compile_definitions(boys-cuda-tests-divform-control
+            PRIVATE BOYS_CUDA_TEST_DROP_DIVISION_FORM)
+        target_link_libraries(boys-cuda-tests-divform-control PRIVATE boys-cuda boys
+            gtest gtest_main)
+        target_include_directories(boys-cuda-tests-divform-control PRIVATE src)
+        boys_strict_warnings(boys-cuda-tests-divform-control)
+        add_test(NAME boys-cuda-tests-divform-control
+            COMMAND boys-cuda-tests-divform-control
+                --gtest_filter=BoysCudaTest.DivisionFormsDifferByBits)
+        set_tests_properties(boys-cuda-tests-divform-control PROPERTIES
+            PASS_REGULAR_EXPRESSION "exact vs plain 0 of")
+
         # The DEVICE OPTION PROBE's own test. It asserts nothing about a cost -
         # those are the card's - and asserts instead what a test can own about
         # the surface: that an absent device is a status, that the card the

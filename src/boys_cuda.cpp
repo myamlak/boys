@@ -21,75 +21,78 @@ int BoysCudaUploadTables();
 int BoysCudaDeviceTableAddresses(void** out);
 int BoysCudaDeviceTableAddressesTail(void** out);
 int BoysCudaLaunchSingleF32(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchSingleF32Fast(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllNF32(int nmax, const double* x, float* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllNF32(
+    int form, int nmax, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32Uniform(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32UniformHorner(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32UniformRat(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64UniformRat(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32Narrow(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32NarrowMono(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32Rat(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32NarrowRat(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32Orders(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32NarrowOrders(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32NarrowOrdersMono(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32OrdersRat(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32NarrowOrdersRat(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchSingleF64(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64Uniform(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64UniformHorner(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64Orders(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64Narrow(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64NarrowOrders(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64Mono(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64OrdersMono(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64NarrowMono(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64NarrowOrdersMono(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64Rat(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64OrdersRat(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64NarrowRat(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64NarrowOrdersRat(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllNF64(int nmax, const double* x, double* out, std::size_t count, void* stream);
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllNF64(
+    int form, int nmax, const double* x, double* out, std::size_t count, void* stream);
 #if BoysFp16
 int BoysCudaLaunchSingleF16(
-    const int* n, const void* x, void* out, std::size_t count, void* stream);
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF16(
-    const int* n, const void* x, void* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllNF16(int nmax, const void* x, void* out, std::size_t count, void* stream);
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllNF16(
+    int form, int nmax, const void* x, void* out, std::size_t count, void* stream);
 #endif
 }
 
@@ -119,18 +122,46 @@ BoysStatus CheckOrder(int nmax) {
     return BoysStatus::kSuccess;
 }
 
-// Shared launch path for every entry: the count == 0 no-op (a zero-block launch is a
-// CUDA error, an empty batch is a success that writes nothing) and the one status
-// mapping. Order is either entry's first argument.
+// The division form a caller may name. One kernel holds one division (the launch picks
+// the instantiation; a kernel never branches on it), so a value outside the three has no
+// kernel to select and is refused here, before anything is launched.
+BoysStatus CheckDivisionForm(DivisionForm form) {
+    switch (form)
+    {
+    case DivisionForm::kExactDivision:
+    case DivisionForm::kPlainReciprocal:
+    case DivisionForm::kRefinedReciprocal:
+        return BoysStatus::kSuccess;
+    }
+
+    return BoysStatus::kInvalidArgument;
+}
+
+// Shared launch path for every entry: the form check, the count == 0 no-op (a zero-block
+// launch is a CUDA error, an empty batch is a success that writes nothing) and the one
+// status mapping. Order is either entry's first argument; the form is the division the
+// launched kernel is built with, and the launcher takes it as its own first argument.
 template <typename Launcher, typename Order, typename X, typename Value>
-BoysStatus RunLaunch(
-    Launcher launcher, Order order, X x, Value* out, std::size_t count, void* stream) {
+BoysStatus RunLaunch(Launcher launcher,
+                     Order order,
+                     X x,
+                     Value* out,
+                     std::size_t count,
+                     void* stream,
+                     DivisionForm form) {
+    const BoysStatus formStatus = CheckDivisionForm(form);
+
+    if (formStatus != BoysStatus::kSuccess)
+    {
+        return formStatus;
+    }
+
     if (count == 0)
     {
         return BoysStatus::kSuccess;
     }
 
-    return FromLaunchCode(launcher(order, x, out, count, stream));
+    return FromLaunchCode(launcher(static_cast<int>(form), order, x, out, count, stream));
 }
 
 } // namespace
@@ -298,7 +329,7 @@ BoysStatus BoysCuda::DeviceTables(BoysDeviceTables* out) {
 
 template <RegionBExp kExp>
 BoysStatus BoysCuda::SingleF32(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
@@ -307,25 +338,25 @@ BoysStatus BoysCuda::SingleF32(
     // The two readings differ only in the region-B exponential.
     if constexpr (kExp == RegionBExp::kFast)
     {
-        return RunLaunch(BoysCudaLaunchSingleF32Fast, n, x, out, count, stream);
+        return RunLaunch(BoysCudaLaunchSingleF32Fast, n, x, out, count, stream, form);
     } else
     {
-        return RunLaunch(BoysCudaLaunchSingleF32, n, x, out, count, stream);
+        return RunLaunch(BoysCudaLaunchSingleF32, n, x, out, count, stream, form);
     }
 }
 
 BoysStatus BoysCuda::AllOrdersF32(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF32, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF32, n, x, out, count, stream, form);
 }
 
 BoysStatus BoysCuda::AllNF32(
-    int nmax, const double* x, float* out, std::size_t count, void* stream) {
+    int nmax, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
     const auto valid = CheckOrder(nmax);
 
     if (valid != BoysStatus::kSuccess)
@@ -338,41 +369,57 @@ BoysStatus BoysCuda::AllNF32(
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllNF32, nmax, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllNF32, nmax, x, out, count, stream, form);
 }
 
-BoysStatus BoysCuda::SingleF64(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+BoysStatus BoysCuda::SingleF64(const int* n,
+                               const double* x,
+                               double* out,
+                               std::size_t count,
+                               void* stream,
+                               DivisionForm form) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchSingleF64, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchSingleF64, n, x, out, count, stream, form);
 }
 
-BoysStatus BoysCuda::AllOrdersF64(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+BoysStatus BoysCuda::AllOrdersF64(const int* n,
+                                  const double* x,
+                                  double* out,
+                                  std::size_t count,
+                                  void* stream,
+                                  DivisionForm form) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF64, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF64, n, x, out, count, stream, form);
 }
 
-BoysStatus BoysCuda::AllOrdersF64Orders(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+BoysStatus BoysCuda::AllOrdersF64Orders(const int* n,
+                                        const double* x,
+                                        double* out,
+                                        std::size_t count,
+                                        void* stream,
+                                        DivisionForm form) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF64Orders, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF64Orders, n, x, out, count, stream, form);
 }
 
-BoysStatus BoysCuda::AllOrdersF64Narrow(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+BoysStatus BoysCuda::AllOrdersF64Narrow(const int* n,
+                                        const double* x,
+                                        double* out,
+                                        std::size_t count,
+                                        void* stream,
+                                        DivisionForm form) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
@@ -380,105 +427,141 @@ BoysStatus BoysCuda::AllOrdersF64Narrow(
 
     // The kernels read the degrees the partition was stored at, which BoysCudaUploadTables
     // has already placed.
-    return RunLaunch(BoysCudaLaunchAllOrdersF64Narrow, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF64Narrow, n, x, out, count, stream, form);
 }
 
-BoysStatus BoysCuda::AllOrdersF64NarrowOrders(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+BoysStatus BoysCuda::AllOrdersF64NarrowOrders(const int* n,
+                                              const double* x,
+                                              double* out,
+                                              std::size_t count,
+                                              void* stream,
+                                              DivisionForm form) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrders, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrders, n, x, out, count, stream, form);
 }
 
 // The monomial scheme's four shapes: the entries above's path, with the launcher naming the
 // pool and the summation the scheme reads.
-BoysStatus BoysCuda::AllOrdersF64Mono(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+BoysStatus BoysCuda::AllOrdersF64Mono(const int* n,
+                                      const double* x,
+                                      double* out,
+                                      std::size_t count,
+                                      void* stream,
+                                      DivisionForm form) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF64Mono, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF64Mono, n, x, out, count, stream, form);
 }
 
-BoysStatus BoysCuda::AllOrdersF64OrdersMono(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+BoysStatus BoysCuda::AllOrdersF64OrdersMono(const int* n,
+                                            const double* x,
+                                            double* out,
+                                            std::size_t count,
+                                            void* stream,
+                                            DivisionForm form) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF64OrdersMono, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF64OrdersMono, n, x, out, count, stream, form);
 }
 
-BoysStatus BoysCuda::AllOrdersF64NarrowMono(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+BoysStatus BoysCuda::AllOrdersF64NarrowMono(const int* n,
+                                            const double* x,
+                                            double* out,
+                                            std::size_t count,
+                                            void* stream,
+                                            DivisionForm form) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowMono, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowMono, n, x, out, count, stream, form);
 }
 
-BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono(const int* n,
+                                                  const double* x,
+                                                  double* out,
+                                                  std::size_t count,
+                                                  void* stream,
+                                                  DivisionForm form) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrdersMono, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrdersMono, n, x, out, count, stream, form);
 }
 
 // The fit route's four shapes, on the same path: the launcher names the pair a piece is read
 // from, and the route's cut is per reading, so each shape's launcher names which cut it reads.
-BoysStatus BoysCuda::AllOrdersF64Rat(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+BoysStatus BoysCuda::AllOrdersF64Rat(const int* n,
+                                     const double* x,
+                                     double* out,
+                                     std::size_t count,
+                                     void* stream,
+                                     DivisionForm form) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF64Rat, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF64Rat, n, x, out, count, stream, form);
 }
 
-BoysStatus BoysCuda::AllOrdersF64OrdersRat(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+BoysStatus BoysCuda::AllOrdersF64OrdersRat(const int* n,
+                                           const double* x,
+                                           double* out,
+                                           std::size_t count,
+                                           void* stream,
+                                           DivisionForm form) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF64OrdersRat, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF64OrdersRat, n, x, out, count, stream, form);
 }
 
-BoysStatus BoysCuda::AllOrdersF64NarrowRat(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+BoysStatus BoysCuda::AllOrdersF64NarrowRat(const int* n,
+                                           const double* x,
+                                           double* out,
+                                           std::size_t count,
+                                           void* stream,
+                                           DivisionForm form) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowRat, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowRat, n, x, out, count, stream, form);
 }
 
-BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat(const int* n,
+                                                 const double* x,
+                                                 double* out,
+                                                 std::size_t count,
+                                                 void* stream,
+                                                 DivisionForm form) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrdersRat, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrdersRat, n, x, out, count, stream, form);
 }
 
 BoysStatus BoysCuda::AllNF64(
-    int nmax, const double* x, double* out, std::size_t count, void* stream) {
+    int nmax, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
     const auto valid = CheckOrder(nmax);
 
     if (valid != BoysStatus::kSuccess)
@@ -491,31 +574,32 @@ BoysStatus BoysCuda::AllNF64(
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllNF64, nmax, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllNF64, nmax, x, out, count, stream, form);
 }
 
 #if BoysFp16
 BoysStatus BoysCuda::SingleF16(
-    const int* n, const F16* x, F16* out, std::size_t count, void* stream) {
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchSingleF16, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchSingleF16, n, x, out, count, stream, form);
 }
 
 BoysStatus BoysCuda::AllOrdersF16(
-    const int* n, const F16* x, F16* out, std::size_t count, void* stream) {
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF16, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF16, n, x, out, count, stream, form);
 }
 
-BoysStatus BoysCuda::AllNF16(int nmax, const F16* x, F16* out, std::size_t count, void* stream) {
+BoysStatus BoysCuda::AllNF16(
+    int nmax, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
     const auto valid = CheckOrder(nmax);
 
     if (valid != BoysStatus::kSuccess)
@@ -528,12 +612,16 @@ BoysStatus BoysCuda::AllNF16(int nmax, const F16* x, F16* out, std::size_t count
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllNF16, nmax, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllNF16, nmax, x, out, count, stream, form);
 }
 #endif // BoysFp16
 
-BoysStatus BoysCuda::AllOrdersF64Uniform(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+BoysStatus BoysCuda::AllOrdersF64Uniform(const int* n,
+                                         const double* x,
+                                         double* out,
+                                         std::size_t count,
+                                         void* stream,
+                                         DivisionForm form) {
     // The route's table is stored at one degree for every order and interval, so there is no
     // shorter image of it to cut: that one degree is the arithmetic this entry documents.
 
@@ -542,12 +630,16 @@ BoysStatus BoysCuda::AllOrdersF64Uniform(
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF64Uniform, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF64Uniform, n, x, out, count, stream, form);
 }
 
 
-BoysStatus BoysCuda::AllOrdersF64UniformHorner(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+BoysStatus BoysCuda::AllOrdersF64UniformHorner(const int* n,
+                                               const double* x,
+                                               double* out,
+                                               std::size_t count,
+                                               void* stream,
+                                               DivisionForm form) {
     // The other form of the same table, at the same contract: the degree is a property of the
     // stored table and not of the basis it is summed in.
 
@@ -556,12 +648,16 @@ BoysStatus BoysCuda::AllOrdersF64UniformHorner(
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF64UniformHorner, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF64UniformHorner, n, x, out, count, stream, form);
 }
 
 
-BoysStatus BoysCuda::AllOrdersF64OrdersUniform(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+BoysStatus BoysCuda::AllOrdersF64OrdersUniform(const int* n,
+                                               const double* x,
+                                               double* out,
+                                               std::size_t count,
+                                               void* stream,
+                                               DivisionForm form) {
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
@@ -571,24 +667,28 @@ BoysStatus BoysCuda::AllOrdersF64OrdersUniform(
     // The route's one reading of the grid, and therefore the kernel
     // AllOrdersF64Uniform launches: the packing axis this entry names has one
     // member here, for the reason the header's declaration states.
-    return RunLaunch(BoysCudaLaunchAllOrdersF64Uniform, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF64Uniform, n, x, out, count, stream, form);
 }
 
 
-BoysStatus BoysCuda::AllOrdersF64OrdersUniformHorner(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+BoysStatus BoysCuda::AllOrdersF64OrdersUniformHorner(const int* n,
+                                                     const double* x,
+                                                     double* out,
+                                                     std::size_t count,
+                                                     void* stream,
+                                                     DivisionForm form) {
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF64UniformHorner, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF64UniformHorner, n, x, out, count, stream, form);
 }
 
 
 BoysStatus BoysCuda::AllOrdersF32Uniform(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
     // The float lane's uniform table is stored at one degree for every order and interval
     // exactly as the double lane's is, so the same contract holds. What the route's own
     // placement of that degree buys is the lane's table budget.
@@ -598,19 +698,19 @@ BoysStatus BoysCuda::AllOrdersF32Uniform(
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF32Uniform, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF32Uniform, n, x, out, count, stream, form);
 }
 
 
 BoysStatus BoysCuda::AllOrdersF32UniformHorner(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF32UniformHorner, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF32UniformHorner, n, x, out, count, stream, form);
 }
 
 
@@ -618,80 +718,96 @@ BoysStatus BoysCuda::AllOrdersF32UniformHorner(
 // the table it reads is one numerator/denominator pair per interval rather than one polynomial
 // per interval, so the launch below is a kernel of its own and not the Chebyshev one.
 BoysStatus BoysCuda::AllOrdersF32UniformRat(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF32UniformRat, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF32UniformRat, n, x, out, count, stream, form);
 }
 
 BoysStatus BoysCuda::AllOrdersF32UniformRatHorner(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
 
-    return AllOrdersF32UniformRat(n, x, out, count, stream);
+    return AllOrdersF32UniformRat(n, x, out, count, stream, form);
 }
 
-BoysStatus BoysCuda::AllOrdersF64UniformRat(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+BoysStatus BoysCuda::AllOrdersF64UniformRat(const int* n,
+                                            const double* x,
+                                            double* out,
+                                            std::size_t count,
+                                            void* stream,
+                                            DivisionForm form) {
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF64UniformRat, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF64UniformRat, n, x, out, count, stream, form);
 }
 
-BoysStatus BoysCuda::AllOrdersF64UniformRatHorner(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+BoysStatus BoysCuda::AllOrdersF64UniformRatHorner(const int* n,
+                                                  const double* x,
+                                                  double* out,
+                                                  std::size_t count,
+                                                  void* stream,
+                                                  DivisionForm form) {
 
-    return AllOrdersF64UniformRat(n, x, out, count, stream);
+    return AllOrdersF64UniformRat(n, x, out, count, stream, form);
 }
 
 // The grid's rational member over the route's other packing axis, which has one member here:
 // the pair is stored per interval at the interval's own pair and stored count, so no gather
 // has a stride to step and the launch below is the per-argument entry's kernel.
 BoysStatus BoysCuda::AllOrdersF32OrdersUniformRat(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF32UniformRat, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF32UniformRat, n, x, out, count, stream, form);
 }
 
 BoysStatus BoysCuda::AllOrdersF32OrdersUniformRatHorner(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
 
-    return AllOrdersF32OrdersUniformRat(n, x, out, count, stream);
+    return AllOrdersF32OrdersUniformRat(n, x, out, count, stream, form);
 }
 
 // The same four on the double lane's grid: that lane's own pair per interval over its own
 // intervals, read by that lane's launcher.
-BoysStatus BoysCuda::AllOrdersF64OrdersUniformRat(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+BoysStatus BoysCuda::AllOrdersF64OrdersUniformRat(const int* n,
+                                                  const double* x,
+                                                  double* out,
+                                                  std::size_t count,
+                                                  void* stream,
+                                                  DivisionForm form) {
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF64UniformRat, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF64UniformRat, n, x, out, count, stream, form);
 }
 
-BoysStatus BoysCuda::AllOrdersF64OrdersUniformRatHorner(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+BoysStatus BoysCuda::AllOrdersF64OrdersUniformRatHorner(const int* n,
+                                                        const double* x,
+                                                        double* out,
+                                                        std::size_t count,
+                                                        void* stream,
+                                                        DivisionForm form) {
 
-    return AllOrdersF64OrdersUniformRat(n, x, out, count, stream);
+    return AllOrdersF64OrdersUniformRat(n, x, out, count, stream, form);
 }
 
 BoysStatus BoysCuda::AllOrdersF32Narrow(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
     // The lane's narrow partition reads region B's degrees as the float lane's own
     // (NarrowRegionBDegrees over the float pieces). Region A needs no table beside them
     // because this lane's region-A seed is the double lane's.
@@ -701,12 +817,12 @@ BoysStatus BoysCuda::AllOrdersF32Narrow(
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF32Narrow, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF32Narrow, n, x, out, count, stream, form);
 }
 
 
 BoysStatus BoysCuda::AllOrdersF32NarrowMono(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
     // The other form of the partition above: the degrees are the monomial coefficients' own
     // (NarrowRegionBDegrees at TailBasis::kMonomial). Region A is no second table here either:
     // this lane's region-A seed is the double lane's narrow monomial table.
@@ -716,12 +832,12 @@ BoysStatus BoysCuda::AllOrdersF32NarrowMono(
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowMono, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowMono, n, x, out, count, stream, form);
 }
 
 
 BoysStatus BoysCuda::AllOrdersF32Rat(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
     // The lane's rational route reads this lane's own fit: the region-B pair's degrees are its
     // own (RationalRegionBF32Degrees), and region A's seed is the double lane's pair.
 
@@ -730,12 +846,12 @@ BoysStatus BoysCuda::AllOrdersF32Rat(
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF32Rat, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF32Rat, n, x, out, count, stream, form);
 }
 
 
 BoysStatus BoysCuda::AllOrdersF32RatHorner(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
     // The other scheme name of the route above, over the same pair: both names reach one
     // kernel and one arithmetic.
 
@@ -744,12 +860,12 @@ BoysStatus BoysCuda::AllOrdersF32RatHorner(
         return BoysStatus::kDeviceError;
     }
 
-    return AllOrdersF32Rat(n, x, out, count, stream);
+    return AllOrdersF32Rat(n, x, out, count, stream, form);
 }
 
 
 BoysStatus BoysCuda::AllOrdersF32NarrowRat(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
     // The route above on the narrow partition, whose region-B pair is this lane's
     // own fit there, read at its own degrees.
 
@@ -758,12 +874,12 @@ BoysStatus BoysCuda::AllOrdersF32NarrowRat(
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowRat, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowRat, n, x, out, count, stream, form);
 }
 
 
 BoysStatus BoysCuda::AllOrdersF32NarrowRatHorner(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
     // The other scheme name of the pair above, over the same kernel.
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
@@ -771,7 +887,7 @@ BoysStatus BoysCuda::AllOrdersF32NarrowRatHorner(
         return BoysStatus::kDeviceError;
     }
 
-    return AllOrdersF32NarrowRat(n, x, out, count, stream);
+    return AllOrdersF32NarrowRat(n, x, out, count, stream, form);
 }
 
 
@@ -780,19 +896,19 @@ BoysStatus BoysCuda::AllOrdersF32NarrowRatHorner(
 // coarsest partition under both its names, the narrow partition in both bases and the
 // rational route out of its own float pairs each have both packings.
 BoysStatus BoysCuda::AllOrdersF32Orders(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF32Orders, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF32Orders, n, x, out, count, stream, form);
 }
 
 
 BoysStatus BoysCuda::AllOrdersF32NarrowOrders(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
@@ -801,12 +917,12 @@ BoysStatus BoysCuda::AllOrdersF32NarrowOrders(
 
     // The same two tables its per-argument twin reads, on the other axis: the
     // degrees are a property of the stored fit and not of the reading.
-    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowOrders, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowOrders, n, x, out, count, stream, form);
 }
 
 
 BoysStatus BoysCuda::AllOrdersF32NarrowOrdersMono(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
@@ -815,60 +931,60 @@ BoysStatus BoysCuda::AllOrdersF32NarrowOrdersMono(
 
     // The same two tables its per-argument twin reads, on the other axis: the
     // degrees are a property of the stored fit and not of the reading.
-    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowOrdersMono, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowOrdersMono, n, x, out, count, stream, form);
 }
 
 
 BoysStatus BoysCuda::AllOrdersF32OrdersRat(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF32OrdersRat, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF32OrdersRat, n, x, out, count, stream, form);
 }
 
 
 BoysStatus BoysCuda::AllOrdersF32OrdersRatHorner(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return AllOrdersF32OrdersRat(n, x, out, count, stream);
+    return AllOrdersF32OrdersRat(n, x, out, count, stream, form);
 }
 
 
 BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRat(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowOrdersRat, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowOrdersRat, n, x, out, count, stream, form);
 }
 
 
 BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRatHorner(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return AllOrdersF32NarrowOrdersRat(n, x, out, count, stream);
+    return AllOrdersF32NarrowOrdersRat(n, x, out, count, stream, form);
 }
 
 
 BoysStatus BoysCuda::AllOrdersF32OrdersUniform(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
     // The route's one reading of the grid, and therefore the kernel
     // AllOrdersF32Uniform launches: the packing axis this entry names has one
     // member here, for the reason the header's declaration states.
@@ -878,19 +994,19 @@ BoysStatus BoysCuda::AllOrdersF32OrdersUniform(
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF32Uniform, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF32Uniform, n, x, out, count, stream, form);
 }
 
 
 BoysStatus BoysCuda::AllOrdersF32OrdersUniformHorner(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return RunLaunch(BoysCudaLaunchAllOrdersF32UniformHorner, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF32UniformHorner, n, x, out, count, stream, form);
 }
 
 
@@ -901,9 +1017,9 @@ BoysStatus BoysCuda::AllOrdersF32OrdersUniformHorner(
 // here; every other entry of this lane is a plain function defined above.
 // ---------------------------------------------------------------------------
 template BoysStatus BoysCuda::SingleF32<RegionBExp::kAccurate>(
-    const int*, const double*, float*, std::size_t, void*);
+    const int*, const double*, float*, std::size_t, void*, DivisionForm);
 template BoysStatus BoysCuda::SingleF32<RegionBExp::kFast>(
-    const int*, const double*, float*, std::size_t, void*);
+    const int*, const double*, float*, std::size_t, void*, DivisionForm);
 
 // ---------------------------------------------------------------------------
 // The device option space.

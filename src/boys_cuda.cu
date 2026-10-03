@@ -707,7 +707,7 @@ struct Lane32NarrowRat {
 //
 // __restrict__ on x/out: the buffers are distinct DeviceBuffers by construction, and without it
 // every out store would force nvcc to reload x (assumed aliasing).
-template <bool kFastExp>
+template <DivisionForm kForm, bool kFastExp>
 __global__ void BoysSingleF32Kernel(const int* n,
                                     const double* __restrict__ x,
                                     float* __restrict__ out,
@@ -719,9 +719,11 @@ __global__ void BoysSingleF32Kernel(const int* n,
         return;
     }
 
-    out[i] = detail::DeviceSingleF32<kFastExp>(Lane32Full{}, n[i], static_cast<float>(x[i]));
+    out[i] = detail::DeviceSingleF32<kForm, kFastExp>(Lane32Full{}, n[i],
+                                                      static_cast<float>(x[i]));
 }
 
+template <DivisionForm kForm>
 __global__ void BoysAllOrdersF32Kernel(const int* n,
                                        const double* __restrict__ x,
                                        float* __restrict__ out,
@@ -733,15 +735,16 @@ __global__ void BoysAllOrdersF32Kernel(const int* n,
         return;
     }
 
-    detail::DeviceAllOrdersF32(Lane64Full{},
-                               Lane32Full{},
-                               n[i],
-                               static_cast<float>(x[i]),
-                               [&](int l, float v) { out[l * count + i] = v; });
+    detail::DeviceAllOrdersF32<kForm>(Lane64Full{},
+                                      Lane32Full{},
+                                      n[i],
+                                      static_cast<float>(x[i]),
+                                      [&](int l, float v) { out[l * count + i] = v; });
 }
 
 // The uniform-order entry: one nmax for the whole batch, so the recursion
 // bounds are warp-uniform and no order array is read.
+template <DivisionForm kForm>
 __global__ void BoysAllNF32Kernel(int nmax,
                                   const double* __restrict__ x,
                                   float* __restrict__ out,
@@ -753,13 +756,14 @@ __global__ void BoysAllNF32Kernel(int nmax,
         return;
     }
 
-    detail::DeviceAllOrdersF32(Lane64Full{},
-                               Lane32Full{},
-                               nmax,
-                               static_cast<float>(x[i]),
-                               [&](int l, float v) { out[l * count + i] = v; });
+    detail::DeviceAllOrdersF32<kForm>(Lane64Full{},
+                                      Lane32Full{},
+                                      nmax,
+                                      static_cast<float>(x[i]),
+                                      [&](int l, float v) { out[l * count + i] = v; });
 }
 
+template <DivisionForm kForm>
 __global__ void BoysSingleF64Kernel(const int* n, const double* x, double* out, size_t count) {
     const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
 
@@ -768,9 +772,10 @@ __global__ void BoysSingleF64Kernel(const int* n, const double* x, double* out, 
         return;
     }
 
-    out[i] = detail::DeviceSingleF64(Lane64Full{}, n[i], x[i]);
+    out[i] = detail::DeviceSingleF64<kForm>(Lane64Full{}, n[i], x[i]);
 }
 
+template <DivisionForm kForm>
 __global__ void BoysAllOrdersF64Kernel(const int* n, const double* x, double* out, size_t count) {
     const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
 
@@ -779,12 +784,13 @@ __global__ void BoysAllOrdersF64Kernel(const int* n, const double* x, double* ou
         return;
     }
 
-    detail::DeviceAllOrdersF64(Lane64Full{}, n[i], x[i], [&](int l, double v) {
+    detail::DeviceAllOrdersF64<kForm>(Lane64Full{}, n[i], x[i], [&](int l, double v) {
         out[l * count + i] = v;
     });
 }
 
 // The uniform-order entry (see BoysAllNF32Kernel).
+template <DivisionForm kForm>
 __global__ void BoysAllNF64Kernel(int nmax, const double* x, double* out, size_t count) {
     const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
 
@@ -793,7 +799,7 @@ __global__ void BoysAllNF64Kernel(int nmax, const double* x, double* out, size_t
         return;
     }
 
-    detail::DeviceAllOrdersF64(Lane64Full{}, nmax, x[i], [&](int l, double v) {
+    detail::DeviceAllOrdersF64<kForm>(Lane64Full{}, nmax, x[i], [&](int l, double v) {
         out[l * count + i] = v;
     });
 }
@@ -819,7 +825,7 @@ __global__ void BoysAllNF64Kernel(int nmax, const double* x, double* out, size_t
 // The ladder itself is the header's (DeviceAllOrdersF64Flat): the pools are the whole of what this
 // route reads, so a kernel holding them by their local symbols and a caller holding them through
 // the handle run one body.
-template <bool kMonomial>
+template <DivisionForm kForm, bool kMonomial>
 __global__ void BoysAllOrdersF64FlatKernel(const int* n,
                                            const double* x,
                                            double* out,
@@ -833,11 +839,11 @@ __global__ void BoysAllOrdersF64FlatKernel(const int* n,
 
     double* o = out + i;
 
-    detail::DeviceAllOrdersF64Flat<kMonomial>(dFlatCoeffs, dFlatMonoCoeffs, dFlatDegs,
-                                              dFlatOffsets, n[i], x[i], [&](int, double v) {
-                                                  *o = v;
-                                                  o += count;
-                                              });
+    detail::DeviceAllOrdersF64Flat<kForm, kMonomial>(dFlatCoeffs, dFlatMonoCoeffs, dFlatDegs,
+                                                     dFlatOffsets, n[i], x[i], [&](int, double v) {
+                                                         *o = v;
+                                                         o += count;
+                                                     });
 }
 
 // The same grid on its rational route. The structure is the kernel above - one thread per argument,
@@ -845,8 +851,9 @@ __global__ void BoysAllOrdersF64FlatKernel(const int* n,
 // table it steps: one numerator/denominator pair per interval, addressed at the interval's own
 // stored count, so the kernel closes over the pool and the four per-interval columns.
 //
-// No form parameter: the route is a family and not a basis, so both scheme names a caller may use
+// No basis parameter: the route is a family and not a basis, so both scheme names a caller may use
 // reach this one kernel.
+template <DivisionForm kForm>
 __global__ void BoysAllOrdersF64FlatRatKernel(const int* n,
                                               const double* x,
                                               double* out,
@@ -860,12 +867,12 @@ __global__ void BoysAllOrdersF64FlatRatKernel(const int* n,
 
     double* o = out + i;
 
-    detail::DeviceAllOrdersF64FlatRat(dFlatRatCoeffs, dFlatRatNumDeg, dFlatRatDenDeg,
-                                      dFlatRatStored, dFlatRatOffsets, n[i], x[i],
-                                      [&](int, double v) {
-                                          *o = v;
-                                          o += count;
-                                      });
+    detail::DeviceAllOrdersF64FlatRat<kForm>(dFlatRatCoeffs, dFlatRatNumDeg, dFlatRatDenDeg,
+                                             dFlatRatStored, dFlatRatOffsets, n[i], x[i],
+                                             [&](int, double v) {
+                                                 *o = v;
+                                                 o += count;
+                                             });
 }
 
 // ---------------------------------------------------------------------------
@@ -880,7 +887,7 @@ __global__ void BoysAllOrdersF64FlatRatKernel(const int* n,
 // The ladder is the header's (DeviceAllOrdersF32Flat), for the same cause the double kernel above
 // gives: the two pools and the grid's two per-interval tables are the whole of what this route
 // reads.
-template <bool kMonomial>
+template <DivisionForm kForm, bool kMonomial>
 __global__ void BoysAllOrdersF32FlatKernel(const int* n,
                                            const double* x,
                                            float* out,
@@ -896,16 +903,21 @@ __global__ void BoysAllOrdersF32FlatKernel(const int* n,
     // does: the argument measured at is the float it evaluates at.
     float* o = out + i;
 
-    detail::DeviceAllOrdersF32Flat<kMonomial>(dFlatCoeffsF32, dFlatMonoCoeffsF32, dFlatDegsF32,
-                                              dFlatOffsetsF32, n[i], static_cast<float>(x[i]),
-                                              [&](int, float v) {
-                                                  *o = v;
-                                                  o += count;
-                                              });
+    detail::DeviceAllOrdersF32Flat<kForm, kMonomial>(dFlatCoeffsF32,
+                                                     dFlatMonoCoeffsF32,
+                                                     dFlatDegsF32,
+                                                     dFlatOffsetsF32,
+                                                     n[i],
+                                                     static_cast<float>(x[i]),
+                                                     [&](int, float v) {
+                                                         *o = v;
+                                                         o += count;
+                                                     });
 }
 
 // The float lane's grid on its rational route: the double kernel above at this lane's grid, tables
-// and arithmetic, and with no form parameter for the same reason.
+// and arithmetic, and with no basis parameter for the same reason.
+template <DivisionForm kForm>
 __global__ void BoysAllOrdersF32FlatRatKernel(const int* n,
                                               const double* x,
                                               float* out,
@@ -919,13 +931,14 @@ __global__ void BoysAllOrdersF32FlatRatKernel(const int* n,
 
     float* o = out + i;
 
-    detail::DeviceAllOrdersF32FlatRat(dFlatRatCoeffsF32, dFlatRatNumDegF32, dFlatRatDenDegF32,
-                                      dFlatRatStoredF32, dFlatRatOffsetsF32, n[i],
-                                      static_cast<float>(x[i]),
-                                      [&](int, float v) {
-                                          *o = v;
-                                          o += count;
-                                      });
+    detail::DeviceAllOrdersF32FlatRat<kForm>(dFlatRatCoeffsF32, dFlatRatNumDegF32,
+                                             dFlatRatDenDegF32,
+                                             dFlatRatStoredF32, dFlatRatOffsetsF32, n[i],
+                                             static_cast<float>(x[i]),
+                                             [&](int, float v) {
+                                                 *o = v;
+                                                 o += count;
+                                             });
 }
 
 // ---------------------------------------------------------------------------
@@ -939,6 +952,7 @@ __global__ void BoysAllOrdersF32FlatRatKernel(const int* n,
 // region-B seed is the float lane's own, the split the coarsest entry (Lane64Full beside Lane32Full)
 // already makes. Here the double lane's parts are its narrow partition's, so the entry is the
 // narrow route rather than a mixed one.
+template <DivisionForm kForm>
 __global__ void BoysAllOrdersF32NarrowKernel(const int* n,
                                              const double* __restrict__ x,
                                              float* __restrict__ out,
@@ -950,13 +964,14 @@ __global__ void BoysAllOrdersF32NarrowKernel(const int* n,
         return;
     }
 
-    detail::DeviceAllOrdersF32(Lane64Narrow{},
-                               Lane32Narrow{},
-                               n[i],
-                               static_cast<float>(x[i]),
-                               [&](int l, float v) { out[l * count + i] = v; });
+    detail::DeviceAllOrdersF32<kForm>(Lane64Narrow{},
+                                      Lane32Narrow{},
+                                      n[i],
+                                      static_cast<float>(x[i]),
+                                      [&](int l, float v) { out[l * count + i] = v; });
 }
 
+template <DivisionForm kForm>
 __global__ void BoysAllOrdersF32NarrowMonoKernel(const int* n,
                                                  const double* __restrict__ x,
                                                  float* __restrict__ out,
@@ -968,17 +983,18 @@ __global__ void BoysAllOrdersF32NarrowMonoKernel(const int* n,
         return;
     }
 
-    detail::DeviceAllOrdersF32(Lane64NarrowMono{},
-                               Lane32NarrowMono{},
-                               n[i],
-                               static_cast<float>(x[i]),
-                               [&](int l, float v) { out[l * count + i] = v; });
+    detail::DeviceAllOrdersF32<kForm>(Lane64NarrowMono{},
+                                      Lane32NarrowMono{},
+                                      n[i],
+                                      static_cast<float>(x[i]),
+                                      [&](int l, float v) { out[l * count + i] = v; });
 }
 
 // The float lane's rational route, one kernel per partition it is carried on. The seed lane is the
 // double lane's rational pair at that partition, which is what makes the two lanes' region-A seeds
 // one reading, and the float lane supplies the region-B seed. The route has no second scheme: its
 // pair is stored in monomial form and read by Horner, so both scheme names reach one kernel.
+template <DivisionForm kForm>
 __global__ void BoysAllOrdersF32RatKernel(const int* n,
                                           const double* __restrict__ x,
                                           float* __restrict__ out,
@@ -990,13 +1006,14 @@ __global__ void BoysAllOrdersF32RatKernel(const int* n,
         return;
     }
 
-    detail::DeviceAllOrdersF32(Lane64RatFull{},
-                               Lane32Rat{},
-                               n[i],
-                               static_cast<float>(x[i]),
-                               [&](int l, float v) { out[l * count + i] = v; });
+    detail::DeviceAllOrdersF32<kForm>(Lane64RatFull{},
+                                      Lane32Rat{},
+                                      n[i],
+                                      static_cast<float>(x[i]),
+                                      [&](int l, float v) { out[l * count + i] = v; });
 }
 
+template <DivisionForm kForm>
 __global__ void BoysAllOrdersF32NarrowRatKernel(const int* n,
                                                 const double* __restrict__ x,
                                                 float* __restrict__ out,
@@ -1008,11 +1025,11 @@ __global__ void BoysAllOrdersF32NarrowRatKernel(const int* n,
         return;
     }
 
-    detail::DeviceAllOrdersF32(Lane64NarrowRat{},
-                               Lane32NarrowRat{},
-                               n[i],
-                               static_cast<float>(x[i]),
-                               [&](int l, float v) { out[l * count + i] = v; });
+    detail::DeviceAllOrdersF32<kForm>(Lane64NarrowRat{},
+                                      Lane32NarrowRat{},
+                                      n[i],
+                                      static_cast<float>(x[i]),
+                                      [&](int l, float v) { out[l * count + i] = v; });
 }
 
 // ---------------------------------------------------------------------------
@@ -1021,6 +1038,7 @@ __global__ void BoysAllOrdersF32NarrowRatKernel(const int* n,
 // region-partitioned dispatch, the same bodies.
 // ---------------------------------------------------------------------------
 #if BoysFp16
+template <DivisionForm kForm>
 __global__ void BoysSingleF16Kernel(const int* n,
                                     const __half* __restrict__ x,
                                     __half* __restrict__ out,
@@ -1033,9 +1051,10 @@ __global__ void BoysSingleF16Kernel(const int* n,
     }
 
     out[i] = __float2half(
-        detail::DeviceSingleF32<false>(Lane32Full{}, n[i], __half2float(x[i])));
+        detail::DeviceSingleF32<kForm, false>(Lane32Full{}, n[i], __half2float(x[i])));
 }
 
+template <DivisionForm kForm>
 __global__ void BoysAllOrdersF16Kernel(const int* n,
                                        const __half* __restrict__ x,
                                        __half* __restrict__ out,
@@ -1047,14 +1066,17 @@ __global__ void BoysAllOrdersF16Kernel(const int* n,
         return;
     }
 
-    detail::DeviceAllOrdersF32(Lane64Full{},
-                               Lane32Full{},
-                               n[i],
-                               __half2float(x[i]),
-                               [&](int l, float v) { out[l * count + i] = __float2half(v); });
+    detail::DeviceAllOrdersF32<kForm>(Lane64Full{},
+                                      Lane32Full{},
+                                      n[i],
+                                      __half2float(x[i]),
+                                      [&](int l, float v) {
+                                          out[l * count + i] = __float2half(v);
+                                      });
 }
 
 // The uniform-order entry (see BoysAllNF64Kernel).
+template <DivisionForm kForm>
 __global__ void BoysAllNF16Kernel(int nmax,
                                   const __half* __restrict__ x,
                                   __half* __restrict__ out,
@@ -1066,11 +1088,13 @@ __global__ void BoysAllNF16Kernel(int nmax,
         return;
     }
 
-    detail::DeviceAllOrdersF32(Lane64Full{},
-                               Lane32Full{},
-                               nmax,
-                               __half2float(x[i]),
-                               [&](int l, float v) { out[l * count + i] = __float2half(v); });
+    detail::DeviceAllOrdersF32<kForm>(Lane64Full{},
+                                      Lane32Full{},
+                                      nmax,
+                                      __half2float(x[i]),
+                                      [&](int l, float v) {
+                                          out[l * count + i] = __float2half(v);
+                                      });
 }
 #endif // BoysFp16
 
@@ -1083,12 +1107,14 @@ __global__ void BoysAllNF16Kernel(int nmax,
 //
 // The orders axis is a choice inside region A only: past kX0 these kernels run the certified
 // all-orders body, whose row is the lane's own bound over the whole range.
-template <typename Lane>
+template <DivisionForm kForm, typename Lane>
 __device__ __forceinline__ void DeviceOrdersBody(
     const Lane& lane, int order, double xx, double* out, size_t count, size_t i) {
-    detail::DeviceOrdersF64(lane, order, xx, [&](int l, double v) { out[l * count + i] = v; });
+    detail::DeviceOrdersF64<kForm>(lane, order, xx,
+                                   [&](int l, double v) { out[l * count + i] = v; });
 }
 
+template <DivisionForm kForm>
 __global__ void BoysAllOrdersF64OrdersKernel(const int* n,
                                              const double* __restrict__ x,
                                              double* __restrict__ out,
@@ -1100,9 +1126,10 @@ __global__ void BoysAllOrdersF64OrdersKernel(const int* n,
         return;
     }
 
-    DeviceOrdersBody(Lane64Full{}, n[i], x[i], out, count, i);
+    DeviceOrdersBody<kForm>(Lane64Full{}, n[i], x[i], out, count, i);
 }
 
+template <DivisionForm kForm>
 __global__ void BoysAllOrdersF64NarrowKernel(const int* n,
                                              const double* __restrict__ x,
                                              double* __restrict__ out,
@@ -1114,11 +1141,12 @@ __global__ void BoysAllOrdersF64NarrowKernel(const int* n,
         return;
     }
 
-    detail::DeviceAllOrdersF64(Lane64Narrow{}, n[i], x[i], [&](int l, double v) {
+    detail::DeviceAllOrdersF64<kForm>(Lane64Narrow{}, n[i], x[i], [&](int l, double v) {
         out[l * count + i] = v;
     });
 }
 
+template <DivisionForm kForm>
 __global__ void BoysAllOrdersF64NarrowOrdersKernel(const int* n,
                                                    const double* __restrict__ x,
                                                    double* __restrict__ out,
@@ -1130,7 +1158,7 @@ __global__ void BoysAllOrdersF64NarrowOrdersKernel(const int* n,
         return;
     }
 
-    DeviceOrdersBody(Lane64Narrow{}, n[i], x[i], out, count, i);
+    DeviceOrdersBody<kForm>(Lane64Narrow{}, n[i], x[i], out, count, i);
 }
 
 // ---------------------------------------------------------------------------
@@ -1143,6 +1171,7 @@ __global__ void BoysAllOrdersF64NarrowOrdersKernel(const int* n,
 //
 // The orders axis composes with it too: DeviceOrdersBody takes the lane, so the axis is a choice
 // inside region A whichever basis that lane sums.
+template <DivisionForm kForm>
 __global__ void BoysAllOrdersF64MonoKernel(const int* n,
                                            const double* __restrict__ x,
                                            double* __restrict__ out,
@@ -1154,11 +1183,12 @@ __global__ void BoysAllOrdersF64MonoKernel(const int* n,
         return;
     }
 
-    detail::DeviceAllOrdersF64(Lane64MonoFull{}, n[i], x[i], [&](int l, double v) {
+    detail::DeviceAllOrdersF64<kForm>(Lane64MonoFull{}, n[i], x[i], [&](int l, double v) {
         out[l * count + i] = v;
     });
 }
 
+template <DivisionForm kForm>
 __global__ void BoysAllOrdersF64OrdersMonoKernel(const int* n,
                                                  const double* __restrict__ x,
                                                  double* __restrict__ out,
@@ -1170,9 +1200,10 @@ __global__ void BoysAllOrdersF64OrdersMonoKernel(const int* n,
         return;
     }
 
-    DeviceOrdersBody(Lane64MonoFull{}, n[i], x[i], out, count, i);
+    DeviceOrdersBody<kForm>(Lane64MonoFull{}, n[i], x[i], out, count, i);
 }
 
+template <DivisionForm kForm>
 __global__ void BoysAllOrdersF64NarrowMonoKernel(const int* n,
                                                  const double* __restrict__ x,
                                                  double* __restrict__ out,
@@ -1184,11 +1215,12 @@ __global__ void BoysAllOrdersF64NarrowMonoKernel(const int* n,
         return;
     }
 
-    detail::DeviceAllOrdersF64(Lane64NarrowMono{}, n[i], x[i], [&](int l, double v) {
+    detail::DeviceAllOrdersF64<kForm>(Lane64NarrowMono{}, n[i], x[i], [&](int l, double v) {
         out[l * count + i] = v;
     });
 }
 
+template <DivisionForm kForm>
 __global__ void BoysAllOrdersF64NarrowOrdersMonoKernel(const int* n,
                                                        const double* __restrict__ x,
                                                        double* __restrict__ out,
@@ -1200,7 +1232,7 @@ __global__ void BoysAllOrdersF64NarrowOrdersMonoKernel(const int* n,
         return;
     }
 
-    DeviceOrdersBody(Lane64NarrowMono{}, n[i], x[i], out, count, i);
+    DeviceOrdersBody<kForm>(Lane64NarrowMono{}, n[i], x[i], out, count, i);
 }
 
 // ---------------------------------------------------------------------------
@@ -1217,6 +1249,7 @@ __global__ void BoysAllOrdersF64NarrowOrdersMonoKernel(const int* n,
 //
 // The scheme axis is inert on this route: the pair is stored once, in one basis, so both scheme
 // names launch this same kernel.
+template <DivisionForm kForm>
 __global__ void BoysAllOrdersF64RatKernel(const int* n,
                                           const double* __restrict__ x,
                                           double* __restrict__ out,
@@ -1228,11 +1261,12 @@ __global__ void BoysAllOrdersF64RatKernel(const int* n,
         return;
     }
 
-    detail::DeviceAllOrdersF64(Lane64RatFull{}, n[i], x[i], [&](int l, double v) {
+    detail::DeviceAllOrdersF64<kForm>(Lane64RatFull{}, n[i], x[i], [&](int l, double v) {
         out[l * count + i] = v;
     });
 }
 
+template <DivisionForm kForm>
 __global__ void BoysAllOrdersF64OrdersRatKernel(const int* n,
                                                 const double* __restrict__ x,
                                                 double* __restrict__ out,
@@ -1244,9 +1278,10 @@ __global__ void BoysAllOrdersF64OrdersRatKernel(const int* n,
         return;
     }
 
-    DeviceOrdersBody(Lane64RatFull{}, n[i], x[i], out, count, i);
+    DeviceOrdersBody<kForm>(Lane64RatFull{}, n[i], x[i], out, count, i);
 }
 
+template <DivisionForm kForm>
 __global__ void BoysAllOrdersF64NarrowRatKernel(const int* n,
                                                 const double* __restrict__ x,
                                                 double* __restrict__ out,
@@ -1258,11 +1293,12 @@ __global__ void BoysAllOrdersF64NarrowRatKernel(const int* n,
         return;
     }
 
-    detail::DeviceAllOrdersF64(Lane64NarrowRat{}, n[i], x[i], [&](int l, double v) {
+    detail::DeviceAllOrdersF64<kForm>(Lane64NarrowRat{}, n[i], x[i], [&](int l, double v) {
         out[l * count + i] = v;
     });
 }
 
+template <DivisionForm kForm>
 __global__ void BoysAllOrdersF64NarrowOrdersRatKernel(const int* n,
                                                       const double* __restrict__ x,
                                                       double* __restrict__ out,
@@ -1274,7 +1310,7 @@ __global__ void BoysAllOrdersF64NarrowOrdersRatKernel(const int* n,
         return;
     }
 
-    DeviceOrdersBody(Lane64NarrowRat{}, n[i], x[i], out, count, i);
+    DeviceOrdersBody<kForm>(Lane64NarrowRat{}, n[i], x[i], out, count, i);
 }
 
 // ---------------------------------------------------------------------------
@@ -1290,14 +1326,15 @@ __global__ void BoysAllOrdersF64NarrowOrdersRatKernel(const int* n,
 // float budget. So each kernel below hands DeviceOrdersF32 a lane object this file already runs and
 // a piece table this lane already stores - the axis is a reading of the same stored fits and not a
 // new fit.
-template <typename SeedLane, typename Lane>
+template <DivisionForm kForm, typename SeedLane, typename Lane>
 __device__ __forceinline__ void DeviceOrdersBody32(
     const SeedLane& seedLane, const Lane& lane, int order, float xx, float* out, size_t count,
     size_t i) {
-    detail::DeviceOrdersF32(seedLane, lane, order, xx,
-                            [&](int l, float v) { out[l * count + i] = v; });
+    detail::DeviceOrdersF32<kForm>(seedLane, lane, order, xx,
+                                   [&](int l, float v) { out[l * count + i] = v; });
 }
 
+template <DivisionForm kForm>
 __global__ void BoysAllOrdersF32OrdersKernel(const int* n,
                                              const double* __restrict__ x,
                                              float* __restrict__ out,
@@ -1309,9 +1346,11 @@ __global__ void BoysAllOrdersF32OrdersKernel(const int* n,
         return;
     }
 
-    DeviceOrdersBody32(Lane64Full{}, Lane32Full{}, n[i], static_cast<float>(x[i]), out, count, i);
+    DeviceOrdersBody32<kForm>(Lane64Full{}, Lane32Full{}, n[i], static_cast<float>(x[i]), out,
+                              count, i);
 }
 
+template <DivisionForm kForm>
 __global__ void BoysAllOrdersF32NarrowOrdersKernel(const int* n,
                                                    const double* __restrict__ x,
                                                    float* __restrict__ out,
@@ -1323,10 +1362,11 @@ __global__ void BoysAllOrdersF32NarrowOrdersKernel(const int* n,
         return;
     }
 
-    DeviceOrdersBody32(Lane64Narrow{}, Lane32Narrow{}, n[i], static_cast<float>(x[i]), out,
-                       count, i);
+    DeviceOrdersBody32<kForm>(Lane64Narrow{}, Lane32Narrow{}, n[i], static_cast<float>(x[i]), out,
+                              count, i);
 }
 
+template <DivisionForm kForm>
 __global__ void BoysAllOrdersF32NarrowOrdersMonoKernel(const int* n,
                                                        const double* __restrict__ x,
                                                        float* __restrict__ out,
@@ -1338,14 +1378,15 @@ __global__ void BoysAllOrdersF32NarrowOrdersMonoKernel(const int* n,
         return;
     }
 
-    DeviceOrdersBody32(Lane64NarrowMono{}, Lane32NarrowMono{}, n[i],
-                       static_cast<float>(x[i]), out, count, i);
+    DeviceOrdersBody32<kForm>(Lane64NarrowMono{}, Lane32NarrowMono{}, n[i],
+                              static_cast<float>(x[i]), out, count, i);
 }
 
 // The fit route's orders shapes. The pair is stored once and read by the two readings: this one
 // reads each order's own piece at A = 1, which is what an order's own value is, where the
 // per-argument shape seeds at its top order's piece and carries that piece's w(b) down the
 // recursion.
+template <DivisionForm kForm>
 __global__ void BoysAllOrdersF32OrdersRatKernel(const int* n,
                                                 const double* __restrict__ x,
                                                 float* __restrict__ out,
@@ -1357,9 +1398,11 @@ __global__ void BoysAllOrdersF32OrdersRatKernel(const int* n,
         return;
     }
 
-    DeviceOrdersBody32(Lane64RatFull{}, Lane32Rat{}, n[i], static_cast<float>(x[i]), out, count, i);
+    DeviceOrdersBody32<kForm>(Lane64RatFull{}, Lane32Rat{}, n[i], static_cast<float>(x[i]), out,
+                              count, i);
 }
 
+template <DivisionForm kForm>
 __global__ void BoysAllOrdersF32NarrowOrdersRatKernel(const int* n,
                                                       const double* __restrict__ x,
                                                       float* __restrict__ out,
@@ -1371,8 +1414,8 @@ __global__ void BoysAllOrdersF32NarrowOrdersRatKernel(const int* n,
         return;
     }
 
-    DeviceOrdersBody32(Lane64NarrowRat{}, Lane32NarrowRat{}, n[i],
-                       static_cast<float>(x[i]), out, count, i);
+    DeviceOrdersBody32<kForm>(Lane64NarrowRat{}, Lane32NarrowRat{}, n[i],
+                              static_cast<float>(x[i]), out, count, i);
 }
 
 // ---------------------------------------------------------------------------
@@ -2243,82 +2286,120 @@ int LaunchBlocks(std::size_t count) {
     return static_cast<int>((count + threads - 1) / threads);
 }
 
+// The one place a launcher's run-time form becomes a kernel's template argument, so every kernel
+// holds one division and not three. The host layer validates the form before it gets here, so the
+// arm below the switch exists only because a switch needs one.
+template <typename Body>
+int UnderForm(int form, Body body) {
+    switch (static_cast<DivisionForm>(form))
+    {
+    case DivisionForm::kExactDivision:
+        return body(std::integral_constant<DivisionForm, DivisionForm::kExactDivision>{});
+    case DivisionForm::kPlainReciprocal:
+        return body(std::integral_constant<DivisionForm, DivisionForm::kPlainReciprocal>{});
+    case DivisionForm::kRefinedReciprocal:
+        return body(std::integral_constant<DivisionForm, DivisionForm::kRefinedReciprocal>{});
+    }
+
+    return static_cast<int>(cudaErrorInvalidValue);
+}
+
 } // namespace
 
 extern "C" int BoysCudaLaunchSingleF32(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    BoysSingleF32Kernel<false>
-        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysSingleF32Kernel<kForm(), false>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 extern "C" int BoysCudaLaunchSingleF32Fast(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    BoysSingleF32Kernel<true>
-        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysSingleF32Kernel<kForm(), true>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 extern "C" int BoysCudaLaunchAllOrdersF32(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    BoysAllOrdersF32Kernel<<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
-        n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF32Kernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 // The float lane's partition and grid, one launcher per arithmetic: the route is an argument of the
 // caller's and not of the launch, so the choice is the symbol it names.
 extern "C" int BoysCudaLaunchAllOrdersF32Uniform(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    BoysAllOrdersF32FlatKernel<false>
-        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF32FlatKernel<kForm(), false>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 extern "C" int BoysCudaLaunchAllOrdersF32UniformHorner(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    BoysAllOrdersF32FlatKernel<true>
-        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF32FlatKernel<kForm(), true>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 // The float lane's grid on the same route, one launcher for the reason above.
 extern "C" int BoysCudaLaunchAllOrdersF32UniformRat(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    BoysAllOrdersF32FlatRatKernel
-        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF32FlatRatKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 extern "C" int BoysCudaLaunchAllOrdersF32Narrow(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    BoysAllOrdersF32NarrowKernel<<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
-        n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF32NarrowKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 extern "C" int BoysCudaLaunchAllOrdersF32NarrowMono(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    BoysAllOrdersF32NarrowMonoKernel
-        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF32NarrowMonoKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 // The float lane's rational route, one launcher per partition: the two scheme names a caller may
 // use differ in the report's row and not here, because the route's pair is stored in one form and
 // the two names reach one kernel.
 extern "C" int BoysCudaLaunchAllOrdersF32Rat(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    BoysAllOrdersF32RatKernel<<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
-        n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF32RatKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 extern "C" int BoysCudaLaunchAllOrdersF32NarrowRat(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    BoysAllOrdersF32NarrowRatKernel
-        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF32NarrowRatKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 // The float lane's orders axis: the same launches the rows above make, one per kernel of that axis.
@@ -2326,93 +2407,119 @@ extern "C" int BoysCudaLaunchAllOrdersF32NarrowRat(
 // no launcher of their own: its packing axis has one member and those rows launch
 // BoysCudaLaunchAllOrdersF32Uniform and its Horner twin.
 extern "C" int BoysCudaLaunchAllOrdersF32Orders(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    BoysAllOrdersF32OrdersKernel<<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
-        n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF32OrdersKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 extern "C" int BoysCudaLaunchAllOrdersF32NarrowOrders(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    BoysAllOrdersF32NarrowOrdersKernel
-        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF32NarrowOrdersKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 extern "C" int BoysCudaLaunchAllOrdersF32NarrowOrdersMono(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    BoysAllOrdersF32NarrowOrdersMonoKernel
-        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF32NarrowOrdersMonoKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 extern "C" int BoysCudaLaunchAllOrdersF32OrdersRat(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    BoysAllOrdersF32OrdersRatKernel
-        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF32OrdersRatKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 extern "C" int BoysCudaLaunchAllOrdersF32NarrowOrdersRat(
-    const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    BoysAllOrdersF32NarrowOrdersRatKernel
-        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF32NarrowOrdersRatKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 extern "C" int BoysCudaLaunchAllNF32(
-    int nmax, const double* x, float* out, std::size_t count, void* stream) {
-    BoysAllNF32Kernel<<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
-        nmax, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, int nmax, const double* x, float* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllNF32Kernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(nmax, x, out,
+                                                                                 count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 extern "C" int BoysCudaLaunchSingleF64(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    BoysSingleF64Kernel<<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
-        n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysSingleF64Kernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 extern "C" int BoysCudaLaunchAllOrdersF64(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    BoysAllOrdersF64Kernel<<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
-        n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF64Kernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 extern "C" int BoysCudaLaunchAllOrdersF64Uniform(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    BoysAllOrdersF64FlatKernel<false>
-        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF64FlatKernel<kForm(), false>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
-// The same launch over the same table's other form. Two launchers and not one taking the form as an
-// argument: the form is the arithmetic, and an argument would be a choice made at run time by the
-// caller of a function whose whole contract is which numbers it delivers.
+// The same launch over the same table's other basis. Two launchers and not one taking the basis as
+// an argument: the basis is the arithmetic, and an argument would be a choice made at run time by
+// the caller of a function whose whole contract is which numbers it delivers.
 extern "C" int BoysCudaLaunchAllOrdersF64UniformHorner(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    BoysAllOrdersF64FlatKernel<true>
-        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF64FlatKernel<kForm(), true>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 // The grid's rational route, one launcher and not two: the pair is stored in one form, so both
 // scheme names a caller may use reach it. The orders-axis rows of that route are this same launch,
 // because the route's packing axis has no second member to run.
 extern "C" int BoysCudaLaunchAllOrdersF64UniformRat(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    BoysAllOrdersF64FlatRatKernel
-        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF64FlatRatKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 extern "C" int BoysCudaLaunchAllNF64(
-    int nmax, const double* x, double* out, std::size_t count, void* stream) {
-    BoysAllNF64Kernel<<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
-        nmax, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, int nmax, const double* x, double* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllNF64Kernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(nmax, x, out,
+                                                                                 count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 #if BoysFp16
@@ -2420,104 +2527,135 @@ extern "C" int BoysCudaLaunchAllNF64(
 // stream and the call returns once the launch is accepted - callers synchronize the stream before
 // reading the outputs.
 extern "C" int BoysCudaLaunchSingleF16(
-    const int* n, const void* x, void* out, std::size_t count, void* stream) {
-    BoysSingleF16Kernel<<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
-        n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysSingleF16Kernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+                n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 extern "C" int BoysCudaLaunchAllOrdersF16(
-    const int* n, const void* x, void* out, std::size_t count, void* stream) {
-    BoysAllOrdersF16Kernel<<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
-        n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF16Kernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+                n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 extern "C" int BoysCudaLaunchAllNF16(
-    int nmax, const void* x, void* out, std::size_t count, void* stream) {
-    BoysAllNF16Kernel<<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
-        nmax, static_cast<const __half*>(x), static_cast<__half*>(out), count);
-    return static_cast<int>(cudaGetLastError());
+    int form, int nmax, const void* x, void* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllNF16Kernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+                nmax, static_cast<const __half*>(x), static_cast<__half*>(out), count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 #endif // BoysFp16
 
 extern "C" int BoysCudaLaunchAllOrdersF64Orders(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    BoysAllOrdersF64OrdersKernel
-        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF64OrdersKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 extern "C" int BoysCudaLaunchAllOrdersF64Narrow(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    BoysAllOrdersF64NarrowKernel
-        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF64NarrowKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 extern "C" int BoysCudaLaunchAllOrdersF64NarrowOrders(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    BoysAllOrdersF64NarrowOrdersKernel
-        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF64NarrowOrdersKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 // The monomial scheme's four shapes.
 extern "C" int BoysCudaLaunchAllOrdersF64Mono(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    BoysAllOrdersF64MonoKernel
-        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF64MonoKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 extern "C" int BoysCudaLaunchAllOrdersF64OrdersMono(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    BoysAllOrdersF64OrdersMonoKernel
-        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF64OrdersMonoKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 extern "C" int BoysCudaLaunchAllOrdersF64NarrowMono(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    BoysAllOrdersF64NarrowMonoKernel
-        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF64NarrowMonoKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 extern "C" int BoysCudaLaunchAllOrdersF64NarrowOrdersMono(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    BoysAllOrdersF64NarrowOrdersMonoKernel
-        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF64NarrowOrdersMonoKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 // The fit route's four shapes.
 extern "C" int BoysCudaLaunchAllOrdersF64Rat(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    BoysAllOrdersF64RatKernel
-        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF64RatKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 extern "C" int BoysCudaLaunchAllOrdersF64OrdersRat(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    BoysAllOrdersF64OrdersRatKernel
-        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF64OrdersRatKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 extern "C" int BoysCudaLaunchAllOrdersF64NarrowRat(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    BoysAllOrdersF64NarrowRatKernel
-        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF64NarrowRatKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 extern "C" int BoysCudaLaunchAllOrdersF64NarrowOrdersRat(
-    const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    BoysAllOrdersF64NarrowOrdersRatKernel
-        <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
-    return static_cast<int>(cudaGetLastError());
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF64NarrowOrdersRatKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
 }
 
 } // namespace

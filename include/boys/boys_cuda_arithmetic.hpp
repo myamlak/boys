@@ -44,6 +44,7 @@
 /// recursion. The all-orders bodies carry a second, downward recursion inside region
 /// A: the fit there is of F_n, and the lower orders come back down from it.
 
+#include "boys/accuracy.hpp"
 #include "boys/boys_coefficients.hpp"
 
 #include <cuda_runtime.h>
@@ -392,13 +393,184 @@ __device__ __forceinline__ float DeviceRegionBExp(float xx) {
 }
 
 // ---------------------------------------------------------------------------
+// the division form
+// ---------------------------------------------------------------------------
+
+// The three forms of a ladder step's division, as the host's bodies spell them
+// (boys_impl.hpp, DivideStep and the two helpers beside it). The device runs the
+// same three arithmetics on the same values: a quotient is correctly rounded, a
+// product by a rounded reciprocal rounds twice, and the refinement recovers the
+// correctly rounded quotient from the product with one fused multiply-add per
+// step.
+//
+// **The form is a template argument and never a run-time branch.** The option probe
+// times these bodies one form at a time, and a branch would compile all three forms
+// into every kernel it times - measuring the branch rather than the form
+// (src/boys_cuda_probe_kernels.cu, the preamble over its two dispatches). Every
+// body below therefore takes the form as a template argument with no default, so a
+// call site that has not stated the form it runs does not compile rather than
+// silently running the build's.
+
+// The two fused multiply-adds, named per value type: the refinement is only the
+// correctly rounded quotient when the step is one instruction, so both are the
+// round-to-nearest fused intrinsics and never a bare a * b + c.
+template <typename T>
+__device__ __forceinline__ T DeviceFma(T a, T b, T c) {
+    if constexpr (std::is_same_v<T, float>)
+    {
+        return __fmaf_rn(a, b, c);
+    } else
+    {
+        return __fma_rn(a, b, c);
+    }
+}
+
+// The exact form: the correctly rounded quotient, and what a published bound over a
+// region is stated for.
+template <typename T>
+__device__ __forceinline__ T DeviceDivideExact(T a, T x) {
+    return a / x;
+}
+
+// The plain form: the quotient through the divisor's reciprocal. It rounds twice
+// where the exact form rounds once, so a step may differ by an ulp and a ladder of
+// them accumulates the difference.
+template <typename T>
+__device__ __forceinline__ T DeviceDividePlain(T a, T invx) {
+    return a * invx;
+}
+
+// The refined form: the plain product, then the classical refinement. An infinite
+// divisor is the one argument where the recovery cannot run - the residual is
+// `a - quotient * x` and `quotient` is a signed zero there, so the first fused
+// multiply-add hands back a NaN the second spreads - and the branch costs nothing,
+// since a finite numerator over an infinite divisor is exactly the signed zero the
+// product already is (boys_impl.hpp, DivideByReciprocal, states the same guard for
+// the host's own steps).
+template <typename T>
+__device__ __forceinline__ T DeviceDivideByReciprocal(T a, T x, T invx) {
+    const T quotient = a * invx;
+
+    if (isinf(x))
+    {
+        return quotient;
+    }
+
+    return DeviceFma(DeviceFma(-quotient, x, a), invx, quotient);
+}
+
+// One divide in the form named, taking whichever of the divisor and its reciprocal
+// that form reads.
+template <DivisionForm kForm, typename T>
+__device__ __forceinline__ T DeviceDivideStep(T a, T x, T invx) {
+    if constexpr (kForm == DivisionForm::kExactDivision)
+    {
+        static_cast<void>(invx);
+        return DeviceDivideExact(a, x);
+    } else if constexpr (kForm == DivisionForm::kPlainReciprocal)
+    {
+        static_cast<void>(x);
+        return DeviceDividePlain(a, invx);
+    } else
+    {
+        return DeviceDivideByReciprocal(a, x, invx);
+    }
+}
+
+// The reciprocal a form needs, formed once per call and multiplied through the
+// ladder. The exact form's is not formed at all: the three forms are ranked on the
+// work each actually does, so a form that divides must not also pay for a
+// reciprocal it never reads.
+template <DivisionForm kForm, typename T>
+__device__ __forceinline__ T DeviceStepReciprocal(T x) {
+    if constexpr (kForm == DivisionForm::kExactDivision)
+    {
+        static_cast<void>(x);
+        return T{0};
+    } else
+    {
+        return T{1} / x;
+    }
+}
+
+// The downward step's divisor, l + 1/2, as a table of its reciprocals: the constant
+// is exact in both value types for every order the recurrences run to, so its
+// reciprocal is a compile-time constant and the trade the axis names is available on
+// the downward ladder as it is on the steps that divide by the argument
+// (boys_impl.hpp, kDownwardReciprocals).
+// The table is a raw member array of a device variable, and not a std::array of a
+// host one, for the three things the device compiler refuses in turn: std::array's
+// element access is a constexpr HOST function, which a __device__ body may not call
+// ("calling a constexpr __host__ function(\"operator[]\") from a __device__ function
+// (...) is not allowed"); a host constexpr variable read from device code is an
+// identifier "undefined in device code"; and a __device__ variable TEMPLATE may not
+// have a const-qualified type on Windows. The subscript below is the built-in one,
+// which no host function stands between, and the two objects are named rather than
+// templated so the declaration is one the device compiler takes.
+template <typename T>
+struct DeviceDownwardReciprocalTable {
+    T values[static_cast<std::size_t>(kMaxBoysOrder) + 1];
+};
+
+template <typename T>
+constexpr DeviceDownwardReciprocalTable<T> MakeDeviceDownwardReciprocals() noexcept {
+    DeviceDownwardReciprocalTable<T> table{};
+
+    for (int l = 0; l <= kMaxBoysOrder; ++l)
+    {
+        table.values[static_cast<std::size_t>(l)] = T{1} / (static_cast<T>(l) + T{0.5});
+    }
+
+    return table;
+}
+
+__device__ constexpr DeviceDownwardReciprocalTable<double> kDeviceDownwardReciprocalsF64 =
+    MakeDeviceDownwardReciprocals<double>();
+__device__ constexpr DeviceDownwardReciprocalTable<float> kDeviceDownwardReciprocalsF32 =
+    MakeDeviceDownwardReciprocals<float>();
+
+/// The reciprocal of \c l + 1/2, for the value type the ladder runs in.
+template <typename T>
+__device__ __forceinline__ T DeviceDownwardReciprocal(std::size_t index) noexcept {
+    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>,
+                  "the downward ladder runs in the double and float value types; a table of "
+                  "another type's reciprocals is not stated (boys_cuda_arithmetic.hpp)");
+
+    if constexpr (std::is_same_v<T, float>)
+    {
+        return kDeviceDownwardReciprocalsF32.values[index];
+    } else
+    {
+        return kDeviceDownwardReciprocalsF64.values[index];
+    }
+}
+
+// The downward step's divide, in the form named.
+template <DivisionForm kForm, typename T>
+__device__ __forceinline__ T DeviceDivideDownwardStep(int l, T a) {
+    const std::size_t index = static_cast<std::size_t>(l);
+
+    if constexpr (kForm == DivisionForm::kExactDivision)
+    {
+        return DeviceDivideExact(a, static_cast<T>(l) + T{0.5});
+    } else if constexpr (kForm == DivisionForm::kPlainReciprocal)
+    {
+        return DeviceDividePlain(a, DeviceDownwardReciprocal<T>(index));
+    } else
+    {
+        return DeviceDivideByReciprocal(a, static_cast<T>(l) + T{0.5},
+                                        DeviceDownwardReciprocal<T>(index));
+    }
+}
+
+// ---------------------------------------------------------------------------
 // one order at one argument
 // ---------------------------------------------------------------------------
 
 // Region A asks the fit for the order directly; the higher regions seed F_0
 // and recur upward once per order, since a fit of every order over the whole
 // range would cost more table than the recursion costs work.
-template <typename Lane>
+template <DivisionForm kForm, typename Lane>
 __device__ __forceinline__ double DeviceSingleF64(const Lane& lane, int order, double xx) {
     if (xx < kX0)
     {
@@ -409,20 +581,22 @@ __device__ __forceinline__ double DeviceSingleF64(const Lane& lane, int order, d
     {
         double f = lane.BSeed(xx, order);
         const double expx = 0.5 * exp(-xx);
+        const double invx = DeviceStepReciprocal<kForm>(xx);
 
         for (int l = 0; l < order; ++l)
         {
-            f = ((l + 0.5) * f - expx) / xx;
+            f = DeviceDivideStep<kForm>((l + 0.5) * f - expx, xx, invx);
         }
 
         return f;
     }
 
     double f = kHalfSqrtPi * rsqrt(xx);
+    const double invx = DeviceStepReciprocal<kForm>(xx);
 
     for (int l = 0; l < order; ++l)
     {
-        f = (l + 0.5) * f / xx;
+        f = DeviceDivideStep<kForm>((l + 0.5) * f, xx, invx);
     }
 
     return f;
@@ -431,7 +605,7 @@ __device__ __forceinline__ double DeviceSingleF64(const Lane& lane, int order, d
 // The float lane's single body, and the fp16 lane's: the fp16 entries round
 // at the boundary and run this engine in between, so there is one body and
 // not two.
-template <bool kFastExp, typename Lane>
+template <DivisionForm kForm, bool kFastExp, typename Lane>
 __device__ __forceinline__ float DeviceSingleF32(const Lane& lane, int order, float xx) {
     if (xx < static_cast<float>(kX0))
     {
@@ -442,20 +616,22 @@ __device__ __forceinline__ float DeviceSingleF32(const Lane& lane, int order, fl
     {
         float f = lane.BSeed(xx, order);
         const float expx = DeviceRegionBExp<kFastExp>(xx);
+        const float invx = DeviceStepReciprocal<kForm>(xx);
 
         for (int l = 0; l < order; ++l)
         {
-            f = ((l + 0.5f) * f - expx) / xx;
+            f = DeviceDivideStep<kForm>((l + 0.5f) * f - expx, xx, invx);
         }
 
         return f;
     }
 
     float f = static_cast<float>(kHalfSqrtPi) * rsqrtf(xx);
+    const float invx = DeviceStepReciprocal<kForm>(xx);
 
     for (int l = 0; l < order; ++l)
     {
-        f = (l + 0.5f) * f / xx;
+        f = DeviceDivideStep<kForm>((l + 0.5f) * f, xx, invx);
     }
 
     return f;
@@ -470,7 +646,7 @@ __device__ __forceinline__ float DeviceSingleF32(const Lane& lane, int order, fl
 // its plane and a caller can keep the ladder in registers. Region A descends,
 // so its stores arrive high order first and the value in the register chain
 // is the one the downward recursion carries.
-template <typename Lane, typename Store>
+template <DivisionForm kForm, typename Lane, typename Store>
 __device__ __forceinline__ void DeviceAllOrdersF64(
     const Lane& lane, int order, double xx, Store store) {
     if (xx < kX0)
@@ -481,7 +657,7 @@ __device__ __forceinline__ void DeviceAllOrdersF64(
 
         for (int l = order - 1; l >= 0; --l)
         {
-            f = (xx * f + expx) / (l + 0.5);
+            f = DeviceDivideDownwardStep<kForm>(l, xx * f + expx);
             store(l, f);
         }
 
@@ -493,10 +669,11 @@ __device__ __forceinline__ void DeviceAllOrdersF64(
         double f = lane.BSeed(xx, order);
         store(0, f);
         const double expx = 0.5 * exp(-xx);
+        const double invx = DeviceStepReciprocal<kForm>(xx);
 
         for (int l = 1; l <= order; ++l)
         {
-            f = ((l - 0.5) * f - expx) / xx;
+            f = DeviceDivideStep<kForm>((l - 0.5) * f - expx, xx, invx);
             store(l, f);
         }
 
@@ -505,10 +682,11 @@ __device__ __forceinline__ void DeviceAllOrdersF64(
 
     double f = kHalfSqrtPi * rsqrt(xx);
     store(0, f);
+    const double invx = DeviceStepReciprocal<kForm>(xx);
 
     for (int l = 1; l <= order; ++l)
     {
-        f = (l - 0.5) * f / xx;
+        f = DeviceDivideStep<kForm>((l - 0.5) * f, xx, invx);
         store(l, f);
     }
 }
@@ -518,7 +696,7 @@ __device__ __forceinline__ void DeviceAllOrdersF64(
 // amplifies a float seed error past the float budget, so the seed is computed
 // in double and rounded once on entry to the recursion. That is what the
 // second lane argument is, and it is why this body takes two of them.
-template <typename SeedLane, typename Lane, typename Store>
+template <DivisionForm kForm, typename SeedLane, typename Lane, typename Store>
 __device__ __forceinline__ void DeviceAllOrdersF32(
     const SeedLane& seedLane, const Lane& lane, int order, float xx, Store store) {
     if (xx < static_cast<float>(kX0))
@@ -530,7 +708,7 @@ __device__ __forceinline__ void DeviceAllOrdersF32(
 
         for (int l = order - 1; l >= 0; --l)
         {
-            f = (xx * f + expx) / (l + 0.5f);
+            f = DeviceDivideDownwardStep<kForm>(l, xx * f + expx);
             store(l, f);
         }
 
@@ -542,10 +720,11 @@ __device__ __forceinline__ void DeviceAllOrdersF32(
         float f = lane.BSeed(xx, order);
         store(0, f);
         const float expx = 0.5f * expf(-xx);
+        const float invx = DeviceStepReciprocal<kForm>(xx);
 
         for (int l = 1; l <= order; ++l)
         {
-            f = ((l - 0.5f) * f - expx) / xx;
+            f = DeviceDivideStep<kForm>((l - 0.5f) * f - expx, xx, invx);
             store(l, f);
         }
 
@@ -554,10 +733,11 @@ __device__ __forceinline__ void DeviceAllOrdersF32(
 
     float f = static_cast<float>(kHalfSqrtPi) * rsqrtf(xx);
     store(0, f);
+    const float invx = DeviceStepReciprocal<kForm>(xx);
 
     for (int l = 1; l <= order; ++l)
     {
-        f = (l - 0.5f) * f / xx;
+        f = DeviceDivideStep<kForm>((l - 0.5f) * f, xx, invx);
         store(l, f);
     }
 }
@@ -586,7 +766,7 @@ __device__ __forceinline__ void DeviceAllOrdersF32(
 // already served.
 
 // The uniform route's ladder, in double.
-template <bool kMonomial, typename Store>
+template <DivisionForm kForm, bool kMonomial, typename Store>
 __device__ __forceinline__ void DeviceAllOrdersF64Flat(const double* cheb,
                                                        const double* mono,
                                                        const int* degs,
@@ -597,12 +777,13 @@ __device__ __forceinline__ void DeviceAllOrdersF64Flat(const double* cheb,
     if (xx >= kFlatHi)
     {
         double f = kHalfSqrtPi * rsqrt(xx);
+        const double invx = DeviceStepReciprocal<kForm>(xx);
 
 #pragma unroll 4
         for (int l = 0; l <= order; ++l)
         {
             store(l, f);
-            f = (l + 0.5) * f / xx;
+            f = DeviceDivideStep<kForm>((l + 0.5) * f, xx, invx);
         }
 
         return;
@@ -679,7 +860,7 @@ __device__ __forceinline__ void DeviceAllOrdersF64Flat(const double* cheb,
 // The summation is DeviceRatSum, the same two Horner sums and the same held
 // denominator constant the host reader performs, so the figures the host gate
 // certifies are the figures this entry delivers.
-template <typename Store>
+template <DivisionForm kForm, typename Store>
 __device__ __forceinline__ void DeviceAllOrdersF64FlatRat(const double* rat,
                                                           const int* numDegs,
                                                           const int* denDegs,
@@ -691,12 +872,13 @@ __device__ __forceinline__ void DeviceAllOrdersF64FlatRat(const double* rat,
     if (xx >= kFlatHi)
     {
         double f = kHalfSqrtPi * rsqrt(xx);
+        const double invx = DeviceStepReciprocal<kForm>(xx);
 
 #pragma unroll 4
         for (int l = 0; l <= order; ++l)
         {
             store(l, f);
-            f = (l + 0.5) * f / xx;
+            f = DeviceDivideStep<kForm>((l + 0.5) * f, xx, invx);
         }
 
         return;
@@ -744,7 +926,7 @@ __device__ __forceinline__ void DeviceAllOrdersF64FlatRat(const double* rat,
 // (tools/gen_boys_coefficients.py, flat_order_f32: a = iv * width, b = a + width) and
 // not a scan of stored edges, so the interval an argument is mapped inside is the one
 // the fit was measured in.
-template <bool kMonomial, typename Store>
+template <DivisionForm kForm, bool kMonomial, typename Store>
 __device__ __forceinline__ void DeviceAllOrdersF32Flat(const float* cheb,
                                                        const float* mono,
                                                        const int* degs,
@@ -755,12 +937,13 @@ __device__ __forceinline__ void DeviceAllOrdersF32Flat(const float* cheb,
     if (xx >= f32::kFlatHiF32)
     {
         float f = static_cast<float>(kHalfSqrtPi) * rsqrtf(xx);
+        const float invx = DeviceStepReciprocal<kForm>(xx);
 
 #pragma unroll 4
         for (int l = 0; l <= order; ++l)
         {
             store(l, f);
-            f = (l + 0.5f) * f / xx;
+            f = DeviceDivideStep<kForm>((l + 0.5f) * f, xx, invx);
         }
 
         return;
@@ -818,7 +1001,7 @@ __device__ __forceinline__ void DeviceAllOrdersF32Flat(const float* cheb,
 // gate certifies for this member was measured on the mapping this locate builds
 // (tools/gen_boys_coefficients.py, f32_map), at BOTH multiply-add routes, so this
 // body's fused-only reading is inside what was certified rather than beside it.
-template <typename Store>
+template <DivisionForm kForm, typename Store>
 __device__ __forceinline__ void DeviceAllOrdersF32FlatRat(const float* rat,
                                                           const int* numDegs,
                                                           const int* denDegs,
@@ -830,12 +1013,13 @@ __device__ __forceinline__ void DeviceAllOrdersF32FlatRat(const float* rat,
     if (xx >= f32::kFlatHiF32)
     {
         float f = static_cast<float>(kHalfSqrtPi) * rsqrtf(xx);
+        const float invx = DeviceStepReciprocal<kForm>(xx);
 
 #pragma unroll 4
         for (int l = 0; l <= order; ++l)
         {
             store(l, f);
-            f = (l + 0.5f) * f / xx;
+            f = DeviceDivideStep<kForm>((l + 0.5f) * f, xx, invx);
         }
 
         return;
@@ -889,7 +1073,7 @@ __device__ __forceinline__ void DeviceAllOrdersF32FlatRat(const float* rat,
 // certified one above, which is also where the region-A fit it replaces ends.
 // Outside region A the two bodies are one body, so a row that carries this
 // axis names its interval as region A rather than claiming the rest.
-template <typename Lane, typename Store>
+template <DivisionForm kForm, typename Lane, typename Store>
 __device__ __forceinline__ void DeviceOrdersF64(
     const Lane& lane, int order, double xx, Store store) {
     if (xx < kX0)
@@ -902,12 +1086,12 @@ __device__ __forceinline__ void DeviceOrdersF64(
         return;
     }
 
-    DeviceAllOrdersF64(lane, order, xx, store);
+    DeviceAllOrdersF64<kForm>(lane, order, xx, store);
 }
 
 // The float lane's and the fp16 lane's, over the double region-A seed lane the
 // body above takes for the same reason.
-template <typename SeedLane, typename Lane, typename Store>
+template <DivisionForm kForm, typename SeedLane, typename Lane, typename Store>
 __device__ __forceinline__ void DeviceOrdersF32(
     const SeedLane& seedLane, const Lane& lane, int order, float xx, Store store) {
     if (xx < static_cast<float>(kX0))
@@ -920,7 +1104,7 @@ __device__ __forceinline__ void DeviceOrdersF32(
         return;
     }
 
-    DeviceAllOrdersF32(seedLane, lane, order, xx, store);
+    DeviceAllOrdersF32<kForm>(seedLane, lane, order, xx, store);
 }
 
 } // namespace boys::detail
