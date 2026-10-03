@@ -1052,10 +1052,11 @@ on the same reasoning the double lane's is.
 packed backends are templates over the route, defaulted to that selection (`src/boys_backend_simd.hpp`,
 `Avx2Fp64` and `Avx2Fp32`), and the across-orders lane's own steps read the same selection, so a build
 with `BOYS_MULADD_SEPARATE=ON` hands the packed lane the two-rounding form on the same terms as the
-scalar lane. The packed lane is contraction-free in the way the build asked for, not whatever the
-build says. The two lanes are therefore one arithmetic on both builds, and the values are the same
-bits on both: **0 of 879,351** swept values differ and the worst parting is 0.000e+00, on the
-two-rounding build as on the fused one.
+scalar lane. The packed backends spell that multiply-add themselves from the selection rather than
+leaving the step to the compiler, so the arithmetic is the one the build named. The two lanes are
+therefore one arithmetic on both builds, and on either build the packed lane's values are the same
+bits as the per-order lane's: **0 of 879,351** swept values differ and the worst parting is
+0.000e+00, on the two-rounding build as on the fused one.
 
 Those 879,351 values are this tree's own sweeps, every one of them run by
 `tests/boys_orders_f32_test.cpp` on whichever build it is compiled into: 199,815 values from five
