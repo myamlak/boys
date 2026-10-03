@@ -1270,10 +1270,19 @@ int BoysCudaProbeTime(ProbeTimeRequest* request) {
             return TimeRegion(RunFloor, *request, request->outMs);
         case ProbeWhat::kLaunchedEntry:
             return TimeRegion(RunLaunched, *request, request->outMs);
-        default:
+        // The other half of the subtraction kernel, named as its own region rather than left
+        // to the fall-through: the arm a switch does not name answers with the body it holds,
+        // and the body here is a region a report prints as a measured figure.
+        case ProbeWhat::kInKernelEntry:
             return request->handle == nullptr
                        ? 1
                        : TimeRegion(RunInKernel, *request, request->outMs);
+        // A region this enumeration does not name. \c what arrives as an int across this
+        // entry's own ABI, so a value outside the enumerators is a caller's int and not an
+        // arm nothing can reach. Refused, as the entry dispatches above refuse the entries
+        // they do not name, rather than measured as whichever region sits nearest.
+        default:
+            return 1;
     }
 }
 
