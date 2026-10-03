@@ -2,6 +2,13 @@
 /build/
 /build-*/
 
+# Compiler artifacts that land in the source root. The CUDA host compile passes
+# /FS without an /Fd, so cl drops its shared program database in the current
+# working directory rather than in the build tree; object files land the same way
+# when a one-off compile is run from the root. Neither is ever part of the tree.
+*.pdb
+*.obj
+
 # Visual Studio IDE files
 /.vs/
 
