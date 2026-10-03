@@ -1,8 +1,8 @@
-// The device half of the consumer check on the CUDA lane's default. The lane's
-// f32 single entries take one selection axis and no other — the region-B
-// exponential — a template parameter with a default, so a caller that has chosen
-// the precision and the format's f32 writes one call and gets the lane's shipped
-// arithmetic.
+// The device half of the consumer check on the CUDA lane's default. The device
+// f32 single entry takes two selection axes, the division form and the region-B
+// exponential, each a template parameter with a default, so a caller that has
+// chosen the precision and the format's f32 writes one call and gets the lane's
+// shipped arithmetic.
 //
 // The check is two translation units because the lane is: the batch entry
 // BoysCuda::SingleF32 is declared in <boys/boys_cuda.hpp>, a host header, and
@@ -24,12 +24,20 @@ template <auto Left, auto Right> constexpr bool SameCall = (Left == Right);
 
 // Two spellings of one entry compare equal as function addresses exactly when
 // they are one instantiation, so the assertion below says the two calls are one
-// call and not two that happen to agree. The negated one is the control, without
-// which an equality that held for every pair would prove nothing.
+// call and not two that happen to agree: the entry named with no argument and the
+// one naming both of its defaults — the division form's and the region-B
+// exponential's — are the same call. The negated one is the control, and it holds
+// the form at its default on both sides so that the axis it varies is the
+// exponential alone: a call naming kFast is not the call naming the default
+// exponential, without which an equality that held for every pair would prove
+// nothing.
 static_assert(
-    SameCall<&boys::BoysDeviceSingleF32<>, &boys::BoysDeviceSingleF32<boys::kDefaultRegionBExp>>);
-static_assert(!SameCall<&boys::BoysDeviceSingleF32<boys::kDefaultRegionBExp>,
-                        &boys::BoysDeviceSingleF32<boys::RegionBExp::kFast>>);
+    SameCall<&boys::BoysDeviceSingleF32<>,
+             &boys::BoysDeviceSingleF32<boys::kDefaultDivisionForm, boys::kDefaultRegionBExp>>);
+static_assert(!SameCall<&boys::BoysDeviceSingleF32<boys::kDefaultDivisionForm,
+                                                   boys::kDefaultRegionBExp>,
+                        &boys::BoysDeviceSingleF32<boys::kDefaultDivisionForm,
+                                                   boys::RegionBExp::kFast>>);
 
 namespace {
 
@@ -95,9 +103,11 @@ __global__ void DeviceEntryKernel(__grid_constant__ const boys::BoysDeviceTables
 
     const boys::BoysDeviceStatus a = boys::BoysDeviceSingleF32(tables, n[i], x, &left);
     const boys::BoysDeviceStatus b =
-        boys::BoysDeviceSingleF32<boys::kDefaultRegionBExp>(tables, n[i], x, &right);
+        boys::BoysDeviceSingleF32<boys::kDefaultDivisionForm,
+                                  boys::kDefaultRegionBExp>(tables, n[i], x, &right);
     const boys::BoysDeviceStatus c =
-        boys::BoysDeviceSingleF32<boys::RegionBExp::kFast>(tables, n[i], x, &spared);
+        boys::BoysDeviceSingleF32<boys::kDefaultDivisionForm,
+                                  boys::RegionBExp::kFast>(tables, n[i], x, &spared);
 
     status[i] = (a == b && a == c) ? static_cast<int>(a) : -1;
     plain[i] = left;

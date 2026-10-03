@@ -699,6 +699,15 @@ void SweepDouble(const Reference& ref,
 // stopped being refusals.
 // ---------------------------------------------------------------------------
 
+// The division form this gate's device rows are launched at. Every entry of the
+// surface takes the form as a trailing argument and the option space crosses each
+// of them with all three, but a bound is stated for a lane and a region and not
+// for a form (there is no per-form figure in BoysLaneContracts()), so the rows
+// below are measured at the arithmetic the library's own default names - the one
+// every published figure was measured at. Crossing the forms here would be a
+// second option space beside the probe's, and this gate is not that instrument.
+constexpr boys::DivisionForm kGateDivisionForm = boys::kDefaultDivisionForm;
+
 // One of those rows, launched once over the whole grid, measured against the
 // independent reference as every other row of this gate is. The returns are
 // handed back so the same launch can be measured against the host lane as
@@ -710,7 +719,8 @@ std::vector<double> LaunchDeviceChoice(const Reference& ref,
                                                                   const double*,
                                                                   double*,
                                                                   std::size_t,
-                                                                  void*),
+                                                                  void*,
+                                                                  boys::DivisionForm),
                                        int slotReference) {
     const std::size_t count = ref.count;
     const std::size_t cells = grid.cells;
@@ -722,7 +732,7 @@ std::vector<double> LaunchDeviceChoice(const Reference& ref,
     const std::vector<int> tops(count, boys::kMaxBoysOrder);
     dN.Upload(tops);
     dX.Upload(grid.x);
-    CheckLaunch(launch(dN.get(), dX.get(), dOut.get(), count, nullptr), what);
+    CheckLaunch(launch(dN.get(), dX.get(), dOut.get(), count, nullptr, kGateDivisionForm), what);
     std::vector<double> out(cells);
     dOut.Download(out);
     Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
@@ -810,7 +820,8 @@ std::vector<double> MeasureDeviceRow(const Reference& ref,
                                                                 const double*,
                                                                 double*,
                                                                 std::size_t,
-                                                                void*)) {
+                                                                void*,
+                                                                boys::DivisionForm)) {
     const std::string name = Label(DeviceRow(entry).name);
     const double bound = kBoundDoubleBatch;
     const int row = AddClaim(name.c_str(), "A..C", bound);
@@ -845,7 +856,8 @@ void MeasureDeviceRowF32(const Reference& ref,
                                                     const double*,
                                                     float*,
                                                     std::size_t,
-                                                    void*)) {
+                                                    void*,
+                                                    boys::DivisionForm)) {
     const std::string name = Label(DeviceRow(entry).name);
     const double bound = kBoundFloat;
     const int row = AddClaim(name.c_str(), "A..C", bound);
@@ -865,7 +877,8 @@ void MeasureDeviceRowF32(const Reference& ref,
     const std::vector<int> tops(count, boys::kMaxBoysOrder);
     dN.Upload(tops);
     dX.Upload(grid.x);
-    CheckLaunch(launch(dN.get(), dX.get(), dOut.get(), count, nullptr), name.c_str());
+    CheckLaunch(launch(dN.get(), dX.get(), dOut.get(), count, nullptr, kGateDivisionForm),
+                name.c_str());
     std::vector<float> out(cells);
     dOut.Download(out);
     Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
@@ -2152,7 +2165,8 @@ void MeasureDeviceLadder64(
                 std::size_t,
                 int,
                 int*),
-    boys::BoysStatus (*launch)(const int*, const double*, double*, std::size_t, void*)) {
+    boys::BoysStatus (*launch)(const int*, const double*, double*, std::size_t, void*,
+                               boys::DivisionForm)) {
     const std::size_t count = ref.count;
     const int nmax = boys::kMaxBoysOrder;
     const std::size_t cells = grid.cells;
@@ -2212,7 +2226,8 @@ void MeasureDeviceLadder64(
     for (int top = 0; top <= nmax; ++top)
     {
         dNb.Upload(std::vector<int>(count, top));
-        CheckLaunch(launch(dNb.get(), dXb.get(), dOutb.get(), count, nullptr), name);
+        CheckLaunch(launch(dNb.get(), dXb.get(), dOutb.get(), count, nullptr, kGateDivisionForm),
+                    name);
         dOutb.Download(batch);
         Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
         AgreeOrder(agreement, out, batch, ref.x, top);
@@ -2238,7 +2253,8 @@ void MeasureDeviceLadder32(
                 std::size_t,
                 int,
                 int*),
-    boys::BoysStatus (*launch)(const int*, const double*, float*, std::size_t, void*)) {
+    boys::BoysStatus (*launch)(const int*, const double*, float*, std::size_t, void*,
+                               boys::DivisionForm)) {
     const std::size_t count = ref.count;
     const int nmax = boys::kMaxBoysOrder;
     const std::size_t cells = grid.cells;
@@ -2298,7 +2314,8 @@ void MeasureDeviceLadder32(
     for (int top = 0; top <= nmax; ++top)
     {
         dNb.Upload(std::vector<int>(count, top));
-        CheckLaunch(launch(dNb.get(), dXb.get(), dOutb.get(), count, nullptr), name);
+        CheckLaunch(launch(dNb.get(), dXb.get(), dOutb.get(), count, nullptr, kGateDivisionForm),
+                    name);
         dOutb.Download(batch);
         Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
         AgreeOrder(agreement, out, batch, ref.x, top);

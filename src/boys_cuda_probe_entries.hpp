@@ -81,6 +81,17 @@ struct ProbeTimeRequest {
     /// The entry, read when \c what is kLaunchedEntry or kInKernelEntry.
     int entry;
 
+    /// The division form the entry is run at, as a \c DivisionForm value
+    /// (boys/accuracy.hpp): the form each of that entry's ladder steps divides
+    /// in. Every entry of this space can run every form, so the form is a
+    /// coordinate of the measurement and not a property of the entry: the same
+    /// entry is a different row under each of the three.
+    ///
+    /// It arrives as an int because this header is compiled by both sides of the
+    /// device boundary, and the enumerator it carries is the library's own
+    /// rather than a second list here.
+    int form;
+
     /// Launches inside the region. The elapsed device time is divided by this
     /// by the caller.
     int reps;

@@ -1316,10 +1316,20 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report);
 /// its entry fixes (\c DeviceEntryAxesOf, boys_cuda_options.hpp) a device row would have
 /// carried cells nobody could check.
 ///
-/// One row per class the table keys on: `kDevice` with \c Precision::kFp32Device - the one
-/// precision cell the device lane has - and the shape, one per question the probe ranks. The
-/// library serves one accuracy and no accuracy cell is written: a row of this table names what
-/// the library picks, and the figure behind it is the class's own reading.
+/// **One row per class the table keys on, and the device half of that key is three cells
+/// wide.** A class is `kDevice` with the lane the entry runs in and the shape, one per question
+/// the probe ranks; the device's own three precisions are three lanes, so the rows below are the
+/// nine classes of the device half - \c Precision::kFp64Device, \c kFp32Device and
+/// \c kFp16Device, which are the three precisions the device surface's entries are built at
+/// (\c BoysDeviceLane, boys_device_tables.hpp). A table that gave the device half one precision
+/// cell could carry one of those nine per shape and no row for the other six, which is the
+/// keying this file's own list is written to be able to state.
+///
+/// The route, the scheme and the packing axis of a row are the entry's own
+/// (\c DeviceEntryAxesOf), the granularity is the partition it reads, and the packing cell is
+/// that reading of region A in the axis the seam names \c PackAxis. The library serves one
+/// accuracy and no accuracy cell is written: a row of this table names what the library picks,
+/// and the figure behind it is the class's own reading.
 ///
 /// **A row is a measurement only where the run measured one.** A class whose winner was the
 /// last entry left standing rather than an ordering's first - \c kOnlyEntry - is written with

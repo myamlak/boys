@@ -119,7 +119,7 @@ __global__ void BoysDeviceDemoAllN64Kernel(
     double ladder[boys::kMaxBoysOrder + 1];
 
     const boys::BoysDeviceStatus got =
-        boys::BoysDeviceAllNF64<boys::kMaxBoysOrder>(tables, x, ladder);
+        boys::BoysDeviceAllNF64<boys::kDefaultDivisionForm, boys::kMaxBoysOrder>(tables, x, ladder);
     status[i] = static_cast<int>(got);
 
     if (got != boys::BoysDeviceStatus::kSuccess)
@@ -291,7 +291,7 @@ __global__ void BoysDeviceDemoAllN32Kernel(
     float ladder[boys::kMaxBoysOrder + 1];
 
     const boys::BoysDeviceStatus got =
-        boys::BoysDeviceAllNF32<boys::kMaxBoysOrder>(tables, x, ladder);
+        boys::BoysDeviceAllNF32<boys::kDefaultDivisionForm, boys::kMaxBoysOrder>(tables, x, ladder);
     status[i] = static_cast<int>(got);
 
     if (got != boys::BoysDeviceStatus::kSuccess)
@@ -410,7 +410,8 @@ __global__ void BoysDeviceDemoSingle32ExpKernel(
     const float x = static_cast<float>(rho[i] * d2[i]);
     float value = 0.0f;
 
-    const boys::BoysDeviceStatus got = boys::BoysDeviceSingleF32<kExp>(tables, n[i], x, &value);
+    const boys::BoysDeviceStatus got =
+        boys::BoysDeviceSingleF32<boys::kDefaultDivisionForm, kExp>(tables, n[i], x, &value);
     status[i] = static_cast<int>(got);
 
     if (got == boys::BoysDeviceStatus::kSuccess)
@@ -501,7 +502,7 @@ __global__ void BoysDeviceDemoAllN16Kernel(
     __half ladder[boys::kMaxBoysOrder + 1];
 
     const boys::BoysDeviceStatus got =
-        boys::BoysDeviceAllNF16<boys::kMaxBoysOrder>(tables, x, ladder);
+        boys::BoysDeviceAllNF16<boys::kDefaultDivisionForm, boys::kMaxBoysOrder>(tables, x, ladder);
     status[i] = static_cast<int>(got);
 
     if (got != boys::BoysDeviceStatus::kSuccess)

@@ -661,14 +661,48 @@ template struct PackingIsNamed<DevicePacking::kPerOrder>;
 template struct PackingIsNamed<DevicePacking::kNotApplicable>;
 template struct PackingIsNamed<DevicePacking::kUnstated>;
 
-/// The axes of a row: the member of the axis it varies, where it varies one, and then the route,
-/// the summation and the region-A packing its entry runs.
+/// The division form a row's ladder steps divide in, as the report spells it; nullptr for a value
+/// outside the enumerators.
 ///
-/// The three axes last are stated on every row and not only on the rows that move them, because
+/// The library spells these too (\c DivisionFormName, boys/backend.hpp), and this table is the
+/// report's own the way the route, the scheme and the packing are: an enumerator added to
+/// \c DivisionForm and not named here stops this translation unit at
+/// \c DivisionIsNamed below, where a table keyed by the library's name function would have
+/// printed its fallback for it.
+constexpr const char* DivisionName(DivisionForm form) noexcept {
+    switch (form)
+    {
+        case DivisionForm::kExactDivision:
+            return "exact-division";
+        case DivisionForm::kPlainReciprocal:
+            return "plain-reciprocal";
+        case DivisionForm::kRefinedReciprocal:
+            return "refined-reciprocal";
+    }
+
+    return nullptr;
+}
+
+/// One enumerator of \c DivisionForm that \c DivisionName spells no name for.
+template <DivisionForm Form>
+struct DivisionIsNamed {
+    static_assert(DivisionName(Form) != nullptr,
+                  "an enumerator of DivisionForm names no form: name it in DivisionName "
+                  "(src/boys_cuda_probe.cpp)");
+};
+
+template struct DivisionIsNamed<DivisionForm::kExactDivision>;
+template struct DivisionIsNamed<DivisionForm::kPlainReciprocal>;
+template struct DivisionIsNamed<DivisionForm::kRefinedReciprocal>;
+
+/// The axes of a row: the member of the axis it varies, where it varies one, and then the route,
+/// the summation, the region-A packing and the division form its entry runs.
+///
+/// The four axes last are stated on every row and not only on the rows that move them, because
 /// that is what places a row against its neighbours: a row whose axis is kNone is the entry, and
-/// before this column carried the three, the arithmetic it runs was recoverable from its name and
-/// from nothing the report printed. A row of the packing, scheme or route axis carries its member
-/// among the three, so nothing is said twice.
+/// before this column carried them, the arithmetic it runs was recoverable from its name and
+/// from nothing the report printed. A row of the packing, scheme, route or division axis carries
+/// its member among the four, so nothing is said twice.
 std::string AxisName(const DeviceOptionInfo& option) {
     std::string text;
 
@@ -680,6 +714,9 @@ std::string AxisName(const DeviceOptionInfo& option) {
             break;
         case DeviceOptionAxis::kPartition:
             text = Text("partition:%s ", DevicePartitionName(option.entry));
+            break;
+        case DeviceOptionAxis::kDivision:
+            text = Text("division:%s ", DivisionName(option.division));
             break;
         case DeviceOptionAxis::kNone:
         case DeviceOptionAxis::kPacking:
@@ -694,10 +731,11 @@ std::string AxisName(const DeviceOptionInfo& option) {
             break;
     }
 
-    text += Text("route:%s scheme:%s packing:%s",
+    text += Text("route:%s scheme:%s packing:%s division:%s",
                  RouteName(option.route),
                  SchemeName(option.scheme),
-                 PackingName(option.packing));
+                 PackingName(option.packing),
+                 DivisionName(option.division));
     return text;
 }
 
@@ -1006,11 +1044,18 @@ TimedEntry TimeEntry(const EntryInfo& info,
                      bool baselineFirst = false) {
     TimedEntry timed;
 
+    // The form this row is measured at. It is read off the entry rather than fixed here:
+    // a row is an entry crossed with a form, and the form a row carries is the one
+    // DeviceEntryAxesOf states for its entry, so the region dispatched below runs the
+    // arithmetic the row's own arithmetic column reports.
+    const int form = static_cast<int>(DeviceEntryAxesOf(info.entry).division);
+
     if (!info.inKernel)
     {
         ProbeTimeRequest request = base;
         request.what = static_cast<int>(ProbeWhat::kLaunchedEntry);
         request.entry = static_cast<int>(info.entry);
+        request.form = form;
         request.reps = reps;
         timed.ok = TimeRegion(request, timed.withMs);
         return timed;
@@ -1019,6 +1064,7 @@ TimedEntry TimeEntry(const EntryInfo& info,
     ProbeTimeRequest withBoys = base;
     withBoys.what = static_cast<int>(ProbeWhat::kInKernelEntry);
     withBoys.entry = static_cast<int>(info.entry);
+    withBoys.form = form;
     withBoys.reps = reps;
     withBoys.withBoys = 1;
 
@@ -3913,7 +3959,7 @@ void AppendOptionSpace(std::string& text,
                  emptyRows,
                  served);
 
-    text += "  report row                 probe row                  group     precision  shape       question    axes                                                                       lane        bound     documented form\n";
+    text += "  report row                 probe row                  group     precision  shape       question    axes                                                                                                  lane        bound     documented form\n";
 
     for (const DeviceOptionInfo& option : space)
     {
@@ -3925,7 +3971,7 @@ void AppendOptionSpace(std::string& text,
                 ? std::string("measured on this run")
                 : std::string("not measured on this run");
 
-        text += Text("  %-26s %-26s %-9s %-10s %-11s %-11s %-74s %-11s %-9.2g %s\n",
+        text += Text("  %-26s %-26s %-9s %-10s %-11s %-11s %-101s %-11s %-9.2g %s\n",
                      option.name,
                      carried.c_str(),
                      GroupName(option.group),
@@ -4058,6 +4104,167 @@ const char* SeamGranularityCell(const DeviceOptionInfo& row) noexcept {
     return "FitGranularity::kCoarsest";
 }
 
+/// The division-form cell of a row: the form the entry's ladder steps divide in, as the
+/// default-policy table spells it.
+///
+/// Read off the row's own entry and never listed beside it: \c DeviceOptionInfo::division is
+/// \c DeviceEntryAxesOf's statement of the form an entry's body performs its divisions in
+/// (boys_cuda_options.hpp), so this cell follows the arithmetic the lane and the kernel bodies
+/// name, and the build default the seam carries for the device half is what that statement
+/// resolves to.
+///
+/// \returns the cell, or \c nullptr for a value outside \c DivisionForm's enumerators - which
+///          \c DeviceEntryAxesOf states for no entry, its own assertion making an entry it has
+///          not been taught a compile error rather than a row here
+constexpr const char* SeamDivisionCell(DivisionForm form) noexcept {
+    switch (form)
+    {
+        case DivisionForm::kExactDivision:
+            return "DivisionForm::kExactDivision";
+        case DivisionForm::kPlainReciprocal:
+            return "DivisionForm::kPlainReciprocal";
+        case DivisionForm::kRefinedReciprocal:
+            return "DivisionForm::kRefinedReciprocal";
+    }
+
+    return nullptr;
+}
+
+/// The precision cell of a row: the lane the class runs in, as the default-policy table spells
+/// it.
+///
+/// The device's three precisions are three lanes of the table and not one lane named three
+/// ways: a row is keyed by (device, precision, shape), so a table that gave the device half one
+/// precision cell would carry one class per shape and none of the other two precisions' shapes.
+/// The nine classes the probe ranks - three precisions by three shapes - need the three cells
+/// below, and each names the lane whose entries that class's winner is an entry of
+/// (boys/boys_device_tables.hpp, \c BoysDeviceLane, which is where the device's own lanes are
+/// enumerated).
+///
+/// \param precision the class's precision, as the probe's option table names it
+///
+/// \returns the cell, or \c nullptr for an enumerator this switch has not been taught - which
+///          the assertions below turn into a compile error rather than a row quietly keyed to
+///          another lane's class
+constexpr const char* SeamPrecisionCell(DeviceOptionPrecision precision) noexcept {
+    switch (precision)
+    {
+        case DeviceOptionPrecision::kFp64:
+            return "kFp64Device";
+        case DeviceOptionPrecision::kFp32:
+            return "kFp32Device";
+        case DeviceOptionPrecision::kFp16:
+            return "kFp16Device";
+        case DeviceOptionPrecision::kCount:
+            break;
+    }
+
+    return nullptr;
+}
+
+/// One enumerator of \c DeviceOptionPrecision that \c SeamPrecisionCell spells no cell for.
+template <DeviceOptionPrecision Precision> constexpr bool PrecisionCellIsNamed() noexcept {
+    return SeamPrecisionCell(Precision) != nullptr;
+}
+
+static_assert(PrecisionCellIsNamed<DeviceOptionPrecision::kFp64>() &&
+                  PrecisionCellIsNamed<DeviceOptionPrecision::kFp32>() &&
+                  PrecisionCellIsNamed<DeviceOptionPrecision::kFp16>(),
+              "an enumerator of DeviceOptionPrecision names no cell: name it in "
+              "SeamPrecisionCell (src/boys_cuda_probe.cpp)");
+
+/// The budget cell of a row: the budget the class's lane carries, which is the axis
+/// \c BoysBudget names and the one \c LaneFallbackBudget (boys/boys.hpp) states for that lane.
+///
+/// The half lane is the one that moves it: the fp16 device entries run the float lane's bodies
+/// under the half budget, whose degree tables are not the float lane's, and every other device
+/// lane carries the float budget. The cell is read from the lane rather than chosen here, and a
+/// lane added to the device without a statement of its budget is a compile error below rather
+/// than a row that carries the float budget by accident.
+constexpr const char* SeamBudgetCell(DeviceOptionPrecision precision) noexcept {
+    switch (precision)
+    {
+        case DeviceOptionPrecision::kFp64:
+        case DeviceOptionPrecision::kFp32:
+            return "BoysBudget::kFloat";
+        case DeviceOptionPrecision::kFp16:
+            return "BoysBudget::kFp16";
+        case DeviceOptionPrecision::kCount:
+            break;
+    }
+
+    return nullptr;
+}
+
+/// One enumerator of \c DeviceOptionPrecision that \c SeamBudgetCell spells no cell for.
+template <DeviceOptionPrecision Precision> constexpr bool BudgetCellIsNamed() noexcept {
+    return SeamBudgetCell(Precision) != nullptr;
+}
+
+static_assert(BudgetCellIsNamed<DeviceOptionPrecision::kFp64>() &&
+                  BudgetCellIsNamed<DeviceOptionPrecision::kFp32>() &&
+                  BudgetCellIsNamed<DeviceOptionPrecision::kFp16>(),
+              "an enumerator of DeviceOptionPrecision names no budget cell: name it in "
+              "SeamBudgetCell (src/boys_cuda_probe.cpp)");
+
+/// The packing cell of a row: the entry's own reading of region A, in the axis the seam names
+/// \c PackAxis.
+///
+/// The two axes are not one axis, and this is where they meet: the device states how region A's
+/// fits are read (\c DevicePacking, boys_cuda_options.hpp) and the seam states which axis a
+/// packed lane vectorises over (\c PackAxis, boys/backend.hpp). The translation below is the one
+/// the library's own words use - the ladder is "the per-argument ladder every one of those
+/// entries has" and the per-order reading is "the orders reading of the same stored fits"
+/// (src/boys.cpp, the fp32 device lane's carrier) - so a reader comparing this cell with
+/// \c DeviceEntryAxesOf for the entry the row names finds one fact stated twice rather than two
+/// facts:
+///
+///   * \c kLadder, the top order's fit seeded and every lower order brought back down the
+///     recurrence, is a reading taken per argument, so its cell is \c PackAxis::kArguments;
+///   * \c kPerOrder, every order's own fit located and summed where it lies, is the orders
+///     reading of the same fits, so its cell is \c PackAxis::kOrders;
+///   * \c kNotApplicable is the single-order shape's own statement that it fixes nothing on the
+///     axis, and the axis a one-order call has is the arguments one - there is no second order
+///     to pack - which is the cell the committed file gives every host single-order row.
+///
+/// The derivation is the entry's own (\c DeviceEntryAxesOf) and never the entry's name: the
+/// names of this space spell "orders" for the per-order rows, and a cell written from a name
+/// would be a statement about a string rather than about the arithmetic the row compiles.
+///
+/// \param packing the entry's own reading of region A
+///
+/// \returns the cell, or \c nullptr for an enumerator this switch has not been taught
+constexpr const char* SeamPackCell(DevicePacking packing) noexcept {
+    switch (packing)
+    {
+        case DevicePacking::kLadder:
+            return "PackAxis::kArguments";
+        case DevicePacking::kPerOrder:
+            return "PackAxis::kOrders";
+        case DevicePacking::kNotApplicable:
+            return "PackAxis::kArguments";
+        case DevicePacking::kUnstated:
+            // Never a row's value: DeviceEntryAxesOf answers it for an entry its switch has not
+            // been taught, which that header's own assertion turns into a compile error. A row
+            // written from it would state the argument axis for an entry that stated none.
+            break;
+    }
+
+    return nullptr;
+}
+
+/// One enumerator of \c DevicePacking that \c SeamPackCell spells no cell for. \c kUnstated is
+/// excluded: it is not a reading and never a row's value (boys_cuda_options.hpp).
+template <DevicePacking Packing> constexpr bool PackingCellIsNamed() noexcept {
+    return SeamPackCell(Packing) != nullptr;
+}
+
+static_assert(PackingCellIsNamed<DevicePacking::kLadder>() &&
+                  PackingCellIsNamed<DevicePacking::kPerOrder>() &&
+                  PackingCellIsNamed<DevicePacking::kNotApplicable>(),
+              "an enumerator of DevicePacking names no cell: name it in SeamPackCell "
+              "(src/boys_cuda_probe.cpp)");
+
 // The one row list this run read, expanded twice: once as the rows written back into the file
 // it emits, cell for cell and stringized rather than re-derived - so a row of the committed
 // file or of another replacement reaches the file this run writes with the tokens it was
@@ -4102,6 +4309,9 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
                                                  const std::string& takenAt) {
     DeviceDefaultsEmission emission;
 
+    constexpr DeviceOptionPrecision kPrecisions[] = {DeviceOptionPrecision::kFp64,
+                                                     DeviceOptionPrecision::kFp32,
+                                                     DeviceOptionPrecision::kFp16};
     constexpr DeviceOptionQuestion kQuestions[] = {DeviceOptionQuestion::kSingle,
                                                    DeviceOptionQuestion::kAllOrders,
                                                    DeviceOptionQuestion::kAllN};
@@ -4109,113 +4319,156 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
     std::string rows;
     bool measured = false;
 
-    for (const DeviceOptionQuestion question : kQuestions)
+    // One row per class the probe ranks: the three device precisions by the three questions, in
+    // the table's own order. A class is a (device, precision, shape) triple, so the nine rows
+    // below are the nine classes of the device half of the seam - one class per shape would be
+    // the fp32 lane's three alone.
+    for (const DeviceOptionPrecision precision : kPrecisions)
     {
-        const std::string klass = Text("kFp32Device %s", QuestionName(question));
-        const char* const shapeCell = SeamShapeCell(question);
-        bool carried = false;
-
-        // A class the table in force already carries is left exactly as it is: writing a
-        // second row for it would be two specializations of one template, which does not
-        // compile. It is a class this run has nothing to add to.
-        for (const SeamClassKey& known : kTableClasses)
+        for (const DeviceOptionQuestion question : kQuestions)
         {
-            carried = carried || (std::strcmp(known.device, "kDevice") == 0 &&
-                                  std::strcmp(known.precision, "kFp32Device") == 0 &&
-                                  std::strcmp(known.shape, shapeCell) == 0);
-        }
+            const char* const precisionCell = SeamPrecisionCell(precision);
+            const std::string klass = Text("%s %s", precisionCell, QuestionName(question));
+            const char* const shapeCell = SeamShapeCell(question);
+            bool carried = false;
 
-        if (carried)
-        {
-            emission.refused.push_back(Text("%s: the table in force already carries this class, "
-                                            "so its row is left as that file wrote it",
-                                            klass.c_str()));
-            continue;
-        }
-
-        // The class this row would come from: the fp32 device lane's, which is the one
-        // precision cell the default-policy table gives the device lane. A row states what the
-        // library picks for a class, so it is the entry that class's own readings placed first.
-        const DeviceProbeClass* founder = nullptr;
-
-        for (const DeviceProbeClass& candidate : report.classes)
-        {
-            if (candidate.precision == PrecisionName(DeviceOptionPrecision::kFp32) &&
-                candidate.question == QuestionName(question))
+            // A class the table in force already carries is left exactly as it is: writing a
+            // second row for it would be two specializations of one template, which does not
+            // compile. It is a class this run has nothing to add to.
+            for (const SeamClassKey& known : kTableClasses)
             {
-                founder = &candidate;
+                carried = carried || (std::strcmp(known.device, "kDevice") == 0 &&
+                                      std::strcmp(known.precision, precisionCell) == 0 &&
+                                      std::strcmp(known.shape, shapeCell) == 0);
             }
-        }
 
-        if (founder == nullptr)
-        {
-            emission.refused.push_back(
-                Text("%s: this run carried no fp32 class of that question", klass.c_str()));
-            continue;
-        }
-
-        const std::string& winner = founder->ranking.recommended;
-
-        if (winner.empty() || founder->ranking.verdict == DeviceProbeVerdict::kCannotDetermine)
-        {
-            emission.refused.push_back(
-                Text("%s: %s", klass.c_str(),
-                     founder->ranking.reason.empty()
-                         ? "the class's ranking named no entry and gave no reason"
-                         : founder->ranking.reason.c_str()));
-            continue;
-        }
-
-        const DeviceOptionInfo* row = nullptr;
-
-        for (const DeviceOptionInfo& candidate : BoysDeviceOptions())
-        {
-            if (winner == candidate.name)
+            if (carried)
             {
-                row = &candidate;
+                emission.refused.push_back(Text("%s: the table in force already carries this class, "
+                                                "so its row is left as that file wrote it",
+                                                klass.c_str()));
+                continue;
             }
+
+            // The class this row would come from: this run's own class of this precision and this
+            // question, which is the class the library's answer for this key is taken from. A row
+            // states what the library picks for a class, so it is the entry that class's own
+            // readings placed first.
+            const DeviceProbeClass* founder = nullptr;
+
+            for (const DeviceProbeClass& candidate : report.classes)
+            {
+                if (candidate.precision == PrecisionName(precision) &&
+                    candidate.question == QuestionName(question))
+                {
+                    founder = &candidate;
+                }
+            }
+
+            if (founder == nullptr)
+            {
+                emission.refused.push_back(Text("%s: this run carried no %s class of that question",
+                                                klass.c_str(), PrecisionName(precision)));
+                continue;
+            }
+
+            const std::string& winner = founder->ranking.recommended;
+
+            if (winner.empty() || founder->ranking.verdict == DeviceProbeVerdict::kCannotDetermine)
+            {
+                emission.refused.push_back(
+                    Text("%s: %s", klass.c_str(),
+                         founder->ranking.reason.empty()
+                             ? "the class's ranking named no entry and gave no reason"
+                             : founder->ranking.reason.c_str()));
+                continue;
+            }
+
+            const DeviceOptionInfo* row = nullptr;
+
+            for (const DeviceOptionInfo& candidate : BoysDeviceOptions())
+            {
+                if (winner == candidate.name)
+                {
+                    row = &candidate;
+                }
+            }
+
+            if (row == nullptr)
+            {
+                emission.refused.push_back(
+                    Text("%s: the entry it named, '%s', is no row of the library's option space",
+                         klass.c_str(), winner.c_str()));
+                continue;
+            }
+
+            // A winner reached by being the last entry left standing is a choice and not a
+            // measurement: the seam's own header asks for the two markers to differ, and a walkover
+            // recorded as a win would be a default nobody measured.
+            const bool walkover = founder->ranking.defaultHow == DeviceProbeDefaultHow::kOnlyEntry;
+
+            // The packing cell is the entry's own reading of region A, translated once here
+            // (SeamPackCell). An entry that states none is not a row this report can place:
+            // DeviceEntryAxesOf answers kUnstated only for an entry its switch has not been taught,
+            // which that header's own assertion turns into a compile error, so this arm is the
+            // reading of a value that cannot arrive rather than a case a run reaches.
+            const char* const packCell = SeamPackCell(row->packing);
+
+            if (packCell == nullptr)
+            {
+                emission.refused.push_back(
+                    Text("%s: the entry it named, '%s', states no reading of region A, so no packing "
+                         "cell of the seam is this row's",
+                         klass.c_str(), winner.c_str()));
+                continue;
+            }
+
+            // The division-form cell is the entry's own form (SeamDivisionCell), read from the
+            // same statement of what an entry runs as the packing cell above. An entry that
+            // states none is not a row this report can place, for the reason the packing cell's
+            // arm gives: DeviceEntryAxesOf answers kUnstatedDivisionForm only for an entry its
+            // switch has not been taught, which the assertion under that switch turns into a
+            // compile error, so this arm reads a value that cannot arrive.
+            const char* const formCell = SeamDivisionCell(row->division);
+
+            if (formCell == nullptr)
+            {
+                emission.refused.push_back(
+                    Text("%s: the entry it named, '%s', states no division form, so no "
+                         "division-form cell of the seam is this row's",
+                         klass.c_str(), winner.c_str()));
+                continue;
+            }
+
+            rows += walkover
+                        ? Text("    /* a choice, not a measurement: '%s' was the last entry standing "
+                               "in\n"
+                               "       this class, so the row is an answer and not the winner of a\n"
+                               "       comparison */\\\n",
+                               winner.c_str())
+                        : Text("    /* measured: the %s %s class, '%s', reached by %s */\\\n",
+                               PrecisionName(precision), QuestionName(question), winner.c_str(),
+                               DeviceProbeDefaultHowName(founder->ranking.defaultHow));
+
+            rows += Text("    X(kDevice, %s, %s, %s, %s,\\\n"
+                         "      %s, %s, %s,\\\n"
+                         "      %s)\\\n",
+                         precisionCell, shapeCell, SeamRouteCell(row->route),
+                         SeamSchemeCell(row->scheme), SeamBudgetCell(precision), packCell,
+                         SeamGranularityCell(*row), formCell);
+
+            measured = measured || !walkover;
+
+            const std::string how =
+                Text("reached by %s, a measurement of this class's own runs",
+                     DeviceProbeDefaultHowName(founder->ranking.defaultHow));
+
+            emission.emitted.push_back(
+                Text("%s: '%s', %s", klass.c_str(), winner.c_str(),
+                     walkover ? "the last entry standing - written as a choice and not as a "
+                                "measurement"
+                              : how.c_str()));
         }
-
-        if (row == nullptr)
-        {
-            emission.refused.push_back(
-                Text("%s: the entry it named, '%s', is no row of the library's option space",
-                     klass.c_str(), winner.c_str()));
-            continue;
-        }
-
-        // A winner reached by being the last entry left standing is a choice and not a
-        // measurement: the seam's own header asks for the two markers to differ, and a walkover
-        // recorded as a win would be a default nobody measured.
-        const bool walkover = founder->ranking.defaultHow == DeviceProbeDefaultHow::kOnlyEntry;
-
-        rows += walkover
-                    ? Text("    /* a choice, not a measurement: '%s' was the last entry standing "
-                           "in\n"
-                           "       this class, so the row is an answer and not the winner of a\n"
-                           "       comparison */\\\n",
-                           winner.c_str())
-                    : Text("    /* measured: the fp32 %s class, '%s', reached by %s */\\\n",
-                           QuestionName(question), winner.c_str(),
-                           DeviceProbeDefaultHowName(founder->ranking.defaultHow));
-
-        rows += Text("    X(kDevice, kFp32Device, %s, %s, %s,\\\n"
-                     "      BoysBudget::kFloat, PackAxis::kArguments, %s,\\\n"
-                     "      DivisionForm::kRefinedReciprocal)\\\n",
-                     shapeCell, SeamRouteCell(row->route), SeamSchemeCell(row->scheme),
-                     SeamGranularityCell(*row));
-
-        measured = measured || !walkover;
-
-        const std::string how =
-            Text("reached by %s, a measurement of this class's own runs",
-                 DeviceProbeDefaultHowName(founder->ranking.defaultHow));
-
-        emission.emitted.push_back(
-            Text("%s: '%s', %s", klass.c_str(), winner.c_str(),
-                 walkover ? "the last entry standing - written as a choice and not as a "
-                            "measurement"
-                          : how.c_str()));
     }
 
     // A file written by a run that measured nothing would be a transcription of the seam and
@@ -4245,16 +4498,28 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
         text += Text("/// The card and the run: %s\n///\n", takenAt.c_str());
     }
 
-    text += "/// **What a device row's cells are, and what they are not.** The class is `kDevice`\n";
-    text += "/// with `kFp32Device`, the one precision cell the table gives the device lane, and the\n";
-    text += "/// shape of one question the probe ranks. The route and the scheme are the entry's own\n";
-    text += "/// (`DeviceEntryAxesOf`, boys_cuda_options.hpp), read from the lane and the body its\n";
-    text += "/// kernels name, and the granularity is the partition it reads. The packing-axis and\n";
-    text += "/// division-form cells are the seam's own values: this lane's packing axis is region A's\n";
-    text += "/// reading - one ladder, or one fit per order - which is a different axis from the CPU\n";
-    text += "/// lane's `PackAxis`, and its lane names no division form at all, so neither cell is a\n";
-    text += "/// device choice and a reader must not read one as that. The budget is the float budget,\n";
-    text += "/// which is the budget every non-half lane's default policy carries.\n";
+    text += "/// **One row per class, and a class is a (device, precision, shape) triple.** The rows\n";
+    text += "/// below are the nine classes the device half of the table holds: the three device lanes\n";
+    text += "/// - `kFp64Device`, `kFp32Device` and `kFp16Device`, which are the three precisions this\n";
+    text += "/// lane's entries are built at - by the three questions the probe ranks. A table keyed by\n";
+    text += "/// the triple can hold the nine; one keyed with a single device precision cell holds one\n";
+    text += "/// of them per shape.\n";
+    text += "///\n";
+    text += "/// **What a device row's cells are, and what they are not.** The route, the scheme, the\n";
+    text += "/// packing and the division form are the entry's own (`DeviceEntryAxesOf`,\n";
+    text += "/// boys_cuda_options.hpp), read from the lane and the body its kernels name, and the\n";
+    text += "/// granularity is the partition it reads. The packing cell is the entry's own reading of\n";
+    text += "/// region A in the axis the seam names `PackAxis`: the ladder - the top order's fit seeded\n";
+    text += "/// and every lower order\n";
+    text += "/// brought back down the recurrence, which is the per-argument reading - is\n";
+    text += "/// `PackAxis::kArguments`, and the per-order reading is `PackAxis::kOrders`. A single-\n";
+    text += "/// order class carries the arguments axis, because a call that produces one order has no\n";
+    text += "/// second order to pack. The budget is the budget the class's lane carries: the float\n";
+    text += "/// budget on the fp64 and fp32 lanes, the half budget on the fp16 one, whose degree\n";
+    text += "/// tables are not the float lane's. The division-form cell is the entry's own form, in the\n";
+    text += "/// axis the seam names `DivisionForm` and this lane `DeviceOptionAxis::kDivision`: every\n";
+    text += "/// entry of the space runs every form, so a row is an (entry, form) pair and the cell names\n";
+    text += "/// the form the figure beside it was measured at.\n";
     text += "///\n";
     text += "/// **A row a probe named by there being no rival is a choice, not a measurement.** A\n";
     text += "/// device class whose winner won an ordering carries the marker a measurement carries;\n";
