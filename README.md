@@ -74,7 +74,7 @@ passing a pointer and a count still reaches the pointer entry exactly.
 
     git clone https://github.com/myamlak/boys.git && cd boys
     cmake -S . -B build -DBOYS_BUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF
-    cmake --build build
+    cmake --build build --config Release
 
 or, against a tree you have already built:
 
