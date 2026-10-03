@@ -1529,6 +1529,30 @@ figures, CUDA fp32 at `RegionBExp::kAccurate` the float lane's 1.5e-7 in every r
 at `RegionBExp::kFast` that bound plus the corrected seed's own contribution — the region-B
 exponential section above states it, and the device gate measures it.
 
+**The device lane runs the build's multiply-add route, and reports it.** The multiply-add route is a
+build fact rather than a call-site argument, and one selection serves both lanes: `BOYS_MULADD_SEPARATE`
+chooses whether every multiply-add the arithmetic is built from is the fused step, one rounding, or the
+separate step, a rounded product followed by a rounded add. Both spellings of the device lane's step are
+written out in the lane's own headers — the separate step is a fused step with a zero addend followed by
+the add — because a device compiler contracts a bare `a * b + c` into the fused step on its own, which
+would deliver the fused route to a build that selected the separate one. A caller reads the route the
+device arithmetic runs off `BoysCuda::MulAddRouteInForce()`, the device's counterpart of the CPU lane's
+`RouteInForce<T>()`, and the lane's headers read the selection from one definition, so the route a device
+figure was produced under is read rather than inferred from a compiler flag.
+
+**The run that prints it.** The command prints the route in force beside the one this build selected,
+then runs the lane's arithmetic at both routes and at the build's own selection:
+
+    cmake --build <build> --target boys-cuda-route-tests   # needs -DBUILD_CUDA=ON
+    <build>/Release/boys-cuda-route-tests
+
+Each of the three is compared against the exact host reference: the fused route against `std::fma`, the
+separate route against a rounded product followed by a rounded add. The rows that carry the figure are
+how many of the compared cells the two routes part on — the route is a choice of arithmetic and not a
+spelling of one — and that the arithmetic the build delivers is the reported route and not the other
+one. The same checks run over the uniform ladder the batch entry launches, so the route is shown to
+reach the arithmetic that produces a batch figure and not only the step the lane is named for.
+
 **The run that prints these figures.** The first command prints the identity of each name and the
 in-force default as numbers rather than as a checkmark:
 
