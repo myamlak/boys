@@ -446,26 +446,27 @@ TEST(DeviceProbe, AShapeItsRoundsCouldNotOrderIsNamedByTheRefinementStage) {
             }
 
             // A tie: the stage ran and voted over the entries the shape's own rounds could not
-            // separate, and the vote decides how the named entry was reached, never which one.
+            // separate, and the entry the vote named is the one the shape names. The route is
+            // the vote's own result - every run leading with that entry, a majority of them, or
+            // a field the runs divided evenly.
             EXPECT_TRUE(ranking.refinement.ran) << ranking.question;
             EXPECT_FALSE(ranking.refinement.winner.empty()) << ranking.question;
 
-            const bool voteNamedIt = ranking.refinement.winner == ranking.recommended;
-
+            EXPECT_EQ(ranking.recommended, ranking.refinement.winner)
+                << ranking.question << ": the default is not the entry the vote named";
             EXPECT_EQ(ranking.defaultHow,
-                      !voteNamedIt
-                          ? DeviceProbeDefaultHow::kChosenAmongEquals
-                          : (ranking.refinement.unanimous
-                                 ? DeviceProbeDefaultHow::kRefined
-                                 : (ranking.refinement.plurality
-                                        ? DeviceProbeDefaultHow::kVote
-                                        : DeviceProbeDefaultHow::kChosenAmongEquals)))
-                << ranking.question << ": the route is the vote's own result for the entry "
-                << "the shape's figures put first, and a vote for another entry is a tie";
+                      ranking.refinement.unanimous
+                          ? DeviceProbeDefaultHow::kRefined
+                          : (ranking.refinement.plurality ? DeviceProbeDefaultHow::kVote
+                                                          : DeviceProbeDefaultHow::kChosenAmongEquals))
+                << ranking.question << ": the route is the vote's own result for the entry the "
+                << "vote named";
 
-            // The invariant the report rests on: the name printed as the default is the
-            // cheapest row its own class could be ordered by. A vote may name another entry -
-            // and the report says so - but no placeable row of the class may be faster.
+            // The invariant the report rests on: no name is handed to a reader beside a table
+            // that contradicts it without the report saying so. Where the vote named the entry
+            // the shape's own figures put first, no row the run could place may be faster than
+            // that entry; where it named another, the entry those figures put first is printed
+            // beside the name.
             const DeviceProbeMeasurement* namedRow = nullptr;
 
             for (const DeviceProbeMeasurement& measurement : report.measurements) {
@@ -476,18 +477,28 @@ TEST(DeviceProbe, AShapeItsRoundsCouldNotOrderIsNamedByTheRefinementStage) {
 
             ASSERT_NE(namedRow, nullptr) << ranking.recommended;
 
-            for (const DeviceProbeMeasurement& measurement : report.measurements) {
-                if (!measurement.measured || !(measurement.nsPerArgument > 0.0) ||
-                    measurement.precision != clause.precision ||
-                    measurement.question != ranking.question ||
-                    !measurement.subtractionResolved ||
-                    (measurement.repetitionChecked && !measurement.repetitionAgrees)) {
-                    continue;
-                }
+            if (ranking.recommended == ranking.fastestOverall) {
+                for (const DeviceProbeMeasurement& measurement : report.measurements) {
+                    if (!measurement.measured || !(measurement.nsPerArgument > 0.0) ||
+                        measurement.precision != clause.precision ||
+                        measurement.question != ranking.question ||
+                        !measurement.subtractionResolved ||
+                        (measurement.repetitionChecked && !measurement.repetitionAgrees)) {
+                        continue;
+                    }
 
-                EXPECT_GE(measurement.nsPerArgument, namedRow->nsPerArgument)
-                    << ranking.question << " names " << ranking.recommended
-                    << " with " << measurement.name << " faster in the same class";
+                    EXPECT_GE(measurement.nsPerArgument, namedRow->nsPerArgument)
+                        << ranking.question << " names " << ranking.recommended
+                        << " with " << measurement.name << " faster in the same class";
+                }
+            } else {
+                EXPECT_FALSE(ranking.fastestOverall.empty())
+                    << ranking.question << ": a vote that named another entry is printed with "
+                    << "the entry the shape's own figures put first";
+                EXPECT_NE(ranking.reason.find(ranking.fastestOverall), std::string::npos)
+                    << ranking.question << ": " << ranking.fastestOverall
+                    << " is the entry the shape's own figures put first and is not printed "
+                    << "beside a name the vote chose";
             }
 
             EXPECT_EQ(ranking.refinement.runLeaders.size(),
@@ -547,10 +558,6 @@ TEST(DeviceProbe, ATieNamesEveryRivalAndTheBandItFellIn) {
                 EXPECT_FALSE(ranking.tiedEntries.empty()) << ranking.question;
             }
 
-            // The name the shape ends with is the one its own figures put first, whatever the
-            // vote said - a tie is where it is easiest to print a name the table beside it
-            // contradicts. "Its own figures" means the placeable rows: a row the run declines
-            // to rank anything on may carry a figure the name is behind, and the report says so.
             if (ranking.recommended.empty()) {
                 continue;
             }
@@ -564,6 +571,54 @@ TEST(DeviceProbe, ATieNamesEveryRivalAndTheBandItFellIn) {
             }
 
             ASSERT_NE(named, nullptr) << ranking.recommended;
+
+            // Which entry the shape ends with, by the route it was reached by. A tie the
+            // shape's own rounds could not break is settled by which entry was fastest in
+            // most of the refinement runs, so that entry is the one the shape names - the
+            // vote decides which entry, and defaultHow states how it was reached. The entry
+            // the shape's own figures put first is the record of the shorter protocol: it is
+            // printed beside the name, and where the two differ the difference is what says
+            // the shape's top entries cannot be separated. Where no vote named an entry, the
+            // name is the one those figures put first.
+            const bool voted = ranking.refinement.ran && !ranking.refinement.winner.empty();
+
+            if (voted) {
+                EXPECT_EQ(ranking.recommended, ranking.refinement.winner)
+                    << ranking.question << " names " << ranking.recommended
+                    << " where the vote named " << ranking.refinement.winner;
+                EXPECT_EQ(ranking.defaultHow,
+                          ranking.refinement.unanimous
+                              ? DeviceProbeDefaultHow::kRefined
+                              : (ranking.refinement.plurality
+                                     ? DeviceProbeDefaultHow::kVote
+                                     : DeviceProbeDefaultHow::kChosenAmongEquals))
+                    << ranking.question << ": the route is the vote's own result for the entry "
+                    << "the vote named";
+                EXPECT_NE(std::find(ranking.tiedEntries.begin(), ranking.tiedEntries.end(),
+                                    ranking.recommended),
+                          ranking.tiedEntries.end())
+                    << ranking.question << ": the vote ran over the entries this shape could not "
+                    << "separate, so the entry it named is one of them";
+
+                if (ranking.recommended != ranking.fastestOverall) {
+                    // The vote named another entry, so the name is not the one the table beside
+                    // it lists first: the report says so, or a reader comparing the two reads a
+                    // contradiction where the report sees a tie.
+                    EXPECT_FALSE(ranking.fastestOverall.empty())
+                        << ranking.question << ": a vote that named another entry is printed with "
+                        << "the entry the shape's own figures put first";
+                    EXPECT_NE(ranking.reason.find(ranking.fastestOverall), std::string::npos)
+                        << ranking.question << ": " << ranking.fastestOverall
+                        << " is the entry the shape's own figures put first and is not printed "
+                        << "beside a name the vote chose";
+                }
+            }
+
+            if (voted && ranking.recommended != ranking.fastestOverall) {
+                // The name is the vote's, and the class's own figures put another row faster:
+                // that difference is the tie the stage was taken to settle, asserted above.
+                continue;
+            }
 
             for (const DeviceProbeMeasurement& measurement : report.measurements) {
                 if (!measurement.measured || !(measurement.nsPerArgument > 0.0) ||

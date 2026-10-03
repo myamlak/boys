@@ -1841,10 +1841,11 @@ double ShapeResolution(const std::vector<DeviceProbeMeasurement>& measurements,
 /// quantity from the one the main run could not separate would be answering a question the shape
 /// did not ask.
 ///
-/// The stage settles **how the shape's own fastest was reached**, and nothing else: the name is the
-/// entry the shape's figures put first, and what the stage adds is whether the longer re-run of the
-/// tied rows named that entry too, which is what the shape's route - a refinement, a vote, or a tie
-/// the runs could not break - is made of.
+/// The stage settles **which entry the shape names** where the shape's own rounds could not: the
+/// entry the vote named is the recommendation, and the entry the shape's own figures put first stays
+/// the record of what the shorter protocol said. The two are printed together, and where they differ
+/// the difference is what says the shape's top entries cannot be separated. A stage that placed no
+/// leader at all leaves the shape with the entry its own figures put first.
 ///
 /// /// \\param clause the shape whose tie is to be refined, with its tiedEntries filled
 /// /// \\param entries the rows this run measured, in the report's own order
@@ -4745,8 +4746,8 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
             "is the accuracy\n  gate's business. The bounds in that column are not all the same, and "
             "a row that carries a\n  looser one is a row that bought speed with accuracy: the "
             "classes below are per precision\n  and per question shape, so no row is ordered against "
-            "a row of another class, and the winner\n  of a class is the fastest entry of it at the "
-            "bound its own row states.\n";
+            "a row of another class, and the name a class\n  carries is reached among its own rows "
+            "and read at the bound each of them states.\n";
 
     // --- The controls --------------------------------------------------------
     //
@@ -4914,19 +4915,20 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
 
         const DeviceProbeRefinement& stage = ranking.refinement;
 
-        // The vote named another entry: the stage could not separate the shape's
-        // top entries, and what the shape names is still the one its own figures
-        // put first. The line says which entry the vote preferred.
-        const bool voted_here = !stage.winner.empty() && stage.winner == ranking.recommended;
-
+        // The entry the vote named is the entry this shape names, so the line says how
+        // the vote came out. The entry the shape's own figures put first is printed
+        // beside the name below, and where the two differ the difference is what says
+        // the shape's top entries cannot be separated.
         text += Text("\n  reached by: the refinement stage — %s\n",
-                     !voted_here    ? "a vote that named another entry, so the shape's top entries "
-                                       "are entries this\n    stage could not separate"
-                     : stage.unanimous ? "a unanimous re-run of the entries this shape could not "
+                     stage.unanimous   ? "a unanimous re-run of the entries this shape could not "
                                          "separate"
                      : stage.plurality ? "a majority vote over re-runs of the entries this shape "
                                          "could not separate"
-                                       : "a choice among entries the re-runs divided evenly");
+                     : !stage.winner.empty()
+                         ? "a choice among entries the re-runs divided evenly; the shape's top\n"
+                           "    entries are entries this stage could not separate"
+                         : "no run placed a leader, so the entry the shape's own figures put\n"
+                           "    first stands");
         text += Text("    the entries the shape's own rounds could not separate, re-run alone: "
                      "%zu\n",
                      stage.pool.size());
@@ -4957,11 +4959,17 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
         text += Text("    vote: %s\n", stage.note.c_str());
         text += Text("    vote named: %s\n",
                      stage.winner.empty() ? "no entry" : stage.winner.c_str());
-        text += Text("    default: %s — the entry this shape's own figures put first, %s\n",
-                     ranking.recommended.c_str(),
-                     voted_here ? "which the vote named too"
-                                : "which the vote did not, so the stage says the shape's top "
-                                  "entries cannot be separated");
+
+        const std::string why =
+            ranking.recommended == ranking.fastestOverall
+                ? std::string("the entry the vote named, which the shape's own figures put first "
+                              "too")
+                : Text("the entry the vote named; this shape's own figures put %s first, which is "
+                       "what\n      says the shape's top entries cannot be separated",
+                       ranking.fastestOverall.empty() ? "no entry"
+                                                      : ranking.fastestOverall.c_str());
+
+        text += Text("    default: %s — %s\n", ranking.recommended.c_str(), why.c_str());
     };
 
     // The classes, in full: one per precision and question shape, each the class a
@@ -5166,9 +5174,9 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
                 if (oneBound)
                 {
                     text += Text("      this row and every other row of this shape document the "
-                                 "same bound, %.2g,\n      so the ranking is at one accuracy and "
-                                 "this is the fastest entry of the shape\n      in the %s class "
-                                 "at it.\n",
+                                 "same bound, %.2g,\n      so the ranking is at one accuracy: the "
+                                 "name above rests on entries of the\n      shape all measured at "
+                                 "it, in the %s class.\n",
                                  recommendedBound,
                                  clause.precision.c_str());
                 } else
@@ -5177,10 +5185,10 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
                     // the direction holds for that row and the looser rows are
                     // looser still.
                     text += Text("      this row documents a bound of %.2g, %s the %.2g of %s.\n"
-                                 "      The winner of this shape is the fastest entry of it at the "
-                                 "bound its own row\n      states, which is not the same as the "
-                                 "fastest at one accuracy. The bound column above\n      is the "
-                                 "figure to weigh against this one.\n",
+                                 "      The entry this shape names is named among entries that "
+                                 "document two bounds,\n      so its figure is read at the bound "
+                                 "its own row states and not as the fastest at\n      one accuracy. "
+                                 "The bound column above is the figure to weigh against this one.\n",
                                  recommendedBound,
                                  otherBound < recommendedBound ? "looser than" : "tighter than",
                                  otherBound,

@@ -288,18 +288,21 @@ enum class DeviceProbeDefaultHow : int {
     kOnlyEntry,
     /// The shape's own rounds left the leader tied with others, those entries
     /// were re-run alone at a larger protocol, and every one of those runs was
-    /// fastest with the entry this shape names — the row the shape's own figures
-    /// put first, measured again, longer, and agreed with.
+    /// fastest with the entry this shape names — the entry the vote named,
+    /// measured again, longer, and unanimous. The row the shape's own figures put
+    /// first is printed beside it, and where the two differ that difference is
+    /// what says the top entries cannot be separated.
     kRefined,
     /// The same re-runs, with a majority rather than all of them leading with the
-    /// entry this shape names: the vote had a plurality and it agreed with the
-    /// shape's own figures, which are printed with it.
+    /// entry this shape names: the vote had a plurality over the entries it could
+    /// not separate, and the entry it named is the one the shape names. The row
+    /// the shape's own figures put first is printed beside it.
     kVote,
-    /// The shape's top entries could not be separated: the vote named another of
-    /// them, or was split across several, or no run placed a leader at all. The
-    /// entry is the row the shape's own figures put first among entries it cannot
-    /// tell apart — named as that, with the vote and both figures printed, and
-    /// not as a ranking.
+    /// The shape's top entries could not be separated, and the vote itself did
+    /// not settle them either: it was split across several, or no run placed a
+    /// leader at all. The entry is the row the shape's own figures put first
+    /// among entries it cannot tell apart — named as that, with the vote and both
+    /// figures printed, and not as a ranking.
     kChosenAmongEquals,
 
     kCount, ///< states this report defines; one past the last
@@ -871,21 +874,26 @@ struct DeviceProbeRanking {
 
     /// The entry the probe recommends in this shape, empty when it declined.
     ///
-    /// **It is always the entry this shape's own figures put first** — the row
-    /// this shape's table lists first — and never another, whatever the
-    /// refinement stage's vote said. What that stage decides is how the named
-    /// entry was reached, which \c refinement and \c defaultHow state and the
-    /// report prints beside the name; a vote for another entry is the stage
-    /// stating that the shape's top entries cannot be separated, and the report
-    /// prints it as that.
+    /// **It is the entry the refinement stage's vote named, where that stage
+    /// ran** — entries a shape's own rounds cannot separate are settled by which
+    /// was fastest in most of the stage's runs, and how that vote came out is
+    /// what \c defaultHow states. The entry this shape's own figures put first,
+    /// \c fastestOverall, is the record of the shorter protocol: it is printed
+    /// beside the name, and where the two differ the difference is what says the
+    /// shape's top entries cannot be separated. A shape the stage did not reach —
+    /// one its own rounds ordered, one holding a single entry, one whose rounds
+    /// produced no figure to refine — is named by the entry its own figures put
+    /// first.
     std::string recommended;
 
-    /// How \c recommended was reached. \c kOrdered is the shape's own rounds,
-    /// \c kRefined and \c kVote are the vote over the refinement runs agreeing
-    /// with the entry those figures put first, \c kChosenAmongEquals is a tie the
-    /// run could not break — a vote that named another entry, one split across
-    /// several, or no run placing a leader at all — and \c kOnlyEntry is a shape
-    /// holding one entry, named by there being no alternative.
+    /// How \c recommended was reached. \c kOrdered is the shape's own rounds.
+    /// \c kRefined and \c kVote are the vote over the refinement runs — every run
+    /// and a majority of the runs respectively, each leading with the entry the
+    /// shape names. \c kChosenAmongEquals is a tie the vote itself could not
+    /// break: it was split across several entries, or no run placed a leader at
+    /// all, and the entry named is then the one the shape's own figures put first.
+    /// \c kOnlyEntry is a shape holding one entry, named by there being no
+    /// alternative.
     DeviceProbeDefaultHow defaultHow = DeviceProbeDefaultHow::kNone;
 
     /// The fastest entry measured in this shape, empty when no entry was.
