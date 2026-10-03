@@ -553,25 +553,27 @@ inline double RegionBHalfExp(double x) noexcept {
     {
         return 0.5 * std::exp(-x);
     }
-
-    if (x < kRegionBExpCheapFrom)
+    else
     {
-        return 0.5 * std::exp(-x);
+        if (x < kRegionBExpCheapFrom)
+        {
+            return 0.5 * std::exp(-x);
+        }
+
+        const double biased = x * kRegionBExpLog2e + kRegionBExpRoundMagic;
+        const double kd = biased - kRegionBExpRoundMagic;
+        const double r = x - kd * kRegionBExpLn2;
+
+        double p = kRegionBExpReduced[7];
+
+        for (int k = 6; k >= 0; --k)
+        {
+            p = p * r + kRegionBExpReduced[k];
+        }
+
+        const int k = static_cast<int>(kd);
+        return 0.5 * std::bit_cast<double>(static_cast<std::uint64_t>(1023 - k) << 52) * p;
     }
-
-    const double biased = x * kRegionBExpLog2e + kRegionBExpRoundMagic;
-    const double kd = biased - kRegionBExpRoundMagic;
-    const double r = x - kd * kRegionBExpLn2;
-
-    double p = kRegionBExpReduced[7];
-
-    for (int k = 6; k >= 0; --k)
-    {
-        p = p * r + kRegionBExpReduced[k];
-    }
-
-    const int k = static_cast<int>(kd);
-    return 0.5 * std::bit_cast<double>(static_cast<std::uint64_t>(1023 - k) << 52) * p;
 }
 
 // The same member at the single-precision lane's own type.
@@ -589,8 +591,10 @@ inline float RegionBHalfExpF32(float x) noexcept {
     {
         return 0.5f * std::exp(-x);
     }
-
-    return static_cast<float>(RegionBHalfExp<RegionBExp::kFast>(static_cast<double>(x)));
+    else
+    {
+        return static_cast<float>(RegionBHalfExp<RegionBExp::kFast>(static_cast<double>(x)));
+    }
 }
 
 // One step of the upward recursion: F_l(x) from F_{l-1}(x). The band's orders,
