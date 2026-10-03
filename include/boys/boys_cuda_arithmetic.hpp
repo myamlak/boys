@@ -46,6 +46,7 @@
 
 #include "boys/accuracy.hpp"
 #include "boys/boys_coefficients.hpp"
+#include "boys/boys_cuda_muladd.hpp"
 
 #include <cuda_runtime.h>
 
@@ -60,6 +61,71 @@ namespace boys::detail {
 inline constexpr double kHalfSqrtPi = 0.886226925452758014;
 
 // ---------------------------------------------------------------------------
+// the multiply-add route
+// ---------------------------------------------------------------------------
+
+// The two routes of the multiply-add, as the device spells them, and the
+// selection the bodies below read (boys_cuda_muladd.hpp).
+//
+// **Both are written out, so neither is left to the compiler's contraction
+// setting.** The fused step is the round-to-nearest fused intrinsic: one
+// rounding, and the value every device figure in this tree was measured at. The
+// separate step is a product rounded once and then summed, which rounds twice.
+//
+// The separate step is spelled as a fused step with a zero addend rather than as
+// a bare `a * b + c`, and for the reason the host's own two-rounding operations
+// are spelled that way (backend.hpp, MulSub): a bare product-plus-add is a
+// licence the device compiler takes up by default, so the "separate" route
+// written that way would be the fused one. A fused step with a zero addend is
+// the product and nothing else, and it is one instruction rather than a call, so
+// the extra rounding costs one multiply-add per piece step.
+//
+// A compiler that folded `fma(a, b, 0)` to a bare product would still leave the
+// following add outside the fold only if it did not then contract it. That is a
+// property of a toolchain rather than of this source, so it is measured rather
+// than assumed: tests/boys_cuda_route_test.cu evaluates this step's separate
+// route on the device against `round(round(a * b) + c)` computed exactly on the
+// host, over a fixed value set, and it evaluates the fused route against the
+// single-rounding reference the same way. A toolchain that fused the two would
+// fail that check rather than quietly deliver the other route.
+template <typename T>
+__device__ __forceinline__ T DeviceFusedMulAdd(T a, T b, T c) {
+    if constexpr (std::is_same_v<T, float>)
+    {
+        return __fmaf_rn(a, b, c);
+    } else
+    {
+        return __fma_rn(a, b, c);
+    }
+}
+
+// `a * b + c` with two roundings: the product rounds, then the sum rounds.
+template <typename T>
+__device__ __forceinline__ T DeviceSeparateMulAdd(T a, T b, T c) {
+    if constexpr (std::is_same_v<T, float>)
+    {
+        return __fmaf_rn(a, b, 0.0f) + c;
+    } else
+    {
+        return __fma_rn(a, b, 0.0) + c;
+    }
+}
+
+// The step at one route. The route is a template argument with the build's own
+// selection as its default, so a body that names no route runs the route the
+// build selected and a check can name either one and compare them.
+template <backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename T>
+__device__ __forceinline__ T DeviceMulAdd(T a, T b, T c) {
+    if constexpr (kRoute == backend::MulAddRoute::kFused)
+    {
+        return DeviceFusedMulAdd(a, b, c);
+    } else
+    {
+        return DeviceSeparateMulAdd(a, b, c);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // piecewise Chebyshev evaluation
 // ---------------------------------------------------------------------------
 
@@ -67,6 +133,7 @@ inline constexpr double kHalfSqrtPi = 0.886226925452758014;
 // which keeps every step a fused multiply-add on a value of one sign. The
 // deg <= 2 cases are unrolled because the split below assumes the odd part
 // has at least two terms.
+template <backend::MulAddRoute kRoute = kDeviceMulAddRoute>
 __device__ __forceinline__ double DeviceClenshawSplit(const double* c, int deg, double t) {
     if (deg == 0)
     {
@@ -75,17 +142,17 @@ __device__ __forceinline__ double DeviceClenshawSplit(const double* c, int deg, 
 
     if (deg == 1)
     {
-        return __fma_rn(t, c[1], c[0]);
+        return DeviceMulAdd<kRoute>(t, c[1], c[0]);
     }
 
-    const double v = __fma_rn(2.0, t * t, -1.0);
+    const double v = DeviceMulAdd<kRoute>(2.0, t * t, -1.0);
     const double twoV = v + v;
 
     if (deg == 2)
     {
         // T_2(t) = 2t^2 - 1 = v; the even/odd split below assumes deg >= 4
         // (the odd part's m = 1 finalization would double the t*c[1] term).
-        return __fma_rn(t, c[1], __fma_rn(v, c[2], c[0]));
+        return DeviceMulAdd<kRoute>(t, c[1], DeviceMulAdd<kRoute>(v, c[2], c[0]));
     }
 
     const int m = deg / 2;
@@ -94,27 +161,28 @@ __device__ __forceinline__ double DeviceClenshawSplit(const double* c, int deg, 
 
     for (int k = m - 1; k >= 1; --k)
     {
-        const double b0 = __fma_rn(twoV, b1, c[2 * k] - b2);
+        const double b0 = DeviceMulAdd<kRoute>(twoV, b1, c[2 * k] - b2);
         b2 = b1;
         b1 = b0;
     }
 
-    const double even = __fma_rn(v, b1, c[0] - b2);
+    const double even = DeviceMulAdd<kRoute>(v, b1, c[0] - b2);
 
     double o1 = c[2 * m - 1];
     double o2 = 0.0;
 
     for (int k = m - 2; k >= 1; --k)
     {
-        const double o0 = __fma_rn(twoV, o1, c[2 * k + 1] - o2);
+        const double o0 = DeviceMulAdd<kRoute>(twoV, o1, c[2 * k + 1] - o2);
         o2 = o1;
         o1 = o0;
     }
 
-    const double odd = __fma_rn(twoV - 1.0, o1, c[1] - o2);
-    return __fma_rn(t, odd, even);
+    const double odd = DeviceMulAdd<kRoute>(twoV - 1.0, o1, c[1] - o2);
+    return DeviceMulAdd<kRoute>(t, odd, even);
 }
 
+template <backend::MulAddRoute kRoute = kDeviceMulAddRoute>
 __device__ __forceinline__ float DeviceClenshawSplit32(const float* c, int deg, float t) {
     if (deg == 0)
     {
@@ -123,17 +191,17 @@ __device__ __forceinline__ float DeviceClenshawSplit32(const float* c, int deg, 
 
     if (deg == 1)
     {
-        return __fmaf_rn(t, c[1], c[0]);
+        return DeviceMulAdd<kRoute>(t, c[1], c[0]);
     }
 
-    const float v = __fmaf_rn(2.0f, t * t, -1.0f);
+    const float v = DeviceMulAdd<kRoute>(2.0f, t * t, -1.0f);
     const float twoV = v + v;
 
     if (deg == 2)
     {
         // T_2(t) = 2t^2 - 1 = v; the even/odd split below assumes deg >= 4
         // (the odd part's m = 1 finalization would double the t*c[1] term).
-        return __fmaf_rn(t, c[1], __fmaf_rn(v, c[2], c[0]));
+        return DeviceMulAdd<kRoute>(t, c[1], DeviceMulAdd<kRoute>(v, c[2], c[0]));
     }
 
     const int m = deg / 2;
@@ -142,25 +210,25 @@ __device__ __forceinline__ float DeviceClenshawSplit32(const float* c, int deg, 
 
     for (int k = m - 1; k >= 1; --k)
     {
-        const float b0 = __fmaf_rn(twoV, b1, c[2 * k] - b2);
+        const float b0 = DeviceMulAdd<kRoute>(twoV, b1, c[2 * k] - b2);
         b2 = b1;
         b1 = b0;
     }
 
-    const float even = __fmaf_rn(v, b1, c[0] - b2);
+    const float even = DeviceMulAdd<kRoute>(v, b1, c[0] - b2);
 
     float o1 = c[2 * m - 1];
     float o2 = 0.0f;
 
     for (int k = m - 2; k >= 1; --k)
     {
-        const float o0 = __fmaf_rn(twoV, o1, c[2 * k + 1] - o2);
+        const float o0 = DeviceMulAdd<kRoute>(twoV, o1, c[2 * k + 1] - o2);
         o2 = o1;
         o1 = o0;
     }
 
-    const float odd = __fmaf_rn(twoV - 1.0f, o1, c[1] - o2);
-    return __fmaf_rn(t, odd, even);
+    const float odd = DeviceMulAdd<kRoute>(twoV - 1.0f, o1, c[1] - o2);
+    return DeviceMulAdd<kRoute>(t, odd, even);
 }
 
 // The monomial scheme's summation: the same fit in the other basis, at the same
@@ -168,12 +236,13 @@ __device__ __forceinline__ float DeviceClenshawSplit32(const float* c, int deg, 
 // One multiply-add per coefficient against the split Clenshaw's two, so the scheme
 // is a cost choice at equal degree; each form's delivered accuracy is its own
 // certified row.
+template <backend::MulAddRoute kRoute = kDeviceMulAddRoute>
 __device__ __forceinline__ double DeviceHornerMono(const double* c, int deg, double t) {
     double acc = c[deg];
 
     for (int j = deg - 1; j >= 0; --j)
     {
-        acc = __fma_rn(acc, t, c[j]);
+        acc = DeviceMulAdd<kRoute>(acc, t, c[j]);
     }
 
     return acc;
@@ -185,12 +254,13 @@ __device__ __forceinline__ double DeviceHornerMono(const double* c, int deg, dou
 // kFlatRowsF32, boys_coefficients.hpp). The double helper above would read a float
 // table through a double pointer and sum a double polynomial, which is a different
 // arithmetic and a different rounding.
+template <backend::MulAddRoute kRoute = kDeviceMulAddRoute>
 __device__ __forceinline__ float DeviceHornerMono32(const float* c, int deg, float t) {
     float acc = c[deg];
 
     for (int j = deg - 1; j >= 0; --j)
     {
-        acc = __fmaf_rn(acc, t, c[j]);
+        acc = DeviceMulAdd<kRoute>(acc, t, c[j]);
     }
 
     return acc;
@@ -204,16 +274,17 @@ __device__ __forceinline__ float DeviceHornerMono32(const float* c, int deg, flo
 // the stored form, coefficient for coefficient the same as the host lane's piece and
 // seed evaluations (boys_impl.hpp RationalPieceAtCut, RationalSeedAtCut), so the two
 // lanes' figures are comparable.
+template <backend::MulAddRoute kRoute = kDeviceMulAddRoute>
 __device__ __forceinline__ double DeviceRatSum(const double* num,
-                                              int numDeg,
-                                              const double* den,
-                                              int denDeg,
-                                              double t) {
+                                               int numDeg,
+                                               const double* den,
+                                               int denDeg,
+                                               double t) {
     double numerator = num[numDeg];
 
     for (int j = numDeg - 1; j >= 0; --j)
     {
-        numerator = __fma_rn(numerator, t, num[j]);
+        numerator = DeviceMulAdd<kRoute>(numerator, t, num[j]);
     }
 
     if (denDeg == 0)
@@ -225,10 +296,10 @@ __device__ __forceinline__ double DeviceRatSum(const double* num,
 
     for (int j = denDeg - 2; j >= 0; --j)
     {
-        denominator = __fma_rn(denominator, t, den[j]);
+        denominator = DeviceMulAdd<kRoute>(denominator, t, den[j]);
     }
 
-    return numerator / __fma_rn(denominator, t, 1.0);
+    return numerator / DeviceMulAdd<kRoute>(denominator, t, 1.0);
 }
 
 // The float lanes' form of that summation: the same two Horner sums, the same held
@@ -240,6 +311,7 @@ __device__ __forceinline__ double DeviceRatSum(const double* num,
 // region-B seed stores its numerator and denominator in two arrays and its narrow
 // partition stores them in one pool with the denominator above the numerator, and
 // both are named by a pointer rather than computed here.
+template <backend::MulAddRoute kRoute = kDeviceMulAddRoute>
 __device__ __forceinline__ float DeviceRatSum32(const float* num,
                                                 int numDeg,
                                                 const float* den,
@@ -249,7 +321,7 @@ __device__ __forceinline__ float DeviceRatSum32(const float* num,
 
     for (int j = numDeg - 1; j >= 0; --j)
     {
-        numerator = __fmaf_rn(numerator, t, num[j]);
+        numerator = DeviceMulAdd<kRoute>(numerator, t, num[j]);
     }
 
     if (denDeg == 0)
@@ -261,10 +333,10 @@ __device__ __forceinline__ float DeviceRatSum32(const float* num,
 
     for (int j = denDeg - 2; j >= 0; --j)
     {
-        denominator = __fmaf_rn(denominator, t, den[j]);
+        denominator = DeviceMulAdd<kRoute>(denominator, t, den[j]);
     }
 
-    return numerator / __fmaf_rn(denominator, t, 1.0f);
+    return numerator / DeviceMulAdd<kRoute>(denominator, t, 1.0f);
 }
 
 // Which basis a lane's coefficients are stored in. A lane that reads the
@@ -293,17 +365,17 @@ template <typename Lane>
 struct LaneRational<Lane, std::void_t<decltype(Lane::kRational)>>
     : std::bool_constant<Lane::kRational> {};
 
-template <typename Lane>
+template <backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Lane>
 __device__ __forceinline__ double DevicePieceSum(const Lane& lane,
                                                  const double* c,
                                                  int deg,
                                                  double t) {
     if constexpr (LaneMonomial<Lane>::value)
     {
-        return DeviceHornerMono(c, deg, t);
+        return DeviceHornerMono<kRoute>(c, deg, t);
     } else
     {
-        return DeviceClenshawSplit(c, deg, t);
+        return DeviceClenshawSplit<kRoute>(c, deg, t);
     }
 }
 
@@ -316,7 +388,7 @@ __device__ __forceinline__ double DevicePieceSum(const Lane& lane,
 // names the piece (and the last piece holds everything above the topmost
 // edge). The scan is linear — a binary search would not pay for its branches
 // until the rows are much longer than the twelve pieces a lane may have.
-template <typename Lane>
+template <backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Lane>
 __device__ __forceinline__ double DeviceSeed(const Lane& lane, int order, double x) {
     const int count = lane.Count(order);
     int p = count - 1;
@@ -334,18 +406,18 @@ __device__ __forceinline__ double DeviceSeed(const Lane& lane, int order, double
 
     if constexpr (LaneRational<Lane>::value)
     {
-        return DeviceRatSum(lane.Coeffs(order, p),
-                            lane.NumDeg(order, p),
-                            lane.DenCoeffs(order, p),
-                            lane.DenDeg(order, p),
-                            t);
+        return DeviceRatSum<kRoute>(lane.Coeffs(order, p),
+                                    lane.NumDeg(order, p),
+                                    lane.DenCoeffs(order, p),
+                                    lane.DenDeg(order, p),
+                                    t);
     } else
     {
-        return DevicePieceSum(lane, lane.Coeffs(order, p), lane.Deg(order, p), t);
+        return DevicePieceSum<kRoute>(lane, lane.Coeffs(order, p), lane.Deg(order, p), t);
     }
 }
 
-template <typename Lane>
+template <backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Lane>
 __device__ __forceinline__ float DeviceSeed32(const Lane& lane, int order, float x) {
     const int count = lane.Count(order);
     int p = count - 1;
@@ -362,7 +434,7 @@ __device__ __forceinline__ float DeviceSeed32(const Lane& lane, int order, float
     const float* c = lane.Coeffs(order, p);
     const float t =
         2.0f * (x - lane.A(order, p)) / (lane.B(order, p) - lane.A(order, p)) - 1.0f;
-    return DeviceClenshawSplit32(c, lane.Deg(order, p), t);
+    return DeviceClenshawSplit32<kRoute>(c, lane.Deg(order, p), t);
 }
 
 // ---------------------------------------------------------------------------
@@ -378,14 +450,14 @@ __device__ __forceinline__ float DeviceSeed32(const Lane& lane, int order, float
 //    and 2^(t + d) = 2^t 2^d ~= 2^t (1 + d ln 2), so two fused steps take the error
 //    back to the approximation's own few ulp, flat in the argument.
 //  - otherwise the library routine, which is what the batch bodies compute.
-template <bool kFastExp>
+template <bool kFastExp, backend::MulAddRoute kRoute = kDeviceMulAddRoute>
 __device__ __forceinline__ float DeviceRegionBExp(float xx) {
     if constexpr (kFastExp)
     {
         const float y = -xx;
         const float t = y * 1.4426950408889634f;
-        const float d = __fmaf_rn(y, 1.4426950408889634f, -t);
-        return 0.5f * __expf(y) * __fmaf_rn(d, 0.6931471805599453f, 1.0f);
+        const float d = DeviceMulAdd<kRoute>(y, 1.4426950408889634f, -t);
+        return 0.5f * __expf(y) * DeviceMulAdd<kRoute>(d, 0.6931471805599453f, 1.0f);
     } else
     {
         return 0.5f * expf(-xx);
@@ -570,11 +642,11 @@ __device__ __forceinline__ T DeviceDivideDownwardStep(int l, T a) {
 // Region A asks the fit for the order directly; the higher regions seed F_0
 // and recur upward once per order, since a fit of every order over the whole
 // range would cost more table than the recursion costs work.
-template <DivisionForm kForm, typename Lane>
+template <DivisionForm kForm, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Lane>
 __device__ __forceinline__ double DeviceSingleF64(const Lane& lane, int order, double xx) {
     if (xx < kX0)
     {
-        return DeviceSeed(lane, order, xx);
+        return DeviceSeed<kRoute>(lane, order, xx);
     }
 
     if (xx < kX1)
@@ -605,17 +677,17 @@ __device__ __forceinline__ double DeviceSingleF64(const Lane& lane, int order, d
 // The float lane's single body, and the fp16 lane's: the fp16 entries round
 // at the boundary and run this engine in between, so there is one body and
 // not two.
-template <DivisionForm kForm, bool kFastExp, typename Lane>
+template <DivisionForm kForm, bool kFastExp, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Lane>
 __device__ __forceinline__ float DeviceSingleF32(const Lane& lane, int order, float xx) {
     if (xx < static_cast<float>(kX0))
     {
-        return DeviceSeed32(lane, order, xx);
+        return DeviceSeed32<kRoute>(lane, order, xx);
     }
 
     if (xx < static_cast<float>(kX1))
     {
         float f = lane.BSeed(xx, order);
-        const float expx = DeviceRegionBExp<kFastExp>(xx);
+        const float expx = DeviceRegionBExp<kFastExp, kRoute>(xx);
         const float invx = DeviceStepReciprocal<kForm>(xx);
 
         for (int l = 0; l < order; ++l)
@@ -646,12 +718,12 @@ __device__ __forceinline__ float DeviceSingleF32(const Lane& lane, int order, fl
 // its plane and a caller can keep the ladder in registers. Region A descends,
 // so its stores arrive high order first and the value in the register chain
 // is the one the downward recursion carries.
-template <DivisionForm kForm, typename Lane, typename Store>
+template <DivisionForm kForm, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Lane, typename Store>
 __device__ __forceinline__ void DeviceAllOrdersF64(
     const Lane& lane, int order, double xx, Store store) {
     if (xx < kX0)
     {
-        double f = DeviceSeed(lane, order, xx);
+        double f = DeviceSeed<kRoute>(lane, order, xx);
         store(order, f);
         const double expx = 0.5 * exp(-xx);
 
@@ -696,12 +768,12 @@ __device__ __forceinline__ void DeviceAllOrdersF64(
 // amplifies a float seed error past the float budget, so the seed is computed
 // in double and rounded once on entry to the recursion. That is what the
 // second lane argument is, and it is why this body takes two of them.
-template <DivisionForm kForm, typename SeedLane, typename Lane, typename Store>
+template <DivisionForm kForm, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename SeedLane, typename Lane, typename Store>
 __device__ __forceinline__ void DeviceAllOrdersF32(
     const SeedLane& seedLane, const Lane& lane, int order, float xx, Store store) {
     if (xx < static_cast<float>(kX0))
     {
-        const double seed = DeviceSeed(seedLane, order, static_cast<double>(xx));
+        const double seed = DeviceSeed<kRoute>(seedLane, order, static_cast<double>(xx));
         float f = static_cast<float>(seed);
         store(order, f);
         const float expx = 0.5f * expf(-xx);
@@ -766,7 +838,7 @@ __device__ __forceinline__ void DeviceAllOrdersF32(
 // already served.
 
 // The uniform route's ladder, in double.
-template <DivisionForm kForm, bool kMonomial, typename Store>
+template <DivisionForm kForm, bool kMonomial, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Store>
 __device__ __forceinline__ void DeviceAllOrdersF64Flat(const double* cheb,
                                                        const double* mono,
                                                        const int* degs,
@@ -829,11 +901,11 @@ __device__ __forceinline__ void DeviceAllOrdersF64Flat(const double* cheb,
 
         if constexpr (kMonomial)
         {
-            store(l, DeviceHornerMono(c, deg, t));
+            store(l, DeviceHornerMono<kRoute>(c, deg, t));
         }
         else
         {
-            store(l, DeviceClenshawSplit(c, deg, t));
+            store(l, DeviceClenshawSplit<kRoute>(c, deg, t));
         }
     }
 }
@@ -860,7 +932,7 @@ __device__ __forceinline__ void DeviceAllOrdersF64Flat(const double* cheb,
 // The summation is DeviceRatSum, the same two Horner sums and the same held
 // denominator constant the host reader performs, so the figures the host gate
 // certifies are the figures this entry delivers.
-template <DivisionForm kForm, typename Store>
+template <DivisionForm kForm, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Store>
 __device__ __forceinline__ void DeviceAllOrdersF64FlatRat(const double* rat,
                                                           const int* numDegs,
                                                           const int* denDegs,
@@ -912,7 +984,7 @@ __device__ __forceinline__ void DeviceAllOrdersF64FlatRat(const double* rat,
     {
         const double* c = interval + static_cast<std::size_t>(l) * static_cast<std::size_t>(stored);
 
-        store(l, DeviceRatSum(c, m, c + m + 1, k, t));
+        store(l, DeviceRatSum<kRoute>(c, m, c + m + 1, k, t));
     }
 }
 
@@ -926,7 +998,7 @@ __device__ __forceinline__ void DeviceAllOrdersF64FlatRat(const double* rat,
 // (tools/gen_boys_coefficients.py, flat_order_f32: a = iv * width, b = a + width) and
 // not a scan of stored edges, so the interval an argument is mapped inside is the one
 // the fit was measured in.
-template <DivisionForm kForm, bool kMonomial, typename Store>
+template <DivisionForm kForm, bool kMonomial, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Store>
 __device__ __forceinline__ void DeviceAllOrdersF32Flat(const float* cheb,
                                                        const float* mono,
                                                        const int* degs,
@@ -987,11 +1059,11 @@ __device__ __forceinline__ void DeviceAllOrdersF32Flat(const float* cheb,
 
         if constexpr (kMonomial)
         {
-            store(l, DeviceHornerMono32(c, deg, t));
+            store(l, DeviceHornerMono32<kRoute>(c, deg, t));
         }
         else
         {
-            store(l, DeviceClenshawSplit32(c, deg, t));
+            store(l, DeviceClenshawSplit32<kRoute>(c, deg, t));
         }
     }
 }
@@ -999,9 +1071,10 @@ __device__ __forceinline__ void DeviceAllOrdersF32Flat(const float* cheb,
 // The float lane's uniform grid on its RATIONAL route: the double body above at this
 // lane's width, its own grid, its own tables and DeviceRatSum32. Every figure the host
 // gate certifies for this member was measured on the mapping this locate builds
-// (tools/gen_boys_coefficients.py, f32_map), at BOTH multiply-add routes, so this
-// body's fused-only reading is inside what was certified rather than beside it.
-template <DivisionForm kForm, typename Store>
+// (tools/gen_boys_coefficients.py, f32_map), at BOTH multiply-add routes, and the two
+// routes reach this body's summation too, so the figures it delivers are inside what
+// was certified rather than beside it.
+template <DivisionForm kForm, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Store>
 __device__ __forceinline__ void DeviceAllOrdersF32FlatRat(const float* rat,
                                                           const int* numDegs,
                                                           const int* denDegs,
@@ -1055,7 +1128,7 @@ __device__ __forceinline__ void DeviceAllOrdersF32FlatRat(const float* rat,
     {
         const float* c = interval + static_cast<std::size_t>(l) * static_cast<std::size_t>(stored);
 
-        store(l, DeviceRatSum32(c, m, c + m + 1, k, t));
+        store(l, DeviceRatSum32<kRoute>(c, m, c + m + 1, k, t));
     }
 }
 
@@ -1073,38 +1146,38 @@ __device__ __forceinline__ void DeviceAllOrdersF32FlatRat(const float* rat,
 // certified one above, which is also where the region-A fit it replaces ends.
 // Outside region A the two bodies are one body, so a row that carries this
 // axis names its interval as region A rather than claiming the rest.
-template <DivisionForm kForm, typename Lane, typename Store>
+template <DivisionForm kForm, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Lane, typename Store>
 __device__ __forceinline__ void DeviceOrdersF64(
     const Lane& lane, int order, double xx, Store store) {
     if (xx < kX0)
     {
         for (int l = 0; l <= order; ++l)
         {
-            store(l, DeviceSeed(lane, l, xx));
+            store(l, DeviceSeed<kRoute>(lane, l, xx));
         }
 
         return;
     }
 
-    DeviceAllOrdersF64<kForm>(lane, order, xx, store);
+    DeviceAllOrdersF64<kForm, kRoute>(lane, order, xx, store);
 }
 
 // The float lane's and the fp16 lane's, over the double region-A seed lane the
 // body above takes for the same reason.
-template <DivisionForm kForm, typename SeedLane, typename Lane, typename Store>
+template <DivisionForm kForm, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename SeedLane, typename Lane, typename Store>
 __device__ __forceinline__ void DeviceOrdersF32(
     const SeedLane& seedLane, const Lane& lane, int order, float xx, Store store) {
     if (xx < static_cast<float>(kX0))
     {
         for (int l = 0; l <= order; ++l)
         {
-            store(l, static_cast<float>(DeviceSeed(seedLane, l, static_cast<double>(xx))));
+            store(l, static_cast<float>(DeviceSeed<kRoute>(seedLane, l, static_cast<double>(xx))));
         }
 
         return;
     }
 
-    DeviceAllOrdersF32<kForm>(seedLane, lane, order, xx, store);
+    DeviceAllOrdersF32<kForm, kRoute>(seedLane, lane, order, xx, store);
 }
 
 } // namespace boys::detail

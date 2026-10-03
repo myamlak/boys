@@ -1,6 +1,7 @@
 #pragma once
 
 #include "boys/boys.hpp"
+#include "boys/boys_cuda_muladd.hpp"
 #include "boys/boys_cuda_options.hpp"
 #include "boys/boys_device_tables.hpp"
 
@@ -75,20 +76,24 @@ enum class BoysStatus {
 /// the division form a call may name is one of the three certified divisions of
 /// that arithmetic's ladder steps.
 ///
-/// **The device lane does not honour the multiply-add route, and this is a
-/// stated limitation rather than an untested property.** The host's routes are
-/// selected at build time (`BOYS_MULADD_SEPARATE`) and reported by
-/// `BoysBackends()`, whose `route` field is what the corresponding arithmetic
-/// was *measured* to deliver. The device kernels are not on that report and do
-/// not read the selection: they name the fused intrinsic (`__fma_rn`) directly,
-/// so the device arithmetic is fused whatever the host build selected, and a
-/// caller who asked for the separate route gets a second rounding on the host
-/// and a single one on the device. Nothing in a returned value shows it and no
-/// entry reports it — a caller has to read the kernel or know this paragraph.
+/// **The device lane honours the multiply-add route, and reports it.** The
+/// host's routes are selected at build time (`BOYS_MULADD_SEPARATE`) and
+/// reported by `BoysBackends()`, whose `route` field is what the corresponding
+/// arithmetic was *measured* to deliver. The device lane runs that selection
+/// too: it is a public compile definition, so the kernels' translation unit and
+/// a consumer's own inherit the value the host build reads, and every entry of
+/// this class and every device-callable entry of boys_cuda_device.hpp runs the
+/// arithmetic that selection names. `BoysCuda::MulAddRouteInForce()` is where a caller reads it —
+/// the device's counterpart of `RouteInForce<T>()`, one selection covering both
+/// precisions of the lane.
 ///
-/// This is unbuilt work rather than an impossibility: a kernel written as a bare
-/// product-plus-add leaves the choice to the device compiler's own contraction
-/// setting. Until that lands, treat the device lane as fused unconditionally.
+/// The device spells both routes out rather than leaving the choice to the
+/// device compiler's contraction setting: the fused step as the fused intrinsic,
+/// the separate step as a product rounded once and then summed, a form no
+/// setting has anything left to fuse. The separate route is therefore two
+/// roundings on the device as it is on the host, and the device delivers the
+/// route it names — measured, not asserted: the CUDA route test holds each route
+/// to the arithmetic it names, bit for bit, over a fixed value set.
 ///
 /// The three shapes per precision family: Single* (one order per argument),
 /// AllOrders* (all orders per argument, top order per element), AllN* (all
@@ -142,6 +147,28 @@ public:
     /// \returns kSuccess after filling \c out with the current device's table
     /// addresses; kDeviceError when the upload or an address query fails.
     static BoysStatus DeviceTables(BoysDeviceTables* out);
+
+    /// The multiply-add route the device arithmetic of this lane runs.
+    ///
+    /// The device's counterpart of the host's \c RouteInForce<T>() and of the
+    /// \c route field of \c BoysBackends(): one computation serves both
+    /// precisions of the lane, so one reader answers for both. It is the build's
+    /// \c BOYS_MULADD_SEPARATE selection — a public compile definition, so the
+    /// value a consumer's own translation unit reads is the value the kernels
+    /// were compiled with.
+    ///
+    /// It is a report and not a restatement of the selection: the device spells
+    /// both routes out rather than leaving the choice to the device compiler's
+    /// contraction setting, so the arithmetic delivers the route it names. That
+    /// the delivered arithmetic is the named one is measured — the CUDA route
+    /// test holds each route to its own reference, bit for bit, over a fixed
+    /// value set.
+    ///
+    /// \returns the route every entry of this class, and every device-callable
+    ///          entry of boys_cuda_device.hpp, delivers on this device
+    static constexpr backend::MulAddRoute MulAddRouteInForce() noexcept {
+        return detail::kDeviceMulAddRoute;
+    }
 
     /// F_n(x[i]) in single precision — the recommended GPU lane on consumer
     /// hardware (double precision runs there at a fraction of single-precision

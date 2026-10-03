@@ -1041,6 +1041,17 @@ if (BUILD_CUDA)
         target_compile_definitions(boys-cuda PUBLIC BOYS_BUILD_DEFAULTS_REPLACED=1)
     endif()
     target_compile_definitions(boys-cuda PUBLIC BoysFp16=1)
+    # The multiply-add route is one build fact with two lanes behind it, and
+    # this is the device's half: the kernels' translation unit reads the same
+    # selection the host's does, so a build that selected the separate route
+    # cannot leave the device arithmetic fused and report the host's route over
+    # it. PUBLIC for the reason the boys target states at the option: every
+    # device entry is header-defined, so a consumer's own .cu compiles the
+    # arithmetic the library reports, and the batch kernels here compile it with
+    # it. tests/boys_cuda_route_test.cu is what holds the two to each other.
+    if (BOYS_MULADD_SEPARATE)
+        target_compile_definitions(boys-cuda PUBLIC BOYS_MULADD_SEPARATE=1)
+    endif()
     # Stated because this target links nothing that carries a standard into it:
     # without it the host TU compiles at the compiler's default (C++14 on
     # MSVC) and the library's headers do not build.
@@ -1152,6 +1163,23 @@ if (BUILD_CUDA)
         target_compile_features(boys-consumer-cuda-defaults PRIVATE cxx_std_20)
         boys_strict_warnings(boys-consumer-cuda-defaults)
         add_test(NAME boys-consumer-cuda-defaults COMMAND boys-consumer-cuda-defaults)
+
+        # The multiply-add route's own check: the lane's arithmetic at both
+        # routes and at the build's selection, held to the exact references a
+        # host can state - the fused route to std::fma, the separate route to
+        # round(round(a*b) + c) - and the build's selection held to the route
+        # the lane reports. It is the one place the device's route is a measured
+        # result rather than a sentence in a header, and the build that
+        # -DBOYS_MULADD_SEPARATE=ON selects is the one where it can fail: there
+        # the delivered arithmetic must be the two-rounding one, and a lane that
+        # ran the fused step anyway reports the mismatch rather than passing.
+        add_executable(boys-cuda-route-tests
+            tests/boys_cuda_route_test.cpp
+            tests/boys_cuda_route_test.cu)
+        target_link_libraries(boys-cuda-route-tests PRIVATE boys-cuda boys)
+        target_compile_features(boys-cuda-route-tests PRIVATE cxx_std_20)
+        boys_strict_warnings(boys-cuda-route-tests)
+        add_test(NAME boys-cuda-route-tests COMMAND boys-cuda-route-tests)
     endif()
 endif()
 
