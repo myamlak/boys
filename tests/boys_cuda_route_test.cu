@@ -101,25 +101,25 @@ __global__ void RouteLadderF64Kernel(__grid_constant__ const boys::BoysDeviceTab
 
     if (monomial)
     {
-        boys::detail::DeviceAllOrdersF64Flat<true, MulAddRoute::kFused>(
+        boys::detail::DeviceAllOrdersF64Flat<boys::kDefaultDivisionForm,true, MulAddRoute::kFused>(
             tables.flatCoeffs, tables.flatMonoCoeffs, tables.flatDegs, tables.flatOffsets, n[i],
             x[i], [&](int l, double v) { fused[static_cast<std::size_t>(l) * count + i] = v; });
-        boys::detail::DeviceAllOrdersF64Flat<true, MulAddRoute::kSeparate>(
+        boys::detail::DeviceAllOrdersF64Flat<boys::kDefaultDivisionForm,true, MulAddRoute::kSeparate>(
             tables.flatCoeffs, tables.flatMonoCoeffs, tables.flatDegs, tables.flatOffsets, n[i],
             x[i], [&](int l, double v) { separate[static_cast<std::size_t>(l) * count + i] = v; });
-        boys::detail::DeviceAllOrdersF64Flat<true>(
+        boys::detail::DeviceAllOrdersF64Flat<boys::kDefaultDivisionForm,true>(
             tables.flatCoeffs, tables.flatMonoCoeffs, tables.flatDegs, tables.flatOffsets, n[i],
             x[i], [&](int l, double v) { delivered[static_cast<std::size_t>(l) * count + i] = v; });
     }
     else
     {
-        boys::detail::DeviceAllOrdersF64Flat<false, MulAddRoute::kFused>(
+        boys::detail::DeviceAllOrdersF64Flat<boys::kDefaultDivisionForm,false, MulAddRoute::kFused>(
             tables.flatCoeffs, tables.flatMonoCoeffs, tables.flatDegs, tables.flatOffsets, n[i],
             x[i], [&](int l, double v) { fused[static_cast<std::size_t>(l) * count + i] = v; });
-        boys::detail::DeviceAllOrdersF64Flat<false, MulAddRoute::kSeparate>(
+        boys::detail::DeviceAllOrdersF64Flat<boys::kDefaultDivisionForm,false, MulAddRoute::kSeparate>(
             tables.flatCoeffs, tables.flatMonoCoeffs, tables.flatDegs, tables.flatOffsets, n[i],
             x[i], [&](int l, double v) { separate[static_cast<std::size_t>(l) * count + i] = v; });
-        boys::detail::DeviceAllOrdersF64Flat<false>(
+        boys::detail::DeviceAllOrdersF64Flat<boys::kDefaultDivisionForm,false>(
             tables.flatCoeffs, tables.flatMonoCoeffs, tables.flatDegs, tables.flatOffsets, n[i],
             x[i], [&](int l, double v) { delivered[static_cast<std::size_t>(l) * count + i] = v; });
     }
@@ -142,28 +142,28 @@ __global__ void RouteLadderF32Kernel(__grid_constant__ const boys::BoysDeviceTab
 
     if (monomial)
     {
-        boys::detail::DeviceAllOrdersF32Flat<true, MulAddRoute::kFused>(
+        boys::detail::DeviceAllOrdersF32Flat<boys::kDefaultDivisionForm,true, MulAddRoute::kFused>(
             tables.flatCoeffs32, tables.flatMonoCoeffs32, tables.flatDegs32, tables.flatOffsets32,
             n[i], x[i], [&](int l, float v) { fused[static_cast<std::size_t>(l) * count + i] = v; });
-        boys::detail::DeviceAllOrdersF32Flat<true, MulAddRoute::kSeparate>(
+        boys::detail::DeviceAllOrdersF32Flat<boys::kDefaultDivisionForm,true, MulAddRoute::kSeparate>(
             tables.flatCoeffs32, tables.flatMonoCoeffs32, tables.flatDegs32, tables.flatOffsets32,
             n[i], x[i],
             [&](int l, float v) { separate[static_cast<std::size_t>(l) * count + i] = v; });
-        boys::detail::DeviceAllOrdersF32Flat<true>(
+        boys::detail::DeviceAllOrdersF32Flat<boys::kDefaultDivisionForm,true>(
             tables.flatCoeffs32, tables.flatMonoCoeffs32, tables.flatDegs32, tables.flatOffsets32,
             n[i], x[i],
             [&](int l, float v) { delivered[static_cast<std::size_t>(l) * count + i] = v; });
     }
     else
     {
-        boys::detail::DeviceAllOrdersF32Flat<false, MulAddRoute::kFused>(
+        boys::detail::DeviceAllOrdersF32Flat<boys::kDefaultDivisionForm,false, MulAddRoute::kFused>(
             tables.flatCoeffs32, tables.flatMonoCoeffs32, tables.flatDegs32, tables.flatOffsets32,
             n[i], x[i], [&](int l, float v) { fused[static_cast<std::size_t>(l) * count + i] = v; });
-        boys::detail::DeviceAllOrdersF32Flat<false, MulAddRoute::kSeparate>(
+        boys::detail::DeviceAllOrdersF32Flat<boys::kDefaultDivisionForm,false, MulAddRoute::kSeparate>(
             tables.flatCoeffs32, tables.flatMonoCoeffs32, tables.flatDegs32, tables.flatOffsets32,
             n[i], x[i],
             [&](int l, float v) { separate[static_cast<std::size_t>(l) * count + i] = v; });
-        boys::detail::DeviceAllOrdersF32Flat<false>(
+        boys::detail::DeviceAllOrdersF32Flat<boys::kDefaultDivisionForm,false>(
             tables.flatCoeffs32, tables.flatMonoCoeffs32, tables.flatDegs32, tables.flatOffsets32,
             n[i], x[i],
             [&](int l, float v) { delivered[static_cast<std::size_t>(l) * count + i] = v; });
