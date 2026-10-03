@@ -153,7 +153,7 @@ The bound is |F̂_n(x) − F_n(x)| ≤ B for every supported n, x and lane. Ever
 | fp16 / bf16 | ≤ 1.5e-7 + ½ ULP, or ≤ 2.5e-7 + ½ ULP in the plain-reciprocal form |
 | native half, x ≥ 28.984375 | ≤ 8 ULP of the returned value |
 | CUDA fp64 | the same budgets as the CPU double lanes |
-| CUDA fp32, `RegionBExp::kAccurate` (the default) | the same budgets as the CPU float lanes |
+| CUDA fp32, `RegionBExp::kAccurate` (the default) | the same budgets as the CPU float lanes, at the lane's own default division form |
 | CUDA fp32, `RegionBExp::kFast` | ≤ 1.5e-7 + 8e-8, the lane's budget plus the corrected seed's contribution |
 
 The CUDA fp32 lane's single entry is the one device entry that takes a second, certified axis: which

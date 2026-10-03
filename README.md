@@ -156,7 +156,7 @@ over part of the range than over the rest. Every figure below holds for **all** 
 | fp16 / bf16 | ≤ 1.5e-7 + ½ ULP, or ≤ 2.5e-7 + ½ ULP in the plain-reciprocal form |
 | native half, x ≥ 28.984375 | ≤ 8 ULP of the returned value |
 | CUDA fp64 | the same budgets as the CPU double lanes |
-| CUDA fp32, `RegionBExp::kAccurate` (the default) | the same budgets as the CPU float lanes |
+| CUDA fp32, `RegionBExp::kAccurate` (the default) | the same budgets as the CPU float lanes, at the lane's own default division form |
 | CUDA fp32, `RegionBExp::kFast` | ≤ 1.5e-7 + 8e-8 — the lane's budget plus the corrected seed's own contribution |
 
 **One axis's members are not one figure.** `DivisionForm` is how every recurrence step divides, and
