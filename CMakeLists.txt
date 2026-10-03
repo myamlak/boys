@@ -443,6 +443,13 @@ if (BOYS_BUILD_TESTS)
         tests/f16_test.cpp
         tests/boys_half_native_test.cpp
         tests/boys_backend_test.cpp
+        # The multiply-add route's liveness: a lane that stops reading the build's
+        # route keeps compiling and keeps every suite that names the route green,
+        # so what these hold is the values each lane delivers, against the
+        # library's own summations at a named route (the reference arithmetic is
+        # tests/boys_muladd_route_reference.hpp, shared by the two).
+        tests/boys_muladd_route_test.cpp
+        tests/boys_muladd_route_simd_test.cpp
         tests/boys_fixture_pins_test.cpp
         tests/boys_probe_test.cpp
         tests/boys_build_defaults_test.cpp
@@ -460,6 +467,31 @@ if (BOYS_BUILD_TESTS)
     target_compile_definitions(boys-tests PRIVATE
         BoysDataDir="${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
     boys_strict_warnings(boys-tests)
+
+    # tests/boys_muladd_route_simd_test.cpp includes the private header the
+    # packed backends are declared in, so this unit carries the intrinsics' flag
+    # set the way src/boys_simd.cpp does - the same set and the same pinning of
+    # the measured contraction answer, and for the same reason: the reference
+    # arithmetic it holds those backends to has to be the build's arithmetic,
+    # not this unit's own reading of a bare product-plus-add.
+    if (BOYS_ARCH_X86_64)
+        if (MSVC)
+            set_source_files_properties(tests/boys_muladd_route_simd_test.cpp PROPERTIES
+                COMPILE_OPTIONS "/arch:AVX2")
+        else()
+            set(_boys_simd_test_flags "-mavx2;-mfma;-mf16c")
+            if (DEFINED BOYS_SCALAR_CONTRACTS)
+                if (BOYS_SCALAR_CONTRACTS)
+                    list(APPEND _boys_simd_test_flags "-ffp-contract=fast")
+                else()
+                    list(APPEND _boys_simd_test_flags "-ffp-contract=off")
+                endif()
+            endif()
+            set_source_files_properties(tests/boys_muladd_route_simd_test.cpp PROPERTIES
+                COMPILE_OPTIONS "${_boys_simd_test_flags}")
+            unset(_boys_simd_test_flags)
+        endif()
+    endif()
 
     # The ACCURACY GATE (tests/boys_accuracy_gate.cpp) measures every
     # documented per-lane, per-region bound against the independent
