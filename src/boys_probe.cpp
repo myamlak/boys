@@ -6460,8 +6460,8 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
     text += "    measured, at their default policy alone, as the all-n classes above: one call per\n";
     text += "    order run, at the shipped route, scheme, partition, packing axis, division form\n";
     text += "    and region-B exponential. Those rows are no cell of the space, and they are\n";
-    text += "    counted in the closure below\n";
-    text += Text("    below, which names them and counts the crossing they stand for: %zu row(s),\n"
+    text += "    counted in the closure below,\n";
+    text += Text("    which names them and counts the crossing they stand for: %zu row(s),\n"
                  "    standing for the %zu cell(s) of their own class that crossing them\n"
                  "    with the axes would add beyond the cells they stand at.\n",
                  closure.shapesNotCrossed, closure.crossedOwed);
