@@ -931,7 +931,7 @@ None: every leg that runs the probe has a row.
 
 ### CI legs that run no probe
 
-No run of these legs prints a row, and none of them is being waited for: the option-matrix cells build the accuracy gate and nothing else, and option-plan and the clang-tidy leg build no binary at all. A row states what one build is, and these legs do not build the probe.
+No run of these legs prints a row, and none of them is being waited for: the option-matrix cells build the accuracy gate and the test suite rather than the probe, and option-plan and the clang-tidy leg build no binary at all. A row states what one build is, and these legs do not build the probe.
 
 | CI leg | Runner label |
 |---|---|

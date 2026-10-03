@@ -930,10 +930,11 @@ The table is generated from `.github/workflows/ci.yml`, `.github/required-checks
 `.github/option-matrix.json` by `tools/gen_platform_table.py`. The CI legs re-check it, so it cannot
 drift from what actually runs.
 
-The `option-matrix` legs are not platform legs: each one builds and runs the accuracy gate in one
-certified configuration of the library — a host crossed with a multiply-add route — and the list of
-those configurations is generated from the library by `tools/gen_option_matrix.py`, so a member added
-to an option axis reaches CI by regenerating that list rather than by editing the workflow.
+The `option-matrix` legs are not platform legs: each one builds and runs the accuracy gate and the
+test suite in one certified configuration of the library — a host crossed with a multiply-add route —
+and the list of those configurations is generated from the library by `tools/gen_option_matrix.py`, so
+a member added to an option axis reaches CI by regenerating that list rather than by editing the
+workflow.
 
 What each leg's *build* is — the instruction sets it targets, its lane widths, whether a bare
 `a * b + c` in it is a single rounding, and whether the compiled library calls the runtime's `fma` —

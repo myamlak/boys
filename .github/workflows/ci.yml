@@ -125,11 +125,11 @@ concurrency:
 # only a run of that leg can make one, and the job log is not a file. The step
 # therefore TEES the probe's stdout - the row is the first thing the probe
 # prints, before it compares anything - into build-facts-row.txt, and the step
-# after it uploads that file as an artifact. Eight of the nineteen legs cannot
+# after it uploads that file as an artifact. Ten of the twenty-one legs cannot
 # print a row at all - option-plan and the clang-tidy leg build no binary and the
-# seven option-matrix cells build the accuracy gate target and no probe - and the
-# eleven that carry this step are the ones that can. A maintainer downloads those
-# artifacts and folds each row in with
+# eight option-matrix cells build the accuracy gate and the test suite and no
+# probe - and the eleven that carry this step are the ones that can. A maintainer
+# downloads those artifacts and folds each row in with
 # `python tools/gen_build_facts.py --record <file>`.
 #
 # This is what breaks the bootstrap loop, and it is the only thing that can. The
@@ -220,8 +220,8 @@ jobs:
         run: echo "matrix=$(python3 tools/gen_option_matrix.py --emit)" >> "$GITHUB_OUTPUT"
 
   # -------------------------------------------------------------------------
-  # Every allowed configuration: one build of the accuracy gate in the tree
-  # that configuration names, and the gate run in it.
+  # Every allowed configuration: one build of the accuracy gate and of the test
+  # suite in the tree that configuration names, and both run in it.
   #
   # What a configuration is, which axes it selects and why the matrix is over
   # those, is stated where the list is generated: tools/gen_option_matrix.py.
@@ -233,6 +233,18 @@ jobs:
   # configuration and are expected to differ. A configuration whose books do
   # not hold exits non-zero and fails this job; the run is verbose so the
   # verdict it reached is in the log rather than behind --output-on-failure.
+  #
+  # AND THE TEST SUITE, in that same tree. The gate judges the figures the
+  # library publishes; the suite judges the library's own contract, which
+  # includes relations between two of its lanes that no reference grid states
+  # and that the multiply-add route decides - the across-orders lane's split
+  # Clenshaw body against the across-arguments lane's is one, and the claim
+  # written for it is bit identity at the fused route against a parting no
+  # wider than twice the region-A budget at the separate one
+  # (tests/boys_across_orders_test.cpp). This job is the only place in the
+  # workflow where the separate route is built at all, so a suite run in any
+  # other leg measures the fused arithmetic under whatever name that leg
+  # carries.
   #
   # NO TIMING ANYWHERE IN THIS JOB, and none anywhere in this workflow. What
   # is measured is accuracy and counts. A hosted runner is shared, ephemeral
@@ -264,10 +276,21 @@ jobs:
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF
           ${{ matrix.generator }} ${{ matrix.cmake_args }}
-      - name: Build (the accuracy gate target)
-        run: cmake --build build ${{ matrix.build_jobs }} --target boys-accuracy-gate
+      - name: Build (the accuracy gate and the test suite)
+        run: cmake --build build ${{ matrix.build_jobs }} --target boys-accuracy-gate boys-tests
       - name: Accuracy gate (this configuration's books)
         run: ctest --test-dir build -V -R boys-accuracy-gate
+      # The suite, in this configuration's own tree. The selection is COUNTED
+      # before it is run, because ctest does not fail on a filter that matched
+      # nothing: measured here, `ctest -R <no match>` exits 0 on 4.2.3, and on
+      # 4.4.2 without --no-tests=error. A step held only to its exit status
+      # would therefore go green having run nothing, which is the failure this
+      # count exists for.
+      - name: Test suite (this configuration's route)
+        shell: bash
+        run: |
+          ctest --test-dir build -N -R '^boys-tests$' | grep -qE '^Total Tests: 1'
+          ctest --test-dir build --output-on-failure -R '^boys-tests$'
 
   # -------------------------------------------------------------------------
   # windows-latest, MSVC, Debug + Release. The original windows-msvc-release

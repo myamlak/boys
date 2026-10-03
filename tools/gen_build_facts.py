@@ -57,13 +57,13 @@ def ci_legs():
 def legs_that_probe():
     """The CI legs a build-facts step runs on: the legs whose steps pass `--leg`.
 
-    Only a leg that runs the probe can print a row, and eight of the nineteen do
-    not: option-plan runs the option list and no build, and the seven
-    option-matrix cells build the accuracy gate target, which the probe is not a
-    part of. The page tells a maintainer which legs to expect a row from, so it
-    reads that answer off the steps rather than asserting it: a leg that gains or
-    loses a probe step changes this set with the workflow and without an edit
-    here.
+    Only a leg that runs the probe can print a row, and ten of the twenty-one do
+    not: option-plan runs the option list and no build, the clang-tidy leg builds
+    no binary, and the eight option-matrix cells build the accuracy gate and the
+    test suite, neither of which is the probe. The page tells a maintainer which
+    legs to expect a row from, so it reads that answer off the steps rather than
+    asserting it: a leg that gains or loses a probe step changes this set with
+    the workflow and without an edit here.
     """
     workflow = platform.yaml.safe_load(platform.CI_YML.read_text(encoding="utf-8"))
     legs = set()
@@ -185,10 +185,10 @@ def render(rows):
         parts.append("")
         parts.append(
             "No run of these legs prints a row, and none of them is being waited "
-            "for: the option-matrix cells build the accuracy gate and nothing "
-            "else, and option-plan and the clang-tidy leg build no binary at "
-            "all. A row states what one build is, and these legs do not build "
-            "the probe.")
+            "for: the option-matrix cells build the accuracy gate and the test "
+            "suite rather than the probe, and option-plan and the clang-tidy leg "
+            "build no binary at all. A row states what one build is, and these "
+            "legs do not build the probe.")
         parts.append("")
         parts.append("| CI leg | Runner label |")
         parts.append("|---|---|")
