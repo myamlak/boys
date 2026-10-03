@@ -913,9 +913,9 @@ struct DeviceOptionInfo {
     /// single-order shape — and not a row nobody filled in: an entry that statement has
     /// not been taught fails to compile where it is written.
     FitRoute route = DeviceEntryAxesOf(entry).route;
-    EvalScheme scheme = DeviceEntryAxesOf(entry).scheme;
-    DevicePacking packing = DeviceEntryAxesOf(entry).packing;
-    DivisionForm division = DeviceEntryAxesOf(entry).division;
+    EvalScheme scheme = DeviceEntryAxesOf(entry).scheme; ///< the row's scheme-axis value
+    DevicePacking packing = DeviceEntryAxesOf(entry).packing; ///< the row's packing-axis value
+    DivisionForm division = DeviceEntryAxesOf(entry).division; ///< the row's division-axis value
 
     /// The cut of the domain the entry reads its fits from.
     ///

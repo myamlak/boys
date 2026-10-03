@@ -583,6 +583,7 @@ struct DefaultPolicyRow {
 // combination its shape cannot carry is caught where that class's entries are
 // instantiated, which is the reading that makes a row which cannot compile a
 // build error rather than a surprise at a consumer's call site.
+/// \cond
 #define BOYS_DEFAULT_POLICY_ROW(kDevice, kPrecision, kShape, kRoute, kScheme, kBudget, kPack,  \
                                 kGranularity, kDivision)                                       \
     template <>                                                                                \
@@ -594,7 +595,6 @@ struct DefaultPolicyRow {
         static constexpr bool kCarried = true;                                                  \
     };
 
-/// \cond
 #if defined(BOYS_BUILD_DEFAULT_ROWS)
 BOYS_BUILD_DEFAULT_ROWS(BOYS_DEFAULT_POLICY_ROW)
 #else
@@ -609,8 +609,8 @@ BOYS_BUILD_DEFAULT_ROWS(BOYS_DEFAULT_POLICY_ROW)
 BOYS_DEFAULT_POLICY_BUILD_ROWS(BOYS_DEFAULT_POLICY_BUILD_ROW)
 #undef BOYS_DEFAULT_POLICY_BUILD_ROWS
 #undef BOYS_DEFAULT_POLICY_BUILD_ROW
-/// \endcond
 #endif
+/// \endcond
 
 #undef BOYS_DEFAULT_POLICY_ROW
 

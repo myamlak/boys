@@ -1425,7 +1425,7 @@ struct DeviceOptionClosure {
     /// read from different sources — the run's grid and the library's tables — and they
     /// have to agree.
     std::size_t gridPlaces = 0;
-    std::size_t gridPlacesOwed = 0;
+    std::size_t gridPlacesOwed = 0; ///< the places a run of this request owes the space
 
     /// The classes the space admits, and the classes the report carries.
     ///
@@ -1435,7 +1435,7 @@ struct DeviceOptionClosure {
     /// class the space admits and the report does not carry is a shape of this surface
     /// that nothing in the run reports on.
     std::size_t classesAdmitted = 0;
-    std::size_t classesPrinted = 0;
+    std::size_t classesPrinted = 0; ///< the classes the report carries: DeviceProbeReport::classes
 
     /// Whether the closure holds; see this struct's own note.
     bool closed = false;
