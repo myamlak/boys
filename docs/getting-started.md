@@ -336,7 +336,7 @@ computes. The rest can only be named where the call is compiled:
 | Setting | Can you name it at run time? | How |
 |---|---|---|
 | which stored fit serves the interval | **yes** | `BoysAllOrdersWithRoute`, `BoysSingleF32WithRoute` |
-| how the coefficients are summed | **yes** | the `(route, scheme)` overload of `BoysAllOrdersWithRoute`, and `BoysSingleF32WithRoute` |
+| how the coefficients are summed | **yes** | the `(route, scheme)` overload of `BoysAllOrdersWithRoute` — the ladder shape; the float lane's single-order entry takes a route and no scheme |
 | the internal precision budget | no | template argument only — `EvalPolicy`'s third parameter |
 | the packing axis (whether a vector register holds four arguments or four orders) | no | template argument only — `EvalPolicy`'s fourth parameter |
 | how finely the fitted interval is cut | no | template argument only — `EvalPolicy`'s fifth parameter |

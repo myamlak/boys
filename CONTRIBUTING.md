@@ -42,10 +42,16 @@ the reproducibility evidence behind the documented accuracy contract.
 
 ## Build and test
 
-Requirements: CMake >= 3.25, a C++20 compiler (MSVC, GCC or Clang), git, **and a build tool — Ninja
-or Make**. The last one is easy to miss: `cmake -S . -B build` names no generator, so it picks
-whatever the machine has. A machine with neither fails at configure with a message about generators,
-not about the tool that is missing. `-G Ninja` is what this repository's own configurations use.
+Requirements: CMake >= 3.25, git, **and a build tool — Ninja or Make**. The last one is easy to miss:
+`cmake -S . -B build` names no generator, so it picks whatever the machine has. A machine with
+neither fails at configure with a message about generators, not about the tool that is missing.
+`-G Ninja` is what this repository's own configurations use.
+
+The compiler the block below wants is a **C++23** one (MSVC, GCC or Clang), because that block is
+the contributor's build: it compiles the test suite, the gate and the benchmark drivers, and those
+are the targets that ask for C++23. The library itself is standalone **C++20** — README.md's recipe,
+with `-DBOYS_BUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF`, builds it and nothing
+else.
 Dependencies are vendored in-tree, so there is no vcpkg and no FetchContent.
 
 ```bash
