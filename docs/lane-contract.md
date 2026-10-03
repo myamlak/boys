@@ -1446,13 +1446,13 @@ are its own.
 
 Run on this tree, the gate's own lines for the tolerance question are:
 
-    the tolerance query: 96 carried row(s) asked at the figure each row is judged by and
-                  answered inside it, 96 of them asked at half of that figure and answered
+    the tolerance query: 144 carried row(s) asked at the figure each row is judged by and
+                  answered inside it, 144 of them asked at half of that figure and answered
                   outside it, 0 row(s) whose lane publishes no figure to halve, and 0
                   refused row(s) answered with no verdict and no figure. 0 disagreement(s)
                   with the figures the two accessors answer
 
-The 96 rows are every member of the option space, and the block
+The 144 rows are every member of the option space, and the block
 asks all of them: the members the device lane holds and a host-only build cannot run answer from the
 accessor's own tables like the rest, because the query reads a table rather than a measurement. None is refused
 at this revision; a member a later revision has not derived would be asked the same question and
