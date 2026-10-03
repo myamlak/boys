@@ -363,7 +363,7 @@ inline double RegionBExtendedSeed(double x) noexcept {
 }
 
 // The three division forms, one entry each, and the selectors the bodies read.
-// Which is cheapest is a property of the host (DivisionForm in backend.hpp), so the
+// Which is cheapest is a property of the host (DivisionForm in accuracy.hpp), so the
 // bodies take the form from the policy rather than writing one of the three into a
 // body, and each entry is templated on the value type because a form the caller
 // names is that lane's arithmetic for every step of the ladder it governs.
@@ -530,13 +530,30 @@ inline constexpr double kRegionBExpLog2e = 1.4426950408889634073599246810018921;
 inline constexpr double kRegionBExpLn2 = 0.6931471805599453094172321214581766;
 inline constexpr double kRegionBExpRoundMagic = 6755399441055744.0; // 1.5 * 2^52
 
-// 0.5 * e^{-x} for a region-B argument.
+// 0.5 * e^{-x} for a region-B argument, in the member the policy named.
 //
-// The reduction is the textbook one - x = k ln2 + r with |r| <= ln2/2, so
-// e^{-x} = 2^{-k} e^{-r} - with k out of a magic constant rather than a libm
-// rounding call and 2^{-k} from the exponent field rather than ldexp. Over region B
-// k is in [25, 42], far from the exponent field's ends, so the scale is exact.
+// The accurate member is the library routine, and it is not a second body: the
+// single-precision lane's region B has always run it, and both lanes' band and
+// downward seeds run it at every member of the axis, because those are region A
+// and the axis is region B's.
+//
+// The fast member is the reduced-argument polynomial. The reduction is the
+// textbook one - x = k ln2 + r with |r| <= ln2/2, so e^{-x} = 2^{-k} e^{-r} - with
+// k out of a magic constant rather than a libm rounding call and 2^{-k} from the
+// exponent field rather than ldexp. Over region B k is in [25, 42], far from the
+// exponent field's ends, so the scale is exact. Below kRegionBExpCheapFrom the
+// ladder's own requirement, which kRegionBExpBar states above, is tighter than the
+// polynomial's error, and this member reads the library routine there: that arm is
+// part of the member rather than a fallback, because the polynomial alone would
+// fail a bound over a band interior to region B, and a member whose failing band
+// is interior to the region is not offered at all.
+template <RegionBExp kExp>
 inline double RegionBHalfExp(double x) noexcept {
+    if constexpr (kExp == RegionBExp::kAccurate)
+    {
+        return 0.5 * std::exp(-x);
+    }
+
     if (x < kRegionBExpCheapFrom)
     {
         return 0.5 * std::exp(-x);
@@ -555,6 +572,25 @@ inline double RegionBHalfExp(double x) noexcept {
 
     const int k = static_cast<int>(kd);
     return 0.5 * std::bit_cast<double>(static_cast<std::uint64_t>(1023 - k) << 52) * p;
+}
+
+// The same member at the single-precision lane's own type.
+//
+// The accurate member is the single-precision routine - 0.5f * expf, the
+// arithmetic that lane's published figures were measured at - and not the double
+// one narrowed: routing it through the shape above would move values the lane's
+// documents speak for. The fast member is the double arithmetic rounded once, which
+// is the same program the double lane runs at that member; the widening is exact
+// and the narrowing costs half an ulp, which is the whole of the member's error
+// above the cut and all of it but the routine's own below.
+template <RegionBExp kExp>
+inline float RegionBHalfExpF32(float x) noexcept {
+    if constexpr (kExp == RegionBExp::kAccurate)
+    {
+        return 0.5f * std::exp(-x);
+    }
+
+    return static_cast<float>(RegionBHalfExp<RegionBExp::kFast>(static_cast<double>(x)));
 }
 
 // One step of the upward recursion: F_l(x) from F_{l-1}(x). The band's orders,
@@ -2747,8 +2783,11 @@ double FloatBatchRegionASeed(int order, double x) noexcept {
 //
 // The division form is a parameter here rather than a field the fit carries,
 // because the fit is what this body's callers select and the form is what the
-// policy selects beside it.
-template <typename Fit, DivisionForm kForm = kDefaultDivisionForm>
+// policy selects beside it. The region-B exponential is the same kind of
+// parameter, and it has no default: a caller that forgot it would run one
+// member's seed under a policy naming the other, which is the substitution this
+// body's call site exists to prevent.
+template <typename Fit, DivisionForm kForm = kDefaultDivisionForm, RegionBExp kExp>
 float SingleOrderF32Body(int n, float x) noexcept {
     if (x == 0.0f)
     {
@@ -2776,7 +2815,7 @@ float SingleOrderF32Body(int n, float x) noexcept {
 
     if (x < x1)
     {
-        const float expx = 0.5f * std::exp(-x);
+        const float expx = RegionBHalfExpF32<kExp>(x);
 
         // The recurrence step is written as the backend's two-rounding
         // multiply-subtract rather than as a bare product and difference: a bare
@@ -2955,7 +2994,7 @@ void AllOrdersBody(int nmax, double x, double* out) noexcept {
     {
         double f = Fit::RegionBSeed(x);
         out[0] = f;
-        const double expx = RegionBHalfExp(x);
+        const double expx = RegionBHalfExp<Policy::kRegionBExp>(x);
         const double invx = StepReciprocal<Policy::kDivision>(x);
 
         for (int l = 1; l <= nmax; ++l)
@@ -3042,7 +3081,7 @@ double SingleOrder(int n, double x) noexcept {
     if (x < kX1)
     {
         double f = Fit::RegionBSeed(x);
-        const double expx = RegionBHalfExp(x);
+        const double expx = RegionBHalfExp<Policy::kRegionBExp>(x);
         const double invx = StepReciprocal<Policy::kDivision>(x);
 
         for (int l = 1; l <= n; ++l)
@@ -3359,7 +3398,7 @@ void BoysFixedNImpl(
 
             if (xi < kX1)
             {
-                const double expx = RegionBHalfExp(xi);
+                const double expx = RegionBHalfExp<Policy::kRegionBExp>(xi);
 
                 for (int l = 0; l < n; ++l)
                 {
@@ -3452,7 +3491,7 @@ float BoysSingleF32Impl(int n, float x) noexcept {
     {
         return SingleOrderF32Body<FloatRouteFit<Policy::kRoute, Policy::kScheme,
                                                 Policy::kGranularity>,
-                                  Policy::kDivision>(n, x);
+                                  Policy::kDivision, Policy::kRegionBExp>(n, x);
     }
 }
 
@@ -3573,7 +3612,7 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
 
         if (x < x1)
         {
-            const float expx = 0.5f * std::exp(-x);
+            const float expx = RegionBHalfExpF32<Policy::kRegionBExp>(x);
 
             for (int l = 1; l <= nmax; ++l)
             {
@@ -4092,7 +4131,7 @@ inline void BoysAllNBodyRegionB(int nmax, double x, std::size_t stride, double* 
     {
         double f = PolicyRegionBSeed<Policy>(x);
         plane[0] = f;
-        const double expx = RegionBHalfExp(x);
+        const double expx = RegionBHalfExp<Policy::kRegionBExp>(x);
         const double invx = StepReciprocal<Policy::kDivision>(x);
 
         for (int l = 1; l <= nmax; ++l)

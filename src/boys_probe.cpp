@@ -596,6 +596,10 @@ struct Option {
     /// narrowed at run time.
     DivisionForm division = kDefaultDivisionForm;
 
+    /// The exponential the option's region-B ladders are seeded with: the seventh
+    /// axis of the policy, carried as a value for the same reason the form is.
+    RegionBExp regionBExp = kDefaultHostRegionBExp;
+
     /// The question this option answers, and the second part of the class it is
     /// ranked in: the shape ShapeOf gives its kind.
     OptionProbeShape shape = OptionProbeShape::kAllOrders;
@@ -946,6 +950,11 @@ double LaneCellBound(OptionPrecision precision,
 /// reciprocal's row for the default's, which is exactly the confusion the two
 /// forms' arithmetic differs by.
 ///
+/// The region-B exponential is named on the same reading and for the same reason:
+/// the member left unmarked is the host default, which is the member the entries
+/// the shape rows call really seed with, and the other member is named so that a
+/// cell of one combination cannot print the other's name.
+///
 /// The precision in the closing segment is the class the row is ranked in, not
 /// the lane its cells were enumerated from: the two half formats are one lane and
 /// two classes, so the same cell of that lane is named once for each format it is
@@ -955,7 +964,8 @@ std::string CellName(OptionPrecision precision,
                      PackAxis pack,
                      FitRoute route,
                      EvalScheme scheme,
-                     DivisionForm division) {
+                     DivisionForm division,
+                     RegionBExp regionBExp) {
     std::string name = "batch";
 
     if (granularity == FitGranularity::kUniform)
@@ -988,6 +998,14 @@ std::string CellName(OptionPrecision precision,
         // way of writing it here.
         name += "-";
         name += DivisionFormName(division);
+    }
+
+    if (regionBExp != kDefaultHostRegionBExp)
+    {
+        // The library's own spelling of the member, on the same reading as the
+        // form's segment above.
+        name += "-";
+        name += RegionBExpName(regionBExp);
     }
 
     return name + "-" + PrecisionName(precision);
@@ -1134,7 +1152,8 @@ std::vector<std::string> DistinctRouteNames(std::span<const FitRouteInfo> routes
 ///
 /// The space is the product the library reports **for that precision**: the
 /// routes of the lane's own fit table, the evaluation schemes, the partitions of
-/// the fitted regions, the packing axes and the division forms. It is walked
+/// the fitted regions, the packing axes, the division forms and the region-B
+/// exponentials. It is walked
 /// rather than listed, so a member a later change adds is enumerated and a cell
 /// the library refuses is counted as the
 /// unbuilt work it is instead of being absent from the report.
@@ -1177,52 +1196,60 @@ std::vector<OptionProbeCell> EnumerateCells(OptionPrecision precision) {
                 {
                     for (const DivisionFormInfo& form : BoysDivisionForms())
                     {
-                        OptionProbeCell cell;
-                        // The form is part of the test and not only of the
-                        // name: the shape row's name is the one this grammar
-                        // gives the *default* form's cell, and the entry that
-                        // row measures runs the default form. A cell of the
-                        // same combination at another form is its own cell
-                        // and keeps its own name - two cells printing one
-                        // name is the collision the segment exists to stop.
-                        const bool shapesRow =
-                            partition.granularity == FitGranularity::kCoarsest &&
-                            axis.axis == PackAxis::kArguments &&
-                            route.route == FitRoute::kChebyshev &&
-                            scheme.scheme == EvalScheme::kSplitClenshaw &&
-                            form.form == kDefaultDivisionForm;
-                        cell.name = shapesRow ? LaneShapeName(precision)
-                                              : CellName(precision,
-                                                         partition.granularity,
-                                                         axis.axis,
-                                                         route.route,
-                                                         scheme.scheme,
-                                                         form.form);
-                        cell.precision = precision;
-                        cell.lane = lane;
-                        cell.route = route.route;
-                        cell.scheme = scheme.scheme;
-                        cell.granularity = partition.granularity;
-                        cell.pack = axis.axis;
-                        cell.division = form.form;
-
-                        // The form is not asked about: it is how a step
-                        // divides, not which entry runs, so the library's
-                        // carriage answer is the same for every member of
-                        // the axis and the cell is served or refused on its
-                        // other five.
-                        const AccuracyFigure carriage =
-                            BoysAccuracyGuaranteed(lane, cell.route, cell.scheme, cell.pack,
-                                                   cell.granularity);
-
-                        cell.served = carriage.available;
-
-                        if (!carriage.available)
+                        for (const RegionBExpInfo& exp : BoysRegionBExps())
                         {
-                            cell.reason = carriage.reason;
-                        }
+                            OptionProbeCell cell;
+                            // The form and the exponential are part of the test
+                            // and not only of the name: the shape row's name is
+                            // the one this grammar gives the *default* members'
+                            // cell, and the entry that row measures runs those
+                            // members. A cell of the same combination at another
+                            // member is its own cell and keeps its own name - two
+                            // cells printing one name is the collision the
+                            // segments exist to stop.
+                            const bool shapesRow =
+                                partition.granularity == FitGranularity::kCoarsest &&
+                                axis.axis == PackAxis::kArguments &&
+                                route.route == FitRoute::kChebyshev &&
+                                scheme.scheme == EvalScheme::kSplitClenshaw &&
+                                form.form == kDefaultDivisionForm &&
+                                exp.exp == kDefaultHostRegionBExp;
+                            cell.name = shapesRow ? LaneShapeName(precision)
+                                                  : CellName(precision,
+                                                             partition.granularity,
+                                                             axis.axis,
+                                                             route.route,
+                                                             scheme.scheme,
+                                                             form.form,
+                                                             exp.exp);
+                            cell.precision = precision;
+                            cell.lane = lane;
+                            cell.route = route.route;
+                            cell.scheme = scheme.scheme;
+                            cell.granularity = partition.granularity;
+                            cell.pack = axis.axis;
+                            cell.division = form.form;
+                            cell.regionBExp = exp.exp;
 
-                        cells.push_back(cell);
+                            // Neither the form nor the exponential is asked
+                            // about: they are how a step divides and how a seed
+                            // is evaluated, not which entry runs, so the
+                            // library's carriage answer is the same for every
+                            // member of either axis and the cell is served or
+                            // refused on its other five.
+                            const AccuracyFigure carriage =
+                                BoysAccuracyGuaranteed(lane, cell.route, cell.scheme, cell.pack,
+                                                       cell.granularity);
+
+                            cell.served = carriage.available;
+
+                            if (!carriage.available)
+                            {
+                                cell.reason = carriage.reason;
+                            }
+
+                            cells.push_back(cell);
+                        }
                     }
                 }
             }
@@ -1247,6 +1274,14 @@ std::vector<OptionProbeCell> EnumerateCells(OptionPrecision precision) {
 /// row that recorded another member would be claiming an arithmetic no entry it
 /// calls runs. Every other member of the axis is reached through the cell loop
 /// below, which is where a cell's own form becomes an instantiation.
+///
+/// The region-B exponential of those rows is derived the same way and for the
+/// same reason, from the default policy of the precision the row runs rather
+/// than from a constant: the row's entry takes no policy, so the member it
+/// seeds its region-B ladders with is the default policy's, and the row records
+/// what its own implementation does. It is written per precision because the
+/// default policy is per precision - the half lanes run the float engine, so
+/// their rows carry the float policy's member.
 ///
 /// The entries whose call shape is not one of the axes are named here,
 /// because a shape is a function and no table of them exists to read: the
@@ -1279,6 +1314,7 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
                             FitGranularity granularity,
                             PackAxis pack,
                             DivisionForm division,
+                            RegionBExp regionBExp,
                             const backend::BackendInfo* arithmetic,
                             double bound) {
         if (arithmetic == nullptr)
@@ -1298,6 +1334,7 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
         option.granularity = granularity;
         option.pack = pack;
         option.division = division;
+        option.regionBExp = regionBExp;
         option.shape = ShapeOf(kind);
         option.bound = bound;
         options.push_back(std::move(option));
@@ -1317,6 +1354,7 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
            FitGranularity::kCoarsest,
            PackAxis::kArguments,
            kDefaultDivisionForm,
+           DefaultPolicyFp64::kRegionBExp,
            fp64,
            fp64Bound);
     append("grouped-fp64",
@@ -1327,6 +1365,7 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
            FitGranularity::kCoarsest,
            PackAxis::kArguments,
            kDefaultDivisionForm,
+           DefaultPolicyFp64::kRegionBExp,
            fp64,
            fp64Bound);
     append("tagged-fp64",
@@ -1337,6 +1376,7 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
            FitGranularity::kCoarsest,
            PackAxis::kArguments,
            kDefaultDivisionForm,
+           DefaultPolicyFp64::kRegionBExp,
            fp64,
            fp64Bound);
     append(LaneShapeName(OptionPrecision::kFp32),
@@ -1347,6 +1387,7 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
            FitGranularity::kCoarsest,
            PackAxis::kArguments,
            kDefaultDivisionForm,
+           DefaultPolicyFp32::kRegionBExp,
            fp32,
            DefaultPolicyBound(OptionPrecision::kFp32));
 
@@ -1360,6 +1401,7 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
            FitGranularity::kCoarsest,
            PackAxis::kArguments,
            kDefaultDivisionForm,
+           DefaultPolicyFp32::kRegionBExp,
            fp32,
            DefaultPolicyBound(OptionPrecision::kFp16));
     append(LaneShapeName(OptionPrecision::kBf16),
@@ -1370,6 +1412,7 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
            FitGranularity::kCoarsest,
            PackAxis::kArguments,
            kDefaultDivisionForm,
+           DefaultPolicyFp32::kRegionBExp,
            fp32,
            DefaultPolicyBound(OptionPrecision::kBf16));
 
@@ -1399,16 +1442,17 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
             continue;
         }
 
-        // The form is part of the test for the same reason it is part of the
-        // shape row's: the row this skips is the one the named rows above carry
-        // at the default form, and it carries it at one form only. Skipping the
-        // cell without asking about the form would drop the plain and exact
-        // members of that combination out of the book entirely - a cell of the
-        // product with no row and no reason, which is the omission the coverage
-        // exists to prevent.
+        // The form and the exponential are part of the test for the same reason
+        // they are part of the shape row's: the row this skips is the one the
+        // named rows above carry at the default members, and it carries it at one
+        // member of each axis only. Skipping the cell without asking about them
+        // would drop the plain and exact members of that combination, and the
+        // other member of the exponential axis at every one of the three forms,
+        // out of the book entirely - a cell of the product with no row and no
+        // reason, which is the omission the coverage exists to prevent.
         if (cell.granularity == FitGranularity::kCoarsest && cell.pack == PackAxis::kArguments &&
             cell.route == FitRoute::kChebyshev && cell.scheme == EvalScheme::kSplitClenshaw &&
-            cell.division == kDefaultDivisionForm)
+            cell.division == kDefaultDivisionForm && cell.regionBExp == kDefaultHostRegionBExp)
         {
             continue;
         }
@@ -1423,6 +1467,7 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
                    cell.granularity,
                    cell.pack,
                    cell.division,
+                   cell.regionBExp,
                    fp64,
                    0.0);
             continue;
@@ -1436,6 +1481,7 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
                cell.granularity,
                cell.pack,
                cell.division,
+               cell.regionBExp,
                fp32,
                LaneCellBound(cell.precision, cell.route, cell.scheme, cell.pack, cell.granularity,
                              cell.division));
@@ -1481,8 +1527,9 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
 /// packing axis and division form select it.
 ///
 /// A cell that is not the default policy's own shape exists only as an
-/// instantiation: the partition, the packing axis and the division form are
-/// template arguments of the policy and have no run-time entry, so a consumer
+/// instantiation: the partition, the packing axis, the division form and the
+/// region-B exponential are template arguments of the policy and have no
+/// run-time entry, so a consumer
 /// reaches them the way this does, by naming them. Every entry is built at the
 /// library's full-accuracy multiplier, which is the one accuracy this revision
 /// carries, and the dispatch is the same cross the library's own accuracy
@@ -1490,14 +1537,16 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
 /// this build really runs.
 ///
 /// \tparam kDivision the form the cell's recurrence steps divide in
+/// \tparam kExp      the exponential the cell's region-B seed is evaluated with
 template <FitRoute kRoute,
           EvalScheme kScheme,
           PackAxis kPack,
           FitGranularity kGran,
-          DivisionForm kDivision>
+          DivisionForm kDivision,
+          RegionBExp kExp>
 void CellEntry(int nmax, double x, double* out) noexcept {
     constexpr BoysBudget kBudget = BoysBudget::kFloat;
-    using Policy = EvalPolicy<kRoute, kScheme, kBudget, kPack, kGran, kDivision>;
+    using Policy = EvalPolicy<kRoute, kScheme, kBudget, kPack, kGran, kDivision, kExp>;
 
     BoysAllOrders<Policy>(nmax, x, out);
 }
@@ -1525,7 +1574,8 @@ void CellEntry(int nmax, double x, double* out) noexcept {
 /// partitions' own lattice did with this value before it was given an arm.
 ///
 /// \tparam kDivision the form the cell's recurrence steps divide in
-template <DivisionForm kDivision>
+/// \tparam kExp      the exponential the cell's region-B seed is evaluated with
+template <DivisionForm kDivision, RegionBExp kExp>
 void CellUniform(FitRoute route,
                  EvalScheme scheme,
                  PackAxis pack,
@@ -1550,7 +1600,7 @@ void CellUniform(FitRoute route,
     // The policy is \c CellEntry's and not a second dispatch written here, so both
     // members of this partition are built by the one reading of the multiplier.
     const auto with_axis = [&]<FitRoute kRoute, EvalScheme kScheme, PackAxis kPack>() {
-        CellEntry<kRoute, kScheme, kPack, FitGranularity::kUniform, kDivision>(nmax, x, out);
+        CellEntry<kRoute, kScheme, kPack, FitGranularity::kUniform, kDivision, kExp>(nmax, x, out);
     };
 
     const auto with_pack = [&]<FitRoute kRoute, EvalScheme kScheme>() {
@@ -1597,7 +1647,8 @@ void CellUniform(FitRoute route,
 /// \c CellUniform carries both.
 ///
 /// \tparam kDivision the form this call's cells divide in
-template <DivisionForm kDivision>
+/// \tparam kExp      the exponential this call's cells seed their region-B ladders with
+template <DivisionForm kDivision, RegionBExp kExp>
 void CellFormPolicy(FitRoute route,
                     EvalScheme scheme,
                     PackAxis pack,
@@ -1607,7 +1658,7 @@ void CellFormPolicy(FitRoute route,
                     double* out) noexcept {
     if (granularity == FitGranularity::kUniform)
     {
-        CellUniform<kDivision>(route, scheme, pack, nmax, x, out);
+        CellUniform<kDivision, kExp>(route, scheme, pack, nmax, x, out);
 
         return;
     }
@@ -1615,10 +1666,12 @@ void CellFormPolicy(FitRoute route,
     const auto with_partition = [&]<FitRoute kRoute, EvalScheme kScheme, PackAxis kPack>() {
         if (granularity == FitGranularity::kNarrow)
         {
-            CellEntry<kRoute, kScheme, kPack, FitGranularity::kNarrow, kDivision>(nmax, x, out);
+            CellEntry<kRoute, kScheme, kPack, FitGranularity::kNarrow, kDivision, kExp>(nmax, x,
+                                                                                         out);
         } else
         {
-            CellEntry<kRoute, kScheme, kPack, FitGranularity::kCoarsest, kDivision>(nmax, x, out);
+            CellEntry<kRoute, kScheme, kPack, FitGranularity::kCoarsest, kDivision, kExp>(nmax, x,
+                                                                                          out);
         }
     };
 
@@ -1651,11 +1704,11 @@ void CellFormPolicy(FitRoute route,
     }
 }
 
-/// The same, for a cell named at run time, with the division form dispatched
-/// here: the form is a template argument of the policy like the partition and the
-/// packing axis, so a cell that runs one of the non-default forms needs an
-/// instantiation of its own to run, and the three cases below are that
-/// instantiation each.
+/// The same, at one region-B exponential named as a compile-time value and the
+/// division form dispatched at run time inside it: the form is a template argument
+/// of the policy like the partition and the packing axis, so a cell that runs one
+/// of the non-default forms needs an instantiation of its own to run, and the three
+/// cases below are that instantiation each, at the member this call names.
 ///
 /// The switch names its three enumerators and leaves no default label: a fourth
 /// member of the axis is a decision to make here rather than arithmetic to pick
@@ -1664,27 +1717,64 @@ void CellFormPolicy(FitRoute route,
 ///
 /// The form is a value of the cell and never a filter: every one of the three is
 /// served on every combination of the other axes, so no case here refuses.
+///
+/// \tparam kExp the exponential this call's cells seed their region-B ladders with
+template <RegionBExp kExp>
+void CellExpPolicy(FitRoute route,
+                   EvalScheme scheme,
+                   PackAxis pack,
+                   FitGranularity granularity,
+                   DivisionForm division,
+                   int nmax,
+                   double x,
+                   double* out) noexcept {
+    switch (division)
+    {
+    case DivisionForm::kExactDivision:
+        CellFormPolicy<DivisionForm::kExactDivision, kExp>(route, scheme, pack, granularity, nmax,
+                                                           x, out);
+        return;
+    case DivisionForm::kPlainReciprocal:
+        CellFormPolicy<DivisionForm::kPlainReciprocal, kExp>(route, scheme, pack, granularity,
+                                                             nmax, x, out);
+        return;
+    case DivisionForm::kRefinedReciprocal:
+        CellFormPolicy<DivisionForm::kRefinedReciprocal, kExp>(route, scheme, pack, granularity,
+                                                               nmax, x, out);
+        return;
+    }
+}
+
+/// The same, for a cell named at run time, with the region-B exponential
+/// dispatched here: the member is a template argument of the policy like the
+/// division form and the partition, so a cell that runs the non-default member
+/// needs an instantiation of its own to run, and the two cases below are that
+/// instantiation each.
+///
+/// The switch names its two enumerators and leaves no default label, on the same
+/// reading as the form's: a third member of this axis is a decision to make here
+/// rather than arithmetic to pick silently, and the build says so at this line
+/// instead of a cell quietly seeding its ladder with the other member.
+///
+/// The member is a value of the cell and never a filter: both are served on every
+/// combination of the other axes, so no case here refuses.
 void CellPolicy(FitRoute route,
                 EvalScheme scheme,
                 PackAxis pack,
                 FitGranularity granularity,
                 DivisionForm division,
+                RegionBExp regionBExp,
                 int nmax,
                 double x,
                 double* out) noexcept {
-    switch (division)
+    switch (regionBExp)
     {
-    case DivisionForm::kExactDivision:
-        CellFormPolicy<DivisionForm::kExactDivision>(route, scheme, pack, granularity, nmax, x,
-                                                     out);
+    case RegionBExp::kAccurate:
+        CellExpPolicy<RegionBExp::kAccurate>(route, scheme, pack, granularity, division, nmax, x,
+                                             out);
         return;
-    case DivisionForm::kPlainReciprocal:
-        CellFormPolicy<DivisionForm::kPlainReciprocal>(route, scheme, pack, granularity, nmax, x,
-                                                       out);
-        return;
-    case DivisionForm::kRefinedReciprocal:
-        CellFormPolicy<DivisionForm::kRefinedReciprocal>(route, scheme, pack, granularity, nmax, x,
-                                                         out);
+    case RegionBExp::kFast:
+        CellExpPolicy<RegionBExp::kFast>(route, scheme, pack, granularity, division, nmax, x, out);
         return;
     }
 }
@@ -1711,14 +1801,17 @@ constexpr BoysBudget BudgetOf(OptionPrecision precision) noexcept {
 /// too.
 ///
 /// \tparam kDivision the form the cell's recurrence steps divide in
+/// \tparam kExp      the member of the region-B exponential axis the cell's
+///                   ladders seed with
 template <BoysBudget kBudget,
           FitRoute kRoute,
           EvalScheme kScheme,
           PackAxis kPack,
           FitGranularity kGran,
-          DivisionForm kDivision>
+          DivisionForm kDivision,
+          RegionBExp kExp>
 void CellEntrySingle(int nmax, float x, float* out) noexcept {
-    using Policy = EvalPolicy<kRoute, kScheme, kBudget, kPack, kGran, kDivision>;
+    using Policy = EvalPolicy<kRoute, kScheme, kBudget, kPack, kGran, kDivision, kExp>;
 
     BoysAllOrdersF32<Policy>(nmax, x, out);
 }
@@ -1743,7 +1836,9 @@ void CellEntrySingle(int nmax, float x, float* out) noexcept {
 /// through the other's.
 ///
 /// \tparam kDivision the form the cell's recurrence steps divide in
-template <DivisionForm kDivision>
+/// \tparam kExp      the member of the region-B exponential axis the cell's
+///                   ladders seed with
+template <DivisionForm kDivision, RegionBExp kExp>
 void CellUniformSingle(BoysBudget budget,
                        FitRoute route,
                        EvalScheme scheme,
@@ -1760,7 +1855,7 @@ void CellUniformSingle(BoysBudget budget,
     const auto with_budget = [&]<FitRoute kRoute, BoysBudget kBudget>() {
         const auto with_pack = [&]<PackAxis kPack, EvalScheme kScheme>() {
             using Policy = EvalPolicy<kRoute, kScheme, kBudget, kPack,
-                                      FitGranularity::kUniform, kDivision>;
+                                      FitGranularity::kUniform, kDivision, kExp>;
 
             BoysAllOrdersF32<Policy>(nmax, x, out);
         };
@@ -1814,7 +1909,9 @@ void CellUniformSingle(BoysBudget budget,
 /// route and the axes this lane holds it on are read.
 ///
 /// \tparam kDivision the form this call's cells divide in
-template <DivisionForm kDivision>
+/// \tparam kExp      the member of the region-B exponential axis this call's
+///                   cells seed their ladders with
+template <DivisionForm kDivision, RegionBExp kExp>
 void CellFormPolicySingle(BoysBudget budget,
                           FitRoute route,
                           EvalScheme scheme,
@@ -1825,7 +1922,7 @@ void CellFormPolicySingle(BoysBudget budget,
                           float* out) noexcept {
     if (granularity == FitGranularity::kUniform)
     {
-        CellUniformSingle<kDivision>(budget, route, scheme, pack, nmax, x, out);
+        CellUniformSingle<kDivision, kExp>(budget, route, scheme, pack, nmax, x, out);
 
         return;
     }
@@ -1836,12 +1933,12 @@ void CellFormPolicySingle(BoysBudget budget,
                                     PackAxis kPack>() {
         if (granularity == FitGranularity::kNarrow)
         {
-            CellEntrySingle<kBudget, kRoute, kScheme, kPack, FitGranularity::kNarrow, kDivision>(
-                nmax, x, out);
+            CellEntrySingle<kBudget, kRoute, kScheme, kPack, FitGranularity::kNarrow, kDivision,
+                            kExp>(nmax, x, out);
         } else
         {
-            CellEntrySingle<kBudget, kRoute, kScheme, kPack, FitGranularity::kCoarsest, kDivision>(
-                nmax, x, out);
+            CellEntrySingle<kBudget, kRoute, kScheme, kPack, FitGranularity::kCoarsest, kDivision,
+                            kExp>(nmax, x, out);
         }
     };
 
@@ -1884,32 +1981,65 @@ void CellFormPolicySingle(BoysBudget budget,
     }
 }
 
-/// The same, for a cell named at run time, with the division form dispatched
-/// here for the same reason and in the same shape as the double lane's
-/// \c CellPolicy: the form is a template argument of the engine's entries, so
-/// each of the three cases below is the instantiation a cell of that form runs.
+/// The same, at one region-B exponential named as a compile-time value and the
+/// division form dispatched at run time inside it, for the same reason and in the
+/// same shape as the double lane's \c CellExpPolicy: the form is a template
+/// argument of the engine's entries, so each of the three cases below is the
+/// instantiation a cell of that form runs, at the member this call names.
+///
+/// \tparam kExp the member of the region-B exponential axis this call's cells
+///              seed their ladders with
+template <RegionBExp kExp>
+void CellExpPolicySingle(BoysBudget budget,
+                         FitRoute route,
+                         EvalScheme scheme,
+                         PackAxis pack,
+                         FitGranularity granularity,
+                         DivisionForm division,
+                         int nmax,
+                         float x,
+                         float* out) noexcept {
+    switch (division)
+    {
+    case DivisionForm::kExactDivision:
+        CellFormPolicySingle<DivisionForm::kExactDivision, kExp>(budget, route, scheme, pack,
+                                                                 granularity, nmax, x, out);
+        return;
+    case DivisionForm::kPlainReciprocal:
+        CellFormPolicySingle<DivisionForm::kPlainReciprocal, kExp>(budget, route, scheme, pack,
+                                                                   granularity, nmax, x, out);
+        return;
+    case DivisionForm::kRefinedReciprocal:
+        CellFormPolicySingle<DivisionForm::kRefinedReciprocal, kExp>(budget, route, scheme, pack,
+                                                                     granularity, nmax, x, out);
+        return;
+    }
+}
+
+/// The same, for a cell named at run time, with the region-B exponential
+/// dispatched here: both members are served on this lane as on the double lane's,
+/// so the switch below names the two enumerators and leaves no default label, and
+/// a cell that runs the non-default member runs its own instantiation rather than
+/// being answered by the other member's.
 void CellPolicySingle(BoysBudget budget,
                       FitRoute route,
                       EvalScheme scheme,
                       PackAxis pack,
                       FitGranularity granularity,
                       DivisionForm division,
+                      RegionBExp regionBExp,
                       int nmax,
                       float x,
                       float* out) noexcept {
-    switch (division)
+    switch (regionBExp)
     {
-    case DivisionForm::kExactDivision:
-        CellFormPolicySingle<DivisionForm::kExactDivision>(budget, route, scheme, pack, granularity,
-                                                           nmax, x, out);
+    case RegionBExp::kAccurate:
+        CellExpPolicySingle<RegionBExp::kAccurate>(budget, route, scheme, pack, granularity,
+                                                   division, nmax, x, out);
         return;
-    case DivisionForm::kPlainReciprocal:
-        CellFormPolicySingle<DivisionForm::kPlainReciprocal>(budget, route, scheme, pack,
-                                                             granularity, nmax, x, out);
-        return;
-    case DivisionForm::kRefinedReciprocal:
-        CellFormPolicySingle<DivisionForm::kRefinedReciprocal>(budget, route, scheme, pack,
-                                                               granularity, nmax, x, out);
+    case RegionBExp::kFast:
+        CellExpPolicySingle<RegionBExp::kFast>(budget, route, scheme, pack, granularity, division,
+                                               nmax, x, out);
         return;
     }
 }
@@ -1928,6 +2058,7 @@ void CellValuesSingle(const Option& option, int nmax, float x, float* out) noexc
                      option.pack,
                      option.granularity,
                      option.division,
+                     option.regionBExp,
                      nmax,
                      x,
                      out);
@@ -1942,14 +2073,16 @@ void CellValuesSingle(const Option& option, int nmax, float x, float* out) noexc
 /// selector options' cost already does.
 ///
 /// The run-time entry is the default policy's and therefore divides in the
-/// default form, whatever it is handed: it takes no form argument, so a cell at
-/// one of the other two forms would be measured through arithmetic it did not
-/// name. The form is part of the shortcut's own condition for that reason, and a
-/// cell of the default policy's shape at either other form takes its own
+/// default form and seeds its region-B ladders with the default exponential,
+/// whatever it is handed: it takes neither as an argument, so a cell at one of the
+/// other two forms or at the other member of the exponential axis would be
+/// measured through arithmetic it did not name. The form and the member are both
+/// part of the shortcut's own condition for that reason, and a cell of the default
+/// policy's shape at either other form, or at the other member, takes its own
 /// instantiation below like any other cell.
 void CellValues(const Option& option, int nmax, double x, double* out) noexcept {
     if (option.granularity == kDefaultFitGranularity && option.pack == PackAxis::kArguments &&
-        option.division == kDefaultDivisionForm)
+        option.division == kDefaultDivisionForm && option.regionBExp == kDefaultHostRegionBExp)
     {
         BoysAllOrdersWithRoute(option.route, option.scheme, nmax, x, out);
         return;
@@ -1960,6 +2093,7 @@ void CellValues(const Option& option, int nmax, double x, double* out) noexcept 
                option.pack,
                option.granularity,
                option.division,
+               option.regionBExp,
                nmax,
                x,
                out);
@@ -3859,6 +3993,7 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
         measurement.granularity = options_[index].granularity;
         measurement.pack = options_[index].pack;
         measurement.division = options_[index].division;
+        measurement.regionBExp = options_[index].regionBExp;
         measurement.bound = options_[index].bound;
         measurement.ownBound = options_[index].ownBound;
         measurement.ownLo = options_[index].ownLo;
@@ -4166,7 +4301,8 @@ std::size_t LaneRouteCount(Precision lane) {
 /// and the three are one total or the closure fails.
 std::size_t CellsPerClass(OptionPrecision precision) {
     return LaneRouteCount(LaneOf(precision)) * BoysEvalSchemes().size() *
-           BoysFitGranularities().size() * BoysPackAxes().size() * BoysDivisionForms().size();
+           BoysFitGranularities().size() * BoysPackAxes().size() * BoysDivisionForms().size() *
+           BoysRegionBExps().size();
 }
 
 /// The cells the library's own axes admit for one class.
@@ -4250,8 +4386,8 @@ void AppendOptionClosure(std::string& text,
     text += "  carries — the precision classes this machine measures and the device lane's "
             "book\n  beside them, which this host cannot run. One class's cells are the product "
             "of its own\n  lane's axes, every factor read from the library:\n";
-    text += Text("    %-11s %8s %8s %11s %13s %15s %7s\n", "class", "routes", "schemes",
-                 "partitions", "packing axes", "division forms", "cells");
+    text += Text("    %-11s %8s %8s %11s %13s %15s %13s %7s\n", "class", "routes", "schemes",
+                 "partitions", "packing axes", "division forms", "exponentials", "cells");
 
     std::string product;
 
@@ -4259,9 +4395,10 @@ void AppendOptionClosure(std::string& text,
     {
         const std::size_t admitted = AdmittedCells(precision);
 
-        text += Text("    %-11s %8zu %8zu %11zu %13zu %15zu %7zu\n", PrecisionName(precision),
-                     LaneRouteCount(LaneOf(precision)), BoysEvalSchemes().size(),
-                     BoysFitGranularities().size(), BoysPackAxes().size(), BoysDivisionForms().size(),
+        text += Text("    %-11s %8zu %8zu %11zu %13zu %15zu %13zu %7zu\n",
+                     PrecisionName(precision), LaneRouteCount(LaneOf(precision)),
+                     BoysEvalSchemes().size(), BoysFitGranularities().size(),
+                     BoysPackAxes().size(), BoysDivisionForms().size(), BoysRegionBExps().size(),
                      admitted);
 
         if (!product.empty())
@@ -4599,6 +4736,10 @@ constexpr const char* PrecisionToken(Precision lane) noexcept {
         return "kFp16";
     case Precision::kFp32Device:
         return "kFp32Device";
+    case Precision::kFp64Device:
+        return "kFp64Device";
+    case Precision::kFp16Device:
+        return "kFp16Device";
     }
 
     return "(a lane this probe names no cell for)";
@@ -4679,6 +4820,10 @@ constexpr const char* LaneSpelling(Precision lane) noexcept {
         return "fp16";
     case Precision::kFp32Device:
         return "fp32-device";
+    case Precision::kFp64Device:
+        return "fp64-device";
+    case Precision::kFp16Device:
+        return "fp16-device";
     }
 
     return "unknown";
@@ -4739,6 +4884,10 @@ struct EmittedSeamRow {
     std::string cells; ///< the X(...) call, wrapped where the seam wraps it
     std::string marker; ///< the comment above it: a measurement, or a choice and why
     bool measured = false; ///< whether the row is this run's own winning combination
+
+    /// Whether this class's own winner seeds its region-B ladders with a member the seam's row
+    /// format cannot name, so the row written is not the class's winner.
+    bool winnerUnnamable = false;
 };
 
 /// The row this run measured for one class of the seam's table, with what it was reached by.
@@ -4746,7 +4895,34 @@ struct SeamWinner {
     const OptionProbeMeasurement* row = nullptr;
     OptionProbeDefaultHow how = OptionProbeDefaultHow::kNone;
     bool formatsDisagree = false; ///< the two half classes were both ranked and differed
+
+    /// The fastest row of the same class that seeds its region-B ladders with the member the
+    /// seam's row format names, where that is not the winner itself.
+    ///
+    /// The seam's row format carries six cells and the region-B exponential is not one of
+    /// them, so a row written from it denotes the member the library's default names, and a
+    /// winner at the other member cannot be written without the file claiming arithmetic this
+    /// run did not measure. That row is therefore not written: the row written is the fastest
+    /// combination of the class the format can name, which is a cell this run did measure.
+    const OptionProbeMeasurement* namable = nullptr;
+
+    /// Whether the class's own winner is at a member the row format cannot name, and the row
+    /// written is \c namable rather than the winner.
+    bool winnerUnnamable = false;
 };
+
+/// The row one name belongs to in this run's own table, or nothing where no row carries it.
+const OptionProbeMeasurement* RowNamed(const OptionProbeReport& report, const std::string& name) {
+    for (const OptionProbeMeasurement& row : report.measurements)
+    {
+        if (row.name == name)
+        {
+            return &row;
+        }
+    }
+
+    return nullptr;
+}
 
 /// The winner of one seam class's class, or nothing where this run ranked no cell of it.
 /// The two half classes are both asked, and a disagreement between them is reported rather
@@ -4771,25 +4947,35 @@ SeamWinner WinnerOf(const OptionProbeReport& report,
                 continue;
             }
 
-            const OptionProbeMeasurement* row = nullptr;
-
-            for (const OptionProbeMeasurement& measured : report.measurements)
-            {
-                if (measured.name == clause.leader)
-                {
-                    row = &measured;
-                }
-            }
+            const OptionProbeMeasurement* row = RowNamed(report, clause.leader);
 
             if (row == nullptr)
             {
                 continue;
             }
 
+            // The class's own ranking is the order the namable member is read in: the first
+            // row of it the row format can name is the fastest combination of this class the
+            // file it writes can state, and it is a cell this run measured like any other.
+            const OptionProbeMeasurement* namable = nullptr;
+
+            for (const std::string& name : clause.ranked)
+            {
+                const OptionProbeMeasurement* member = RowNamed(report, name);
+
+                if (member != nullptr && member->regionBExp == kDefaultHostRegionBExp)
+                {
+                    namable = member;
+                    break;
+                }
+            }
+
             if (winner.row == nullptr)
             {
                 winner.row = row;
                 winner.how = clause.how;
+                winner.namable = namable;
+                winner.winnerUnnamable = row->regionBExp != kDefaultHostRegionBExp;
                 continue;
             }
 
@@ -4898,25 +5084,71 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
 
         const SeamWinner winner = WinnerOf(report, klass.precision, klass.shape);
 
-        if (winner.row != nullptr)
+        // The row this file can state: the class's own winner where the row format can name
+        // the member it seeds its region-B ladders with, and otherwise the fastest combination
+        // of the class that is at the member the format does name. A winner the format cannot
+        // name is never written as if it were that row.
+        const OptionProbeMeasurement* written =
+            winner.row == nullptr ? nullptr : (winner.winnerUnnamable ? winner.namable : winner.row);
+
+        if (written != nullptr)
         {
             // A class reached by one entry standing alone is a choice and not a comparison:
             // the seam's own header asks for the marker the two carry to differ.
             const bool walkover = winner.how == OptionProbeDefaultHow::kOnlyEntry;
 
             row.measured = !walkover;
-            row.marker =
-                walkover
-                    ? "    /* a choice, not a measurement: one entry of this class was measured\n"
-                      "       and it is the last one standing, so this row is an answer and not the\n"
-                      "       winner of a comparison */\\\n"
-                    : Text("    /* measured: m = 1, the %s class, %.2f ns per\n"
-                           "       argument on this host; the entry was reached by %s */\\\n",
-                           ShapeSpelling(shape), winner.row->nsPerArgument,
-                           OptionProbeDefaultHowName(winner.how).c_str());
-            row.cells = SeamRowCall(klass.precision, klass.shape, lane, winner.row->route,
-                                    winner.row->scheme, winner.row->pack, winner.row->granularity,
-                                    winner.row->division);
+            row.winnerUnnamable = winner.winnerUnnamable;
+
+            if (winner.winnerUnnamable)
+            {
+                row.marker =
+                    Text("    /* measured: m = 1, the %s class, %.2f ns per\n"
+                         "       argument on this host; the class's own winner seeds its region-B "
+                         "ladders with\n"
+                         "       the accurate exponential, which this file's row format carries no "
+                         "cell for, so\n"
+                         "       the row below is the fastest combination of the class that is at "
+                         "the member the\n"
+                         "       format does name */\\\n",
+                         ShapeSpelling(shape), written->nsPerArgument);
+            }
+            else if (walkover)
+            {
+                row.marker = "    /* a choice, not a measurement: one entry of this class was "
+                             "measured\n"
+                             "       and it is the last one standing, so this row is an answer and "
+                             "not the\n"
+                             "       winner of a comparison */\\\n";
+            }
+            else
+            {
+                row.marker = Text("    /* measured: m = 1, the %s class, %.2f ns per\n"
+                                  "       argument on this host; the entry was reached by %s */\\\n",
+                                  ShapeSpelling(shape), written->nsPerArgument,
+                                  OptionProbeDefaultHowName(winner.how).c_str());
+            }
+
+            row.cells = SeamRowCall(klass.precision, klass.shape, lane, written->route,
+                                    written->scheme, written->pack, written->granularity,
+                                    written->division);
+            rows.push_back(std::move(row));
+            continue;
+        }
+
+        if (winner.winnerUnnamable)
+        {
+            // A class this run ranked whose every row seeds its region-B ladders with a member
+            // the row format has no cell for: the fallback is stated, and the reason is this
+            // axis rather than a class nothing was measured of.
+            row.winnerUnnamable = true;
+            row.marker = "    /* the five above: every row this run measured of this class seeds "
+                         "its region-B\n"
+                         "       ladders with the accurate exponential, which this file's row "
+                         "format carries no\n"
+                         "       cell for */\\\n";
+            row.cells = SeamRowCall(klass.precision, klass.shape, lane, five.route, five.scheme,
+                                    five.pack, five.granularity, five.division);
             rows.push_back(std::move(row));
             continue;
         }
@@ -4932,8 +5164,9 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
 }
 
 /// The seam this run would write, as the report's own account of it: the classes it emits
-/// from this run's rankings, the classes it carries at the file's five because the run
-/// ranked no cell of them, and any disagreement between the two half formats.
+/// from this run's rankings, the classes whose winner it could not state and what it wrote
+/// instead, the classes it carries at the file's five because the run ranked no cell of
+/// them, and any disagreement between the two half formats.
 ///
 /// The block exists because the file is the point and the account is what makes it
 /// checkable: a reader sees which rows a run measured before pointing a build at it, and a
@@ -4960,15 +5193,45 @@ void AppendDefaultsBlock(std::string& text, const OptionProbeReport& report) {
         return;
     }
 
-    text += Text("  %zu of %zu class(es) carry a measured row — the class's own winner, one row\n"
-                 "  per class:\n",
-                 measured, rows.size());
+    text += Text("  %zu of %zu class(es) carry a measured row, one row per class:\n", measured,
+                 rows.size());
 
     for (const EmittedSeamRow& row : rows)
     {
         if (row.measured)
         {
-            text += Text("    %s\n", row.klass.c_str());
+            text += Text("    %s%s\n", row.klass.c_str(),
+                         row.winnerUnnamable ? " (not the class's own winner: see below)" : "");
+        }
+    }
+
+    std::size_t unnamable = 0;
+
+    for (const EmittedSeamRow& row : rows)
+    {
+        unnamable += row.winnerUnnamable ? 1 : 0;
+    }
+
+    if (unnamable > 0)
+    {
+        // A row written at the namable member is not the class's winner, and the difference is
+        // not the run's: the file's row format carries six cells and the region-B exponential
+        // is not among them, so the winner's own arithmetic is not something this file can
+        // state. Naming the classes here is what keeps the row above from reading as the
+        // class's first place.
+        text += Text("  %zu class(es) whose own winner is not the row written: the class's "
+                     "first place\n  seeds its region-B ladders with the accurate exponential, "
+                     "and the seam's row format\n  carries no cell for that axis. The row written "
+                     "is the fastest combination of the\n  class that is at the member the format "
+                     "does name — a measured cell, and not the\n  class's first place:\n",
+                     unnamable);
+
+        for (const EmittedSeamRow& row : rows)
+        {
+            if (row.winnerUnnamable)
+            {
+                text += Text("    %s\n", row.klass.c_str());
+            }
         }
     }
 
@@ -5021,8 +5284,9 @@ std::string FormatBuildDefaults(const OptionProbeReport& report, const std::stri
     text += "#pragma once\n\n";
     text += "/// \\file\n";
     text += "/// This build's default-policy seam, written by the option probe from the rankings it\n";
-    text += Text("/// measured%s: the classes it ranked carry the combination that won the class, and\n",
+    text += Text("/// measured%s: the classes it ranked carry the combination that won the\n",
                  takenAt.empty() ? "" : Text(" on this host, %s", takenAt.c_str()).c_str());
+    text += "/// class among the combinations this row format can name (see the row list below), and\n";
     text += "/// the classes it ranked no cell of carry the five below at their own lane's budget.\n";
     text += "///\n";
     text += "/// A row is a measurement taken on one machine and not a choice of the library's, so\n";
@@ -5056,8 +5320,11 @@ std::string FormatBuildDefaults(const OptionProbeReport& report, const std::stri
     text += Text("#define BOYS_BUILD_DEFAULT_DIVISION_FORM %s\n\n", DivisionCell(five.division));
     text += Text("#define BOYS_BUILD_DEFAULT_FIT_GRANULARITY %s\n\n", GranularityCell(five.granularity));
     text += "/// The classes this file sets a default for: **one row per class**, in the table's own\n";
-    text += "/// format. A measured row is one this run's rounds placed first in its class; a row\n";
-    text += "/// marked a choice is one the run did not rank, and it states the five above.\n";
+    text += "/// format. A measured row is one this run's rounds placed first in its class **among\n";
+    text += "/// the combinations this row format can name** — the six cells below, which do not\n";
+    text += "/// carry the region-B exponential: a class whose first place is at the other member\n";
+    text += "/// is written at the member the format names, and it says so in its own comment. A\n";
+    text += "/// row marked a choice is one the run did not rank, and it states the five above.\n";
     text += "#define BOYS_BUILD_DEFAULT_ROWS(X)\\\n";
 
     for (const EmittedSeamRow& row : rows)
@@ -5448,8 +5715,9 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
             "evaluation\n";
     text += "  scheme, the partition of the fitted regions, the packing axis, the division form "
             "the recursion\n";
-    text += "  ends in, and whether a sorted array is declared so that the all-N entry skips its "
-            "sort — is a\n";
+    text += "  ends in, the exponential a region-B ladder is seeded with, and whether a sorted "
+            "array is declared\n";
+    text += "  so that the all-N entry skips its sort — is a\n";
     text += "  way of computing the same answer and is\n";
     text += "  a column inside the class, so those options compete in one ranking rather than "
             "dividing it.\n";
@@ -5633,6 +5901,7 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
         std::vector<std::string> axes;
         std::vector<std::string> partitions;
         std::vector<std::string> forms;
+        std::vector<std::string> exponentials;
 
         for (const EvalSchemeInfo& scheme : BoysEvalSchemes())
         {
@@ -5649,6 +5918,11 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
             forms.push_back(form.name != nullptr ? form.name : "(unnamed)");
         }
 
+        for (const RegionBExpInfo& exp : BoysRegionBExps())
+        {
+            exponentials.push_back(exp.name != nullptr ? exp.name : "(unnamed)");
+        }
+
         for (const FitGranularityInfo& partition : report.granularities)
         {
             partitions.push_back(partition.name);
@@ -5661,11 +5935,14 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
                      Joined(schemes).c_str(),
                      partitions.size(),
                      Joined(partitions).c_str());
-        text += Text("        %zu packing axis/axes (%s) | %zu division form(s) (%s),\n",
+        text += Text("        %zu packing axis/axes (%s) | %zu division form(s) (%s) | "
+                     "%zu exponential(s) (%s),\n",
                      axes.size(),
                      Joined(axes).c_str(),
                      forms.size(),
-                     Joined(forms).c_str());
+                     Joined(forms).c_str(),
+                     exponentials.size(),
+                     Joined(exponentials).c_str());
         text += "        each class's cells counted above\n";
     }
 
@@ -6178,11 +6455,12 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
                 "library's product is missing from this report;\n";
     }
     text += "  * the call shapes other than this workload's all-orders-per-argument one, which the "
-            "six axes\n";
+            "seven axes\n";
     text += "    are not crossed with. The all-N grouping and its sorted-argument overload are\n";
     text += "    measured, at their default policy alone, as the all-n classes above: one call per\n";
-    text += "    order run, at the shipped route, scheme, partition, packing axis and division\n";
-    text += "    form. Those rows are no cell of the space, and they are counted in the closure below\n";
+    text += "    order run, at the shipped route, scheme, partition, packing axis, division form\n";
+    text += "    and region-B exponential. Those rows are no cell of the space, and they are\n";
+    text += "    counted in the closure below\n";
     text += Text("    below, which names them and counts the crossing they stand for: %zu row(s),\n"
                  "    standing for the %zu cell(s) of their own class that crossing them\n"
                  "    with the axes would add beyond the cells they stand at.\n",
@@ -6198,8 +6476,9 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
     text += "    count is every row this report carries and the cells it stands for. The axes are\n";
     text += "    crossed on every precision class: the routes each class's own lane reports its "
             "fits\n";
-    text += "    in, the schemes, partitions, packing axes and division forms of that lane,\n";
-    text += "    one row per served cell of a class this machine can run.\n";
+    text += "    in, the schemes, partitions, packing axes and division forms of that lane and the\n";
+    text += "    exponentials its region-B ladders can be seeded with, one row per served cell of a\n";
+    text += "    class this machine can run.\n";
 
     // The last block of the report, on every path: the space counted, so that what this run
     // did with it is a number a reader can check rather than an inference from the sections

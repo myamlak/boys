@@ -14,53 +14,24 @@
 
 namespace boys {
 
-/// How the CUDA lane's f32 single entries evaluate the region-B exponential
-/// e^{-x} that their upward recursion carries.
-///
-/// Two arithmetics with two measured bounds, neither a fallback for the other.
-/// The recurrence that consumes the value is why the choice matters: its condition
-/// number — the ratio of the dominant solution of the homogeneous recurrence to the
-/// wanted one ([Gautschi1967]) — is 7.6e4 at the region-B boundary, n = 32, and falls
-/// as the argument grows, so a seed error whose *relative* size grows with the
-/// argument fails a bound over a band of region B at the highest order while holding
-/// it everywhere else.
-///
-/// Both hold their bounds in every region; what separates them is the bound, not a
-/// counted cost — the exponential is evaluated once per element, outside the order
-/// loop.
-///
-///  - \c kAccurate is the library routine and the arithmetic the f32 batch entries
-///    run: at m = 1 a single and a batch evaluation of the same (n, x) return the
-///    same bits outside region A. Its relative error is flat at 2 ulp, so its bound
-///    is the lane's, m * 1.5e-7, in every region.
-///  - \c kFast is the hardware approximation with its argument-scaling residual
-///    removed: 2^fl(y log2 e) is rounded once in that product, which is what grows
-///    its error with |y|. The residual fma(y, log2 e, -t) is exact and
-///    2^(t + d) = 2^t 2^d approximates 2^t (1 + d log 2), so two fused steps take
-///    the error back to the approximation's own few ulp, flat in the argument. Its
-///    bound is the lane's plus its own seed's contribution, certified at 8e-8 —
-///    0.41 of the lane's budget — which the condition number derives and the device
-///    gate's sweep confirms (5.0e-8 measured at m = 1).
-///
-/// The bare approximation is not offered at any multiplier: its failing band is
-/// interior to region B, which a caller cannot name a sub-range of.
-///
-/// One name serves both lanes that take the option: the batch entry
-/// BoysCuda::SingleF32 (a run-time argument) and the device entry
-/// BoysDeviceSingleF32 (a template argument).
-///
-/// \ingroup boys
-enum class RegionBExp : int {
-    /// expf: the library routine, the batch bodies' arithmetic, 2 ulp.
-    kAccurate = 0,
-    /// The hardware approximation with its argument-scaling residual removed.
-    /// Read it with the bound SingleF32 documents for it, not with the lane's.
-    kFast,
-};
-
 /// The region-B exponential the device lane's f32 entries evaluate when the call
 /// site names none: \c RegionBExp::kAccurate, the library routine the f32 batch
 /// bodies run, whose bound is the lane's own.
+///
+/// **The axis is one shared type.** \c RegionBExp is defined in
+/// `boys/accuracy.hpp`, which states the member set both targets name and each
+/// target's own arithmetic for each member: the CPU lanes read it as a field of
+/// their evaluation policy and the device entries take it here, so a member one
+/// side grows is a member of the axis the other side already names. There is one
+/// definition and this header adds none - the enumerators below are the shared
+/// ones, and the f32 single entry BoysDeviceSingleF32 (a template argument) and
+/// the batch entry BoysCuda::SingleF32 (a run-time argument) both name them.
+///
+/// This constant is the device lane's own. It is \c kAccurate rather than the
+/// host's \c kFast because this lane's published figures were measured at the
+/// library routine - which is also the arithmetic the f32 batch bodies run, the
+/// same bits for the same (n, x) outside region A - so naming nothing keeps the
+/// values the documents state.
 ///
 /// The device lane's other default is the accuracy multiplier
 /// \c kBoysFullAccuracyMultiplier, the same name the CPU entries default to.

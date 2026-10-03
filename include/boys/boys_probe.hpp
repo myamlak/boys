@@ -264,6 +264,7 @@ struct OptionProbeMeasurement {
     FitGranularity granularity = kDefaultFitGranularity; ///< the partition it reads
     PackAxis pack = PackAxis::kArguments; ///< the packing axis its entry carries
     DivisionForm division = kDefaultDivisionForm; ///< the form its steps divide in
+    RegionBExp regionBExp = kDefaultHostRegionBExp; ///< the exponential its region-B seed is
 
     /// The question shape it answers, the second part of its class's key. An
     /// option is only ordered against options of the same shape.
@@ -512,6 +513,11 @@ struct OptionProbeCell {
     /// of the other axes, so this one never decides carriage; it is part of the
     /// cell because it is part of the combination an option runs.
     DivisionForm division = kDefaultDivisionForm;
+
+    /// The region-B exponential this cell fixes, on the same reading as the
+    /// division form: both members are served at every cell of the other axes,
+    /// and the member is part of the combination an option runs.
+    RegionBExp regionBExp = kDefaultHostRegionBExp;
 
     /// Whether this build serves the cell, so a served cell has an option row in
     /// this report unless the run was narrowed by ProbeOptions::only, or the cell

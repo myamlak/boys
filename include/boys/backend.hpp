@@ -122,84 +122,11 @@ inline constexpr PackAxis kDefaultPackAxis = BOYS_BUILD_DEFAULT_PACK_AXIS;
 /// "unknown".
 const char* PackAxisName(PackAxis axis) noexcept;
 
-/// How the recursion's per-order division is performed.
-///
-/// A ladder step divides in region B and in region C, and each of those ends in
-/// one of these. They are different arithmetic and not three spellings of one: a
-/// quotient is correctly rounded, and a product by a rounded reciprocal rounds
-/// twice, so the plain form may differ from the exact one by an ulp per step and
-/// a ladder of them accumulates that; the refined form is the plain one carried
-/// back to the exact one's rounding by a fused multiply-add, at the price of two
-/// dependent operations per step.
-///
-/// **Which divisions a form governs.** A step divides either by the argument or
-/// by the step's constant `l + 1/2`, and a form governs both. The argument's
-/// reciprocal is formed once per call and multiplied through the ladder, which is
-/// the division the caller named the axis for. The constant's is the downward
-/// ladder's, and its reciprocal is a compile-time table rather than a value
-/// formed at the step: `l + 1/2` is exact, so a reciprocal computed from `l` would
-/// be a division there, and a form whose whole point is not to divide would
-/// divide once per order anyway. The divisions that are not a step of a chain are
-/// outside the axis — the zero argument's `1/(2n+1)`, a piece's affine map — and
-/// not because a form was declined for them: they are closed formulas rather than
-/// a recurrence, no form shortens them, and the exact form is what they are.
-///
-/// **The single-precision lane's plain reciprocal publishes its own figure.**
-/// That lane's downward ladder divides by the step's constant, and the step reads
-/// whichever form the caller named. The plain form rounds once more there, which
-/// takes the ladder past the lane's 1.5e-7 base: over the accuracy gate's own
-/// reference grid at the reference multiplier its worst cell is 1.7514e-07 at
-/// n = 0, x = 9.74054909, where the lane's exact and refined forms deliver
-/// 1.0835e-07 at worst. So the lane publishes a term beside its base for that
-/// form — 1.5e-7 plus 1e-7 — and the accuracy accessor answers it when the caller
-/// names the form. The double lane's downward ladder takes the form with room to
-/// spare: the plain form's worst cell over the grid's arguments below kX0 is
-/// 6.7292e-15 where exact division's is 3.2162e-15, and that cell lies in the band,
-/// which publishes 3e-14.
-///
-/// **Which of the three is cheapest is a property of the host and not of this
-/// library.** A processor whose division is a multi-instruction sequence pays far
-/// more for the exact form than for either product; one whose fused multiply-add is
-/// scarce relative to its multiplier pays more for the refined form than the plain
-/// one. The three are therefore all carried, and ranked by the option probe on the
-/// machine it is run on. The measured figures for this host are in the probe's own
-/// report.
-///
-/// \ingroup boys
-enum class DivisionForm : std::uint8_t {
-    /// One division per step: the form the recurrences are written in.
-    kExactDivision = 0,
-
-    /// One reciprocal per divisor and one product per step: the argument's
-    /// reciprocal, formed once and multiplied through the ladder, and the step
-    /// constant's, read from a compile-time table and multiplied the same way.
-    /// It governs every division of a chain, the single-precision lane's
-    /// downward ladder included: that lane publishes a figure of its own for
-    /// this form rather than substituting another arithmetic for it.
-    kPlainReciprocal = 1,
-
-    /// The plain form with the correctly rounded quotient recovered from it, by
-    /// the product's error and one fused multiply-add per step.
-    kRefinedReciprocal = 2,
-};
-
-/// The division form the recurrences take when the caller names none.
-///
-/// **Measured.** At the per-call entry, over eight interleaved rounds whose
-/// fixed-work canary held to 6%, both reciprocal forms came out about a quarter
-/// cheaper than exact division on the molecular stream: 0.751 and 0.742 of its
-/// cost, the two within 1% of each other against a spread wider than that.
-///
-/// **This one, because it is the reciprocal that moves nothing.** The refinement
-/// recovers the correctly rounded quotient from the product with one fused
-/// multiply-add per step, so this form is bit-identical to exact division: it
-/// delivers the values every published per-region figure was measured at, at the
-/// cost the plain form pays where the real workload lives. The plain form is the
-/// one to reach for when ladders are long — on the host's own dependent chain it
-/// reads 3.220 ns per step against 5.333 here, the difference being the
-/// refinement's two fused multiply-adds paid once per order. All three forms are
-/// served, and the option probe measures them.
-inline constexpr DivisionForm kDefaultDivisionForm = BOYS_BUILD_DEFAULT_DIVISION_FORM;
+// The division form itself — DivisionForm and kDefaultDivisionForm, with the
+// measurement the default stands on — is declared in boys/accuracy.hpp, because
+// the CUDA lane's option rows name it and that header is the one both sides of the
+// device boundary can read. The name a report prints it under is here, beside the
+// other axis names.
 
 /// The name a report prints a division form under, and never null.
 ///
@@ -213,110 +140,29 @@ inline constexpr DivisionForm kDefaultDivisionForm = BOYS_BUILD_DEFAULT_DIVISION
 /// reading as \c PackAxisName.
 const char* DivisionFormName(DivisionForm form) noexcept;
 
-/// How narrowly the fitted domain is cut into pieces.
-///
-/// A stored fit is a polynomial over one interval, and a narrower interval
-/// needs a lower degree to hold the same bound: the truncation bound carries
-/// the interval's half-width as `(h/(2d))^d`, so halving a piece buys roughly
-/// `2^d` and raising the degree at a fixed width buys far less. Splitting is
-/// therefore the lever, and how far to take it is a choice with a price on each
-/// side — a narrower piece is fewer coefficients to evaluate per call and more
-/// pieces to store and to select between.
-///
-/// Each partition is whole rather than a point on a spectrum. It carries its
-/// own stored counts and its own certified bound, and none is a rung of
-/// another: naming one changes the fits that serve the intervals its own report
-/// names.
-///
-/// **The axis cuts both fitted regions, and region A pays a second criterion.**
-/// Region B's seed is read for itself, so a narrow piece there is held to the
-/// same bound as any other fit of that interval. Region A's pieces are read two
-/// ways: a single-order call reads one for its own value, and the batch entry's
-/// relaxed path reads one as the seed of a downward recursion that carries its
-/// error down to F_0 with a gain of `max(1, b^n / prod(j + 1/2))` at the piece's
-/// right end `b`. That gain's envelope over region A reaches 1.04e5, at order 12
-/// and the region's right edge, while the seeding fallback is taken only below
-/// the band's left edge, where the gain a call reaches is the calling order's
-/// own - 2.18 at order 1, 1.58 at order 2 and 1 at every order from 3 up - and
-/// the walk holds the envelope rather than that, so that no piece's reading
-/// depends on which order an entry seeds from. A narrow piece is therefore held
-/// to whichever of the two readings is tighter at its own right end, so the gain
-/// binds only where it exceeds the ratio of the two bars, and a piece far enough
-/// left is cut to the single-order bar alone. Both readings are parts of one
-/// criterion rather than a choice.
-///
-/// Both routes and both precisions carry the member: the rational family is
-/// fitted over the narrow pieces as its own per-piece pairs, and the
-/// single-precision lanes carry their own narrow tables, each accepted in the
-/// arithmetic its lane runs at both multiply-add routes.
-///
-/// A member the build cannot serve is refused where it is named, with the
-/// reason, rather than answered from the shipped tables: the partitions'
-/// coefficients are different fits of the same function over the same
-/// interval, so a silent substitution would return one partition's values
-/// under another's name, at a certified bound, with nothing reporting it.
-///
-/// Every refusal names the work it would need, and none of them is a
-/// combination that cannot exist. What a lane refuses is a member of a partition it
-/// has not stored.
-///
-/// The across-orders packing axis is otherwise built: the packed lane reaches a
-/// per-order cut
-/// with a gathered fetch, reading each of the four orders it holds its own
-/// piece and coefficients instead of stepping one piece's coefficients at a
-/// fixed stride. This includes the single-precision lanes, whose narrow rung
-/// tables are derived like the double lane's rather than absent.
-///
-/// \ingroup boys
-enum class FitGranularity : std::uint8_t {
-    /// The partition the certified lanes are defined by: region A's per-order
-    /// pieces and region B's single seed, at the degrees the committed tables
-    /// carry. Region A's pieces are two equal bands an order, at degree 20 and
-    /// 18, on the double lane, and two to four pieces an order, all at degree 10,
-    /// on the single-precision lane; region B is one seed on both. A caller names
-    /// it to read those tables.
-    kCoarsest = 0,
+// The region-B exponential itself — RegionBExp, its two members and
+// kDefaultHostRegionBExp, each target's arithmetic stated with them — is declared
+// in boys/accuracy.hpp, for the reason the division form is: the CUDA lane's option
+// rows name it and that header is the one both sides of the device boundary can
+// read. The name a report prints it under is here, beside the other axis names.
 
-    /// A narrower partition of both fitted regions, at the degrees the proved
-    /// truncation bound gives a piece of that width at the bar the piece is read
-    /// under. Fewer coefficients per evaluation, more pieces in the table.
-    kNarrow = 1,
-
-    /// A fixed grid over the whole fitted domain rather than a derived one: one
-    /// uniform interval width, every order fitted independently at one degree,
-    /// and no order built from another.
-    ///
-    /// The other two partitions are walks: each places a piece where the proved
-    /// bound says the function needs one, so the pieces are of different widths
-    /// and locating one is a scan of piece edges. This one trades that for a
-    /// grid whose index is one multiply and a truncation, and it trades the
-    /// per-order recursion for independent polynomials. Both are what the
-    /// option probe measures; neither is free, and the table pays for them in
-    /// stored coefficients and in a floor on the work each order does.
-    kUniform = 2,
-};
-
-/// The partition the entries evaluate when the caller names none.
+/// The name a report prints a region-B exponential under, and never null.
 ///
-/// The narrow one: a call site that names no partition reads the narrow pieces'
-/// coefficients, and naming another value asks for that partition's. The
-/// derived partitions cut the same fits, so choosing between them is a choice
-/// of arithmetic rather than of accuracy.
+/// \param exp the member
 ///
-/// **It is not the cheaper of the two at either setting of the other axis.** On
-/// the host these were last measured on, the narrow partition was 0.3% to 0.8%
-/// behind the shipped one where the fit is summed by the split Clenshaw
-/// recurrence — inside the 5.6 to 7.4 points one of these rows moves by from one
-/// run to the next — while summed by Horner's rule, the scheme this default
-/// reads, it was 15% to 17% cheaper. What the measurement establishes is a tie:
-/// three rows of the double lane's full-accuracy class for the all-orders shape —
-/// the shipped partition summed by the split Clenshaw recurrence, and the narrow
-/// partition summed by either scheme — came out within 0.9% of each other, with
-/// the class's next row 11.5% to 12% behind them. This default is one of the
-/// three tied rows. A caller who wants this ranking on their own machine runs the
-/// option probe (boys_probe.hpp), which measures it there and names the pairs it
-/// could and could not separate.
-inline constexpr FitGranularity kDefaultFitGranularity = BOYS_BUILD_DEFAULT_FIT_GRANULARITY;
+/// \returns a string literal naming it: "accurate" or "fast", and "unknown" for a
+///          value outside the enumerators
+///
+/// A value outside the enumerators is answered rather than refused, on the same
+/// reading as \c PackAxisName.
+const char* RegionBExpName(RegionBExp exp) noexcept;
+
+// How narrowly the fitted domain is cut into pieces — FitGranularity and
+// kDefaultFitGranularity, with the measurement the default stands on — is declared
+// in boys/accuracy.hpp, for the reason the division form is: the CUDA lane's option
+// rows name the cut an entry reads its fits from, and that header is the one both
+// sides of the device boundary can read. The name a report prints it under is here,
+// beside the other axis names.
 
 /// The name a report prints a granularity under, and never null.
 ///
@@ -567,7 +413,9 @@ struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kNarrow> {
 /// Everything a call site selects about how an evaluation is performed, apart
 /// from the accuracy multiplier: the fit route, the scheme the fit's
 /// coefficients are summed in, the budget a single-precision engine runs at,
-/// and the axis a packed evaluation vectorises over. One parameter rather than
+/// the axis a packed evaluation vectorises over, how narrowly the fitted domain
+/// is cut into pieces, how a ladder's steps divide, and which exponential seeds
+/// a region-B ladder. One parameter rather than
 /// one per axis, so an axis added later is a field here rather than an argument
 /// on every entry, engine and kernel between the call site and the fit.
 ///
@@ -609,6 +457,10 @@ struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kNarrow> {
 /// \tparam kDivision      how the recursion's per-order division is performed;
 ///                        \c kDefaultDivisionForm by default, which is
 ///                        \c DivisionForm::kRefinedReciprocal
+/// \tparam kExp           which exponential seeds a region-B ladder;
+///                        \c kDefaultHostRegionBExp by default, which is
+///                        \c RegionBExp::kFast, the arithmetic the double
+///                        lane's per-region figures were measured at
 ///
 /// \ingroup boys
 template <FitRoute kFitRoute = kDefaultFitRoute,
@@ -616,7 +468,8 @@ template <FitRoute kFitRoute = kDefaultFitRoute,
           BoysBudget kEngineBudget = BoysBudget::kFloat,
           PackAxis kPackedAxis = kDefaultPackAxis,
           FitGranularity kFitGranularity = kDefaultFitGranularity,
-          DivisionForm kDivisionForm = kDefaultDivisionForm>
+          DivisionForm kDivisionForm = kDefaultDivisionForm,
+          RegionBExp kExp = kDefaultHostRegionBExp>
 struct EvalPolicy {
     /// The fit this policy evaluates, where the combination is one the library
     /// carries.
@@ -639,12 +492,14 @@ struct EvalPolicy {
     static constexpr FitGranularity kGranularity = kFitGranularity;
     /// How the recursion's per-order division is performed.
     static constexpr DivisionForm kDivision = kDivisionForm;
+    /// Which exponential seeds a region-B ladder.
+    static constexpr RegionBExp kRegionBExp = kExp;
 };
 
 /// The constraint the entries put on a policy, so a combination the library
 /// does not carry is rejected where the caller names it.
 ///
-/// It requires the four axes and the fit the first two join to. The fit's own
+/// It requires every axis and the fit the first two join to. The fit's own
 /// contract (FitPolicy) is asserted where the fit is read rather than here,
 /// because a fit the library carries is complete only where its tables are.
 ///
@@ -658,6 +513,7 @@ concept EvalPolicyLike = requires {
     { P::kPack } -> std::convertible_to<PackAxis>;
     { P::kGranularity } -> std::convertible_to<FitGranularity>;
     { P::kDivision } -> std::convertible_to<DivisionForm>;
+    { P::kRegionBExp } -> std::convertible_to<RegionBExp>;
 };
 
 /// The evaluation policy a caller gets by naming no axis, one name per
@@ -853,7 +709,13 @@ T Separate(T a, T b, T c) noexcept {
 /// kernel in its own unit gets the arithmetic the library reports. The default
 /// is the fused route: the certified bounds are the fused arithmetic's, and a
 /// build that changes route changes them.
-#if defined(BOYS_MULADD_SEPARATE)
+///
+/// **The value is read and not only the spelling**, so `-DBOYS_MULADD_SEPARATE=0`
+/// is the fused route and not the separate one. CMake defines this as 1 or not
+/// at all, but a consumer may pass the option's name with a value of their own,
+/// and a header that answered the separate route for `=0` would select the
+/// arithmetic the caller asked against - silently, at the one place nobody looks.
+#if defined(BOYS_MULADD_SEPARATE) && BOYS_MULADD_SEPARATE
 inline constexpr MulAddRoute kSelectedRoute = MulAddRoute::kSeparate;
 #else
 inline constexpr MulAddRoute kSelectedRoute = MulAddRoute::kFused;
