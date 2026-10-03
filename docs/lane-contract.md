@@ -640,12 +640,25 @@ bits. The float batch entry's worst cell is on the upward recursion, which is wr
 multiplies, subtractions and one division that no multiply-add route governs. And the double lane's
 worst cells at the smallest arguments and in the asymptotic region are not on a multiply-add either.
 
-**Three lanes are outside the choice entirely.** The half lanes
+**Two lanes are outside the choice entirely.** The half lanes
 evaluate in float and round to 16 bits once per value, so their multiply-adds are the float lane's —
 but the 16-bit representation term dominates every cell they measure, and the route's difference is
-orders below it, so the sweep finds the same worst cell on both routes. The AVX2 packed lanes name
-their instruction directly, so there is no route to select and no call to avoid. The packed-half
+orders below it, so the sweep finds the same worst cell on both routes. The packed-half
 lane's chain is one multiply and one divide per order, so it takes no fused step either.
+
+**The two packed backends the report enumerates are inside the choice.** `avx2-fp64` and
+`avx2-fp32` — the four-wide region-A lane of `src/boys_simd.cpp` — carry the route as a template
+parameter and run the one the build selected, which is what `BoysBackends()` reports for them: the
+fused route's step is one `vfmadd`, the separate route's is a multiply and an add, and that second
+one is two roundings on every build because no compiler flag reaches an instruction the source
+named. What the packed lane does not pay is the call a target without the fused instruction charges
+the scalar lane for the same two roundings. The across-orders lane
+(`src/boys_orders_simd.cpp`) is a packed lane this revision does not route: it spells its own
+`vfmadd` at each of its steps, so it is one-rounding whatever the build says and its values do not
+move between the routes. It is reachable only through the orders axis, and the route's rows below
+are measured on the arguments axis, so no figure on this page rests on it — but a caller who
+selects the separate route and calls `BoysAllOrders` gets the fused arithmetic on the arguments
+that lane serves, which is a gap in the axis and not a property of it.
 
 **The separate route does not remove every call, and the remainder is deliberate.** The transform
 lane's own product contains no fused step at all — its splits are exact by construction and its
@@ -1192,7 +1205,12 @@ fits. A caller evaluating there should expect that, and should not read the 5.5e
 
 The lanes above are one axis of five. A call is a lane, a fit route, an evaluation scheme, an
 interval partition and a packing axis, and the library offers the product of
-all five: **2 routes × 2 schemes × 3 partitions × 2 axes, in 4 lanes — 96 combinations.**
+all five: **2 routes × 2 schemes × 3 partitions × 2 axes, in 6 lanes — 144 combinations.** Each of
+them is a cell the accuracy gate counts: certified and published, refused with the library's own
+reason and owed, or a device cell this host cannot run. The six lanes are the host's double, single
+and half lanes and the device's own `kFp64Device`, `kFp32Device` and `kFp16Device`, which are the
+three precisions the CUDA surface's entries are built at; a device class of the default-policy table
+is one of those three by a question.
 Each axis's own section above states what that axis changes. This one states the two figures a
 combination has, how a program asks the library for each of them, how a program asks whether a
 combination meets the error it needs, and which members of the space this revision does not carry.
@@ -1209,9 +1227,17 @@ the bound is here.
 | float | 1.5e-7 | — | `Precision::kFp32` |
 | half, fp16 and bfloat16 | 1.5e-7 | plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum | `Precision::kFp16` |
 | float on a device | 1.5e-7 | plus 8e-8 under the fast region-B exponential | `Precision::kFp32Device` |
+| double on a device | 5.5e-14 | — | `Precision::kFp64Device` |
+| half on a device | 1e-7 | plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum | `Precision::kFp16Device` |
+
+The device's three lanes are three rows and not one: each is its own precision of the CUDA surface
+(`boys/boys_device_tables.hpp`, `BoysDeviceLane`), and the figures above are the ones those lanes'
+own entries publish — `boys/boys_cuda.hpp` states 5.5e-14 for the double entries and `1e-7 + ½ ULP`
+for the half ones, which is tighter than the host half lane's 1.5e-7 + ½ ULP because the device's
+half lane is not the host's.
 
 A combination carries **`base + additive`** — the same arithmetic the README's
-contract table states lane by lane. `BoysLaneContracts()` returns those four rows, so a program
+contract table states lane by lane. `BoysLaneContracts()` returns those six rows, so a program
 reads the figures the tables are written from rather than transcribing them, and the accuracy gate
 reads the same rows to judge a combination against.
 
@@ -1368,8 +1394,8 @@ the second names a lane no row of this library describes. Both are refusals and 
 which is what they have in common — the sentence is what tells a caller which of the two it is
 holding.
 
-Checked over the whole cross, the two accessors and this entry agree: **96 combinations of this
-build are carried, none is refused, and 0 of them disagreed** — every carried combination asked at
+Checked over the whole cross, the two accessors and this entry agree: **144 combinations of this
+build are carried or refused with a reason, and 0 of the carried ones disagreed** — every carried combination asked at
 the figure its lane publishes answers inside it, asked at half of that figure answers outside it,
 and every lane publishes a figure to halve. The owed book reads zero above, so no combination is
 left to answer with no verdict and no figure; a member a later revision has not derived would be

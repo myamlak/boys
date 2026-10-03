@@ -283,9 +283,17 @@ held to 1.5e-7 above, and the fast option's looser bound is not covered by the 3
 
 The lanes above are one axis of five. A call is a lane, a fit route, an evaluation scheme, an interval
 partition and a packing axis, and the library offers the product of all five:
-2 routes × 2 schemes × 3 partitions × 2 axes, in 4 lanes — **96 combinations: none is refused, each
-is certified and published or is a device cell a host without a CUDA device cannot run, and none
-deliver outside the bound their lane publishes** (the gate command below prints that arithmetic).
+2 routes × 2 schemes × 3 partitions × 2 axes, in 6 lanes — **144 combinations**, and every one of
+them is a cell the gate below counts: certified and published, refused with the library's own reason
+and owed, or a device cell this host cannot run. None delivers outside the bound its lane publishes
+(the gate command below prints the three counts on the build it runs in).
+
+The six lanes are the host's double, single and half lanes and the device's own `kFp64Device`,
+`kFp32Device` and `kFp16Device`, which are the three precisions the CUDA surface's entries are built
+at. A device lane's entries are not the host lane's beside it, which is why the default-policy table
+keys a device class by the device lane: that table is keyed `(device, precision, shape)`, and the
+device classes it holds are the nine of those three lanes by the three questions the device option
+probe ranks.
 `BoysAccuracyGuaranteed(...)` returns the bound a
 combination carries — its lane's figure, plus the lane's own additive term where it
 documents one — and `BoysAccuracyDelivered(...)` returns the figure it was measured to deliver,
@@ -296,14 +304,15 @@ number.
 
 **Choosing a combination is a name.** The four structural axes —
 route, scheme, partition, packing axis — are the fields of an `EvalPolicy`, so a combination is a type
-the call site writes once and the compiler resolves where it is written: 4 lanes × 24 axis
-combinations, **96 combinations, each reachable as a name**. Naming one costs nothing at the call —
+the call site writes once and the compiler resolves where it is written: 6 lanes × 24 axis
+combinations, **144 combinations, each reachable as a name**. Naming one costs nothing at the call —
 there is no table to look a combination up in, no string to match and no search at run time, which is
 why those axes are not call arguments. All of them are named and all of them are evaluated by
 `tests/consumer_option_space.cpp`, which prints the counts per precision.
 A caller holding a route and a scheme as values names both at the call instead:
-`BoysAllOrdersWithRoute(route, scheme, nmax, x, out)` on the ladder shape and
-`BoysSingleF32WithRoute(route, scheme, n, x)` on the single-order shape.
+`BoysAllOrdersWithRoute(route, scheme, nmax, x, out)` on the ladder shape. The single-order
+float shape takes a route and no scheme — `BoysSingleF32WithRoute(route, n, x)` — so a scheme
+there is a template argument rather than a call argument.
 
 **A caller that has a target rather than a comparison asks it directly.** `QueryCombination(...)`
 takes the same axes and the absolute error the caller needs, and answers with a verdict beside
@@ -397,8 +406,9 @@ returning something the caller did not ask for. **No speed is claimed for either
 
 The route composes with the evaluation scheme into one `EvalPolicy`, which every templated
 double-precision entry takes. A caller holding a route and a scheme as values names both at the call
-instead: `BoysAllOrdersWithRoute(route, scheme, ...)` on the ladder shape, and
-`BoysSingleF32WithRoute(route, scheme, ...)` on the float lane's single-order shape.
+instead on the ladder shape: `BoysAllOrdersWithRoute(route, scheme, nmax, x, out)`. The float
+lane's single-order shape takes a route and no scheme, `BoysSingleF32WithRoute(route, n, x)` — a
+scheme there is the `EvalPolicy` below.
 
 [docs/lane-contract.md](docs/lane-contract.md#the-two-fit-routes) carries this in full: the table of
 routes with each one's stored count, measured error and bar; the criterion each is accepted against;
@@ -415,7 +425,7 @@ no coefficient under either route, so naming one there changes nothing.
 
 **The same choice is open at compile time, and there it carries the scheme as well.** The lane's
 entries take the `EvalPolicy` above, so a caller who templates on it names the route and the scheme as
-the second template argument instead of calling `BoysSingleF32WithRoute`. Both fields are read:
+the first two template arguments instead of calling `BoysSingleF32WithRoute`. Both fields are read:
 the route selects which family supplies the lane's fits, and the scheme selects which of
 that family's stored forms is summed, so naming another pair there is answered rather than refused.
 `BoysAllNF32` forwards its policy to the batch entry's body once per argument.
@@ -944,6 +954,8 @@ mistyped name cannot block every pull request.
 | `option-matrix linux-clang separate` | `ubuntu-latest` | present | no |
 | `option-matrix windows-msvc fused` | `windows-latest` | present | no |
 | `option-matrix windows-msvc separate` | `windows-latest` | present | no |
+| `option-matrix linux-arm64 fused` | `ubuntu-24.04-arm` | absent | no |
+| `option-matrix linux-arm64 separate` | `ubuntu-24.04-arm` | absent | no |
 | `windows-msvc Release` | `windows-latest` | present | yes |
 | `windows-msvc Debug` | `windows-latest` | present | yes |
 | `linux-x86 gcc Release` | `ubuntu-latest` | n/a | yes |
