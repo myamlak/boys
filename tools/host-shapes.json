@@ -238,6 +238,7 @@
   "BoysEvalSchemeDelivered": "one figure read from those rows",
   "BoysPackAxes": "the packing-axis rows",
   "BoysDivisionForms": "the division-form rows",
+  "BoysRegionBExps": "the region-B exponential rows",
   "FitGranularityHasRoute": "a bit test on a partition row's route mask",
   "FitGranularityHasAxis": "a bit test on a partition row's axis mask",
   "BoysFitGranularities": "the interval-partition rows",
