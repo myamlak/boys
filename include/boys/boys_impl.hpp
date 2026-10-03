@@ -4331,6 +4331,10 @@ void BoysAllNRun(int nmax,
     // reads the shipped piece table by index, one order at a time, so the granularity
     // joins the condition above rather than the lane, and a narrow policy trades away
     // the four-wide lane rather than a value it returns.
+    if constexpr (Policy::kRoute == FitRoute::kChebyshev &&
+                  Policy::kScheme == EvalScheme::kSplitClenshaw &&
+                  Policy::kPack == PackAxis::kArguments &&
+                  Policy::kGranularity == FitGranularity::kCoarsest)
     {
         // The lane serves region A below the crossover order; at and above it
         // the scalar body is the faster of the two.
