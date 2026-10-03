@@ -1,5 +1,5 @@
 boys accuracy gate
-reference    : C:/Users/myaml/dev/boys-owedf16/tests/data/boys_accuracy_gate_reference.csv
+reference    : C:/Users/myaml/dev/boys-arm64diag/tests/data/boys_accuracy_gate_reference.csv
                33 orders x 1718 arguments = 56694 points
 boundaries   : x_ext=1.0855252345349333  x0=11.899848152108484  x1=28.98933773882074
 tiers        : n<=4 1.0855252345349333 | n<=8 2.0152977053351142 | n<=16 4.8978702998256569 | n<=32 10.783587858916762
@@ -107,8 +107,8 @@ the certified fit routes, measured:
   shipped partition's route does not answer with (the carriage that makes naming it an
   option rather than a spelling), worst piece value 2.21663e-14 away from the reference.
 
-accuracy gate, revision 7a769bb
-  reference: C:/Users/myaml/dev/boys-owedf16/tests/data/boys_accuracy_gate_reference.csv (1718 arguments per order, 33 orders, independent of the code under test)
+accuracy gate, revision 3bebb0c
+  reference: C:/Users/myaml/dev/boys-arm64diag/tests/data/boys_accuracy_gate_reference.csv (1718 arguments per order, 33 orders, independent of the code under test)
 per-lane, per-region: delivered error / documented bound
   lane                     region      points     real  delivered / claimed      max ratio (n, x)          vacuous no value
   ------------------------------------------------------------------------------------------------------------------------------
