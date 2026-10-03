@@ -173,26 +173,35 @@ double RegionBound(BoysRegion region, LaneKind lane) {
     return 0.0; // unreachable
 }
 
-// The figure the float lane publishes for the division form the entries below run. Those
-// entries name no policy, so the form they divide in is the build's default one, and the
-// figure to read is the one the lane publishes for that form: the lane's own contract row
-// - the row the README's table, BoysAccuracyGuaranteed and both gates read - plus the term
-// the row carries beside its base for the plain reciprocal where that is the form in force.
-// The row's own scaling is that sum, this lane's additive term being zero, so the sweeps
-// below read the figure the accessor answers.
+// The policy the float batch entry's unnamed call compiles: the fp32 all-orders class's
+// row. The sweeps below call BoysAllOrdersF32 naming no policy, and the form that entry's
+// downward ladder divides in is this class's and not the seam's five - a replacement
+// header may move the class (boys/boys.hpp expands the one table the header carries), and
+// the seam's five are then the point a class with no row falls to and not this one's form.
+using FloatBatchClass = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllOrders>;
+
+// The figure the float lane publishes for the division form the entries below run: the
+// lane's own contract row - the row the README's table, BoysAccuracyGuaranteed and both
+// gates read - plus the term the row carries beside its base for the plain reciprocal
+// where that is the form in force. The row's own scaling is that sum, this lane's additive
+// term being zero, so the sweeps below read the figure the accessor answers.
+//
+// The form is the caller's argument and not a seam read, because the answer belongs to the
+// class the entry under test compiles: an entry whose class row names the plain reciprocal
+// spends that term however the seam's five are set, and one whose row names another form
+// spends nothing.
 //
 // It is not the same number as the float base above, and the difference is the point: the
 // base is what the lane's two other forms deliver, and the row's term is what the plain
 // form spends on the downward ladder, which is inside the batch shape and not inside the
 // single one. So the batch sweeps are read at this figure and the single shape at the base.
-double FloatLanePublishedFigure() {
+double FloatLanePublishedFigure(boys::DivisionForm kForm) {
     for (const boys::LaneContractInfo& row : boys::BoysLaneContracts())
     {
         if (row.precision == boys::Precision::kFp32)
         {
-            return row.bound + (boys::kDefaultDivisionForm == boys::DivisionForm::kPlainReciprocal
-                                    ? row.plainAdditive
-                                    : 0.0);
+            return row.bound +
+                   (kForm == boys::DivisionForm::kPlainReciprocal ? row.plainAdditive : 0.0);
         }
     }
 
@@ -349,9 +358,9 @@ void SweepFloatBatchFp16Budget() {
         {
             const double reference = gGrid.Value(k, row.x);
             // The lane's published figure for the form in force and not the shape's base:
-            // this entry's downward ladder divides in the form the build compiles, and the
-            // budget the policy names moves no division form.
-            const double bound = FloatLanePublishedFigure();
+            // this entry's downward ladder divides in the form this class's row names, and
+            // the budget the policy names moves no division form.
+            const double bound = FloatLanePublishedFigure(FloatBatchClass::kDivision);
             const double error =
                 std::abs(static_cast<double>(batch[static_cast<std::size_t>(k)]) - reference);
             EXPECT_LE(error, bound) << "batch F" << k << " at x=" << row.x;
@@ -376,9 +385,9 @@ void SweepFloatBatch() {
         {
             const double reference = gGrid.Value(k, row.x);
             // The lane's published figure for the form in force and not the shape's base:
-            // this entry's downward ladder divides in the form the build compiles, so the
-            // bar is the one the lane states for that form.
-            const double bound = FloatLanePublishedFigure();
+            // this entry's downward ladder divides in the form this class's row names, so
+            // the bar is the one the lane states for that form.
+            const double bound = FloatLanePublishedFigure(FloatBatchClass::kDivision);
             const double error =
                 std::abs(static_cast<double>(batch[static_cast<std::size_t>(k)]) - reference);
             EXPECT_LE(error, bound)

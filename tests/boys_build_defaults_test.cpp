@@ -82,6 +82,7 @@
 
 #include "boys/boys.hpp"
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cstddef>
@@ -90,6 +91,7 @@
 #include <gtest/gtest.h>
 #include <string>
 #include <type_traits>
+#include <vector>
 
 namespace {
 
@@ -426,4 +428,137 @@ TEST(BuildDefaultsTest, AnUnnamedCallIsItsClasssDefault) {
     EXPECT_EQ(singleSeamMoved == 0u, kSingleClassIsTheSeamFive)
         << "the single-order entry resolves through the five rather than through the row the "
            "build's table carries for its class, or the other way round";
+}
+
+// THE SAME CLAIM, PER ENTRY, OVER EVERY ENTRY A MISSING ROW WOULD SILENTLY MOVE.
+//
+// The sweep above holds two entries to their class's row. This one holds the rest of
+// the surface to it, because the claim is per entry and not per library: each of these
+// is a separate declaration whose default template argument is that entry's own class
+// alias, and any one of them stopped reading it answers a caller from a policy its
+// class's row does not name.
+//
+// WHY IT IS HERE RATHER THAN IN THE ENTRY'S OWN SUITE. The suites that sweep these
+// entries compare them AGAINST EACH OTHER - boys_all_n_test.cpp holds the all-n entry
+// to the all-orders entry, boys_c_test.cpp holds the C entries to the C++ ones - and
+// that comparison is a claim about two classes, which holds only where the two classes'
+// rows agree. Naming a policy on both sides is what those sweeps have to do to state
+// an implementation relationship that survives a replacement, and once they do, nothing
+// in them reads the class table at all. This test is what still reads it.
+//
+// The entries below are the ones a shape-carried row can move apart, each measured
+// against its own class: the rows are the question and an entry's default argument is
+// the answer this file checks.
+TEST(BuildDefaultsTest, EveryEntryResolvesThroughItsOwnClasssRow) {
+    using AllOrdersF32Class = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllOrders>;
+    using AllNF32Class = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllN>;
+    using AllNClass = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllN>;
+    using AtOrdersClass =
+        boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllNAtOrders>;
+
+    constexpr int kOrders[] = {0, 3, boys::kMaxBoysOrder};
+    constexpr int kCount = 4;
+    constexpr double kXs[] = {0.0, 0.25, 5.0, 30.0};
+
+    std::size_t allNMoved = 0;
+    std::size_t atOrdersMoved = 0;
+    std::size_t ordersF32Moved = 0;
+    std::size_t allNF32Moved = 0;
+    std::size_t cells = 0;
+
+    for (const int nmax : kOrders) {
+        const std::size_t span = static_cast<std::size_t>(nmax) + 1;
+        std::vector<double> unnamed(kCount * span);
+        std::vector<double> classDefault(kCount * span);
+
+        boys::BoysAllN(nmax, kXs, unnamed.data(), kCount);
+        boys::BoysAllN<AllNClass>(nmax, kXs, classDefault.data(), kCount);
+
+        for (std::size_t i = 0; i < unnamed.size(); ++i) {
+            ++cells;
+
+            if (std::bit_cast<std::uint64_t>(unnamed[i]) !=
+                std::bit_cast<std::uint64_t>(classDefault[i])) {
+                ++allNMoved;
+            }
+        }
+
+        // The per-argument tops entry: each argument's own top order, so the sweep's
+        // tops stop at the argument's index and the two calls are asked the same shape.
+        std::vector<int> tops(kCount);
+        std::fill(tops.begin(), tops.end(), nmax);
+        std::vector<double> viaUnnamed(kCount * span);
+        std::vector<double> viaClass(kCount * span);
+
+        boys::BoysAllNAtOrders(tops.data(), kXs, viaUnnamed.data(), kCount);
+        boys::BoysAllNAtOrders<AtOrdersClass>(tops.data(), kXs, viaClass.data(), kCount);
+
+        for (std::size_t i = 0; i < viaUnnamed.size(); ++i) {
+            ++cells;
+
+            if (std::bit_cast<std::uint64_t>(viaUnnamed[i]) !=
+                std::bit_cast<std::uint64_t>(viaClass[i])) {
+                ++atOrdersMoved;
+            }
+        }
+
+        // The float lane's two shapes, bit-compared as floats: the fp32 classes are the
+        // ones a per-class table separates from the fp64 ones, and their entries' class
+        // aliases are not the ones the sweeps above name.
+        std::vector<float> xsF32(kCount);
+        std::vector<float> f32Unnamed(kCount * span);
+        std::vector<float> f32Class(kCount * span);
+
+        for (int i = 0; i < kCount; ++i) {
+            xsF32[static_cast<std::size_t>(i)] = static_cast<float>(kXs[i]);
+        }
+
+        boys::BoysAllNF32(nmax, xsF32.data(), f32Unnamed.data(), kCount);
+        boys::BoysAllNF32<AllNF32Class>(nmax, xsF32.data(), f32Class.data(), kCount);
+
+        for (std::size_t i = 0; i < f32Unnamed.size(); ++i) {
+            ++cells;
+
+            if (std::bit_cast<std::uint32_t>(f32Unnamed[i]) !=
+                std::bit_cast<std::uint32_t>(f32Class[i])) {
+                ++allNF32Moved;
+            }
+        }
+
+        // The single-argument float entry, one call per argument.
+        for (int i = 0; i < kCount; ++i) {
+            std::array<float, boys::kMaxBoysOrder + 1> unnamedRow{};
+            std::array<float, boys::kMaxBoysOrder + 1> classRow{};
+
+            boys::BoysAllOrdersF32(nmax, xsF32[static_cast<std::size_t>(i)], unnamedRow.data());
+            boys::BoysAllOrdersF32<AllOrdersF32Class>(
+                nmax, xsF32[static_cast<std::size_t>(i)], classRow.data());
+
+            for (std::size_t k = 0; k < span; ++k) {
+                ++cells;
+
+                if (std::bit_cast<std::uint32_t>(unnamedRow[k]) !=
+                    std::bit_cast<std::uint32_t>(classRow[k])) {
+                    ++ordersF32Moved;
+                }
+            }
+        }
+    }
+
+    std::printf("boys: an unnamed call against its own class's default, over %zu values: "
+                "all-n %zu, all-n-at-orders %zu, float all-orders %zu, float all-n %zu moved\n",
+                cells,
+                allNMoved,
+                atOrdersMoved,
+                ordersF32Moved,
+                allNF32Moved);
+
+    EXPECT_EQ(allNMoved, 0u) << "the all-n entry that names no policy does not resolve to the "
+                                "default policy the build's table carries for the fp64 all-n class";
+    EXPECT_EQ(atOrdersMoved, 0u) << "the per-argument-tops entry that names no policy does not "
+                                    "resolve to its own class's default policy";
+    EXPECT_EQ(ordersF32Moved, 0u) << "the float all-orders entry that names no policy does not "
+                                     "resolve to its own class's default policy";
+    EXPECT_EQ(allNF32Moved, 0u) << "the float all-n entry that names no policy does not resolve to "
+                                   "its own class's default policy";
 }

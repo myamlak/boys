@@ -53,6 +53,18 @@ constexpr double kBandBudget = 3e-14;
 // above it the lane's per-order cost outweighs the body's single seed and recursion.
 constexpr int kLaneMaxOrder = 4;
 
+// The policy an unnamed BoysAllN call compiles: this entry's own class row.
+//
+// The sweeps below compare this entry against the per-argument BoysAllOrders entry, and
+// the identity they pin is between the two ENTRIES - the batch's bodies are that entry's
+// own, restructured onto this layout (include/boys/boys_impl.hpp). It is an identity at
+// ONE policy and not across the class table: a replacement header that carries its own
+// rows may give the fp64 all-n class a different combination from the fp64 all-orders
+// class (boys/boys.hpp expands the one table the header carries), and two entries at two
+// policies return two arithmetics by construction. So the per-argument side below is asked
+// at THIS entry's class policy, which is the policy the unnamed call here compiles.
+using AllNPolicy = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllN>;
+
 struct ReferenceRow {
     int n;
     double x;
@@ -302,7 +314,10 @@ void CheckAgainstPerArgument(const Grid& grid,
 
         // The per-argument path at the batch's own order: region A's body seeds at
         // nmax and recurses down, so the batch's F_k for k < nmax is the recurrence's.
-        BoysAllOrders(nmax, row.x, want);
+        // Asked at the batch entry's own class policy (AllNPolicy above): the two entries
+        // are two classes in the build's table, and a replacement may move one without
+        // the other.
+        BoysAllOrders<AllNPolicy>(nmax, row.x, want);
         const double diff =
             std::abs(out[static_cast<std::size_t>(row.n) * count + i] - want[row.n]);
 
@@ -473,7 +488,7 @@ TEST(BoysAllNTest, ExactBoundaryArgumentsMatchThePerArgumentPath) {
     for (std::size_t i = 0; i < xs.size(); ++i)
     {
         double want[boys::kMaxBoysOrder + 1];
-        BoysAllOrders(boys::kMaxBoysOrder, xs[i], want);
+        BoysAllOrders<AllNPolicy>(boys::kMaxBoysOrder, xs[i], want);
 
         for (int k = 0; k <= boys::kMaxBoysOrder; ++k)
         {
@@ -521,7 +536,7 @@ TEST(BoysAllNTest, DegenerateCountsAndOrders) {
             std::vector<double> one(static_cast<std::size_t>(nmax) + 1);
             std::vector<double> want(static_cast<std::size_t>(nmax) + 1);
             BoysAllN(nmax, &x, one.data(), 1);
-            BoysAllOrders(nmax, x, want.data());
+            BoysAllOrders<AllNPolicy>(nmax, x, want.data());
 
             for (int k = 0; k <= nmax; ++k)
             {
@@ -828,11 +843,11 @@ TEST(BoysAllNTest, TheRationalRouteIsCarriedAndIsThePerArgumentEntry) {
         << "the rational route returns the shipped values: the carriage is not reachable";
 }
 
-TEST(BoysAllNTest, TheDefaultRouteIsUnchangedByTheRouteAxis) {
+TEST(BoysAllNTest, TheRouteNamedIsTheRowsAndNotTheSeams) {
     const int nmax = boys::kMaxBoysOrder;
     const std::size_t count = gGrid.xs.size();
     std::vector<double> got(count * (static_cast<std::size_t>(nmax) + 1));
-    boys::BoysAllN<boys::EvalPolicy<boys::FitRoute::kChebyshev>>(
+    boys::BoysAllN<boys::EvalPolicy<boys::kDefaultFitRoute>>(
         nmax, gGrid.xs.data(), got.data(), count);
     const std::vector<double> plain = RunEntry(gGrid, false, true);
     std::size_t differing = 0;
@@ -845,7 +860,31 @@ TEST(BoysAllNTest, TheDefaultRouteIsUnchangedByTheRouteAxis) {
         }
     }
 
-    EXPECT_EQ(differing, 0u) << "naming the default route explicitly moved a value";
+    // Which arithmetic this entry's unnamed call compiles: the class's own row, which is
+    // the seam's five exactly where the row spells them. The five-composed table (the
+    // shipped header, and every fixture that names no rows) spells them for every class,
+    // and a replacement that carries its own row list need not.
+    constexpr bool kRowIsTheSeamFive =
+        AllNPolicy::kRoute == boys::kDefaultFitRoute &&
+        AllNPolicy::kScheme == boys::kDefaultEvalScheme &&
+        AllNPolicy::kPack == boys::kDefaultPackAxis &&
+        AllNPolicy::kGranularity == boys::kDefaultFitGranularity &&
+        AllNPolicy::kDivision == boys::kDefaultDivisionForm;
+
+    std::printf("naming the seam's route over %zu values: %zu differ, and this class's row %s "
+                "the seam's five\n",
+                got.size(),
+                differing,
+                kRowIsTheSeamFive ? "is" : "is not");
+
+    // The claim both ways: naming the seam's route (with the seam's other four axes) is the
+    // unnamed call exactly where the class's row is the seam's five, and is a different
+    // arithmetic where the row moves the class. An entry resolving through the five while
+    // its row names something else agrees here when it must not.
+    EXPECT_EQ(differing == 0u, kRowIsTheSeamFive)
+        << "naming the route the seam's five name does not move the unnamed call where this "
+           "class's row is those five, or moves it nowhere where the row names another "
+           "combination: the entry is not resolving through the row its class carries";
 }
 
 } // namespace

@@ -25,6 +25,17 @@ constexpr int kSampleOrders[] = {0, 1, 2, 3, 7, 16, 31, 32};
 // supported order and argument, so a negative marker says "not written".
 constexpr double kUnwritten = -1.0;
 
+// Each batch entry below wraps one C++ entry, and that entry resolves through the
+// default-policy row of its own class - the row, which is not the seam's five once a
+// replacement header moves a class. So a reference asked without naming that class
+// reads a different row wherever the two disagree, and the comparison would state an
+// identity between two classes instead of the identity between the batch shape and the
+// per-argument shape this file is checking. Naming the entry's class on the reference
+// side keeps every comparison the statement the entries make: one policy, two shapes.
+using DoubleAtOrdersClass =
+    boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllNAtOrders>;
+using FloatBatchClass = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllN>;
+
 double RefSingle(int n, double x) {
     double value = 0.0;
     EXPECT_EQ(BoysDouble(n, x, &value), BOYS_SUCCESS);
@@ -76,6 +87,8 @@ TEST(BoysCTest, DoubleBatchMatchesCppPerElement) {
     for (std::size_t i = 0; i < xs.size(); ++i)
     {
         std::vector<double> row(nmax + 1);
+        // Unnamed on both sides, and rightly so: this C entry itself runs the fp64
+        // all-orders entry per argument, so the two names compile the same class's row.
         boys::BoysAllOrders(nmax, xs[i], row.data());
 
         for (int k = 0; k <= nmax; ++k)
@@ -102,7 +115,9 @@ TEST(BoysCTest, FloatBatchMatchesCppPerElement) {
     for (std::size_t i = 0; i < xs.size(); ++i)
     {
         std::vector<float> row(nmax + 1);
-        boys::BoysAllOrdersF32(nmax, xs[i], row.data());
+        // At the class the C entry compiles (FloatBatchClass above): the per-argument
+        // shape and the batch shape at one policy, which is the identity being checked.
+        boys::BoysAllOrdersF32<FloatBatchClass>(nmax, xs[i], row.data());
 
         for (int k = 0; k <= nmax; ++k)
         {
@@ -138,7 +153,9 @@ TEST(BoysCTest, DoubleBatchAtOrdersMatchesCppPerElement) {
         // documents - not the batch's nmax: below the first tier threshold an
         // all-orders body seeds its downward recursion at the order it is called.
         std::vector<double> row(static_cast<std::size_t>(tops[i]) + 1);
-        boys::BoysAllOrders(tops[i], xs[i], row.data());
+        // At the class the C entry compiles (DoubleAtOrdersClass above): the per-argument
+        // shape and the at-orders batch shape at one policy.
+        boys::BoysAllOrders<DoubleAtOrdersClass>(tops[i], xs[i], row.data());
 
         for (int k = 0; k <= nmax; ++k)
         {
