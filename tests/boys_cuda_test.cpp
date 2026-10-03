@@ -1034,6 +1034,12 @@ struct FormPair {
     std::size_t apartByAThousandth = 0;
     double widestRelative = 0.0;
     std::string widestRelativeWhere;
+    /// The largest absolute gap between the two forms, and where. The ulp count above
+    /// is a distance in representable steps and the relative figure beside it is
+    /// undefined where the value crosses zero, so the error itself is stated here:
+    /// it is the quantity a per-form bound is written in.
+    double widestAbsolute = 0.0;
+    std::string widestAbsoluteWhere;
     std::vector<std::string> examples;
 };
 
@@ -1097,6 +1103,13 @@ FormPair CompareBits(const std::vector<T>& a, const std::vector<T>& b, const std
                 ? std::abs(static_cast<double>(a[i]) - static_cast<double>(b[i])) / magnitude
                 : 0.0;
 
+        if (const double gap = std::abs(static_cast<double>(a[i]) - static_cast<double>(b[i]));
+            gap > pair.widestAbsolute)
+        {
+            pair.widestAbsolute = gap;
+            pair.widestAbsoluteWhere = FormatDifference(element, order, x[element], a[i], b[i]);
+        }
+
         if (relative > 1e-3)
         {
             ++pair.apartByAThousandth;
@@ -1149,8 +1162,10 @@ struct FormTally {
     std::uint64_t widestPlainVsRefined = 0;
     std::size_t plainVsExactApart = 0;
     double plainVsExactWidestRelative = 0.0;
+    double plainVsExactWidestAbsolute = 0.0;
     std::string widestPlainVsExactWhere;
     std::string widestRelativePlainVsExactWhere;
+    std::string widestAbsolutePlainVsExactWhere;
     std::vector<std::string> examples;
 };
 
@@ -1194,6 +1209,13 @@ void CrossEntryWithForms(FormTally& tally, const char* entry, Launch launch, con
         tally.plainVsExactWidestRelative = plainVsExact.widestRelative;
         tally.widestRelativePlainVsExactWhere =
             std::string(entry) + ":\n" + plainVsExact.widestRelativeWhere;
+    }
+
+    if (plainVsExact.widestAbsolute > tally.plainVsExactWidestAbsolute)
+    {
+        tally.plainVsExactWidestAbsolute = plainVsExact.widestAbsolute;
+        tally.widestAbsolutePlainVsExactWhere =
+            std::string(entry) + ":\n" + plainVsExact.widestAbsoluteWhere;
     }
 
     for (const std::string& line : refinedVsExact.examples)
@@ -1293,6 +1315,21 @@ TEST(BoysCudaTest, DivisionFormsDifferByBits) {
     {
         std::printf("the widest exact-vs-plain RELATIVE difference:\n%s\n",
                     tally.widestRelativePlainVsExactWhere.c_str());
+    }
+
+    // The gap in the units a bound is written in. A per-form device figure is not
+    // published at this revision (BoysLaneContracts(), the fp32-device row), so this
+    // is a measurement and not a comparison against a bar; it is printed so that the
+    // figure the lane owes is a number a reader can see rather than one to be
+    // measured again to find out.
+    std::printf("exact vs plain: the widest ABSOLUTE gap between the two forms, over the values "
+                "compared, is %.6g\n",
+                tally.plainVsExactWidestAbsolute);
+
+    if (!tally.widestAbsolutePlainVsExactWhere.empty())
+    {
+        std::printf("the widest exact-vs-plain absolute gap:\n%s\n",
+                    tally.widestAbsolutePlainVsExactWhere.c_str());
     }
 
     for (const std::string& line : tally.examples)
