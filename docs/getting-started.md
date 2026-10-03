@@ -218,10 +218,13 @@ select how the same approximation is summed, not what is approximated. The place
 the ones where they do **not** agree. Finding those on your machine is what
 [the option probe](#i-want-to-know-which-option-is-fastest-on-this-machine) is for.
 
-The six settings, in the order they are written: which stored fit serves the interval, how its
-coefficients are summed, an internal precision budget, whether vector lanes hold four arguments or
-four orders, how finely the fitted interval is cut, and how the recursion's divisions are performed.
-Each is documented beside its type in [the API reference](mainpage.md).
+The six settings the call above writes, in the order they are written: which stored fit serves the
+interval, how its coefficients are summed, an internal precision budget, whether vector lanes hold
+four arguments or four orders, how finely the fitted interval is cut, and how the recursion's
+divisions are performed. The policy carries a seventh — which exponential seeds a region-B ladder —
+which the call above leaves at its default. Each is documented beside its type in
+[the API reference](mainpage.md), and all seven are listed under [What you can and cannot choose at
+run time](#what-you-can-and-cannot-choose-at-run-time).
 
 **Next:** you have named a specific evaluation. Before you rely on it, ask what it guarantees.
 
@@ -341,6 +344,7 @@ computes. The rest can only be named where the call is compiled:
 | the packing axis (whether a vector register holds four arguments or four orders) | no | template argument only — `EvalPolicy`'s fourth parameter |
 | how finely the fitted interval is cut | no | template argument only — `EvalPolicy`'s fifth parameter |
 | how the recursion divides | no | template argument only — `EvalPolicy`'s sixth parameter |
+| which exponential seeds a region-B ladder | no | template argument only — `EvalPolicy`'s seventh parameter |
 
 The ones that cannot be named late are fixed when the translation unit is compiled. **This revision
 offers no run-time entry for them.** A choice that has to be made per input record needs an `if` over
