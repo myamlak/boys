@@ -35,6 +35,77 @@
 namespace boys::detail {
 namespace {
 
+// --- The multiply-add route the lane's steps run -----------------------------
+//
+// Which multiply-add a summation step is built from is a build fact, read from
+// the same selection the scalar backend and the packed backends read
+// (boys/backend.hpp, kSelectedRoute), and this lane's steps run that arithmetic
+// rather than one of their own: the fused step is one instruction and one
+// rounding, the separate step a product and a sum and two roundings, and the
+// same stored fit summed at the two is two values.
+//
+// The route is a template argument on the lane's kernels and bodies, as it is on
+// the packed backends (boys_backend_simd.hpp): the public entries name
+// kSelectedRoute, so the lane runs the arithmetic this build selected, and a
+// caller inside this file that names the other gets that arithmetic, so one
+// build can hold the two against each other.
+//
+// Both spellings are written out and neither is left to the compiler's
+// contraction setting. The fused step is the round-to-nearest fused intrinsic;
+// the separate step is two named instructions, which is two roundings on every
+// build the lane is compiled on. A bare `a * b + c` would be the fused step
+// wherever the target contracts and would not be the separate route at all.
+//
+// The subtraction form is the same choice one operation along: `a * b - c` is
+// one instruction and one rounding at the fused route, and a product and a
+// difference at the separate one. It is not the backend's MulSub, whose
+// contract is two roundings on every build and which is spelled for it; this is
+// a step of a summation, and the fused route's certified values are the ones it
+// already delivers.
+template <backend::MulAddRoute kMulAddRoute>
+__m256d StepMulAdd(__m256d a, __m256d b, __m256d c) noexcept {
+    if constexpr (kMulAddRoute == backend::MulAddRoute::kFused)
+    {
+        return _mm256_fmadd_pd(a, b, c);
+    } else
+    {
+        return _mm256_add_pd(_mm256_mul_pd(a, b), c);
+    }
+}
+
+template <backend::MulAddRoute kMulAddRoute>
+__m256d StepMulSub(__m256d a, __m256d b, __m256d c) noexcept {
+    if constexpr (kMulAddRoute == backend::MulAddRoute::kFused)
+    {
+        return _mm256_fmsub_pd(a, b, c);
+    } else
+    {
+        return _mm256_sub_pd(_mm256_mul_pd(a, b), c);
+    }
+}
+
+template <backend::MulAddRoute kMulAddRoute>
+__m256 StepMulAdd(__m256 a, __m256 b, __m256 c) noexcept {
+    if constexpr (kMulAddRoute == backend::MulAddRoute::kFused)
+    {
+        return _mm256_fmadd_ps(a, b, c);
+    } else
+    {
+        return _mm256_add_ps(_mm256_mul_ps(a, b), c);
+    }
+}
+
+template <backend::MulAddRoute kMulAddRoute>
+__m256 StepMulSub(__m256 a, __m256 b, __m256 c) noexcept {
+    if constexpr (kMulAddRoute == backend::MulAddRoute::kFused)
+    {
+        return _mm256_fmsub_ps(a, b, c);
+    } else
+    {
+        return _mm256_sub_ps(_mm256_mul_ps(a, b), c);
+    }
+}
+
 // --- The premise the lane rests on ------------------------------------------
 //
 // Four orders in one vector with no masking and no per-lane degree rests on every
@@ -139,10 +210,12 @@ struct BroadcastCoefficients {
 };
 
 // Split Clenshaw, transcribed from boys_impl.hpp's ClenshawSplit onto gathered
-// coefficients: same steps, order and fused operations, so a lane's value is the
-// across-arguments lane's value for that order, bit for bit - the identity the
-// across-orders test asserts.
-template <class C> __m256d ClenshawSplitGathered(C coeff, int deg, __m256d t) noexcept {
+// coefficients: same steps, order and multiply-add route, so a lane's value is
+// the across-arguments lane's value for that order, bit for bit - the identity
+// the across-orders test asserts, and it holds at either route because both
+// bodies read the one selection.
+template <backend::MulAddRoute kMulAddRoute, class C>
+__m256d ClenshawSplitGathered(C coeff, int deg, __m256d t) noexcept {
     if (deg == 0)
     {
         return coeff(0);
@@ -150,16 +223,17 @@ template <class C> __m256d ClenshawSplitGathered(C coeff, int deg, __m256d t) no
 
     if (deg == 1)
     {
-        return _mm256_fmadd_pd(t, coeff(1), coeff(0));
+        return StepMulAdd<kMulAddRoute>(t, coeff(1), coeff(0));
     }
 
     const __m256d v =
-        _mm256_fmadd_pd(_mm256_set1_pd(2.0), _mm256_mul_pd(t, t), _mm256_set1_pd(-1.0));
+        StepMulAdd<kMulAddRoute>(_mm256_set1_pd(2.0), _mm256_mul_pd(t, t), _mm256_set1_pd(-1.0));
     const __m256d twoV = _mm256_add_pd(v, v);
 
     if (deg == 2)
     {
-        return _mm256_fmadd_pd(t, coeff(1), _mm256_fmadd_pd(v, coeff(2), coeff(0)));
+        return StepMulAdd<kMulAddRoute>(t, coeff(1),
+                                        StepMulAdd<kMulAddRoute>(v, coeff(2), coeff(0)));
     }
 
     assert(deg >= 4 && deg % 2 == 0);
@@ -170,39 +244,42 @@ template <class C> __m256d ClenshawSplitGathered(C coeff, int deg, __m256d t) no
 
     for (int k = m - 1; k >= 1; --k)
     {
-        const __m256d b0 = _mm256_fmadd_pd(twoV, b1, _mm256_sub_pd(coeff(2 * k), b2));
+        const __m256d b0 =
+            StepMulAdd<kMulAddRoute>(twoV, b1, _mm256_sub_pd(coeff(2 * k), b2));
         b2 = b1;
         b1 = b0;
     }
 
-    const __m256d even = _mm256_fmadd_pd(v, b1, _mm256_sub_pd(coeff(0), b2));
+    const __m256d even = StepMulAdd<kMulAddRoute>(v, b1, _mm256_sub_pd(coeff(0), b2));
 
     __m256d o1 = coeff(2 * m - 1);
     __m256d o2 = _mm256_setzero_pd();
 
     for (int k = m - 2; k >= 1; --k)
     {
-        const __m256d o0 = _mm256_fmadd_pd(twoV, o1, _mm256_sub_pd(coeff(2 * k + 1), o2));
+        const __m256d o0 =
+            StepMulAdd<kMulAddRoute>(twoV, o1, _mm256_sub_pd(coeff(2 * k + 1), o2));
         o2 = o1;
         o1 = o0;
     }
 
-    const __m256d odd =
-        _mm256_fmadd_pd(_mm256_sub_pd(twoV, _mm256_set1_pd(1.0)), o1, _mm256_sub_pd(coeff(1), o2));
-    return _mm256_fmadd_pd(t, odd, even);
+    const __m256d odd = StepMulAdd<kMulAddRoute>(_mm256_sub_pd(twoV, _mm256_set1_pd(1.0)), o1,
+                                                 _mm256_sub_pd(coeff(1), o2));
+    return StepMulAdd<kMulAddRoute>(t, odd, even);
 }
 
 // The direct sum: the Chebyshev series term by term, T_k by the forward recurrence
 // T_k = 2t T_{k-1} - T_{k-2}. Two multiply-adds per coefficient against the split
 // Clenshaw's one, and no dependence between the terms - the shape an across-orders
 // vector fills.
-template <class C> __m256d ChebyshevDirectSum(C coeff, int deg, __m256d t) noexcept {
+template <backend::MulAddRoute kMulAddRoute, class C>
+__m256d ChebyshevDirectSum(C coeff, int deg, __m256d t) noexcept {
     if (deg == 0)
     {
         return coeff(0);
     }
 
-    __m256d sum = _mm256_fmadd_pd(t, coeff(1), coeff(0));
+    __m256d sum = StepMulAdd<kMulAddRoute>(t, coeff(1), coeff(0));
 
     if (deg == 1)
     {
@@ -215,8 +292,8 @@ template <class C> __m256d ChebyshevDirectSum(C coeff, int deg, __m256d t) noexc
 
     for (int k = 2; k <= deg; ++k)
     {
-        const __m256d next = _mm256_fmsub_pd(twoT, cur, prev);
-        sum = _mm256_fmadd_pd(coeff(k), next, sum);
+        const __m256d next = StepMulSub<kMulAddRoute>(twoT, cur, prev);
+        sum = StepMulAdd<kMulAddRoute>(coeff(k), next, sum);
         prev = cur;
         cur = next;
     }
@@ -226,12 +303,13 @@ template <class C> __m256d ChebyshevDirectSum(C coeff, int deg, __m256d t) noexc
 
 // Horner over the monomial form of the fit, transcribed from HornerMono onto
 // gathered coefficients.
-template <class C> __m256d HornerGathered(C coeff, int deg, __m256d t) noexcept {
+template <backend::MulAddRoute kMulAddRoute, class C>
+__m256d HornerGathered(C coeff, int deg, __m256d t) noexcept {
     __m256d acc = coeff(deg);
 
     for (int k = deg - 1; k >= 0; --k)
     {
-        acc = _mm256_fmadd_pd(acc, t, coeff(k));
+        acc = StepMulAdd<kMulAddRoute>(acc, t, coeff(k));
     }
 
     return acc;
@@ -239,20 +317,21 @@ template <class C> __m256d HornerGathered(C coeff, int deg, __m256d t) noexcept 
 
 // One order's fit at one argument, in the lane's own arithmetic and mapping:
 // the scalar tail runs this so that its value is the vector's.
-template <OrdersScheme kScheme> double ScalarFit(const double* base, int deg, double t) noexcept {
+template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme>
+double ScalarFit(const double* base, int deg, double t) noexcept {
     const BroadcastCoefficients coeff{base};
     const __m256d tv = _mm256_set1_pd(t);
     double lanes[4];
 
     if constexpr (kScheme == OrdersScheme::kHorner)
     {
-        _mm256_storeu_pd(lanes, HornerGathered(coeff, deg, tv));
+        _mm256_storeu_pd(lanes, HornerGathered<kMulAddRoute>(coeff, deg, tv));
     } else if constexpr (kScheme == OrdersScheme::kDirectSum)
     {
-        _mm256_storeu_pd(lanes, ChebyshevDirectSum(coeff, deg, tv));
+        _mm256_storeu_pd(lanes, ChebyshevDirectSum<kMulAddRoute>(coeff, deg, tv));
     } else
     {
-        _mm256_storeu_pd(lanes, ClenshawSplitGathered(coeff, deg, tv));
+        _mm256_storeu_pd(lanes, ClenshawSplitGathered<kMulAddRoute>(coeff, deg, tv));
     }
 
     return lanes[0];
@@ -307,7 +386,7 @@ int GroupDegree(Degrees degrees, std::size_t flat, int pieceStride, int stored) 
 
 // One vector of four orders' values from a polynomial table, the group's first
 // order being l.
-template <OrdersScheme kScheme, bool kComposed>
+template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme, bool kComposed>
 __m256d ShippedGroup(
     const double* base, int l, int orderStride, int deg, __m128i step, __m256d tv) noexcept {
     const double* const groupBase = base + static_cast<std::ptrdiff_t>(l) * orderStride;
@@ -317,13 +396,13 @@ __m256d ShippedGroup(
 
     if constexpr (kScheme == OrdersScheme::kHorner)
     {
-        return HornerGathered(coeff, deg, tv);
+        return HornerGathered<kMulAddRoute>(coeff, deg, tv);
     } else if constexpr (kScheme == OrdersScheme::kDirectSum)
     {
-        return ChebyshevDirectSum(coeff, deg, tv);
+        return ChebyshevDirectSum<kMulAddRoute>(coeff, deg, tv);
     } else
     {
-        return ClenshawSplitGathered(coeff, deg, tv);
+        return ClenshawSplitGathered<kMulAddRoute>(coeff, deg, tv);
     }
 }
 
@@ -346,7 +425,10 @@ void StoreGroup(double* out, int l, std::size_t stride, __m256d value) noexcept 
     }
 }
 
-template <OrdersScheme kScheme, bool kComposed, class Degrees>
+template <backend::MulAddRoute kMulAddRoute,
+          OrdersScheme kScheme,
+          bool kComposed,
+          class Degrees>
 void OrdersBody(int nmax, double x, double* out, std::size_t stride, Degrees degrees) noexcept {
     // Both tables are cut identically, so the geometry is the same whichever
     // one the scheme reads: a scheme picks a table and a summation.
@@ -380,7 +462,8 @@ void OrdersBody(int nmax, double x, double* out, std::size_t stride, Degrees deg
             StoreGroup(out,
                        l,
                        stride,
-                       ShippedGroup<kScheme, kComposed>(base, l, orderStride, deg, step, tv));
+                       ShippedGroup<kMulAddRoute, kScheme, kComposed>(
+                           base, l, orderStride, deg, step, tv));
         }
     }
 
@@ -388,7 +471,7 @@ void OrdersBody(int nmax, double x, double* out, std::size_t stride, Degrees deg
     {
         const std::size_t flat = firstFlat + static_cast<std::size_t>(l) * pieceStride;
 
-        out[static_cast<std::size_t>(l) * stride] = ScalarFit<kScheme>(
+        out[static_cast<std::size_t>(l) * stride] = ScalarFit<kMulAddRoute, kScheme>(
             base + static_cast<std::ptrdiff_t>(l) * orderStride,
             degrees.At(flat, piece.deg),
             t);
@@ -427,7 +510,7 @@ static_assert(FlatDegreesCarried(),
               "with is written for an even degree of at least four, and a degree above the cap "
               "is beyond the coefficients the interval stores");
 
-template <OrdersScheme kScheme, bool kComposed>
+template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme, bool kComposed>
 void UniformOrdersBody(int nmax, double x, double* out, std::size_t stride) noexcept {
     const double* const table =
         (kScheme == OrdersScheme::kHorner) ? kFlatMonoCoeffs.data() : kFlatCoeffs.data();
@@ -453,14 +536,15 @@ void UniformOrdersBody(int nmax, double x, double* out, std::size_t stride) noex
             StoreGroup(out,
                        l,
                        stride,
-                       ShippedGroup<kScheme, kComposed>(base, l, orderStride, deg, step, tv));
+                       ShippedGroup<kMulAddRoute, kScheme, kComposed>(
+                           base, l, orderStride, deg, step, tv));
         }
     }
 
     for (; l <= nmax; ++l)
     {
-        out[static_cast<std::size_t>(l) * stride] =
-            ScalarFit<kScheme>(base + static_cast<std::ptrdiff_t>(l) * orderStride, deg, at.t);
+        out[static_cast<std::size_t>(l) * stride] = ScalarFit<kMulAddRoute, kScheme>(
+            base + static_cast<std::ptrdiff_t>(l) * orderStride, deg, at.t);
     }
 }
 
@@ -519,24 +603,28 @@ void NarrowGeometry(int l,
 // One vector of four orders from the narrow pieces, each lane fetched from its
 // own piece's block: `offsets` holds the four lanes' coefficient offsets, so
 // the gather at step k reads the k-th coefficient of each lane's own piece.
-template <OrdersScheme kScheme>
+template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme>
 __m256d NarrowGroup(const double* table, __m128i offsets, int deg, __m256d tv) noexcept {
     const auto coeff = [&](int k) { return _mm256_i32gather_pd(table + k, offsets, 8); };
 
     if constexpr (kScheme == OrdersScheme::kHorner)
     {
-        return HornerGathered(coeff, deg, tv);
+        return HornerGathered<kMulAddRoute>(coeff, deg, tv);
     } else if constexpr (kScheme == OrdersScheme::kDirectSum)
     {
-        return ChebyshevDirectSum(coeff, deg, tv);
+        return ChebyshevDirectSum<kMulAddRoute>(coeff, deg, tv);
     } else
     {
-        return ClenshawSplitGathered(coeff, deg, tv);
+        return ClenshawSplitGathered<kMulAddRoute>(coeff, deg, tv);
     }
 }
 
-template <OrdersScheme kScheme, class Degrees>
-void NarrowOrdersBody(int nmax, double x, double* out, std::size_t stride, Degrees degrees) noexcept {
+template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme, class Degrees>
+void NarrowOrdersBody(int nmax,
+                      double x,
+                      double* out,
+                      std::size_t stride,
+                      Degrees degrees) noexcept {
     const double* const table =
         (kScheme == OrdersScheme::kHorner) ? kNarrowAMonoCoeffs.data() : kNarrowACoeffs.data();
 
@@ -550,7 +638,8 @@ void NarrowOrdersBody(int nmax, double x, double* out, std::size_t stride, Degre
             int deg = 0;
             __m256d tv{};
             NarrowGeometry(l, x, degrees, offsets, deg, tv);
-            StoreGroup(out, l, stride, NarrowGroup<kScheme>(table, offsets, deg, tv));
+            StoreGroup(out, l, stride,
+                       NarrowGroup<kMulAddRoute, kScheme>(table, offsets, deg, tv));
         }
     }
 
@@ -560,8 +649,8 @@ void NarrowOrdersBody(int nmax, double x, double* out, std::size_t stride, Degre
         const std::size_t flat = static_cast<std::size_t>(&piece - kNarrowAPieces.data());
         const double t = std::fma(x - piece.a, 2.0 / (piece.b - piece.a), -1.0);
 
-        out[static_cast<std::size_t>(l) * stride] =
-            ScalarFit<kScheme>(table + piece.offset, degrees.At(flat, piece.deg), t);
+        out[static_cast<std::size_t>(l) * stride] = ScalarFit<kMulAddRoute, kScheme>(
+            table + piece.offset, degrees.At(flat, piece.deg), t);
     }
 }
 
@@ -618,18 +707,18 @@ static_assert(SchemesAllNamed(),
               "an enumerator of OrdersScheme names no summation: name it in SchemeIsNamed "
               "(boys_orders_simd.cpp), in both dispatches of this file");
 
-template <bool kComposed>
+template <backend::MulAddRoute kMulAddRoute, bool kComposed>
 void OrdersByScheme(OrdersScheme scheme, int nmax, double x, double* out, std::size_t stride) {
     const StoredDegree degrees{};
 
     switch (scheme)
     {
     case OrdersScheme::kDirectSum:
-        OrdersBody<OrdersScheme::kDirectSum, kComposed>(nmax, x, out, stride, degrees);
+        OrdersBody<kMulAddRoute, OrdersScheme::kDirectSum, kComposed>(nmax, x, out, stride, degrees);
         return;
 
     case OrdersScheme::kHorner:
-        OrdersBody<OrdersScheme::kHorner, kComposed>(nmax, x, out, stride, degrees);
+        OrdersBody<kMulAddRoute, OrdersScheme::kHorner, kComposed>(nmax, x, out, stride, degrees);
         return;
 
     // Named, so that a scheme added to the enumeration is this switch's
@@ -648,7 +737,7 @@ void OrdersByScheme(OrdersScheme scheme, int nmax, double x, double* out, std::s
     // own ClenshawSplit runs. Every enumerator of OrdersScheme is an arm above -
     // SchemesAllNamed is what keeps that true - so a scheme a caller can name
     // never arrives here.
-    OrdersBody<OrdersScheme::kSplitClenshaw, kComposed>(nmax, x, out, stride, degrees);
+    OrdersBody<kMulAddRoute, OrdersScheme::kSplitClenshaw, kComposed>(nmax, x, out, stride, degrees);
 }
 
 // --- The rational route on the orders axis ----------------------------------
@@ -698,7 +787,7 @@ int LaneMax(const int* lanes) noexcept {
 // The four lanes' geometry is handed in, because the two partitions reach it
 // differently: the shipped cover steps one flat index per lane at a table
 // stride, the narrow cover looks each lane's own piece up.
-template <class Pairs>
+template <backend::MulAddRoute kMulAddRoute, class Pairs>
 __m256d RationalGroupAt(const double* coeffs,
                         __m128i flat,
                         __m128i offset,
@@ -721,7 +810,7 @@ __m256d RationalGroupAt(const double* coeffs,
     {
         const __m128i idx = _mm_add_epi32(offset, _mm_min_epi32(_mm_set1_epi32(k), storedNum));
         const __m256d c = _mm256_i32gather_pd(coeffs, idx, 8);
-        num = _mm256_fmadd_pd(num, tv, _mm256_andnot_pd(AboveCut(k, numCutD), c));
+        num = StepMulAdd<kMulAddRoute>(num, tv, _mm256_andnot_pd(AboveCut(k, numCutD), c));
     }
 
     // The denominator is stored above the piece's FULL numerator, so the
@@ -736,16 +825,16 @@ __m256d RationalGroupAt(const double* coeffs,
         const __m128i idx = _mm_add_epi32(_mm_add_epi32(offset, storedNum),
                                          _mm_min_epi32(_mm_set1_epi32(k), storedDen));
         const __m256d c = _mm256_i32gather_pd(coeffs, idx, 8);
-        den = _mm256_fmadd_pd(den, tv, _mm256_andnot_pd(AboveCut(k, denCutD), c));
+        den = StepMulAdd<kMulAddRoute>(den, tv, _mm256_andnot_pd(AboveCut(k, denCutD), c));
     }
 
-    den = _mm256_fmadd_pd(den, tv, _mm256_set1_pd(1.0));
+    den = StepMulAdd<kMulAddRoute>(den, tv, _mm256_set1_pd(1.0));
     return _mm256_div_pd(num, den);
 }
 
 // One shipped-cover group: the four lanes' flat indices are derived from the
 // group's first flat index and the table's stride.
-template <class Pairs>
+template <backend::MulAddRoute kMulAddRoute, class Pairs>
 __m256d RationalGroup(const double* coeffs,
                       std::size_t firstFlat,
                       int pieceStride,
@@ -756,7 +845,7 @@ __m256d RationalGroup(const double* coeffs,
         _mm_set1_epi32(static_cast<int>(firstFlat) + l * pieceStride),
         _mm_mullo_epi32(_mm_set_epi32(3, 2, 1, 0), _mm_set1_epi32(pieceStride)));
 
-    return RationalGroupAt(coeffs,
+    return RationalGroupAt<kMulAddRoute>(coeffs,
                            flat,
                            _mm_i32gather_epi32(kRatAOffset.data(), flat, 4),
                            _mm_i32gather_epi32(kRatANumDeg.data(), flat, 4),
@@ -771,7 +860,7 @@ __m256d RationalGroup(const double* coeffs,
 // The orders below their end of region A are read with the shipped body's own
 // group rule, so an order's value there does not depend on which route the
 // policy names - only which orders the route answers does.
-template <EvalScheme kScheme, class Pairs, class Degrees>
+template <backend::MulAddRoute kMulAddRoute, EvalScheme kScheme, class Pairs, class Degrees>
 void RationalOrdersBody(int nmax,
                         double x,
                         double* out,
@@ -813,9 +902,10 @@ void RationalOrdersBody(int nmax,
 
     const auto shippedOrder = [&](int l) {
         const std::size_t flat = firstFlat + static_cast<std::size_t>(l) * pieceStride;
-        return ScalarFit<kOrdersScheme>(base + static_cast<std::ptrdiff_t>(l) * orderStride,
-                                        degrees.At(flat, piece.deg),
-                                        t);
+        return ScalarFit<kMulAddRoute, kOrdersScheme>(
+            base + static_cast<std::ptrdiff_t>(l) * orderStride,
+            degrees.At(flat, piece.deg),
+            t);
     };
 
     int l = 0;
@@ -833,18 +923,18 @@ void RationalOrdersBody(int nmax,
                 StoreGroup(out,
                            l,
                            stride,
-                           ShippedGroup<kOrdersScheme, true>(base,
-                                                            l,
-                                                            orderStride,
-                                                            GroupDegree(degrees,
-                                                                        flat,
-                                                                        pieceStride,
-                                                                        piece.deg),
-                                                            step,
-                                                            tv));
+                           ShippedGroup<kMulAddRoute, kOrdersScheme, true>(
+                               base,
+                               l,
+                               orderStride,
+                               GroupDegree(degrees, flat, pieceStride, piece.deg),
+                               step,
+                               tv));
             } else if (l + 4 <= served)
             {
-                StoreGroup(out, l, stride, RationalGroup(ratCoeffs, firstFlat, pieceStride, l, pairs, tv));
+                StoreGroup(out, l, stride,
+                           RationalGroup<kMulAddRoute>(
+                               ratCoeffs, firstFlat, pieceStride, l, pairs, tv));
             } else
             {
                 // The handover falls inside this group: one order at a time, in
@@ -872,7 +962,7 @@ void RationalOrdersBody(int nmax,
 // rule is the body above's, unchanged, so what a call on this axis returns is
 // the per-order narrow rational lane's value for the same order, four at a
 // time.
-template <EvalScheme kScheme, class Pairs, class Degrees>
+template <backend::MulAddRoute kMulAddRoute, EvalScheme kScheme, class Pairs, class Degrees>
 void NarrowRationalOrdersBody(int nmax,
                               double x,
                               double* out,
@@ -905,7 +995,8 @@ void NarrowRationalOrdersBody(int nmax,
         const OrderPiece& piece = narrowPiece(l);
         const std::size_t flat = static_cast<std::size_t>(&piece - kNarrowAPieces.data());
         const double t = std::fma(x - piece.a, 2.0 / (piece.b - piece.a), -1.0);
-        return ScalarFit<kOrdersScheme>(table + piece.offset, degrees.At(flat, piece.deg), t);
+        return ScalarFit<kMulAddRoute, kOrdersScheme>(
+            table + piece.offset, degrees.At(flat, piece.deg), t);
     };
 
     int l = 0;
@@ -922,7 +1013,8 @@ void NarrowRationalOrdersBody(int nmax,
                 __m128i offsets{};
                 __m256d tv{};
                 NarrowGeometry(l, x, degrees, offsets, deg, tv);
-                StoreGroup(out, l, stride, NarrowGroup<kOrdersScheme>(table, offsets, deg, tv));
+                StoreGroup(out, l, stride,
+                           NarrowGroup<kMulAddRoute, kOrdersScheme>(table, offsets, deg, tv));
             } else if (l + 4 <= served)
             {
                 alignas(32) int flatIdx[4];
@@ -947,7 +1039,7 @@ void NarrowRationalOrdersBody(int nmax,
                 StoreGroup(out,
                            l,
                            stride,
-                           RationalGroupAt(
+                           RationalGroupAt<kMulAddRoute>(
                                ratCoeffs,
                                _mm_loadu_si128(reinterpret_cast<const __m128i*>(flatIdx)),
                                _mm_loadu_si128(reinterpret_cast<const __m128i*>(off)),
@@ -1200,7 +1292,8 @@ struct BroadcastCoefficientsF32 {
 // Split Clenshaw, transcribed from boys_impl.hpp's ClenshawSplit onto per-lane
 // coefficients: same steps, same order, same fused operations, so a lane's
 // value is that order's single-precision value at the same degree, bit for bit.
-template <class C> __m256 ClenshawSplitF32(C coeff, int deg, __m256 t) noexcept {
+template <backend::MulAddRoute kMulAddRoute, class C>
+__m256 ClenshawSplitF32(C coeff, int deg, __m256 t) noexcept {
     if (deg == 0)
     {
         return coeff(0);
@@ -1208,16 +1301,17 @@ template <class C> __m256 ClenshawSplitF32(C coeff, int deg, __m256 t) noexcept 
 
     if (deg == 1)
     {
-        return _mm256_fmadd_ps(t, coeff(1), coeff(0));
+        return StepMulAdd<kMulAddRoute>(t, coeff(1), coeff(0));
     }
 
     const __m256 v =
-        _mm256_fmadd_ps(_mm256_set1_ps(2.0f), _mm256_mul_ps(t, t), _mm256_set1_ps(-1.0f));
+        StepMulAdd<kMulAddRoute>(_mm256_set1_ps(2.0f), _mm256_mul_ps(t, t), _mm256_set1_ps(-1.0f));
     const __m256 twoV = _mm256_add_ps(v, v);
 
     if (deg == 2)
     {
-        return _mm256_fmadd_ps(t, coeff(1), _mm256_fmadd_ps(v, coeff(2), coeff(0)));
+        return StepMulAdd<kMulAddRoute>(t, coeff(1),
+                                        StepMulAdd<kMulAddRoute>(v, coeff(2), coeff(0)));
     }
 
     assert(deg >= 4 && deg % 2 == 0);
@@ -1228,37 +1322,38 @@ template <class C> __m256 ClenshawSplitF32(C coeff, int deg, __m256 t) noexcept 
 
     for (int k = m - 1; k >= 1; --k)
     {
-        const __m256 b0 = _mm256_fmadd_ps(twoV, b1, _mm256_sub_ps(coeff(2 * k), b2));
+        const __m256 b0 = StepMulAdd<kMulAddRoute>(twoV, b1, _mm256_sub_ps(coeff(2 * k), b2));
         b2 = b1;
         b1 = b0;
     }
 
-    const __m256 even = _mm256_fmadd_ps(v, b1, _mm256_sub_ps(coeff(0), b2));
+    const __m256 even = StepMulAdd<kMulAddRoute>(v, b1, _mm256_sub_ps(coeff(0), b2));
 
     __m256 o1 = coeff(2 * m - 1);
     __m256 o2 = _mm256_setzero_ps();
 
     for (int k = m - 2; k >= 1; --k)
     {
-        const __m256 o0 = _mm256_fmadd_ps(twoV, o1, _mm256_sub_ps(coeff(2 * k + 1), o2));
+        const __m256 o0 = StepMulAdd<kMulAddRoute>(twoV, o1, _mm256_sub_ps(coeff(2 * k + 1), o2));
         o2 = o1;
         o1 = o0;
     }
 
-    const __m256 odd = _mm256_fmadd_ps(
+    const __m256 odd = StepMulAdd<kMulAddRoute>(
         _mm256_sub_ps(twoV, _mm256_set1_ps(1.0f)), o1, _mm256_sub_ps(coeff(1), o2));
-    return _mm256_fmadd_ps(t, odd, even);
+    return StepMulAdd<kMulAddRoute>(t, odd, even);
 }
 
 // The direct sum; see ChebyshevDirectSum for what it is and why the shape suits
 // this axis.
-template <class C> __m256 ChebyshevDirectSumF32(C coeff, int deg, __m256 t) noexcept {
+template <backend::MulAddRoute kMulAddRoute, class C>
+__m256 ChebyshevDirectSumF32(C coeff, int deg, __m256 t) noexcept {
     if (deg == 0)
     {
         return coeff(0);
     }
 
-    __m256 sum = _mm256_fmadd_ps(t, coeff(1), coeff(0));
+    __m256 sum = StepMulAdd<kMulAddRoute>(t, coeff(1), coeff(0));
 
     if (deg == 1)
     {
@@ -1271,8 +1366,8 @@ template <class C> __m256 ChebyshevDirectSumF32(C coeff, int deg, __m256 t) noex
 
     for (int k = 2; k <= deg; ++k)
     {
-        const __m256 next = _mm256_fmsub_ps(twoT, cur, prev);
-        sum = _mm256_fmadd_ps(coeff(k), next, sum);
+        const __m256 next = StepMulSub<kMulAddRoute>(twoT, cur, prev);
+        sum = StepMulAdd<kMulAddRoute>(coeff(k), next, sum);
         prev = cur;
         cur = next;
     }
@@ -1282,12 +1377,13 @@ template <class C> __m256 ChebyshevDirectSumF32(C coeff, int deg, __m256 t) noex
 
 // Horner over the monomial form of the fit, transcribed from HornerMono onto
 // per-lane coefficients.
-template <class C> __m256 HornerGatheredF32(C coeff, int deg, __m256 t) noexcept {
+template <backend::MulAddRoute kMulAddRoute, class C>
+__m256 HornerGatheredF32(C coeff, int deg, __m256 t) noexcept {
     __m256 acc = coeff(deg);
 
     for (int k = deg - 1; k >= 0; --k)
     {
-        acc = _mm256_fmadd_ps(acc, t, coeff(k));
+        acc = StepMulAdd<kMulAddRoute>(acc, t, coeff(k));
     }
 
     return acc;
@@ -1295,7 +1391,7 @@ template <class C> __m256 HornerGatheredF32(C coeff, int deg, __m256 t) noexcept
 
 // One order's fit at one argument, in the group's own arithmetic: the body the
 // scalar tail runs so that its values are the vector's.
-template <OrdersScheme kScheme>
+template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme>
 float F32ScalarFit(const float* table, int base, int deg, float t) noexcept {
     const BroadcastCoefficientsF32 coeff{table, base};
     const __m256 tv = _mm256_set1_ps(t);
@@ -1303,13 +1399,13 @@ float F32ScalarFit(const float* table, int base, int deg, float t) noexcept {
 
     if constexpr (kScheme == OrdersScheme::kHorner)
     {
-        _mm256_store_ps(lanes, HornerGatheredF32(coeff, deg, tv));
+        _mm256_store_ps(lanes, HornerGatheredF32<kMulAddRoute>(coeff, deg, tv));
     } else if constexpr (kScheme == OrdersScheme::kDirectSum)
     {
-        _mm256_store_ps(lanes, ChebyshevDirectSumF32(coeff, deg, tv));
+        _mm256_store_ps(lanes, ChebyshevDirectSumF32<kMulAddRoute>(coeff, deg, tv));
     } else
     {
-        _mm256_store_ps(lanes, ClenshawSplitF32(coeff, deg, tv));
+        _mm256_store_ps(lanes, ClenshawSplitF32<kMulAddRoute>(coeff, deg, tv));
     }
 
     return lanes[0];
@@ -1317,20 +1413,20 @@ float F32ScalarFit(const float* table, int base, int deg, float t) noexcept {
 
 // One vector of eight orders' values from a polynomial table, at the group's
 // largest degree, every lane masked to its own.
-template <OrdersScheme kScheme, bool kComposed>
+template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme, bool kComposed>
 __m256 F32ShippedGroup(const F32Group& group) noexcept {
     const auto coeff = [&](int k) { return F32Coefficients<kComposed>(group, k); };
     const __m256 tv = _mm256_loadu_ps(group.t);
 
     if constexpr (kScheme == OrdersScheme::kHorner)
     {
-        return HornerGatheredF32(coeff, group.degMax, tv);
+        return HornerGatheredF32<kMulAddRoute>(coeff, group.degMax, tv);
     } else if constexpr (kScheme == OrdersScheme::kDirectSum)
     {
-        return ChebyshevDirectSumF32(coeff, group.degMax, tv);
+        return ChebyshevDirectSumF32<kMulAddRoute>(coeff, group.degMax, tv);
     } else
     {
-        return ClenshawSplitF32(coeff, group.degMax, tv);
+        return ClenshawSplitF32<kMulAddRoute>(coeff, group.degMax, tv);
     }
 }
 
@@ -1352,7 +1448,7 @@ struct F32RungDegree {
     }
 };
 
-template <OrdersScheme kScheme, bool kComposed, class Degrees>
+template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme, bool kComposed, class Degrees>
 void F32OrdersBody(int nmax, float x, float* out, Degrees degrees) noexcept {
     const float* const table =
         (kScheme == OrdersScheme::kHorner) ? f32::kMonoCoeffs.data() : f32::kCoeffs.data();
@@ -1361,7 +1457,9 @@ void F32OrdersBody(int nmax, float x, float* out, Degrees degrees) noexcept {
 
     for (; l + 8 <= nmax + 1; l += 8)
     {
-        _mm256_storeu_ps(out + l, F32ShippedGroup<kScheme, kComposed>(BuildF32Group(table, l, x, degrees)));
+        _mm256_storeu_ps(
+            out + l,
+            F32ShippedGroup<kMulAddRoute, kScheme, kComposed>(BuildF32Group(table, l, x, degrees)));
     }
 
     for (; l <= nmax; ++l)
@@ -1369,17 +1467,16 @@ void F32OrdersBody(int nmax, float x, float* out, Degrees degrees) noexcept {
         const f32::OrderPiece& piece = FindPieceF32(l, x);
         const auto flat = static_cast<std::size_t>(&piece - f32::kPieces.data());
 
-        out[l] = F32ScalarFit<kScheme>(table,
-                                       piece.offset,
-                                       degrees.At(flat, piece.deg),
-                                       2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f);
+        out[l] = F32ScalarFit<kMulAddRoute, kScheme>(
+            table, piece.offset, degrees.At(flat, piece.deg),
+            2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f);
     }
 }
 
 // The shipped body's shape over the narrow pieces, whose fit is the narrow table's
 // rather than the shipped one's. The degrees are this partition's own table for the
 // same reason: a cut degree is certified against the coefficients it is cut from.
-template <OrdersScheme kScheme, bool kComposed, class Degrees>
+template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme, bool kComposed, class Degrees>
 void F32NarrowOrdersBody(int nmax, float x, float* out, Degrees degrees) noexcept {
     const float* const table = (kScheme == OrdersScheme::kHorner)
                                    ? f32::kNarrowAMonoCoeffsF32.data()
@@ -1390,7 +1487,9 @@ void F32NarrowOrdersBody(int nmax, float x, float* out, Degrees degrees) noexcep
     for (; l + 8 <= nmax + 1; l += 8)
     {
         _mm256_storeu_ps(
-            out + l, F32ShippedGroup<kScheme, kComposed>(BuildF32NarrowGroup(table, l, x, degrees)));
+            out + l,
+            F32ShippedGroup<kMulAddRoute, kScheme, kComposed>(
+                BuildF32NarrowGroup(table, l, x, degrees)));
     }
 
     for (; l <= nmax; ++l)
@@ -1398,10 +1497,9 @@ void F32NarrowOrdersBody(int nmax, float x, float* out, Degrees degrees) noexcep
         const f32::OrderPiece& piece = FindNarrowPieceF32(l, x);
         const auto flat = static_cast<std::size_t>(&piece - f32::kNarrowAPiecesF32.data());
 
-        out[l] = F32ScalarFit<kScheme>(table,
-                                       piece.offset,
-                                       degrees.At(flat, piece.deg),
-                                       2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f);
+        out[l] = F32ScalarFit<kMulAddRoute, kScheme>(
+            table, piece.offset, degrees.At(flat, piece.deg),
+            2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f);
     }
 }
 
@@ -1544,6 +1642,7 @@ __m256 F32RatCoefficients(const float* coeffs,
 // the route's own scalar reading. A lane with no denominator at all keeps the zero
 // accumulator and the closing multiply-add turns it into exactly one, the route's own
 // early return.
+template <backend::MulAddRoute kMulAddRoute>
 __m256 F32RationalGroup(const F32RatGroup& group, const float* coeffs) noexcept {
     const __m256 tv = _mm256_loadu_ps(group.t);
     const std::int32_t kNumShift[8] = {};
@@ -1552,7 +1651,7 @@ __m256 F32RationalGroup(const F32RatGroup& group, const float* coeffs) noexcept 
 
     for (int k = group.numMax; k >= 0; --k)
     {
-        num = _mm256_fmadd_ps(
+        num = StepMulAdd<kMulAddRoute>(
             num, tv, F32RatCoefficients(coeffs, group.base, kNumShift, group.numdeg, k));
     }
 
@@ -1572,18 +1671,18 @@ __m256 F32RationalGroup(const F32RatGroup& group, const float* coeffs) noexcept 
 
     for (int k = group.denMax - 1; k >= 0; --k)
     {
-        den = _mm256_fmadd_ps(
+        den = StepMulAdd<kMulAddRoute>(
             den, tv, F32RatCoefficients(coeffs, group.base, denShift, denStored, k));
     }
 
-    den = _mm256_fmadd_ps(den, tv, _mm256_set1_ps(1.0f));
+    den = StepMulAdd<kMulAddRoute>(den, tv, _mm256_set1_ps(1.0f));
     return _mm256_div_ps(num, den);
 }
 
 // The route's region-A body on this axis: eight orders to a vector and a scalar
 // tail in the group's own arithmetic - the route's own cut reading, so the
 // tail's value is the vector's for the lane it stands for.
-template <class CutPairs>
+template <backend::MulAddRoute kMulAddRoute, class CutPairs>
 void F32RationalBody(int nmax, float x, float* out, CutPairs cuts) noexcept {
     int l = 0;
 
@@ -1591,7 +1690,7 @@ void F32RationalBody(int nmax, float x, float* out, CutPairs cuts) noexcept {
     {
         _mm256_storeu_ps(
             out + l,
-            F32RationalGroup(BuildF32RatGroup(l, x, cuts), f32::kRatACoeffs.data()));
+            F32RationalGroup<kMulAddRoute>(BuildF32RatGroup(l, x, cuts), f32::kRatACoeffs.data()));
     }
 
     for (; l <= nmax; ++l)
@@ -1612,15 +1711,15 @@ void F32RationalBody(int nmax, float x, float* out, CutPairs cuts) noexcept {
 // table the lanes look their piece up in, which coefficient array the offsets index and
 // which pairs table the rung's cut is read from. The tail is the shipped body's too, at
 // this partition's own table, so its value is the group reader's for the same lane.
-template <class CutPairs>
+template <backend::MulAddRoute kMulAddRoute, class CutPairs>
 void F32NarrowRationalBody(int nmax, float x, float* out, CutPairs cuts) noexcept {
     int l = 0;
 
     for (; l + 8 <= nmax + 1; l += 8)
     {
         _mm256_storeu_ps(out + l,
-                         F32RationalGroup(BuildF32NarrowRatGroup(l, x, cuts),
-                                          f32::kNarrowRatACoeffsF32.data()));
+                         F32RationalGroup<kMulAddRoute>(BuildF32NarrowRatGroup(l, x, cuts),
+                                                        f32::kNarrowRatACoeffsF32.data()));
     }
 
     for (; l <= nmax; ++l)
@@ -1699,22 +1798,24 @@ bool F32OrdersShortcut(int nmax, float x, float* out) noexcept {
     return false;
 }
 
-template <bool kComposed>
+template <backend::MulAddRoute kMulAddRoute, bool kComposed>
 void F32OrdersByRoute(OrdersScheme scheme, FitRoute route, int nmax, float x, float* out) noexcept {
     if (route == FitRoute::kRationalMinimax)
     {
-        F32RationalBody(nmax, x, out, F32StoredPairs{});
+        F32RationalBody<kMulAddRoute>(nmax, x, out, F32StoredPairs{});
         return;
     }
 
     switch (scheme)
     {
     case OrdersScheme::kDirectSum:
-        F32OrdersBody<OrdersScheme::kDirectSum, kComposed>(nmax, x, out, F32StoredDegree{});
+        F32OrdersBody<kMulAddRoute, OrdersScheme::kDirectSum, kComposed>(nmax, x, out,
+                                                                        F32StoredDegree{});
         return;
 
     case OrdersScheme::kHorner:
-        F32OrdersBody<OrdersScheme::kHorner, kComposed>(nmax, x, out, F32StoredDegree{});
+        F32OrdersBody<kMulAddRoute, OrdersScheme::kHorner, kComposed>(nmax, x, out,
+                                                                     F32StoredDegree{});
         return;
 
     // Named, so that a scheme added to the enumeration is this switch's
@@ -1734,7 +1835,8 @@ void F32OrdersByRoute(OrdersScheme scheme, FitRoute route, int nmax, float x, fl
     // reason. Every enumerator of OrdersScheme is an arm above - SchemesAllNamed
     // is what keeps that true - so a scheme a caller can name never arrives
     // here.
-    F32OrdersBody<OrdersScheme::kSplitClenshaw, kComposed>(nmax, x, out, F32StoredDegree{});
+    F32OrdersBody<kMulAddRoute, OrdersScheme::kSplitClenshaw, kComposed>(nmax, x, out,
+                                                                        F32StoredDegree{});
 }
 
 } // namespace
@@ -1803,7 +1905,7 @@ void BoysAllOrdersSimdAtForm(
         return;
     }
 
-    OrdersByScheme<kComposed>(scheme, nmax, x, out, stride);
+    OrdersByScheme<backend::detail::kSelectedRoute, kComposed>(scheme, nmax, x, out, stride);
 }
 
 void BoysAllOrdersSimd(
@@ -1824,7 +1926,7 @@ void BoysAllOrdersF32Simd(
 
     if (!F32OrdersShortcut(nmax, x, out))
     {
-        F32OrdersByRoute<false>(scheme, route, nmax, x, out);
+        F32OrdersByRoute<backend::detail::kSelectedRoute, false>(scheme, route, nmax, x, out);
     }
 }
 
@@ -1836,7 +1938,7 @@ void BoysAllOrdersF32SimdComposed(
 
     if (!F32OrdersShortcut(nmax, x, out))
     {
-        F32OrdersByRoute<true>(scheme, route, nmax, x, out);
+        F32OrdersByRoute<backend::detail::kSelectedRoute, true>(scheme, route, nmax, x, out);
     }
 }
 
@@ -1945,7 +2047,8 @@ void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
             return;
         }
 
-        F32OrdersBody<OrdersSchemeOf(kScheme), kF32Composed>(nmax, x, out, F32StoredDegree{});
+        F32OrdersBody<backend::detail::kSelectedRoute, OrdersSchemeOf(kScheme), kF32Composed>(
+            nmax, x, out, F32StoredDegree{});
     } else
     {
         if (x == 0.0f)
@@ -1994,10 +2097,12 @@ void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
                 static constexpr auto kPairsA =
                     RationalRegionAF32Degrees<kRole>();
 
-                F32RationalBody(nmax, x, out, F32RungPairs<decltype(kPairsA)>{kPairsA});
+                F32RationalBody<backend::detail::kSelectedRoute>(
+                    nmax, x, out, F32RungPairs<decltype(kPairsA)>{kPairsA});
             } else
             {
-                F32OrdersBody<OrdersSchemeOf(kScheme), kF32Composed>(
+                F32OrdersBody<backend::detail::kSelectedRoute, OrdersSchemeOf(kScheme),
+                              kF32Composed>(
                     nmax, x, out, F32RungDegree<decltype(kDegreesA)>{kDegreesA});
             }
         } else
@@ -2016,10 +2121,12 @@ void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
                 static constexpr auto kPairsA =
                     NarrowRationalRegionAF32Degrees<kRole>();
 
-                F32NarrowRationalBody(nmax, x, out, F32RungPairs<decltype(kPairsA)>{kPairsA});
+                F32NarrowRationalBody<backend::detail::kSelectedRoute>(
+                    nmax, x, out, F32RungPairs<decltype(kPairsA)>{kPairsA});
             } else
             {
-                F32NarrowOrdersBody<OrdersSchemeOf(kScheme), kF32Composed>(
+                F32NarrowOrdersBody<backend::detail::kSelectedRoute, OrdersSchemeOf(kScheme),
+                                    kF32Composed>(
                     nmax, x, out, F32RungDegree<decltype(kDegreesA)>{kDegreesA});
             }
         }
@@ -2223,7 +2330,8 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
                 return;
             }
 
-            UniformOrdersBody<OrdersSchemeOf(kScheme), true>(nmax, x, out, 1);
+            UniformOrdersBody<backend::detail::kSelectedRoute, OrdersSchemeOf(kScheme), true>(
+                nmax, x, out, 1);
         }
 
         return;
@@ -2289,23 +2397,23 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
             {
                 static constexpr auto kPairs = RationalRegionANarrowDegrees();
 
-                NarrowRationalOrdersBody<kScheme>(
+                NarrowRationalOrdersBody<backend::detail::kSelectedRoute, kScheme>(
                     nmax, x, out, 1, kPairs, RungDegree<decltype(kDegrees)>{kDegrees});
             }
             else
             {
-                NarrowOrdersBody<OrdersSchemeOf(kScheme)>(
+                NarrowOrdersBody<backend::detail::kSelectedRoute, OrdersSchemeOf(kScheme)>(
                     nmax, x, out, 1, RungDegree<decltype(kDegrees)>{kDegrees});
             }
         } else if constexpr (kRoute == FitRoute::kRationalMinimax)
         {
             static constexpr auto kPairs = RationalRegionADegrees();
 
-            RationalOrdersBody<kScheme>(
+            RationalOrdersBody<backend::detail::kSelectedRoute, kScheme>(
                 nmax, x, out, 1, kPairs, RungDegree<decltype(kDegrees)>{kDegrees});
         } else
         {
-            OrdersBody<OrdersSchemeOf(kScheme), true>(
+            OrdersBody<backend::detail::kSelectedRoute, OrdersSchemeOf(kScheme), true>(
                 nmax, x, out, 1, RungDegree<decltype(kDegrees)>{kDegrees});
         }
     }

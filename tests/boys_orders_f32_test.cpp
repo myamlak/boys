@@ -71,8 +71,8 @@ bool SameBitsF32(float a, float b) noexcept {
 }
 
 // Whether the scalar arithmetic this build compiles is the one-rounding route.
-// The packed lane names its own instruction and is contraction-free whatever
-// this says; the scalar lane the values are compared with is not.
+// The packed lane runs whatever this build selected, so the two lanes are one
+// route either way; the scalar lane the values are compared with is not.
 constexpr bool kScalarIsFused() noexcept {
 #if defined(BOYS_MULADD_SEPARATE) && BOYS_MULADD_SEPARATE
     return false;

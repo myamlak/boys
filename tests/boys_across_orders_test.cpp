@@ -258,11 +258,11 @@ BarShortfall PolicyAgainstReference(const std::vector<ReferenceCell>& cells, Bar
 // for an order is the across-arguments lane's for that order.
 //
 // At the fused route the two bodies run one arithmetic and the claim is bit for
-// bit. At the separate route they are two arithmetics: this lane spells its own
-// `vfmadd` and is one-rounding whatever the build says, while the across-arguments
-// lane now carries the route the build selected. The claim there is how far the
-// two part, which is a rounding's — each body is inside the region's budget, so
-// the two are within twice it — and the count and the parting print either way.
+// bit. At the separate route they are two arithmetics: both lanes carry the route
+// the build selected, and they sum the same stored fit in different orders. The
+// claim there is how far the two part, which is a rounding's — each body is
+// inside the region's budget, so the two are within twice it — and the count and
+// the parting print either way.
 TEST(BoysAcrossOrders, SplitClenshawIsTheAcrossArgumentsLaneBitForBit) {
     if (!VectorTier())
     {
@@ -1012,7 +1012,7 @@ TEST(BoysAcrossOrders, TheUniformGridOnTheAxisIsThePerOrderLaneBitForBit) {
 #if defined(BOYS_MULADD_SEPARATE) && BOYS_MULADD_SEPARATE
     // This build's scalar route is the two-rounding one, so the lane and the per-order
     // entry are two arithmetics and what is asserted is the region's budget: the packed
-    // lane names its own instruction and is one-rounding whatever the build says. The
+    // lane runs the build's own two-rounding route, summed in its own order. The
     // count above still prints, so a reader sees how far apart the two arithmetics are.
     static_cast<void>(differing);
     EXPECT_LE(worst, boys::detail::RegionABudget(boys::detail::BoysRole::kDoubleSingle))
