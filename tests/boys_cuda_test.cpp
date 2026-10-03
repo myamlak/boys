@@ -3,13 +3,18 @@
 #include "boys/boys_impl.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
 #include <limits>
 #include <random>
+#include <string>
+#include <type_traits>
 #include <vector>
 
 #if BoysFp16
@@ -927,3 +932,414 @@ TEST(BoysCudaTest, AllNChecksTheOrder) {
     ASSERT_EQ(boys::BoysCuda::AllNF16(-1, &y, &y, 0, nullptr), boys::BoysStatus::kInvalidArgument);
 }
 #endif // BoysFp16
+
+// ---------------------------------------------------------------------------
+// The division-form axis, checked by bits
+// ---------------------------------------------------------------------------
+//
+// The axis states that every entry of the space runs every form, and the reason
+// the two reciprocal forms are worth carrying is a claim about bits: accuracy.hpp
+// states of the refined form that it "is bit-identical to exact division", and of
+// the plain one that it rounds twice where the exact form rounds once. No bound
+// the library publishes can see that difference - one ulp sits inside every one of
+// them - so the check below crosses a spread of entries with the three forms,
+// compares bit patterns, and counts the values at which two forms disagree.
+//
+// The check has a negative control: a build with BOYS_CUDA_TEST_DROP_DIVISION_FORM
+// defined (the target boys-cuda-tests-divform-control) hands every launch
+// kExactDivision whatever form it asked for, and the assertion that the plain form
+// differ from the exact one must then fail on its own message. Without that build,
+// "the refined form is bit-identical" would be consistent with a form argument no
+// kernel reads, which is the failure this whole axis exists to make visible.
+
+namespace {
+
+// The forms, in the axis's own order, read off the library's enumeration rather
+// than listed from memory.
+constexpr std::array<boys::DivisionForm, 3> kDivisionForms = {
+    boys::DivisionForm::kExactDivision,
+    boys::DivisionForm::kPlainReciprocal,
+    boys::DivisionForm::kRefinedReciprocal,
+};
+
+/// The form a launch actually runs. The negative control named above makes this
+/// answer kExactDivision for every form asked for: the axis is still crossed,
+/// every call still succeeds and every count below is still taken, and only the
+/// arithmetic the kernel runs is the same three times.
+boys::DivisionForm LaunchedForm(boys::DivisionForm asked) noexcept {
+#if defined(BOYS_CUDA_TEST_DROP_DIVISION_FORM)
+    static_cast<void>(asked);
+    return boys::DivisionForm::kExactDivision;
+#else
+    return asked;
+#endif
+}
+
+/// A value's bits - the comparison this check makes. A float's four bytes are read
+/// into the low half of the word.
+template <typename T>
+std::uint64_t BitsOf(T value) noexcept {
+    std::uint64_t bits = 0;
+    std::memcpy(&bits, &value, sizeof(T));
+    return bits;
+}
+
+/// The distance between two values counted in representable steps: 0 when they are
+/// the same value, 1 when they are adjacent. An IEEE value's bit pattern read as a
+/// sign-magnitude integer is monotone in the value, and the map below turns it into
+/// a plain ordinal, so the distance is a subtraction. It is what turns "the plain
+/// form differs" into "the plain form differs by at most this much".
+template <typename T>
+std::uint64_t UlpDistance(T a, T b) noexcept {
+    if constexpr (std::is_same_v<T, float>)
+    {
+        std::uint32_t ua = 0;
+        std::uint32_t ub = 0;
+        std::memcpy(&ua, &a, sizeof(float));
+        std::memcpy(&ub, &b, sizeof(float));
+        const auto ordinal = [](std::uint32_t u) -> std::uint32_t {
+            return (u & 0x80000000u) != 0u ? ~u : (u | 0x80000000u);
+        };
+        const std::uint32_t first = ordinal(ua);
+        const std::uint32_t second = ordinal(ub);
+        return first > second ? first - second : second - first;
+    } else
+    {
+        std::uint64_t ua = 0;
+        std::uint64_t ub = 0;
+        std::memcpy(&ua, &a, sizeof(double));
+        std::memcpy(&ub, &b, sizeof(double));
+        const auto ordinal = [](std::uint64_t u) -> std::uint64_t {
+            return (u & 0x8000000000000000ull) != 0ull ? ~u : (u | 0x8000000000000000ull);
+        };
+        const std::uint64_t first = ordinal(ua);
+        const std::uint64_t second = ordinal(ub);
+        return first > second ? first - second : second - first;
+    }
+}
+
+/// How many values two forms' outputs disagree on, how far apart the widest of them
+/// is, and the first few of them, so a disagreement is reportable and not only
+/// countable.
+struct FormPair {
+    std::size_t values = 0;
+    std::size_t differ = 0;
+    std::uint64_t widest = 0;
+    std::string widestWhere;
+    /// The values the two forms place more than a thousandth of the value apart:
+    /// the ulp distance alone is dynamic-range sensitive, since two values near zero
+    /// are far apart in representable steps while agreeing to the last bit of their
+    /// magnitude, and this count is what separates "an ulp here and there" from a
+    /// value one of the two forms got wrong outright.
+    std::size_t apartByAThousandth = 0;
+    double widestRelative = 0.0;
+    std::string widestRelativeWhere;
+    std::vector<std::string> examples;
+};
+
+constexpr std::size_t kFormExamples = 4;
+
+/// One disagreement, with the argument and the order that produced it and both
+/// values as a decimal and as their bits. A finding, if there is one, has to name
+/// the x at which it happened.
+template <typename T>
+std::string FormatDifference(std::size_t element, int order, double arg, T first, T second) {
+    char values[192];
+
+    if constexpr (std::is_same_v<T, float>)
+    {
+        std::snprintf(values, sizeof(values), "a=%.9g [%08x]  b=%.9g [%08x]",
+                      static_cast<double>(first), static_cast<unsigned>(BitsOf(first)),
+                      static_cast<double>(second), static_cast<unsigned>(BitsOf(second)));
+    } else
+    {
+        std::snprintf(values, sizeof(values), "a=%.17g [%016llx]  b=%.17g [%016llx]",
+                      static_cast<double>(first), static_cast<unsigned long long>(BitsOf(first)),
+                      static_cast<double>(second), static_cast<unsigned long long>(BitsOf(second)));
+    }
+
+    char line[288];
+    std::snprintf(line, sizeof(line), "    i=%zu order=%d x=%.17g  %s", element, order, arg, values);
+    return std::string(line);
+}
+
+/// The counts for one pair, over the whole output. The order-major entries write
+/// `out[order * count + i]`; the per-argument ones write `out[i]` and their order
+/// is the one the caller asked for at `i`.
+template <typename T>
+FormPair CompareBits(const std::vector<T>& a, const std::vector<T>& b, const std::vector<int>& n,
+                     const std::vector<double>& x, std::size_t count, bool planes) {
+    FormPair pair;
+    pair.values = a.size();
+
+    for (std::size_t i = 0; i < a.size(); ++i)
+    {
+        if (BitsOf(a[i]) == BitsOf(b[i]))
+        {
+            continue;
+        }
+
+        ++pair.differ;
+
+        const std::size_t element = planes ? i % count : i;
+        const int order = planes ? static_cast<int>(i / count) : n[element];
+
+        if (const std::uint64_t distance = UlpDistance(a[i], b[i]); distance > pair.widest)
+        {
+            pair.widest = distance;
+            pair.widestWhere = FormatDifference(element, order, x[element], a[i], b[i]);
+        }
+
+        const double magnitude =
+            std::max(std::abs(static_cast<double>(a[i])), std::abs(static_cast<double>(b[i])));
+        const double relative =
+            magnitude > 0.0
+                ? std::abs(static_cast<double>(a[i]) - static_cast<double>(b[i])) / magnitude
+                : 0.0;
+
+        if (relative > 1e-3)
+        {
+            ++pair.apartByAThousandth;
+
+            if (relative > pair.widestRelative)
+            {
+                pair.widestRelative = relative;
+                pair.widestRelativeWhere = FormatDifference(element, order, x[element], a[i], b[i]);
+            }
+        }
+
+        if (pair.examples.size() < kFormExamples)
+        {
+            pair.examples.push_back(FormatDifference(element, order, x[element], a[i], b[i]));
+        }
+    }
+
+    return pair;
+}
+
+/// Runs one entry at one form over the batch and returns what it wrote. Every
+/// launch goes through LaunchedForm, so the negative control reaches the entries
+/// below without any of them knowing it.
+template <typename T, typename Launch>
+std::vector<T> RunEntryAtForm(const char* entry, Launch launch, const int* deviceN,
+                              const double* deviceX, T* deviceOut, std::size_t values,
+                              std::size_t count, boys::DivisionForm form) {
+    const boys::BoysStatus status =
+        launch(deviceN, deviceX, deviceOut, count, nullptr, LaunchedForm(form));
+    EXPECT_EQ(status, boys::BoysStatus::kSuccess)
+        << entry << " at " << boys::DivisionFormName(form);
+    EXPECT_EQ(cudaDeviceSynchronize(), cudaSuccess) << entry;
+
+    std::vector<T> host(values);
+    EXPECT_EQ(cudaMemcpy(host.data(), deviceOut, values * sizeof(T), cudaMemcpyDeviceToHost),
+              cudaSuccess)
+        << entry;
+    return host;
+}
+
+/// The counts over every entry crossed, plus the examples of the first pair.
+struct FormTally {
+    std::size_t entries = 0;
+    std::size_t values = 0;
+    std::size_t refinedVsExact = 0;
+    std::size_t plainVsExact = 0;
+    std::size_t plainVsRefined = 0;
+    std::uint64_t widestRefinedVsExact = 0;
+    std::uint64_t widestPlainVsExact = 0;
+    std::uint64_t widestPlainVsRefined = 0;
+    std::size_t plainVsExactApart = 0;
+    double plainVsExactWidestRelative = 0.0;
+    std::string widestPlainVsExactWhere;
+    std::string widestRelativePlainVsExactWhere;
+    std::vector<std::string> examples;
+};
+
+/// The whole check for one entry: three launches, three pairwise counts, one line
+/// of the report. The totals are asserted on by the test.
+template <typename T, typename Launch>
+void CrossEntryWithForms(FormTally& tally, const char* entry, Launch launch, const int* deviceN,
+                         const double* deviceX, T* deviceOut, const std::vector<int>& n,
+                         const std::vector<double>& x, std::size_t count, bool planes) {
+    const std::size_t values = planes ? count * (boys::kMaxBoysOrder + 1) : count;
+    std::array<std::vector<T>, 3> output;
+
+    for (std::size_t f = 0; f < kDivisionForms.size(); ++f)
+    {
+        output[f] = RunEntryAtForm(entry, launch, deviceN, deviceX, deviceOut, values, count,
+                                   kDivisionForms[f]);
+    }
+
+    const FormPair refinedVsExact = CompareBits(output[0], output[2], n, x, count, planes);
+    const FormPair plainVsExact = CompareBits(output[0], output[1], n, x, count, planes);
+    const FormPair plainVsRefined = CompareBits(output[1], output[2], n, x, count, planes);
+
+    ++tally.entries;
+    tally.values += values;
+    tally.refinedVsExact += refinedVsExact.differ;
+    tally.plainVsExact += plainVsExact.differ;
+    tally.plainVsRefined += plainVsRefined.differ;
+    tally.widestRefinedVsExact = std::max(tally.widestRefinedVsExact, refinedVsExact.widest);
+    tally.widestPlainVsRefined = std::max(tally.widestPlainVsRefined, plainVsRefined.widest);
+
+    if (plainVsExact.widest > tally.widestPlainVsExact)
+    {
+        tally.widestPlainVsExact = plainVsExact.widest;
+        tally.widestPlainVsExactWhere = std::string(entry) + ":\n" + plainVsExact.widestWhere;
+    }
+
+    tally.plainVsExactApart += plainVsExact.apartByAThousandth;
+
+    if (plainVsExact.widestRelative > tally.plainVsExactWidestRelative)
+    {
+        tally.plainVsExactWidestRelative = plainVsExact.widestRelative;
+        tally.widestRelativePlainVsExactWhere =
+            std::string(entry) + ":\n" + plainVsExact.widestRelativeWhere;
+    }
+
+    for (const std::string& line : refinedVsExact.examples)
+    {
+        tally.examples.push_back(std::string(entry) + " exact vs refined:\n" + line);
+    }
+
+    std::printf("  %-16s %9zu values   exact/refined %8zu (max %llu ulp)   exact/plain %8zu (max "
+                "%llu ulp)   plain/refined %8zu (max %llu ulp)\n",
+                entry, values, refinedVsExact.differ,
+                static_cast<unsigned long long>(refinedVsExact.widest), plainVsExact.differ,
+                static_cast<unsigned long long>(plainVsExact.widest), plainVsRefined.differ,
+                static_cast<unsigned long long>(plainVsRefined.widest));
+}
+
+/// The uniform-order entries take their order as a host scalar - that is what
+/// makes them uniform, and what the launched surface exposes as `AllNF*` rather
+/// than as an order array - so the two adapters below supply it and every other
+/// entry is passed through as it stands.
+struct UniformOrderF64 {
+    int nmax;
+
+    boys::BoysStatus operator()(const int*, const double* x, double* out, std::size_t count,
+                                void* stream, boys::DivisionForm form) const {
+        return boys::BoysCuda::AllNF64(nmax, x, out, count, stream, form);
+    }
+};
+
+struct UniformOrderF32 {
+    int nmax;
+
+    boys::BoysStatus operator()(const int*, const double* x, float* out, std::size_t count,
+                                void* stream, boys::DivisionForm form) const {
+        return boys::BoysCuda::AllNF32(nmax, x, out, count, stream, form);
+    }
+};
+
+} // namespace
+
+TEST(BoysCudaTest, DivisionFormsDifferByBits) {
+    int deviceCount = 0;
+    cudaGetDeviceCount(&deviceCount);
+
+    if (deviceCount == 0)
+    {
+        GTEST_SKIP() << "no CUDA device";
+    }
+
+    DeviceSetup setup;
+    ASSERT_EQ(boys::BoysCuda::InitializeTables(), boys::BoysStatus::kSuccess);
+
+    std::vector<int> hostN(kCount);
+    std::vector<double> hostX(kCount);
+    ASSERT_EQ(cudaMemcpy(hostN.data(), setup.n, kCount * sizeof(int), cudaMemcpyDeviceToHost),
+              cudaSuccess);
+    ASSERT_EQ(cudaMemcpy(hostX.data(), setup.x, kCount * sizeof(double), cudaMemcpyDeviceToHost),
+              cudaSuccess);
+
+    const int nmax = boys::kMaxBoysOrder;
+    FormTally tally;
+
+    std::printf("division forms: %zu forms, entry by entry\n", kDivisionForms.size());
+    CrossEntryWithForms(tally, "SingleF64", &boys::BoysCuda::SingleF64, setup.n, setup.x,
+                        setup.outF64, hostN, hostX, kCount, false);
+    CrossEntryWithForms(tally, "AllOrdersF64", &boys::BoysCuda::AllOrdersF64, setup.n, setup.x,
+                        setup.outF64, hostN, hostX, kCount, true);
+    CrossEntryWithForms(tally, "AllNF64", UniformOrderF64{nmax}, setup.n, setup.x, setup.outF64,
+                        hostN, hostX, kCount, true);
+    CrossEntryWithForms(tally, "SingleF32", &boys::BoysCuda::SingleF32<>, setup.n, setup.x,
+                        setup.outF32, hostN, hostX, kCount, false);
+    CrossEntryWithForms(tally, "AllOrdersF32", &boys::BoysCuda::AllOrdersF32, setup.n, setup.x,
+                        setup.outF32, hostN, hostX, kCount, true);
+    CrossEntryWithForms(tally, "AllNF32", UniformOrderF32{nmax}, setup.n, setup.x, setup.outF32,
+                        hostN, hostX, kCount, true);
+
+    std::printf("division forms: %zu entries, %zu values per form\n", tally.entries, tally.values);
+    std::printf("division form check: exact vs refined %zu of %zu (max %llu ulp); exact vs plain "
+                "%zu of %zu (max %llu ulp); plain vs refined %zu of %zu (max %llu ulp)\n",
+                tally.refinedVsExact, tally.values,
+                static_cast<unsigned long long>(tally.widestRefinedVsExact), tally.plainVsExact,
+                tally.values, static_cast<unsigned long long>(tally.widestPlainVsExact),
+                tally.plainVsRefined, tally.values,
+                static_cast<unsigned long long>(tally.widestPlainVsRefined));
+
+    std::printf("exact vs plain: %zu values of %zu are more than a thousandth of the value apart; "
+                "the widest of those is %.3e of the value\n",
+                tally.plainVsExactApart, tally.values, tally.plainVsExactWidestRelative);
+
+    if (!tally.widestPlainVsExactWhere.empty())
+    {
+        std::printf("the widest exact-vs-plain difference, %llu representable steps apart:\n%s\n",
+                    static_cast<unsigned long long>(tally.widestPlainVsExact),
+                    tally.widestPlainVsExactWhere.c_str());
+    }
+
+    if (!tally.widestRelativePlainVsExactWhere.empty())
+    {
+        std::printf("the widest exact-vs-plain RELATIVE difference:\n%s\n",
+                    tally.widestRelativePlainVsExactWhere.c_str());
+    }
+
+    for (const std::string& line : tally.examples)
+    {
+        std::printf("%s\n", line.c_str());
+    }
+
+    // The claim the refined form is carried for, in accuracy.hpp's own words
+    // ("this form is bit-identical to exact division"): stated over every value of
+    // every entry crossed here, so one differing bit violates it. That is the
+    // assertion to make, and not a tolerance to widen - a value the two forms place
+    // in different bins is either a defect in the refinement or a defect in what
+    // "exact" compiles to, and both are findings.
+    EXPECT_EQ(tally.refinedVsExact, 0u)
+        << "the refined form is not bit-identical to exact division over the values compared; "
+           "the differing values and their x are printed above";
+
+    // What makes the first assertion mean something: if the plain form agreed with
+    // exact division on every value too, then no form would be reaching any kernel
+    // and the first count would be zero for the same reason. The negative control
+    // build makes this line fail.
+    EXPECT_GT(tally.plainVsExact, 0u)
+        << "the plain reciprocal agrees with exact division on every value compared, so the forms "
+           "reaching the kernels are not the forms the calls named";
+}
+
+TEST(BoysCudaTest, AnUnknownDivisionFormIsRefused) {
+    int deviceCount = 0;
+    cudaGetDeviceCount(&deviceCount);
+
+    if (deviceCount == 0)
+    {
+        GTEST_SKIP() << "no CUDA device";
+    }
+
+    DeviceSetup setup;
+    ASSERT_EQ(boys::BoysCuda::InitializeTables(), boys::BoysStatus::kSuccess);
+
+    // Refused and not substituted: a form the library does not carry is an
+    // argument error. A call that quietly ran the default instead would be exactly
+    // the substitution the axis exists to make visible, and the refinement's
+    // bit-identity would hide it.
+    const auto unknown = static_cast<boys::DivisionForm>(200);
+    EXPECT_EQ(boys::BoysCuda::SingleF64(setup.n, setup.x, setup.outF64, 1, nullptr, unknown),
+              boys::BoysStatus::kInvalidArgument);
+    EXPECT_EQ(boys::BoysCuda::AllOrdersF32(setup.n, setup.x, setup.outF32, 1, nullptr, unknown),
+              boys::BoysStatus::kInvalidArgument);
+    EXPECT_EQ(boys::BoysCuda::AllNF64(boys::kMaxBoysOrder, setup.x, setup.outF64, 1, nullptr, unknown),
+              boys::BoysStatus::kInvalidArgument);
+}
