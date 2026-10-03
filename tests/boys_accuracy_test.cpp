@@ -313,11 +313,32 @@ void SweepFloatSingle() {
     PrintWorsts("float single", worst);
 }
 
-// The half lanes' engine budget, as the f32 entries now take it: the policy is
-// a type, so naming the budget is naming a policy.
-using Fp16Budget = boys::EvalPolicy<boys::kDefaultFitRoute,
-                                    boys::kDefaultEvalScheme,
-                                    boys::BoysBudget::kFp16>;
+// The half lanes' engine budget, as the f32 entries now take it: the policy is a type,
+// so naming the budget is naming a policy.
+//
+// Each policy is composed from the class the entry under test resolves to - the row the
+// build's table carries for it - rather than from the seam's five, so the budget is the
+// one cell the pairs below differ in. A replacement header carries its own row per class
+// (boys/boys.hpp expands BOYS_BUILD_DEFAULT_ROWS in place of the five-composed table, and
+// DefaultPolicy is that row), so a policy composed from the five is another arithmetic
+// from the class's own the moment a row spells anything but the five: the two calls would
+// then differ in their route and in their division form as well, and the equality below
+// would read a difference the budget did not make as one it did.
+using FloatSingleClass = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kSingle>;
+using Fp16SingleBudget = boys::EvalPolicy<FloatSingleClass::kRoute,
+                                          FloatSingleClass::kScheme,
+                                          boys::BoysBudget::kFp16,
+                                          FloatSingleClass::kPack,
+                                          FloatSingleClass::kGranularity,
+                                          FloatSingleClass::kDivision,
+                                          FloatSingleClass::kRegionBExp>;
+using Fp16BatchBudget = boys::EvalPolicy<FloatBatchClass::kRoute,
+                                         FloatBatchClass::kScheme,
+                                         boys::BoysBudget::kFp16,
+                                         FloatBatchClass::kPack,
+                                         FloatBatchClass::kGranularity,
+                                         FloatBatchClass::kDivision,
+                                         FloatBatchClass::kRegionBExp>;
 
 // The float lane with the half lanes' engine budget named. The budget is what the halves'
 // fits are cut against, and at the accuracy this library serves naming it selects nothing:
@@ -328,7 +349,7 @@ void SweepFloatSingleFp16Budget() {
 
     for (const ReferenceRow& row : gReference)
     {
-        const float value = BoysSingleF32<Fp16Budget>(row.n, static_cast<float>(row.x));
+        const float value = BoysSingleF32<Fp16SingleBudget>(row.n, static_cast<float>(row.x));
         // The base, for the reason the default entry's sweep above states: the single shape
         // reads no downward step, and the budget the policy names moves no division form.
         const double bound = RegionBound(RegionOf(row.x), LaneKind::kFloatSingle);
@@ -351,7 +372,7 @@ void SweepFloatBatchFp16Budget() {
 
     for (const ReferenceRow& row : gReference)
     {
-        BoysAllOrdersF32<Fp16Budget>(row.n, static_cast<float>(row.x), batch.data());
+        BoysAllOrdersF32<Fp16BatchBudget>(row.n, static_cast<float>(row.x), batch.data());
         BoysAllOrdersF32(row.n, static_cast<float>(row.x), plain.data());
 
         for (int k = 0; k <= row.n; ++k)
@@ -366,7 +387,9 @@ void SweepFloatBatchFp16Budget() {
             EXPECT_LE(error, bound) << "batch F" << k << " at x=" << row.x;
             worst.Update(error, row.x);
 
-            EXPECT_EQ(batch[static_cast<std::size_t>(k)], plain[static_cast<std::size_t>(k)]);
+            EXPECT_EQ(batch[static_cast<std::size_t>(k)], plain[static_cast<std::size_t>(k)])
+                << "naming the budget must not move the certified lane: n=" << row.n
+                << " x=" << row.x << " order " << k;
         }
     }
 
