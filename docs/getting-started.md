@@ -284,6 +284,11 @@ const boys::OptionProbeReport report = boys::RunOptionProbe(options);
 
     recommended here: uniform-pack-orders-horner-exact-division-fp64
 
+**The line counts are that build's, not this one's.** The transcript above was taken on the build this
+document was written against, and the option space has changed size since, so **your counts will
+differ from the two headline numbers** — that is the space growing and shrinking, not a fault in your
+build. The counts to read are the ones your own run prints.
+
 **The important line is the third one, not the second.** Of the 72 options in that group, the run
 could not place 2 behind the leader. The "fastest" row is therefore one of three that are effectively
 tied, and that is the real answer. The probe says so rather than inventing a winner from a timing
