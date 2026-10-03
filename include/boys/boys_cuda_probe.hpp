@@ -155,14 +155,13 @@
 /// the resolution the run measured — the same within-round band the ordering is
 /// made in — and a row it fails is set aside rather than ranked.
 ///
-/// **Entries are ordered only within one precision, one accuracy rung and one
-/// question shape.** Those three are what the consumer has already fixed when
-/// they call: how much precision the result needs, what accuracy they can
-/// afford, and what they are asking for — one F_n, or the ladder. An entry of
-/// another precision, another rung or another question answers a different call,
-/// so no entry is ever ordered against one: the report carries one class per
-/// combination it measured, and a class's winner is the fastest entry of that
-/// precision at that rung for that question and a claim about nothing else. The
+/// **Entries are ordered only within one precision and one question shape.**
+/// Those two are what the consumer has already fixed when they call: how much
+/// precision the result needs and what they are asking for — one F_n, or the
+/// ladder. An entry of another precision or another question answers a different
+/// call, so no entry is ever ordered against one: the report carries one class
+/// per combination it measured, and a class's winner is the fastest entry of
+/// that precision for that question and a claim about nothing else. The
 /// figure the report states is per argument rather than per value, so the single
 /// order, the ladder to each argument's own order and the ladder to one common
 /// top order are three questions and never one ranking.
@@ -179,21 +178,19 @@
 /// entries are the case in this library, where one of them evaluates the fast
 /// region-B exponential and documents the looser bound that buys. That row stays
 /// in its class and carries its own bound, so a class's winner is the fastest
-/// entry of one shape in one precision at one rung at the bound its own row
-/// states — the fastest at an accuracy, not the fastest at one accuracy.
+/// entry of one shape in one precision at the bound its own row states — the
+/// fastest at an accuracy, not the fastest at one accuracy.
 ///
 /// **The accuracy column is the documented bound, not a measurement.** A row
 /// that is fast at a looser bound is not a faster option for a caller who needs
 /// the tighter one, so each row carries the bound its lane documents, read from
-/// the library's option table at the rung the row was measured at. What an entry
-/// actually delivers on this card is the accuracy gate's business, and that gate
-/// sweeps every rung this report measures.
+/// the library's option table. What an entry actually delivers on this card is
+/// the accuracy gate's business, and that gate certifies every entry.
 ///
-/// **The full-accuracy rung is what a default is taken from.** m = 1 is the rung
-/// every class of this report is measured at and the one the default is read out
-/// of; a relaxed rung is a different class and a different accuracy, and its
-/// figures are reported apart from the default's so that a cheaper row of a
-/// looser rung is never read as the answer at the default's accuracy.
+/// **A default is read out of the classes the run measured and nothing else.**
+/// The fastest entry of a class is the default that class names, and it is named
+/// only where the run's own rounds placed it there: an entry read off the
+/// library's tables is never a default.
 ///
 /// **What this probe does not measure**, and why. The ordered-batch precondition
 /// is left out: AllN* entries document that their arguments are non-decreasing
@@ -203,15 +200,14 @@
 /// its forms, because both are reachable from a consumer and neither substitutes
 /// for the other, and each carries the bound its own form documents. The accuracy
 /// the entries actually deliver is left to the accuracy gate, which certifies
-/// every entry at every rung: this probe spends its time on cost, and every figure
-/// it prints is a device time.
+/// every entry: this probe spends its time on cost, and every figure it prints is
+/// a device time.
 ///
-/// **A rung the lane does not serve, or this build cannot make resident, is a
-/// refusal with its reason and not an absence.** The lane's rungs are its own
-/// table (kDeviceRungs, boys_cuda_options.hpp); a rung this build does not carry,
-/// or whose degree tables the device refused, is reported as such where its
-/// classes would have stood, because a reader who expected it there would
-/// otherwise take its absence for a fact about the arithmetic.
+/// **A lane whose tables this build cannot make resident is a refusal with its
+/// reason and not an absence.** A lane whose degree tables the device refused is
+/// reported as such where its classes would have stood, because a reader who
+/// expected it there would otherwise take its absence for a fact about the
+/// arithmetic.
 ///
 /// **This result is about the card it was measured on.** The report says so in
 /// its own output, not only here, and it states the card's documented ratio of
@@ -570,52 +566,35 @@ struct DeviceProbePass {
     double pairedSpread = 0.0;
 };
 
-/// One entry at one accuracy rung, as this card measured it.
+/// One entry, as this card measured it.
 ///
 /// \ingroup boys
 struct DeviceProbeMeasurement {
-    /// The entry's name, as the report prints it. The same name appears once per
-    /// rung this run measured the entry at, so a name alone does not identify a
-    /// row: \c entryIndex and \c rung do.
+    /// The entry's name, as the report prints it. A name appears once in a run's
+    /// table, so the name and \c entryIndex identify a row between them.
     std::string name;
 
     /// \c "fp64", \c "fp32" or \c "fp16": the arithmetic the entry runs in.
     std::string precision;
 
-    /// The entry's row in the library's own option table, which is what a name
-    /// that appears at every rung resolves to: every relaxed row of one entry
-    /// carries the same index, and the entry's own facts — what it documents and
-    /// what the library says it is — are read through it rather than looked up by
-    /// name.
+    /// The entry's row in the library's own option table: the entry's own facts —
+    /// what it documents and what the library says it is — are read through it
+    /// rather than looked up by name.
     std::size_t entryIndex = 0;
 
     /// The entry itself, where \c entryIndex is its position in this run's own
-    /// list. A reader needs the entry and not only its index, because whether the
-    /// option space offers an entry at a rung is a property of the entry
-    /// (DeviceEntryServedAtRung, boys_cuda_options.hpp): a row with no figure is
-    /// told apart from a row that was never offered by judging it against that,
-    /// and the two are different facts about a report.
+    /// list. A reader needs the entry and not only its index, because the axes an
+    /// entry fixes are the entry's own statement (\c DeviceEntryAxesOf,
+    /// boys_cuda_options.hpp), and a row is judged against the entry it names.
     DeviceEntry entry = DeviceEntry::kSingleF64;
-
-    /// The accuracy rung this row was measured at: the multiplier m, one of
-    /// kDeviceRungs (boys_cuda_options.hpp), which is the axis this report's
-    /// classes are keyed on beside the precision and the question. \c 1.0 is the
-    /// full-accuracy rung every lane serves and the rung a default is taken from.
-    double rung = 1.0;
-
-    /// How the rung is spelled in the report, as the library's own rung table
-    /// spells it. It is carried rather than formatted at print time so that every
-    /// line naming this row names the rung the same way.
-    std::string rungName;
 
     /// \c "single", \c "all-orders", \c "all-n" or \c "each-order": the shape of
     /// the call.
     std::string shape;
 
-    /// The question shape of the call. With the entry's precision and its rung it
-    /// names the one set the entry may be ordered in and no other: the report
-    /// ranks one question shape at one precision and one rung, so this is the
-    /// ranking the row stands in.
+    /// The question shape of the call. With the entry's precision it names the one
+    /// set the entry may be ordered in and no other: the report ranks one question
+    /// shape at one precision, so this is the ranking the row stands in.
     std::string question;
 
     /// How the figure was obtained: \c "launched" for a kernel of this library
@@ -626,20 +605,11 @@ struct DeviceProbeMeasurement {
     /// Whether the launch of this entry is this library's or the caller's.
     bool launchedByLibrary = false;
 
-    /// The bound the entry's lane documents at full accuracy, read from the
-    /// documentation. It is not a measurement — the accuracy gate is what
-    /// measures — and it is here so a faster precision is not read as a faster
-    /// option at the same accuracy.
+    /// The bound the entry's lane documents, read from the library's own option
+    /// table. It is not a measurement — the accuracy gate is what measures — and
+    /// it is here so a faster precision is not read as a faster option at the
+    /// same accuracy.
     double documentedBound = 0.0;
-
-    /// The same bound at the rung this row was measured at, read from the
-    /// library's own statement of how the multiplier enters it
-    /// (DeviceOptionInfo::boundFixed, boys_cuda_options.hpp). Equal to
-    /// \c documentedBound exactly at m = 1, and the figure a reader weighing a
-    /// relaxed class against the full-accuracy one wants: the trade a rung offers
-    /// is a cost for an accuracy, and this is the accuracy side of it in the same
-    /// units the m = 1 column is in.
-    double documentedBoundAtRung = 0.0;
 
     /// Whether at least one round of this entry produced a figure, so the cost
     /// and the band below rest on a measurement. False means the entry produced
@@ -775,16 +745,14 @@ struct DeviceProbeMeasurement {
 
     /// Paired rounds the figures above rest on: the rounds of every pass, pooled.
     /// Every round of the run is pooled, so this is the same for every entry that
-    /// produced a figure at this row's rung, and a quartile band needs at least
-    /// four of them.
+    /// produced a figure, and a quartile band needs at least four of them.
     int rounds = 0;
 
-    /// The anchor figure this row's cost columns were scaled from: its own rung's
-    /// reference entry, at the lower quartile of that rung's pooled rounds. The
-    /// reference is one entry at every rung the run measured, so a ratio between
-    /// two rows is a ratio inside one rung's rounds; a cost read across two rungs
-    /// is read against two of these, which the report states only as a ratio
-    /// between the two classes' winners and never as one measurement.
+    /// The anchor figure this row's cost columns were scaled from: the reference
+    /// entry, at the lower quartile of the run's pooled rounds. A ratio between
+    /// two rows is therefore a ratio inside one round's readings, and every cost
+    /// column of the report is one measurement and a set of ratios rather than a
+    /// set of independent times.
     double referenceNsPerArgument = 0.0;
 
     /// Sum of every value the entry returned, read back once outside the timer,
@@ -965,37 +933,28 @@ struct DeviceProbeRanking {
     DeviceProbeRefinement refinement;
 };
 
-/// One class: one precision, one accuracy rung and one question shape, and the
-/// one ranking over the alternatives the library offers at those three.
+/// One class: one precision, one question shape, and the one ranking over the
+/// alternatives the library offers at those two.
 ///
-/// The three are the consumer's own choices — the precision their calculation
-/// needs, the accuracy they can afford, and the question they are asking — so a
-/// row of another class answers a different call and is never ordered against
-/// this one. What the class ranges over is what the library decides: the fit
-/// route, the evaluation scheme, the interval partition and the packing axis,
-/// each a row of the option table that carries its own documented bound. The
-/// class's winner is the fastest of them at the accuracy its own row states.
+/// The two are the consumer's own choices — the precision their calculation
+/// needs and the question they are asking — so a row of another class answers a
+/// different call and is never ordered against this one. What the class ranges
+/// over is what the library decides: the fit route, the evaluation scheme, the
+/// interval partition and the packing axis, each a row of the option table that
+/// carries its own documented bound. The class's winner is the fastest of them
+/// at the bound its own row states.
 ///
 /// \ingroup boys
 struct DeviceProbeClass {
     /// \c "fp64", \c "fp32" or \c "fp16": the arithmetic every entry of this
-    /// class runs, and the first of its three key members. How far the fp64 class
+    /// class runs, and the first of its two key members. How far the fp64 class
     /// sits behind the fp32 one is the card's own ratio of single- to
     /// double-precision throughput, which is a property of the card and not of
     /// the library.
     std::string precision;
 
-    /// The accuracy rung every entry of this class was measured at: the
-    /// multiplier m, one of kDeviceRungs (boys_cuda_options.hpp). It is the
-    /// second key member, and \c 1.0 is the full-accuracy rung the default is
-    /// taken from.
-    double rung = 1.0;
-
-    /// How the report spells that rung, as the library's own table spells it.
-    std::string rungName;
-
     /// \c "single", \c "all-orders" or \c "all-n": which question the entries of
-    /// this class answer, and the third key member. Its member is \c question.
+    /// this class answer, and the second key member. Its member is \c question.
     std::string question;
 
     /// The question said in full: what an entry of this class produces for one
@@ -1003,14 +962,14 @@ struct DeviceProbeClass {
     /// other and what a winner here is a claim about.
     std::string asked;
 
-    /// One paragraph saying what this class is: the precision, the rung and the
-    /// question its rows share, that the bounds they document are their own and
-    /// need not agree, and what its winner is therefore a claim about.
+    /// One paragraph saying what this class is: the precision and the question
+    /// its rows share, that the bounds they document are their own and need not
+    /// agree, and what its winner is therefore a claim about.
     std::string note;
 
-    /// The class's one ranking: the alternatives of this precision, this rung and
-    /// this question, ordered by cost. Empty of rows when every entry of the
-    /// class failed to produce a figure, which the ranking's own reason states.
+    /// The class's one ranking: the alternatives of this precision and this
+    /// question, ordered by cost. Empty of rows when every entry of the class
+    /// failed to produce a figure, which the ranking's own reason states.
     DeviceProbeRanking ranking;
 };
 
@@ -1199,20 +1158,18 @@ struct DeviceProbeReport {
     /// floor the canary's own spread is measured against.
     double canaryFloorMs = 0.0;
 
-    /// The entry every cost column of the full-accuracy classes is anchored to:
-    /// the option book's first fp64 row, resolved at every rung before any round
-    /// is timed. Each measured row's cost is its own rung's reference figure
-    /// scaled by that row's ratio to it at the middle of the run's rounds, so the
-    /// column is one measurement per rung and a set of ratios rather than a set of
-    /// independent times.
+    /// The entry every cost column is anchored to: the option book's first fp64
+    /// row, resolved before any round is timed. Each measured row's cost is that
+    /// reference figure scaled by the row's ratio to it at the middle of the
+    /// run's rounds, so the column is one measurement and a set of ratios rather
+    /// than a set of independent times.
     std::string referenceEntry;
 
     /// The reference entry's own cost per argument at the lower quartile of its
-    /// rounds at m = 1, nanoseconds: the scale the full-accuracy classes' ratios
-    /// are applied to. Zero when the reference entry produced no figure. Every
-    /// row carries its own rung's figure in
-    /// DeviceProbeMeasurement::referenceNsPerArgument, so a relaxed class is read
-    /// against its own rung's anchor and never against this one.
+    /// rounds, nanoseconds: the scale every ratio of the report is applied to.
+    /// Zero when the reference entry produced no figure. Every row carries its own
+    /// copy in DeviceProbeMeasurement::referenceNsPerArgument, which is what that
+    /// row's ratio was taken against.
     double referenceNsPerArgument = 0.0;
 
     /// Whether the run named a recommended entry in any class. False means no
@@ -1220,31 +1177,25 @@ struct DeviceProbeReport {
     /// its own rounds, or held a single entry, or measured no figure at all.
     bool hasDefault = false;
 
-    /// One class per precision, accuracy rung and question shape this run's
-    /// option table carries, in the report's own order: the rows of the option
-    /// table in their own order, most specific rung first within an entry, so a
-    /// reader sees the entries of one rung together.
+    /// One class per precision and question shape this run's option table
+    /// carries, in the report's own order: the rows of the option table in their
+    /// own order, so a reader sees the entries of one precision together.
     std::vector<DeviceProbeClass> classes;
 
-    /// The rungs this run could not measure, each with the library's own answer
-    /// and the classes that would have stood there. Empty when every rung of the
-    /// lane was made resident and timed. A rung that is not here measured
-    /// nothing: its rows are reported as producing no figure rather than as
-    /// costing what another rung's tables cost, and this list is what says which
-    /// rung is missing and why.
-    std::vector<std::string> refusedRungs;
+    /// Whether this run made the degree tables resident on the device. False
+    /// means no row of this report was timed: a device that will not hold the
+    /// tables has no entry of this surface measured, and every row is reported as
+    /// producing no figure rather than as costing what tables that were never
+    /// uploaded would cost.
+    bool tablesResident = false;
 
-    /// The same rungs as the multipliers themselves, in the order \c refusedRungs
-    /// names them: the member of \c kDeviceRungs whose degree tables the device
-    /// would not hold.
-    ///
-    /// Carried as data and not only as the sentences above because the option
-    /// space's closure counts members of a rung from it
-    /// (DeviceOptionSpaceClosure): a cell of a rung that is not here was offered
-    /// to the device, and a cell of one that is is not a cell this card can run.
-    /// Empty is every rung resident, which is what a report that never reached the
-    /// tables also carries.
-    std::vector<double> refusedRungMultipliers;
+    /// The library's own answer for a device that would not hold the tables,
+    /// empty when \c tablesResident is true. It is data and not only a sentence
+    /// because the option space's closure counts the members of such a run from
+    /// it (DeviceOptionSpaceClosure): a row of a run whose tables never went
+    /// resident is not a row this card can run, and the closure says so rather
+    /// than counting it as a row that produced no figure.
+    std::string refusedTables;
 
     /// The control on the launched route: the fastest launched row timed at two
     /// very different repetition counts.
@@ -1266,18 +1217,17 @@ struct DeviceProbeReport {
 /// the resident buffers, once in each round, inside each of several passes, with
 /// runs of the fixed-work canary taken between the rounds. **Every round of every
 /// pass is pooled and every pass is used**; the canary's spread flags a pass and
-/// excludes none. It does that at every rung of kDeviceRungs
-/// (boys_cuda_options.hpp), making each rung resident before the rows that name it
-/// are timed, so one entry is measured once per rung: a rung the device will not
-/// hold is a refusal in DeviceProbeReport::refusedRungs rather than an absence.
-/// Each row's cost is its own rung's reference figure scaled by that row's ratio
-/// to it at the middle of the run's rounds, and every comparison the report makes
-/// is between two rows' ratios taken in the same round under one rung's tables. The report
-/// carries, per row, that figure with its ratio band and its drift beside it, one
-/// class per precision, accuracy rung and question shape — each with the widest
-/// within-round band it showed as its resolution and a recommended entry wherever
-/// its measurement supported one — and the repetition-count controls described on
-/// DeviceProbeRepetitionControl, one per route, over the full-accuracy block.
+/// excludes none. The degree tables are made resident before the first row is
+/// timed, so every entry is measured under one arithmetic: a device that will not
+/// hold the tables is a refusal in DeviceProbeReport::refusedTables rather than an
+/// absence. Each row's cost is the reference figure scaled by that row's ratio to
+/// it at the middle of the run's rounds, and every comparison the report makes is
+/// between two rows' ratios taken in the same round. The report carries, per row,
+/// that figure with its ratio band and its drift beside it, one class per
+/// precision and question shape — each with the widest within-round band it showed
+/// as its resolution and a recommended entry wherever its measurement supported
+/// one — and the repetition-count controls described on
+/// DeviceProbeRepetitionControl, one per route.
 ///
 /// A shape whose own rounds cannot place a rival behind the fastest entry is not
 /// left there: the entries it could not separate are re-run alone at
@@ -1346,28 +1296,79 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options = {});
 /// \ingroup boys
 std::string FormatDeviceOptionProbe(const DeviceProbeReport& report);
 
+/// The build-defaults file this run can write, and the classes it writes a row for and
+/// refuses.
+///
+/// The seam it writes into is `boys/boys_build_defaults.hpp`: a replacement carries the five
+/// names, a `BOYS_BUILD_DEFAULT_ROWS` list, and no `BOYS_BUILD_DEFAULTS_SHIPPED`, and a build
+/// pointed at it through the `BOYS_BUILD_DEFAULTS` CMake option reads it instead of the
+/// committed file. The device lane is the half of that table which no measurement had ever
+/// written a row for, and the reason is the surface: a row names the arithmetic its class
+/// compiles, and until every device option row stated the route, the scheme and the packing
+/// its entry fixes (\c DeviceEntryAxesOf, boys_cuda_options.hpp) a device row would have
+/// carried cells nobody could check.
+///
+/// One row per class the table keys on: `kDevice` with \c Precision::kFp32Device - the one
+/// precision cell the device lane has - and the shape, one per question the probe ranks. The
+/// library serves one accuracy and no accuracy cell is written: a row of this table names what
+/// the library picks, and the figure behind it is the class's own reading.
+///
+/// **A row is a measurement only where the run measured one.** A class whose winner was the
+/// last entry left standing rather than an ordering's first - \c kOnlyEntry - is written with
+/// the marker a choice carries, which is the seam's own rule, and a class this run did not
+/// measure, or whose ranking could not determine an entry, gets no row at all and a reason in
+/// \c refused.
+///
+/// The classes the table in force already carries are written back verbatim beside the
+/// device rows: a replacement is read INSTEAD of the committed file, so one that dropped
+/// them would leave their callers with no row at all.
+///
+/// \ingroup boys
+struct DeviceDefaultsEmission {
+    /// The replacement header, empty where this run measured no class at all.
+    std::string text;
+
+    /// One line per row written: the class, the entry it was taken from, and how that
+    /// entry was reached.
+    std::vector<std::string> emitted;
+
+    /// One line per class no row is written for, with the reason.
+    std::vector<std::string> refused;
+};
+
+/// The defaults file this run implies, with the classes it carries and the ones it refuses.
+///
+/// \param report  a report, from RunDeviceOptionProbe
+/// \param takenAt the host and the run, as the report's own first lines state them, or
+///                empty where the caller has none to give; written into the file's comments
+///
+/// \returns the file's text and the two class lists. \c text is empty where the run measured
+///          no device class, which is the same rule the option probe's own emission keeps: a
+///          file written by a run that ranked nothing would be a transcription of the seam
+///          and not a measurement
+///
+/// \ingroup boys
+DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report,
+                                                 const std::string& takenAt);
+
 /// The device option space counted: every member of it in the state one run
 /// established for it, and the arithmetic that has to close.
 ///
-/// A member is one (row, rung) cell of the space — a row of \c BoysDeviceOptions()
-/// (boys_cuda_options.hpp) at one multiplier of \c kDeviceRungs — so the total is the
-/// two tables' own sizes multiplied, a projection of the library that cannot fall
-/// behind it. The states are what the run did with that member, and a member is in
-/// exactly one of them:
+/// A member is one row of the space — a row of \c BoysDeviceOptions()
+/// (boys_cuda_options.hpp) — so the total is the table's own size, a projection of
+/// the library that cannot fall behind it. The states are what the run did with
+/// that member, and a member is in exactly one of them:
 ///
-///   * \c measured — the run took a figure for the cell;
+///   * \c measured — the run took a figure for the row;
 ///   * \c refusedAndOwed — the row is one this build does not serve, refused with the
 ///     library's own reason (\c DeviceOptionInfo::refusedBecause) and outstanding work;
-///   * \c refusedAtRung — the row's entry answers at no such rung, which is
-///     \c DeviceEntryServedAtRung saying no and the library's own statement rather
-///     than a card's;
-///   * \c notRunnable — the row is served at that rung and this card would not hold
-///     the rung's degree tables, so nothing of it was timed; which rungs they are is
-///     \c DeviceProbeReport::refusedRungMultipliers;
-///   * \c offeredNoFigure — the run carried a place for the cell and no round of it
+///   * \c notRunnable — the row is served and this card would not hold the degree
+///     tables, so nothing of it was timed (\c DeviceProbeReport::tablesResident is
+///     false and \c refusedTables states the library's answer);
+///   * \c offeredNoFigure — the run carried a place for the row and no round of it
 ///     produced a figure;
 ///   * \c notAsked — this run's own request (\c DeviceProbeOptions::only) named no such
-///     entry, so the cell was never presented to the device; a run that never reached
+///     entry, so the row was never presented to the device; a run that never reached
 ///     the grid at all places no member here.
 ///
 /// **Nothing else is a state, and \c unaccounted counts the members in none of
@@ -1375,7 +1376,7 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report);
 /// run stands behind: the closure says so rather than counting it into the nearest
 /// state, and the report's last line fails on it.
 ///
-/// \c closed is the verdict that line prints: the six states sum to \c total,
+/// \c closed is the verdict that line prints: the five states sum to \c total,
 /// \c unaccounted is zero, the run's own grid holds exactly the places the request
 /// owes (\c gridPlaces equals \c gridPlacesOwed), the report carries every class the
 /// space admits (\c classesPrinted equals \c classesAdmitted), and the run succeeded.
@@ -1385,18 +1386,16 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report);
 /// \ingroup boys
 struct DeviceOptionClosure {
     std::size_t rows = 0; ///< rows of the library's own option table, BoysDeviceOptions()
-    std::size_t rungs = 0; ///< rungs of the lane's own table, kDeviceRungs
-    std::size_t total = 0; ///< the two multiplied: the members of the space
+    std::size_t total = 0; ///< the members of the space: one per row
 
     std::size_t measured = 0; ///< members this run took a figure for
     std::size_t refusedAndOwed = 0; ///< members of a row this build does not serve
-    std::size_t refusedAtRung = 0; ///< members of a rung the row's own entry refuses
-    std::size_t notRunnable = 0; ///< members of a rung this card would not hold
+    std::size_t notRunnable = 0; ///< rows of a run whose tables the card would not hold
     std::size_t offeredNoFigure = 0; ///< places of this run's grid that produced no figure
     std::size_t notAsked = 0; ///< members this run's request never named
 
-    /// The six states above summed, which is the left-hand side the report prints and
-    /// the bar the space's own total is held to.
+    /// The five states above summed, which is the left-hand side the report prints
+    /// and the bar the space's own total is held to.
     std::size_t states = 0;
 
     /// Members in no state above. Zero for every run whose closure closes, and the
@@ -1404,19 +1403,19 @@ struct DeviceOptionClosure {
     std::size_t unaccounted = 0;
 
     /// Places this run's own measurement table carries, and the number a run of this
-    /// request owes the space: one per (row it serves and the request named, rung). The
-    /// two are read from different sources — the run's grid and the library's tables —
-    /// and they have to agree.
+    /// request owes the space: one per row it serves and the request named. The two are
+    /// read from different sources — the run's grid and the library's tables — and they
+    /// have to agree.
     std::size_t gridPlaces = 0;
     std::size_t gridPlacesOwed = 0;
 
     /// The classes the space admits, and the classes the report carries.
     ///
-    /// A class is one precision, one rung and one question, and which of them the space
-    /// admits is read off the rows the request named — not off the report those rows are
-    /// held to. \c classesPrinted is \c DeviceProbeReport::classes, and the two have to
-    /// agree: a class the space admits and the report does not carry is a shape of this
-    /// surface that nothing in the run reports on.
+    /// A class is one precision and one question, and which of them the space admits is
+    /// read off the rows the request named — not off the report those rows are held to.
+    /// \c classesPrinted is \c DeviceProbeReport::classes, and the two have to agree: a
+    /// class the space admits and the report does not carry is a shape of this surface
+    /// that nothing in the run reports on.
     std::size_t classesAdmitted = 0;
     std::size_t classesPrinted = 0;
 

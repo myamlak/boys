@@ -23,12 +23,12 @@
 // The card is named rather than assumed: a delivered figure describes the
 // arithmetic this device executes, so a weaker or stronger double unit changes
 // what a bound costs and not what it is - the bounds transfer between cards and
-// the delivered figures do not. Every rung is measured, because the header
-// asserts a bound for every rung: the batch entries are swept once per
-// multiplier, and the device-callable entries once per rung.
+// the delivered figures do not. Every entry is measured at the one accuracy
+// this library has: the batch entries are swept once and the device-callable
+// entries once.
 //
 // One entry carries two certified options rather than one arithmetic: the f32
-// single entry's region-B exponential, swept once per option against the bound
+// single entry's region-B exponential, each option measured against the bound
 // that option documents. The two returns are measured against each other as
 // well - they differ in that one factor, so their difference is the
 // contribution the fast option's second bound term has to cover, and the
@@ -46,14 +46,12 @@
 // that are one body reached through different shapes are additionally compared
 // with each other bit for bit, which is a stronger statement than a bound.
 //
-// Each of those entries takes the rung as a run-time argument, so each is swept
-// at every rung the lane instantiates - held to m * the m = 1 bound of its
-// precision, which is the relaxation the contract states - and at every rung
-// every device entry is compared bit for bit with the batch entry of the same
-// precision and the same rung, because the two are one arithmetic reached two
-// ways and no bound can say so. A rung is resident only while the last
-// BoysCuda::DeviceTables call named it, and the refusal that follows from that
-// is exercised beside the order and capacity refusals.
+// Every device entry is also compared bit for bit with the batch entry of the
+// same precision, because the two are one arithmetic reached two ways and no
+// bound can say so: the same degree tables, the same inlined body, a lane object
+// that reads the caller's handle where the batch kernel reads a __constant__
+// symbol. The order and the capacity refusals are exercised beside those
+// comparisons.
 //
 // The fp64 device entries are additionally measured against the 45-digit
 // reference grid (tests/data/boys_reference.csv), whose arguments are the region
@@ -151,7 +149,7 @@ const boys::DeviceOptionInfo& DeviceRow(boys::DeviceEntry entry,
     std::abort();
 }
 
-// README's accuracy contract: "CUDA fp64 | same m*budgets as the CPU double
+// README's accuracy contract: "CUDA fp64 | the same budgets as the CPU double
 // lanes". The CPU double single lane is the one with per-region cells (1e-15
 // below the region-A edge, 3e-14 through the extended band and region B,
 // 5.5e-14 in region C); the CPU double batch lane publishes one, 5.5e-14.
@@ -164,13 +162,13 @@ constexpr double kBoundSingleBand = 3e-14;
 constexpr double kBoundSingleB = 3e-14;
 const double kBoundSingleC = DeviceRow(boys::DeviceEntry::kSingleF64).bound;
 const double kBoundDoubleBatch = DeviceRow(boys::DeviceEntry::kAllOrdersF64).bound;
-// README: "CUDA fp32, RegionBExp::kAccurate (the default) | same m*budgets as
-// the CPU float lanes" - 1.5e-7, the bound of the single entry's accurate
+// README: "CUDA fp32, RegionBExp::kAccurate (the default) | the same budgets
+// as the CPU float lanes" - 1.5e-7, the bound of the single entry's accurate
 // region-B exponential, of the batch entries and of the all-n entry. Read from
 // the report, which is the header's own figure for that option.
 const double kBoundFloat = DeviceRow(boys::DeviceEntry::kDeviceSingleF32).bound;
 // The single entry's fast region-B exponential carries its own bound: the
-// lane's m * 1.5e-7 plus the corrected seed's own contribution, which the
+// lane's 1.5e-7 plus the corrected seed's own contribution, which the
 // recurrence's amplification caps at this figure. The cap is derived, not
 // measured cell by cell: the region-B ladder f_l = ((l - 1/2) f_{l-1} - e)/x
 // propagates an error in e to order n with gain G_n(x) = sum_k A_n/(x A_k),
@@ -187,77 +185,12 @@ const double kBoundFloat = DeviceRow(boys::DeviceEntry::kDeviceSingleF32).bound;
 const double kFastExpContribution =
     DeviceRow(boys::DeviceEntry::kDeviceSingleF32Fast, boys::RegionBExp::kFast).bound -
                                     DeviceRow(boys::DeviceEntry::kDeviceSingleF32).bound;
-// The fp16 entries' bound is the header's: m * 1e-7 + 1/2 ULP of the returned
-// value, which is what HalfBound computes at m = 1. Its constant part is read
-// from the report's fp16 row, and the coverage check at the end of this file
-// compares it against kBoundHalfBase, the figure the shared reference book
-// states: two books, one number, and a disagreement stops the gate.
+// The fp16 entries' bound is the header's: 1e-7 + 1/2 ULP of the returned
+// value, which is what HalfBoundAt computes. Its constant part is read from the
+// report's fp16 row, and the coverage check at the end of this file compares it
+// against kBoundHalfBase, the figure the shared reference book states: two
+// books, one number, and a disagreement stops the gate.
 const double kBoundHalfRow = DeviceRow(boys::DeviceEntry::kDeviceSingleF16).bound;
-
-// The rungs the lane instantiates, ascending, in the order the rows print: the
-// multiplier and the name a row's label carries for it. m = 1 is the unlabelled
-// row, which a lane's plain name already means. The batch entries take one of
-// these as a template argument and the device-callable entries as a run-time
-// argument, and both read the degree tables cut for it.
-//
-// The list is kDeviceRungs (boys_cuda_options.hpp), spelled out here because a
-// sweep names its rung at the call site and a template argument cannot be read
-// out of a table. It holds every rung that lane serves: the option space's 64,
-// 256, 1024, 4096, 16384 and 65536, whose option rows this lane's entries are
-// claimed for, beside the lane's own finer-at-the-low-end sample set. A rung the
-// lane serves and this list misses is the drift the coverage check at the end of
-// this file exists to catch.
-struct Rung {
-    double multiplier;
-    const char* name;
-};
-
-constexpr Rung kRungs[] = {{1.0, nullptr},
-                           {2.0, "2"},
-                           {10.0, "10"},
-                           {64.0, "64"},
-                           {100.0, "100"},
-                           {256.0, "256"},
-                           {1024.0, "1024"},
-                           {4096.0, "4096"},
-                           {1e4, "1e4"},
-                           {16384.0, "16384"},
-                           {65536.0, "65536"},
-                           {1e8, "1e8"}};
-
-// The last rung of that list, which is the one the run's sweeps leave resident:
-// it is the highest multiplier the lane serves, and the sweeps run in that order.
-constexpr int kLastRung = static_cast<int>(sizeof(kRungs) / sizeof(kRungs[0])) - 1;
-
-// Whether the list above is the lane's own rung set, element by element and in
-// order, so the spelling and kDeviceRungs (boys_cuda_options.hpp) cannot part:
-// a rung added to the lane and not to the list would be a row of the library no
-// bound is measured at, and one added to the list and not to the lane would not
-// link.
-constexpr bool RungsAreTheLanesSet() noexcept {
-    constexpr std::size_t kListed = sizeof(kRungs) / sizeof(kRungs[0]);
-
-    if (kListed != boys::kDeviceRungs.size())
-    {
-        return false;
-    }
-
-    for (std::size_t i = 0; i < kListed; ++i)
-    {
-        if (kRungs[i].multiplier != boys::kDeviceRungs[i])
-        {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-static_assert(RungsAreTheLanesSet(),
-              "the rungs this gate sweeps must be kDeviceRungs (boys_cuda_options.hpp), in its "
-              "order: that table is what the library's accuracy accessors answer the device lane "
-              "out of, and this file's sweeps are what measure the bound of every entry at every "
-              "rung it holds");
 
 // The smallest positive normal float: below it a returned value is the
 // format's floor rather than arithmetic, which is what the relative-error side
@@ -265,12 +198,12 @@ static_assert(RungsAreTheLanesSet(),
 constexpr double kFloatMinNormal = std::numeric_limits<float>::min();
 
 // What the fast region-B exponential costs, measured against the accurate one
-// over the same grid at the same multiplier: the seed substitution's own
-// contribution (max|fast - accurate|, which is the term the fast bound carries
-// on top of the lane's), and the cells whose return has the opposite sign to
-// the function. The second is a tripwire rather than a bound term: a seed error
-// the recurrence amplifies is what put the wrong sign there before the
-// correction, so a non-zero count at m = 1 means the correction has been lost.
+// over the same grid: the seed substitution's own contribution (max|fast -
+// accurate|, which is the term the fast bound carries on top of the lane's),
+// and the cells whose return has the opposite sign to the function. The second
+// is a tripwire rather than a bound term: a seed error the recurrence amplifies
+// is what put the wrong sign there before the correction, so a non-zero count
+// means the correction has been lost.
 struct ExpAudit {
     std::string lane;
     double contributed = 0.0;
@@ -310,8 +243,8 @@ void NoteNotCarried(int slot) {
 #endif
 
 // That register as the report prints it: one line naming the seam and the
-// reason, then the rows, deduplicated because each rung registers the same
-// lanes again.
+// reason, then the rows, deduplicated because a row is registered by every
+// entry that reaches it.
 void PrintNotCarried() {
     if (NotCarriedLanes().empty())
     {
@@ -517,13 +450,16 @@ SortedArgs SortArgs(const Reference& ref) {
     return sorted;
 }
 
-std::string Label(const char* lane, const char* rung) {
-    return rung == nullptr ? std::string(lane) : std::string(lane) + " m=" + rung;
+// The name a claim is registered under, which is the library's own name for
+// the row: the coverage check at the end of this file reads every claim by it,
+// so a claim this gate invented would be a claim for no reported option.
+std::string Label(const char* lane) {
+    return std::string(lane);
 }
 
-// The same rung, on a phrase rather than on a lane name.
-std::string ShapeLabel(const char* what, const char* rung) {
-    return rung == nullptr ? std::string(what) : std::string(what) + " (m=" + rung + ")";
+// The same, on a phrase rather than on a lane name.
+std::string ShapeLabel(const char* what) {
+    return std::string(what);
 }
 
 // The committed 45-digit grid (tests/data/boys_reference.csv), the reference the
@@ -631,10 +567,10 @@ DigitGrid LoadDigitGrid(const std::string& path) {
 // The sweeps, one per precision family, each covering all three shapes.
 // ---------------------------------------------------------------------------
 
-// The fp16 bound at a multiplier: the header's m * 1e-7 + 1/2 ULP, in ULP of
-// the value the entry returned rather than of the value it should have.
-double HalfBoundAt(double got, double multiplier) {
-    return multiplier * kBoundHalfRow + 0.5 * UlpOf(got, kF16MantissaBits, kF16MinNormalExp);
+// The fp16 bound: the header's 1e-7 + 1/2 ULP, in ULP of the value the entry
+// returned rather than of the value it should have.
+double HalfBoundAt(double got) {
+    return kBoundHalfRow + 0.5 * UlpOf(got, kF16MantissaBits, kF16MinNormalExp);
 }
 
 // A float lane's return, widened for the comparison against a double reference,
@@ -647,10 +583,6 @@ std::pair<double, bool> Widen(float got) {
                               std::fabs(asDouble) < std::numeric_limits<float>::min());
 }
 
-// Each sweep is measured at one multiplier and launches that multiplier's
-// instantiation: the header asserts a bound per multiplier, so the kernel that
-// has to meet it is the one the multiplier names.
-template <double kMultiplier>
 void SweepDouble(const Reference& ref,
                  const Grid& grid,
                  const SortedArgs& sorted,
@@ -673,7 +605,7 @@ void SweepDouble(const Reference& ref,
         dN.Upload(grid.n);
         dX.Upload(grid.x);
         CheckLaunch(
-            boys::BoysCuda::SingleF64<kMultiplier>(dN.get(), dX.get(), dOut.get(), cells, nullptr),
+            boys::BoysCuda::SingleF64(dN.get(), dX.get(), dOut.get(), cells, nullptr),
             "SingleF64");
         std::vector<double> out(cells);
         dOut.Download(out);
@@ -706,7 +638,7 @@ void SweepDouble(const Reference& ref,
         std::vector<int> hostN(count, nmax);
         dN.Upload(hostN);
         dX.Upload(grid.x);
-        CheckLaunch(boys::BoysCuda::AllOrdersF64<kMultiplier>(
+        CheckLaunch(boys::BoysCuda::AllOrdersF64(
                         dN.get(), dX.get(), dOut.get(), count, nullptr),
                     "AllOrdersF64");
         std::vector<double> out(cells);
@@ -724,7 +656,7 @@ void SweepDouble(const Reference& ref,
                         got,
                         ref.v[ref.Index(n, i)],
                         ref.decade[ref.Index(n, i)],
-                        kMultiplier * kBoundDoubleBatch,
+                        kBoundDoubleBatch,
                         Unrepresentable(got, -1022));
             }
         }
@@ -737,7 +669,7 @@ void SweepDouble(const Reference& ref,
         DevBuf<double> dOut(cells);
         dX.Upload(sorted.x);
         CheckLaunch(
-            boys::BoysCuda::AllNF64<kMultiplier>(nmax, dX.get(), dOut.get(), count, nullptr),
+            boys::BoysCuda::AllNF64(nmax, dX.get(), dOut.get(), count, nullptr),
             "AllNF64");
         std::vector<double> out(cells);
         dOut.Download(out);
@@ -755,7 +687,7 @@ void SweepDouble(const Reference& ref,
                         out[e],
                         ref.v[ref.Index(n, i)],
                         ref.decade[ref.Index(n, i)],
-                        kMultiplier * kBoundDoubleBatch,
+                        kBoundDoubleBatch,
                         Unrepresentable(out[e], -1022));
             }
         }
@@ -771,7 +703,6 @@ void SweepDouble(const Reference& ref,
 // independent reference as every other row of this gate is. The returns are
 // handed back so the same launch can be measured against the host lane as
 // well, which is one launch and not three.
-template <double kMultiplier>
 std::vector<double> LaunchDeviceChoice(const Reference& ref,
                                        const Grid& grid,
                                        const char* what,
@@ -783,7 +714,7 @@ std::vector<double> LaunchDeviceChoice(const Reference& ref,
                                        int slotReference) {
     const std::size_t count = ref.count;
     const std::size_t cells = grid.cells;
-    const double bound = kMultiplier * kBoundDoubleBatch;
+    const double bound = kBoundDoubleBatch;
 
     DevBuf<int> dN(count);
     DevBuf<double> dX(count);
@@ -817,7 +748,7 @@ std::vector<double> LaunchDeviceChoice(const Reference& ref,
 
 // The other half of the claim: the two lanes are one question answered twice
 // rather than two rows that agree with a third party. The host lane is handed
-// the same arguments at the same multiplier and its returns are the reference
+// the same arguments and its returns are the reference
 // the device row's are read against, so what is measured is the distance
 // between the two lanes. The host entry is the CPU spelling of this lane's
 // batch (boys.hpp says so), so the two calls are one question with two answers.
@@ -829,18 +760,18 @@ std::vector<double> LaunchDeviceChoice(const Reference& ref,
 // bound is not. The sum is a statement about the pair, and it neither loosens
 // nor tightens either row's own figure: those stay at the single bound, and are
 // measured against the 45-digit reference above.
-template <double kMultiplier, typename HostPolicy>
+template <typename HostPolicy>
 void CompareDeviceWithHost(const Reference& ref,
                            const Grid& grid,
                            const std::vector<double>& out,
                            int slotHost) {
     const std::size_t count = ref.count;
     const std::size_t cells = grid.cells;
-    const double bound = 2.0 * kMultiplier * kBoundDoubleBatch;
+    const double bound = 2.0 * kBoundDoubleBatch;
     const std::vector<int> tops(count, boys::kMaxBoysOrder);
 
     std::vector<double> host(cells, 0.0);
-    boys::BoysAllNAtOrders<kMultiplier, HostPolicy>(
+    boys::BoysAllNAtOrders<HostPolicy>(
         tops.data(), grid.x.data(), host.data(), count);
 
     for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
@@ -853,51 +784,45 @@ void CompareDeviceWithHost(const Reference& ref,
     }
 }
 
-// The seven rows, each measured against the reference and against the host lane
-// at the rung the call is made at.
+// The seven rows, each measured against the reference and against the host lane.
 //
-// Two host comparisons and not one. The lane's shipped batch entry is the one
-// host entry every rung carries, so it is what a relaxed device row is read
-// against: the device lane takes the multiplier as a template argument at the
-// call site and instantiates its own rungs, and the host lane's fits are
-// instantiated at the accuracy tiers, so the two lists meet at m = 1 alone.
-// There, and only there, the row is additionally shown against the host's
-// combination of the same name - the same route, scheme, partition and packing
-// axis - which is the counterpart that says the two lanes agree about the
-// option and not merely about the function.
+// Two host comparisons and not one. The lane's shipped batch entry is the host
+// entry that answers the same question, so it is what the device row is read
+// against; the row is additionally shown against the host's combination of the
+// same name - the same route, scheme, partition and packing axis - which is the
+// counterpart that says the two lanes agree about the option and not merely
+// about the function.
 //
-// The cross-lane claims carry their rung in every book, the first included,
-// because the device-option coverage below reads a claim as belonging to an
-// option when it is that option's name or that name followed by a rung, and a
-// cross-lane claim is not the row itself.
+// A cross-lane claim is registered under the row's own name followed by the
+// phrase naming what it was compared with, because the device-option coverage
+// below reads a claim as belonging to an option when it is that option's name
+// or that name followed by a phrase, and a cross-lane claim is not the row
+// itself.
 //
 // The entry and the launcher are named together and once, in MeasureDeviceRow:
 // the row's claim takes its name from the report's own row for that entry, and
-// the launcher is that entry's kernel at this rung, so a claim cannot name a
-// row the library does not report or an entry no kernel serves.
-template <double kMultiplier>
+// the launcher is that entry's kernel, so a claim cannot name a row the library
+// does not report or an entry no kernel serves.
 std::vector<double> MeasureDeviceRow(const Reference& ref,
                                      const Grid& grid,
                                      boys::DeviceEntry entry,
-                                     const char* rung,
-                                     const std::string& rungWord,
                                      boys::BoysStatus (*launch)(const int*,
                                                                 const double*,
                                                                 double*,
                                                                 std::size_t,
                                                                 void*)) {
-    const std::string name = Label(DeviceRow(entry).name, rung);
-    const double bound = kMultiplier * kBoundDoubleBatch;
+    const std::string name = Label(DeviceRow(entry).name);
+    const double bound = kBoundDoubleBatch;
     const int row = AddClaim(name.c_str(), "A..C", bound);
     const int shipped = AddClaim(
-        (std::string(DeviceRow(entry).name) + rungWord + " vs fp64 host").c_str(),
+        (std::string(DeviceRow(entry).name) + " vs fp64 host").c_str(),
         "A..C",
         2.0 * bound);
 
     const std::vector<double> out =
-        LaunchDeviceChoice<kMultiplier>(ref, grid, name.c_str(), launch, row);
+        LaunchDeviceChoice(ref, grid, name.c_str(), launch, row);
 
-    CompareDeviceWithHost<kMultiplier, boys::DefaultPolicyFp64>(ref, grid, out, shipped);
+    CompareDeviceWithHost<boys::DefaultPolicyFp64>(ref, grid, out, shipped);
 
     return out;
 }
@@ -913,18 +838,16 @@ std::vector<double> MeasureDeviceRow(const Reference& ref,
 // so a name this gate invented could not pass the coverage check at the end of
 // this file, and a row the report carries is either certified here or counted
 // there.
-template <double kMultiplier>
 void MeasureDeviceRowF32(const Reference& ref,
                          const Grid& grid,
                          boys::DeviceEntry entry,
-                         const char* rung,
                          boys::BoysStatus (*launch)(const int*,
                                                     const double*,
                                                     float*,
                                                     std::size_t,
                                                     void*)) {
-    const std::string name = Label(DeviceRow(entry).name, rung);
-    const double bound = kMultiplier * kBoundFloat;
+    const std::string name = Label(DeviceRow(entry).name);
+    const double bound = kBoundFloat;
     const int row = AddClaim(name.c_str(), "A..C", bound);
     const std::size_t count = ref.count;
     const int nmax = boys::kMaxBoysOrder;
@@ -959,10 +882,8 @@ void MeasureDeviceRowF32(const Reference& ref,
     }
 }
 
-template <double kMultiplier>
-void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung) {
-    const std::string rungWord = std::string(" m=") + (rung == nullptr ? "1" : rung);
-    const double pairBound = 2.0 * kMultiplier * kBoundDoubleBatch;
+void SweepDeviceChoices(const Reference& ref, const Grid& grid) {
+    const double pairBound = 2.0 * kBoundDoubleBatch;
 
     using NarrowPolicy = boys::EvalPolicy<boys::kDefaultFitRoute,
                                           boys::kDefaultEvalScheme,
@@ -973,7 +894,7 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
                                           boys::kDefaultEvalScheme,
                                           boys::BoysBudget::kFloat,
                                           boys::PackAxis::kOrders,
-                                          boys::FitGranularity::kShipped>;
+                                          boys::FitGranularity::kCoarsest>;
     using NarrowOrdersPolicy = boys::EvalPolicy<boys::kDefaultFitRoute,
                                                 boys::kDefaultEvalScheme,
                                                 boys::BoysBudget::kFloat,
@@ -987,12 +908,12 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
                                         boys::EvalScheme::kHorner,
                                         boys::BoysBudget::kFloat,
                                         boys::PackAxis::kArguments,
-                                        boys::FitGranularity::kShipped>;
+                                        boys::FitGranularity::kCoarsest>;
     using OrdersMonoPolicy = boys::EvalPolicy<boys::kDefaultFitRoute,
                                               boys::EvalScheme::kHorner,
                                               boys::BoysBudget::kFloat,
                                               boys::PackAxis::kOrders,
-                                              boys::FitGranularity::kShipped>;
+                                              boys::FitGranularity::kCoarsest>;
     using NarrowMonoPolicy = boys::EvalPolicy<boys::kDefaultFitRoute,
                                               boys::EvalScheme::kHorner,
                                               boys::BoysBudget::kFloat,
@@ -1012,12 +933,12 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
                                        boys::kDefaultEvalScheme,
                                        boys::BoysBudget::kFloat,
                                        boys::PackAxis::kArguments,
-                                       boys::FitGranularity::kShipped>;
+                                       boys::FitGranularity::kCoarsest>;
     using OrdersRatPolicy = boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
                                              boys::kDefaultEvalScheme,
                                              boys::BoysBudget::kFloat,
                                              boys::PackAxis::kOrders,
-                                             boys::FitGranularity::kShipped>;
+                                             boys::FitGranularity::kCoarsest>;
     using NarrowRatPolicy = boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
                                              boys::kDefaultEvalScheme,
                                              boys::BoysBudget::kFloat,
@@ -1029,395 +950,319 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
                                                    boys::PackAxis::kOrders,
                                                    boys::FitGranularity::kNarrow>;
 
-    const std::vector<double> narrowOut = MeasureDeviceRow<kMultiplier>(
+    const std::vector<double> narrowOut = MeasureDeviceRow(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF64Narrow,
-        rung,
-        rungWord,
-        &boys::BoysCuda::AllOrdersF64Narrow<kMultiplier>);
-    const std::vector<double> ordersOut = MeasureDeviceRow<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF64Narrow);
+    const std::vector<double> ordersOut = MeasureDeviceRow(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF64Orders,
-        rung,
-        rungWord,
-        &boys::BoysCuda::AllOrdersF64Orders<kMultiplier>);
-    const std::vector<double> bothOut = MeasureDeviceRow<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF64Orders);
+    const std::vector<double> bothOut = MeasureDeviceRow(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF64NarrowOrders,
-        rung,
-        rungWord,
-        &boys::BoysCuda::AllOrdersF64NarrowOrders<kMultiplier>);
-    const std::vector<double> monoOut = MeasureDeviceRow<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF64NarrowOrders);
+    const std::vector<double> monoOut = MeasureDeviceRow(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF64Mono,
-        rung,
-        rungWord,
-        &boys::BoysCuda::AllOrdersF64Mono<kMultiplier>);
-    const std::vector<double> ordersMonoOut = MeasureDeviceRow<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF64Mono);
+    const std::vector<double> ordersMonoOut = MeasureDeviceRow(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF64OrdersMono,
-        rung,
-        rungWord,
-        &boys::BoysCuda::AllOrdersF64OrdersMono<kMultiplier>);
-    const std::vector<double> narrowMonoOut = MeasureDeviceRow<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF64OrdersMono);
+    const std::vector<double> narrowMonoOut = MeasureDeviceRow(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF64NarrowMono,
-        rung,
-        rungWord,
-        &boys::BoysCuda::AllOrdersF64NarrowMono<kMultiplier>);
-    const std::vector<double> bothMonoOut = MeasureDeviceRow<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF64NarrowMono);
+    const std::vector<double> bothMonoOut = MeasureDeviceRow(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF64NarrowOrdersMono,
-        rung,
-        rungWord,
-        &boys::BoysCuda::AllOrdersF64NarrowOrdersMono<kMultiplier>);
+        &boys::BoysCuda::AllOrdersF64NarrowOrdersMono);
     // The fit route's rows. Both rows of a scheme pair are measured and each
     // carries its own figure; a pair whose figures differ would be a report that
     // named two arithmetics where the lane has one.
-    const std::vector<double> ratOut = MeasureDeviceRow<kMultiplier>(
+    const std::vector<double> ratOut = MeasureDeviceRow(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF64Rat,
-        rung,
-        rungWord,
-        &boys::BoysCuda::AllOrdersF64Rat<kMultiplier>);
-    const std::vector<double> ratHornerOut = MeasureDeviceRow<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF64Rat);
+    const std::vector<double> ratHornerOut = MeasureDeviceRow(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF64RatHorner,
-        rung,
-        rungWord,
-        &boys::BoysCuda::AllOrdersF64Rat<kMultiplier>);
-    const std::vector<double> ordersRatOut = MeasureDeviceRow<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF64Rat);
+    const std::vector<double> ordersRatOut = MeasureDeviceRow(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF64OrdersRat,
-        rung,
-        rungWord,
-        &boys::BoysCuda::AllOrdersF64OrdersRat<kMultiplier>);
-    const std::vector<double> ordersRatHornerOut = MeasureDeviceRow<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF64OrdersRat);
+    const std::vector<double> ordersRatHornerOut = MeasureDeviceRow(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF64OrdersRatHorner,
-        rung,
-        rungWord,
-        &boys::BoysCuda::AllOrdersF64OrdersRat<kMultiplier>);
-    const std::vector<double> narrowRatOut = MeasureDeviceRow<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF64OrdersRat);
+    const std::vector<double> narrowRatOut = MeasureDeviceRow(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF64NarrowRat,
-        rung,
-        rungWord,
-        &boys::BoysCuda::AllOrdersF64NarrowRat<kMultiplier>);
-    const std::vector<double> narrowRatHornerOut = MeasureDeviceRow<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF64NarrowRat);
+    const std::vector<double> narrowRatHornerOut = MeasureDeviceRow(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF64NarrowRatHorner,
-        rung,
-        rungWord,
-        &boys::BoysCuda::AllOrdersF64NarrowRat<kMultiplier>);
-    const std::vector<double> bothRatOut = MeasureDeviceRow<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF64NarrowRat);
+    const std::vector<double> bothRatOut = MeasureDeviceRow(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF64NarrowOrdersRat,
-        rung,
-        rungWord,
-        &boys::BoysCuda::AllOrdersF64NarrowOrdersRat<kMultiplier>);
-    const std::vector<double> bothRatHornerOut = MeasureDeviceRow<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF64NarrowOrdersRat);
+    const std::vector<double> bothRatHornerOut = MeasureDeviceRow(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF64NarrowOrdersRatHorner,
-        rung,
-        rungWord,
-        &boys::BoysCuda::AllOrdersF64NarrowOrdersRat<kMultiplier>);
+        &boys::BoysCuda::AllOrdersF64NarrowOrdersRat);
 
-    // The uniform route's rows, at every rung the lane serves. Its table is
-    // stored at one degree for every order and every interval, so no rung's
-    // criterion cuts it: every rung's arithmetic is that one degree, a rung's
-    // row is its own figure times m, and the entry serves every rung - the same
-    // statement the library makes in DeviceEntryServedAtRung, which is why
-    // there is no guard around this block. Every row of the route is measured,
-    // the two packing-axis rows included.
+    // The uniform route's rows. Its table is stored at one degree for every
+    // order and every interval, so no criterion cuts it: the arithmetic is that
+    // one degree and the row is the figure it documents. Every row of the route
+    // is measured, the two packing-axis rows included.
     {
-        const std::vector<double> uniformOut = MeasureDeviceRow<kMultiplier>(
+        const std::vector<double> uniformOut = MeasureDeviceRow(
             ref,
             grid,
             boys::DeviceEntry::kAllOrdersF64Uniform,
-            rung,
-            rungWord,
-            &boys::BoysCuda::AllOrdersF64Uniform<kMultiplier>);
-        const std::vector<double> uniformHornerOut = MeasureDeviceRow<kMultiplier>(
+            &boys::BoysCuda::AllOrdersF64Uniform);
+        const std::vector<double> uniformHornerOut = MeasureDeviceRow(
             ref,
             grid,
             boys::DeviceEntry::kAllOrdersF64UniformHorner,
-            rung,
-            rungWord,
-            &boys::BoysCuda::AllOrdersF64UniformHorner<kMultiplier>);
+            &boys::BoysCuda::AllOrdersF64UniformHorner);
 
             // The same grid on the rational route, the double lane's member.
-            MeasureDeviceRow<kMultiplier>(
+            MeasureDeviceRow(
                 ref,
                 grid,
                 boys::DeviceEntry::kAllOrdersF64UniformRat,
-                rung,
-                rungWord,
-                &boys::BoysCuda::AllOrdersF64UniformRat<kMultiplier>);
-            MeasureDeviceRow<kMultiplier>(
+                &boys::BoysCuda::AllOrdersF64UniformRat);
+            MeasureDeviceRow(
                 ref,
                 grid,
                 boys::DeviceEntry::kAllOrdersF64UniformRatHorner,
-                rung,
-                rungWord,
-                &boys::BoysCuda::AllOrdersF64UniformRatHorner<kMultiplier>);
-            MeasureDeviceRow<kMultiplier>(
+                &boys::BoysCuda::AllOrdersF64UniformRatHorner);
+            MeasureDeviceRow(
                 ref,
                 grid,
                 boys::DeviceEntry::kAllOrdersF64OrdersUniformRat,
-                rung,
-                rungWord,
-                &boys::BoysCuda::AllOrdersF64UniformRat<kMultiplier>);
-            MeasureDeviceRow<kMultiplier>(
+                &boys::BoysCuda::AllOrdersF64UniformRat);
+            MeasureDeviceRow(
                 ref,
                 grid,
                 boys::DeviceEntry::kAllOrdersF64OrdersUniformRatHorner,
-                rung,
-                rungWord,
-                &boys::BoysCuda::AllOrdersF64UniformRatHorner<kMultiplier>);
-        const std::vector<double> ordersUniformOut = MeasureDeviceRow<kMultiplier>(
+                &boys::BoysCuda::AllOrdersF64UniformRatHorner);
+        const std::vector<double> ordersUniformOut = MeasureDeviceRow(
             ref,
             grid,
             boys::DeviceEntry::kAllOrdersF64OrdersUniform,
-            rung,
-            rungWord,
-            &boys::BoysCuda::AllOrdersF64OrdersUniform<kMultiplier>);
-        const std::vector<double> ordersUniformHornerOut = MeasureDeviceRow<kMultiplier>(
+            &boys::BoysCuda::AllOrdersF64OrdersUniform);
+        const std::vector<double> ordersUniformHornerOut = MeasureDeviceRow(
             ref,
             grid,
             boys::DeviceEntry::kAllOrdersF64OrdersUniformHorner,
-            rung,
-            rungWord,
-            &boys::BoysCuda::AllOrdersF64OrdersUniformHorner<kMultiplier>);
+            &boys::BoysCuda::AllOrdersF64OrdersUniformHorner);
         (void)uniformOut;
         (void)uniformHornerOut;
         (void)ordersUniformOut;
         (void)ordersUniformHornerOut;
     }
 
-    // The float lane's grid, the uniform route at that lane's precision, served
-    // at every rung for the reason the double lane's is.
-    MeasureDeviceRowF32<kMultiplier>(
+    // The float lane's grid, the uniform route at that lane's precision.
+    MeasureDeviceRowF32(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF32Uniform,
-        rung,
-        &boys::BoysCuda::AllOrdersF32Uniform<kMultiplier>);
-    MeasureDeviceRowF32<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF32Uniform);
+    MeasureDeviceRowF32(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF32UniformHorner,
-        rung,
-        &boys::BoysCuda::AllOrdersF32UniformHorner<kMultiplier>);
+        &boys::BoysCuda::AllOrdersF32UniformHorner);
 
     // The grid on its rational route, the float lane's member over its own
-    // intervals, served at every rung for the reason the rows above are: one
-    // pair per interval and no per-order effective-degree column, so nothing to
-    // cut.
-    MeasureDeviceRowF32<kMultiplier>(
+    // intervals: one pair per interval and no per-order effective-degree column,
+    // so nothing to cut.
+    MeasureDeviceRowF32(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF32UniformRat,
-        rung,
-        &boys::BoysCuda::AllOrdersF32UniformRat<kMultiplier>);
-    MeasureDeviceRowF32<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF32UniformRat);
+    MeasureDeviceRowF32(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF32UniformRatHorner,
-        rung,
-        &boys::BoysCuda::AllOrdersF32UniformRatHorner<kMultiplier>);
-    MeasureDeviceRowF32<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF32UniformRatHorner);
+    MeasureDeviceRowF32(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF32OrdersUniformRat,
-        rung,
-        &boys::BoysCuda::AllOrdersF32UniformRat<kMultiplier>);
-    MeasureDeviceRowF32<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF32UniformRat);
+    MeasureDeviceRowF32(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF32OrdersUniformRatHorner,
-        rung,
-        &boys::BoysCuda::AllOrdersF32UniformRatHorner<kMultiplier>);
+        &boys::BoysCuda::AllOrdersF32UniformRatHorner);
 
-    // The float lane's other packing axis, on the two tables whose rung this
-    // lane holds: the shipped partition's own cut of the float Chebyshev table,
-    // and the uniform grid, whose one degree per interval no rung's criterion
-    // cuts. Both are measured at the bound the float lane documents.
-    MeasureDeviceRowF32<kMultiplier>(
+    // The float lane's other packing axis, on the two tables this lane holds:
+    // the shipped partition's own cut of the float Chebyshev table, and the
+    // uniform grid, whose one degree per interval no criterion cuts. Both are
+    // measured at the bound the float lane documents.
+    MeasureDeviceRowF32(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF32Orders,
-        rung,
-        &boys::BoysCuda::AllOrdersF32Orders<kMultiplier>);
-    MeasureDeviceRowF32<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF32Orders);
+    MeasureDeviceRowF32(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF32OrdersUniform,
-        rung,
-        &boys::BoysCuda::AllOrdersF32OrdersUniform<kMultiplier>);
-    MeasureDeviceRowF32<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF32OrdersUniform);
+    MeasureDeviceRowF32(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF32OrdersUniformHorner,
-        rung,
-        &boys::BoysCuda::AllOrdersF32OrdersUniformHorner<kMultiplier>);
+        &boys::BoysCuda::AllOrdersF32OrdersUniformHorner);
 
-    // The float lane's narrow partition carries every rung on both axes, in each
-    // of the two forms it is stored in, each form's cut being the float lane's
-    // own region-B degrees in that form beside the double lane's region-A cut.
-    MeasureDeviceRowF32<kMultiplier>(
+    // The float lane's narrow partition, in each of the two forms it is stored
+    // in, each form's cut being the float lane's own region-B degrees in that
+    // form beside the double lane's region-A cut.
+    MeasureDeviceRowF32(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF32Narrow,
-        rung,
-        &boys::BoysCuda::AllOrdersF32Narrow<kMultiplier>);
-    MeasureDeviceRowF32<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF32Narrow);
+    MeasureDeviceRowF32(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF32NarrowMono,
-        rung,
-        &boys::BoysCuda::AllOrdersF32NarrowMono<kMultiplier>);
-    MeasureDeviceRowF32<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF32NarrowMono);
+    MeasureDeviceRowF32(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF32NarrowOrders,
-        rung,
-        &boys::BoysCuda::AllOrdersF32NarrowOrders<kMultiplier>);
-    MeasureDeviceRowF32<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF32NarrowOrders);
+    MeasureDeviceRowF32(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF32NarrowOrdersMono,
-        rung,
-        &boys::BoysCuda::AllOrdersF32NarrowOrdersMono<kMultiplier>);
+        &boys::BoysCuda::AllOrdersF32NarrowOrdersMono);
 
-    // The float lane's rational route carries every rung on both axes and on
-    // both partitions: the region-B pair is that lane's own fit, cut by the same
-    // criterion over the coefficients the row sums, and region A's seed is the
-    // double lane's pair at the same rung's cut. Each of its rows is measured at
-    // every rung, named twice because the route's pair is stored in one form:
-    // the two scheme names of a partition reach one kernel, and the row's own
-    // scheme says which name reached it.
-    MeasureDeviceRowF32<kMultiplier>(
+    // The float lane's rational route on both axes and both partitions: the
+    // region-B pair is that lane's own fit, cut by the same criterion over the
+    // coefficients the row sums, and region A's seed is the double lane's pair
+    // at the same cut. Each of its rows is named twice because the route's pair
+    // is stored in one form: the two scheme names of a partition reach one
+    // kernel, and the row's own scheme says which name reached it.
+    MeasureDeviceRowF32(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF32Rat,
-        rung,
-        &boys::BoysCuda::AllOrdersF32Rat<kMultiplier>);
-    MeasureDeviceRowF32<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF32Rat);
+    MeasureDeviceRowF32(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF32RatHorner,
-        rung,
-        &boys::BoysCuda::AllOrdersF32RatHorner<kMultiplier>);
-    MeasureDeviceRowF32<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF32RatHorner);
+    MeasureDeviceRowF32(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF32NarrowRat,
-        rung,
-        &boys::BoysCuda::AllOrdersF32NarrowRat<kMultiplier>);
-    MeasureDeviceRowF32<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF32NarrowRat);
+    MeasureDeviceRowF32(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF32NarrowRatHorner,
-        rung,
-        &boys::BoysCuda::AllOrdersF32NarrowRatHorner<kMultiplier>);
-    // The same tables and route on the packing axis's other side, at every rung
-    // and for the same reason: a rung cuts the pair this row reads as it cuts the
-    // per-argument row's, so the two are served at the same rungs.
-    MeasureDeviceRowF32<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF32NarrowRatHorner);
+    // The same tables and route on the packing axis's other side: the cut this
+    // row reads is the per-argument row's own.
+    MeasureDeviceRowF32(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF32OrdersRat,
-        rung,
-        &boys::BoysCuda::AllOrdersF32OrdersRat<kMultiplier>);
-    MeasureDeviceRowF32<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF32OrdersRat);
+    MeasureDeviceRowF32(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF32OrdersRatHorner,
-        rung,
-        &boys::BoysCuda::AllOrdersF32OrdersRatHorner<kMultiplier>);
-    MeasureDeviceRowF32<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF32OrdersRatHorner);
+    MeasureDeviceRowF32(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF32NarrowOrdersRat,
-        rung,
-        &boys::BoysCuda::AllOrdersF32NarrowOrdersRat<kMultiplier>);
-    MeasureDeviceRowF32<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF32NarrowOrdersRat);
+    MeasureDeviceRowF32(
         ref,
         grid,
         boys::DeviceEntry::kAllOrdersF32NarrowOrdersRatHorner,
-        rung,
-        &boys::BoysCuda::AllOrdersF32NarrowOrdersRatHorner<kMultiplier>);
+        &boys::BoysCuda::AllOrdersF32NarrowOrdersRatHorner);
 
-    if constexpr (kMultiplier == boys::kBoysFullAccuracyMultiplier)
+    // The two lanes' rows of the same name, read against each other: the
+    // device row's distance from the host lane's own combination - the same
+    // route, scheme, partition and packing axis - which is the counterpart that
+    // says the two lanes agree about the option and not merely about the
+    // function.
     {
         const int narrowHost = AddClaim(
-            (std::string(DeviceRow(boys::DeviceEntry::kAllOrdersF64Narrow).name) + rungWord
-             + " vs fp64 host narrow")
+            (std::string(DeviceRow(boys::DeviceEntry::kAllOrdersF64Narrow).name) + " vs fp64 host narrow")
                 .c_str(),
             "A..C",
             pairBound);
         const int ordersHost = AddClaim(
-            (std::string(DeviceRow(boys::DeviceEntry::kAllOrdersF64Orders).name) + rungWord
-             + " vs fp64 host orders")
+            (std::string(DeviceRow(boys::DeviceEntry::kAllOrdersF64Orders).name) + " vs fp64 host orders")
                 .c_str(),
             "A..C",
             pairBound);
         const int bothHost = AddClaim(
-            (std::string(DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowOrders).name) + rungWord
-             + " vs fp64 host narrow orders")
+            (std::string(DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowOrders).name) + " vs fp64 host narrow orders")
                 .c_str(),
             "A..C",
             pairBound);
         const int monoHost = AddClaim(
-            (std::string(DeviceRow(boys::DeviceEntry::kAllOrdersF64Mono).name) + rungWord
-             + " vs fp64 host mono")
+            (std::string(DeviceRow(boys::DeviceEntry::kAllOrdersF64Mono).name) + " vs fp64 host mono")
                 .c_str(),
             "A..C",
             pairBound);
         const int ordersMonoHost = AddClaim(
-            (std::string(DeviceRow(boys::DeviceEntry::kAllOrdersF64OrdersMono).name) + rungWord
-             + " vs fp64 host orders mono")
+            (std::string(DeviceRow(boys::DeviceEntry::kAllOrdersF64OrdersMono).name) + " vs fp64 host orders mono")
                 .c_str(),
             "A..C",
             pairBound);
         const int narrowMonoHost = AddClaim(
-            (std::string(DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowMono).name) + rungWord
-             + " vs fp64 host narrow mono")
+            (std::string(DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowMono).name) + " vs fp64 host narrow mono")
                 .c_str(),
             "A..C",
             pairBound);
         const int bothMonoHost = AddClaim(
             (std::string(DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowOrdersMono).name)
-             + rungWord + " vs fp64 host narrow orders mono")
+             + " vs fp64 host narrow orders mono")
                 .c_str(),
             "A..C",
             pairBound);
 
-        CompareDeviceWithHost<kMultiplier, NarrowPolicy>(ref, grid, narrowOut, narrowHost);
-        CompareDeviceWithHost<kMultiplier, OrdersPolicy>(ref, grid, ordersOut, ordersHost);
-        CompareDeviceWithHost<kMultiplier, NarrowOrdersPolicy>(ref, grid, bothOut, bothHost);
-        CompareDeviceWithHost<kMultiplier, MonoPolicy>(ref, grid, monoOut, monoHost);
-        CompareDeviceWithHost<kMultiplier, OrdersMonoPolicy>(
+        CompareDeviceWithHost<NarrowPolicy>(ref, grid, narrowOut, narrowHost);
+        CompareDeviceWithHost<OrdersPolicy>(ref, grid, ordersOut, ordersHost);
+        CompareDeviceWithHost<NarrowOrdersPolicy>(ref, grid, bothOut, bothHost);
+        CompareDeviceWithHost<MonoPolicy>(ref, grid, monoOut, monoHost);
+        CompareDeviceWithHost<OrdersMonoPolicy>(
             ref, grid, ordersMonoOut, ordersMonoHost);
-        CompareDeviceWithHost<kMultiplier, NarrowMonoPolicy>(
+        CompareDeviceWithHost<NarrowMonoPolicy>(
             ref, grid, narrowMonoOut, narrowMonoHost);
-        CompareDeviceWithHost<kMultiplier, NarrowOrdersMonoPolicy>(
+        CompareDeviceWithHost<NarrowOrdersMonoPolicy>(
             ref, grid, bothMonoOut, bothMonoHost);
 
         // The fit route's rows, each shape's two scheme names measured against the
@@ -1426,7 +1271,7 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
         // measurements of one arithmetic; each is recorded per row, because a
         // row's claim is the row's own.
         const auto routeHostClaim = [&](const char* rowName, const char* shape) {
-            return AddClaim((std::string(rowName) + rungWord + " vs fp64 host " + shape).c_str(),
+            return AddClaim((std::string(rowName) + " vs fp64 host " + shape).c_str(),
                             "A..C",
                             pairBound);
         };
@@ -1443,22 +1288,22 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
             DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowRat).name, "narrow rat");
         const int narrowRatHornerHost = routeHostClaim(
             DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowRatHorner).name, "narrow rat");
-        CompareDeviceWithHost<kMultiplier, RatPolicy>(ref, grid, ratOut, ratHost);
-        CompareDeviceWithHost<kMultiplier, RatPolicy>(ref, grid, ratHornerOut, ratHornerHost);
-        CompareDeviceWithHost<kMultiplier, OrdersRatPolicy>(
+        CompareDeviceWithHost<RatPolicy>(ref, grid, ratOut, ratHost);
+        CompareDeviceWithHost<RatPolicy>(ref, grid, ratHornerOut, ratHornerHost);
+        CompareDeviceWithHost<OrdersRatPolicy>(
             ref, grid, ordersRatOut, ordersRatHost);
-        CompareDeviceWithHost<kMultiplier, OrdersRatPolicy>(
+        CompareDeviceWithHost<OrdersRatPolicy>(
             ref, grid, ordersRatHornerOut, ordersRatHornerHost);
-        CompareDeviceWithHost<kMultiplier, NarrowRatPolicy>(
+        CompareDeviceWithHost<NarrowRatPolicy>(
             ref, grid, narrowRatOut, narrowRatHost);
-        CompareDeviceWithHost<kMultiplier, NarrowRatPolicy>(
+        CompareDeviceWithHost<NarrowRatPolicy>(
             ref, grid, narrowRatHornerOut, narrowRatHornerHost);
 
         // The narrow partition under the rational route on the orders axis, the
         // last of the route's four shapes. The host lane carries it: its packed
         // entry takes the route and the partition as template arguments, and
-        // boys_orders_simd.cpp instantiates that pair for both schemes at every
-        // rung (BOYS_ORDERS_NARROW_RATIONAL_INSTANTIATIONS). The rows are read
+        // boys_orders_simd.cpp instantiates that pair for both schemes
+        // (BOYS_ORDERS_NARROW_RATIONAL_INSTANTIATIONS). The rows are read
         // against the host lane at their own policy like every other shape of
         // the route.
         const int bothRatHost = routeHostClaim(
@@ -1466,14 +1311,13 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid, const char* rung
         const int bothRatHornerHost = routeHostClaim(
             DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowOrdersRatHorner).name,
             "narrow orders rat");
-        CompareDeviceWithHost<kMultiplier, NarrowOrdersRatPolicy>(
+        CompareDeviceWithHost<NarrowOrdersRatPolicy>(
             ref, grid, bothRatOut, bothRatHost);
-        CompareDeviceWithHost<kMultiplier, NarrowOrdersRatPolicy>(
+        CompareDeviceWithHost<NarrowOrdersRatPolicy>(
             ref, grid, bothRatHornerOut, bothRatHornerHost);
     }
 }
 
-template <double kMultiplier>
 void SweepFloat(const Reference& ref,
                 const Grid& grid,
                 const SortedArgs& sorted,
@@ -1485,8 +1329,8 @@ void SweepFloat(const Reference& ref,
     const std::size_t count = ref.count;
     const int nmax = boys::kMaxBoysOrder;
     const std::size_t cells = grid.cells;
-    const double bound = kMultiplier * kBoundFloat;
-    const double fastBound = kMultiplier * kBoundFloat + kFastExpContribution;
+    const double bound = kBoundFloat;
+    const double fastBound = kBoundFloat + kFastExpContribution;
 
     // The entry the caller hands a double and the kernel narrows itself: the
     // argument measured at is the float it evaluates at, which is the
@@ -1506,9 +1350,9 @@ void SweepFloat(const Reference& ref,
         dN.Upload(grid.n);
         dX.Upload(grid.x);
         CheckLaunch(
-            boys::BoysCuda::SingleF32<kMultiplier>(dN.get(), dX.get(), dOut.get(), cells, nullptr),
+            boys::BoysCuda::SingleF32(dN.get(), dX.get(), dOut.get(), cells, nullptr),
             "SingleF32");
-        CheckLaunch(boys::BoysCuda::SingleF32<kMultiplier, boys::RegionBExp::kFast>(
+        CheckLaunch(boys::BoysCuda::SingleF32<boys::RegionBExp::kFast>(
                         dN.get(), dX.get(), dOutFast.get(), cells, nullptr),
                     "SingleF32 fast");
         std::vector<float> out(cells);
@@ -1591,7 +1435,7 @@ void SweepFloat(const Reference& ref,
         std::vector<int> hostN(count, nmax);
         dN.Upload(hostN);
         dX.Upload(grid.x);
-        CheckLaunch(boys::BoysCuda::AllOrdersF32<kMultiplier>(
+        CheckLaunch(boys::BoysCuda::AllOrdersF32(
                         dN.get(), dX.get(), dOut.get(), count, nullptr),
                     "AllOrdersF32");
         std::vector<float> out(cells);
@@ -1621,7 +1465,7 @@ void SweepFloat(const Reference& ref,
         DevBuf<float> dOut(cells);
         dX.Upload(sorted.x);
         CheckLaunch(
-            boys::BoysCuda::AllNF32<kMultiplier>(nmax, dX.get(), dOut.get(), count, nullptr),
+            boys::BoysCuda::AllNF32(nmax, dX.get(), dOut.get(), count, nullptr),
             "AllNF32");
         std::vector<float> out(cells);
         dOut.Download(out);
@@ -1647,7 +1491,6 @@ void SweepFloat(const Reference& ref,
     }
 }
 
-template <double kMultiplier>
 void SweepHalf(const Reference& ref,
                const Grid& grid,
                const SortedArgs& sorted,
@@ -1666,7 +1509,7 @@ void SweepHalf(const Reference& ref,
         dN.Upload(grid.n);
         dX.Upload(grid.x16);
         CheckLaunch(
-            boys::BoysCuda::SingleF16<kMultiplier>(dN.get(), dX.get(), dOut.get(), cells, nullptr),
+            boys::BoysCuda::SingleF16(dN.get(), dX.get(), dOut.get(), cells, nullptr),
             "SingleF16");
         std::vector<boys::F16> out(cells);
         dOut.Download(out);
@@ -1692,7 +1535,7 @@ void SweepHalf(const Reference& ref,
                         got,
                         ref.v16[e],
                         ref.decade16[e],
-                        HalfBoundAt(got, kMultiplier),
+                        HalfBoundAt(got),
                         Unrepresentable(got, kF16MinNormalExp));
             }
         }
@@ -1712,7 +1555,7 @@ void SweepHalf(const Reference& ref,
 
         dN.Upload(hostN);
         dX.Upload(hostX);
-        CheckLaunch(boys::BoysCuda::AllOrdersF16<kMultiplier>(
+        CheckLaunch(boys::BoysCuda::AllOrdersF16(
                         dN.get(), dX.get(), dOut.get(), count, nullptr),
                     "AllOrdersF16");
         std::vector<boys::F16> out(cells);
@@ -1731,7 +1574,7 @@ void SweepHalf(const Reference& ref,
                         got,
                         ref.v16[e],
                         ref.decade16[e],
-                        HalfBoundAt(got, kMultiplier),
+                        HalfBoundAt(got),
                         Unrepresentable(got, kF16MinNormalExp));
             }
         }
@@ -1749,7 +1592,7 @@ void SweepHalf(const Reference& ref,
 
         dX.Upload(hostX);
         CheckLaunch(
-            boys::BoysCuda::AllNF16<kMultiplier>(nmax, dX.get(), dOut.get(), count, nullptr),
+            boys::BoysCuda::AllNF16(nmax, dX.get(), dOut.get(), count, nullptr),
             "AllNF16");
         std::vector<boys::F16> out(cells);
         dOut.Download(out);
@@ -1768,7 +1611,7 @@ void SweepHalf(const Reference& ref,
                         got,
                         ref.v16[ref.Index(n, i)],
                         ref.decade16[ref.Index(n, i)],
-                        HalfBoundAt(got, kMultiplier),
+                        HalfBoundAt(got),
                         Unrepresentable(got, kF16MinNormalExp));
             }
         }
@@ -1786,68 +1629,6 @@ void SweepHalf(const Reference& ref,
 #endif // BOYS_CUDA_GATE_FP16
 }
 
-// One relaxed instantiation's rows. The device takes the multiplier as a
-// compile-time argument and has no per-call accuracy parameter, so each one is
-// the separate lane the header says it is; its asserted bound is the header's
-// m * (the m = 1 budget), which is the relaxation the contract states.
-template <double kMultiplier>
-void SweepRelaxed(const Reference& ref,
-                  const Grid& grid,
-                  const SortedArgs& sorted,
-                  const char* rung) {
-    const std::string doubleSingle = Label(DeviceRow(boys::DeviceEntry::kSingleF64).name, rung);
-    const std::string doubleOrders = Label(DeviceRow(boys::DeviceEntry::kAllOrdersF64).name, rung);
-    const std::string doubleAllN = Label(DeviceRow(boys::DeviceEntry::kAllNF64).name, rung);
-    const std::string floatSingle = Label(DeviceRow(boys::DeviceEntry::kSingleF32).name, rung);
-    const std::string floatSingleFast = Label(DeviceRow(boys::DeviceEntry::kSingleF32Fast, boys::RegionBExp::kFast).name, rung);
-    const std::string floatOrders = Label(DeviceRow(boys::DeviceEntry::kAllOrdersF32).name, rung);
-    const std::string floatAllN = Label(DeviceRow(boys::DeviceEntry::kAllNF32).name, rung);
-    const std::string halfSingle = Label(DeviceRow(boys::DeviceEntry::kSingleF16).name, rung);
-    const std::string halfOrders = Label(DeviceRow(boys::DeviceEntry::kAllOrdersF16).name, rung);
-    const std::string halfAllN = Label(DeviceRow(boys::DeviceEntry::kAllNF16).name, rung);
-
-    const int doubleSingleA = AddClaim(doubleSingle.c_str(), "A", kMultiplier * kBoundSingleA);
-    const int doubleSingleBand =
-        AddClaim(doubleSingle.c_str(), "band", kMultiplier * kBoundSingleBand);
-    const int doubleSingleB = AddClaim(doubleSingle.c_str(), "B", kMultiplier * kBoundSingleB);
-    const int doubleSingleC = AddClaim(doubleSingle.c_str(), "C", kMultiplier * kBoundSingleC);
-    const int doubleOrderSlot =
-        AddClaim(doubleOrders.c_str(), "A..C", kMultiplier * kBoundDoubleBatch);
-    const int doubleAllNSlot =
-        AddClaim(doubleAllN.c_str(), "A..C", kMultiplier * kBoundDoubleBatch);
-    const int floatSingleSlot = AddClaim(floatSingle.c_str(), "A..C", kMultiplier * kBoundFloat);
-    // The fast option's own bound, which permits the wrong sign the audit
-    // reports: the lane's m * 1.5e-7 plus the exponential's contribution.
-    const int floatSingleFastSlot =
-        AddClaim(floatSingleFast.c_str(), "A..C", kMultiplier * kBoundFloat + kFastExpContribution);
-    const int floatOrderSlot = AddClaim(floatOrders.c_str(), "A..C", kMultiplier * kBoundFloat);
-    const int floatAllNSlot = AddClaim(floatAllN.c_str(), "A..C", kMultiplier * kBoundFloat);
-    const int halfSingleSlot = AddClaim(halfSingle.c_str(), "A..C", kMultiplier * kBoundHalfRow);
-    const int halfOrderSlot = AddClaim(halfOrders.c_str(), "A..C", kMultiplier * kBoundHalfRow);
-    const int halfAllNSlot = AddClaim(halfAllN.c_str(), "A..C", kMultiplier * kBoundHalfRow);
-
-    SweepDouble<kMultiplier>(ref,
-                             grid,
-                             sorted,
-                             doubleSingleA,
-                             doubleSingleBand,
-                             doubleSingleB,
-                             doubleSingleC,
-                             doubleOrderSlot,
-                             doubleAllNSlot);
-    SweepFloat<kMultiplier>(ref,
-                            grid,
-                            sorted,
-                            floatSingleSlot,
-                            floatSingleFastSlot,
-                            floatOrderSlot,
-                            floatAllNSlot,
-                            floatSingleFast);
-    SweepHalf<kMultiplier>(ref, grid, sorted, halfSingleSlot, halfOrderSlot, halfAllNSlot);
-    SweepDeviceChoices<kMultiplier>(ref, grid, rung);
-}
-
-// ---------------------------------------------------------------------------
 // The device-callable entries, reached from a consumer's own kernel.
 // ---------------------------------------------------------------------------
 
@@ -2010,8 +1791,7 @@ void CheckDemo(int error, const char* what) {
 }
 
 // Which row each device entry's cells are measured into. One entry per row
-// except the double single lane, whose bound is published per region; one set
-// of rows per rung, since the multiplier is an argument of the call.
+// except the double single lane, whose bound is published per region.
 struct DeviceSlots {
     int singleA = -1;
     int singleBand = -1;
@@ -2031,9 +1811,9 @@ struct DeviceSlots {
     int each16 = -1;
 
     // The partition and route axes of the ladder shape. Every row of them - the
-    // float lane's narrow and rational rows included - is served at every rung,
-    // so DeviceClaimSet below fills every slot here at every rung; the -1 is the
-    // initial value and not what a rung leaves unclaimed.
+    // float lane's narrow and rational rows included - is served, so
+    // DeviceClaimSet below fills every slot here; the -1 is the initial value
+    // and not a slot the library leaves unclaimed.
     int narrow64 = -1;
     int narrowMono64 = -1;
     int rat64 = -1;
@@ -2056,44 +1836,43 @@ struct DeviceSlots {
     int uniformRatHorner32 = -1;
 };
 
-// The rows one rung's device cells are measured into, at that rung's bound:
-// every documented device bound is m times the m = 1 figure, so a relaxed row
-// that held the m = 1 bound would be asserting what it was relaxed out of.
-DeviceSlots DeviceClaimSet(const char* rung, double multiplier) {
+// The rows the device cells are measured into, each at the bound its own
+// reported row documents.
+DeviceSlots DeviceClaimSet() {
     DeviceSlots slots;
-    const std::string single = Label(DeviceRow(boys::DeviceEntry::kDeviceSingleF64).name, rung);
-    const std::string orders64 = Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64).name, rung);
-    const std::string allN64 = Label(DeviceRow(boys::DeviceEntry::kDeviceAllNF64).name, rung);
-    const std::string each64 = Label(DeviceRow(boys::DeviceEntry::kDeviceEachOrderF64).name, rung);
-    const std::string single32 = Label(DeviceRow(boys::DeviceEntry::kDeviceSingleF32).name, rung);
-    const std::string single32Fast = Label(DeviceRow(boys::DeviceEntry::kDeviceSingleF32Fast, boys::RegionBExp::kFast).name, rung);
-    const std::string orders32 = Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32).name, rung);
-    const std::string allN32 = Label(DeviceRow(boys::DeviceEntry::kDeviceAllNF32).name, rung);
-    const std::string each32 = Label(DeviceRow(boys::DeviceEntry::kDeviceEachOrderF32).name, rung);
-    const std::string single16 = Label(DeviceRow(boys::DeviceEntry::kDeviceSingleF16).name, rung);
-    const std::string orders16 = Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF16).name, rung);
-    const std::string allN16 = Label(DeviceRow(boys::DeviceEntry::kDeviceAllNF16).name, rung);
-    const std::string each16 = Label(DeviceRow(boys::DeviceEntry::kDeviceEachOrderF16).name, rung);
+    const std::string single = Label(DeviceRow(boys::DeviceEntry::kDeviceSingleF64).name);
+    const std::string orders64 = Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64).name);
+    const std::string allN64 = Label(DeviceRow(boys::DeviceEntry::kDeviceAllNF64).name);
+    const std::string each64 = Label(DeviceRow(boys::DeviceEntry::kDeviceEachOrderF64).name);
+    const std::string single32 = Label(DeviceRow(boys::DeviceEntry::kDeviceSingleF32).name);
+    const std::string single32Fast = Label(DeviceRow(boys::DeviceEntry::kDeviceSingleF32Fast, boys::RegionBExp::kFast).name);
+    const std::string orders32 = Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32).name);
+    const std::string allN32 = Label(DeviceRow(boys::DeviceEntry::kDeviceAllNF32).name);
+    const std::string each32 = Label(DeviceRow(boys::DeviceEntry::kDeviceEachOrderF32).name);
+    const std::string single16 = Label(DeviceRow(boys::DeviceEntry::kDeviceSingleF16).name);
+    const std::string orders16 = Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF16).name);
+    const std::string allN16 = Label(DeviceRow(boys::DeviceEntry::kDeviceAllNF16).name);
+    const std::string each16 = Label(DeviceRow(boys::DeviceEntry::kDeviceEachOrderF16).name);
 
-    slots.singleA = AddClaim(single.c_str(), "A", multiplier * kBoundSingleA);
-    slots.singleBand = AddClaim(single.c_str(), "band", multiplier * kBoundSingleBand);
-    slots.singleB = AddClaim(single.c_str(), "B", multiplier * kBoundSingleB);
-    slots.singleC = AddClaim(single.c_str(), "C", multiplier * kBoundSingleC);
-    slots.orders64 = AddClaim(orders64.c_str(), "A..C", multiplier * kBoundDoubleBatch);
-    slots.allN64 = AddClaim(allN64.c_str(), "A..C", multiplier * kBoundDoubleBatch);
-    slots.each64 = AddClaim(each64.c_str(), "A..C", multiplier * kBoundDoubleBatch);
-    slots.single32 = AddClaim(single32.c_str(), "A..C", multiplier * kBoundFloat);
-    // The fast option's own bound: the lane's m * 1.5e-7 plus the corrected
-    // seed's contribution, which the option carries at every rung.
+    slots.singleA = AddClaim(single.c_str(), "A", kBoundSingleA);
+    slots.singleBand = AddClaim(single.c_str(), "band", kBoundSingleBand);
+    slots.singleB = AddClaim(single.c_str(), "B", kBoundSingleB);
+    slots.singleC = AddClaim(single.c_str(), "C", kBoundSingleC);
+    slots.orders64 = AddClaim(orders64.c_str(), "A..C", kBoundDoubleBatch);
+    slots.allN64 = AddClaim(allN64.c_str(), "A..C", kBoundDoubleBatch);
+    slots.each64 = AddClaim(each64.c_str(), "A..C", kBoundDoubleBatch);
+    slots.single32 = AddClaim(single32.c_str(), "A..C", kBoundFloat);
+    // The fast option's own bound: the lane's 1.5e-7 plus the corrected seed's
+    // contribution, which the option carries.
     slots.single32Fast =
-        AddClaim(single32Fast.c_str(), "A..C", multiplier * kBoundFloat + kFastExpContribution);
-    slots.orders32 = AddClaim(orders32.c_str(), "A..C", multiplier * kBoundFloat);
-    slots.allN32 = AddClaim(allN32.c_str(), "A..C", multiplier * kBoundFloat);
-    slots.each32 = AddClaim(each32.c_str(), "A..C", multiplier * kBoundFloat);
-    slots.single16 = AddClaim(single16.c_str(), "A..C", multiplier * kBoundHalfRow);
-    slots.orders16 = AddClaim(orders16.c_str(), "A..C", multiplier * kBoundHalfRow);
-    slots.allN16 = AddClaim(allN16.c_str(), "A..C", multiplier * kBoundHalfRow);
-    slots.each16 = AddClaim(each16.c_str(), "A..C", multiplier * kBoundHalfRow);
+        AddClaim(single32Fast.c_str(), "A..C", kBoundFloat + kFastExpContribution);
+    slots.orders32 = AddClaim(orders32.c_str(), "A..C", kBoundFloat);
+    slots.allN32 = AddClaim(allN32.c_str(), "A..C", kBoundFloat);
+    slots.each32 = AddClaim(each32.c_str(), "A..C", kBoundFloat);
+    slots.single16 = AddClaim(single16.c_str(), "A..C", kBoundHalfRow);
+    slots.orders16 = AddClaim(orders16.c_str(), "A..C", kBoundHalfRow);
+    slots.allN16 = AddClaim(allN16.c_str(), "A..C", kBoundHalfRow);
+    slots.each16 = AddClaim(each16.c_str(), "A..C", kBoundHalfRow);
 
     // The partition and route axes reached in the caller's kernel. Each row's
     // name, precision and bound are its launched row's above, because the
@@ -2101,122 +1880,121 @@ DeviceSlots DeviceClaimSet(const char* rung, double multiplier) {
     // reaches it.
     //
     // Every row of the float lane - the shipped and narrow partitions' Chebyshev
-    // and monomial forms and the rational route on both partitions - carries
-    // every rung and is claimed at every rung, as the double lane's rows and the
-    // grid's are: a claim is made wherever the row's own entry says the row
-    // answers (DeviceEntryServedAtRung), so the claim set and the space's rung
-    // mask cannot come apart here.
+    // and monomial forms and the rational route on both partitions - is served
+    // and claimed here, as the double lane's rows and the grid's are: a claim is
+    // made wherever the row's own entry says the row answers, so the claim set
+    // and the space the library reports cannot come apart here.
     slots.narrow64 = AddClaim(
-        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64Narrow).name, rung).c_str(),
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64Narrow).name).c_str(),
         "A..C",
-        multiplier * kBoundDoubleBatch);
+        kBoundDoubleBatch);
     slots.narrowMono64 = AddClaim(
-        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64NarrowMono).name, rung).c_str(),
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64NarrowMono).name).c_str(),
         "A..C",
-        multiplier * kBoundDoubleBatch);
+        kBoundDoubleBatch);
     slots.rat64 =
-        AddClaim(Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64Rat).name, rung).c_str(),
+        AddClaim(Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64Rat).name).c_str(),
                  "A..C",
-                 multiplier * kBoundDoubleBatch);
+                 kBoundDoubleBatch);
     slots.ratHorner64 = AddClaim(
-        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64RatHorner).name, rung).c_str(),
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64RatHorner).name).c_str(),
         "A..C",
-        multiplier * kBoundDoubleBatch);
+        kBoundDoubleBatch);
     slots.narrowRat64 = AddClaim(
-        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64NarrowRat).name, rung).c_str(),
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64NarrowRat).name).c_str(),
         "A..C",
-        multiplier * kBoundDoubleBatch);
+        kBoundDoubleBatch);
     slots.narrowRatHorner64 = AddClaim(
-        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64NarrowRatHorner).name, rung).c_str(),
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64NarrowRatHorner).name).c_str(),
         "A..C",
-        multiplier * kBoundDoubleBatch);
+        kBoundDoubleBatch);
     slots.uniform64 = AddClaim(
-        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64Uniform).name, rung).c_str(),
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64Uniform).name).c_str(),
         "A..C",
-        multiplier * kBoundDoubleBatch);
+        kBoundDoubleBatch);
     slots.uniformHorner64 = AddClaim(
-        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64UniformHorner).name, rung).c_str(),
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64UniformHorner).name).c_str(),
         "A..C",
-        multiplier * kBoundDoubleBatch);
+        kBoundDoubleBatch);
     slots.uniform32 = AddClaim(
-        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32Uniform).name, rung).c_str(),
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32Uniform).name).c_str(),
         "A..C",
-        multiplier * kBoundFloat);
+        kBoundFloat);
     slots.uniformHorner32 = AddClaim(
-        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32UniformHorner).name, rung).c_str(),
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32UniformHorner).name).c_str(),
         "A..C",
-        multiplier * kBoundFloat);
-    // The grid's rational member on both lanes, claimed at every rung for the
-    // reason the four above are: the table has no cut to make.
+        kBoundFloat);
+    // The grid's rational member on both lanes, claimed for the reason the four
+    // above are: the table has no cut to make.
     slots.uniformRat64 = AddClaim(
-        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64UniformRat).name, rung).c_str(),
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64UniformRat).name).c_str(),
         "A..C",
-        multiplier * kBoundDoubleBatch);
+        kBoundDoubleBatch);
     slots.uniformRatHorner64 = AddClaim(
-        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64UniformRatHorner).name, rung)
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64UniformRatHorner).name)
             .c_str(),
         "A..C",
-        multiplier * kBoundDoubleBatch);
+        kBoundDoubleBatch);
     slots.uniformRat32 = AddClaim(
-        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32UniformRat).name, rung).c_str(),
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32UniformRat).name).c_str(),
         "A..C",
-        multiplier * kBoundFloat);
+        kBoundFloat);
     slots.uniformRatHorner32 = AddClaim(
-        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32UniformRatHorner).name, rung)
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32UniformRatHorner).name)
             .c_str(),
         "A..C",
-        multiplier * kBoundFloat);
-    // The float lane's narrow rows, which carry every rung: the handle carries
-    // the cut that rung leaves on both halves of the body — the double lane's
-    // narrow pieces for region A and this lane's own region-B seed, one table per
-    // basis — so the two rows are claimed at every rung like the grid's.
+        kBoundFloat);
+    // The float lane's narrow rows: the handle carries the cut on both halves
+    // of the body — the double lane's narrow pieces for region A and this lane's
+    // own region-B seed, one table per basis — so the two rows are claimed like
+    // the grid's.
     slots.narrow32 = AddClaim(
-        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32Narrow).name, rung).c_str(),
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32Narrow).name).c_str(),
         "A..C",
-        multiplier * kBoundFloat);
+        kBoundFloat);
     slots.narrowMono32 = AddClaim(
-        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowMono).name, rung).c_str(),
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowMono).name).c_str(),
         "A..C",
-        multiplier * kBoundFloat);
-    // The float lane's rational rows, which carry every rung as well: the handle
-    // carries the cut that rung leaves on both halves of the pair - the double
-    // lane's pairs for region A and this lane's own for region B.
+        kBoundFloat);
+    // The float lane's rational rows: the handle carries the cut on both halves
+    // of the pair - the double lane's pairs for region A and this lane's own for
+    // region B.
     slots.rat32 =
-        AddClaim(Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32Rat).name, rung).c_str(),
+        AddClaim(Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32Rat).name).c_str(),
                  "A..C",
-                 multiplier * kBoundFloat);
+                 kBoundFloat);
     slots.ratHorner32 = AddClaim(
-        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32RatHorner).name, rung).c_str(),
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32RatHorner).name).c_str(),
         "A..C",
-        multiplier * kBoundFloat);
+        kBoundFloat);
     slots.narrowRat32 = AddClaim(
-        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowRat).name, rung).c_str(),
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowRat).name).c_str(),
         "A..C",
-        multiplier * kBoundFloat);
+        kBoundFloat);
     slots.narrowRatHorner32 = AddClaim(
-        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowRatHorner).name, rung)
+        Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowRatHorner).name)
             .c_str(),
         "A..C",
-        multiplier * kBoundFloat);
+        kBoundFloat);
 
     return slots;
 }
 
-// A device entry and the batch entry of the same precision at the same rung:
-// one arithmetic reached two ways - the same degree tables, the same inlined
-// body, a lane object that reads the caller's handle instead of a __constant__
-// symbol. A bound cannot say that, and the header claims it, so every value the
-// device call wrote is compared bit for bit against the batch entry launched on
-// the same orders and the same arguments; a divergence is a defect in one of
-// the two routes, not a looser bound.
-struct RungAgreement {
+// A device entry and the batch entry of the same precision: one arithmetic
+// reached two ways - the same degree tables, the same inlined body, a lane
+// object that reads the caller's handle instead of a __constant__ symbol. A
+// bound cannot say that, and the header claims it, so every value the device
+// call wrote is compared bit for bit against the batch entry launched on the
+// same orders and the same arguments; a divergence is a defect in one of the
+// two routes, not a looser bound.
+struct PairAgreement {
     std::string what;
     std::size_t identical = 0;
     std::size_t values = 0;
 };
 
-std::vector<RungAgreement>& RungAgreements() {
-    static std::vector<RungAgreement> agreements;
+std::vector<PairAgreement>& PairAgreements() {
+    static std::vector<PairAgreement> agreements;
     return agreements;
 }
 
@@ -2241,11 +2019,11 @@ std::vector<RungAgreement>& RungAgreements() {
 // One value per element on both sides: the single entries, whose output is
 // indexed by the cell the demo kernel formed its argument in.
 template <typename T>
-void AgreeRungCells(const std::string& what,
+void AgreeCells(const std::string& what,
                     const std::vector<T>& device,
                     const std::vector<T>& batch,
                     const Reference& ref) {
-    RungAgreement agreement;
+    PairAgreement agreement;
     agreement.what = what;
 
     for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
@@ -2266,7 +2044,7 @@ void AgreeRungCells(const std::string& what,
         }
     }
 
-    RungAgreements().push_back(agreement);
+    PairAgreements().push_back(agreement);
 }
 
 // One top order's ladder against the batch entry launched at that same top
@@ -2274,7 +2052,7 @@ void AgreeRungCells(const std::string& what,
 // of rounding and the comparison has to be made within one; the counts land in
 // the caller's agreement row.
 template <typename T>
-void AgreeRungOrder(RungAgreement& agreement,
+void AgreeOrder(PairAgreement& agreement,
                     const std::vector<T>& device,
                     const std::vector<T>& batch,
                     const std::vector<double>& args,
@@ -2314,13 +2092,13 @@ void AgreeRungOrder(RungAgreement& agreement,
 // kMaxBoysOrder for the shape that descends from kMaxBoysOrder at every
 // argument. A slot above that is one neither call wrote.
 template <typename T>
-void AgreeRungFamily(const std::string& what,
+void AgreeFamily(const std::string& what,
                      const std::vector<T>& device,
                      const std::vector<T>& batch,
                      const std::vector<int>& orders,
                      const Reference& ref,
                      bool uniformTop) {
-    RungAgreement agreement;
+    PairAgreement agreement;
     agreement.what = what;
     const std::size_t cells = ref.count * (static_cast<std::size_t>(boys::kMaxBoysOrder) + 1);
 
@@ -2346,28 +2124,25 @@ void AgreeRungFamily(const std::string& what,
         }
     }
 
-    RungAgreements().push_back(agreement);
+    PairAgreements().push_back(agreement);
 }
 
-// One device-callable row of the ladder shape, measured at one rung: the entry
-// called inside the consumer's kernel over the grid, its cells compared with
-// the reference at the row's own bound, and its values compared bit for bit
-// with the launched row of the same option at the same rung.
+// One device-callable row of the ladder shape, measured: the entry called
+// inside the consumer's kernel over the grid, its cells compared with the
+// reference at the row's own bound, and its values compared bit for bit with
+// the launched row of the same option.
 //
 // The two comparisons are two statements and neither implies the other. The
 // bound is what a caller of the row is promised, and it is the claim the report
 // carries. The bit-for-bit comparison is what the header claims for a
 // device-callable entry - one arithmetic reached two ways, the same degree
 // tables read through the handle instead of through a __constant__ symbol -
-// which no bound can state. The rung is a compile-time argument because the
-// launched row's launcher takes it as one.
-template <double kMultiplier>
+// which no bound can state.
 void MeasureDeviceLadder64(
     const Reference& ref,
     const Grid& grid,
     const boys::BoysDeviceTables& tables,
     int slot,
-    const char* rung,
     const char* name,
     int (*demo)(const boys::BoysDeviceTables*,
                 const int*,
@@ -2393,6 +2168,9 @@ void MeasureDeviceLadder64(
     dD2.Upload(grid.d2);
     dOut.Upload(std::vector<double>(family, 0.0));
     dStatus.Upload(std::vector<int>(cells, -1));
+    // The launcher is reached through a pointer, so its accuracy argument - which
+    // the demo header still declares, defaulted, for the direct calls - has to be
+    // spelled here.
     CheckDemo(demo(&tables,
                    dN.get(),
                    dRho.get(),
@@ -2401,7 +2179,7 @@ void MeasureDeviceLadder64(
                    cells,
                    nmax + 1,
                    dStatus.get(),
-                   kMultiplier),
+                   boys::kBoysFullAccuracyMultiplier),
               name);
     std::vector<double> out(family);
     std::vector<int> status(cells);
@@ -2427,9 +2205,9 @@ void MeasureDeviceLadder64(
         }
     }
 
-    RungAgreement agreement;
+    PairAgreement agreement;
     agreement.what =
-        ShapeLabel((std::string(name) + " and its launched row").c_str(), rung);
+        ShapeLabel((std::string(name) + " and its launched row").c_str());
     DevBuf<int> dNb(count);
     DevBuf<double> dXb(count);
     DevBuf<double> dOutb(cells);
@@ -2442,22 +2220,20 @@ void MeasureDeviceLadder64(
         CheckLaunch(launch(dNb.get(), dXb.get(), dOutb.get(), count, nullptr), name);
         dOutb.Download(batch);
         Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
-        AgreeRungOrder(agreement, out, batch, ref.x, top);
+        AgreeOrder(agreement, out, batch, ref.x, top);
     }
 
-    RungAgreements().push_back(agreement);
+    PairAgreements().push_back(agreement);
 }
 
 // The float lane's half of the same measurement: the reference is that lane's
 // own column, because the entry evaluates the argument the thread formed and
 // rounded, and the bound is the figure the row documents.
-template <double kMultiplier>
 void MeasureDeviceLadder32(
     const Reference& ref,
     const Grid& grid,
     const boys::BoysDeviceTables& tables,
     int slot,
-    const char* rung,
     const char* name,
     int (*demo)(const boys::BoysDeviceTables*,
                 const int*,
@@ -2483,6 +2259,9 @@ void MeasureDeviceLadder32(
     dD2.Upload(grid.d2);
     dOut.Upload(std::vector<float>(family, 0.0f));
     dStatus.Upload(std::vector<int>(cells, -1));
+    // The launcher is reached through a pointer, so its accuracy argument - which
+    // the demo header still declares, defaulted, for the direct calls - has to be
+    // spelled here.
     CheckDemo(demo(&tables,
                    dN.get(),
                    dRho.get(),
@@ -2491,7 +2270,7 @@ void MeasureDeviceLadder32(
                    cells,
                    nmax + 1,
                    dStatus.get(),
-                   kMultiplier),
+                   boys::kBoysFullAccuracyMultiplier),
               name);
     std::vector<float> out(family);
     std::vector<int> status(cells);
@@ -2517,9 +2296,9 @@ void MeasureDeviceLadder32(
         }
     }
 
-    RungAgreement agreement;
+    PairAgreement agreement;
     agreement.what =
-        ShapeLabel((std::string(name) + " and its launched row").c_str(), rung);
+        ShapeLabel((std::string(name) + " and its launched row").c_str());
     DevBuf<int> dNb(count);
     DevBuf<double> dXb(count);
     DevBuf<float> dOutb(cells);
@@ -2532,22 +2311,20 @@ void MeasureDeviceLadder32(
         CheckLaunch(launch(dNb.get(), dXb.get(), dOutb.get(), count, nullptr), name);
         dOutb.Download(batch);
         Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
-        AgreeRungOrder(agreement, out, batch, ref.x, top);
+        AgreeOrder(agreement, out, batch, ref.x, top);
     }
 
-    RungAgreements().push_back(agreement);
+    PairAgreements().push_back(agreement);
 }
 
-// Every device entry at one rung, measured against the grid through the consumer
-// kernels of tests/boys_cuda_device_demo.cu, and compared bit for bit with the
-// batch entry of the same rung.
-template <double kMultiplier>
+// Every device entry, measured against the grid through the consumer kernels of
+// tests/boys_cuda_device_demo.cu, and compared bit for bit with the batch entry
+// of the same precision.
 void SweepDevice(const Reference& ref,
                  const Grid& grid,
                  const SortedArgs& sorted,
                  const boys::BoysDeviceTables& tables,
-                 const DeviceSlots& slots,
-                 const char* rung) {
+                 const DeviceSlots& slots) {
     const std::size_t count = ref.count;
     const int nmax = boys::kMaxBoysOrder;
     const std::size_t cells = grid.cells;
@@ -2574,8 +2351,7 @@ void SweepDevice(const Reference& ref,
                                          dD2.get(),
                                          dOut.get(),
                                          cells,
-                                         dStatus.get(),
-                                         kMultiplier),
+                                         dStatus.get()),
                   "BoysDeviceDemoSingle64");
         std::vector<double> out(cells);
         std::vector<int> status(cells);
@@ -2608,13 +2384,13 @@ void SweepDevice(const Reference& ref,
             DevBuf<double> dOutb(cells);
             dNb.Upload(grid.n);
             dXb.Upload(grid.x);
-            CheckLaunch(boys::BoysCuda::SingleF64<kMultiplier>(
+            CheckLaunch(boys::BoysCuda::SingleF64(
                             dNb.get(), dXb.get(), dOutb.get(), cells, nullptr),
                         "SingleF64 (one arithmetic)");
             std::vector<double> batch(cells);
             dOutb.Download(batch);
             Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
-            AgreeRungCells(ShapeLabel("device single f64 and batch single f64", rung),
+            AgreeCells(ShapeLabel("device single f64 and batch single f64"),
                            out,
                            batch,
                            ref);
@@ -2652,16 +2428,14 @@ void SweepDevice(const Reference& ref,
                                          dLadder.get(),
                                          cells,
                                          nmax + 1,
-                                         dStatusLadder.get(),
-                                         kMultiplier),
+                                         dStatusLadder.get()),
                   "BoysDeviceDemoLadder64");
         CheckDemo(BoysDeviceDemoAllN64(&tables,
                                        dRho.get(),
                                        dD2.get(),
                                        dAllN.get(),
                                        cells,
-                                       dStatusAllN.get(),
-                                       kMultiplier),
+                                       dStatusAllN.get()),
                   "BoysDeviceDemoAllN64");
         CheckDemo(BoysDeviceDemoEach64(&tables,
                                        dN.get(),
@@ -2669,8 +2443,7 @@ void SweepDevice(const Reference& ref,
                                        dD2.get(),
                                        dEach.get(),
                                        cells,
-                                       dStatusEach.get(),
-                                       kMultiplier),
+                                       dStatusEach.get()),
                   "BoysDeviceDemoEach64");
         std::vector<double> ladder(family);
         std::vector<double> allN(family);
@@ -2711,18 +2484,18 @@ void SweepDevice(const Reference& ref,
             }
         }
 
-        // The batch entries of the same rung, on the same orders and the same
+        // The batch entries of the same precision, on the same orders and the same
         // arguments, element for element. The single entry is launched over the
         // whole element list, so its element is the device's element; the ladders
         // are launched once per top order, because a ladder descends from the
         // order it is named; the all-n entry takes its arguments non-decreasing,
         // so its plane is permuted back to the reference order first.
         {
-            RungAgreement ladderAgreement;
-            RungAgreement eachAgreement;
+            PairAgreement ladderAgreement;
+            PairAgreement eachAgreement;
             ladderAgreement.what =
-                ShapeLabel("device all-orders f64 and batch all-orders f64", rung);
-            eachAgreement.what = ShapeLabel("device each-order f64 and batch all-orders f64", rung);
+                ShapeLabel("device all-orders f64 and batch all-orders f64");
+            eachAgreement.what = ShapeLabel("device each-order f64 and batch all-orders f64");
             {
                 DevBuf<int> dNb(count);
                 DevBuf<double> dXb(count);
@@ -2734,23 +2507,23 @@ void SweepDevice(const Reference& ref,
                 {
                     const std::vector<int> hostN(count, top);
                     dNb.Upload(hostN);
-                    CheckLaunch(boys::BoysCuda::AllOrdersF64<kMultiplier>(
+                    CheckLaunch(boys::BoysCuda::AllOrdersF64(
                                     dNb.get(), dXb.get(), dOutb.get(), count, nullptr),
                                 "AllOrdersF64 (one arithmetic)");
                     dOutb.Download(batch);
                     Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
-                    AgreeRungOrder(ladderAgreement, ladder, batch, ref.x, top);
-                    AgreeRungOrder(eachAgreement, each, batch, ref.x, top);
+                    AgreeOrder(ladderAgreement, ladder, batch, ref.x, top);
+                    AgreeOrder(eachAgreement, each, batch, ref.x, top);
                 }
             }
 
-            RungAgreements().push_back(ladderAgreement);
-            RungAgreements().push_back(eachAgreement);
+            PairAgreements().push_back(ladderAgreement);
+            PairAgreements().push_back(eachAgreement);
 
             DevBuf<double> dXs(count);
             DevBuf<double> dOuts(cells);
             dXs.Upload(sorted.x);
-            CheckLaunch(boys::BoysCuda::AllNF64<kMultiplier>(
+            CheckLaunch(boys::BoysCuda::AllNF64(
                             nmax, dXs.get(), dOuts.get(), count, nullptr),
                         "AllNF64 (one arithmetic)");
             std::vector<double> rawSorted(cells);
@@ -2767,7 +2540,7 @@ void SweepDevice(const Reference& ref,
                 }
             }
 
-            AgreeRungFamily(ShapeLabel("device all-n f64 and batch all-n f64", rung),
+            AgreeFamily(ShapeLabel("device all-n f64 and batch all-n f64"),
                             allN,
                             batchSorted,
                             grid.n,
@@ -2775,12 +2548,12 @@ void SweepDevice(const Reference& ref,
                             true);
         }
 
-        Agree(ShapeLabel("device all-orders f64 and device each-order f64", rung),
+        Agree(ShapeLabel("device all-orders f64 and device each-order f64"),
               ladder,
               each,
               ref,
               nmax);
-        AgreeFixedTopOrder(ShapeLabel("device all-n f64 and device all-orders f64", rung),
+        AgreeFixedTopOrder(ShapeLabel("device all-n f64 and device all-orders f64"),
                            allN,
                            ladder,
                            ref,
@@ -2817,8 +2590,7 @@ void SweepDevice(const Reference& ref,
                                          dD2.get(),
                                          dSingle.get(),
                                          cells,
-                                         dStatus.get(),
-                                         kMultiplier),
+                                         dStatus.get()),
                   "BoysDeviceDemoSingle32");
         CheckDemo(BoysDeviceDemoSingle32Fast(&tables,
                                              dN.get(),
@@ -2826,8 +2598,7 @@ void SweepDevice(const Reference& ref,
                                              dD2.get(),
                                              dSingleFast.get(),
                                              cells,
-                                             dStatus.get(),
-                                             kMultiplier),
+                                             dStatus.get()),
                   "BoysDeviceDemoSingle32Fast");
         CheckDemo(BoysDeviceDemoLadder32(&tables,
                                          dN.get(),
@@ -2836,16 +2607,14 @@ void SweepDevice(const Reference& ref,
                                          dLadder.get(),
                                          cells,
                                          nmax + 1,
-                                         dStatus.get(),
-                                         kMultiplier),
+                                         dStatus.get()),
                   "BoysDeviceDemoLadder32");
         CheckDemo(BoysDeviceDemoAllN32(&tables,
                                        dRho.get(),
                                        dD2.get(),
                                        dAllN.get(),
                                        cells,
-                                       dStatus.get(),
-                                       kMultiplier),
+                                       dStatus.get()),
                   "BoysDeviceDemoAllN32");
         CheckDemo(BoysDeviceDemoEach32(&tables,
                                        dN.get(),
@@ -2853,8 +2622,7 @@ void SweepDevice(const Reference& ref,
                                        dD2.get(),
                                        dEach.get(),
                                        cells,
-                                       dStatus.get(),
-                                       kMultiplier),
+                                       dStatus.get()),
                   "BoysDeviceDemoEach32");
         std::vector<float> single(cells);
         std::vector<float> singleFast(cells);
@@ -2887,7 +2655,7 @@ void SweepDevice(const Reference& ref,
         // go into their own row under the bound its own option carries, and the
         // difference between the two returns is the audit's contribution term.
         ExpAudit audit;
-        audit.lane = ShapeLabel(DeviceRow(boys::DeviceEntry::kDeviceSingleF32Fast, boys::RegionBExp::kFast).name, rung);
+        audit.lane = ShapeLabel(DeviceRow(boys::DeviceEntry::kDeviceSingleF32Fast, boys::RegionBExp::kFast).name);
 
         for (int n = 0; n <= nmax; ++n)
         {
@@ -2903,7 +2671,7 @@ void SweepDevice(const Reference& ref,
                         widenedFast,
                         ref.vf[e],
                         ref.decadeF[e],
-                        kMultiplier * kBoundFloat + kFastExpContribution,
+                        kBoundFloat + kFastExpContribution,
                         fastUnrepresentable);
 
                 const double accurate = Widen(single[e]).first;
@@ -2946,7 +2714,7 @@ void SweepDevice(const Reference& ref,
 
         ExpAudits().push_back(audit);
 
-        // The batch entries of the same rung, on the same orders and the same
+        // The batch entries of the same precision, on the same orders and the same
         // arguments, element for element, as in the f64 block above.
         {
             {
@@ -2955,34 +2723,33 @@ void SweepDevice(const Reference& ref,
                 DevBuf<float> dOutb(cells);
                 dNb.Upload(grid.n);
                 dXb.Upload(grid.x);
-                CheckLaunch(boys::BoysCuda::SingleF32<kMultiplier>(
+                CheckLaunch(boys::BoysCuda::SingleF32(
                                 dNb.get(), dXb.get(), dOutb.get(), cells, nullptr),
                             "SingleF32 (one arithmetic)");
                 std::vector<float> batchSingle(cells);
                 dOutb.Download(batchSingle);
-                CheckLaunch(boys::BoysCuda::SingleF32<kMultiplier, boys::RegionBExp::kFast>(
+                CheckLaunch(boys::BoysCuda::SingleF32<boys::RegionBExp::kFast>(
                                 dNb.get(), dXb.get(), dOutb.get(), cells, nullptr),
                             "SingleF32 (one arithmetic)");
                 std::vector<float> batchSingleFast(cells);
                 dOutb.Download(batchSingleFast);
                 Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
-                AgreeRungCells(ShapeLabel("device single f32 and batch single f32", rung),
+                AgreeCells(ShapeLabel("device single f32 and batch single f32"),
                                single,
                                batchSingle,
                                ref);
-                AgreeRungCells(
-                    ShapeLabel("device single f32 (fast exp) and batch single f32 (fast exp)",
-                               rung),
+                AgreeCells(
+                    ShapeLabel("device single f32 (fast exp) and batch single f32 (fast exp)"),
                     singleFast,
                     batchSingleFast,
                     ref);
             }
 
-            RungAgreement ladderAgreement;
-            RungAgreement eachAgreement;
+            PairAgreement ladderAgreement;
+            PairAgreement eachAgreement;
             ladderAgreement.what =
-                ShapeLabel("device all-orders f32 and batch all-orders f32", rung);
-            eachAgreement.what = ShapeLabel("device each-order f32 and batch all-orders f32", rung);
+                ShapeLabel("device all-orders f32 and batch all-orders f32");
+            eachAgreement.what = ShapeLabel("device each-order f32 and batch all-orders f32");
             {
                 DevBuf<int> dNb(count);
                 DevBuf<double> dXb(count);
@@ -2994,23 +2761,23 @@ void SweepDevice(const Reference& ref,
                 {
                     const std::vector<int> hostN(count, top);
                     dNb.Upload(hostN);
-                    CheckLaunch(boys::BoysCuda::AllOrdersF32<kMultiplier>(
+                    CheckLaunch(boys::BoysCuda::AllOrdersF32(
                                     dNb.get(), dXb.get(), dOutb.get(), count, nullptr),
                                 "AllOrdersF32 (one arithmetic)");
                     dOutb.Download(batch);
                     Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
-                    AgreeRungOrder(ladderAgreement, ladder, batch, ref.xf, top);
-                    AgreeRungOrder(eachAgreement, each, batch, ref.xf, top);
+                    AgreeOrder(ladderAgreement, ladder, batch, ref.xf, top);
+                    AgreeOrder(eachAgreement, each, batch, ref.xf, top);
                 }
             }
 
-            RungAgreements().push_back(ladderAgreement);
-            RungAgreements().push_back(eachAgreement);
+            PairAgreements().push_back(ladderAgreement);
+            PairAgreements().push_back(eachAgreement);
 
             DevBuf<double> dXs(count);
             DevBuf<float> dOuts(cells);
             dXs.Upload(sorted.x);
-            CheckLaunch(boys::BoysCuda::AllNF32<kMultiplier>(
+            CheckLaunch(boys::BoysCuda::AllNF32(
                             nmax, dXs.get(), dOuts.get(), count, nullptr),
                         "AllNF32 (one arithmetic)");
             std::vector<float> rawSorted(cells);
@@ -3027,7 +2794,7 @@ void SweepDevice(const Reference& ref,
                 }
             }
 
-            AgreeRungFamily(ShapeLabel("device all-n f32 and batch all-n f32", rung),
+            AgreeFamily(ShapeLabel("device all-n f32 and batch all-n f32"),
                             allN,
                             batchSorted,
                             grid.n,
@@ -3035,12 +2802,12 @@ void SweepDevice(const Reference& ref,
                             true);
         }
 
-        Agree(ShapeLabel("device all-orders f32 and device each-order f32", rung),
+        Agree(ShapeLabel("device all-orders f32 and device each-order f32"),
               ladder,
               each,
               ref,
               nmax);
-        AgreeFixedTopOrder(ShapeLabel("device all-n f32 and device all-orders f32", rung),
+        AgreeFixedTopOrder(ShapeLabel("device all-n f32 and device all-orders f32"),
                            allN,
                            ladder,
                            ref,
@@ -3077,8 +2844,7 @@ void SweepDevice(const Reference& ref,
                                          dD2.get(),
                                          static_cast<void*>(dSingle.get()),
                                          cells,
-                                         dStatus.get(),
-                                         kMultiplier),
+                                         dStatus.get()),
                   "BoysDeviceDemoSingle16");
         CheckDemo(BoysDeviceDemoLadder16(&tables,
                                          dN.get(),
@@ -3087,16 +2853,14 @@ void SweepDevice(const Reference& ref,
                                          static_cast<void*>(dLadder.get()),
                                          cells,
                                          nmax + 1,
-                                         dStatus.get(),
-                                         kMultiplier),
+                                         dStatus.get()),
                   "BoysDeviceDemoLadder16");
         CheckDemo(BoysDeviceDemoAllN16(&tables,
                                        dRho.get(),
                                        dD2.get(),
                                        static_cast<void*>(dAllN.get()),
                                        cells,
-                                       dStatus.get(),
-                                       kMultiplier),
+                                       dStatus.get()),
                   "BoysDeviceDemoAllN16");
         CheckDemo(BoysDeviceDemoEach16(&tables,
                                        dN.get(),
@@ -3104,8 +2868,7 @@ void SweepDevice(const Reference& ref,
                                        dD2.get(),
                                        static_cast<void*>(dEach.get()),
                                        cells,
-                                       dStatus.get(),
-                                       kMultiplier),
+                                       dStatus.get()),
                   "BoysDeviceDemoEach16");
         std::vector<boys::F16> single(cells);
         std::vector<boys::F16> ladder(family);
@@ -3127,7 +2890,7 @@ void SweepDevice(const Reference& ref,
                     got,
                     ref.v16[ref.Index(n, i)],
                     ref.decade16[ref.Index(n, i)],
-                    HalfBoundAt(got, kMultiplier),
+                    HalfBoundAt(got),
                     Unrepresentable(got, kF16MinNormalExp));
         };
 
@@ -3151,7 +2914,7 @@ void SweepDevice(const Reference& ref,
             }
         }
 
-        // The batch entries of the same rung, on the same orders and arguments,
+        // The batch entries of the same precision, on the same orders and arguments,
         // element for element, as in the f64 block above. The fp16 batch entries
         // take their argument in fp16 already, the value the grid carries.
         {
@@ -3161,23 +2924,23 @@ void SweepDevice(const Reference& ref,
                 DevBuf<boys::F16> dOutb(cells);
                 dNb.Upload(grid.n);
                 dXb.Upload(grid.x16);
-                CheckLaunch(boys::BoysCuda::SingleF16<kMultiplier>(
+                CheckLaunch(boys::BoysCuda::SingleF16(
                                 dNb.get(), dXb.get(), dOutb.get(), cells, nullptr),
                             "SingleF16 (one arithmetic)");
                 std::vector<boys::F16> batchSingle(cells);
                 dOutb.Download(batchSingle);
                 Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
-                AgreeRungCells(ShapeLabel("device single f16 and batch single f16", rung),
+                AgreeCells(ShapeLabel("device single f16 and batch single f16"),
                                single,
                                batchSingle,
                                ref);
             }
 
-            RungAgreement ladderAgreement;
-            RungAgreement eachAgreement;
+            PairAgreement ladderAgreement;
+            PairAgreement eachAgreement;
             ladderAgreement.what =
-                ShapeLabel("device all-orders f16 and batch all-orders f16", rung);
-            eachAgreement.what = ShapeLabel("device each-order f16 and batch all-orders f16", rung);
+                ShapeLabel("device all-orders f16 and batch all-orders f16");
+            eachAgreement.what = ShapeLabel("device each-order f16 and batch all-orders f16");
             {
                 DevBuf<int> dNb(count);
                 DevBuf<boys::F16> dXb(count);
@@ -3196,18 +2959,18 @@ void SweepDevice(const Reference& ref,
                 {
                     const std::vector<int> hostN(count, top);
                     dNb.Upload(hostN);
-                    CheckLaunch(boys::BoysCuda::AllOrdersF16<kMultiplier>(
+                    CheckLaunch(boys::BoysCuda::AllOrdersF16(
                                     dNb.get(), dXb.get(), dOutb.get(), count, nullptr),
                                 "AllOrdersF16 (one arithmetic)");
                     dOutb.Download(batch);
                     Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
-                    AgreeRungOrder(ladderAgreement, ladder, batch, ref.x16, top);
-                    AgreeRungOrder(eachAgreement, each, batch, ref.x16, top);
+                    AgreeOrder(ladderAgreement, ladder, batch, ref.x16, top);
+                    AgreeOrder(eachAgreement, each, batch, ref.x16, top);
                 }
             }
 
-            RungAgreements().push_back(ladderAgreement);
-            RungAgreements().push_back(eachAgreement);
+            PairAgreements().push_back(ladderAgreement);
+            PairAgreements().push_back(eachAgreement);
 
             DevBuf<boys::F16> dXs(count);
             DevBuf<boys::F16> dOuts(cells);
@@ -3219,7 +2982,7 @@ void SweepDevice(const Reference& ref,
             }
 
             dXs.Upload(hostSorted);
-            CheckLaunch(boys::BoysCuda::AllNF16<kMultiplier>(
+            CheckLaunch(boys::BoysCuda::AllNF16(
                             nmax, dXs.get(), dOuts.get(), count, nullptr),
                         "AllNF16 (one arithmetic)");
             std::vector<boys::F16> rawSorted(cells);
@@ -3236,7 +2999,7 @@ void SweepDevice(const Reference& ref,
                 }
             }
 
-            AgreeRungFamily(ShapeLabel("device all-n f16 and batch all-n f16", rung),
+            AgreeFamily(ShapeLabel("device all-n f16 and batch all-n f16"),
                             allN,
                             batchSorted,
                             grid.n,
@@ -3244,18 +3007,17 @@ void SweepDevice(const Reference& ref,
                             true);
         }
 
-        Agree(ShapeLabel("device all-orders f16 and device each-order f16", rung),
+        Agree(ShapeLabel("device all-orders f16 and device each-order f16"),
               ladder,
               each,
               ref,
               nmax);
-        AgreeFixedTopOrder(ShapeLabel("device all-n f16 and device all-orders f16", rung),
+        AgreeFixedTopOrder(ShapeLabel("device all-n f16 and device all-orders f16"),
                            allN,
                            ladder,
                            ref,
                            nmax);
 #else
-        (void)rung;
         NoteNotCarried(slots.single16);
         NoteNotCarried(slots.orders16);
         NoteNotCarried(slots.allN16);
@@ -3263,210 +3025,185 @@ void SweepDevice(const Reference& ref,
 #endif // BOYS_CUDA_GATE_FP16
     }
 
-    // The partition and route axes reached in the caller's kernel, at this rung.
-    // Each is measured the way the shapes above are: over the grid, against the
+    // The partition and route axes reached in the caller's kernel. Each is
+    // measured the way the shapes above are: over the grid, against the
     // reference at the row's own bound, and bit for bit against the launched row
     // of the same option.
     //
     // The double lane's eight rows, and the float lane's grid, narrow and
-    // rational rows, are all served at the rung the handle carries: the float
-    // lane's rational pairs are cut per rung as its narrow seed is, so this
-    // block runs unguarded at every rung. A call naming a rung that is not
-    // resident returns kMultiplierNotResident, a refusal about the handle's rung
-    // and not about the route, and it is exercised beside the rung sweep rather
-    // than here.
-    MeasureDeviceLadder64<kMultiplier>(ref,
+    // rational rows, are all served: the float lane's rational pairs are cut as
+    // its narrow seed is.
+    MeasureDeviceLadder64(ref,
                                        grid,
                                        tables,
                                        slots.narrow64,
-                                       rung,
                                        DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64Narrow).name,
                                        &BoysDeviceDemoLadder64Narrow,
-                                       &boys::BoysCuda::AllOrdersF64Narrow<kMultiplier>);
-    MeasureDeviceLadder64<kMultiplier>(
+                                       &boys::BoysCuda::AllOrdersF64Narrow);
+    MeasureDeviceLadder64(
         ref,
         grid,
         tables,
         slots.narrowMono64,
-        rung,
         DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64NarrowMono).name,
         &BoysDeviceDemoLadder64NarrowMono,
-        &boys::BoysCuda::AllOrdersF64NarrowMono<kMultiplier>);
-    MeasureDeviceLadder64<kMultiplier>(ref,
+        &boys::BoysCuda::AllOrdersF64NarrowMono);
+    MeasureDeviceLadder64(ref,
                                        grid,
                                        tables,
                                        slots.rat64,
-                                       rung,
                                        DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64Rat).name,
                                        &BoysDeviceDemoLadder64Rat,
-                                       &boys::BoysCuda::AllOrdersF64Rat<kMultiplier>);
-    MeasureDeviceLadder64<kMultiplier>(
+                                       &boys::BoysCuda::AllOrdersF64Rat);
+    MeasureDeviceLadder64(
         ref,
         grid,
         tables,
         slots.ratHorner64,
-        rung,
         DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64RatHorner).name,
         &BoysDeviceDemoLadder64RatHorner,
-        &boys::BoysCuda::AllOrdersF64Rat<kMultiplier>);
-    MeasureDeviceLadder64<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF64Rat);
+    MeasureDeviceLadder64(
         ref,
         grid,
         tables,
         slots.narrowRat64,
-        rung,
         DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64NarrowRat).name,
         &BoysDeviceDemoLadder64NarrowRat,
-        &boys::BoysCuda::AllOrdersF64NarrowRat<kMultiplier>);
-    MeasureDeviceLadder64<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF64NarrowRat);
+    MeasureDeviceLadder64(
         ref,
         grid,
         tables,
         slots.narrowRatHorner64,
-        rung,
         DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64NarrowRatHorner).name,
         &BoysDeviceDemoLadder64NarrowRatHorner,
-        &boys::BoysCuda::AllOrdersF64NarrowRat<kMultiplier>);
-    MeasureDeviceLadder64<kMultiplier>(ref,
+        &boys::BoysCuda::AllOrdersF64NarrowRat);
+    MeasureDeviceLadder64(ref,
                                        grid,
                                        tables,
                                        slots.uniform64,
-                                       rung,
                                        DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64Uniform).name,
                                        &BoysDeviceDemoLadder64Uniform,
-                                       &boys::BoysCuda::AllOrdersF64Uniform<kMultiplier>);
-    MeasureDeviceLadder64<kMultiplier>(
+                                       &boys::BoysCuda::AllOrdersF64Uniform);
+    MeasureDeviceLadder64(
         ref,
         grid,
         tables,
         slots.uniformHorner64,
-        rung,
         DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64UniformHorner).name,
         &BoysDeviceDemoLadder64UniformHorner,
-        &boys::BoysCuda::AllOrdersF64UniformHorner<kMultiplier>);
-    MeasureDeviceLadder32<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF64UniformHorner);
+    MeasureDeviceLadder32(
         ref,
         grid,
         tables,
         slots.uniform32,
-        rung,
         DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32Uniform).name,
         &BoysDeviceDemoLadder32Uniform,
-        &boys::BoysCuda::AllOrdersF32Uniform<kMultiplier>);
-    MeasureDeviceLadder32<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF32Uniform);
+    MeasureDeviceLadder32(
         ref,
         grid,
         tables,
         slots.uniformHorner32,
-        rung,
         DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32UniformHorner).name,
         &BoysDeviceDemoLadder32UniformHorner,
-        &boys::BoysCuda::AllOrdersF32UniformHorner<kMultiplier>);
-    MeasureDeviceLadder64<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF32UniformHorner);
+    MeasureDeviceLadder64(
         ref,
         grid,
         tables,
         slots.uniformRat64,
-        rung,
         DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64UniformRat).name,
         &BoysDeviceDemoLadder64UniformRat,
-        &boys::BoysCuda::AllOrdersF64UniformRat<kMultiplier>);
-    MeasureDeviceLadder64<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF64UniformRat);
+    MeasureDeviceLadder64(
         ref,
         grid,
         tables,
         slots.uniformRatHorner64,
-        rung,
         DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64UniformRatHorner).name,
         &BoysDeviceDemoLadder64UniformRatHorner,
-        &boys::BoysCuda::AllOrdersF64UniformRatHorner<kMultiplier>);
-    MeasureDeviceLadder32<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF64UniformRatHorner);
+    MeasureDeviceLadder32(
         ref,
         grid,
         tables,
         slots.uniformRat32,
-        rung,
         DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32UniformRat).name,
         &BoysDeviceDemoLadder32UniformRat,
-        &boys::BoysCuda::AllOrdersF32UniformRat<kMultiplier>);
-    MeasureDeviceLadder32<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF32UniformRat);
+    MeasureDeviceLadder32(
         ref,
         grid,
         tables,
         slots.uniformRatHorner32,
-        rung,
         DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32UniformRatHorner).name,
         &BoysDeviceDemoLadder32UniformRatHorner,
-        &boys::BoysCuda::AllOrdersF32UniformRatHorner<kMultiplier>);
-    // The float lane's narrow partition carries every rung on both of the forms
-    // it is stored in, so each of these two rows is measured here at every rung
-    // like the grid's above: one arithmetic reached two ways.
-    MeasureDeviceLadder32<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF32UniformRatHorner);
+    // The float lane's narrow partition, on both of the forms it is stored in:
+    // each of these two rows is measured here like the grid's above, one
+    // arithmetic reached two ways.
+    MeasureDeviceLadder32(
         ref,
         grid,
         tables,
         slots.narrow32,
-        rung,
         DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32Narrow).name,
         &BoysDeviceDemoLadder32Narrow,
-        &boys::BoysCuda::AllOrdersF32Narrow<kMultiplier>);
-    MeasureDeviceLadder32<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF32Narrow);
+    MeasureDeviceLadder32(
         ref,
         grid,
         tables,
         slots.narrowMono32,
-        rung,
         DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowMono).name,
         &BoysDeviceDemoLadder32NarrowMono,
-        &boys::BoysCuda::AllOrdersF32NarrowMono<kMultiplier>);
+        &boys::BoysCuda::AllOrdersF32NarrowMono);
 
-    // The float lane's rational rows, each measured at every rung like the rows
-    // above and bit for bit against the launched row of the same option: the
-    // route's pair is cut by the rung's criterion on both lanes.
-    MeasureDeviceLadder32<kMultiplier>(
+    // The float lane's rational rows, each measured like the rows above and bit
+    // for bit against the launched row of the same option: the route's pair is
+    // cut on both lanes.
+    MeasureDeviceLadder32(
         ref,
         grid,
         tables,
         slots.rat32,
-        rung,
         DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32Rat).name,
         &BoysDeviceDemoLadder32Rat,
-        &boys::BoysCuda::AllOrdersF32Rat<kMultiplier>);
-    MeasureDeviceLadder32<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF32Rat);
+    MeasureDeviceLadder32(
         ref,
         grid,
         tables,
         slots.ratHorner32,
-        rung,
         DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32RatHorner).name,
         &BoysDeviceDemoLadder32RatHorner,
-        &boys::BoysCuda::AllOrdersF32RatHorner<kMultiplier>);
-    MeasureDeviceLadder32<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF32RatHorner);
+    MeasureDeviceLadder32(
         ref,
         grid,
         tables,
         slots.narrowRat32,
-        rung,
         DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowRat).name,
         &BoysDeviceDemoLadder32NarrowRat,
-        &boys::BoysCuda::AllOrdersF32NarrowRat<kMultiplier>);
-    MeasureDeviceLadder32<kMultiplier>(
+        &boys::BoysCuda::AllOrdersF32NarrowRat);
+    MeasureDeviceLadder32(
         ref,
         grid,
         tables,
         slots.narrowRatHorner32,
-        rung,
         DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF32NarrowRatHorner).name,
         &BoysDeviceDemoLadder32NarrowRatHorner,
-        &boys::BoysCuda::AllOrdersF32NarrowRatHorner<kMultiplier>);
+        &boys::BoysCuda::AllOrdersF32NarrowRatHorner);
 }
 
-// One rung's fp64 entries on the 45-digit grid. The cells are measured into the
+// One fp64 entry's cells on the 45-digit grid. They are measured into the
 // entry's own row as well as into the accumulator below, so a cell over bound
 // here fails the gate like every other cell; the accumulator is what names the
 // worst cell this grid produced.
 struct DigitRow {
-    std::string rung;
     Accum cell;
 };
 
@@ -3475,22 +3212,20 @@ std::vector<DigitRow>& DigitRows() {
     return rows;
 }
 
-template <double kMultiplier>
 void SweepDigit64(const DigitGrid& digits,
                   const boys::BoysDeviceTables& tables,
-                  const DeviceSlots& slots,
-                  const char* rung) {
+                  const DeviceSlots& slots) {
     const int nmax = boys::kMaxBoysOrder;
     const std::size_t count = digits.count;
     const std::size_t cells = digits.cells;
     const std::size_t family = cells * (static_cast<std::size_t>(nmax) + 1);
     const int success = BoysDeviceDemoStatusSuccess();
     const int singleSlots[4] = {slots.singleA, slots.singleBand, slots.singleB, slots.singleC};
-    const double singleBounds[4] = {kMultiplier * kBoundSingleA,
-                                    kMultiplier * kBoundSingleBand,
-                                    kMultiplier * kBoundSingleB,
-                                    kMultiplier * kBoundSingleC};
-    const double familyBound = kMultiplier * kBoundDoubleBatch;
+    const double singleBounds[4] = {kBoundSingleA,
+                                    kBoundSingleBand,
+                                    kBoundSingleB,
+                                    kBoundSingleC};
+    const double familyBound = kBoundDoubleBatch;
 
     // Every thread forms its own argument as rho * d2, exactly as the kernels of
     // the gate grid's sweep do: rho is a power of two, so the product is the
@@ -3521,10 +3256,6 @@ void SweepDigit64(const DigitGrid& digits,
     DigitRow orders;
     DigitRow each;
     DigitRow allN;
-    single.rung = rung == nullptr ? "1" : rung;
-    orders.rung = single.rung;
-    each.rung = single.rung;
-    allN.rung = single.rung;
     single.cell.lane = "device single f64";
     orders.cell.lane = "device all-orders f64";
     each.cell.lane = "device each-order f64";
@@ -3570,8 +3301,7 @@ void SweepDigit64(const DigitGrid& digits,
                                          dD2.get(),
                                          dSingle.get(),
                                          cells,
-                                         dStatus.get(),
-                                         kMultiplier),
+                                         dStatus.get()),
                   "BoysDeviceDemoSingle64 (45-digit grid)");
         CheckDemo(BoysDeviceDemoLadder64(&tables,
                                          dN.get(),
@@ -3580,8 +3310,7 @@ void SweepDigit64(const DigitGrid& digits,
                                          dLadder.get(),
                                          cells,
                                          nmax + 1,
-                                         dStatus.get(),
-                                         kMultiplier),
+                                         dStatus.get()),
                   "BoysDeviceDemoLadder64 (45-digit grid)");
         CheckDemo(BoysDeviceDemoEach64(&tables,
                                        dN.get(),
@@ -3589,16 +3318,14 @@ void SweepDigit64(const DigitGrid& digits,
                                        dD2.get(),
                                        dEach.get(),
                                        cells,
-                                       dStatus.get(),
-                                       kMultiplier),
+                                       dStatus.get()),
                   "BoysDeviceDemoEach64 (45-digit grid)");
         CheckDemo(BoysDeviceDemoAllN64(&tables,
                                        dRho.get(),
                                        dD2.get(),
                                        dAllN.get(),
                                        cells,
-                                       dStatus.get(),
-                                       kMultiplier),
+                                       dStatus.get()),
                   "BoysDeviceDemoAllN64 (45-digit grid)");
         std::vector<double> gotSingle(cells);
         std::vector<double> gotLadder(family);
@@ -3857,433 +3584,19 @@ void CheckRefusals(const boys::BoysDeviceTables& tables) {
 #endif // BoysFp16
 }
 
-// One shape run at one named rung, with the status the call must return and
-// whether it must write. The sentinel is what separates a refusal from a silent
-// fallback - an entry that reported a refusal and still wrote would leave its
-// output changed - and it is also what separates an accepted call from a refusal
-// this check mis-read, since a call that is served must leave the sentinel
-// behind. The tally counts the probes that came back as required, so the report
-// can state that the path was exercised.
-std::size_t& RetiredRungProbes() {
-    static std::size_t probes = 0;
-    return probes;
-}
-
-std::size_t& ServedRungProbes() {
-    static std::size_t probes = 0;
-    return probes;
-}
-
-template <typename T, typename Launch>
-void ProbeOnce(const char* label,
-               const char* what,
-               std::size_t elements,
-               std::size_t slots,
-               const T& sentinel,
-               int want,
-               bool wrote,
-               std::size_t& tally,
-               Launch&& launch) {
-    const std::string name = std::string(what) + " at " + label;
-    std::vector<T> hostOut(slots, sentinel);
-    std::vector<int> hostStatus(elements, -1);
-    DevBuf<T> dOut(slots);
-    DevBuf<int> dStatus(elements);
-    dOut.Upload(hostOut);
-    dStatus.Upload(hostStatus);
-    CheckDemo(launch(dOut.get(), dStatus.get()), name.c_str());
-    std::vector<T> out(slots);
-    std::vector<int> status(elements);
-    dOut.Download(out);
-    dStatus.Download(status);
-    Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
-    ExpectStatus(status, elements, want, name.c_str());
-    ReportSentinel(out, sentinel, wrote, name.c_str());
-    ++tally;
-}
-
-// Every shape run at one named rung, with the status each must return and
-// whether it must write. One function carries both halves of the rung contract
-// as a consumer meets it: a rung that is not resident, which must refuse at
-// every shape rather than read whatever the tables now hold, and m = 1 while a
-// relaxed rung is resident, which must be served at every shape because it reads
-// the handle's own tables and never the resident one. Every lane and every shape
-// is covered, because both decisions are made per lane.
-void CheckRungCalls(const boys::BoysDeviceTables& tables,
-                    double multiplier,
-                    int want,
-                    bool wrote,
-                    const char* label,
-                    std::size_t& tally) {
-    const int nmax = boys::kMaxBoysOrder;
-    const std::size_t count = 2;
-    const std::size_t family = count * (static_cast<std::size_t>(nmax) + 1);
-    const double sentinel = -12345.0;
-    const double x = 3.5;
-    const std::vector<int> hostOrder(count, nmax);
-    const std::vector<double> hostRho(count, 1.0);
-    const std::vector<double> hostD2(count, x);
-    std::vector<int> hostStatus(count, -1);
-    DevBuf<int> dN(count);
-    DevBuf<double> dRho(count);
-    DevBuf<double> dD2(count);
-    DevBuf<int> dStatus(count);
-    dN.Upload(hostOrder);
-    dRho.Upload(hostRho);
-    dD2.Upload(hostD2);
-    dStatus.Upload(hostStatus);
-
-    ProbeOnce(label,
-              "BoysDeviceSingleF64",
-              count,
-              count,
-              sentinel,
-              want,
-              wrote,
-              tally,
-              [&](double* out, int* status) {
-                  return BoysDeviceDemoSingle64(&tables,
-                                                dN.get(),
-                                                dRho.get(),
-                                                dD2.get(),
-                                                out,
-                                                count,
-                                                status,
-                                                multiplier);
-              });
-    ProbeOnce(label,
-              "BoysDeviceAllOrdersF64",
-              count,
-              family,
-              sentinel,
-              want,
-              wrote,
-              tally,
-              [&](double* out, int* status) {
-                  return BoysDeviceDemoLadder64(&tables,
-                                                dN.get(),
-                                                dRho.get(),
-                                                dD2.get(),
-                                                out,
-                                                count,
-                                                nmax + 1,
-                                                status,
-                                                multiplier);
-              });
-    ProbeOnce(label,
-              "BoysDeviceAllNF64",
-              count,
-              family,
-              sentinel,
-              want,
-              wrote,
-              tally,
-              [&](double* out, int* status) {
-                  return BoysDeviceDemoAllN64(
-                      &tables, dRho.get(), dD2.get(), out, count, status, multiplier);
-              });
-    ProbeOnce(label,
-              "BoysDeviceEachOrderF64",
-              count,
-              family,
-              sentinel,
-              want,
-              wrote,
-              tally,
-              [&](double* out, int* status) {
-                  return BoysDeviceDemoEach64(&tables,
-                                              dN.get(),
-                                              dRho.get(),
-                                              dD2.get(),
-                                              out,
-                                              count,
-                                              status,
-                                              multiplier);
-              });
-
-    ProbeOnce(label,
-              "BoysDeviceSingleF32",
-              count,
-              count,
-              0.0f,
-              want,
-              wrote,
-              tally,
-              [&](float* out, int* status) {
-                  return BoysDeviceDemoSingle32(&tables,
-                                                dN.get(),
-                                                dRho.get(),
-                                                dD2.get(),
-                                                out,
-                                                count,
-                                                status,
-                                                multiplier);
-              });
-    ProbeOnce(label,
-              "BoysDeviceSingleF32 (fast exp)",
-              count,
-              count,
-              0.0f,
-              want,
-              wrote,
-              tally,
-              [&](float* out, int* status) {
-                  return BoysDeviceDemoSingle32Fast(&tables,
-                                                    dN.get(),
-                                                    dRho.get(),
-                                                    dD2.get(),
-                                                    out,
-                                                    count,
-                                                    status,
-                                                    multiplier);
-              });
-    ProbeOnce(label,
-              "BoysDeviceAllOrdersF32",
-              count,
-              family,
-              0.0f,
-              want,
-              wrote,
-              tally,
-              [&](float* out, int* status) {
-                  return BoysDeviceDemoLadder32(&tables,
-                                                dN.get(),
-                                                dRho.get(),
-                                                dD2.get(),
-                                                out,
-                                                count,
-                                                nmax + 1,
-                                                status,
-                                                multiplier);
-              });
-    ProbeOnce(label,
-              "BoysDeviceAllNF32",
-              count,
-              family,
-              0.0f,
-              want,
-              wrote,
-              tally,
-              [&](float* out, int* status) {
-                  return BoysDeviceDemoAllN32(
-                      &tables, dRho.get(), dD2.get(), out, count, status, multiplier);
-              });
-    ProbeOnce(label,
-              "BoysDeviceEachOrderF32",
-              count,
-              family,
-              0.0f,
-              want,
-              wrote,
-              tally,
-              [&](float* out, int* status) {
-                  return BoysDeviceDemoEach32(&tables,
-                                              dN.get(),
-                                              dRho.get(),
-                                              dD2.get(),
-                                              out,
-                                              count,
-                                              status,
-                                              multiplier);
-              });
-
-#if BoysFp16
-    const boys::F16 halfSentinel(static_cast<float>(sentinel));
-
-    ProbeOnce(label,
-              "BoysDeviceSingleF16",
-              count,
-              count,
-              halfSentinel,
-              want,
-              wrote,
-              tally,
-              [&](boys::F16* out, int* status) {
-                  return BoysDeviceDemoSingle16(&tables,
-                                                dN.get(),
-                                                dRho.get(),
-                                                dD2.get(),
-                                                static_cast<void*>(out),
-                                                count,
-                                                status,
-                                                multiplier);
-              });
-    ProbeOnce(label,
-              "BoysDeviceAllOrdersF16",
-              count,
-              family,
-              halfSentinel,
-              want,
-              wrote,
-              tally,
-              [&](boys::F16* out, int* status) {
-                  return BoysDeviceDemoLadder16(&tables,
-                                                dN.get(),
-                                                dRho.get(),
-                                                dD2.get(),
-                                                static_cast<void*>(out),
-                                                count,
-                                                nmax + 1,
-                                                status,
-                                                multiplier);
-              });
-    ProbeOnce(label,
-              "BoysDeviceAllNF16",
-              count,
-              family,
-              halfSentinel,
-              want,
-              wrote,
-              tally,
-              [&](boys::F16* out, int* status) {
-                  return BoysDeviceDemoAllN16(&tables,
-                                              dRho.get(),
-                                              dD2.get(),
-                                              static_cast<void*>(out),
-                                              count,
-                                              status,
-                                              multiplier);
-              });
-    ProbeOnce(label,
-              "BoysDeviceEachOrderF16",
-              count,
-              family,
-              halfSentinel,
-              want,
-              wrote,
-              tally,
-              [&](boys::F16* out, int* status) {
-                  return BoysDeviceDemoEach16(&tables,
-                                              dN.get(),
-                                              dRho.get(),
-                                              dD2.get(),
-                                              static_cast<void*>(out),
-                                              count,
-                                              status,
-                                              multiplier);
-              });
-#endif // BoysFp16
-
-    // The partition and route axes reached in the caller's kernel, probed for the
-    // same two statements as the shapes above: a rung that is not the one the
-    // handle was made resident for is refused with kMultiplierNotResident and
-    // writes nothing, and m = 1 is served because it reads the handle's own
-    // tables. The rows are a table per precision, so a missing probe is visible.
-    struct LadderRow64 {
-        const char* what;
-        int (*demo)(const boys::BoysDeviceTables*,
-                    const int*,
-                    const double*,
-                    const double*,
-                    double*,
-                    std::size_t,
-                    int,
-                    int*,
-                    double);
-    };
-
-    const LadderRow64 rows64[] = {
-        {"BoysDeviceAllOrdersF64Narrow", &BoysDeviceDemoLadder64Narrow},
-        {"BoysDeviceAllOrdersF64NarrowMono", &BoysDeviceDemoLadder64NarrowMono},
-        {"BoysDeviceAllOrdersF64Rat", &BoysDeviceDemoLadder64Rat},
-        {"BoysDeviceAllOrdersF64RatHorner", &BoysDeviceDemoLadder64RatHorner},
-        {"BoysDeviceAllOrdersF64NarrowRat", &BoysDeviceDemoLadder64NarrowRat},
-        {"BoysDeviceAllOrdersF64NarrowRatHorner", &BoysDeviceDemoLadder64NarrowRatHorner},
-        {"BoysDeviceAllOrdersF64Uniform", &BoysDeviceDemoLadder64Uniform},
-        {"BoysDeviceAllOrdersF64UniformHorner", &BoysDeviceDemoLadder64UniformHorner},
-        {"BoysDeviceAllOrdersF64UniformRat", &BoysDeviceDemoLadder64UniformRat},
-        {"BoysDeviceAllOrdersF64UniformRatHorner", &BoysDeviceDemoLadder64UniformRatHorner},
-    };
-
-    for (const LadderRow64& row : rows64)
-    {
-        ProbeOnce(label,
-                  row.what,
-                  count,
-                  family,
-                  sentinel,
-                  want,
-                  wrote,
-                  tally,
-                  [&](double* out, int* status) {
-                      return row.demo(&tables,
-                                      dN.get(),
-                                      dRho.get(),
-                                      dD2.get(),
-                                      out,
-                                      count,
-                                      nmax + 1,
-                                      status,
-                                      multiplier);
-                  });
-    }
-
-    struct LadderRow32 {
-        const char* what;
-        int (*demo)(const boys::BoysDeviceTables*,
-                    const int*,
-                    const double*,
-                    const double*,
-                    float*,
-                    std::size_t,
-                    int,
-                    int*,
-                    double);
-    };
-
-    const LadderRow32 rows32[] = {
-        {"BoysDeviceAllOrdersF32Narrow", &BoysDeviceDemoLadder32Narrow},
-        {"BoysDeviceAllOrdersF32NarrowMono", &BoysDeviceDemoLadder32NarrowMono},
-        {"BoysDeviceAllOrdersF32Rat", &BoysDeviceDemoLadder32Rat},
-        {"BoysDeviceAllOrdersF32RatHorner", &BoysDeviceDemoLadder32RatHorner},
-        {"BoysDeviceAllOrdersF32NarrowRat", &BoysDeviceDemoLadder32NarrowRat},
-        {"BoysDeviceAllOrdersF32NarrowRatHorner", &BoysDeviceDemoLadder32NarrowRatHorner},
-        {"BoysDeviceAllOrdersF32Uniform", &BoysDeviceDemoLadder32Uniform},
-        {"BoysDeviceAllOrdersF32UniformHorner", &BoysDeviceDemoLadder32UniformHorner},
-        {"BoysDeviceAllOrdersF32UniformRat", &BoysDeviceDemoLadder32UniformRat},
-        {"BoysDeviceAllOrdersF32UniformRatHorner", &BoysDeviceDemoLadder32UniformRatHorner},
-    };
-
-    for (const LadderRow32& row : rows32)
-    {
-        ProbeOnce(label,
-                  row.what,
-                  count,
-                  family,
-                  0.0f,
-                  want,
-                  wrote,
-                  tally,
-                  [&](float* out, int* status) {
-                      return row.demo(&tables,
-                                      dN.get(),
-                                      dRho.get(),
-                                      dD2.get(),
-                                      out,
-                                      count,
-                                      nmax + 1,
-                                      status,
-                                      multiplier);
-                  });
-    }
-}
-
-// One rung of the device-callable entries: the handle filled at that rung, the
-// rows that rung's cells are measured into, and every entry through the
-// consumer's kernels. Filling the handle at the rung is what makes it the
-// resident one; the sweep at m = 1 is unaffected by a relaxed rung being
-// resident, because that entry reads the m = 1 tables.
-template <double kMultiplier>
-void SweepRung(const Reference& ref,
-               const Grid& grid,
-               const SortedArgs& sorted,
-               const DigitGrid& digits,
-               const char* rung) {
+// The device-callable entries: the handle filled once, the rows its cells are
+// measured into, and every entry through the consumer's kernels. Filling the
+// handle is what makes the degree tables resident for the kernels, and the
+// handle is the one every device entry below reads.
+void SweepDeviceLane(const Reference& ref,
+                     const Grid& grid,
+                     const SortedArgs& sorted,
+                     const DigitGrid& digits) {
     boys::BoysDeviceTables tables{};
-    CheckLaunch(boys::BoysCuda::DeviceTables<kMultiplier>(&tables), "DeviceTables");
-    const DeviceSlots slots = DeviceClaimSet(rung, kMultiplier);
-    SweepDevice<kMultiplier>(ref, grid, sorted, tables, slots, rung);
-    SweepDigit64<kMultiplier>(digits, tables, slots, rung);
+    CheckLaunch(boys::BoysCuda::DeviceTables(&tables), "DeviceTables");
+    const DeviceSlots slots = DeviceClaimSet();
+    SweepDevice(ref, grid, sorted, tables, slots);
+    SweepDigit64(digits, tables, slots);
 }
 
 // One cell, every entry: what each device entry returns beside the reference, so
@@ -4376,13 +3689,13 @@ void RunProbe(const Reference& ref,
     const double ref16 = have16 ? ref.v16[atH] : 0.0;
 
 
-    CheckLaunch(boys::BoysCuda::SingleF64<1.0>(dN.get(), dX.get(), d64.get(), count, nullptr),
+    CheckLaunch(boys::BoysCuda::SingleF64(dN.get(), dX.get(), d64.get(), count, nullptr),
                 "SingleF64");
     d64.Download(out64);
     row("cuda single f64", out64[0], ref64, kBoundSingleC, have64);
 
     CheckLaunch(
-        boys::BoysCuda::AllOrdersF64<1.0>(dN.get(), dX.get(), d64.get(), count, nullptr),
+        boys::BoysCuda::AllOrdersF64(dN.get(), dX.get(), d64.get(), count, nullptr),
         "AllOrdersF64");
     d64.Download(out64);
     row("cuda all-orders f64",
@@ -4391,17 +3704,17 @@ void RunProbe(const Reference& ref,
         kBoundDoubleBatch,
         have64);
 
-    CheckLaunch(boys::BoysCuda::AllNF64<1.0>(n, dX.get(), d64.get(), count, nullptr), "AllNF64");
+    CheckLaunch(boys::BoysCuda::AllNF64(n, dX.get(), d64.get(), count, nullptr), "AllNF64");
     d64.Download(out64);
     row("cuda all-n f64", out64[static_cast<std::size_t>(n)], ref64, kBoundDoubleBatch, have64);
 
-    CheckLaunch(boys::BoysCuda::SingleF32<1.0>(dN.get(), dX.get(), d32.get(), count, nullptr),
+    CheckLaunch(boys::BoysCuda::SingleF32(dN.get(), dX.get(), d32.get(), count, nullptr),
                 "SingleF32");
     d32.Download(out32);
     row("cuda single f32", static_cast<double>(out32[0]), ref32, kBoundFloat, have32);
     std::printf("  %-22s (evaluated at xf=%.17g)\n", "", xf);
 
-    CheckLaunch(boys::BoysCuda::SingleF32<1.0, boys::RegionBExp::kFast>(
+    CheckLaunch(boys::BoysCuda::SingleF32<boys::RegionBExp::kFast>(
                     dN.get(), dX.get(), d32.get(), count, nullptr),
                 "SingleF32 fast");
     d32.Download(out32);
@@ -4412,7 +3725,7 @@ void RunProbe(const Reference& ref,
         have32);
 
     CheckLaunch(
-        boys::BoysCuda::AllOrdersF32<1.0>(dN.get(), dX.get(), d32.get(), count, nullptr),
+        boys::BoysCuda::AllOrdersF32(dN.get(), dX.get(), d32.get(), count, nullptr),
         "AllOrdersF32");
     d32.Download(out32);
     row("cuda all-orders f32",
@@ -4421,7 +3734,7 @@ void RunProbe(const Reference& ref,
         kBoundFloat,
         have32);
 
-    CheckLaunch(boys::BoysCuda::AllNF32<1.0>(n, dX.get(), d32.get(), count, nullptr), "AllNF32");
+    CheckLaunch(boys::BoysCuda::AllNF32(n, dX.get(), d32.get(), count, nullptr), "AllNF32");
     d32.Download(out32);
     row("cuda all-n f32",
         static_cast<double>(out32[static_cast<std::size_t>(n)]),
@@ -4430,32 +3743,32 @@ void RunProbe(const Reference& ref,
         have32);
 
 #if BoysFp16
-    CheckLaunch(boys::BoysCuda::SingleF16<1.0>(dN.get(), dH.get(), d16.get(), count, nullptr),
+    CheckLaunch(boys::BoysCuda::SingleF16(dN.get(), dH.get(), d16.get(), count, nullptr),
                 "SingleF16");
     d16.Download(out16);
     row("cuda single f16",
         static_cast<double>(out16[0]),
         ref16,
-        HalfBoundAt(static_cast<double>(out16[0]), 1.0),
+        HalfBoundAt(static_cast<double>(out16[0])),
         have16);
     std::printf("  %-22s (evaluated at x16=%.17g)\n", "", x16);
 
     CheckLaunch(
-        boys::BoysCuda::AllOrdersF16<1.0>(dN.get(), dH.get(), d16.get(), count, nullptr),
+        boys::BoysCuda::AllOrdersF16(dN.get(), dH.get(), d16.get(), count, nullptr),
         "AllOrdersF16");
     d16.Download(out16);
     row("cuda all-orders f16",
         static_cast<double>(out16[static_cast<std::size_t>(n)]),
         ref16,
-        HalfBoundAt(static_cast<double>(out16[static_cast<std::size_t>(n)]), 1.0),
+        HalfBoundAt(static_cast<double>(out16[static_cast<std::size_t>(n)])),
         have16);
 
-    CheckLaunch(boys::BoysCuda::AllNF16<1.0>(n, dH.get(), d16.get(), count, nullptr), "AllNF16");
+    CheckLaunch(boys::BoysCuda::AllNF16(n, dH.get(), d16.get(), count, nullptr), "AllNF16");
     d16.Download(out16);
     row("cuda all-n f16",
         static_cast<double>(out16[static_cast<std::size_t>(n)]),
         ref16,
-        HalfBoundAt(static_cast<double>(out16[static_cast<std::size_t>(n)]), 1.0),
+        HalfBoundAt(static_cast<double>(out16[static_cast<std::size_t>(n)])),
         have16);
 #else
     // The three fp16 rows of this table. Their entries are declared behind the
@@ -4586,7 +3899,7 @@ void RunProbe(const Reference& ref,
         row("device single f16",
             static_cast<double>(out16[0]),
             ref16,
-            HalfBoundAt(static_cast<double>(out16[0]), 1.0),
+            HalfBoundAt(static_cast<double>(out16[0])),
             have16);
 
         CheckDemo(BoysDeviceDemoLadder16(&tables,
@@ -4602,7 +3915,7 @@ void RunProbe(const Reference& ref,
         row("device all-orders f16",
             static_cast<double>(out16[static_cast<std::size_t>(n)]),
             ref16,
-            HalfBoundAt(static_cast<double>(out16[static_cast<std::size_t>(n)]), 1.0),
+            HalfBoundAt(static_cast<double>(out16[static_cast<std::size_t>(n)])),
             have16);
 
         CheckDemo(BoysDeviceDemoEach16(&tables,
@@ -4617,7 +3930,7 @@ void RunProbe(const Reference& ref,
         row("device each-order f16",
             static_cast<double>(out16[static_cast<std::size_t>(n)]),
             ref16,
-            HalfBoundAt(static_cast<double>(out16[static_cast<std::size_t>(n)]), 1.0),
+            HalfBoundAt(static_cast<double>(out16[static_cast<std::size_t>(n)])),
             have16);
 
         CheckDemo(BoysDeviceDemoAllN16(&tables,
@@ -4631,7 +3944,7 @@ void RunProbe(const Reference& ref,
         row("device all-n f16",
             static_cast<double>(out16[static_cast<std::size_t>(n)]),
             ref16,
-            HalfBoundAt(static_cast<double>(out16[static_cast<std::size_t>(n)]), 1.0),
+            HalfBoundAt(static_cast<double>(out16[static_cast<std::size_t>(n)])),
             have16);
 #else
         // The four device-callable fp16 rows, on the same cell as the f32 rows
@@ -4696,7 +4009,7 @@ std::size_t ReportDeviceOptionCoverage() {
         for (const Accum& a : Claims())
         {
             const std::string name = option.name;
-            claimed = claimed || a.lane == name || a.lane.rfind(name + " m=", 0) == 0;
+            claimed = claimed || a.lane == name || a.lane.rfind(name + " ", 0) == 0;
         }
 
         if (!claimed)
@@ -4706,8 +4019,7 @@ std::size_t ReportDeviceOptionCoverage() {
         }
     }
 
-    // The other direction: a claim whose name is no reported option. Names the
-    // m = 1 book and the rung books share are counted once.
+    // The other direction: a claim whose name is no reported option.
     std::vector<std::string> orphans;
 
     for (const Accum& a : Claims())
@@ -4722,7 +4034,7 @@ std::size_t ReportDeviceOptionCoverage() {
             }
 
             const std::string name = option.name;
-            known = known || a.lane == name || a.lane.rfind(name + " m=", 0) == 0;
+            known = known || a.lane == name || a.lane.rfind(name + " ", 0) == 0;
         }
 
         if (!known && std::find(orphans.begin(), orphans.end(), a.lane) == orphans.end())
@@ -4829,7 +4141,7 @@ int main(int argc, char** argv) {
     const int slotDoubleAllN = AddClaim(DeviceRow(boys::DeviceEntry::kAllNF64).name, "A..C", kBoundDoubleBatch);
     const int slotFloatSingle = AddClaim(DeviceRow(boys::DeviceEntry::kSingleF32).name, "A..C", kBoundFloat);
     // The single entry's fast region-B exponential: a second certified option
-    // with a bound of its own, not a relaxed rung of the lane's.
+    // with a bound of its own, not a relaxation of the lane's.
     const int slotFloatSingleFast =
         AddClaim(DeviceRow(boys::DeviceEntry::kSingleF32Fast, boys::RegionBExp::kFast).name,
                      "A..C",
@@ -4840,7 +4152,7 @@ int main(int argc, char** argv) {
     const int slotHalfOrders = AddClaim(DeviceRow(boys::DeviceEntry::kAllOrdersF16).name, "A..C", kBoundHalfRow);
     const int slotHalfAllN = AddClaim(DeviceRow(boys::DeviceEntry::kAllNF16).name, "A..C", kBoundHalfRow);
 
-    SweepDouble<1.0>(ref,
+    SweepDouble(ref,
                      grid,
                      sorted,
                      slotSingleA,
@@ -4849,7 +4161,7 @@ int main(int argc, char** argv) {
                      slotSingleC,
                      slotDoubleOrders,
                      slotDoubleAllN);
-    SweepFloat<1.0>(ref,
+    SweepFloat(ref,
                     grid,
                     sorted,
                     slotFloatSingle,
@@ -4857,58 +4169,14 @@ int main(int argc, char** argv) {
                     slotFloatOrders,
                     slotFloatAllN,
                     DeviceRow(boys::DeviceEntry::kSingleF32Fast, boys::RegionBExp::kFast).name);
-    SweepHalf<1.0>(ref, grid, sorted, slotHalfSingle, slotHalfOrders, slotHalfAllN);
-    SweepDeviceChoices<1.0>(ref, grid, kRungs[0].name);
+    SweepHalf(ref, grid, sorted, slotHalfSingle, slotHalfOrders, slotHalfAllN);
+    SweepDeviceChoices(ref, grid);
 
-    SweepRelaxed<2.0>(ref, grid, sorted, kRungs[1].name);
-    SweepRelaxed<10.0>(ref, grid, sorted, kRungs[2].name);
-    SweepRelaxed<64.0>(ref, grid, sorted, kRungs[3].name);
-    SweepRelaxed<100.0>(ref, grid, sorted, kRungs[4].name);
-    SweepRelaxed<256.0>(ref, grid, sorted, kRungs[5].name);
-    SweepRelaxed<1024.0>(ref, grid, sorted, kRungs[6].name);
-    SweepRelaxed<4096.0>(ref, grid, sorted, kRungs[7].name);
-    SweepRelaxed<1e4>(ref, grid, sorted, kRungs[8].name);
-    SweepRelaxed<16384.0>(ref, grid, sorted, kRungs[9].name);
-    SweepRelaxed<65536.0>(ref, grid, sorted, kRungs[10].name);
-    SweepRelaxed<1e8>(ref, grid, sorted, kRungs[kLastRung].name);
-
-    // The device-callable entries: one set of rows per rung, one handle per rung,
-    // and the same consumer kernels every time. Every documented device bound is
-    // a claim about the rung the caller names, so the rung is swept like any
-    // other option - a relaxed rung held to the m = 1 bound would be asserting
-    // what it was relaxed out of. The refusals are exercised first, while m = 1
-    // is resident, and the retired rung after the last upload.
+    // The device-callable entries: one handle, one set of rows, and the same
+    // consumer kernels every time. The order and capacity refusals are exercised
+    // first, beside the comparisons.
     CheckRefusals(tables);
-    SweepRung<1.0>(ref, grid, sorted, digits, kRungs[0].name);
-    SweepRung<2.0>(ref, grid, sorted, digits, kRungs[1].name);
-    SweepRung<10.0>(ref, grid, sorted, digits, kRungs[2].name);
-    SweepRung<64.0>(ref, grid, sorted, digits, kRungs[3].name);
-    SweepRung<100.0>(ref, grid, sorted, digits, kRungs[4].name);
-    SweepRung<256.0>(ref, grid, sorted, digits, kRungs[5].name);
-    SweepRung<1024.0>(ref, grid, sorted, digits, kRungs[6].name);
-    SweepRung<4096.0>(ref, grid, sorted, digits, kRungs[7].name);
-    SweepRung<1e4>(ref, grid, sorted, digits, kRungs[8].name);
-    SweepRung<16384.0>(ref, grid, sorted, digits, kRungs[9].name);
-    SweepRung<65536.0>(ref, grid, sorted, digits, kRungs[10].name);
-    SweepRung<1e8>(ref, grid, sorted, digits, kRungs[kLastRung].name);
-    // A rung that was resident earlier in the run and is not any more: the last
-    // upload left the highest rung resident, so m = 2 is a rung whose degree
-    // tables have been replaced, and it is refused rather than run against them.
-    // Every shape is then run once more at m = 1, which is still served - the
-    // full-accuracy tables are the handle's own - so the refusal is one rung of
-    // the surface and not the surface closing.
-    CheckRungCalls(tables,
-                   2.0,
-                   BoysDeviceDemoStatusMultiplierNotResident(),
-                   false,
-                   "m=2",
-                   RetiredRungProbes());
-    CheckRungCalls(tables,
-                   boys::kBoysFullAccuracyMultiplier,
-                   BoysDeviceDemoStatusSuccess(),
-                   true,
-                   "m=1 while m=1e8 is resident",
-                   ServedRungProbes());
+    SweepDeviceLane(ref, grid, sorted, digits);
 
     Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
 
@@ -4932,16 +4200,14 @@ int main(int argc, char** argv) {
                 boys::detail::kExtendedBX0,
                 boys::detail::kX0,
                 boys::detail::kX1);
-    std::printf("bounds       : README \"CUDA fp64 | same m*budgets as the CPU double lanes\",\n"
-                "               README \"CUDA fp32, RegionBExp::kAccurate (the default) | same"
-                " m*budgets\n"
+    std::printf("bounds       : README \"CUDA fp64 | the same budgets as the CPU double lanes\",\n"
+                "               README \"CUDA fp32, RegionBExp::kAccurate (the default) | the same"
+                " budgets\n"
                 "               as the CPU float lanes\" (1.5e-7),\n"
-                "               README \"CUDA fp32, RegionBExp::kFast | <= m*1.5e-7 + 8e-8 - the"
+                "               README \"CUDA fp32, RegionBExp::kFast | <= 1.5e-7 + 8e-8 - the"
                 " lane's\n"
                 "               budget plus the corrected seed's own contribution\",\n"
-                "               boys_cuda.hpp \"m * 1e-7 + 1/2 ULP\" for the fp16 entries\n"
-                "               the device entries at every rung: m times the same figure, which\n"
-                "               is the relaxation the multiplier is for\n");
+                "               boys_cuda.hpp \"1e-7 + 1/2 ULP\" for the fp16 entries\n");
 
     std::printf("\n  lane                     region   points     real  delivered / bound        "
                 "worst cell               vacuous   zeros\n");
@@ -4967,56 +4233,34 @@ int main(int argc, char** argv) {
         }
     }
 
-    // A device entry and the batch entry of the same precision at the same rung
-    // are one arithmetic reached two ways: the same degree tables, the same
-    // inlined body, a lane object that reads the caller's handle where the batch
-    // kernel reads a __constant__ symbol. Every value the device call wrote is
-    // compared bit for bit with the batch entry of the same rung.
-    if (!RungAgreements().empty())
+    // A device entry and the batch entry of the same precision are one arithmetic
+    // reached two ways: the same degree tables, the same inlined body, a lane
+    // object that reads the caller's handle where the batch kernel reads a
+    // __constant__ symbol. Every value the device call wrote is compared bit for
+    // bit with the batch entry of the same precision.
+    if (!PairAgreements().empty())
     {
-        std::printf("\n  the device entries against the batch entries of the same rung, one\n"
+        std::printf("\n  the device entries against the batch entries of the same precision, one\n"
                     "  arithmetic reached two ways, compared bit for bit over every value a call\n"
                     "  writes - the single shapes per cell, the family shapes per order:\n");
         std::printf("  %-64s %s\n", "device entry against batch entry", "identical values");
 
-        for (const RungAgreement& a : RungAgreements())
+        for (const PairAgreement& a : PairAgreements())
         {
             std::printf("  %-64s %zu / %zu\n", a.what.c_str(), a.identical, a.values);
         }
     }
 
-    // What a consumer sees when it names a rung the tables do not hold: every
-    // shape refuses, the status says which refusal it is, and no output slot is
-    // written. The same shapes are then run at m = 1, the other half of the same
-    // contract: the rung the caller named is the only thing that decides.
-    if (RetiredRungProbes() != 0 && ServedRungProbes() != 0)
-    {
-        std::printf("\n  the rung, from the consumer kernels: %zu shapes run at m = %s while\n"
-                    "  m = %s is resident, and the same %zu shapes run at m = 1 beside them.\n"
-                    "  The first refused: every element of every shape reported\n"
-                    "  kMultiplierNotResident and every output slot still held its sentinel, so\n"
-                    "  the rung is a value the caller branches on. The second was served: every\n"
-                    "  element reported kSuccess and every slot was written, because m = 1 reads\n"
-                    "  the handle's own tables and no upload retires them. The order and the\n"
-                    "  capacity refusals were exercised the same way, while m = %g was resident.\n",
-                    RetiredRungProbes(),
-                    kRungs[1].name,
-                    kRungs[kLastRung].name,
-                    ServedRungProbes(),
-                    kRungs[0].multiplier);
-    }
-
     // The 45-digit grid beside the gate grid. Its cells are counted in the rows
     // above, so a cell over bound here fails the gate with them; this table names
-    // the worst cell that grid produced at each rung.
+    // the worst cell that grid produced.
     if (!DigitRows().empty())
     {
         std::printf("\n  the fp64 device entries on the 45-digit grid as well, at the bound of\n"
                     "  their own row and counted in it: the same entries and the same bounds, a\n"
                     "  second reference whose values carry no format rounding and whose arguments\n"
                     "  are the region boundaries and a logarithmic sweep:\n");
-        std::printf("  %-6s %-24s %8s %8s  %-24s %s\n",
-                    "rung",
+        std::printf("  %-24s %8s %8s  %-24s %s\n",
                     "entry",
                     "points",
                     "real",
@@ -5043,8 +4287,7 @@ int main(int argc, char** argv) {
                               r.cell.worstX);
             }
 
-            std::printf("  %-6s %-24s %8zu %8zu  %-24s %s\n",
-                        r.rung.c_str(),
+            std::printf("  %-24s %8zu %8zu  %-24s %s\n",
                         r.cell.lane.c_str(),
                         r.cell.points,
                         r.cell.points - r.cell.vacuous,
@@ -5063,7 +4306,7 @@ int main(int argc, char** argv) {
     {
         std::printf(
             "\n  the single entry's fast region-B exponential, measured against the accurate one\n"
-            "  on the same grid at the same multiplier. Its bound's second term is the\n"
+            "  on the same grid. Its bound's second term is the\n"
             "  contribution below, capped by the recurrence's amplification; the wrong-sign\n"
             "  count is the audit for the return of the defect the correction removes.\n");
         std::printf("  %-38s %-26s %-16s %s\n",

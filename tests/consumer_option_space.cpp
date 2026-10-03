@@ -2,24 +2,18 @@
 // consumer can write, and does naming it evaluate that combination?
 //
 // The option space is four structural axes - the fit route, the evaluation scheme, the interval
-// partition and the packing axis - on one accuracy rung, per precision: the axes are what a call
-// site chooses once, when it is written, and the rung is what a caller may decide per call.
+// partition and the packing axis - per precision: the axes are what a call site chooses once, when
+// it is written, and a policy names one combination of them.
 //
 //  * for every combination the library's own book reports as served (BoysAccuracyGuaranteed
 //    answering a figure for the five axes), this program writes THE NAME of that combination - a
-//    policy type - and passes the rung as the call's own argument: one arm per name, resolved
-//    where the line is written, with no string, no table and no run-time search anywhere in this
-//    file, so a combination it could not name would not compile. The one partition row it writes
-//    no arm for is named in kUnspelledPartitions with its reason and printed with the census
-//    rather than left out;
+//    policy type - and calls the entry at that name: one arm per name, resolved where the line is
+//    written, with no string, no table and no run-time search anywhere in this file, so a
+//    combination it could not name would not compile;
 //
-//  * every value that comes back is judged twice: against the committed 45-digit reference grid
-//    within the bound the book states for the combination and rung that were named - the figure
-//    BoysAccuracyGuaranteed answers for the same five axes - and BIT FOR BIT against the same
-//    combination reached through the entry whose multiplier is its template argument, which is
-//    what catches a named entry that ignores the rung it was handed. The cells the rung moved are
-//    counted beside those it did not, so a green line is not a claim about a comparison that
-//    could never have failed;
+//  * every value that comes back is judged against the committed 45-digit reference grid within
+//    the bound the book states for the combination that was named - the figure
+//    BoysAccuracyGuaranteed answers for the same five axes;
 //
 //  * the census is printed per precision - combinations served, combinations named, cells served,
 //    cells named and evaluated - counted from the library's own tables rather than a list kept
@@ -64,7 +58,6 @@
 
 namespace {
 
-using boys::AccuracyTier;
 using boys::BoysBudget;
 using boys::EvalPolicy;
 using boys::EvalScheme;
@@ -72,54 +65,18 @@ using boys::FitGranularity;
 using boys::FitRoute;
 using boys::PackAxis;
 
-/// The certified double lane at m = 1, which stands in for the committed grid at the converted
-/// argument wherever a format conversion sits between the grid and the named entry: a composed
-/// bound is the cell's own figure plus this one.
+/// The certified double lane, which stands in for the committed grid at the converted argument
+/// wherever a format conversion sits between the grid and the named entry: a composed bound is the
+/// cell's own figure plus this one.
 constexpr double kOracleBound = 5.5e-14;
-
-/// The rungs this file names, one arm per enumerator of the library's enumeration, in its order.
-constexpr std::array<AccuracyTier, 7> kTiers = {
-    AccuracyTier::kReference,   AccuracyTier::kRelaxed64,     AccuracyTier::kRelaxed256,
-    AccuracyTier::kRelaxed1024, AccuracyTier::kRelaxed4096,   AccuracyTier::kRelaxed16384,
-    AccuracyTier::kRelaxed65536,
-};
-
-/// The raw enumerator value past which this file stops looking for rungs the book might serve: the
-/// enumeration ends below it, and a rung outside it is one no arm here could spell.
-constexpr int kMaxTierProbe = 32;
 
 /// The four structural axes, each as the enumerators this file spells an arm for; the tables the
 /// library publishes are checked against these before anything is counted.
 constexpr std::array<FitRoute, 2> kRoutes = {FitRoute::kChebyshev, FitRoute::kRationalMinimax};
 constexpr std::array<EvalScheme, 2> kSchemes = {EvalScheme::kSplitClenshaw, EvalScheme::kHorner};
-constexpr std::array<FitGranularity, 2> kPartitions = {FitGranularity::kShipped,
-                                                       FitGranularity::kNarrow};
+constexpr std::array<FitGranularity, 3> kPartitions = {
+    FitGranularity::kCoarsest, FitGranularity::kNarrow, FitGranularity::kUniform};
 constexpr std::array<PackAxis, 2> kAxes = {PackAxis::kArguments, PackAxis::kOrders};
-
-/// The partitions the library publishes and this file writes no arm for, each with the reason, so
-/// that this is not a list of the rows that were inconvenient.
-///
-/// An arm names a cell through the entry whose *rung* is the call's own argument
-/// (\c BoysAllOrdersAtTier and its single-precision sibling) beside the same cell reached through
-/// the compile-time multiplier, and compares the two bit for bit. The uniform partition has no
-/// such entry: its table stores one degree for every order and every interval, so the rung the
-/// entry would take at run time has no second value to be handed, and the library refuses every
-/// rung of it but the reference one where the call is named. Its cell is reached by naming the
-/// multiplier at compile time - the other half of every pair, not a pair - and a partition added
-/// to the library that is neither of these two is caught by the check below rather than swept
-/// into the census.
-struct Unspelled {
-    FitGranularity partition; ///< the row this file writes no arm for
-    const char* why;          ///< why no arm here can name a cell of it
-};
-
-constexpr std::array<Unspelled, 1> kUnspelledPartitions = {{
-    {FitGranularity::kUniform,
-     "its two routes' rungs do not agree: the Chebyshev member is served at every rung and the "
-     "rational member at the reference rung alone, and an arm here names the partition rather "
-     "than a member of it, so no arm could reach the served rungs without naming the refused "
-     "ones - which is not an instantiation that exists"},
-}};
 
 /// The precision classes this file sweeps: one per name the library publishes a figure for, with
 /// the lane whose book each class's cells are counted in and the named entry its combinations are
@@ -131,10 +88,10 @@ struct ClassInfo {
 };
 
 constexpr std::array<ClassInfo, 4> kClasses = {{
-    {"fp64", "BoysAllOrdersAtTier", boys::Precision::kFp64},
-    {"fp32", "BoysAllOrdersF32AtTier", boys::Precision::kFp32},
-    {"fp16", "BoysAllOrdersF16AtTier", boys::Precision::kFp16},
-    {"bf16", "BoysAllOrdersBf16AtTier", boys::Precision::kFp16},
+    {"fp64", "BoysAllOrders<>", boys::Precision::kFp64},
+    {"fp32", "BoysAllOrdersF32<>", boys::Precision::kFp32},
+    {"fp16", "BoysAllOrdersF16<>", boys::Precision::kFp16},
+    {"bf16", "BoysAllOrdersBf16<>", boys::Precision::kFp16},
 }};
 
 // --- the committed reference grid -------------------------------------------
@@ -249,7 +206,6 @@ struct Census {
     std::size_t namedCombinations = 0;
     std::size_t servedCells = 0;
     std::size_t namedCells = 0;
-    std::size_t discriminating = 0; ///< cells where the rung moved the values
 };
 
 /// A deque, not a vector: the checks hold a reference to a rule while they
@@ -259,13 +215,11 @@ std::size_t gPrinted = 0;
 constexpr std::size_t kPrintedPerRule = 5;
 std::size_t gFailures = 0;
 
-/// The denominators the verdict prints: the values judged, the values the half lanes claim no
-/// bound for, and the bit-for-bit comparisons with how many held. A green line that says how much
-/// it judged is a measurement; one that says only "PASS" is not.
+/// The denominators the verdict prints: the values judged, and the values the half lanes claim
+/// no bound for. A green line that says how much it judged is a measurement; one that says only
+/// "PASS" is not.
 std::size_t gJudged = 0;
 std::size_t gSkipped = 0;
-std::size_t gCompared = 0;
-std::size_t gHeld = 0;
 
 void Fail(const Rule& rule, int n, double x, double measured, double reference, double bound) {
     if (gPrinted < kPrintedPerRule)
@@ -284,7 +238,7 @@ void Fail(const Rule& rule, int n, double x, double measured, double reference, 
 }
 
 /// Judge one value: |measured - reference| against the bound the book states for the combination
-/// and rung that were named. A non-finite value is counted as exceeded rather than compared,
+/// that was named. A non-finite value is counted as exceeded rather than compared,
 /// because a ratio against a bound is false for every NaN and would otherwise slip through.
 void Judge(Rule& rule, double measured, double reference, double bound, int n, double x) {
     const double error = std::abs(measured - reference);
@@ -350,53 +304,13 @@ double QuantumOf(double v, int significandBits) {
 }
 #endif // BoysFp16
 
-// --- the two spellings of one cell ------------------------------------------
-
-/// The rung as the multiplier the other spelling takes as its template argument: one arm per
-/// enumerator, each multiplier the library's own figure for that rung (AccuracyMultiplier) and not
-/// a literal written here, so the two spellings of a cell are compared through the library's
-/// statement of what a rung is.
-template <typename Call>
-void AtRung(AccuracyTier tier, Call&& call) noexcept {
-    switch (tier)
-    {
-    case AccuracyTier::kReference:
-        call.template operator()<boys::AccuracyMultiplier(AccuracyTier::kReference)>();
-        return;
-    case AccuracyTier::kRelaxed64:
-        call.template operator()<boys::AccuracyMultiplier(AccuracyTier::kRelaxed64)>();
-        return;
-    case AccuracyTier::kRelaxed256:
-        call.template operator()<boys::AccuracyMultiplier(AccuracyTier::kRelaxed256)>();
-        return;
-    case AccuracyTier::kRelaxed1024:
-        call.template operator()<boys::AccuracyMultiplier(AccuracyTier::kRelaxed1024)>();
-        return;
-    case AccuracyTier::kRelaxed4096:
-        call.template operator()<boys::AccuracyMultiplier(AccuracyTier::kRelaxed4096)>();
-        return;
-    case AccuracyTier::kRelaxed16384:
-        call.template operator()<boys::AccuracyMultiplier(AccuracyTier::kRelaxed16384)>();
-        return;
-    case AccuracyTier::kRelaxed65536:
-        call.template operator()<boys::AccuracyMultiplier(AccuracyTier::kRelaxed65536)>();
-        return;
-
-    // The sentinel one past the last rung, and not a rung a caller can name: it
-    // is the bound the enumeration's own count gives, and no arm above owes it a
-    // statement.
-    case AccuracyTier::kCount:
-        break;
-    }
-
-    call.template operator()<boys::AccuracyMultiplier(AccuracyTier::kReference)>();
-}
+// --- the four axes as a call's template argument ---------------------------
 
 /// The four structural axes of one cell, each narrowed to the value that names it. The nested
 /// lambdas write one arm per name without sixteen of them by hand; the innermost arm is the policy
 /// a call site writes. Each level's else arm names the other enumerator it spells and is not a
 /// default, so a value that is neither is caught by the table check rather than answered here; for
-/// the partition, the one axis with a third member this file has no arm for, it is caught here too,
+/// the partition, the one axis that carries three members, it is caught here too,
 /// because answering from the shipped tables would measure one partition's cell under another name.
 template <typename Call>
 void AtAxes(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity partition,
@@ -405,9 +319,12 @@ void AtAxes(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity par
         if (partition == FitGranularity::kNarrow)
         {
             call.template operator()<kRoute, kScheme, kPack, FitGranularity::kNarrow>();
-        } else if (partition == FitGranularity::kShipped)
+        } else if (partition == FitGranularity::kCoarsest)
         {
-            call.template operator()<kRoute, kScheme, kPack, FitGranularity::kShipped>();
+            call.template operator()<kRoute, kScheme, kPack, FitGranularity::kCoarsest>();
+        } else if (partition == FitGranularity::kUniform)
+        {
+            call.template operator()<kRoute, kScheme, kPack, FitGranularity::kUniform>();
         } else
         {
             std::printf("boys consumer option space: a cell was named at a partition this file "
@@ -450,115 +367,74 @@ void AtAxes(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity par
 
 // --- the named cells, one arm per name --------------------------------------
 
-/// One combination named at a rung passed as the call's own argument, and the same combination
-/// named at the compile-time multiplier: the first is the name a consumer writes, the second the
-/// same cell reached through the entry whose multiplier is its template argument.
+/// One combination, evaluated through its own name. The policy is the entry's only template
+/// argument and it names the whole combination, so the arm that names a cell is the call itself.
 
-void NameFp64(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity partition,
-              AccuracyTier tier, int nmax, double x, double* out) {
+void EvalFp64(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity partition,
+              int nmax, double x, double* out) {
     AtAxes(route, scheme, pack, partition,
            [&]<FitRoute kRoute, EvalScheme kScheme, PackAxis kPack, FitGranularity kPartition>() {
                using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFloat, kPack, kPartition>;
-               boys::BoysAllOrdersAtTier<Policy>(tier, nmax, x, out);
+               boys::BoysAllOrders<Policy>(nmax, x, out);
            });
 }
 
-void SpellFp64(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity partition,
-               AccuracyTier tier, int nmax, double x, double* out) {
+void EvalFp32(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity partition,
+              int nmax, float x, float* out) {
     AtAxes(route, scheme, pack, partition,
            [&]<FitRoute kRoute, EvalScheme kScheme, PackAxis kPack, FitGranularity kPartition>() {
                using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFloat, kPack, kPartition>;
-               AtRung(tier, [&]<double m>() { boys::BoysAllOrders<m, Policy>(nmax, x, out); });
-           });
-}
-
-void NameFp32(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity partition,
-              AccuracyTier tier, int nmax, float x, float* out) {
-    AtAxes(route, scheme, pack, partition,
-           [&]<FitRoute kRoute, EvalScheme kScheme, PackAxis kPack, FitGranularity kPartition>() {
-               using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFloat, kPack, kPartition>;
-               boys::BoysAllOrdersF32AtTier<Policy>(tier, nmax, x, out);
-           });
-}
-
-void SpellFp32(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity partition,
-               AccuracyTier tier, int nmax, float x, float* out) {
-    AtAxes(route, scheme, pack, partition,
-           [&]<FitRoute kRoute, EvalScheme kScheme, PackAxis kPack, FitGranularity kPartition>() {
-               using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFloat, kPack, kPartition>;
-               AtRung(tier, [&]<double m>() { boys::BoysAllOrdersF32<m, Policy>(nmax, x, out); });
+               boys::BoysAllOrdersF32<Policy>(nmax, x, out);
            });
 }
 
 #if BoysFp16
-void NameFp16(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity partition,
-              AccuracyTier tier, int nmax, boys::F16 x, boys::F16* out) {
+void EvalFp16(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity partition,
+              int nmax, boys::F16 x, boys::F16* out) {
     AtAxes(route, scheme, pack, partition,
            [&]<FitRoute kRoute, EvalScheme kScheme, PackAxis kPack, FitGranularity kPartition>() {
                using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFp16, kPack, kPartition>;
-               boys::BoysAllOrdersF16AtTier<Policy>(tier, nmax, x, out);
+               boys::BoysAllOrdersF16<Policy>(nmax, x, out);
            });
 }
 
-void SpellFp16(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity partition,
-               AccuracyTier tier, int nmax, boys::F16 x, boys::F16* out) {
+void EvalBf16(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity partition,
+              int nmax, boys::Bf16 x, boys::Bf16* out) {
     AtAxes(route, scheme, pack, partition,
            [&]<FitRoute kRoute, EvalScheme kScheme, PackAxis kPack, FitGranularity kPartition>() {
                using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFp16, kPack, kPartition>;
-               AtRung(tier, [&]<double m>() { boys::BoysAllOrdersF16<m, Policy>(nmax, x, out); });
-           });
-}
-
-void NameBf16(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity partition,
-              AccuracyTier tier, int nmax, boys::Bf16 x, boys::Bf16* out) {
-    AtAxes(route, scheme, pack, partition,
-           [&]<FitRoute kRoute, EvalScheme kScheme, PackAxis kPack, FitGranularity kPartition>() {
-               using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFp16, kPack, kPartition>;
-               boys::BoysAllOrdersBf16AtTier<Policy>(tier, nmax, x, out);
-           });
-}
-
-void SpellBf16(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity partition,
-               AccuracyTier tier, int nmax, boys::Bf16 x, boys::Bf16* out) {
-    AtAxes(route, scheme, pack, partition,
-           [&]<FitRoute kRoute, EvalScheme kScheme, PackAxis kPack, FitGranularity kPartition>() {
-               using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFp16, kPack, kPartition>;
-               AtRung(tier, [&]<double m>() { boys::BoysAllOrdersBf16<m, Policy>(nmax, x, out); });
+               boys::BoysAllOrdersBf16<Policy>(nmax, x, out);
            });
 }
 #endif // BoysFp16
 
 // --- one cell over the sweep ------------------------------------------------
 
-/// One cell's values over the whole sweep, argument-major: values[a * (nmax + 1) + n].
-struct SweepResult {
-    std::vector<double> values;
-};
+/// Name one cell through its own policy, judge its values against the book's figure for the
+/// combination, and leave the counts the verdict prints where they are counted. The named counts
+/// are this arm's own, incremented here and not beside the book's answer, so the verdict compares
+/// what the book serves against what this file ran.
+void SweepCell(std::size_t classIndex,
+               Census& census,
+               Rule& bound,
+               FitRoute route,
+               EvalScheme scheme,
+               PackAxis pack,
+               FitGranularity partition,
+               const std::vector<Cell>& grid,
+               const std::vector<double>& args) {
+    // One accuracy is one cell of the option space, so the combination and its cell are counted
+    // together: with the rung gone there is no second accuracy point to tell them apart.
+    ++census.namedCombinations;
+    ++census.namedCells;
 
-/// Name one cell at the rung that was passed, judge its values against the book's figure for the
-/// combination and the rung, and compare them with the same cell's compile-time spelling.
-SweepResult SweepCell(std::size_t classIndex,
-                      Rule& bound,
-                      Rule& spellings,
-                      FitRoute route,
-                      EvalScheme scheme,
-                      PackAxis pack,
-                      FitGranularity partition,
-                      AccuracyTier tier,
-                      const std::vector<Cell>& grid,
-                      const std::vector<double>& args) {
     constexpr int kNmax = boys::kMaxBoysOrder;
     constexpr std::size_t kWidth = static_cast<std::size_t>(kNmax) + 1;
 
-    SweepResult result;
-    result.values.assign(args.size() * kWidth, 0.0);
-
     const boys::AccuracyFigure figure =
-        boys::BoysAccuracyGuaranteed(kClasses[classIndex].lane, route, scheme, pack, partition,
-                                     tier);
+        boys::BoysAccuracyGuaranteed(kClasses[classIndex].lane, route, scheme, pack, partition);
 
     std::vector<double> value(kWidth);
-    std::vector<double> spelled(kWidth);
 
     for (std::size_t a = 0; a < args.size(); ++a)
     {
@@ -566,8 +442,7 @@ SweepResult SweepCell(std::size_t classIndex,
 
         if (classIndex == 0)
         {
-            NameFp64(route, scheme, pack, partition, tier, kNmax, x, value.data());
-            SpellFp64(route, scheme, pack, partition, tier, kNmax, x, spelled.data());
+            EvalFp64(route, scheme, pack, partition, kNmax, x, value.data());
 
             for (int n = 0; n <= kNmax; ++n)
             {
@@ -584,21 +459,18 @@ SweepResult SweepCell(std::size_t classIndex,
         {
             const float x32 = static_cast<float>(x);
             std::vector<float> fvalue(kWidth);
-            std::vector<float> fspelled(kWidth);
 
-            NameFp32(route, scheme, pack, partition, tier, kNmax, x32, fvalue.data());
-            SpellFp32(route, scheme, pack, partition, tier, kNmax, x32, fspelled.data());
+            EvalFp32(route, scheme, pack, partition, kNmax, x32, fvalue.data());
 
             for (int n = 0; n <= kNmax; ++n)
             {
                 const std::size_t k = static_cast<std::size_t>(n);
                 value[k] = static_cast<double>(fvalue[k]);
-                spelled[k] = static_cast<double>(fspelled[k]);
 
-// The lane rounds its argument before evaluating, so the reference is the certified double lane at
-// the argument the lane was asked about, and the bound composes the cell's figure with its own.
-                const double reference =
-                    boys::BoysSingle<boys::kBoysFullAccuracyMultiplier>(n, static_cast<double>(x32));
+                // The lane rounds its argument before evaluating, so the reference is the
+                // certified double lane at the argument the lane was asked about, and the bound
+                // composes the cell's figure with its own.
+                const double reference = boys::BoysSingle<>(n, static_cast<double>(x32));
 
                 Judge(bound, value[k], reference, figure.value + kOracleBound, n, x);
                 ++gJudged;
@@ -612,20 +484,17 @@ SweepResult SweepCell(std::size_t classIndex,
             if (isBf16)
             {
                 std::vector<boys::Bf16> bvalue(kWidth);
-                std::vector<boys::Bf16> bspelled(kWidth);
                 const boys::Bf16 h(x32);
 
-                NameBf16(route, scheme, pack, partition, tier, kNmax, h, bvalue.data());
-                SpellBf16(route, scheme, pack, partition, tier, kNmax, h, bspelled.data());
+                EvalBf16(route, scheme, pack, partition, kNmax, h, bvalue.data());
 
                 for (int n = 0; n <= kNmax; ++n)
                 {
                     const std::size_t k = static_cast<std::size_t>(n);
                     value[k] = static_cast<double>(bvalue[k]);
-                    spelled[k] = static_cast<double>(bspelled[k]);
 
-                    const double reference = boys::BoysSingle<boys::kBoysFullAccuracyMultiplier>(
-                        n, static_cast<double>(static_cast<float>(h)));
+                    const double reference =
+                        boys::BoysSingle<>(n, static_cast<double>(static_cast<float>(h)));
                     const double cellBound =
                         figure.value + 0.5 * QuantumOf(value[k], 7) + kOracleBound;
 
@@ -641,20 +510,17 @@ SweepResult SweepCell(std::size_t classIndex,
             } else
             {
                 std::vector<boys::F16> hvalue(kWidth);
-                std::vector<boys::F16> hspelled(kWidth);
                 const boys::F16 h(x32);
 
-                NameFp16(route, scheme, pack, partition, tier, kNmax, h, hvalue.data());
-                SpellFp16(route, scheme, pack, partition, tier, kNmax, h, hspelled.data());
+                EvalFp16(route, scheme, pack, partition, kNmax, h, hvalue.data());
 
                 for (int n = 0; n <= kNmax; ++n)
                 {
                     const std::size_t k = static_cast<std::size_t>(n);
                     value[k] = static_cast<double>(hvalue[k]);
-                    spelled[k] = static_cast<double>(hspelled[k]);
 
-                    const double reference = boys::BoysSingle<boys::kBoysFullAccuracyMultiplier>(
-                        n, static_cast<double>(static_cast<float>(h)));
+                    const double reference =
+                        boys::BoysSingle<>(n, static_cast<double>(static_cast<float>(h)));
                     const double cellBound =
                         figure.value + 0.5 * QuantumOf(value[k], 10) + kOracleBound;
 
@@ -674,29 +540,7 @@ SweepResult SweepCell(std::size_t classIndex,
             std::fflush(stdout);
 #endif // BoysFp16
         }
-
-        for (int n = 0; n <= kNmax; ++n)
-        {
-            const std::size_t k = static_cast<std::size_t>(n);
-
-            ++gCompared;
-            ++spellings.cells;
-
-            if (value[k] == spelled[k])
-            {
-                ++gHeld;
-            } else
-            {
-                ++gFailures;
-                ++spellings.exceeded;
-                Fail(spellings, n, x, value[k], spelled[k], 0.0);
-            }
-
-            result.values[a * kWidth + k] = value[k];
-        }
     }
-
-    return result;
 }
 
 // --- the axes the library publishes -----------------------------------------
@@ -738,25 +582,16 @@ void CheckAxes(std::size_t classIndex) {
     Require(boys::BoysPackAxes().size() == kAxes.size(),
             "the library publishes one packing axis per arm this file writes");
 
-    // The partitions are checked row by row rather than by count, because the two lists are not the
-    // same kind of list: every row the library publishes is either an arm this file writes or a row
-    // named in kUnspelledPartitions with its reason, and a third kind fails the check rather than
-    // quietly leaving the census short of the library.
+    Require(boys::BoysFitGranularities().size() == kPartitions.size(),
+            "the library publishes one partition per arm this file writes");
+
+    // Checked row by row as well as by count, because a row whose selector this file writes no arm
+    // for must be a counted gap rather than a value swept into an else arm.
     for (const boys::FitGranularityInfo& row : boys::BoysFitGranularities())
     {
-        const bool spelled =
-            std::find(kPartitions.begin(), kPartitions.end(), row.granularity) != kPartitions.end();
-        const bool accounted =
-            std::any_of(kUnspelledPartitions.begin(), kUnspelledPartitions.end(),
-                        [granularity = row.granularity](const Unspelled& unspelled) {
-                            return unspelled.partition == granularity;
-                        });
-
-        Require(spelled || accounted,
-                "every published partition is an arm this file writes or a row it accounts for");
-
-        Require(!(spelled && accounted),
-                "no published partition is both an arm this file writes and an accounted row");
+        Require(std::find(kPartitions.begin(), kPartitions.end(), row.granularity) !=
+                    kPartitions.end(),
+                "every published partition is an arm this file writes");
     }
 }
 
@@ -769,8 +604,6 @@ Census RunClass(std::size_t classIndex, const std::vector<Cell>& grid,
     const std::string prefix = std::string(kClasses[classIndex].name) + " ";
 
     Rule& bound = NewRule(prefix + kClasses[classIndex].entry + " (values above the bound)");
-    Rule& spellings =
-        NewRule(prefix + "rung honoured (named value vs the same cell at compile time)");
 
     for (const FitRoute route : kRoutes)
     {
@@ -780,67 +613,27 @@ Census RunClass(std::size_t classIndex, const std::vector<Cell>& grid,
             {
                 for (const FitGranularity partition : kPartitions)
                 {
-                    // What the book serves here: every rung of the enumeration the library
-                    // answers a figure for, plus every rung outside it that the library serves and
-                    // no arm here can spell. The two are counted apart - only one has a name.
-                    std::size_t servedHere = 0;
+                    // What the book serves here: the figure the library answers for this
+                    // combination, at this class's own precision. A combination it answers no
+                    // figure for is one this file has no arm for, and it is counted nowhere rather
+                    // than swept against a figure that is not its own.
+                    const boys::AccuracyFigure figure = boys::BoysAccuracyGuaranteed(
+                        kClasses[classIndex].lane, route, scheme, pack, partition);
 
-                    for (int raw = 0; raw <= kMaxTierProbe; ++raw)
+                    if (!figure.available)
                     {
-                        const auto tier = static_cast<AccuracyTier>(raw);
-
-                        if (boys::BoysAccuracyGuaranteed(kClasses[classIndex].lane, route, scheme,
-                                                         pack, partition, tier)
-                                .available)
-                        {
-                            ++servedHere;
-                        }
+                        continue;
                     }
 
-                    if (servedHere > 0)
-                    {
-                        ++census.servedCombinations;
+                    // Every combination the book serves is one of the arms this file writes: the
+                    // axes are the enumerations the table check above held, and the arms are their
+                    // product. One accuracy is one cell of the option space, so a served
+                    // combination is one served cell.
+                    ++census.servedCombinations;
+                    ++census.servedCells;
 
-                        // Every combination the book serves is one of the arms this file writes:
-                        // the axes are the enumerations the table check above held, and the arms
-                        // are their product.
-                        ++census.namedCombinations;
-                    }
-
-                    census.servedCells += servedHere;
-
-                    std::vector<double> referenceRung;
-
-                    for (const AccuracyTier tier : kTiers)
-                    {
-                        const boys::AccuracyFigure figure = boys::BoysAccuracyGuaranteed(
-                            kClasses[classIndex].lane, route, scheme, pack, partition, tier);
-
-                        if (!figure.available)
-                        {
-                            continue;
-                        }
-
-                        ++census.namedCells;
-
-                        const SweepResult result = SweepCell(classIndex, bound, spellings, route,
-                                                             scheme, pack, partition, tier, grid,
-                                                             args);
-
-                        if (tier == AccuracyTier::kReference)
-                        {
-                            referenceRung = result.values;
-                        } else if (!referenceRung.empty())
-                        {
-                            for (std::size_t i = 0; i < result.values.size(); ++i)
-                            {
-                                if (result.values[i] != referenceRung[i])
-                                {
-                                    ++census.discriminating;
-                                }
-                            }
-                        }
-                    }
+                    SweepCell(
+                        classIndex, census, bound, route, scheme, pack, partition, grid, args);
                 }
             }
         }
@@ -874,9 +667,9 @@ int main(int argc, char** argv) {
 
     const std::vector<double> args = SweepArgs(grid);
 
-    std::printf("boys consumer option space: %zu grid cells, %zu arguments swept, %zu rungs, "
+    std::printf("boys consumer option space: %zu grid cells, %zu arguments swept, "
                 "%zu combinations per class\n",
-                grid.size(), args.size(), kTiers.size(),
+                grid.size(), args.size(),
                 kRoutes.size() * kSchemes.size() * kAxes.size() * kPartitions.size());
 
     std::array<Census, 4> censuses{};
@@ -908,38 +701,11 @@ int main(int argc, char** argv) {
                     census.namedCells);
     }
 
-    // The partitions the counts above do not cover, named with the reason, so that "every cell the
-    // book serves is named" is not read as a claim about cells this file writes no arm for; a row
-    // neither counted above nor listed here failed the table check rather than being dropped.
-    std::printf("\npartitions this file writes no arm for, and why:\n");
-
-    for (const Unspelled& unspelled : kUnspelledPartitions)
-    {
-        for (const boys::FitGranularityInfo& row : boys::BoysFitGranularities())
-        {
-            if (row.granularity == unspelled.partition)
-            {
-                std::printf("  %-8s %s\n", row.name, unspelled.why);
-            }
-        }
-    }
-
     std::printf("\nrules:\n");
     PrintRules();
 
     std::printf("\nvalues judged %zu, skipped below the half lanes' floor %zu\n", gJudged,
                 gSkipped);
-    std::printf("bit-for-bit: %zu comparisons, %zu held, over cells where the rung moved the "
-                "values: ",
-                gCompared, gHeld);
-    std::size_t discriminating = 0;
-
-    for (const Census& census : censuses)
-    {
-        discriminating += census.discriminating;
-    }
-
-    std::printf("%zu\n", discriminating);
 
     std::size_t servedCombinations = 0;
     std::size_t namedCombinations = 0;

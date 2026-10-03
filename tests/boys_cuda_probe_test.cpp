@@ -6,16 +6,13 @@
 // and pooled over every round, a pass the canary flagged used rather than
 // dropped, a canary no pass read told apart from a silent one, every name taken
 // from a clock rather than off the library's tables, and a class being one
-// precision, one accuracy rung and one question shape.
+// precision and one question shape.
 //
 // ATieNamesEveryRivalAndTheBandItFellIn is the exception: it hunts a tie through
 // the refinement stage and takes tens of minutes on a real card.
 
 #include "boys/boys_cuda_probe.hpp"
 
-// The lane's own rung table (kDeviceRungs), which a report's classes are keyed on,
-// and the entries whose rung axis is part of it rather than the whole of it.
-#include "boys/boys_cuda.hpp"
 #include "boys/boys_cuda_options.hpp"
 
 #include <algorithm>
@@ -176,8 +173,6 @@ TEST(DeviceProbe, ACanaryThatDidNotRunIsNotAQuietCanary) {
 
     DeviceProbeClass clause;
     clause.precision = "fp64";
-    clause.rung = boys::kBoysFullAccuracyMultiplier;
-    clause.rungName = "1";
     clause.question = "all-orders";
     clause.asked = "every order";
     clause.note = "note";
@@ -196,9 +191,8 @@ TEST(DeviceProbe, ACanaryThatDidNotRunIsNotAQuietCanary) {
 /// Every figure rests on every pooled round, and the reference entry's own ratio to
 /// itself is exactly one with no drift - the one value in the table known
 /// independently of the card, which pins the ratios as formed per round and not across
-/// rounds. The anchor is per rung: a row's cost is its own rung's block scaled by a
-/// within-rung ratio, while the report's \c referenceNsPerArgument carries the
-/// full-accuracy block alone.
+/// rounds. Every row's cost is the report's one anchor scaled by that row's ratio to
+/// it, which is why the anchor is carried on the row and not once for the table.
 TEST(DeviceProbe, AFigureIsAWithinRoundRatioOverEveryPooledRound) {
     DeviceProbeOptions options = Small();
     options.canarySpreadAlarm = 1.0e9;
@@ -234,8 +228,7 @@ TEST(DeviceProbe, AFigureIsAWithinRoundRatioOverEveryPooledRound) {
         EXPECT_GE(measurement.spread, 1.0) << measurement.name;
 
         // The two columns cannot come from different statistics: the reported cost is this
-        // row's own anchor scaled by its ratio to it. The report's referenceNsPerArgument is
-        // the full-accuracy rung's block; a row of another rung is scaled by its own.
+        // row's own anchor scaled by its ratio to it.
         EXPECT_NEAR(measurement.nsPerArgument,
                     measurement.referenceNsPerArgument * measurement.ratioToReference,
                     1e-9 * std::max(1.0, measurement.referenceNsPerArgument)) << measurement.name;
@@ -256,7 +249,7 @@ TEST(DeviceProbe, AFigureIsAWithinRoundRatioOverEveryPooledRound) {
 
         sawReference = true;
         // The reference against itself: one in every round by construction, so every
-        // quantile is one and the drift is zero, at every rung.
+        // quantile is one and the drift is zero.
         EXPECT_DOUBLE_EQ(measurement.ratioToReference, 1.0);
         EXPECT_DOUBLE_EQ(measurement.ratioLo, 1.0);
         EXPECT_DOUBLE_EQ(measurement.ratioHi, 1.0);
@@ -264,12 +257,9 @@ TEST(DeviceProbe, AFigureIsAWithinRoundRatioOverEveryPooledRound) {
         EXPECT_DOUBLE_EQ(measurement.nsPerArgument, measurement.referenceNsPerArgument);
         EXPECT_LE(measurement.nsPerArgumentPeak, measurement.nsPerArgument + 1e-12);
 
-        // The report's one anchor is this entry's figure at the full-accuracy rung; every
-        // other row is scaled by its own rung's anchor, which is why the anchor is carried
-        // on the row and not once for the table.
-        if (measurement.rung == boys::kDeviceRungs.front()) {
-            EXPECT_DOUBLE_EQ(measurement.referenceNsPerArgument, report.referenceNsPerArgument);
-        }
+        // The report's one anchor is this entry's own figure, and every row carries it:
+        // the anchor is carried on the row and not once for the table.
+        EXPECT_DOUBLE_EQ(measurement.referenceNsPerArgument, report.referenceNsPerArgument);
     }
 
     EXPECT_TRUE(sawReference);
@@ -316,21 +306,20 @@ TEST(DeviceProbe, AShortRunNamesAnEntryAndSaysTheBandWasNeverFormed) {
             // No shape is reported as an ordering: its band was never formed.
             EXPECT_NE(ranking.defaultHow, DeviceProbeDefaultHow::kOrdered) << ranking.question;
 
-            // This shape's rows at this rung: a count without the rung reads one row as twelve.
+            // This shape's own rows: a row of another precision or question is no member
+            // of this class.
             std::size_t read = 0;
             bool namedIsRead = false;
 
             for (const DeviceProbeMeasurement& measurement : report.measurements) {
                 if (!measurement.measured || !(measurement.nsPerArgument > 0.0) ||
                     measurement.precision != clause.precision ||
-                    measurement.rung != clause.rung ||
                     measurement.question != ranking.question) {
                     continue;
                 }
 
                 ++read;
-                namedIsRead = namedIsRead || (measurement.name == ranking.recommended &&
-                                              measurement.rung == clause.rung);
+                namedIsRead = namedIsRead || measurement.name == ranking.recommended;
             }
 
             if (read == 0) {
@@ -392,8 +381,8 @@ TEST(DeviceProbe, AShapeItsRoundsCouldNotOrderIsNamedByTheRefinementStage) {
             const DeviceProbeRanking& ranking = clause.ranking;
             EXPECT_FALSE(ranking.asked.empty());
 
-            // This class is one precision at one rung for one question shape: a count taken
-            // without the rung would make a class of one row look like a class of twelve.
+            // This class is one precision and one question shape: a row outside that key
+            // is no member of it.
             //
             // Three counts over its rows. A row has *measured* when its rounds produced a
             // reading; it carries a *figure* when the run has a cost to print beside it; it
@@ -406,7 +395,6 @@ TEST(DeviceProbe, AShapeItsRoundsCouldNotOrderIsNamedByTheRefinementStage) {
 
             for (const DeviceProbeMeasurement& measurement : report.measurements) {
                 if (!measurement.measured || measurement.precision != clause.precision ||
-                    measurement.rung != clause.rung ||
                     measurement.question != ranking.question) {
                     continue;
                 }
@@ -481,8 +469,7 @@ TEST(DeviceProbe, AShapeItsRoundsCouldNotOrderIsNamedByTheRefinementStage) {
             const DeviceProbeMeasurement* namedRow = nullptr;
 
             for (const DeviceProbeMeasurement& measurement : report.measurements) {
-                if (measurement.name == ranking.recommended &&
-                    measurement.rung == clause.rung) {
+                if (measurement.name == ranking.recommended) {
                     namedRow = &measurement;
                 }
             }
@@ -492,7 +479,6 @@ TEST(DeviceProbe, AShapeItsRoundsCouldNotOrderIsNamedByTheRefinementStage) {
             for (const DeviceProbeMeasurement& measurement : report.measurements) {
                 if (!measurement.measured || !(measurement.nsPerArgument > 0.0) ||
                     measurement.precision != clause.precision ||
-                    measurement.rung != clause.rung ||
                     measurement.question != ranking.question ||
                     !measurement.subtractionResolved ||
                     (measurement.repetitionChecked && !measurement.repetitionAgrees)) {
@@ -572,8 +558,7 @@ TEST(DeviceProbe, ATieNamesEveryRivalAndTheBandItFellIn) {
             const DeviceProbeMeasurement* named = nullptr;
 
             for (const DeviceProbeMeasurement& measurement : report.measurements) {
-                if (measurement.name == ranking.recommended &&
-                    measurement.rung == clause.rung) {
+                if (measurement.name == ranking.recommended) {
                     named = &measurement;
                 }
             }
@@ -583,7 +568,6 @@ TEST(DeviceProbe, ATieNamesEveryRivalAndTheBandItFellIn) {
             for (const DeviceProbeMeasurement& measurement : report.measurements) {
                 if (!measurement.measured || !(measurement.nsPerArgument > 0.0) ||
                     measurement.precision != clause.precision ||
-                    measurement.rung != clause.rung ||
                     measurement.question != ranking.question ||
                     !measurement.subtractionResolved ||
                     (measurement.repetitionChecked && !measurement.repetitionAgrees)) {
@@ -712,8 +696,7 @@ TEST(DeviceProbe, EveryNameTheReportCarriesWasTimed) {
             bool measured = false;
 
             for (const DeviceProbeMeasurement& measurement : report.measurements) {
-                if (measurement.name == ranking.recommended && measurement.rung == clause.rung &&
-                    measurement.measured &&
+                if (measurement.name == ranking.recommended && measurement.measured &&
                     measurement.precision == clause.precision &&
                     measurement.question == ranking.question) {
                     measured = true;
@@ -804,9 +787,9 @@ TEST(DeviceProbe, TheReportCarriesTheProtocolItWasTakenUnder) {
     }
 }
 
-/// A class is one precision, one accuracy rung and one question shape: no entry is ever
-/// placed against one of another key, which is the rule the ranking is read under.
-TEST(DeviceProbe, AClassIsOnePrecisionOneRungAndOneShape) {
+/// A class is one precision and one question shape: no entry is ever placed against one
+/// of another key, which is the rule the ranking is read under.
+TEST(DeviceProbe, AClassIsOnePrecisionAndOneShape) {
     DeviceProbeOptions options = Small();
     options.canarySpreadAlarm = 1.0e9;
 
@@ -819,24 +802,15 @@ TEST(DeviceProbe, AClassIsOnePrecisionOneRungAndOneShape) {
         const DeviceProbeClass& clause = report.classes[c];
 
         EXPECT_FALSE(clause.precision.empty());
-        EXPECT_FALSE(clause.rungName.empty());
         EXPECT_FALSE(clause.question.empty());
         EXPECT_FALSE(clause.asked.empty());
         EXPECT_FALSE(clause.note.empty());
 
-        // Every rung a class is keyed on is one the library serves; a class keyed on a rung
-        // no lane holds holds nothing, and the rung a default is read from has to be measured.
-        const auto rung =
-            std::find(boys::kDeviceRungs.begin(), boys::kDeviceRungs.end(), clause.rung);
-        EXPECT_NE(rung, boys::kDeviceRungs.end()) << clause.rungName;
-
-        // One class per key, so no two classes share all three members.
+        // One class per key, so no two classes share both members.
         for (std::size_t other = c + 1; other < report.classes.size(); ++other) {
             const bool sameKey = report.classes[other].precision == clause.precision &&
-                                 report.classes[other].rung == clause.rung &&
                                  report.classes[other].question == clause.question;
-            EXPECT_FALSE(sameKey) << clause.precision << " " << clause.rungName << " "
-                                  << clause.question;
+            EXPECT_FALSE(sameKey) << clause.precision << " " << clause.question;
         }
 
         const DeviceProbeRanking& ranking = clause.ranking;
@@ -849,7 +823,6 @@ TEST(DeviceProbe, AClassIsOnePrecisionOneRungAndOneShape) {
 
         for (const DeviceProbeMeasurement& measurement : report.measurements) {
             if (measurement.precision != clause.precision ||
-                measurement.rung != clause.rung ||
                 measurement.question != ranking.question) {
                 continue;
             }
@@ -863,22 +836,20 @@ TEST(DeviceProbe, AClassIsOnePrecisionOneRungAndOneShape) {
             const auto named =
                 std::find_if(report.measurements.begin(),
                              report.measurements.end(),
-                             [&ranking, &clause](const DeviceProbeMeasurement& measurement) {
-                                 return measurement.name == ranking.recommended &&
-                                        measurement.rung == clause.rung;
+                             [&ranking](const DeviceProbeMeasurement& measurement) {
+                                 return measurement.name == ranking.recommended;
                              });
 
             ASSERT_NE(named, report.measurements.end());
             EXPECT_EQ(named->precision, clause.precision);
-            EXPECT_EQ(named->rung, clause.rung);
             EXPECT_EQ(named->question, ranking.question);
         }
     }
 }
 
-/// A name is not a row: one entry is measured once at every rung the lane serves, so the
-/// table carries the same name many times and a class names the one at its own rung.
-TEST(DeviceProbe, ANameIsResolvedAtTheClassesOwnRung) {
+/// A name is one row: the table carries an entry once, and a class that names a winner
+/// names one row of its own class and no other.
+TEST(DeviceProbe, ANameIsOneRowAndAClassNamesOneOfItsOwn) {
     DeviceProbeOptions options = Small();
     options.canarySpreadAlarm = 1.0e9;
 
@@ -886,8 +857,9 @@ TEST(DeviceProbe, ANameIsResolvedAtTheClassesOwnRung) {
 
     ASSERT_EQ(report.status, DeviceProbeStatus::kSuccess);
 
-    // The sweep happened: a name appears once per rung the run took.
-    bool sawRepeatedName = false;
+    // A name is one row of the table: two rows of one name would leave a class's winner
+    // ambiguous between two readings of one entry.
+    ASSERT_FALSE(report.measurements.empty());
 
     for (const DeviceProbeMeasurement& measurement : report.measurements) {
         std::size_t occurrences = 0;
@@ -896,10 +868,8 @@ TEST(DeviceProbe, ANameIsResolvedAtTheClassesOwnRung) {
             occurrences += other.name == measurement.name ? 1u : 0u;
         }
 
-        sawRepeatedName = sawRepeatedName || occurrences > 1;
+        EXPECT_EQ(occurrences, 1u) << measurement.name;
     }
-
-    EXPECT_TRUE(sawRepeatedName);
 
     std::size_t namedRows = 0;
 
@@ -908,20 +878,21 @@ TEST(DeviceProbe, ANameIsResolvedAtTheClassesOwnRung) {
             continue;
         }
 
-        std::size_t atRung = 0;
+        std::size_t ofThisClass = 0;
 
         for (const DeviceProbeMeasurement& measurement : report.measurements) {
             if (measurement.name == clause.ranking.recommended &&
-                measurement.rung == clause.rung) {
-                ++atRung;
+                measurement.precision == clause.precision &&
+                measurement.question == clause.ranking.question) {
+                ++ofThisClass;
             }
         }
 
-        EXPECT_EQ(atRung, 1u) << clause.ranking.recommended << " at m = " << clause.rungName;
+        EXPECT_EQ(ofThisClass, 1u) << clause.ranking.recommended;
         ++namedRows;
     }
 
-    // A class that named a winner named a row of its own rung and no other; a run whose
+    // A class that named a winner named a row of its own class and no other; a run whose
     // every class refused still carries the rows the sweep measured.
     (void)namedRows;
 }
@@ -963,9 +934,8 @@ TEST(DeviceProbe, AVerdictNamesOnlyEntriesItMeasured) {
             const auto named =
                 std::find_if(report.measurements.begin(),
                              report.measurements.end(),
-                             [&ranking, &clause](const DeviceProbeMeasurement& measurement) {
-                                 return measurement.name == ranking.recommended &&
-                                        measurement.rung == clause.rung;
+                             [&ranking](const DeviceProbeMeasurement& measurement) {
+                                 return measurement.name == ranking.recommended;
                              });
 
             ASSERT_NE(named, report.measurements.end());
@@ -995,14 +965,13 @@ TEST(DeviceProbe, AShapeOfOneNamesItsOnlyEntry) {
     for (const DeviceProbeClass& clause : report.classes) {
         {
             const DeviceProbeRanking& ranking = clause.ranking;
-            // One precision at one rung for one question shape: counting without the rung would
-            // call a class of one row a class of twelve once more than one rung is measured.
+            // One precision and one question shape: a row outside that key is no member of
+            // this class.
             std::size_t rows = 0;
             std::size_t figureRows = 0;
 
             for (const DeviceProbeMeasurement& measurement : report.measurements) {
                 if (measurement.precision != clause.precision ||
-                    measurement.rung != clause.rung ||
                     measurement.question != ranking.question) {
                     continue;
                 }
@@ -1120,16 +1089,17 @@ TEST(DeviceProbe, AnAbsentDeviceIsAStatusAndNotACrash) {
     EXPECT_TRUE(report.measurements.empty());
 }
 
-/// The option space's rung axis, as a report carries it.
+/// The option space's rows, as a report carries them.
 ///
 /// The rows are the library's own and the text is rendered by the same function the
 /// driver prints, from a report whose measurement grid is the one the probe builds - a
-/// cell per (row, rung) this build serves, none measured - so the figures stated about
-/// the cells are those of a real run of this revision, without a card or a clock.
+/// place per row this build serves, none measured - so the figures stated about the
+/// space are those of a real run of this revision, without a card or a clock.
 ///
-/// It is a row that refuses eleven of the twelve rungs: the space once reported such a
-/// row as served, its reason naming the build seam rather than the rung.
-TEST(DeviceProbe, ARowStatesTheRungsItIsServedAtAndTheCellsAreCountedFromTheRows) {
+/// A row this build does not serve is refused with the library's own reason and owed:
+/// the space states what it has and why, rather than counting a row it cannot run among
+/// the rows it did not measure.
+TEST(DeviceProbe, ARowIsServedOrRefusedAndTheSpaceIsCountedFromTheRows) {
     const std::span<const boys::DeviceOptionInfo> space = boys::BoysDeviceOptions();
 
     ASSERT_FALSE(space.empty());
@@ -1138,8 +1108,8 @@ TEST(DeviceProbe, ARowStatesTheRungsItIsServedAtAndTheCellsAreCountedFromTheRows
     report.status = DeviceProbeStatus::kSuccess;
     report.device.name = "a device";
 
-    std::size_t refusedCells = 0;
-    std::size_t partialRows = 0;
+    std::size_t refusedRows = 0;
+    std::size_t servedRows = 0;
     std::size_t launchedRows = 0;
     std::size_t deviceRows = 0;
 
@@ -1147,104 +1117,60 @@ TEST(DeviceProbe, ARowStatesTheRungsItIsServedAtAndTheCellsAreCountedFromTheRows
     {
         (row.group == boys::DeviceOptionGroup::kLaunched ? launchedRows : deviceRows) += 1;
 
-        // Every bit a row sets is a rung of the lane: a mask wider than the axis
-        // would be a row claiming a rung the lane does not serve.
-        EXPECT_EQ(row.servedRungs & ~boys::kEveryDeviceRung, 0u) << row.name;
-
-        for (std::size_t i = 0; i < boys::kDeviceRungCount; ++i)
+        // A row this build does not serve carries the library's own reason and no other:
+        // the closure prints that reason rather than a sentence of its own invention.
+        if (!row.built)
         {
-            const bool stated = (row.servedRungs & (boys::DeviceRungMask{1} << i)) != 0;
-
-            // The row's mask is the library's own answer per rung, through one derivation.
-            EXPECT_EQ(stated, boys::DeviceEntryServedAtRung(row.entry, boys::kDeviceRungs[i]))
-                << row.name << " at m = " << boys::kDeviceRungs[i];
-            EXPECT_EQ(stated,
-                      (boys::DeviceServedRungMask(row.entry, row.built) &
-                       (boys::DeviceRungMask{1} << i)) != 0)
-                << row.name << " at m = " << boys::kDeviceRungs[i];
-
-            if (!stated)
-            {
-                ++refusedCells;
-                continue;
-            }
-
-            DeviceProbeMeasurement measurement;
-            measurement.name = row.name;
-            measurement.entry = row.entry;
-            measurement.rung = boys::kDeviceRungs[i];
-            report.measurements.push_back(measurement);
+            EXPECT_NE(row.refusedBecause, nullptr) << row.name;
+            ++refusedRows;
+            continue;
         }
 
-        if (row.servedRungs != boys::kEveryDeviceRung)
-        {
-            ++partialRows;
-        }
+        EXPECT_EQ(row.refusedBecause, nullptr) << row.name;
+        ++servedRows;
+
+        DeviceProbeMeasurement place;
+        place.name = row.name;
+        place.entry = row.entry;
+        report.measurements.push_back(place);
     }
-
-    // A build that does not serve a row serves it at no rung, whatever its entry's axis
-    // states: the mask folds the build seam in rather than leaving two columns to combine.
-    EXPECT_EQ(boys::DeviceServedRungMask(boys::DeviceEntry::kSingleF16, false), 0u);
-    EXPECT_EQ(boys::DeviceServedRungMask(boys::DeviceEntry::kSingleF16, true),
-              boys::kEveryDeviceRung);
 
     const std::string text = boys::FormatDeviceOptionProbe(report);
 
-    const std::size_t cells = boys::kDeviceRungCount * space.size();
-    const std::size_t servedCells = cells - refusedCells;
-    std::size_t unbuiltCells = 0;
-
     // Stated rather than left to be counted off the report: these are the figures the
     // appendix carries, and a reader checking a revision needs them printed.
-    std::printf("    space: %zu option(s) = %zu launched + %zu device-callable; %zu cell(s) at %zu "
-                "rung(s): %zu served, %zu refused, %zu row(s) holding part of the axis\n",
+    std::printf("    space: %zu option(s) = %zu launched + %zu device-callable; %zu served, "
+                "%zu refused by this build\n",
                 space.size(),
                 launchedRows,
                 deviceRows,
-                cells,
-                boys::kDeviceRungCount,
-                servedCells,
-                refusedCells,
-                partialRows);
+                servedRows,
+                refusedRows);
 
-    for (const boys::DeviceOptionInfo& row : space)
-    {
-        if (!row.built)
-        {
-            unbuiltCells += boys::kDeviceRungCount;
-        }
-    }
-
-    // The space's cells, served and refused, as the appendix states them, for coverage.
-    const std::string counted = std::to_string(boys::kDeviceRungCount) + " rung(s) the lane serves: " +
-                                std::to_string(cells) + " cell(s)";
-    EXPECT_NE(text.find(counted), std::string::npos) << text;
-
-    EXPECT_NE(text.find(", " + std::to_string(servedCells) + " this build\n  serves and " +
-                        std::to_string(refusedCells) + " it refuses"),
+    // The space's own count, as the appendix states it, for coverage.
+    EXPECT_NE(text.find("the space: " + std::to_string(space.size()) +
+                        " row(s) of this library's own option table"),
+              std::string::npos)
+        << text;
+    EXPECT_NE(text.find("one member per row: " + std::to_string(space.size()) + " member(s)"),
               std::string::npos)
         << text;
 
-    EXPECT_NE(text.find("and " + std::to_string(unbuiltCells) +
-                        " because the build does not serve the row at all"),
+    EXPECT_NE(text.find(std::to_string(refusedRows) +
+                        " refused with the library's own reason and owed"),
               std::string::npos)
         << text;
 
-    // Every cell the space serves is a cell of this run's grid, and none produced a figure.
-    EXPECT_NE(text.find("cells it serves, " + std::to_string(servedCells) +
-                        " produced no figure here"),
+    // Every row this build serves is a place of this run's grid, and none produced a figure.
+    EXPECT_NE(text.find(std::to_string(servedRows) +
+                        " offered and this run carried a place for, producing no figure"),
               std::string::npos)
         << text;
 
-    // The rows that hold part of the axis are named under the table with the rungs each
-    // holds: a figure below the whole says how many and not which, and which is what a
-    // caller placing the row needs. There are none at this revision, since every entry of
-    // the lane serves every rung: a row that started holding part of the axis again would
-    // print the block, and this fails at the count below before it reaches the text.
-    ASSERT_EQ(partialRows, 0u) << "a row holds part of the rung axis and this build serves no cut "
-                                  "for the rungs it lacks";
-
-    EXPECT_EQ(text.find("row(s) hold less than the whole of that axis"), std::string::npos) << text;
+    EXPECT_NE(text.find("the run's own grid: " + std::to_string(servedRows) +
+                        " place(s), against the " + std::to_string(servedRows)),
+              std::string::npos)
+        << text;
 }
 
 /// The report's own spelling of a precision and of a question, as a class of it carries
@@ -1280,11 +1206,10 @@ const char* QuestionSpelling(boys::DeviceOptionQuestion question) {
     return "unnamed";
 }
 
-/// A report whose measurement grid is the one the probe builds — a place per (row, rung)
-/// of a row this build serves, none of them measured, and one class per precision, rung
-/// and question those places fall into — so the closure can be counted, and the text
-/// rendered, without a card or a clock. \p servedCells comes back as the places the space
-/// itself serves, which is a place for every rung an entry answers at.
+/// A report whose measurement grid is the one the probe builds — a place per row this
+/// build serves, none of them measured, and one class per precision and question those
+/// places fall into — so the closure can be counted, and the text rendered, without a
+/// card or a clock. \p servedCells comes back as the places this build serves.
 DeviceProbeReport GriddedReport(std::size_t& servedCells) {
     DeviceProbeReport report;
     report.status = DeviceProbeStatus::kSuccess;
@@ -1296,31 +1221,22 @@ DeviceProbeReport GriddedReport(std::size_t& servedCells) {
             continue;
         }
 
-        for (std::size_t i = 0; i < boys::kDeviceRungCount; ++i) {
-            DeviceProbeMeasurement place;
-            place.name = row.name;
-            place.entry = row.entry;
-            place.rung = boys::kDeviceRungs[i];
-            place.precision = PrecisionSpelling(row.precision);
-            place.question = QuestionSpelling(row.question);
-            report.measurements.push_back(place);
-
-            // The run's grid carries a place for every rung of a row it serves; the
-            // space counts a member at a rung the entry answers at. The two differ for a
-            // row holding part of the axis, and only there.
-            if (boys::DeviceEntryServedAtRung(row.entry, boys::kDeviceRungs[i])) {
-                ++servedCells;
-            }
-        }
+        DeviceProbeMeasurement place;
+        place.name = row.name;
+        place.entry = row.entry;
+        place.precision = PrecisionSpelling(row.precision);
+        place.question = QuestionSpelling(row.question);
+        report.measurements.push_back(place);
+        ++servedCells;
     }
 
-    // One class per precision, rung and question the places above fall into, which is what
-    // the probe's own conclusion loop builds over its grid.
+    // One class per precision and question the places above fall into, which is what the
+    // probe's own conclusion loop builds over its grid.
     for (const DeviceProbeMeasurement& place : report.measurements) {
         bool held = false;
 
         for (const DeviceProbeClass& clause : report.classes) {
-            held = held || (clause.precision == place.precision && clause.rung == place.rung &&
+            held = held || (clause.precision == place.precision &&
                             clause.question == place.question);
         }
 
@@ -1330,8 +1246,6 @@ DeviceProbeReport GriddedReport(std::size_t& servedCells) {
 
         DeviceProbeClass fresh;
         fresh.precision = place.precision;
-        fresh.rung = place.rung;
-        fresh.rungName = place.rungName;
         fresh.question = place.question;
         report.classes.push_back(fresh);
     }
@@ -1340,8 +1254,8 @@ DeviceProbeReport GriddedReport(std::size_t& servedCells) {
 }
 
 /// The closure is the space counted, and every member of it is in exactly one state: the
-/// total is the library's own two tables multiplied, the states add up to it, and the
-/// verdict the report's last line prints is that arithmetic's.
+/// total is the library's own option table, the states add up to it, and the verdict the
+/// report's last line prints is that arithmetic's.
 TEST(DeviceProbe, TheClosurePutsEveryMemberOfTheSpaceInOneState) {
     std::size_t servedCells = 0;
     DeviceProbeReport report = GriddedReport(servedCells);
@@ -1349,18 +1263,17 @@ TEST(DeviceProbe, TheClosurePutsEveryMemberOfTheSpaceInOneState) {
     ASSERT_GT(servedCells, 0u);
 
     const std::size_t rows = boys::BoysDeviceOptions().size();
-    const std::size_t total = rows * boys::kDeviceRungCount;
+    const std::size_t total = rows;
 
     // The grid is the run's own, and the total is the library's: the two are read from
     // different sources and the closure demands they agree.
     const boys::DeviceOptionClosure offered = boys::DeviceOptionSpaceClosure(report);
     EXPECT_EQ(offered.rows, rows);
-    EXPECT_EQ(offered.rungs, boys::kDeviceRungCount);
     EXPECT_EQ(offered.total, total);
     EXPECT_EQ(offered.states, total);
     EXPECT_EQ(offered.measured, 0u);
     EXPECT_EQ(offered.offeredNoFigure, servedCells);
-    EXPECT_EQ(offered.refusedAndOwed + offered.refusedAtRung, total - servedCells);
+    EXPECT_EQ(offered.refusedAndOwed, total - servedCells);
     EXPECT_EQ(offered.notRunnable, 0u);
     EXPECT_EQ(offered.notAsked, 0u);
     EXPECT_EQ(offered.unaccounted, 0u);
@@ -1371,7 +1284,6 @@ TEST(DeviceProbe, TheClosurePutsEveryMemberOfTheSpaceInOneState) {
     // carries, and the grid's places are what makes a class, not the figures in them.
     EXPECT_EQ(offered.classesAdmitted, offered.classesPrinted);
     EXPECT_GT(offered.classesAdmitted, 0u);
-    EXPECT_EQ(offered.classesAdmitted % boys::kDeviceRungCount, 0u);
     EXPECT_TRUE(offered.closed);
 
     // A place the run offered and no round of which produced a figure is not a failure of
@@ -1394,26 +1306,20 @@ TEST(DeviceProbe, TheClosurePutsEveryMemberOfTheSpaceInOneState) {
                       " member(s) of the option space are measured"),
               std::string::npos);
 
-    // A rung this card would not hold takes its members out of the measured count and
-    // into its own, and the arithmetic still closes: the members of that rung were
-    // presented to the device and it would not hold the tables they need.
-    report.refusedRungMultipliers.push_back(boys::kDeviceRungs[3]);
-    report.refusedRungs.push_back("m = 64: the device would not hold this rung's degree tables");
-
-    std::size_t ofThatRung = 0;
-
-    for (const DeviceProbeMeasurement& place : report.measurements) {
-        ofThatRung += place.rung == boys::kDeviceRungs[3] ? 1u : 0u;
-    }
+    // A card that would not hold the degree tables takes every row this build serves out
+    // of the measured count and into its own, and the arithmetic still closes: the rows
+    // were presented to the device and it would not hold the tables they read.
+    report.tablesResident = false;
+    report.refusedTables = "the device would not hold the degree tables";
 
     const boys::DeviceOptionClosure held = boys::DeviceOptionSpaceClosure(report);
-    EXPECT_EQ(held.notRunnable, ofThatRung);
-    EXPECT_EQ(held.measured, servedCells - ofThatRung);
+    EXPECT_EQ(held.notRunnable, servedCells);
+    EXPECT_EQ(held.measured, 0u);
     EXPECT_EQ(held.unaccounted, 0u);
     EXPECT_TRUE(held.closed);
 
     const std::string heldText = boys::FormatDeviceOptionProbe(report);
-    EXPECT_NE(heldText.find(std::to_string(ofThatRung) + " not runnable on this card"),
+    EXPECT_NE(heldText.find(std::to_string(servedCells) + " not runnable on this card"),
               std::string::npos)
         << heldText;
     EXPECT_NE(heldText.find("the verdict: PASS"), std::string::npos) << heldText;
@@ -1511,58 +1417,14 @@ TEST(DeviceProbe, ARequestForOneEntryIsClosedWithTheRestOfTheSpaceStated) {
     EXPECT_EQ(closure.measured, placesOfTheNamedRow);
     EXPECT_EQ(closure.gridPlaces, placesOfTheNamedRow);
     EXPECT_EQ(closure.gridPlacesOwed, placesOfTheNamedRow);
-    EXPECT_EQ(closure.classesAdmitted, boys::kDeviceRungCount);
-    EXPECT_EQ(closure.classesPrinted, boys::kDeviceRungCount);
+    EXPECT_EQ(closure.classesAdmitted, 1u);
+    EXPECT_EQ(closure.classesPrinted, 1u);
     EXPECT_EQ(closure.unaccounted, 0u);
     EXPECT_TRUE(closure.closed);
 
     const std::string text = boys::FormatDeviceOptionProbe(report);
     EXPECT_NE(text.find("not asked for by this run's request"), std::string::npos) << text;
     EXPECT_NE(text.find("the verdict: PASS"), std::string::npos) << text;
-}
-
-/// The book's rung axis is whole, and this is where a reader meets that statement.
-///
-/// A row of the space states the rungs it is served at and the entry it names answers at
-/// exactly those: a rung it does not hold is refused by the entry's own test, \c
-/// kInvalidArgument for a launched row, before anything is made resident.
-///
-/// Every stored table the lane carries has a cut per rung and this revision derives,
-/// uploads and reads every one of them (the float lane's narrow pieces in both bases and
-/// its rational pairs on both partitions, beside the double lane's own); the grid's table
-/// has no cut at all, so no built row holds part of the axis and a row appearing with part
-/// of it again is the finding this test exists to make.
-///
-/// The per-rung tie is the sibling test's (\c
-/// ARowStatesTheRungsItIsServedAtAndTheCellsAreCountedFromTheRows, which asks \c
-/// DeviceEntryServedAtRung for every enumerator at every rung); the entries' own answers
-/// at a rung are the device accuracy gate's. Nothing of the card is used here.
-TEST(DeviceProbe, EveryCellTheReportRefusesIsRefusedByTheEntryThatOwnsTheRow) {
-    std::vector<std::string> partial;
-
-    for (const boys::DeviceOptionInfo& row : boys::BoysDeviceOptions())
-    {
-        if (!row.built || row.servedRungs == boys::kEveryDeviceRung)
-        {
-            continue;
-        }
-
-        partial.emplace_back(row.name);
-    }
-
-    for (const std::string& name : partial)
-    {
-        ADD_FAILURE() << name << " holds part of the rung axis, and no row of the device book "
-                                 "does at this revision: every cut it would read is derived, "
-                                 "uploaded and read here";
-    }
-
-    EXPECT_TRUE(partial.empty());
-
-    // Stated, not counted off the space: the figure a passing assertion cannot give a reader.
-    std::printf("    %zu row(s) of the device book hold part of the rung axis, out of %zu\n",
-                partial.size(),
-                boys::BoysDeviceOptions().size());
 }
 
 } // namespace

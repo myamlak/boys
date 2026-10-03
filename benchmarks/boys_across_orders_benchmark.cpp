@@ -218,13 +218,11 @@ void NarrowLane(boys::EvalScheme scheme, int nmax, double x, double* out) noexce
     if (scheme == boys::EvalScheme::kHorner)
     {
         boys::detail::BoysAllOrdersPacked<boys::EvalScheme::kHorner,
-                                          1.0,
                                           boys::FitRoute::kChebyshev,
                                           boys::FitGranularity::kNarrow>(nmax, x, out);
     } else
     {
         boys::detail::BoysAllOrdersPacked<boys::EvalScheme::kSplitClenshaw,
-                                          1.0,
                                           boys::FitRoute::kChebyshev,
                                           boys::FitGranularity::kNarrow>(nmax, x, out);
     }
@@ -238,16 +236,14 @@ void NarrowPerOrderFits(boys::EvalScheme scheme, int nmax, double x, double* out
     {
         if (scheme == boys::EvalScheme::kHorner)
         {
-            out[l] = boys::BoysSingle<1.0,
-                                      boys::EvalPolicy<boys::FitRoute::kChebyshev,
+            out[l] = boys::BoysSingle<boys::EvalPolicy<boys::FitRoute::kChebyshev,
                                                        boys::EvalScheme::kHorner,
                                                        boys::BoysBudget::kFloat,
                                                        boys::PackAxis::kArguments,
                                                        boys::FitGranularity::kNarrow>>(l, x);
         } else
         {
-            out[l] = boys::BoysSingle<1.0,
-                                      boys::EvalPolicy<boys::FitRoute::kChebyshev,
+            out[l] = boys::BoysSingle<boys::EvalPolicy<boys::FitRoute::kChebyshev,
                                                        boys::EvalScheme::kSplitClenshaw,
                                                        boys::BoysBudget::kFloat,
                                                        boys::PackAxis::kArguments,
@@ -357,7 +353,7 @@ double Run(const Config& config) {
 
                 for (std::size_t l = 0; l < orders; ++l)
                 {
-                    boys::detail::BoysRegionASimd<boys::kBoysFullAccuracyMultiplier>(
+                    boys::detail::BoysRegionASimd(
                         static_cast<int>(l), duplicate, lanes, 4);
                     out[l] = lanes[0];
                 }
@@ -483,7 +479,7 @@ double Run(const Config& config) {
                                           boys::BoysBudget::kFloat,
                                           boys::PackAxis::kOrders>;
 
-                    boys::BoysAllOrdersF32<1.0, OrdersAxis>(nmax, x32, fout.data());
+                    boys::BoysAllOrdersF32<OrdersAxis>(nmax, x32, fout.data());
                 } else
                 {
                     boys::detail::BoysAllOrdersF32Simd(boys::detail::OrdersScheme::kSplitClenshaw,
@@ -637,7 +633,7 @@ int main(int argc, char** argv) {
                                       boys::BoysBudget::kFloat,
                                       boys::PackAxis::kOrders>;
 
-                boys::BoysAllOrdersF32<1.0, OrdersAxis>(config.nmax, x32, mine.data());
+                boys::BoysAllOrdersF32<OrdersAxis>(config.nmax, x32, mine.data());
             } else
             {
                 boys::detail::BoysAllOrdersF32Simd(boys::detail::OrdersScheme::kSplitClenshaw,

@@ -121,13 +121,14 @@ enum class BoysDeviceLane : int {
 /// entry of the CUDA lane names the current device: a caller that runs on more than
 /// one device fills one handle per device.
 ///
-/// The full-accuracy degree tables are the handle's own fields, resident from the
-/// first upload. The relaxed ones are a second set, resident for one multiplier at a
-/// time — the one the last BoysCuda::DeviceTables call named. An entry reads that
-/// rung through \c relaxedRung rather than a value copied into the handle, so filling
-/// a handle for a rung retires the rung the previous one named, and an entry asked
-/// for a retired rung says so instead of reading tables that have since been
-/// overwritten. A call that names m = 1 retires nothing.
+/// The degree tables are the handle's own fields, resident from the first upload.
+/// The accuracy axis has one member — m = 1 is the whole of it — so there is no
+/// second, relaxed set beside them and no call that makes one resident. The fields
+/// named for a relaxed reading (\c relaxedRung, \c relaxedDegA, \c relaxedDegB and
+/// the partitions' \c *Relaxed* tables) are filled with null: no entry of this
+/// revision reads one, and they are declared beside the tables they once described
+/// rather than removed, because the slot order BoysCuda::DeviceTables fills is the
+/// order a caller's build already reads.
 ///
 /// \ingroup boys
 struct BoysDeviceTables {
@@ -190,7 +191,7 @@ struct BoysDeviceTables {
     /// same domain, whose pieces are cut per order. Order \c n's pieces are
     /// entries \c n and \c n+1 of \c narrowPieceStart, so a piece index is the
     /// partition's own and the argument alone does not name one. Region A's
-    /// pieces carry the fit of their order's F_n directly, as the shipped
+    /// pieces carry the fit of their order's F_n directly, as the coarsest
     /// partition's do; region B's seed is piecewise, which is why it carries its
     /// own edge table rather than the two edges of one fit.
     ///
@@ -237,7 +238,7 @@ struct BoysDeviceTables {
     const float* narrowBCoeffs32 = nullptr;     ///< region B's seed, Chebyshev
     const float* narrowBMonoCoeffs32 = nullptr; ///< region B's seed, monomial
 
-    /// The rational route's tables on the shipped partition, double lane: the
+    /// The rational route's tables on the coarsest partition, double lane: the
     /// same pieces as the piece tables above, with each piece stored as a
     /// numerator and a denominator summed apart and divided once.
     ///
@@ -304,7 +305,7 @@ struct BoysDeviceTables {
     /// The same table for the monomial form of the same seed, which is what a
     /// Horner call at that rung reads.
     const int* narrowMonoRelaxedDegB32 = nullptr;
-    /// [2] the float lane's fit route on the shipped partition: its region-B
+    /// [2] the float lane's fit route on the coarsest partition: its region-B
     /// pair's degrees at the resident rung, the numerator's first. The route's
     /// float pair is that lane's own fit, so the double lane's pair above
     /// (ratRelaxedDegB) is a cut of other coefficients and is not read here.
@@ -342,7 +343,7 @@ struct BoysDeviceTables {
     /// pair per interval, read by the route's own entries
     /// (BoysDeviceAllOrdersF64UniformRat and its float counterpart).
     ///
-    /// The stored form is the lane's own rational storage, the one the shipped and
+    /// The stored form is the lane's own rational storage, the one the coarsest and
     /// narrow rational routes already read (DeviceRatSum): the numerator's
     /// coefficients ascending, then the denominator's q_1..q_k with q_0 held at 1.
     /// The interval's block is interval-major at the interval's own stored count,

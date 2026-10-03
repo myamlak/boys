@@ -1,8 +1,8 @@
 // The device half of the consumer check on the CUDA lane's default. The lane's
-// f32 single entries take two selection axes and no others — the accuracy
-// multiplier and the region-B exponential — both template parameters with
-// defaults, so a caller that has chosen the precision and the format's f32
-// writes one call and gets the lane's shipped arithmetic.
+// f32 single entries take one selection axis and no other — the region-B
+// exponential — a template parameter with a default, so a caller that has chosen
+// the precision and the format's f32 writes one call and gets the lane's shipped
+// arithmetic.
 //
 // The check is two translation units because the lane is: the batch entry
 // BoysCuda::SingleF32 is declared in <boys/boys_cuda.hpp>, a host header, and
@@ -93,12 +93,11 @@ __global__ void DeviceEntryKernel(__grid_constant__ const boys::BoysDeviceTables
     float right = 0.0f;
     float spared = 0.0f;
 
-    const boys::BoysDeviceStatus a =
-        boys::BoysDeviceSingleF32(tables, n[i], x, &left, boys::kBoysFullAccuracyMultiplier);
-    const boys::BoysDeviceStatus b = boys::BoysDeviceSingleF32<boys::kDefaultRegionBExp>(
-        tables, n[i], x, &right, boys::kBoysFullAccuracyMultiplier);
-    const boys::BoysDeviceStatus c = boys::BoysDeviceSingleF32<boys::RegionBExp::kFast>(
-        tables, n[i], x, &spared, boys::kBoysFullAccuracyMultiplier);
+    const boys::BoysDeviceStatus a = boys::BoysDeviceSingleF32(tables, n[i], x, &left);
+    const boys::BoysDeviceStatus b =
+        boys::BoysDeviceSingleF32<boys::kDefaultRegionBExp>(tables, n[i], x, &right);
+    const boys::BoysDeviceStatus c =
+        boys::BoysDeviceSingleF32<boys::RegionBExp::kFast>(tables, n[i], x, &spared);
 
     status[i] = (a == b && a == c) ? static_cast<int>(a) : -1;
     plain[i] = left;

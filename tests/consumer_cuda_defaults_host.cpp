@@ -24,15 +24,10 @@ static_assert(boys::kDefaultRegionBExp == boys::RegionBExp::kAccurate);
 
 template <auto Left, auto Right> constexpr bool SameCall = (Left == Right);
 
-static_assert(SameCall<&boys::BoysCuda::SingleF32<boys::kBoysFullAccuracyMultiplier>,
-                       &boys::BoysCuda::SingleF32<boys::kBoysFullAccuracyMultiplier,
-                                                  boys::kDefaultRegionBExp>>);
-static_assert(SameCall<&boys::BoysCuda::DeviceTables<>,
-                       &boys::BoysCuda::DeviceTables<boys::kBoysFullAccuracyMultiplier>>);
-static_assert(
-    !SameCall<
-        &boys::BoysCuda::SingleF32<boys::kBoysFullAccuracyMultiplier, boys::kDefaultRegionBExp>,
-        &boys::BoysCuda::SingleF32<boys::kBoysFullAccuracyMultiplier, boys::RegionBExp::kFast>>);
+static_assert(SameCall<&boys::BoysCuda::SingleF32<>, &boys::BoysCuda::SingleF32<
+                                                            boys::kDefaultRegionBExp>>);
+static_assert(!SameCall<&boys::BoysCuda::SingleF32<boys::kDefaultRegionBExp>,
+                        &boys::BoysCuda::SingleF32<boys::RegionBExp::kFast>>);
 
 // C linkage, so a drift between the two sides is a link error rather than a
 // silent second reading. Defined in tests/consumer_cuda_defaults.cu.
@@ -167,8 +162,7 @@ int main() {
     // --- the batch entry, both spellings --------------------------------------
     const boys::BoysStatus plain = boys::BoysCuda::SingleF32<>(n, xs, outPlain, kCount, nullptr);
     const boys::BoysStatus named =
-        boys::BoysCuda::SingleF32<boys::kBoysFullAccuracyMultiplier, boys::kDefaultRegionBExp>(
-            n, xs, outNamed, kCount, nullptr);
+        boys::BoysCuda::SingleF32<boys::kDefaultRegionBExp>(n, xs, outNamed, kCount, nullptr);
 
     if (plain != boys::BoysStatus::kSuccess || named != boys::BoysStatus::kSuccess)
     {
@@ -188,8 +182,7 @@ int main() {
 
     // --- the default beside the lane's other exponential ----------------------
     const boys::BoysStatus fast =
-        boys::BoysCuda::SingleF32<boys::kBoysFullAccuracyMultiplier, boys::RegionBExp::kFast>(
-            n, xs, outFast, kCount, nullptr);
+        boys::BoysCuda::SingleF32<boys::RegionBExp::kFast>(n, xs, outFast, kCount, nullptr);
 
     if (fast != boys::BoysStatus::kSuccess)
     {

@@ -19,13 +19,13 @@
 // The replaced-build branch of tests/boys_backend_test.cpp reads all five axes this file
 // names, so it refuses a replacement only when every one of them is the shipped value:
 //
-//   constexpr bool kShippedDefaultsInForce =
+//   constexpr bool kCoarsestDefaultsInForce =
 //       boys::kDefaultFitRoute == boys::FitRoute::kChebyshev &&
 //       boys::kDefaultEvalScheme == boys::EvalScheme::kHorner &&
 //       boys::kDefaultPackAxis == boys::PackAxis::kArguments &&
 //       boys::kDefaultDivisionForm == boys::DivisionForm::kRefinedReciprocal &&
 //       boys::kDefaultFitGranularity == boys::FitGranularity::kNarrow;
-//   static_assert(!kShippedDefaultsInForce, "the defaults header in force names all five
+//   static_assert(!kCoarsestDefaultsInForce, "the defaults header in force names all five
 //   shipped values, so this build has chosen nothing: point BOYS_BUILD_DEFAULTS at a header
 //   that moves at least one axis, or unset it to build the shipped configuration");
 //

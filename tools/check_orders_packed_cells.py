@@ -21,8 +21,24 @@ lists, so nothing could report it.
 This script compares them. It reads both files, expands the macros the two
 lists are written with, extracts the specializations of BoysAllOrdersPacked and
 BoysAllOrdersF32Packed from each, and reports every cell that is in one list and
-not the other. Exit status is 0 when the lists agree and 1 when they do not, so
-it can be run as a check beside the other tools/*.py --check steps.
+not the other. A cell is the whole declaration and not the template arguments
+alone: the parameter count and the exception specification are part of the
+symbol, so two lists that agree on <args> and disagree on either are reported
+apart rather than as agreement. Exit status is 0 when the lists agree and 1 when
+they do not, so it can be run as a check beside the other tools/*.py --check
+steps.
+
+A specialization the script reads is one the compiler must see for the check to
+mean anything, so a specialization written inside a conditional is an error
+naming the directive, never a line read as live. The one conditional it does
+evaluate is src/boys_orders_simd.cpp's architecture guard: the file is split at
+its markers, and each of the pieces that come out - the two branches, and the
+text outside the guard that a build carries either way - is read with no
+conditional left in it. That was the hole this check left open: a cell moved
+inside a conditional - by a guard a build turns off, or by an `#if 0` left in
+while the option it served was being removed - was still counted as instantiated
+here while the compiler emitted no symbol for it, which is the same undefined
+reference at a consumer's link with this check reporting agreement.
 
 What it compares is the two lists **to each other**, never to the option space
 the library publishes, and the difference matters when a check is believed: a
@@ -35,12 +51,13 @@ and neither stands in for the other.
 
 The expansion is a small processor for the subset of the preprocessor these two
 files use - object-like and function-like `#define`, `#undef`, and invocation -
-and it is deliberately not a preprocessor: `#if`/`#else` are not evaluated, and
-the file's own guard is handled by requiring the branch markers this file is
+and it is deliberately not a preprocessor: no conditional is evaluated, the
+file's own guard is handled by requiring the branch markers this file is
 written with and comparing the two branches' lists against each other, so a
 branch that stops agreeing with its sibling is a failure here rather than a
-union that hides it. A construct the script cannot read is an error naming the
-construct, never a quiet pass.
+union that hides it, and a conditional the script was not taught is refused
+rather than read as live. A construct the script cannot read is an error naming
+the construct, never a quiet pass.
 """
 
 from __future__ import annotations
@@ -220,39 +237,145 @@ DECL = re.compile(
     r"(?P<entry>BoysAllOrdersPacked|BoysAllOrdersF32Packed)\s*<(?P<args>[^<>]*)>"
 )
 
+# One directive each: the three that open a conditional, the two that continue
+# one, and the one that closes it. A line is a directive when it starts with one
+# of these and nothing else is read from it; the nesting is what the cells below
+# are read against.
+COND_OPEN = re.compile(r"#\s*(?:if|ifdef|ifndef)\b")
+COND_MID = re.compile(r"#\s*(?:elif|else)\b")
+COND_CLOSE = re.compile(r"#\s*endif\b")
 
-def cells(text: str, where: str) -> dict[str, dict[str, set[str]]]:
-    """The specializations each entry is declared or defined at, by entry name."""
+
+def conditional_contexts(text: str, where: str) -> list[str | None]:
+    """The innermost conditional directive each line sits inside, or None.
+
+    The expansion above does not evaluate conditionals, so a specialization
+    written inside one would otherwise be read as if the compiler saw it - the
+    one way this script can report agreement over a cell a build does not carry.
+    A directive that closes nothing, or one that is never closed, is an error:
+    the file is then not the shape this script reads, and guessing where its
+    conditionals end is the quiet pass both callers below exist to avoid.
+    """
+    contexts: list[str | None] = []
+    stack: list[str] = []
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if COND_OPEN.match(stripped) or COND_MID.match(stripped):
+            if COND_OPEN.match(stripped):
+                stack.append(stripped)
+            elif not stack:
+                raise CheckError(f"{where}: {stripped!r} continues no conditional")
+            else:
+                stack[-1] = stripped
+            contexts.append(None)
+            continue
+        if COND_CLOSE.match(stripped):
+            if not stack:
+                raise CheckError(f"{where}: {stripped!r} closes no conditional")
+            stack.pop()
+            contexts.append(None)
+            continue
+        contexts.append(stack[-1] if stack else None)
+    if stack:
+        raise CheckError(f"{where}: {stack[-1]!r} is never closed")
+    return contexts
+
+
+def signature(text: str, start: int, where: str) -> tuple[int, bool]:
+    """The parameter count and the exception specification after `start`.
+
+    The specialization's symbol is its template arguments and its function type
+    together, so a list that agrees on the arguments and disagrees on either of
+    these declares a symbol the other list does not define. `start` is the index
+    just past the specialization's `>`; the parameter list is the next thing
+    there, and a declaration without one is an error rather than a cell with no
+    signature. Parentheses nest - a pointer-to-function parameter is legal here -
+    so the list is scanned to its own closing parenthesis rather than matched
+    with a pattern.
+    """
+    while start < len(text) and text[start].isspace():
+        start += 1
+    if start >= len(text) or text[start] != "(":
+        raise CheckError(f"{where}: the specialization at offset {start} has no parameter list")
+    depth = 0
+    end = -1
+    for k in range(start, len(text)):
+        if text[k] == "(":
+            depth += 1
+        elif text[k] == ")":
+            depth -= 1
+            if depth == 0:
+                end = k
+                break
+    if end < 0:
+        raise CheckError(f"{where}: an unclosed parameter list at offset {start}")
+    inside = text[start + 1 : end]
+    arity = 0 if not inside.strip() else 1 + inside.count(",")
+    return arity, text[end + 1 :].lstrip().startswith("noexcept")
+
+
+def cells(
+    text: str, where: str, required: bool = True
+) -> dict[str, dict[str, set[str]]]:
+    """The specializations each entry is declared or defined at, by entry name.
+
+    A cell is the whole declaration: the arguments, the parameter count and the
+    exception specification. A specialization under any conditional is refused,
+    because the compiler sees it only when that conditional holds and a list of
+    what the compiler sees is the only one worth comparing; the caller that has a
+    guard to evaluate hands in the pieces the split produced, which carry no
+    directive of their own. `required` is for the pieces: an entry absent from one
+    piece is not an error there, and the caller that assembles them says which
+    entries must be present at all (see main).
+    """
     found: dict[str, dict[str, set[str]]] = {
         entry: {"extern": set(), "definition": set()} for entry in ENTRIES
     }
+    contexts = conditional_contexts(text, where)
     for match in DECL.finditer(text):
+        line = text.count("\n", 0, match.start())
+        context = contexts[line]
+        if context is not None:
+            raise CheckError(
+                f"{where}: a specialization of {match.group('entry')} sits under {context!r}, a "
+                f"conditional this script does not evaluate - the build may not see it, and "
+                f"reading it as live is how a cell the library does not hold passes this check. "
+                f"Evaluate that conditional here, or write the specialization outside it."
+            )
         kind = "extern" if match.group("extern") else "definition"
         args = re.sub(r"\s+", " ", match.group("args")).strip(" ,")
         args = ", ".join(part.strip() for part in args.split(","))
-        found[match.group("entry")][kind].add(args)
+        arity, noex = signature(text, match.end(), where)
+        cell = f"{args} | {arity} parameter(s){' noexcept' if noex else ''}"
+        found[match.group("entry")][kind].add(cell)
     for entry in ENTRIES:
-        if not found[entry]["extern"] and not found[entry]["definition"]:
+        if required and not found[entry]["extern"] and not found[entry]["definition"]:
             raise CheckError(f"{where}: no specialization of {entry} was found at all")
     return found
 
 
-def branches(text: str, where: str) -> list[tuple[str, str]]:
+def branches(text: str, where: str) -> tuple[str, list[tuple[str, str]]]:
     """Split the source at its own architecture guard, for the two-lists check.
 
     The markers name the guard in a trailing comment, so this runs on the text
-    as it stands in the file and not on the comment-stripped copy.
+    as it stands in the file and not on the comment-stripped copy. What comes
+    back is the text outside the guard - before it and after it, the one region
+    a build carries either way - and the two branch texts. Splitting here is what
+    lets every conditional check below run with nothing allowed: the guard's own
+    directive is consumed by the split, so a conditional still enclosing a
+    specialization inside a piece is one this script does not evaluate, whether
+    it nests inside a branch or wraps the guard.
     """
     if GUARD_OPEN not in text:
         raise CheckError(f"{where}: the branch marker {GUARD_OPEN!r} is gone")
-    _, rest = text.split(GUARD_OPEN, 1)
+    before, rest = text.split(GUARD_OPEN, 1)
     if GUARD_ELSE not in rest:
         raise CheckError(f"{where}: the branch marker {GUARD_ELSE!r} is gone")
     x86, rest = rest.split(GUARD_ELSE, 1)
     if GUARD_CLOSE not in rest:
         raise CheckError(f"{where}: the branch marker {GUARD_CLOSE!r} is gone")
-    scalar, _ = rest.split(GUARD_CLOSE, 1)
-    return [("BOYS_SIMD_X86=1", x86), ("BOYS_SIMD_X86=0", scalar)]
+    scalar, after = rest.split(GUARD_CLOSE, 1)
+    return before + after, [("BOYS_SIMD_X86=1", x86), ("BOYS_SIMD_X86=0", scalar)]
 
 
 def report(header_cells, source_cells) -> int:
@@ -290,18 +413,42 @@ def main() -> int:
             strip_comments(expand(HEADER.read_text(encoding="utf-8"), HEADER.name)), HEADER.name
         )
         expanded = expand(SOURCE.read_text(encoding="utf-8"), SOURCE.name)
-        source = cells(strip_comments(expanded), SOURCE.name)
+        # The source's own architecture guard is the one conditional this script
+        # evaluates, and the split is what evaluates it: the guard's directive is
+        # consumed here, and every conditional left inside a piece is refused by
+        # cells() rather than read as live. The text outside the guard is read as
+        # a piece of its own - a build carries it either way - and the two
+        # branches as the two lists a build can take.
+        outside, chunks = branches(expanded, SOURCE.name)
+        pieces = [("outside the guard", outside)] + chunks
+        carried: list[dict[str, dict[str, set[str]]]] = []
+        source = {entry: {"extern": set(), "definition": set()} for entry in ENTRIES}
+        for label, piece in pieces:
+            written = cells(strip_comments(piece), f"{SOURCE.name} ({label})", required=False)
+            carried.append(written)
+            for entry in ENTRIES:
+                for kind in ("extern", "definition"):
+                    source[entry][kind] |= written[entry][kind]
+        for entry in ENTRIES:
+            if not source[entry]["extern"] and not source[entry]["definition"]:
+                raise CheckError(f"{SOURCE.name}: no specialization of {entry} was found at all")
 
         # The two architecture branches instantiate the same cells on this
         # revision, so the sets compared above are the file's whichever branch a
         # build takes. A revision where they stop agreeing is one this check has
-        # to be told about rather than one whose union it reports as agreement.
-        for label, chunk in branches(expanded, SOURCE.name):
-            written = cells(strip_comments(chunk), f"{SOURCE.name} ({label})")
+        # to be told about rather than one whose union it reports as agreement,
+        # and a branch that instantiates nothing is not an agreement either: a
+        # build taking it would find none of that entry's symbols, which is the
+        # same undefined reference this check exists to catch. Both are compared
+        # against what a build taking that branch would have - the branch and the
+        # text outside the guard - so a cell written outside the guard, which
+        # every build has, is in both sides of the comparison.
+        outside_cells = carried[0]
+        for (label, _), written in zip(chunks, carried[1:]):
             for entry in ENTRIES:
-                a = written[entry]["definition"]
+                a = written[entry]["definition"] | outside_cells[entry]["definition"]
                 b = source[entry]["definition"]
-                if a and a != b:
+                if a != b:
                     once = sorted(a - b)
                     twice = sorted(b - a)
                     raise CheckError(

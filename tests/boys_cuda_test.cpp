@@ -16,12 +16,6 @@
 #include "boys/f16.hpp"
 #endif
 
-// The lane's residency comparison (src/boys_cuda.cu), reached here to assert its
-// rows directly: the device in hand and the multiplier asked for, then the record
-// of what was last uploaded and where - so no second card and no CUDA call.
-extern "C" int BoysCudaEffTablesResidentOn(
-    int device, double m, int recordedDevice, double recordedM);
-
 namespace {
 
 constexpr std::size_t kCount = 1u << 16;
@@ -217,7 +211,7 @@ TEST(BoysCudaTest, SingleF32ExpOptionIsCertifiedAtTheRegionBBoundary) {
 
         const auto status =
             option == boys::RegionBExp::kFast
-                ? boys::BoysCuda::SingleF32<1.0, boys::RegionBExp::kFast>(
+                ? boys::BoysCuda::SingleF32<boys::RegionBExp::kFast>(
                       deviceN, deviceX, deviceOut, 1, nullptr)
                 : boys::BoysCuda::SingleF32(deviceN, deviceX, deviceOut, 1, nullptr);
         EXPECT_EQ(status, boys::BoysStatus::kSuccess);
@@ -513,57 +507,6 @@ TEST(BoysCudaTest, AllNF64MatchesCpuAllN) {
     EXPECT_LE(worst, kDoubleTolerance)
         << "i=" << worstAt % count << " k=" << worstAt / count << " x=" << hostX[worstAt % count];
     std::printf("AllNF64 GPU vs CPU BoysAllN: worst |diff| = %.3e\n", worst);
-}
-
-TEST(BoysCudaTest, AllNF64RelaxedTierKeepsTheBound) {
-    // The multiplier is a template argument, so the tier is an instantiation: m = 10
-    // relaxes the budget to m * 5.5e-14 and uploads its own degree tables on first
-    // use. The reference is the full-accuracy CPU path (own error a tenth of this).
-    int deviceCount = 0;
-    cudaGetDeviceCount(&deviceCount);
-
-    if (deviceCount == 0)
-    {
-        GTEST_SKIP() << "no CUDA device";
-    }
-
-    constexpr double kRelaxed = 10.0;
-    const std::vector<double> hostX = SortedArguments();
-    const std::size_t count = hostX.size();
-    AllNDeviceSetup setup(hostX);
-    ASSERT_EQ(boys::BoysCuda::InitializeTables(), boys::BoysStatus::kSuccess);
-
-    ASSERT_EQ(boys::BoysCuda::AllNF64<kRelaxed>(
-                  boys::kMaxBoysOrder, setup.x, setup.outF64, count, nullptr),
-              boys::BoysStatus::kSuccess);
-    cudaDeviceSynchronize();
-
-    std::vector<double> hostOut(count * (boys::kMaxBoysOrder + 1));
-    cudaMemcpy(
-        hostOut.data(), setup.outF64, hostOut.size() * sizeof(double), cudaMemcpyDeviceToHost);
-
-    std::vector<double> reference(hostOut.size());
-    boys::BoysAllN(
-        boys::kMaxBoysOrder, hostX.data(), reference.data(), count, boys::BoysSortedArgs{});
-    double worst = 0.0;
-    std::size_t worstAt = 0;
-
-    for (std::size_t j = 0; j < hostOut.size(); ++j)
-    {
-        const double error = std::abs(hostOut[j] - reference[j]);
-
-        if (error > worst)
-        {
-            worst = error;
-            worstAt = j;
-        }
-    }
-
-    EXPECT_LE(worst, kRelaxed * kDoubleTolerance)
-        << "i=" << worstAt % count << " k=" << worstAt / count << " x=" << hostX[worstAt % count];
-    std::printf("AllNF64 m=10 vs CPU full accuracy: worst |diff| = %.3e (budget %.3e)\n",
-                worst,
-                kRelaxed * kDoubleTolerance);
 }
 
 TEST(BoysCudaTest, AllNF32MatchesCpuAllOrders) {
@@ -931,14 +874,6 @@ TEST(BoysCudaTest, CountZeroIsANoOpInEveryEntry) {
     EXPECT_EQ(boys::BoysCuda::AllOrdersF16(&n, &y, out16, 0, nullptr), boys::BoysStatus::kSuccess);
     EXPECT_EQ(boys::BoysCuda::AllNF16(1, &y, out16, 0, nullptr), boys::BoysStatus::kSuccess);
 
-    // The relaxed multipliers reach the no-op through their own instantiation
-    // and their own launch symbol, so each family is pinned there too.
-    EXPECT_EQ(boys::BoysCuda::SingleF64<10.0>(&n, &x, out64, 0, nullptr),
-              boys::BoysStatus::kSuccess);
-    EXPECT_EQ(boys::BoysCuda::AllOrdersF32<10.0>(&n, &x, out32, 0, nullptr),
-              boys::BoysStatus::kSuccess);
-    EXPECT_EQ(boys::BoysCuda::AllNF16<10.0>(1, &y, out16, 0, nullptr), boys::BoysStatus::kSuccess);
-
     for (int family = 0; family < 3; ++family)
     {
         std::vector<unsigned char> hostOut(bytes[family], 0);
@@ -992,17 +927,3 @@ TEST(BoysCudaTest, AllNChecksTheOrder) {
     ASSERT_EQ(boys::BoysCuda::AllNF16(-1, &y, &y, 0, nullptr), boys::BoysStatus::kInvalidArgument);
 }
 #endif // BoysFp16
-
-TEST(BoysCudaTest, EffTableResidencyNamesTheDevice) {
-    // The effective-degree tables are per-device copies of __constant__ symbols, so
-    // a record compared on the multiplier alone would answer for a device that has
-    // never held them, and a device no upload has reached reads zeroed tables. The
-    // deciding row is the second: the same multiplier on another device.
-    EXPECT_EQ(BoysCudaEffTablesResidentOn(0, 2.0, 0, 2.0), 1);
-    EXPECT_EQ(BoysCudaEffTablesResidentOn(1, 2.0, 0, 2.0), 0);
-    EXPECT_EQ(BoysCudaEffTablesResidentOn(0, 2.0, 1, 2.0), 0);
-    EXPECT_EQ(BoysCudaEffTablesResidentOn(0, 10.0, 0, 2.0), 0);
-
-    // Before any upload the record names no device and no multiplier.
-    EXPECT_EQ(BoysCudaEffTablesResidentOn(0, 2.0, -1, -1.0), 0);
-}

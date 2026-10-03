@@ -26,71 +26,28 @@
 
 namespace boys {
 
-template double BoysSingle<kBoysFullAccuracyMultiplier>(int n, double x) noexcept;
-template void BoysAllOrders<kBoysFullAccuracyMultiplier>(int nmax, double x, double* out) noexcept;
-template void BoysFixedN<kBoysFullAccuracyMultiplier>(
+template double BoysSingle<>(int n, double x) noexcept;
+template void BoysAllOrders<>(int nmax, double x, double* out) noexcept;
+template void BoysFixedN<>(
     int n, const double* x, double* out, std::size_t count, std::size_t stride) noexcept;
-template void BoysAllN<kBoysFullAccuracyMultiplier>(
+template void BoysAllN<>(
     int nmax, const double* x, double* out, std::size_t count, std::size_t* workspace) noexcept;
-template void BoysAllN<kBoysFullAccuracyMultiplier>(
+template void BoysAllN<>(
     int nmax, const double* x, double* out, std::size_t count, BoysSortedArgs) noexcept;
-template void BoysAllNAtOrders<kBoysFullAccuracyMultiplier>(
+template void BoysAllNAtOrders<>(
     const int* n, const double* x, double* out, std::size_t count) noexcept;
-template float BoysSingleF32<kBoysFullAccuracyMultiplier, EvalPolicy<>>(int n, float x) noexcept;
-template void BoysAllOrdersF32<kBoysFullAccuracyMultiplier, EvalPolicy<>>(
+template float BoysSingleF32<EvalPolicy<>>(int n, float x) noexcept;
+template void BoysAllOrdersF32<EvalPolicy<>>(
     int nmax, float x, float* out) noexcept;
-template void BoysAllNF32<kBoysFullAccuracyMultiplier, EvalPolicy<>>(
+template void BoysAllNF32<EvalPolicy<>>(
     int nmax, const float* x, float* out, std::size_t count) noexcept;
 
 #if BoysFp16
-template F16 BoysSingleF16<kBoysFullAccuracyMultiplier>(int n, F16 x) noexcept;
-template void BoysAllOrdersF16<kBoysFullAccuracyMultiplier>(int nmax, F16 x, F16* out) noexcept;
-template Bf16 BoysSingleBf16<kBoysFullAccuracyMultiplier>(int n, Bf16 x) noexcept;
-template void BoysAllOrdersBf16<kBoysFullAccuracyMultiplier>(int nmax, Bf16 x, Bf16* out) noexcept;
+template F16 BoysSingleF16<>(int n, F16 x) noexcept;
+template void BoysAllOrdersF16<>(int nmax, F16 x, F16* out) noexcept;
+template Bf16 BoysSingleBf16<>(int n, Bf16 x) noexcept;
+template void BoysAllOrdersBf16<>(int nmax, Bf16 x, Bf16* out) noexcept;
 #endif // BoysFp16
-
-// The run-time tiers. Each relaxed rung is instantiated here so the dispatch
-// below is a branch over code the library already holds, not a further
-// instantiation per call site.
-template void BoysAllOrders<64.0>(int nmax, double x, double* out) noexcept;
-template void BoysAllOrders<256.0>(int nmax, double x, double* out) noexcept;
-template void BoysAllOrders<1024.0>(int nmax, double x, double* out) noexcept;
-template void BoysAllOrders<4096.0>(int nmax, double x, double* out) noexcept;
-template void BoysAllOrders<16384.0>(int nmax, double x, double* out) noexcept;
-template void BoysAllOrders<65536.0>(int nmax, double x, double* out) noexcept;
-
-namespace {
-
-// The m = 1 batch bound in regions A and B, the base the contract scales by m.
-constexpr double kRelaxedBatchBound = 5.5e-14;
-
-// The region C bound: the asymptotic branch has no coefficients to truncate,
-// so it is the same at every m.
-constexpr double kAsymptoticBound = 5.5e-14;
-
-} // namespace
-
-TierCoverage QueryTier(AccuracyTier tier, AccuracyRegion region, double tolerance) noexcept {
-    TierCoverage coverage;
-
-    coverage.reachable = (region == AccuracyRegion::kC)
-                             ? kAsymptoticBound
-                             : AccuracyMultiplier(tier) * kRelaxedBatchBound;
-    coverage.meets = coverage.reachable <= tolerance;
-    coverage.limiting = (region == AccuracyRegion::kA)   ? AccuracyComponent::kRegionASeed
-                        : (region == AccuracyRegion::kB) ? AccuracyComponent::kRegionBFit
-                                                         : AccuracyComponent::kRegionCAsymptotic;
-
-    return coverage;
-}
-
-TierCoverage QueryTier(AccuracyTier tier, double x, double tolerance) noexcept {
-    const AccuracyRegion region = x < detail::kX0   ? AccuracyRegion::kA
-                                  : x < detail::kX1 ? AccuracyRegion::kB
-                                                    : AccuracyRegion::kC;
-
-    return QueryTier(tier, region, tolerance);
-}
 
 namespace {
 
@@ -103,225 +60,6 @@ using SelectorPolicy =
     EvalPolicy<kRoute, kScheme, BoysBudget::kFloat, kDefaultPackAxis, kDefaultFitGranularity>;
 
 } // namespace
-
-void BoysAllOrdersAtTier(AccuracyTier tier, int nmax, double x, double* out) noexcept {
-    BoysAllOrdersAtTier<EvalPolicy<>>(tier, nmax, x, out);
-}
-
-namespace {
-
-// The rung a tier names, in one place for every dispatch of this file that
-// reads a tier, and 0.0 for an enumerator no arm below names.
-//
-// It exists beside those dispatches for the reason DevicePartitionName exists
-// beside the device rows: a switch whose last arm is `default` answers an
-// enumerator it does not name with the value that arm holds, and the answer
-// here - the reference rung - is a plausible one that nothing distinguishes
-// from a true answer. A tier added to the enumeration and not named below would
-// therefore be served as the slowest arithmetic on the surface, silently. The
-// switch has no default arm and names the enumeration's sentinel, so such an
-// enumerator falls to the zero, and the check at the end of this block is what
-// turns that into a failed build.
-constexpr double TierRung(AccuracyTier tier) noexcept {
-    switch (tier)
-    {
-    case AccuracyTier::kReference:
-    case AccuracyTier::kRelaxed64:
-    case AccuracyTier::kRelaxed256:
-    case AccuracyTier::kRelaxed1024:
-    case AccuracyTier::kRelaxed4096:
-    case AccuracyTier::kRelaxed16384:
-    case AccuracyTier::kRelaxed65536:
-        // The multiplier is the library's own statement of the rung (boys.hpp),
-        // not a second copy of the numbers written here.
-        return AccuracyMultiplier(tier);
-
-    // The sentinel one past the last rung, and not a rung a caller can name. It
-    // is named rather than left to a default arm: a default would swallow the
-    // next tier as quietly as it swallows this one.
-    case AccuracyTier::kCount:
-        break;
-    }
-
-    // A tier no arm above names. No rung is zero, so a zero is not a rung a
-    // dispatch may take: it is the statement that nothing above named one.
-    return 0.0;
-}
-
-// The rung a tier names as the multiplier an entry takes as its template
-// argument: naming a tier here that TierRung does not name is the compile error
-// below rather than an entry instantiated at a rung nobody asked for.
-template <AccuracyTier kTier>
-struct Rung
-{
-    static constexpr double kValue = TierRung(kTier);
-    static_assert(kValue >= 1.0,
-                  "an enumerator of AccuracyTier names no rung: name it in TierRung (boys.cpp) "
-                  "beside the tier dispatch of this file, and read the rung it names at every "
-                  "entry that dispatches on a tier");
-};
-
-// Whether TierRung names a rung for every enumerator of AccuracyTier, read over
-// the enumeration's own count. An enumerator added to AccuracyTier and not
-// named there falls through that switch's last return, this sees the zero, and
-// the assertion below stops the build - the omission is the error, rather than
-// a default arm quietly answering the slowest arithmetic.
-constexpr bool TierRungsAreNamed() noexcept {
-    for (int i = 0; i < static_cast<int>(AccuracyTier::kCount); ++i)
-    {
-        if (TierRung(static_cast<AccuracyTier>(i)) < 1.0)
-        {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-static_assert(TierRungsAreNamed(),
-              "an enumerator of AccuracyTier names no rung: name it in TierRung (boys.cpp) as "
-              "the rung it asks for, in every file that dispatches on a tier");
-
-// The single-order tier dispatch, the same shape as the batch one above: the
-// policy is the compile-time choice and the tier stays the switch. It exists
-// because the shape is a different call - an engine that reads one order at a
-// time cannot reach a rung through an entry that computes every order - and not
-// because the rung means anything different here.
-template <EvalPolicyLike Policy>
-double SingleAtTier(AccuracyTier tier, int n, double x) noexcept {
-    switch (tier)
-    {
-    case AccuracyTier::kReference:
-        return BoysSingle<Rung<AccuracyTier::kReference>::kValue, Policy>(n, x);
-    case AccuracyTier::kRelaxed64:
-        return BoysSingle<Rung<AccuracyTier::kRelaxed64>::kValue, Policy>(n, x);
-    case AccuracyTier::kRelaxed256:
-        return BoysSingle<Rung<AccuracyTier::kRelaxed256>::kValue, Policy>(n, x);
-    case AccuracyTier::kRelaxed1024:
-        return BoysSingle<Rung<AccuracyTier::kRelaxed1024>::kValue, Policy>(n, x);
-    case AccuracyTier::kRelaxed4096:
-        return BoysSingle<Rung<AccuracyTier::kRelaxed4096>::kValue, Policy>(n, x);
-    case AccuracyTier::kRelaxed16384:
-        return BoysSingle<Rung<AccuracyTier::kRelaxed16384>::kValue, Policy>(n, x);
-    case AccuracyTier::kRelaxed65536:
-        return BoysSingle<Rung<AccuracyTier::kRelaxed65536>::kValue, Policy>(n, x);
-
-    // The sentinel one past the last rung, and not a rung a caller can name.
-    case AccuracyTier::kCount:
-        break;
-    }
-
-    // What the sentinel reaches, and the same fallback the batch entry takes for
-    // it and for the same reason: a tier this build does not serve is evaluated
-    // at the reference rung, which is never coarser than the tier named. Every
-    // enumerator of AccuracyTier is an arm above - held by the compiler's
-    // -Wswitch where that warning fires, and by tools/check_enum_arms_covered.py
-    // where it does not, and not by TierRungsAreNamed, which reads the map
-    // rather than these arms - so a caller's own tier never arrives here.
-    return BoysSingle<kBoysFullAccuracyMultiplier, Policy>(n, x);
-}
-
-} // namespace
-
-double BoysSingleAtTier(AccuracyTier tier, int n, double x) noexcept {
-    return SingleAtTier<EvalPolicy<>>(tier, n, x);
-}
-
-double BoysSingleAtTier(AccuracyTier tier, EvalScheme scheme, int n, double x) noexcept {
-    // Each arm names the scheme the caller named: the other arm is the other
-    // enumerator and not the default, so a move of the default cannot hand a
-    // caller naming one scheme the summation of the other.
-    if (scheme == EvalScheme::kHorner)
-    {
-        return SingleAtTier<SelectorPolicy<kDefaultFitRoute, EvalScheme::kHorner>>(tier, n, x);
-    }
-
-    return SingleAtTier<SelectorPolicy<kDefaultFitRoute, EvalScheme::kSplitClenshaw>>(tier, n, x);
-}
-
-double BoysSingleAtTier(AccuracyTier tier, FitRoute route, int n, double x) noexcept {
-    // The default scheme, the axis this overload leaves unnamed. It must answer
-    // as BoysAllOrdersWithRoute(route, ...) does - the same shape, a route and
-    // no scheme - because the route table's row is the figure for both.
-    return BoysSingleAtTier(tier, route, kDefaultEvalScheme, n, x);
-}
-
-double BoysSingleAtTier(
-    AccuracyTier tier, FitRoute route, EvalScheme scheme, int n, double x) noexcept {
-    if (route == FitRoute::kRationalMinimax)
-    {
-        if (scheme == EvalScheme::kHorner)
-        {
-            return SingleAtTier<SelectorPolicy<FitRoute::kRationalMinimax, EvalScheme::kHorner>>(
-                tier, n, x);
-        }
-
-        return SingleAtTier<SelectorPolicy<FitRoute::kRationalMinimax, EvalScheme::kSplitClenshaw>>(
-            tier, n, x);
-    }
-
-    // The Chebyshev arms name this route rather than reaching the entry that
-    // answers the default route: the caller named a route here.
-    if (scheme == EvalScheme::kHorner)
-    {
-        return SingleAtTier<SelectorPolicy<FitRoute::kChebyshev, EvalScheme::kHorner>>(tier, n, x);
-    }
-
-    return SingleAtTier<SelectorPolicy<FitRoute::kChebyshev, EvalScheme::kSplitClenshaw>>(tier, n, x);
-}
-
-void BoysAllOrdersAtTier(
-    AccuracyTier tier, EvalScheme scheme, int nmax, double x, double* out) noexcept {
-    // Each arm names the scheme the caller named; see BoysSingleAtTier.
-    if (scheme == EvalScheme::kHorner)
-    {
-        BoysAllOrdersAtTier<SelectorPolicy<kDefaultFitRoute, EvalScheme::kHorner>>(tier, nmax, x, out);
-        return;
-    }
-
-    BoysAllOrdersAtTier<SelectorPolicy<kDefaultFitRoute, EvalScheme::kSplitClenshaw>>(tier, nmax, x, out);
-}
-
-void BoysAllOrdersAtTier(
-    AccuracyTier tier, FitRoute route, int nmax, double x, double* out) noexcept {
-    // The default scheme; see BoysSingleAtTier.
-    BoysAllOrdersAtTier(tier, route, kDefaultEvalScheme, nmax, x, out);
-}
-
-void BoysAllOrdersAtTier(AccuracyTier tier,
-                         FitRoute route,
-                         EvalScheme scheme,
-                         int nmax,
-                         double x,
-                         double* out) noexcept {
-    // The same shape as BoysAllOrdersWithRoute, one axis wider: the route and
-    // the scheme are compile-time choices and the tier is a run-time one, so the
-    // pair is the template argument and the tier stays the switch inside.
-    if (route == FitRoute::kRationalMinimax)
-    {
-        if (scheme == EvalScheme::kHorner)
-        {
-            BoysAllOrdersAtTier<SelectorPolicy<FitRoute::kRationalMinimax, EvalScheme::kHorner>>(
-                tier, nmax, x, out);
-            return;
-        }
-
-        BoysAllOrdersAtTier<SelectorPolicy<FitRoute::kRationalMinimax, EvalScheme::kSplitClenshaw>>(
-            tier, nmax, x, out);
-        return;
-    }
-
-    // The Chebyshev arms name this route rather than reaching the entry that
-    // answers the default route; see BoysSingleAtTier.
-    if (scheme == EvalScheme::kHorner)
-    {
-        BoysAllOrdersAtTier<SelectorPolicy<FitRoute::kChebyshev, EvalScheme::kHorner>>(tier, nmax, x, out);
-        return;
-    }
-
-    BoysAllOrdersAtTier<SelectorPolicy<FitRoute::kChebyshev, EvalScheme::kSplitClenshaw>>(
-        tier, nmax, x, out);
-}
 
 std::span<const FitRouteInfo> BoysFitRoutes() noexcept {
     // The rows are the generated header's own measured figures rather than
@@ -409,27 +147,23 @@ void BoysAllOrdersWithRoute(
     {
         if (scheme == EvalScheme::kHorner)
         {
-            BoysAllOrders<kBoysFullAccuracyMultiplier,
-                          SelectorPolicy<FitRoute::kRationalMinimax, EvalScheme::kHorner>>(
+            BoysAllOrders<SelectorPolicy<FitRoute::kRationalMinimax, EvalScheme::kHorner>>(
                 nmax, x, out);
             return;
         }
 
-        BoysAllOrders<kBoysFullAccuracyMultiplier,
-                      SelectorPolicy<FitRoute::kRationalMinimax, EvalScheme::kSplitClenshaw>>(nmax, x,
+        BoysAllOrders<SelectorPolicy<FitRoute::kRationalMinimax, EvalScheme::kSplitClenshaw>>(nmax, x,
                                                                                         out);
         return;
     }
 
     if (scheme == EvalScheme::kHorner)
     {
-        BoysAllOrders<kBoysFullAccuracyMultiplier,
-                      SelectorPolicy<FitRoute::kChebyshev, EvalScheme::kHorner>>(nmax, x, out);
+        BoysAllOrders<SelectorPolicy<FitRoute::kChebyshev, EvalScheme::kHorner>>(nmax, x, out);
         return;
     }
 
-    BoysAllOrders<kBoysFullAccuracyMultiplier,
-                  SelectorPolicy<FitRoute::kChebyshev, EvalScheme::kSplitClenshaw>>(nmax, x, out);
+    BoysAllOrders<SelectorPolicy<FitRoute::kChebyshev, EvalScheme::kSplitClenshaw>>(nmax, x, out);
 }
 
 // The evaluation-scheme report. Both tables are built once from the generated
@@ -507,7 +241,7 @@ float BoysSingleF32WithRoute(FitRoute route, int n, float x) noexcept {
         return detail::SingleOrderF32Body<detail::RationalFit32<>>(n, x);
     }
 
-    return BoysSingleF32<kBoysFullAccuracyMultiplier>(n, x);
+    return BoysSingleF32<>(n, x);
 }
 
 std::span<const EvalFitInfo> BoysEvalSchemeFits() noexcept {
@@ -608,7 +342,7 @@ const char* PackAxisName(PackAxis axis) noexcept {
 const char* GranularityName(FitGranularity granularity) noexcept {
     switch (granularity)
     {
-    case FitGranularity::kShipped:
+    case FitGranularity::kCoarsest:
         return "shipped";
     case FitGranularity::kNarrow:
         return "narrow";
@@ -668,8 +402,8 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
     // Every entry carries the double lane's tables; the single-precision lanes
     // read tables of their own - that engine's pieces, coefficients and rung
     // tables, cut for its own arithmetic and its own budget - so a row here
-    // describes the double lane and not them: which partitions, routes, axes and
-    // rungs that lane serves is stated by its own carriage where the call is
+    // describes the double lane and not them: which partitions, routes and axes
+    // that lane serves is stated by its own carriage where the call is
     // named. The uniform row's table is the double lane's own grid
     // (detail::kFlatCoeffs); the single-precision engine's grid
     // (detail::f32::kFlatCoeffsF32) is the device lane's, and no entry of the
@@ -850,10 +584,9 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
 
         std::array<FitGranularityInfo, 3> built{};
 
-        built[0].granularity = FitGranularity::kShipped;
-        built[0].name = GranularityName(FitGranularity::kShipped);
+        built[0].granularity = FitGranularity::kCoarsest;
+        built[0].name = GranularityName(FitGranularity::kCoarsest);
         built[0].routes = kChebBit | kRatBit;
-        built[0].rungs = static_cast<int>(AccuracyTier::kRelaxed65536) + 1;
         built[0].axes = kBothAxes;
         built[0].regionAPieces = static_cast<int>(std::size(detail::kPieces));
         built[0].regionADeg = shippedADeg;
@@ -872,7 +605,6 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
         built[1].granularity = FitGranularity::kNarrow;
         built[1].name = GranularityName(FitGranularity::kNarrow);
         built[1].routes = kChebBit | kRatBit;
-        built[1].rungs = static_cast<int>(AccuracyTier::kRelaxed65536) + 1;
         built[1].axes = kBothAxes;
         built[1].regionAPieces = static_cast<int>(std::size(detail::kNarrowAPieces));
         built[1].regionADeg = narrowADeg;
@@ -930,7 +662,6 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
         // a call runs is the axis's answer on every partition, and the partition
         // fixes the table rather than the layout.
         built[2].routes = kChebBit | kRatBit;
-        built[2].rungs = static_cast<int>(AccuracyTier::kRelaxed65536) + 1;
         built[2].axes = kBothAxes;
         // The grid itself, which is what this partition is where the other two
         // are walks: the intervals are the grid's cells rather than pieces the
@@ -1088,8 +819,7 @@ struct Carriage {
 Carriage CarriesSingle(FitRoute route,
                        EvalScheme scheme,
                        PackAxis axis,
-                       FitGranularity granularity,
-                       AccuracyTier tier) noexcept {
+                       FitGranularity granularity) noexcept {
     // Every combination this library names is served on both axes and on the
     // three partitions this lane reads, at every rung, with one exception: the
     // rational route over the uniform grid, which is a member this lane's grid
@@ -1118,28 +848,22 @@ Carriage CarriesSingle(FitRoute route,
     const std::size_t s = static_cast<std::size_t>(scheme);
     const std::size_t a = static_cast<std::size_t>(axis);
     const std::size_t g = static_cast<std::size_t>(granularity);
-    const std::size_t t = static_cast<std::size_t>(tier);
-
     if (r >= BoysFitRoutes().size() || s >= BoysEvalSchemes().size() ||
-        a >= BoysPackAxes().size() || g >= BoysFitGranularities().size() ||
-        t > static_cast<std::size_t>(AccuracyTier::kRelaxed65536))
+        a >= BoysPackAxes().size() || g >= BoysFitGranularities().size())
     {
         return {false,
                 "the value named is outside the enumeration this library serves, so it names no "
-                "combination: name a route, a scheme, a packing axis, a partition and a rung from "
+                "combination: name a route, a scheme, a packing axis and a partition from "
                 "the enumerations this revision publishes"};
     }
 
     return {true, ""};
 }
 
-// The device lane's rule. Its accuracy multiplier is a template argument at the
-// call site against a certified degree table the lane holds per rung, so every
-// rung the lane instantiates is served. Those are the option space's seven
-// (AccuracyTier) beside the lane's own six — one union of twelve multipliers,
-// kDeviceRungs (boys_cuda_options.hpp) — and this rule reads that table rather
-// than a list kept here: a value outside it names a multiplier no entry of the
-// lane was compiled for.
+// The device lane's rule. Its entries are compiled at the one accuracy this
+// library carries, so what this rule refuses is a value outside the
+// enumerations this revision publishes rather than a rung it did not
+// instantiate.
 //
 // What the lane this rule answers for carries, and it is that lane's own entries
 // this reads rather than the double lane's beside it: Precision::kFp32Device is
@@ -1147,24 +871,21 @@ Carriage CarriesSingle(FitRoute route,
 // engine's arithmetic.
 //
 // What the lane carries, route by route and partition by partition, read off the
-// fp32 entries the lane itself builds and the rungs each answers at
-// (DeviceEntryServedAtRung, boys_cuda_options.hpp, which is the lane's own
-// statement of the same fact and the table each entry's static_assert reads):
+// fp32 entries the lane itself builds:
 //
 //   * the shipped partition carries both routes. Its Chebyshev fits are the
-//     float lane's own table and are read at every rung (BoysCuda::AllOrdersF32
-//     and its AtRung form, with SingleF32 beside them); its rational member is a
-//     pair per piece of the same partition (AllOrdersF32Rat and its Horner name),
-//     read at every rung too — the pair is this lane's own fit in region B and
-//     the double lane's in region A, each cut by the rung's criterion;
+//     float lane's own table (BoysCuda::AllOrdersF32, with SingleF32 beside
+//     them); its rational member is a pair per piece of the same partition
+//     (AllOrdersF32Rat and its Horner name) — the pair is this lane's own fit in
+//     region B and the double lane's in region A;
 //   * the narrow partition carries both routes the same way
 //     (AllOrdersF32Narrow with its monomial name, AllOrdersF32NarrowRat with its
 //     Horner name): both bases of the Chebyshev member and the rational member on
-//     both packing axes are read at every rung;
-//   * the uniform partition carries the Chebyshev member at every rung
-//     (AllOrdersF32Uniform and AllOrdersF32UniformHorner) and no rational member,
-//     which is the one route-partition pair of this lane that no entry of it
-//     answers: the member is stored and no entry of this lane reads it.
+//     both packing axes;
+//   * the uniform partition carries the Chebyshev member
+//     (AllOrdersF32Uniform and AllOrdersF32UniformHorner) and its rational member
+//     (AllOrdersF32UniformRat and its Horner name), the grid's fits of both
+//     routes being rows of this lane.
 //
 // Both packing axes are carried, and they are carried on the same tables: the
 // per-argument ladder every one of those entries has, and the orders reading of
@@ -1173,24 +894,16 @@ Carriage CarriesSingle(FitRoute route,
 // (BoysCuda::AllOrdersF32Orders and its siblings, one pair per partition and
 // route, mirroring the double lane's). Neither axis reaches a table the other
 // does not: the orders entry of a partition reads the same pieces and the same
-// region-B seed, and the rung it answers at is its own row's statement,
-// DeviceEntryServedAtRung.
+// region-B seed as that partition's ladder.
 //
-// A relaxed rung reaches every stored table of this lane, and there is no table
-// it does not. The shipped partition's rung is the float batch lane's own cut of
-// the float Chebyshev table and of its rational pair; the narrow partition's is
-// the float lane's own region-B cut in each of the two bases that partition is
-// stored in (FillNarrowF32Lane, FillNarrowMonoF32Lane, read by Lane32NarrowRelaxed
-// and Lane32NarrowMonoRelaxed) and of its own narrow pair
-// (FillNarrowRatF32Lane); and the uniform grid's one degree is admissible at every
-// multiplier, so a rung of it is the route's own arithmetic. Each is served at
-// every rung on either packing axis, and the lane instantiates all twelve at each
-// of them.
+// Every one of those tables is read at the one accuracy this lane serves, on
+// either packing axis, and there is no stored table of the lane the accuracy
+// withholds.
 //
-// So the multiplier refuses no cell of this lane any more, and no arm below tests
-// it. What the lane still refuses is a route over a partition no entry of it
-// reads — the grid's rational member above — and that is a statement about
-// which entries were built rather than about a rung.
+// So the accuracy refuses no cell of this lane, and no arm below tests one: a
+// lane that answers at m = 1 alone has no rung to refuse, and what a route over a
+// partition is worth here is a statement about which entries were built rather
+// than about accuracy.
 //
 // What the scheme axis reaches on which partition is the lane's own table's to
 // state: this function has one scheme field for the whole call, and that table is
@@ -1198,21 +911,17 @@ Carriage CarriesSingle(FitRoute route,
 Carriage CarriesDevice(FitRoute route,
                        EvalScheme scheme,
                        PackAxis axis,
-                       FitGranularity granularity,
-                       AccuracyTier tier) noexcept {
+                       FitGranularity granularity) noexcept {
     const std::size_t r = static_cast<std::size_t>(route);
     const std::size_t s = static_cast<std::size_t>(scheme);
     const std::size_t a = static_cast<std::size_t>(axis);
     const std::size_t g = static_cast<std::size_t>(granularity);
-    const std::size_t t = static_cast<std::size_t>(tier);
-
     if (r >= BoysFitRoutes().size() || s >= BoysEvalSchemes().size() ||
-        a >= BoysPackAxes().size() || g >= BoysFitGranularities().size() ||
-        t > static_cast<std::size_t>(AccuracyTier::kRelaxed65536))
+        a >= BoysPackAxes().size() || g >= BoysFitGranularities().size())
     {
         return {false,
                 "the value named is outside the enumeration this library serves, so it names no "
-                "combination: name a route, a scheme, a packing axis, a partition and a rung from "
+                "combination: name a route, a scheme, a packing axis and a partition from "
                 "the enumerations this revision publishes"};
     }
 
@@ -1221,24 +930,10 @@ Carriage CarriesDevice(FitRoute route,
     // the Chebyshev one (tools/gen_boys_coefficients.py), uploaded to the device
     // face and read by entries of its own (BoysDeviceAllOrdersF64UniformRat and
     // its float counterpart, the kernels behind BoysCuda::AllOrdersF64UniformRat
-    // and its float counterpart). So no arm here refuses it, and the rungs are
-    // the route's own arithmetic rather than a cut: DeviceEntryServedAtRung
-    // answers every rung of those rows, for the reason the Chebyshev member of
-    // the same grid does.
+    // and its float counterpart). So no arm here refuses it.
 
-    // The rungs are the entries' own and every one of them is served, so no arm
-    // below tests the multiplier: the table that would refuse a rung is the one
-    // DeviceEntryServedAtRung states, and this rule reads it rather than
-    // restating it.
-
-    if (!DeviceRungServed(AccuracyMultiplier(tier)))
-    {
-        return {false,
-                "the device lane's degree tables are cut per rung and its entries are compiled at "
-                "each rung it serves, so this multiplier is one no entry of that lane answers at: "
-                "the lane serves the option space's rungs beside its own, and a call naming any "
-                "other would be reading another rung's cut"};
-    }
+    // No arm below tests an accuracy, and none can: this lane answers at m = 1
+    // alone, which is the one accuracy each of its entries is built at.
 
     return {true, ""};
 }
@@ -1250,7 +945,6 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
                                       EvalScheme scheme,
                                       PackAxis axis,
                                       FitGranularity granularity,
-                                      AccuracyTier tier,
                                       DivisionForm form) noexcept
 {
     const std::span<const LaneContractInfo> lanes = BoysLaneContracts();
@@ -1272,10 +966,10 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
         switch (precision)
         {
         case Precision::kFp32Device:
-            return CarriesDevice(route, scheme, axis, granularity, tier);
+            return CarriesDevice(route, scheme, axis, granularity);
         case Precision::kFp32:
         case Precision::kFp16:
-            return CarriesSingle(route, scheme, axis, granularity, tier);
+            return CarriesSingle(route, scheme, axis, granularity);
         case Precision::kFp64:
             break;
         }
@@ -1295,13 +989,11 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
         if (static_cast<std::size_t>(route) >= BoysFitRoutes().size() ||
             static_cast<std::size_t>(scheme) >= BoysEvalSchemes().size() ||
             static_cast<std::size_t>(axis) >= BoysPackAxes().size() ||
-            p >= partitions.size() ||
-            static_cast<std::size_t>(tier) >
-                static_cast<std::size_t>(AccuracyTier::kRelaxed65536))
+            p >= partitions.size())
         {
             c.reason =
                 "the value named is outside the enumeration this library serves, so it names no "
-                "combination: name a route, a scheme, a packing axis, a partition and a rung from "
+                "combination: name a route, a scheme, a packing axis and a partition from "
                 "the enumerations this revision publishes";
 
             return c;
@@ -1309,23 +1001,7 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
 
         const FitGranularityInfo& row = partitions[p];
 
-        // The uniform partition's rational member is no longer a rung this carrier
-        // refuses. Its pairs are stored one per interval and are admissible at
-        // every multiplier by the same reading the Chebyshev member's degree is -
-        // there is no per-order effective-degree table to cut, and the entries
-        // select the reference body for this partition at every multiplier
-        // (boys_impl.hpp, BoysSingleImpl), so a rung of it is the route's own
-        // arithmetic rather than a cut of it. The row's own rung count covers it.
-        if (static_cast<int>(tier) >= row.rungs)
-        {
-            c.reason =
-                "a relaxed rung reads a stored row at a per-order effective degree, and this "
-                "partition's row is certified at fewer rungs than the one named: a partition "
-                "whose table is fitted at one degree for every order and every interval has "
-                "neither a criterion to cut it by nor such a table to read for a rung the row "
-                "does not claim, and the build refuses it where the call is named rather than "
-                "answering it from another partition's fits";
-        } else if (!FitGranularityHasRoute(row, route))
+        if (!FitGranularityHasRoute(row, route))
         {
             c.reason =
                 "the partition's tables do not hold this fit route: the row states which "
@@ -1370,7 +1046,7 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
         form == DivisionForm::kPlainReciprocal ? lane.plainAdditive : 0.0;
 
     figure.available = true;
-    figure.value = AccuracyMultiplier(tier) * (lane.bound + formTerm) + lane.additive;
+    figure.value = lane.bound + formTerm + lane.additive;
 
     // The sentence moves with the figure. `source` names the forms the base is for, so on a lane
     // whose plain form carries its own term the figure above is not the one that sentence describes;
@@ -1386,12 +1062,11 @@ AccuracyFigure BoysAccuracyDelivered(Precision precision,
                                      FitRoute route,
                                      EvalScheme scheme,
                                      PackAxis axis,
-                                     FitGranularity granularity,
-                                     AccuracyTier tier) noexcept
+                                     FitGranularity granularity) noexcept
 {
     // A combination this build refuses has no delivered figure for the same
     // reason it has no bound.
-    AccuracyFigure figure = BoysAccuracyGuaranteed(precision, route, scheme, axis, granularity, tier);
+    AccuracyFigure figure = BoysAccuracyGuaranteed(precision, route, scheme, axis, granularity);
 
     figure.reading = AccuracyReading::kDelivered;
     figure.value = 0.0;
@@ -1411,19 +1086,6 @@ AccuracyFigure BoysAccuracyDelivered(Precision precision,
             "delivered figure to read and the guaranteed figure above is the one to use. Where "
             "the value falls at or below the format's floor no accuracy is claimed at all, and a "
             "suite that reports this lane counts those arguments rather than passing them";
-        figure.source = "";
-
-        return figure;
-    }
-
-    if (tier != AccuracyTier::kReference)
-    {
-        figure.available = false;
-        figure.reason =
-            "a delivered figure is a measurement and the rows carry one at the multiplier they "
-            "were measured at, which is the reference one: no row publishes what a relaxed rung "
-            "delivers, so there is no number to read here. The accuracy gate measures the rungs "
-            "and its report is where those figures are";
         figure.source = "";
 
         return figure;
@@ -1486,14 +1148,13 @@ CombinationCoverage QueryCombination(Precision precision,
                                      EvalScheme scheme,
                                      PackAxis axis,
                                      FitGranularity granularity,
-                                     AccuracyTier tier,
                                      double tolerance) noexcept
 {
     // Both figures come from the two accessors above: the tables, the axes and
     // the refusals are theirs.
     CombinationCoverage coverage;
     const AccuracyFigure guaranteed =
-        BoysAccuracyGuaranteed(precision, route, scheme, axis, granularity, tier);
+        BoysAccuracyGuaranteed(precision, route, scheme, axis, granularity);
 
     coverage.requested = tolerance;
     coverage.source = guaranteed.source;
@@ -1508,7 +1169,7 @@ CombinationCoverage QueryCombination(Precision precision,
     }
 
     const AccuracyFigure delivered =
-        BoysAccuracyDelivered(precision, route, scheme, axis, granularity, tier);
+        BoysAccuracyDelivered(precision, route, scheme, axis, granularity);
 
     coverage.bound = guaranteed.value;
     coverage.delivered = delivered.available ? delivered.value : 0.0;

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Check that every device option this build reports is an entry it declares, and the reverse.
 
-The device surface is described by five hand-written lists and nothing reconciles them: the
+The device surface is described by hand-written lists and nothing reconciles them: the
 `DeviceEntry` enumeration in `boys_cuda_options.hpp`, the `BoysCuda` members in `boys_cuda.hpp`,
-the device-callable declarations, the probe's kernel arms, and the enumeration's rung tables. They
+the device-callable declarations, and the probe's kernel arms. They
 already disagreed once, in the worst possible direction: four rows of the enumeration named entries
-that had never been declared, in any commit - and because the rows were served at every rung,
+that had never been declared, in any commit - and they
 carried report rows with bounds and `built = true`, were launched by the measurement tool through a
 twin's launcher, and were claimed by the accuracy gate, four separate mechanisms consumed the
 description without one of them asking whether the entry was there.
@@ -17,9 +17,6 @@ and what the class declares. Both directions are defects:
     deliver - the published-but-absent defect above;
   * a member no row names is an entry the report books cannot describe, so nothing measures it and
     nothing counts it.
-
-A member whose name ends in `AtRung` is the run-time-rung spelling of the member before it, so it
-answers to the same row; that is the only suffix folded here, and it is folded in both directions.
 
 Usage:
   python3 tools/check_device_entry_bijection.py --check
@@ -50,8 +47,6 @@ NOT_AN_OPTION = {
 }
 # A member of the device class.
 MEMBER = re.compile(r"^\s*static\s+BoysStatus\s+(\w+)\s*\(")
-
-AT_RUNG = "AtRung"
 
 
 def rows_of(path: pathlib.Path) -> list[tuple[str, str]]:
@@ -103,19 +98,17 @@ def main() -> int:
         return 1
 
     named = {entry for _, entry in rows}
-    declared = {name[: -len(AT_RUNG)] if name.endswith(AT_RUNG) else name for name in members}
+    declared = set(members)
 
-    # The two directions fold AtRung differently, and getting that wrong makes the check useless.
-    # A row books the PRIMARY entry, so that declaration must exist in its own right: an option
-    # whose only spelling is the run-time-rung one is as broken as one with no spelling at all, and
-    # folding here would let the AtRung sibling satisfy the row it is a spelling of.
+    # A row books an entry, so that declaration must exist in its own right: an option advertised
+    # under a name the class does not declare is as broken as one with no spelling at all.
     absent = sorted(named - members)
 
-    # The other way a member answers to the row its AtRung sibling books, so the fold belongs here.
+    # The other direction: every declared member answers to a row, or is exempted with a reason.
     unlisted = sorted(name for name in declared - named if name not in NOT_AN_OPTION)
 
     print(f"  enumeration rows naming an entry: {len(rows)}")
-    print(f"  members the class declares:       {len(members)} ({len(declared)} after folding AtRung)")
+    print(f"  members the class declares:       {len(members)}")
 
     failures = 0
 

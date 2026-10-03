@@ -41,8 +41,7 @@ int main()
         const boys::CombinationCoverage answer =
             boys::QueryCombination(boys::Precision::kFp64, boys::FitRoute::kChebyshev,
                                    boys::EvalScheme::kHorner, boys::PackAxis::kArguments,
-                                   boys::FitGranularity::kNarrow, boys::AccuracyTier::kReference,
-                                   tolerance);
+                                   boys::FitGranularity::kNarrow, tolerance);
         std::printf("  %-12.2g %-22s %-12.2g %.2g  [%s]\n", tolerance,
                     VerdictName(answer.verdict), answer.bound, answer.delivered, answer.source);
     }
@@ -51,7 +50,7 @@ int main()
     const boys::CombinationCoverage absurd =
         boys::QueryCombination(boys::Precision::kFp64, boys::FitRoute::kChebyshev,
                                boys::EvalScheme::kHorner, boys::PackAxis::kArguments,
-                               boys::FitGranularity::kNarrow, boys::AccuracyTier::kReference, 1e-20);
+                               boys::FitGranularity::kNarrow, 1e-20);
     std::printf("1e-20 is answered %s\n", VerdictName(absurd.verdict));
     return (absurd.verdict != boys::ToleranceVerdict::kGuaranteedInside) ? 0 : 1;
 }

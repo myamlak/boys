@@ -26,10 +26,10 @@ int main()
         std::printf("%-3d %.17g\n", k, ladder[k]);
     }
 
-    // Each rung must agree with the single-order entry, inside the bound.
+    // Each order must agree with the single-order entry, inside the bound.
     const boys::AccuracyFigure bound = boys::BoysAccuracyGuaranteed(
         boys::Precision::kFp64, boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner,
-        boys::PackAxis::kArguments, boys::FitGranularity::kNarrow, boys::AccuracyTier::kReference);
+        boys::PackAxis::kArguments, boys::FitGranularity::kNarrow);
 
     double worst = 0.0;
     for (int k = 0; k <= nmax; ++k)

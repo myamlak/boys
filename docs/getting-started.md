@@ -177,50 +177,18 @@ When the arguments do not share a top order — a quartet whose four shells diff
 pays for cells nobody asked for, 17 of the 45 in the run above. `BoysAllNAtOrders` writes only the
 values you asked for, and it is the column the padded call is checked against.
 
-**Next:** every call so far is as accurate as the library gets. If that is more than your calculation
-needs, the next section turns that into speed.
-
----
-
-## I want to trade accuracy for speed
-
-`examples/04_accuracy_tier.cpp` — every entry takes a multiplier on its error. 1 is the default and
-means full accuracy; larger values allow a larger error and do less work.
-
-```cpp
-const double value = boys::BoysSingleAtTier(boys::AccuracyTier::kRelaxed1024, n, x);
-```
-
-    F_3(1.25), the same call at four multipliers:
-      m = 1       value = 0.055476132923077535  guaranteed error <= 5.5e-14
-      m = 64      value = 0.055476132923077501  guaranteed error <= 3.5e-12
-      m = 1024    value = 0.055476132923077501  guaranteed error <= 5.6e-11
-      m = 65536   value = 0.055476132923072533  guaranteed error <= 3.6e-09
-    worst departure from the m = 1 answer: 5e-15
-
-Read the two number columns together. The value moves very little — here, by 5e-15 — while the
-*guarantee* loosens by nearly five orders of magnitude. **A relaxed multiplier does not mean the answer you
-get is worse by that much; it means the library is no longer promising it is better than that.** That
-is what buys the speed. It is also why the guaranteed figure is what a calculation should be checked
-against.
-
-Whether your calculation can afford a looser guarantee is not a question this library can answer.
-[docs/consumer-perspective.md](consumer-perspective.md) works through what integral codes actually
-need. It is the right thing to read before choosing a multiplier.
-
-**Next:** if you want a specific evaluation rather than just a looser one, the next section is how you
-name it.
+**Next:** if you want a specific evaluation, the next section is how you name it.
 
 ---
 
 ## I want to name a specific evaluation
 
 **First, a warning, because this one is a trap.** One of the settings below is called `kNarrow`. That
-name reads as "narrower, therefore more careful". It is not. `kNarrow` and `kShipped` cut the fitted
+name reads as "narrower, therefore more careful". It is not. `kNarrow` and `kCoarsest` cut the fitted
 interval into pieces of different widths and carry a different number of pieces; **both meet the same
 published error bound.** Choosing the wrong one changes the work, not the accuracy. It costs you
 nothing visible: both compile, both run, both are correct, so you would never find out you had picked
-backwards. `kNarrow` is what a call site that names no partition reads. `kShipped` is what the program
+backwards. `kNarrow` is what a call site that names no partition reads. `kCoarsest` is what the program
 below names. If you have not measured a preference, name no policy at all and take the default. The
 bound the library publishes is the lane's, and no partition moves it.
 
@@ -231,10 +199,10 @@ itself at the top of the file.
 ```cpp
 using Shipped = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
                                  boys::BoysBudget::kFloat, boys::PackAxis::kArguments,
-                                 boys::FitGranularity::kShipped,
+                                 boys::FitGranularity::kCoarsest,
                                  boys::DivisionForm::kExactDivision>;
 
-boys::BoysAllOrders<1.0, Shipped>(nmax, x, named_ladder);
+boys::BoysAllOrders<Shipped>(nmax, x, named_ladder);
 ```
 
     k   default policy            named policy
@@ -267,7 +235,7 @@ comparing a table by eye.
 ```cpp
 const boys::CombinationCoverage answer = boys::QueryCombination(
     boys::Precision::kFp64, boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner,
-    boys::PackAxis::kArguments, boys::FitGranularity::kNarrow, boys::AccuracyTier::kReference,
+    boys::PackAxis::kArguments, boys::FitGranularity::kNarrow,
     tolerance);
 ```
 
@@ -305,7 +273,7 @@ const boys::OptionProbeReport report = boys::RunOptionProbe(options);
 
     measured 2018 options on 12 logical processors
 
-    fp64 m=1 all-orders - 72 options ranked
+    fp64 all-orders - 72 options ranked
       fastest: uniform-pack-orders-horner-exact-division-fp64 at 44.54 ns/argument
       the run could not separate 2 of them from the leader
         uniform-pack-orders-horner-plain-reciprocal-fp64
@@ -352,7 +320,6 @@ By what you want, not by what the library calls things:
 | F_0..F_nmax at every argument of an array | `BoysAllN` | the batch shape of an integral engine; the arguments may arrive in any order |
 | ...with each argument's own top order | `BoysAllNAtOrders` | a shell-quartet batch, where no argument is padded to a common order |
 | ...when you know the arguments are already sorted | `BoysAllN` with `BoysSortedArgs{}` | skips the internal sort when your loop already produces a non-decreasing array |
-| any of the above at a looser accuracy, decided at run time | `BoysSingleAtTier`, `BoysAllOrdersAtTier` | when the multiplier is a loop variable rather than a compile-time choice |
 | any of the above in single precision | `BoysSingleF32`, `BoysAllOrdersF32`, `BoysAllNF32` | when the rest of your kernel is `float` |
 | half-precision storage | `BoysSingleF16`, `BoysAllOrdersF16`, `BoysSingleBf16`, `BoysAllOrdersBf16` | 16-bit I/O around the single-precision engine |
 | an answer on a GPU | `boys/boys_cuda.hpp` | device arrays; see [below](#on-a-gpu-the-first-call-is-the-slow-one) |
@@ -363,15 +330,14 @@ The complete list, with every overload and the arithmetic behind it, is the entr
 
 ## What you can and cannot choose at run time
 
-The settings that select an evaluation fall into two kinds. Three can be named by a value the program
+The settings that select an evaluation fall into two kinds. Two can be named by a value the program
 computes. The rest can only be named where the call is compiled:
 
 | Setting | Can you name it at run time? | How |
 |---|---|---|
-| which stored fit serves the interval | **yes** | `BoysAllOrdersWithRoute`, `BoysAllOrdersAtTier(tier, route, ...)`, `BoysSingleAtTier(tier, route, ...)`, `BoysSingleF32WithRoute` |
-| how the coefficients are summed | **yes** | the `(route, scheme)` overload of `BoysAllOrdersWithRoute`, and `BoysAllOrdersAtTier(tier, scheme, ...)`, `BoysSingleAtTier(tier, scheme, ...)` |
+| which stored fit serves the interval | **yes** | `BoysAllOrdersWithRoute`, `BoysSingleF32WithRoute` |
+| how the coefficients are summed | **yes** | the `(route, scheme)` overload of `BoysAllOrdersWithRoute`, and `BoysSingleF32WithRoute` |
 | the internal precision budget | no | template argument only — `EvalPolicy`'s third parameter |
-| the accuracy multiplier | **yes** | every `*AtTier` entry |
 | the packing axis (whether a vector register holds four arguments or four orders) | no | template argument only — `EvalPolicy`'s fourth parameter |
 | how finely the fitted interval is cut | no | template argument only — `EvalPolicy`'s fifth parameter |
 | how the recursion divides | no | template argument only — `EvalPolicy`'s sixth parameter |
@@ -382,21 +348,21 @@ two instantiations at the call site, not a value passed into one.
 
 ## On a GPU, the first call is the slow one
 
-The GPU entries upload coefficient tables on first use, lazily and idempotently. **The first call at
-a given accuracy multiplier on a given device therefore pays a real one-time cost that every later
+The GPU entries upload coefficient tables on first use, lazily and idempotently. **The first call on
+a given device therefore pays a real one-time cost that every later
 call does not.** A caller timing a loop from a cold start measures the upload, not the evaluation.
 
-If you are benchmarking or budgeting latency, warm the path with one throwaway call at the multiplier
+If you are benchmarking or budgeting latency, warm the path with one throwaway call of the entry
 you intend to use, and time everything after it. A warm-up is also what `BoysCuda::InitializeTables`
 is for, if you would rather pay the cost where you can see it than inside your first real call.
 
 ## What you do not pay for
 
-A call that names no multiplier and no policy is resolved entirely at compile time. It compiles to
+A call that names no policy is resolved entirely at compile time. It compiles to
 that one call — no run-time dispatch, no branch on an axis, nothing to predict. **The library has
 already compiled that specialization into its own archive**, so your translation unit links against
 it instead of instantiating the kernel a second time. An unnamed call therefore costs you neither
-run-time selection nor template-instantiation time. Naming another multiplier or another policy is
+run-time selection nor template-instantiation time. Naming another policy is
 what instantiates the version you asked for, in your translation unit.
 
 ## Where the specification lives

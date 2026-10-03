@@ -79,24 +79,23 @@
 /// third thing again: not I/O around an engine but region C's ladder itself in
 /// packed binary16 — a half2.hpp operation per step, correctly rounded to half,
 /// two arguments to a register. It has no region but region C (no table of
-/// regions A and B is representable in half), no accuracy multiplier (region C
-/// carries no truncatable resource), and a bound of its own, an order of
-/// magnitude looser than the fp16 I/O lane's: the I/O lane rounds once per
-/// value, this one once per operation. It has no tensor-core relation: the
+/// regions A and B is representable in half), no stored fit (region C's
+/// asymptotic form has none), and a bound of its own, an order of magnitude
+/// looser than the fp16 I/O lane's: the I/O lane rounds once per value, this
+/// one once per operation. It has no tensor-core relation: the
 /// ladder is a scalar recurrence, with no matrix product for a tensor core to
 /// take.
 ///
-/// **Accuracy contract.** Every lane entry is templated on
-/// ONE compile-time multiplier \c kAccuracyMultiplier >= 1.0, default
-/// \c kBoysFullAccuracyMultiplier (the full static accuracy). The contract
-/// per lane and region, with m = kAccuracyMultiplier:
+/// **Accuracy contract.** Every lane entry evaluates at the one accuracy this
+/// library carries, the full static accuracy of the certified lane.
+/// The contract per lane and region:
 ///
 /// | Lane | region A | extended band | region B (x0 <= x < x1) | region C (x >= x1) |
 /// |---|---|---|---|---|
-/// | double single | \|F̂ − F\| ≤ m·1e-15 | ≤ m·3e-14 | ≤ m·3e-14 | ≤ m·5.5e-14 |
-/// | double batch | ≤ m·5.5e-14 | ≤ m·5.5e-14 | ≤ m·5.5e-14 | ≤ m·5.5e-14 |
-/// | float single / batch | ≤ m·1.5e-7 | ≤ m·1.5e-7 | ≤ m·1.5e-7 | ≤ m·1.5e-7 |
-/// | fp16 / bf16 | ≤ m·1.5e-7 + ½ULP | ≤ m·1.5e-7 + ½ULP | ≤ m·1.5e-7 + ½ULP | ≤ m·1.5e-7 + ½ULP |
+/// | double single | \|F̂ − F\| ≤ 1e-15 | ≤ 3e-14 | ≤ 3e-14 | ≤ 5.5e-14 |
+/// | double batch | ≤ 5.5e-14 | ≤ 5.5e-14 | ≤ 5.5e-14 | ≤ 5.5e-14 |
+/// | float single / batch | ≤ 1.5e-7 | ≤ 1.5e-7 | ≤ 1.5e-7 | ≤ 1.5e-7 |
+/// | fp16 / bf16 | ≤ 1.5e-7 + ½ULP | ≤ 1.5e-7 + ½ULP | ≤ 1.5e-7 + ½ULP | ≤ 1.5e-7 + ½ULP |
 /// | native half | — | — | — | ≤ 8 ULP of the returned value |
 ///
 /// These are the figures at exact division and at the refined reciprocal. The
@@ -115,26 +114,14 @@
 /// matters, and the band's 3e-14 is the looser of the two. The native half
 /// lane is region C only.
 ///
-/// i.e. |F̂_n(x) − F_n(x)| ≤ m·B_region per lane and region, with B_region the
-/// asserted per-region bounds above (measured). **m = 1 costs nothing extra and
-/// matches the certified lanes bit for bit** — the default instantiations are
-/// the full-accuracy bodies, and every existing call site compiles unchanged.
-/// **Larger m trades a looser bound for less work**: the rung is a separate
-/// instantiation of the same entry, cut to a degree the criterion certifies for
-/// that multiplier, and the full degree is always admissible, so every rung is
-/// served at every scheme. The contract and the work are **monotone in m**;
-/// pointwise error is explicitly NOT guaranteed monotone — a larger m may
-/// occasionally change a pointwise error, but never beyond the m·B_region
-/// envelope. Region C has no relaxable resource; its contract holds with slack
-/// at every m. Instantiations with kAccuracyMultiplier < 1.0 are compile-time
-/// errors.
+/// i.e. |F̂_n(x) − F_n(x)| ≤ B_region per lane and region, with B_region the
+/// asserted per-region bounds above (measured). **These are the certified
+/// lanes' figures and every entry is bit-identical to them.** A lane whose
+/// bound is not one number carries the difference as its own additive term
+/// beside the base rather than inside it: the bound is the base plus that term.
+/// Region C has no stored fit; its contract holds with slack.
 ///
-/// **How a rung is derived** — the degree criterion, the dropped-coefficient
-/// tail it is spent on, the per-path seed-error amplification it is certified
-/// against, and why that tail is the one the scheme's own summation reads — is
-/// stated beside the machinery that applies it, in boys_effective_degrees.hpp.
-/// The CUDA lane's relaxed path holds one degree table per process (filled once
-/// per m, the InitializeTables thread-safety contract). The fp16/bf16 base is
+/// The fp16/bf16 base is
 /// the float lane's own figure — the half lanes run that lane's arithmetic and
 /// store what it returns — plus the half-ULP term the store adds. The suite
 /// asserts them at the tighter 1e-7 the region targets are placed against, so a
@@ -142,9 +129,9 @@
 ///
 /// **The fp16/bf16 bound is a claim only where the value exceeds it.** With u
 /// the format's quantum at the returned value, the half lanes bind where
-/// |F_n(x)| > m·1.5e-7 + ½u — there the return is within that distance of the
+/// |F_n(x)| > 1.5e-7 + ½u — there the return is within that distance of the
 /// value — and over no other arguments, and **no accuracy is claimed** past
-/// that ceiling: a caller that needs |F_n(x)| at or below m·1.5e-7 wants the
+/// that ceiling: a caller that needs |F_n(x)| at or below 1.5e-7 wants the
 /// double lane, or the float lane with the half format's exponent range in
 /// mind, since below the ceiling it is the format's floor that answers and not
 /// the arithmetic. What the return is past
@@ -163,43 +150,6 @@
 
 namespace boys {
 
-/// A run-time accuracy tier: one of the multipliers this kernel instantiates,
-/// chosen per call rather than fixed at build time, and belonging to that call
-/// alone — a coarse tier picked for one call is never reused by a later call that
-/// did not ask for it.
-///
-/// The relaxed enumerators are consecutive rungs of one design family — the same
-/// a-priori degree truncation, monotone in m — spaced so that their certified
-/// bounds stay distinct.
-///
-/// The enumerators listed are the tiers this build serves. A value outside them —
-/// cast in from outside the enum, or named by a newer header — is not a tier:
-/// every entry on this surface treats it as \c kReference rather than guessing a
-/// rung, and that fallback is never coarser than any tier this build can name, so
-/// a caller can never be handed a value at an accuracy it did not ask for.
-///
-/// \ingroup boys
-enum class AccuracyTier : int {
-    /// m = kBoysFullAccuracyMultiplier: the certified lanes, unchanged.
-    kReference = 0,
-    /// m = 64
-    kRelaxed64,
-    /// m = 256
-    kRelaxed256,
-    /// m = 1024
-    kRelaxed1024,
-    /// m = 4096
-    kRelaxed4096,
-    /// m = 16384
-    kRelaxed16384,
-    /// m = 65536
-    kRelaxed65536,
-    /// One past the last rung this enumeration names, and not a rung: the bound a
-    /// check reads to walk the enumerators above and prove it has named every one
-    /// of them.
-    kCount,
-};
-
 /// The three evaluation regions of the kernel (contract table in the file
 /// preamble).
 ///
@@ -210,8 +160,8 @@ enum class AccuracyRegion : int {
     kC, ///< x >= x1: asymptotic plus upward recursion
 };
 
-/// The part of an evaluation that fixes its accuracy, so a request a tier
-/// cannot meet can name what stops it.
+/// The part of an evaluation that fixes its accuracy, so a request that cannot
+/// be met can name what stops it.
 ///
 /// \ingroup boys
 enum class AccuracyComponent : int {
@@ -219,43 +169,6 @@ enum class AccuracyComponent : int {
     kRegionBFit,
     kRegionCAsymptotic,
 };
-
-/// The accuracy multiplier a tier names, so a caller can record the accuracy it
-/// asked for beside the numbers it got. A tier this build does not serve names the
-/// reference multiplier, the rung the rest of this surface evaluates it at.
-///
-/// \param tier the tier
-/// \returns    m >= 1.0
-///
-/// \ingroup boys
-constexpr double AccuracyMultiplier(AccuracyTier tier) noexcept {
-    switch (tier)
-    {
-    case AccuracyTier::kReference:
-        return kBoysFullAccuracyMultiplier;
-    case AccuracyTier::kRelaxed64:
-        return 64.0;
-    case AccuracyTier::kRelaxed256:
-        return 256.0;
-    case AccuracyTier::kRelaxed1024:
-        return 1024.0;
-    case AccuracyTier::kRelaxed4096:
-        return 4096.0;
-    case AccuracyTier::kRelaxed16384:
-        return 16384.0;
-    case AccuracyTier::kRelaxed65536:
-        return 65536.0;
-
-    // The sentinel one past the last rung, and not a rung a caller can name. It
-    // is named rather than left to the return below: this switch has no default
-    // arm, so -Wswitch wants every enumerator of the index named, and naming it
-    // is also what keeps a new rung from arriving here unremarked.
-    case AccuracyTier::kCount:
-        break;
-    }
-
-    return kBoysFullAccuracyMultiplier;
-}
 
 /// The stored fit an evaluated value came from.
 ///
@@ -416,8 +329,8 @@ std::span<const DivisionFormInfo> BoysDivisionForms() noexcept;
 /// The partition is how narrowly the fitted domain is cut into pieces, and it is
 /// a property of the stored tables rather than of a call shape: a row states
 /// what the partition's tables hold — pieces, degree and coefficients per fitted
-/// region — and which rungs and packing axes the partition has kernels for. A
-/// combination the row does not cover is refused where it is named rather than
+/// region — and which packing axes the partition has kernels for. A combination
+/// the row does not cover is refused where it is named rather than
 /// answered from another partition's tables, and the row is where those refusals
 /// can be counted from instead of being discovered one compile at a time.
 ///
@@ -451,10 +364,9 @@ std::span<const DivisionFormInfo> BoysDivisionForms() noexcept;
 ///
 /// \ingroup boys
 struct FitGranularityInfo {
-    FitGranularity granularity = FitGranularity::kShipped; ///< the selector value this row describes
+    FitGranularity granularity = FitGranularity::kCoarsest; ///< the selector value this row describes
     const char* name = ""; ///< the name a report prints it under
     unsigned routes = 0; ///< bit (1u << route) set per fit route the partition's tables hold
-    int rungs = 0; ///< accuracy rungs the partition's tables are certified at, reference included
     unsigned axes = 0; ///< bit (1u << axis) set per packing axis the partition has a kernel for
     int regionAPieces = 0; ///< pieces region A's per-order tables are cut into
     int regionADeg = 0; ///< highest degree an evaluation of a region-A piece reads
@@ -539,9 +451,8 @@ enum class Precision : std::uint8_t {
 /// surface (`boys/boys_cuda.hpp`), which a build carries only where it is
 /// configured for it. A row of the table names one of these, because the two
 /// lanes do not choose the same things: a host row names the five axes an
-/// \c EvalPolicy holds, and the device lane's own two - its accuracy multiplier
-/// and its region-B exponential (`boys/boys_device_tables.hpp`) - are not among
-/// them.
+/// \c EvalPolicy holds, and the device lane's own choice - its region-B
+/// exponential (`boys/boys_device_tables.hpp`) - is not among them.
 ///
 /// \ingroup boys
 enum class Device : std::uint8_t {
@@ -673,14 +584,10 @@ BOYS_DEFAULT_POLICY_BUILD_ROWS(BOYS_DEFAULT_POLICY_BUILD_ROW)
 /// default template argument would drop the entry from overload resolution
 /// instead, and a different overload would answer the call.
 ///
-/// **The rung is not a key, because the rung is the caller's and not the library's.** A caller
-/// chooses the accuracy before the call; what this table answers is what the library then picks,
-/// so naming a rung changes the bound a call carries and never which row applies. The row a class
-/// resolves to is the one its own m = 1 class measured. The *fastest entry* does move with the
-/// rung - measured on the device, three of nine m = 1 classes pick a different entry at a relaxed
-/// rung - and that is the same fact seen from the other side, since a caller at another rung has
-/// asked a different question. The option probe keys its classes by the rung for that reason; what
-/// this table keys is the library's choice, and the probe's key is the caller's.
+/// **The library's own choice is the key, and the caller's question is not.** A
+/// caller chooses what to evaluate before the call; what this table answers is
+/// what the library then picks for that choice, and a class is keyed by that
+/// choice alone.
 ///
 /// **This costs nothing at run time.** \c Type is a type, selected by the
 /// compiler for a class it knows; there is no registry in it, no string key, no
@@ -724,12 +631,10 @@ template <Precision kPrecision, Shape kShape, Device kDevice = Device::kHost>
 using DefaultPolicy = typename DefaultPolicyFor<kPrecision, kShape, kDevice>::Type;
 /// One precision lane's contract, as a report states it.
 ///
-/// \c bound is the base figure the lane documents for one value at the
-/// reference accuracy multiplier, over the whole of x >= 0: a caller multiplies
-/// it by a rung's multiplier to get the base a rung promises, and it is the
-/// guarantee rather than a measurement. \c additive is a term the lane documents
-/// beside it - zero where the lane has none - so that the figure a lane
-/// promises at a rung is \c bound times the multiplier plus \c additive, which
+/// \c bound is the base figure the lane documents for one value, over the whole
+/// of x >= 0, and it is the guarantee rather than a measurement. \c additive is a
+/// term the lane documents beside it - zero where the lane has none - so that
+/// the figure a lane promises is \c bound plus \c additive, which
 /// is what \c BoysAccuracyGuaranteed answers with. \c source states the terms
 /// the base figure does not carry, because a row whose bound is not a flat
 /// constant over the whole of its domain has to say so rather than let a reader
@@ -755,7 +660,7 @@ using DefaultPolicy = typename DefaultPolicyFor<kPrecision, kShape, kDevice>::Ty
 struct LaneContractInfo {
     Precision precision = Precision::kFp64; ///< the lane this row describes
     const char* name = ""; ///< the name a report prints it under
-    double bound = 0.0; ///< the documented base figure per value at the reference multiplier
+    double bound = 0.0; ///< the documented base figure per value
     double additive = 0.0; ///< a term the lane adds beside the base, 0.0 where it has none
     double plainAdditive = 0.0; ///< a term the plain reciprocal adds beside the base, 0.0 where the forms share one figure
     const char* source = ""; ///< the figures beside the base, empty where the base is the whole claim
@@ -804,11 +709,11 @@ struct AccuracyFigure {
 };
 
 /// The accuracy a combination is guaranteed: an upper bound the lane documents
-/// for it, at the rung named.
+/// for it.
 ///
-/// The figure to rely on: the lane's contract table publishes it, times the
-/// rung's multiplier, plus the lane's own additive term where it documents one.
-/// A combination the library does not carry has no figure and says so.
+/// The figure to rely on: the lane's contract table publishes it, plus the
+/// lane's own additive term where it documents one. A combination the library
+/// does not carry has no figure and says so.
 ///
 /// The bound is the lane's and not the axes': a way to read any of the five axes
 /// that narrowed it would be a bound this build does not certify, and the
@@ -828,7 +733,6 @@ struct AccuracyFigure {
 /// \param scheme      the evaluation scheme
 /// \param axis        the packing axis
 /// \param granularity the interval partition
-/// \param tier        the accuracy rung
 /// \param form        how the recursion divides
 /// \returns the figure, and whether this revision carries the combination
 ///
@@ -838,7 +742,6 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
                                       EvalScheme scheme,
                                       PackAxis axis,
                                       FitGranularity granularity,
-                                      AccuracyTier tier,
                                       DivisionForm form = kDefaultDivisionForm) noexcept;
 
 /// The bound a class's default policy carries: what a caller holding the
@@ -852,25 +755,22 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
 /// evaluated and nothing is timed.
 ///
 /// **A class is a (device, precision, shape) triple and this reads a host
-/// class.** The device lane's own two choices are outside the seam - the
-/// accuracy multiplier and the region-B exponential are declared where they are
-/// used - so there is no device row for this accessor to read yet, which is
-/// owed work rather than a design choice.
+/// class.** The device lane's own choice is outside the seam - the region-B
+/// exponential is declared where it is used - so there is no device row for
+/// this accessor to read yet, which is owed work rather than a design choice.
 ///
 /// \tparam kPrecision the precision lane
 /// \tparam kShape the question shape
-/// \param tier the accuracy rung the call will be made at; the reference rung
-///        by default, which is the rung every published figure is stated at
 /// \returns the figure, and whether this build carries the combination
 ///
 /// \ingroup boys
 template <Precision kPrecision, Shape kShape>
-inline AccuracyFigure DefaultGuarantee(AccuracyTier tier = AccuracyTier::kReference) noexcept
+inline AccuracyFigure DefaultGuarantee() noexcept
 {
     using Policy = DefaultPolicy<kPrecision, kShape>;
 
     return BoysAccuracyGuaranteed(kPrecision, Policy::kRoute, Policy::kScheme, Policy::kPack,
-                                  Policy::kGranularity, tier, Policy::kDivision);
+                                  Policy::kGranularity, Policy::kDivision);
 }
 
 /// The accuracy a combination was measured to deliver, which is the figure that
@@ -886,11 +786,10 @@ inline AccuracyFigure DefaultGuarantee(AccuracyTier tier = AccuracyTier::kRefere
 /// over a committed reference grid, and the gate's report is where that figure
 /// lives for every combination.
 ///
-/// This is a swept maximum and not a bound. It is available at the reference
-/// multiplier, because a delivered figure is a measurement and the rows carry one
-/// at the multiplier they were measured at; at a relaxed rung no row carries a
-/// measured figure, so the answer is that there is none rather than a number
-/// scaled from the rung.
+/// This is a swept maximum and not a bound. It is available where a row carries
+/// a measurement: a delivered figure is a measurement, so where no row carries
+/// one the answer is that there is none rather than a number derived from a
+/// bound.
 ///
 /// It is absent for the half-precision lanes, whose error is dominated by the
 /// format's own quantum at the returned value: no row of this library measured
@@ -901,7 +800,6 @@ inline AccuracyFigure DefaultGuarantee(AccuracyTier tier = AccuracyTier::kRefere
 /// \param scheme      the evaluation scheme
 /// \param axis        the packing axis
 /// \param granularity the interval partition
-/// \param tier        the accuracy rung
 /// \returns the figure, and whether this revision carries the combination and
 ///          measured it
 ///
@@ -910,54 +808,7 @@ AccuracyFigure BoysAccuracyDelivered(Precision precision,
                                      FitRoute route,
                                      EvalScheme scheme,
                                      PackAxis axis,
-                                     FitGranularity granularity,
-                                     AccuracyTier tier) noexcept;
-
-/// What a tier delivers in one region, and what limits it when a tighter
-/// error than that is asked for.
-///
-/// \ingroup boys
-struct TierCoverage {
-    bool meets = false; ///< the tier delivers an error at or below the request
-    double reachable = 0.0; ///< the largest error the tier can deliver here
-    AccuracyComponent limiting = AccuracyComponent::kRegionCAsymptotic; ///< the component that limits the tier when a tighter error is asked for
-};
-
-/// The accuracy a tier delivers for arguments in \p region, and the component that
-/// limits it when \p tolerance is tighter than that.
-///
-/// Region C is evaluated by its asymptotic form plus upward recursion and has no
-/// coefficients to truncate, so its reachable error is the reference tier's at
-/// every m: no tier meets a request tighter than it.
-///
-///
-/// \param tier      the tier
-/// \param region    the region the arguments fall in
-/// \param tolerance the absolute error asked for
-/// \returns         the coverage; \c meets is false when the tier cannot reach it
-///
-/// \ingroup boys
-TierCoverage QueryTier(AccuracyTier tier, AccuracyRegion region, double tolerance) noexcept;
-
-/// The same report for one argument, with the region taken from \p x rather than
-/// named by the caller.
-///
-/// The region boundaries are internal and not part of the stable surface (README,
-/// "Public function signatures and supported domains"), so a caller cannot in
-/// general say which region an argument falls in. Naming the wrong one is not a
-/// conservative error: region C has no relaxable resource, so its reachable error is
-/// the reference tier's at every m — a caller who names region C for an argument
-/// that is really in region A or B is told the tier reaches m times better than it
-/// does. This overload takes the guess away.
-///
-///
-/// \param tier      the tier
-/// \param x         the argument, >= 0
-/// \param tolerance the absolute error asked for
-/// \returns         the coverage for arguments in \p x's region
-///
-/// \ingroup boys
-TierCoverage QueryTier(AccuracyTier tier, double x, double tolerance) noexcept;
+                                     FitGranularity granularity) noexcept;
 
 /// Which of a combination's two figures met a tolerance a caller named.
 ///
@@ -982,19 +833,19 @@ enum class ToleranceVerdict : std::uint8_t {
 /// figures the answer was made on.
 ///
 /// Both figures are stated beside the verdict so that the answer can be read rather
-/// than taken: \c bound is the figure the lane documents for the combination at its
-/// rung, which is the one a calculation's safety rests on, and \c delivered is the
+/// than taken: \c bound is the figure the lane documents for the combination, which
+/// is the one a calculation's safety rests on, and \c delivered is the
 /// figure the combination's own rows were measured to deliver, which is the one that
 /// ranks two combinations against each other. The verdict says which of the two met
 /// \c requested. \c deliveredKnown is false where no measured figure is held for the
-/// combination - the half lanes and every rung past the reference multiplier - so a
+/// combination - the half lanes - so a
 /// zero \c delivered is never taken for a measurement of nought.
 ///
 /// A combination this revision does not carry returns no figure at all: \c verdict
 /// is \c kNotCarried, both figures are 0.0, \c deliveredKnown is false, and
 /// \c reason carries the library's own sentence for the refusal. That sentence is
 /// also where the two kinds of refusal stay apart, because it names the work rather
-/// than the outcome: a refusal names either a table, kernel or rung this library has
+/// than the outcome: a refusal names either a table or kernel this library has
 /// not built, which is work owed, or a shape the call itself cannot have, which no
 /// revision lifts.
 ///
@@ -1036,7 +887,6 @@ struct CombinationCoverage {
 /// \param scheme      the evaluation scheme
 /// \param axis        the packing axis
 /// \param granularity the interval partition
-/// \param tier        the accuracy rung
 /// \param tolerance   the absolute error the caller needs, > 0
 /// \returns           the verdict and the figures it was made on; \c
 ///                    kNotCarried, no figures and a reason where this revision
@@ -1054,7 +904,6 @@ CombinationCoverage QueryCombination(Precision precision,
                                      EvalScheme scheme,
                                      PackAxis axis,
                                      FitGranularity granularity,
-                                     AccuracyTier tier,
                                      double tolerance) noexcept;
 
 /// One certified fit route as a report states it.
@@ -1123,9 +972,8 @@ std::span<const FitRouteInfo> BoysFitRoutes() noexcept;
 /// selector takes them over - and a route served per order takes over per order, so
 /// a caller below an order's own boundary receives the default's value for it.
 ///
-/// The multiplier is the reference one: this entry selects a fit, not a rung. A
-/// caller that wants a relaxed budget wants \c BoysAllOrdersAtTier, whose tiers are
-/// defined against the default route.
+/// This entry names one axis and no other: the route selects a fit, and the
+/// accuracy is the one every entry of this header carries.
 ///
 /// A route this build does not serve evaluates at the default route, the same
 /// fallback BoysFitRoutes' table and the enumeration's contract describe.
@@ -1152,7 +1000,7 @@ void BoysAllOrdersWithRoute(FitRoute route, int nmax, double x, double* out) noe
 /// intervals a route's rows report, where the route has already handed the argument
 /// back to the shipped family, and inside them the route's own fits answer at the bar
 /// its row states. A scheme outside the enumeration is the reference scheme's body,
-/// the same fallback \c BoysAllOrdersAtTier takes for a scheme it does not carry.
+/// the same fallback this entry takes for a route it does not serve.
 ///
 /// \param route   the fit route
 /// \param scheme  the evaluation scheme
@@ -1164,210 +1012,18 @@ void BoysAllOrdersWithRoute(FitRoute route, int nmax, double x, double* out) noe
 void BoysAllOrdersWithRoute(
     FitRoute route, EvalScheme scheme, int nmax, double x, double* out) noexcept;
 
-/// F_0(x)..F_nmax(x) in double precision at a run-time-selected tier; the
-/// batch entry's contract — the \c "double batch" row of the table in the
-/// file preamble: |F̂ − F| ≤ m·5.5e-14 per value in every region, with
-/// m = AccuracyMultiplier(tier).
-///
-/// The row is named rather than \c B_region because this entry dispatches to
-/// \c BoysAllOrders, whose region-A error already reaches 3.2·m·1e-15 at m = 1:
-/// reading the table's per-region column would promise up to 54 times tighter
-/// than the code delivers. \c QueryTier reports the batch row for the same
-/// reason.
-///
-/// One branch selects the rung, then the rung's own body runs; the reference tier
-/// is the template default, so it is the same code a direct call reaches.
-///
-/// A tier this build does not serve evaluates at the reference multiplier — the
-/// fallback \c AccuracyMultiplier reports, so the number a caller records beside
-/// these values is the accuracy they were computed at.
-///
-/// \param tier the tier, a property of this call only
-/// \param nmax highest order, 0..kMaxBoysOrder
-/// \param x    argument, >= 0
-/// \param out  receives nmax + 1 values, out[k] = F_k(x); every value is
-///             written at every tier, including a tier this build does not
-///             serve
-///
-/// \ingroup boys
-void BoysAllOrdersAtTier(AccuracyTier tier, int nmax, double x, double* out) noexcept;
 
-/// The same batch entry with the evaluation scheme named as well as the tier.
-///
-/// The two selectors are different kinds of thing: a tier is a run-time value
-/// and a scheme is a compile-time one, so this overload carries the tier and
-/// names the scheme for the rung it dispatches to. A scheme this build does
-/// not carry is the reference scheme's body, the same fallback a tier this
-/// build does not serve takes.
-///
-/// \param tier   the tier
-/// \param scheme the evaluation scheme
-/// \param nmax   highest order, 0..kMaxBoysOrder
-/// \param x      argument, >= 0
-/// \param out    receives nmax + 1 values, out[k] = F_k(x)
-///
-/// \ingroup boys
-void BoysAllOrdersAtTier(
-    AccuracyTier tier, EvalScheme scheme, int nmax, double x, double* out) noexcept;
 
-/// The same batch entry with the fit route named as well as the tier and the
-/// scheme: every axis of the compile-time selection, at run time.
-///
-/// A caller that wants the rational route at a relaxed budget wants this entry: a
-/// rung truncates the route's own fits to the degrees its criterion certifies, and
-/// the criterion reads the table the route evaluates, so a caller that names only
-/// a tier gets the default route's rung, which is what \c BoysAllOrdersAtTier
-/// answers.
-///
-/// The rung is a property of the route rather than of the multiplier: the
-/// Chebyshev family's is a cut of its stored coefficients and the rational
-/// family's a cut of its stored numerator and denominator pair, derived by the same
-/// criterion, and neither is a value the other route's table can express.
-///
-/// \param tier   the tier
-/// \param route  the fit route
-/// \param scheme the evaluation scheme
-/// \param nmax   highest order, 0..kMaxBoysOrder
-/// \param x      argument, >= 0
-/// \param out    receives nmax + 1 values, out[k] = F_k(x)
-///
-/// \ingroup boys
-void BoysAllOrdersAtTier(
-    AccuracyTier tier, FitRoute route, EvalScheme scheme, int nmax, double x, double* out) noexcept;
 
-/// The same entry with the reference scheme named for the route; see the
-/// scheme-carrying overload above.
-///
-/// \param tier  the tier
-/// \param route the fit route
-/// \param nmax  highest order, 0..kMaxBoysOrder
-/// \param x     argument, >= 0
-/// \param out   receives nmax + 1 values, out[k] = F_k(x)
-///
-/// \ingroup boys
-void BoysAllOrdersAtTier(
-    AccuracyTier tier, FitRoute route, int nmax, double x, double* out) noexcept;
 
-/// F_0(x)..F_nmax(x) in double precision at a combination named in the type and
-/// a rung named in the call.
-///
-/// The join between the two decisions a call site makes: **which combination to
-/// evaluate** is structural, written once where the call is written (the policy is
-/// a template argument, so the five axes cost nothing at the call), while **how
-/// much accuracy to buy** is decided per call. \c BoysAllOrders names the
-/// combination and fixes the rung in its first template argument;
-/// \c BoysAllOrdersAtTier takes the rung as a value but reaches only the default
-/// policy; here the policy names the combination and the rung is the call's own
-/// argument.
-///
-/// The values are \c BoysAllOrders's at the policy named and the multiplier the
-/// tier names, bit for bit: one branch selects the rung, then that rung's own body
-/// at the named policy runs. Every rung this build serves is honoured for every
-/// combination its book carries.
-///
-/// A tier this build does not serve evaluates at the reference multiplier, the
-/// fallback \c AccuracyMultiplier reports, so a caller is never handed a looser
-/// rung than the one it named. A caller that needs to know which rung it got reads
-/// \c BoysAccuracyGuaranteed for the combination and tier it named before the
-/// call, which answers whether this revision carries that rung at all.
-///
-/// \tparam Policy the evaluation policy (\c EvalPolicy): the fit route, the
-///         scheme its coefficients are summed in, the partition of the fitted
-///         regions and the packing axis, selected together where the call is
-///         written; there is no default, because the combination is the whole
-///         subject of this entry. \c DefaultPolicyFp64 names the combination the
-///         entries default to
-/// \param tier  the accuracy rung
-/// \param nmax  highest order, 0..kMaxBoysOrder
-/// \param x     argument, >= 0
-/// \param out   receives nmax + 1 values, out[k] = F_k(x)
-///
-/// \ingroup boys
-template <EvalPolicyLike Policy>
-void BoysAllOrdersAtTier(AccuracyTier tier, int nmax, double x, double* out) noexcept;
 
-/// F_n(x) in double precision at a run-time-selected tier, and optionally a
-/// run-time-selected route and scheme; the single-order entry's contract — the
-/// \c "double single" rows of the table in the file preamble, |F̂ − F| ≤
-/// m·B_region per region with m = AccuracyMultiplier(tier).
-///
-/// The batch entry's rung is a run-time choice already; this is the same choice
-/// on the single-order shape, and it exists because the shape is a different
-/// call: an integral engine that reads one order at a time cannot reach the
-/// rung through an entry that computes every order. The route and the scheme
-/// are named here for the same reason they are named on the batch entry — a
-/// rung is a cut of the named route's own fits, so a caller who wants the
-/// rational route's rung has to be able to say both.
-///
-/// One branch selects the rung, then the rung's own body runs, exactly as in
-/// the templated entry: the values are those of \c BoysSingle<m, Policy> at the
-/// multiplier the tier names, bit for bit, and the reference tier is the
-/// template default. A tier or a route this build does not serve is the
-/// fallback the rest of the surface takes for it, so a caller who records the
-/// multiplier \c AccuracyMultiplier reported beside these values is recording
-/// the accuracy they were computed at.
-///
-/// \param tier   the tier
-/// \param route  the fit route; the default route by default
-/// \param scheme the evaluation scheme; the reference scheme by default
-/// \param n      order, 0..kMaxBoysOrder
-/// \param x      argument, >= 0
-/// \returns      F_n(x)
-///
-/// \ingroup boys
-double BoysSingleAtTier(AccuracyTier tier, FitRoute route, EvalScheme scheme, int n,
-                        double x) noexcept;
 
-/// The same entry with the reference scheme named for the route; see the
-/// scheme-carrying overload above.
-///
-/// \param tier  the tier
-/// \param route the fit route
-/// \param n     order, 0..kMaxBoysOrder
-/// \param x     argument, >= 0
-/// \returns     F_n(x)
-///
-/// \ingroup boys
-double BoysSingleAtTier(AccuracyTier tier, FitRoute route, int n, double x) noexcept;
 
-/// The same entry with the default route and a named scheme.
-///
-/// \param tier   the tier
-/// \param scheme the evaluation scheme
-/// \param n      order, 0..kMaxBoysOrder
-/// \param x      argument, >= 0
-/// \returns      F_n(x)
-///
-/// \ingroup boys
-double BoysSingleAtTier(AccuracyTier tier, EvalScheme scheme, int n, double x) noexcept;
 
-/// F_n(x) at a run-time-selected tier, on the default route and scheme.
-///
-/// \param tier the tier
-/// \param n    order, 0..kMaxBoysOrder
-/// \param x    argument, >= 0
-/// \returns    F_n(x)
-///
-/// \ingroup boys
-double BoysSingleAtTier(AccuracyTier tier, int n, double x) noexcept;
 
-/// F_n(x) in double precision, |F̂ − F| ≤ m·B_region per region (contract
-/// table in the file preamble; m = kAccuracyMultiplier).
+/// F_n(x) in double precision, |F̂ − F| ≤ B_region per region (contract
+/// table in the file preamble).
 ///
-/// \tparam kAccuracyMultiplier the accuracy multiplier m >= 1.0; 1.0 = full
-///         static accuracy, bit-identical to the certified lane; relaxes the
-///         per-region bound to m·B_region (compile-time degree truncation,
-///         monotone in m). The rung is a cut of the named route's own fits: the
-///         Chebyshev route's stored coefficients are cut to the degree table of
-///         boys_effective_degrees.hpp, certified against the table the policy's
-///         scheme sums, and the rational route's stored numerator and
-///         denominator pair is cut by the same criterion, which reads a pair's
-///         dropped orders as the two terms a quotient's perturbation has rather
-///         than as one coefficient sum. Both routes are carried, at either
-///         scheme; the entries of this lane that reach their values through
-///         the shipped fits' own path rather than through the policy are the
-///         ones that refuse the rational route, and they say so where the call
-///         is named
 /// \tparam Policy the evaluation policy (\c EvalPolicy): the fit route, the
 ///         scheme its coefficients are summed in, the partition of the fitted
 ///         regions, and a single-precision engine's budget, selected together.
@@ -1379,48 +1035,43 @@ double BoysSingleAtTier(AccuracyTier tier, int n, double x) noexcept;
 /// \returns     F_n(x)
 ///
 /// \ingroup boys
-template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kSingle>>
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kSingle>>
 double BoysSingle(int n, double x) noexcept;
 
 /// F_0(x)..F_nmax(x) in double precision; the batch entry's contract — the
 /// \c "double batch" row of the table in the file preamble:
-/// |F̂ − F| ≤ m·5.5e-14 per value in every region, with m = kAccuracyMultiplier.
+/// |F̂ − F| ≤ 5.5e-14 per value in every region.
 ///
 /// The row is named rather than \c B_region because this entry's delivered
 /// error is the batch row's and not the per-region column's: its region-A error
-/// already reaches 3.2·m·1e-15 at m = 1, so a caller reading \c B_region as the
+/// already reaches 3.2·1e-15, so a caller reading \c B_region as the
 /// per-region column would hold this entry to up to 54 times tighter than its
-/// code delivers. BoysAllOrdersAtTier, the run-time-tier spelling of this
-/// entry, names the same row for the same reason.
+/// code delivers.
 ///
 /// The batch is the pattern real integral engines use (the McMurchie-Davidson
 /// [McMurchie1978] and Obara-Saika [ObaraSaika1986] recursions consume all
 /// orders at once) and is considerably
 /// cheaper than nmax + 1 single evaluations.
 ///
-/// \tparam kAccuracyMultiplier see BoysSingle
 /// \tparam Policy see BoysSingle
 /// \param nmax  highest order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0
 /// \param out   receives nmax + 1 values, out[k] = F_k(x)
 ///
 /// \ingroup boys
-template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllOrders>>
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllOrders>>
 void BoysAllOrders(int nmax, double x, double* out) noexcept;
 
 /// F_n(x_i) for an array of arguments at one fixed order n, double
-/// precision; |F_hat - F| <= m*B_region per value (the BoysSingle
+/// precision; |F_hat - F| <= B_region per value (the BoysSingle
 /// per-region contract, region table in the file preamble).
 ///
 /// The batch shape of integral-engine inner loops that group shell pairs by
 /// angular momentum: each element needs exactly one order, so no unused
-/// cross-order recursion is paid. Each output element returns
-/// BoysSingle<kAccuracyMultiplier>'s value at the same (n, x) and carries the
-/// single lane's per-region bound with it: the m = 1 path runs the certified
-/// scalar single-lane region bodies verbatim, the relaxed path the same bodies
-/// at the single-lane effective degrees. The two agree bit for bit on a build
+/// cross-order recursion is paid. Each output element returns BoysSingle's
+/// value at the same (n, x) and carries the single lane's per-region bound
+/// with it: the entry runs the certified scalar single-lane region bodies
+/// verbatim. An element agrees with the single entry bit for bit on a build
 /// that does not contract a bare product-plus-add, which is what x86-64 without
 /// -mfma and MSVC everywhere deliver. A build that does contract one decides per
 /// call site whether to fuse that form, so an element can differ from the single
@@ -1435,12 +1086,11 @@ void BoysAllOrders(int nmax, double x, double* out) noexcept;
 /// is scalar and portable: x and out need no alignment beyond
 /// alignof(double), and the two arrays must not overlap.
 ///
-/// \tparam kAccuracyMultiplier see BoysSingle
 /// \tparam Policy see BoysSingle. A call naming a route other than the shipped
 ///         one is answered by the per-argument single entry, once per argument,
-///         whose body this entry's own m = 1 path already mirrors region for
-///         region. A call naming the uniform grid is answered the same way, for
-///         the same reason: the grid is a table read one order at a time, and
+///         whose body this entry's own path already mirrors region for region.
+///         A call naming the uniform grid is answered the same way, for the
+///         same reason: the grid is a table read one order at a time, and
 ///         the shaped body below is a walk over the regions the grid does not
 ///         have. Both keep this entry's documented accuracy - the path costs the
 ///         shaped body's region dispatch, not a value
@@ -1460,8 +1110,7 @@ void BoysAllOrders(int nmax, double x, double* out) noexcept;
 /// \param stride output stride in doubles, >= 1 (default 1 = contiguous)
 ///
 /// \ingroup boys
-template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kFixedN>>
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kFixedN>>
 void BoysFixedN(
     int n, const double* x, double* out, std::size_t count, std::size_t stride = 1) noexcept;
 
@@ -1507,10 +1156,10 @@ constexpr std::size_t BoysAllNWorkspaceSize(std::size_t count) noexcept
 /// count * (nmax + 1) doubles.
 ///
 /// Accuracy: every returned value satisfies the double batch lane's documented
-/// per-region bound, |F̂ − F| ≤ m·5.5e-14 (the contract table in the file
+/// per-region bound, |F̂ − F| ≤ 5.5e-14 (the contract table in the file
 /// preamble), which is the bound the per-argument BoysAllOrders call meets —
-/// the same contract, not necessarily the same bits. At m = 1 on a host with
-/// AVX2 a low-order batch (where the region-A lane's one-order-at-a-time cost is
+/// the same contract, not necessarily the same bits. On a host with AVX2 a
+/// low-order batch (where the region-A lane's one-order-at-a-time cost is
 /// amortized) hands its region-A runs to that lane and differs from
 /// BoysAllOrders only within that lane's own region-A budget; every other case
 /// runs the per-argument path's own bodies at the batch's nmax, and is
@@ -1528,7 +1177,6 @@ constexpr std::size_t BoysAllNWorkspaceSize(std::size_t count) noexcept
 /// The entry is total: a failed allocation falls back to the per-argument path,
 /// at the same bound and without the grouped-path speed-up.
 ///
-/// \tparam kAccuracyMultiplier see BoysSingle
 /// \tparam Policy see BoysSingle. The route is a property of the fit a value is
 ///         read from, so a call naming the rational route takes the
 ///         per-argument path, whose body is the all-orders entry's own and takes
@@ -1545,9 +1193,8 @@ constexpr std::size_t BoysAllNWorkspaceSize(std::size_t count) noexcept
 ///         its body, and the packed lane that fills a register with four orders
 ///         of that argument is the all-orders entry's. Naming the axis trades
 ///         the region grouping (which exists to feed a lane that packs four
-///         arguments) for that lane. The axis carries every rung the tier
-///         enumeration declares and either route, at m·B_region as this entry
-///         does
+///         arguments) for that lane. The axis carries either route, at B_region
+///         as this entry does
 /// \param nmax      highest order, 0..kMaxBoysOrder
 /// \param x         array of count arguments, each >= 0
 /// \param out       receives count * (nmax + 1) doubles, out[k * count + i] = F_k(x[i])
@@ -1560,8 +1207,7 @@ constexpr std::size_t BoysAllNWorkspaceSize(std::size_t count) noexcept
 ///      and must not overlap
 ///
 /// \ingroup boys
-template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllN>>
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllN>>
 void BoysAllN(int nmax,
               const double* x,
               double* out,
@@ -1571,7 +1217,6 @@ void BoysAllN(int nmax,
 /// BoysAllN for arguments the caller states are already in non-decreasing
 /// order — the sort is skipped rather than paid for.
 ///
-/// \tparam kAccuracyMultiplier see BoysSingle
 /// \tparam Policy see BoysAllN: the same entry and the same paths, reached
 ///         without the sort
 /// \param nmax   highest order, 0..kMaxBoysOrder
@@ -1588,8 +1233,7 @@ void BoysAllN(int nmax,
 ///      other error channel.
 ///
 /// \ingroup boys
-template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllN>>
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllN>>
 void BoysAllN(
     int nmax, const double* x, double* out, std::size_t count, BoysSortedArgs) noexcept;
 
@@ -1618,7 +1262,7 @@ void BoysAllN(
 /// padding of the arguments or the output.
 ///
 /// Accuracy: every returned value satisfies the double batch lane's documented
-/// per-region bound, |F̂ − F| ≤ m·5.5e-14 (the contract table in the file
+/// per-region bound, |F̂ − F| ≤ 5.5e-14 (the contract table in the file
 /// preamble). Each column is the per-argument all-orders body run at that
 /// argument's own top order: out[k * count + i] is the value, bit for bit, that
 /// BoysAllOrders(n[i], x[i], out) returns at out[k].
@@ -1626,7 +1270,6 @@ void BoysAllN(
 /// Threading: single-threaded and pure like every entry here — divide the array
 /// over your own threads; distinct batches share nothing.
 ///
-/// \tparam kAccuracyMultiplier see BoysSingle
 /// \tparam Policy see BoysSingle. This entry runs the per-argument all-orders
 ///         body, so it takes the same policies that entry takes
 /// \param n     array of count top orders, each 0..kMaxBoysOrder
@@ -1640,8 +1283,7 @@ void BoysAllN(
 ///      overlap
 ///
 /// \ingroup boys
-template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllNAtOrders>>
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllNAtOrders>>
 void BoysAllNAtOrders(const int* n, const double* x, double* out, std::size_t count) noexcept;
 
 /// Whether the packed region-A lane serves a call whose policy names this
@@ -1678,55 +1320,41 @@ constexpr bool BoysPackedLaneServes(EvalScheme scheme) noexcept
     return scheme == EvalScheme::kSplitClenshaw;
 }
 
-/// F_n(x) in single precision, |F̂ − F| ≤ m·1.5e-7.
+/// F_n(x) in single precision, |F̂ − F| ≤ 1.5e-7.
 ///
 /// Same piecewise structure as the double lane with per-order float fits.
 /// This is the recommended lane for GPU integral evaluation.
 ///
-/// \tparam kAccuracyMultiplier see BoysSingle
 /// \tparam Policy see BoysSingle. The lane reads the policy's fit route and its
-///         evaluation scheme at every multiplier: the route selects which family
-///         supplies the lane's own fits - the shipped Chebyshev table or the
-///         rational minimax one - and the scheme selects which of the Chebyshev
-///         family's two parallel tables, the Chebyshev form or the monomial form
-///         of the same fits, is summed. At a multiplier past the reference one
-///         the route and the scheme also name which of those tables the rung's
-///         truncation is cut from, so the degrees are the ones that policy's own
-///         table supports: the Chebyshev and monomial tables are cut from
-///         themselves by their own coefficient tails, and the rational route's
-///         pieces by the tail of the pair it stores, numerator and denominator
-///         together. The budget is a different axis: it picks the region budget
-///         the cut targets, which is what tells the float lane's 1.5e-7 apart
-///         from the half lanes' 1e-7, and it changes the degrees the cut lands on
-///         without changing the route or the scheme. The packing axis is not an
-///         axis of this shape and is refused where it is named: this entry
-///         answers one order at one argument, so the value is a single float and
-///         neither axis has a lane to fill
+///         evaluation scheme: the route selects which family supplies the
+///         lane's own fits - the shipped Chebyshev table or the rational
+///         minimax one - and the scheme selects which of the Chebyshev family's
+///         two parallel tables, the Chebyshev form or the monomial form of the
+///         same fits, is summed. The packing axis is not an axis of this shape
+///         and is refused where it is named: this entry answers one order at
+///         one argument, so the value is a single float and there is no lane to
+///         fill
 /// \param n     order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0
 /// \returns     F_n(x)
 ///
 /// \ingroup boys
-template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp32, Shape::kSingle>>
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp32, Shape::kSingle>>
 float BoysSingleF32(int n, float x) noexcept;
 
-/// F_0(x)..F_nmax(x) in single precision, |F̂ − F| ≤ m·1.5e-7 per value.
+/// F_0(x)..F_nmax(x) in single precision, |F̂ − F| ≤ 1.5e-7 per value.
 ///
-/// \tparam kAccuracyMultiplier see BoysSingle
-/// \tparam Policy see BoysSingleF32: the route and the scheme select the fits at
-///         every multiplier - the route for this lane's region-B seed and for
-///         the double lane's fit that seeds region A, the scheme for which of
-///         the route's tables each of those reads - and the budget selects the
-///         region budget the degree cut targets. Region A's seed is the double
-///         lane's fit at the policy's pair, so its degrees are that lane's rung
-///         table; region B's is this lane's own. The packing axis is read here
-///         too: the orders axis packs eight orders of the single argument and
-///         reads the tables the policy names, so a policy naming the narrow
-///         partition reads each order's own piece of it (each partition holds its
-///         own family's coefficients, so a rung of either is a reading of the
-///         family named), and it carries every rung and either route. Naming the
-///         arguments axis
+/// \tparam Policy see BoysSingleF32: the route and the scheme select the fits -
+///         the route for this lane's region-B seed and for the double lane's
+///         fit that seeds region A, the scheme for which of the route's tables
+///         each of those reads. Region A's seed is the double lane's fit at the
+///         policy's pair, so its degrees are the double lane's; region B's is
+///         this lane's own. The packing axis is read here too: the orders axis
+///         packs eight orders of the single argument and reads the tables the
+///         policy names, so a policy naming the narrow partition reads each
+///         order's own piece of it (each partition holds its own family's
+///         coefficients, so a reading of either is a reading of the family
+///         named), and it carries either route. Naming the arguments axis
 ///         names no lane this shape has to fill: the values are the per-argument
 ///         body's either way, and the batch entry is where an array of arguments
 ///         is answered, one argument at a time
@@ -1735,8 +1363,7 @@ float BoysSingleF32(int n, float x) noexcept;
 /// \param out   receives nmax + 1 values, out[k] = F_k(x)
 ///
 /// \ingroup boys
-template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp32, Shape::kAllOrders>>
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp32, Shape::kAllOrders>>
 void BoysAllOrdersF32(int nmax, float x, float* out) noexcept;
 
 /// F_0(x_i)..F_nmax(x_i) for an array of arguments, single precision — the
@@ -1753,7 +1380,7 @@ void BoysAllOrdersF32(int nmax, float x, float* out) noexcept;
 /// all-orders body at each argument. No speed is claimed for it over the same loop
 /// written at the call site.
 ///
-/// Accuracy: |F̂ − F| ≤ m·1.5e-7 per value, the float lane's bound, which is the
+/// Accuracy: |F̂ − F| ≤ 1.5e-7 per value, the float lane's bound, which is the
 /// same in every region (the contract table in the file preamble) — the bound
 /// BoysAllOrdersF32 meets, and each column is that entry's value at the same
 /// (nmax, x[i]) bit for bit.
@@ -1761,12 +1388,11 @@ void BoysAllOrdersF32(int nmax, float x, float* out) noexcept;
 /// Threading: single-threaded and pure like every entry here — divide the array
 /// over your own threads; distinct batches share nothing.
 ///
-/// \tparam kAccuracyMultiplier see BoysSingle
-/// \tparam Policy see BoysSingleF32: the route and the scheme select the fits, and
-///         the budget the region budget the degree cut targets. The packing axis
-///         is read at every argument - the all-orders body this entry calls packs
-///         eight orders of one argument under the orders axis - and what stays at
-///         the caller's loop is the region partitioning of the arguments axis
+/// \tparam Policy see BoysSingleF32: the route and the scheme select the fits.
+///         The packing axis is read at every argument - the all-orders body this
+///         entry calls packs eight orders of one argument under the orders
+///         axis - and what stays at the caller's loop is the region partitioning
+///         of the arguments axis
 /// \param nmax  highest order, 0..kMaxBoysOrder
 /// \param x     array of count arguments, each >= 0
 /// \param out   receives count * (nmax + 1) floats, out[k * count + i] = F_k(x[i])
@@ -1776,8 +1402,7 @@ void BoysAllOrdersF32(int nmax, float x, float* out) noexcept;
 ///      overlap
 ///
 /// \ingroup boys
-template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp32, Shape::kAllN>>
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp32, Shape::kAllN>>
 void BoysAllNF32(int nmax, const float* x, float* out, std::size_t count) noexcept;
 
 /// F_n(x) in single precision at a run-time-selected fit route — the
@@ -1796,16 +1421,14 @@ void BoysAllNF32(int nmax, const float* x, float* out, std::size_t count) noexce
 /// bit; outside the intervals the route reports in \c BoysFitRoutesF32 the same
 /// holds.
 ///
-/// The two routes are alternatives and not rungs: the rational route holds half
+/// The two routes are alternatives: the rational route holds half
 /// the stored coefficients over region A and delivers more error than the
 /// Chebyshev route at the same bar, so which of the two is cheaper is a property
 /// of the caller's machine rather than of the tables. Both are certified against
 /// the lane's own bound.
 ///
-/// The multiplier is the reference one: this entry selects a fit, not a rung. The
-/// rung and the route are independent — the templated entries read the route at
-/// every multiplier — and a caller who wants both names the route in the policy
-/// it templates on.
+/// This entry selects a fit and nothing else, and a caller who wants a
+/// compile-time route names it in the policy it templates on instead.
 ///
 /// A route this build does not serve evaluates at the default route, the same
 /// fallback the \c FitRoute enumeration's contract describes.
@@ -1818,29 +1441,6 @@ void BoysAllNF32(int nmax, const float* x, float* out, std::size_t count) noexce
 /// \ingroup boys
 float BoysSingleF32WithRoute(FitRoute route, int n, float x) noexcept;
 
-/// F_0(x)..F_nmax(x) in single precision at a combination named in the type and
-/// a rung named in the call; the float lane's own entry, and the same contract
-/// as \c BoysAllOrdersAtTier.
-///
-/// A caller that decides its combination once and its rung per call writes the
-/// policy here and passes the rung, exactly as on the double lane: the policy is
-/// a template argument and costs nothing at the call, and the rung is the call's
-/// own. The values are \c BoysAllOrdersF32's at the policy named and the
-/// multiplier the tier names, bit for bit.
-///
-/// \tparam Policy the evaluation policy (\c EvalPolicy): the fit route, the
-///         scheme, the partition of the fitted regions and the packing axis,
-///         selected together where the call is written, at this lane's own
-///         engine budget. \c DefaultPolicyFp32 names the combination the entries
-///         default to
-/// \param tier  the accuracy rung
-/// \param nmax  highest order, 0..kMaxBoysOrder
-/// \param x     argument, >= 0
-/// \param out   receives nmax + 1 values, out[k] = F_k(x)
-///
-/// \ingroup boys
-template <EvalPolicyLike Policy>
-void BoysAllOrdersF32AtTier(AccuracyTier tier, int nmax, float x, float* out) noexcept;
 
 /// The certified fit routes this build carries for the single-precision lane,
 /// one row per route and region, so a caller can ask what options exist, what
@@ -1880,8 +1480,8 @@ bool BoysAvx2Available() noexcept;
 /// the certified fp32 engine. The argument is rounded to fp16 before
 /// evaluation (the lane evaluates at the fp16 value), the computation is
 /// the F32 lane's, and the result is the correctly rounded fp16 of it —
-/// |result - F_n(x16)| <= m·1.5e-7 + one half-ULP of representation (the
-/// representation term is m-independent, and the base is the float lane's own
+/// |result - F_n(x16)| <= 1.5e-7 + one half-ULP of representation (the
+/// representation term is the format's, and the base is the float lane's own
 /// figure: this lane runs that lane's arithmetic). The bound is claimed only over the
 /// arguments where |F_n(x16)| exceeds it, and no accuracy is claimed past that
 /// ceiling: in f16 the return there is a subnormal number, then exactly zero,
@@ -1896,7 +1496,6 @@ bool BoysAvx2Available() noexcept;
 /// one; naming none runs \c DefaultPolicyFp16, this lane's own default and the
 /// combination its figures are stated for.
 ///
-/// \tparam kAccuracyMultiplier see BoysSingle (forwards to the F32 engine)
 /// \tparam Policy the evaluation policy (\c EvalPolicy): the fit route, the
 ///         scheme its coefficients are summed in, the partition of the fitted
 ///         regions and the packing axis, selected together; \c DefaultPolicyFp16
@@ -1907,29 +1506,25 @@ bool BoysAvx2Available() noexcept;
 /// \returns     F_n(x) in fp16
 ///
 /// \ingroup boys
-template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp16, Shape::kSingle>>
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp16, Shape::kSingle>>
 F16 BoysSingleF16(int n, F16 x) noexcept;
 
 /// F_0(x)..F_nmax(x) in fp16, same certified-boundary contract as
 /// BoysSingleF16 per value.
 ///
-/// \tparam kAccuracyMultiplier see BoysSingleF16
 /// \tparam Policy see BoysSingleF16
 /// \param nmax  highest order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0 (fp16)
 /// \param out   receives nmax + 1 values, out[k] = F_k(x)
 ///
 /// \ingroup boys
-template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp16, Shape::kAllOrders>>
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp16, Shape::kAllOrders>>
 void BoysAllOrdersF16(int nmax, F16 x, F16* out) noexcept;
 
 /// F_n(x) in bfloat16 — the Bf16 lane of the certified mixed-precision
 /// boundary, same
 /// contract as BoysSingleF16 (bf16 representation term, 8-bit mantissa).
 ///
-/// \tparam kAccuracyMultiplier see BoysSingleF16
 /// \tparam Policy see BoysSingleF16. The two half formats are one lane at one
 ///         budget, so this is the fp16 lane's policy type: \c DefaultPolicyBf16
 ///         is \c DefaultPolicyFp16
@@ -1938,59 +1533,21 @@ void BoysAllOrdersF16(int nmax, F16 x, F16* out) noexcept;
 /// \returns     F_n(x) in bf16
 ///
 /// \ingroup boys
-template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp16, Shape::kSingle>>
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp16, Shape::kSingle>>
 Bf16 BoysSingleBf16(int n, Bf16 x) noexcept;
 
 /// F_0(x)..F_nmax(x) in bf16, same contract as BoysAllOrdersF16 per value.
 ///
-/// \tparam kAccuracyMultiplier see BoysSingleF16
 /// \tparam Policy see BoysSingleBf16
 /// \param nmax  highest order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0 (bf16)
 /// \param out   receives nmax + 1 values, out[k] = F_k(x)
 ///
 /// \ingroup boys
-template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp16, Shape::kAllOrders>>
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp16, Shape::kAllOrders>>
 void BoysAllOrdersBf16(int nmax, Bf16 x, Bf16* out) noexcept;
 
-/// F_0(x)..F_nmax(x) in fp16 at a combination named in the type and a rung named
-/// in the call; same contract as \c BoysAllOrdersAtTier.
-///
-/// The lane is the single-precision engine at the fp16 budget with the returned
-/// value stored in the half format, so the policy named here is read for the four
-/// structural axes and the engine is the fp16 one: the values are
-/// \c BoysAllOrdersF16's at the policy named and the multiplier the tier names,
-/// bit for bit.
-///
-/// \tparam Policy the evaluation policy (\c EvalPolicy): the fit route, the
-///         scheme, the partition of the fitted regions and the packing axis,
-///         selected together where the call is written. \c DefaultPolicyFp16
-///         names the combination this lane's figures are stated for
-/// \param tier  the accuracy rung
-/// \param nmax  highest order, 0..kMaxBoysOrder
-/// \param x     argument, >= 0 (fp16)
-/// \param out   receives nmax + 1 values, out[k] = F_k(x)
-///
-/// \ingroup boys
-template <EvalPolicyLike Policy>
-void BoysAllOrdersF16AtTier(AccuracyTier tier, int nmax, F16 x, F16* out) noexcept;
 
-/// F_0(x)..F_nmax(x) in bf16 at a combination named in the type and a rung named
-/// in the call; the bf16 lane's own entry, and the same contract as
-/// \c BoysAllOrdersF16AtTier.
-///
-/// \tparam Policy see BoysAllOrdersF16AtTier; the two half formats are one lane
-///         at one budget, so this is the fp16 lane's policy type
-/// \param tier  the accuracy rung
-/// \param nmax  highest order, 0..kMaxBoysOrder
-/// \param x     argument, >= 0 (bf16)
-/// \param out   receives nmax + 1 values, out[k] = F_k(x)
-///
-/// \ingroup boys
-template <EvalPolicyLike Policy>
-void BoysAllOrdersBf16AtTier(AccuracyTier tier, int nmax, Bf16 x, Bf16* out) noexcept;
 
 /// The power of two the native half lane scales its results by: 15, so 2^15 —
 /// the largest power of two binary16 holds, and an exact scale in it. A
@@ -2065,11 +1622,10 @@ void BoysAllNF16Native(int nmax, const F16* x, F16* out, std::size_t count) noex
 
 /// \cond
 // Hidden from the API reference: each of these is an instantiation of the
-// entries declared above at the default multiplier and the default policy, not
-// an entry of its own. They are what the default call sites link against
-// instead of compiling the kernel again in their own translation unit; a
-// caller that names another multiplier, or another policy, compiles the rung
-// or the route it asks for from the definition below.
+// entries declared above at the default policy, not an entry of its own. They
+// are what the default call sites link against instead of compiling the kernel
+// again in their own translation unit; a caller that names another policy
+// compiles the combination it asks for from the definition below.
 //
 // Declared only for the table this build carries. A build that supplies its own
 // through BOYS_BUILD_DEFAULTS has its own policy types - the table is read by
@@ -2078,16 +1634,16 @@ void BoysAllNF16Native(int nmax, const F16* x, F16* out, std::size_t count) noex
 // them here would promise a definition that does not exist and turn a working
 // consumer build into an unresolved external.
 #if !defined(BOYS_BUILD_DEFAULTS_REPLACED)
-extern template double BoysSingle<kBoysFullAccuracyMultiplier>(int n, double x) noexcept;
-extern template void BoysAllOrders<kBoysFullAccuracyMultiplier>(
+extern template double BoysSingle<>(int n, double x) noexcept;
+extern template void BoysAllOrders<>(
     int nmax, double x, double* out) noexcept;
-extern template void BoysFixedN<kBoysFullAccuracyMultiplier>(
+extern template void BoysFixedN<>(
     int n, const double* x, double* out, std::size_t count, std::size_t stride) noexcept;
-extern template void BoysAllN<kBoysFullAccuracyMultiplier>(
+extern template void BoysAllN<>(
     int nmax, const double* x, double* out, std::size_t count, std::size_t* workspace) noexcept;
-extern template void BoysAllN<kBoysFullAccuracyMultiplier>(
+extern template void BoysAllN<>(
     int nmax, const double* x, double* out, std::size_t count, BoysSortedArgs) noexcept;
-extern template void BoysAllNAtOrders<kBoysFullAccuracyMultiplier>(
+extern template void BoysAllNAtOrders<>(
     const int* n, const double* x, double* out, std::size_t count) noexcept;
 // The single-precision entries are NOT declared extern here, and the reason is the
 // one the paragraph above gives. An extern declaration PROMISES that this translation
@@ -2098,11 +1654,11 @@ extern template void BoysAllNAtOrders<kBoysFullAccuracyMultiplier>(
 // Their definitions are in this header, so a consumer instantiates what it names.
 
 #if BoysFp16
-extern template F16 BoysSingleF16<kBoysFullAccuracyMultiplier>(int n, F16 x) noexcept;
-extern template void BoysAllOrdersF16<kBoysFullAccuracyMultiplier>(
+extern template F16 BoysSingleF16<>(int n, F16 x) noexcept;
+extern template void BoysAllOrdersF16<>(
     int nmax, F16 x, F16* out) noexcept;
-extern template Bf16 BoysSingleBf16<kBoysFullAccuracyMultiplier>(int n, Bf16 x) noexcept;
-extern template void BoysAllOrdersBf16<kBoysFullAccuracyMultiplier>(
+extern template Bf16 BoysSingleBf16<>(int n, Bf16 x) noexcept;
+extern template void BoysAllOrdersBf16<>(
     int nmax, Bf16 x, Bf16* out) noexcept;
 #endif // BoysFp16
 #endif // !BOYS_BUILD_DEFAULTS_REPLACED
@@ -2110,7 +1666,7 @@ extern template void BoysAllOrdersBf16<kBoysFullAccuracyMultiplier>(
 
 } // namespace boys
 
-// The kernel behind the entries above, shipped as a header so that every multiplier
+// The kernel behind the entries above, shipped as a header so that every policy
 // a caller names is instantiable at the call site. Included here rather than at the
 // top of this file because its definitions name the declarations above.
 #include "boys/boys_impl.hpp"

@@ -43,11 +43,10 @@ namespace boys {
 /// \param out  receives the ladder, `nmax + 1` values
 ///
 /// \ingroup boys
-template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllOrders>>
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllOrders>>
 inline void BoysAllOrders(int nmax, double x, std::span<double> out) noexcept
 {
-    BoysAllOrders<kAccuracyMultiplier, Policy>(nmax, x, out.data());
+    BoysAllOrders<Policy>(nmax, x, out.data());
 }
 
 /// F_n(x_i) for every argument written into \p out; see \c BoysFixedN.
@@ -58,12 +57,11 @@ inline void BoysAllOrders(int nmax, double x, std::span<double> out) noexcept
 /// \param stride the distance between the elements the values are written to
 ///
 /// \ingroup boys
-template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kFixedN>>
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kFixedN>>
 inline void BoysFixedN(int n, std::span<const double> x, std::span<double> out,
                        std::size_t stride = 1) noexcept
 {
-    BoysFixedN<kAccuracyMultiplier, Policy>(n, x.data(), out.data(), x.size(), stride);
+    BoysFixedN<Policy>(n, x.data(), out.data(), x.size(), stride);
 }
 
 /// F_0(x_i) through F_nmax(x_i) for every argument; see \c BoysAllN.
@@ -74,12 +72,11 @@ inline void BoysFixedN(int n, std::span<const double> x, std::span<double> out,
 /// \param workspace scratch the grouped path uses, or empty
 ///
 /// \ingroup boys
-template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllN>>
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllN>>
 inline void BoysAllN(int nmax, std::span<const double> x, std::span<double> out,
                      std::span<std::size_t> workspace = {}) noexcept
 {
-    BoysAllN<kAccuracyMultiplier, Policy>(nmax, x.data(), out.data(), x.size(),
+    BoysAllN<Policy>(nmax, x.data(), out.data(), x.size(),
                                           workspace.empty() ? nullptr : workspace.data());
 }
 
@@ -91,12 +88,11 @@ inline void BoysAllN(int nmax, std::span<const double> x, std::span<double> out,
 /// \param out receives the planes, `x.size() * (1 + the largest order)` values
 ///
 /// \ingroup boys
-template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-          EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllNAtOrders>>
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllNAtOrders>>
 inline void BoysAllNAtOrders(std::span<const int> n, std::span<const double> x,
                              std::span<double> out) noexcept
 {
-    BoysAllNAtOrders<kAccuracyMultiplier, Policy>(n.data(), x.data(), out.data(), x.size());
+    BoysAllNAtOrders<Policy>(n.data(), x.data(), out.data(), x.size());
 }
 
 } // namespace boys

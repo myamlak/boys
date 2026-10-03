@@ -197,20 +197,21 @@ constexpr double CoefficientTail(const CoeffArray& coeffs,
     return tail;
 }
 
-/// The effective degree: the smallest admissible truncation (most relaxation)
-/// in the evaluator's domain {0,1,2,4,6,...}; even degrees >= 4 are the
-/// split-Clenshaw domain, and 0/1/2 are special-cased by the evaluator.
-/// Delta(deg) = 0, so deg itself is always admissible - the m = 1 path is
-/// today's path by construction. kAccuracyMultiplier is a runtime quantity so a
-/// table can be filled for an arbitrary m.
+/// The effective degree: the smallest admissible truncation in the
+/// evaluator's domain {0,1,2,4,6,...}; even degrees >= 4 are the split-Clenshaw
+/// domain, and 0/1/2 are special-cased by the evaluator.
+///
+/// The budget is the one this library carries - m = 1 relaxes nothing, so the
+/// criterion is Delta(d') * A <= 0 - and Delta(deg) = 0 is the only zero tail,
+/// so the scan reports the full degree. The scan is kept rather than replaced by
+/// the degree it always returns: it is the derivation, and the assertion beside
+/// each table reads it.
 template <typename CoeffArray>
 constexpr int EffectiveDegree(const CoeffArray& coeffs,
                               std::size_t offset,
                               int deg,
-                              double m,
-                              double amplification,
-                              double bRegion) noexcept {
-    const double budget = (m - 1.0) * bRegion;
+                              double amplification) noexcept {
+    const double budget = 0.0;
 
     for (int dPrime = 0; dPrime <= deg; ++dPrime)
     {
@@ -243,7 +244,7 @@ constexpr const auto& TailTable(const Table& chebyshev, const Table& monomial) n
 // so the table is flat over kNarrowAPieces as the shipped one is over kPieces;
 // which lane's narrow table a role scans follows the same split as
 // RegionADegrees' two branches (RoleUsesDoubleTables).
-template <double kAccuracyMultiplier, BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
+template <BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
 constexpr auto NarrowRegionADegrees() noexcept {
     if constexpr (RoleUsesDoubleTables(kRole))
     {
@@ -261,9 +262,7 @@ constexpr auto NarrowRegionADegrees() noexcept {
                     EffectiveDegree(coeffs,
                                     static_cast<std::size_t>(piece.offset),
                                     piece.deg,
-                                    kAccuracyMultiplier,
-                                    amplification,
-                                    RegionABudget(kRole));
+                                    amplification);
             }
         }
 
@@ -291,9 +290,7 @@ constexpr auto NarrowRegionADegrees() noexcept {
                     EffectiveDegree(coeffs,
                                     static_cast<std::size_t>(piece.offset),
                                     piece.deg,
-                                    kAccuracyMultiplier,
-                                    amplification,
-                                    RegionABudget(kRole));
+                                    amplification);
             }
         }
 
@@ -308,7 +305,7 @@ constexpr auto NarrowRegionADegrees() noexcept {
 // recursion either partition feeds. The split is by precision and not by the
 // region-A rule above: a float return is a float seed, cut at the float
 // budget.
-template <double kAccuracyMultiplier, BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
+template <BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
 constexpr auto NarrowRegionBDegrees() noexcept {
     if constexpr (kRole == BoysRole::kDoubleSingle || kRole == BoysRole::kDoubleBatch)
     {
@@ -325,9 +322,7 @@ constexpr auto NarrowRegionBDegrees() noexcept {
                     EffectiveDegree(coeffs,
                                     static_cast<std::size_t>(piece) * (kNarrowBDeg + 1),
                                     kNarrowBDeg,
-                                    kAccuracyMultiplier,
-                                    RegionBAmplification(order),
-                                    RegionBBudget(kRole));
+                                    RegionBAmplification(order));
             }
         }
 
@@ -349,9 +344,7 @@ constexpr auto NarrowRegionBDegrees() noexcept {
                                     static_cast<std::size_t>(piece)
                                         * (static_cast<std::size_t>(f32::kNarrowBDegF32) + 1),
                                     f32::kNarrowBDegF32,
-                                    kAccuracyMultiplier,
-                                    RegionBAmplification(order),
-                                    RegionBBudget(kRole));
+                                    RegionBAmplification(order));
             }
         }
 
@@ -521,8 +514,11 @@ constexpr double RationalPairTail(const NumArray& num,
 /// The pair's effective cut: the smallest admissible order in the evaluator's
 /// domain {0,1,2,4,6,...}, truncating the numerator and the denominator together.
 /// The full pair is the fallback and is admissible by construction, its dropped
-/// parts being both empty. \c kAccuracyMultiplier is a runtime quantity here as
-/// it is on the polynomial side.
+/// parts being both empty.
+///
+/// The budget is the one this library carries - m = 1 relaxes nothing, so the
+/// criterion is its tail against zero - and the full pair is the only zero tail,
+/// so the cut reports it.
 template <typename NumArray, typename DenArray>
 constexpr void RationalPairCut(const NumArray& num,
                                std::size_t numOffset,
@@ -530,12 +526,10 @@ constexpr void RationalPairCut(const NumArray& num,
                                std::size_t denOffset,
                                int numDeg,
                                int denDeg,
-                               double m,
                                double amplification,
-                               double bRegion,
                                int& outNumDeg,
                                int& outDenDeg) noexcept {
-    const double budget = (m - 1.0) * bRegion;
+    const double budget = 0.0;
     const int full = numDeg > denDeg ? numDeg : denDeg;
 
     // The two cut-independent operands, taken once for the pair: every candidate
@@ -576,7 +570,7 @@ constexpr void RationalPairCut(const NumArray& num,
 // lane's stored piece table the role reads, and the basis picks the form within
 // it - the Chebyshev coefficients ClenshawSplit reads, or the monomial ones
 // HornerMono reads, over the same pieces at the same degrees.
-template <double kAccuracyMultiplier, BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
+template <BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
 constexpr auto RegionADegrees() noexcept {
     if constexpr (RoleUsesDoubleTables(kRole))
     {
@@ -594,9 +588,7 @@ constexpr auto RegionADegrees() noexcept {
                     EffectiveDegree(coeffs,
                                     static_cast<std::size_t>(piece.offset),
                                     piece.deg,
-                                    kAccuracyMultiplier,
-                                    amplification,
-                                    RegionABudget(kRole));
+                                    amplification);
             }
         }
 
@@ -619,9 +611,7 @@ constexpr auto RegionADegrees() noexcept {
                     EffectiveDegree(coeffs,
                                     static_cast<std::size_t>(piece.offset),
                                     piece.deg,
-                                    kAccuracyMultiplier,
-                                    amplification,
-                                    RegionABudget(kRole));
+                                    amplification);
             }
         }
 
@@ -630,7 +620,7 @@ constexpr auto RegionADegrees() noexcept {
 }
 
 // The region-B degrees of one role and one basis; see RegionADegrees.
-template <double kAccuracyMultiplier, BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
+template <BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
 constexpr auto RegionBDegrees() noexcept {
     if constexpr (kRole == BoysRole::kDoubleSingle || kRole == BoysRole::kDoubleBatch)
     {
@@ -642,9 +632,7 @@ constexpr auto RegionBDegrees() noexcept {
             degrees[static_cast<std::size_t>(order)] = EffectiveDegree(coeffs,
                                                                        0,
                                                                        kBDeg,
-                                                                       kAccuracyMultiplier,
-                                                                       RegionBAmplification(order),
-                                                                       RegionBBudget(kRole));
+                                                                       RegionBAmplification(order));
         }
 
         return degrees;
@@ -660,9 +648,7 @@ constexpr auto RegionBDegrees() noexcept {
             degrees[static_cast<std::size_t>(order)] = EffectiveDegree(coeffs,
                                                                        0,
                                                                        f32::kBDeg,
-                                                                       kAccuracyMultiplier,
-                                                                       RegionBAmplification(order),
-                                                                       RegionBBudget(kRole));
+                                                                       RegionBAmplification(order));
         }
 
         return degrees;
@@ -702,9 +688,8 @@ template <int kOrder, bool kSeedReading> struct RationalARow {
     std::array<int, static_cast<std::size_t>(kCount)> den{};
 };
 
-template <double kAccuracyMultiplier, BoysRole kRole, bool kSeedReading, int kOrder>
+template <BoysRole kRole, bool kSeedReading, int kOrder>
 constexpr RationalARow<kOrder, kSeedReading> CutRationalARow() noexcept {
-    constexpr double kBudget = RegionABudget(kRole);
     RationalARow<kOrder, kSeedReading> row{};
 
     for (int i = 0; i < RationalARow<kOrder, kSeedReading>::kCount; ++i)
@@ -721,9 +706,7 @@ constexpr RationalARow<kOrder, kSeedReading> CutRationalARow() noexcept {
                         static_cast<std::size_t>(kRatAOffset[index] + numDeg + 1),
                         numDeg,
                         denDeg,
-                        kAccuracyMultiplier,
                         kSeedReading ? RegionAAmplification(kOrder, piece.b) : 1.0,
-                        kBudget,
                         row.num[static_cast<std::size_t>(i)],
                         row.den[static_cast<std::size_t>(i)]);
     }
@@ -733,14 +716,14 @@ constexpr RationalARow<kOrder, kSeedReading> CutRationalARow() noexcept {
 
 // A variable template's initializer is a constant expression of its own, so each
 // row above is cut under a budget of its own rather than the assembly's.
-template <double kAccuracyMultiplier, BoysRole kRole, bool kSeedReading, int kOrder>
+template <BoysRole kRole, bool kSeedReading, int kOrder>
 inline constexpr RationalARow<kOrder, kSeedReading> kRationalARow =
-    CutRationalARow<kAccuracyMultiplier, kRole, kSeedReading, kOrder>();
+    CutRationalARow< kRole, kSeedReading, kOrder>();
 
-template <double kAccuracyMultiplier, BoysRole kRole, bool kSeedReading, int kOrder>
+template <BoysRole kRole, bool kSeedReading, int kOrder>
 constexpr void CopyRationalARow(RationalRegionAPairs& pairs) noexcept {
     const RationalARow<kOrder, kSeedReading> row =
-        kRationalARow<kAccuracyMultiplier, kRole, kSeedReading, kOrder>;
+        kRationalARow< kRole, kSeedReading, kOrder>;
 
     for (int i = 0; i < RationalARow<kOrder, kSeedReading>::kCount; ++i)
     {
@@ -751,23 +734,20 @@ constexpr void CopyRationalARow(RationalRegionAPairs& pairs) noexcept {
     }
 }
 
-template <double kAccuracyMultiplier, BoysRole kRole, bool kSeedReading, std::size_t... kOrders>
+template <BoysRole kRole, bool kSeedReading, std::size_t... kOrders>
 constexpr RationalRegionAPairs AssembleRationalA(std::index_sequence<kOrders...>) noexcept {
     RationalRegionAPairs pairs{};
-    (CopyRationalARow<kAccuracyMultiplier, kRole, kSeedReading, static_cast<int>(kOrders)>(pairs),
+    (CopyRationalARow< kRole, kSeedReading, static_cast<int>(kOrders)>(pairs),
      ...);
     return pairs;
 }
 
-template <double kAccuracyMultiplier>
 constexpr RationalRegionAPairs RationalRegionADegrees() noexcept {
-    return AssembleRationalA<kAccuracyMultiplier, BoysRole::kDoubleBatch, false>(
+    return AssembleRationalA< BoysRole::kDoubleBatch, false>(
         std::make_index_sequence<kMaxOrder + 1>{});
 }
 
-template <double kAccuracyMultiplier>
 constexpr RationalRegionBPairs RationalRegionBDegrees() noexcept {
-    constexpr double kBudget = RegionBBudget(BoysRole::kDoubleBatch);
     RationalRegionBPairs pairs{};
 
     // One seed for the region rather than one fit per order, so the cut is the
@@ -783,9 +763,7 @@ constexpr RationalRegionBPairs RationalRegionBDegrees() noexcept {
                     0,
                     kRatBnumDeg,
                     kRatBdenDeg,
-                    kAccuracyMultiplier,
                     RegionBAmplification(0),
-                    kBudget,
                     numDeg,
                     denDeg);
 
@@ -819,9 +797,7 @@ struct NarrowRationalRegionBPairs {
     std::array<int, kNarrowBPieces> den{};
 };
 
-template <double kAccuracyMultiplier>
 constexpr NarrowRationalRegionAPairs RationalRegionANarrowDegrees() noexcept {
-    constexpr double kBudget = RegionABudget(BoysRole::kDoubleBatch);
     NarrowRationalRegionAPairs pairs{};
 
     for (int p = 0; p < static_cast<int>(std::size(kNarrowAPieces)); ++p)
@@ -836,9 +812,7 @@ constexpr NarrowRationalRegionAPairs RationalRegionANarrowDegrees() noexcept {
                         static_cast<std::size_t>(kNarrowRatAOffset[index] + numDeg + 1),
                         numDeg,
                         denDeg,
-                        kAccuracyMultiplier,
                         1.0,
-                        kBudget,
                         pairs.num[index],
                         pairs.den[index]);
     }
@@ -846,9 +820,7 @@ constexpr NarrowRationalRegionAPairs RationalRegionANarrowDegrees() noexcept {
     return pairs;
 }
 
-template <double kAccuracyMultiplier>
 constexpr NarrowRationalRegionBPairs RationalRegionBNarrowDegrees() noexcept {
-    constexpr double kBudget = RegionBBudget(BoysRole::kDoubleBatch);
     NarrowRationalRegionBPairs pairs{};
 
     // The narrow seed is one pair per piece rather than one pair for the whole
@@ -866,9 +838,7 @@ constexpr NarrowRationalRegionBPairs RationalRegionBNarrowDegrees() noexcept {
                         static_cast<std::size_t>(kNarrowRatBOffset[index] + numDeg + 1),
                         numDeg,
                         denDeg,
-                        kAccuracyMultiplier,
                         RegionBAmplification(0),
-                        kBudget,
                         pairs.num[index],
                         pairs.den[index]);
     }
@@ -879,7 +849,7 @@ constexpr NarrowRationalRegionBPairs RationalRegionBNarrowDegrees() noexcept {
 // The narrow pairs at the batch seed's reading: the same narrow pieces and the
 // same stored pairs as the single-order reading above, cut at the amplification
 // the recursion pays at the piece's right end rather than at A = 1.
-template <double kAccuracyMultiplier, BoysRole kRole>
+template <BoysRole kRole>
 constexpr NarrowRationalRegionAPairs RationalRegionANarrowSeedDegrees() noexcept {
     static_assert(RoleUsesBatchAmplification(kRole),
                   "this reading of the rational pair is the batch recursion's - the cut is "
@@ -887,7 +857,6 @@ constexpr NarrowRationalRegionAPairs RationalRegionANarrowSeedDegrees() noexcept
                   "it belongs to a batch role; a role whose region-A seed is the order's own "
                   "value pays A = 1 and reads RationalRegionANarrowDegrees instead");
 
-    constexpr double kBudget = RegionABudget(kRole);
     NarrowRationalRegionAPairs pairs{};
 
     for (int order = 0; order <= kMaxOrder; ++order)
@@ -905,9 +874,7 @@ constexpr NarrowRationalRegionAPairs RationalRegionANarrowSeedDegrees() noexcept
                             static_cast<std::size_t>(kNarrowRatAOffset[index] + numDeg + 1),
                             numDeg,
                             denDeg,
-                            kAccuracyMultiplier,
                             RegionAAmplification(order, piece.b),
-                            kBudget,
                             pairs.num[index],
                             pairs.den[index]);
         }
@@ -924,7 +891,7 @@ constexpr NarrowRationalRegionAPairs RationalRegionANarrowSeedDegrees() noexcept
 // order's piece and recurses down pays w(b) at that piece's right end. The pair
 // is the double lane's stored one - an engine that needs a batch seed's
 // precision reads this lane's rational fit, not the float lane's own pair.
-template <double kAccuracyMultiplier, BoysRole kRole>
+template <BoysRole kRole>
 constexpr RationalRegionAPairs RationalRegionASeedDegrees() noexcept {
     static_assert(RoleUsesBatchAmplification(kRole),
                   "this reading of the rational pair is the batch recursion's - the cut is "
@@ -932,7 +899,7 @@ constexpr RationalRegionAPairs RationalRegionASeedDegrees() noexcept {
                   "it belongs to a batch role; a role whose region-A seed is the order's own "
                   "value pays A = 1 and reads RationalRegionADegrees instead");
 
-    return AssembleRationalA<kAccuracyMultiplier, kRole, true>(
+    return AssembleRationalA< kRole, true>(
         std::make_index_sequence<kMaxOrder + 1>{});
 }
 
@@ -948,9 +915,8 @@ template <int kOrder> struct NarrowRationalSeedRow {
     std::array<int, static_cast<std::size_t>(kCount)> den{};
 };
 
-template <double kAccuracyMultiplier, BoysRole kRole, int kOrder>
+template <BoysRole kRole, int kOrder>
 constexpr NarrowRationalSeedRow<kOrder> CutNarrowRationalSeedRow() noexcept {
-    constexpr double kBudget = RegionABudget(kRole);
     NarrowRationalSeedRow<kOrder> row{};
 
     for (int i = 0; i < NarrowRationalSeedRow<kOrder>::kCount; ++i)
@@ -967,9 +933,7 @@ constexpr NarrowRationalSeedRow<kOrder> CutNarrowRationalSeedRow() noexcept {
                         static_cast<std::size_t>(kNarrowRatAOffset[index] + numDeg + 1),
                         numDeg,
                         denDeg,
-                        kAccuracyMultiplier,
                         RegionAAmplification(kOrder, piece.b),
-                        kBudget,
                         row.num[static_cast<std::size_t>(i)],
                         row.den[static_cast<std::size_t>(i)]);
     }
@@ -979,14 +943,14 @@ constexpr NarrowRationalSeedRow<kOrder> CutNarrowRationalSeedRow() noexcept {
 
 // A variable template is initialized in a constant expression of its own, so the
 // row above is cut under a budget of its own rather than the assembly's.
-template <double kAccuracyMultiplier, BoysRole kRole, int kOrder>
+template <BoysRole kRole, int kOrder>
 inline constexpr NarrowRationalSeedRow<kOrder> kNarrowRationalSeedRow =
-    CutNarrowRationalSeedRow<kAccuracyMultiplier, kRole, kOrder>();
+    CutNarrowRationalSeedRow< kRole, kOrder>();
 
-template <double kAccuracyMultiplier, BoysRole kRole, int kOrder>
+template <BoysRole kRole, int kOrder>
 constexpr void CopyNarrowRationalSeedRow(NarrowRationalRegionAPairs& pairs) noexcept {
     const NarrowRationalSeedRow<kOrder> row =
-        kNarrowRationalSeedRow<kAccuracyMultiplier, kRole, kOrder>;
+        kNarrowRationalSeedRow< kRole, kOrder>;
 
     for (int i = 0; i < NarrowRationalSeedRow<kOrder>::kCount; ++i)
     {
@@ -997,18 +961,18 @@ constexpr void CopyNarrowRationalSeedRow(NarrowRationalRegionAPairs& pairs) noex
     }
 }
 
-template <double kAccuracyMultiplier, BoysRole kRole, std::size_t... kOrders>
+template <BoysRole kRole, std::size_t... kOrders>
 constexpr NarrowRationalRegionAPairs AssembleNarrowRationalSeed(
     std::index_sequence<kOrders...>) noexcept {
     NarrowRationalRegionAPairs pairs{};
-    (CopyNarrowRationalSeedRow<kAccuracyMultiplier, kRole, static_cast<int>(kOrders)>(pairs), ...);
+    (CopyNarrowRationalSeedRow< kRole, static_cast<int>(kOrders)>(pairs), ...);
     return pairs;
 }
 
 // The same batch reading over the double lane's narrow pieces, judged at each
 // piece's own w(b): a batch role whose policy names the narrow partition seeds
 // its recursion from that partition's rational fit.
-template <double kAccuracyMultiplier, BoysRole kRole>
+template <BoysRole kRole>
 constexpr NarrowRationalRegionAPairs NarrowRationalRegionASeedDegrees() noexcept {
     static_assert(RoleUsesBatchAmplification(kRole),
                   "this reading of the rational pair is the batch recursion's - the cut is "
@@ -1016,7 +980,7 @@ constexpr NarrowRationalRegionAPairs NarrowRationalRegionASeedDegrees() noexcept
                   "it belongs to a batch role; a role whose region-A seed is the order's own "
                   "value pays A = 1 and reads the single-order reading instead");
 
-    return AssembleNarrowRationalSeed<kAccuracyMultiplier, kRole>(
+    return AssembleNarrowRationalSeed< kRole>(
         std::make_index_sequence<kMaxOrder + 1>{});
 }
 
@@ -1038,9 +1002,8 @@ struct RationalRegionBF32Pairs {
     std::array<int, kMaxOrder + 1> den{};
 };
 
-template <double kAccuracyMultiplier, BoysRole kRole>
+template <BoysRole kRole>
 constexpr RationalRegionAF32Pairs RationalRegionAF32Degrees() noexcept {
-    constexpr double kBudget = RegionABudget(kRole);
     RationalRegionAF32Pairs pairs{};
 
     for (int order = 0; order <= kMaxOrder; ++order)
@@ -1056,11 +1019,9 @@ constexpr RationalRegionAF32Pairs RationalRegionAF32Degrees() noexcept {
                             static_cast<std::size_t>(piece.offset + piece.numdeg + 1),
                             piece.numdeg,
                             piece.dendeg,
-                            kAccuracyMultiplier,
                             RoleUsesBatchAmplification(kRole)
                                 ? RegionAAmplification(order, static_cast<double>(piece.b))
                                 : 1.0,
-                            kBudget,
                             pairs.num[index],
                             pairs.den[index]);
         }
@@ -1073,9 +1034,8 @@ constexpr RationalRegionAF32Pairs RationalRegionAF32Degrees() noexcept {
 // table as the double lane's is, judged at A_B(0) = 1: kX0 is the argument at
 // which prod_{j<n}(j+1/2)/kX0^n first reaches one, so A_B(n) <= A_B(0) at every
 // order the table covers.
-template <double kAccuracyMultiplier, BoysRole kRole>
+template <BoysRole kRole>
 constexpr RationalRegionBF32Pairs RationalRegionBF32Degrees() noexcept {
-    constexpr double kBudget = RegionBBudget(kRole);
     RationalRegionBF32Pairs pairs{};
 
     int numDeg = 0;
@@ -1087,9 +1047,7 @@ constexpr RationalRegionBF32Pairs RationalRegionBF32Degrees() noexcept {
                     0,
                     f32::kRatBnumDeg,
                     f32::kRatBdenDeg,
-                    kAccuracyMultiplier,
                     RegionBAmplification(0),
-                    kBudget,
                     numDeg,
                     denDeg);
 
@@ -1125,9 +1083,8 @@ template <int kOrder> struct NarrowRationalF32Row {
     std::array<int, static_cast<std::size_t>(kCount)> den{};
 };
 
-template <double kAccuracyMultiplier, BoysRole kRole, int kOrder>
+template <BoysRole kRole, int kOrder>
 constexpr NarrowRationalF32Row<kOrder> CutNarrowRationalF32Row() noexcept {
-    constexpr double kBudget = RegionABudget(kRole);
     NarrowRationalF32Row<kOrder> row{};
 
     for (int i = 0; i < NarrowRationalF32Row<kOrder>::kCount; ++i)
@@ -1142,11 +1099,9 @@ constexpr NarrowRationalF32Row<kOrder> CutNarrowRationalF32Row() noexcept {
                         static_cast<std::size_t>(piece.offset + piece.numdeg + 1),
                         piece.numdeg,
                         piece.dendeg,
-                        kAccuracyMultiplier,
                         RoleUsesBatchAmplification(kRole)
                             ? RegionAAmplification(kOrder, static_cast<double>(piece.b))
                             : 1.0,
-                        kBudget,
                         row.num[static_cast<std::size_t>(i)],
                         row.den[static_cast<std::size_t>(i)]);
     }
@@ -1156,14 +1111,14 @@ constexpr NarrowRationalF32Row<kOrder> CutNarrowRationalF32Row() noexcept {
 
 // A variable template's initializer is a constant expression of its own, so each
 // row above is cut under a budget of its own rather than the assembly's.
-template <double kAccuracyMultiplier, BoysRole kRole, int kOrder>
+template <BoysRole kRole, int kOrder>
 inline constexpr NarrowRationalF32Row<kOrder> kNarrowRationalF32Row =
-    CutNarrowRationalF32Row<kAccuracyMultiplier, kRole, kOrder>();
+    CutNarrowRationalF32Row< kRole, kOrder>();
 
-template <double kAccuracyMultiplier, BoysRole kRole, int kOrder>
+template <BoysRole kRole, int kOrder>
 constexpr void CopyNarrowRationalF32Row(NarrowRationalRegionAF32Pairs& pairs) noexcept {
     const NarrowRationalF32Row<kOrder> row =
-        kNarrowRationalF32Row<kAccuracyMultiplier, kRole, kOrder>;
+        kNarrowRationalF32Row< kRole, kOrder>;
 
     for (int i = 0; i < NarrowRationalF32Row<kOrder>::kCount; ++i)
     {
@@ -1174,26 +1129,25 @@ constexpr void CopyNarrowRationalF32Row(NarrowRationalRegionAF32Pairs& pairs) no
     }
 }
 
-template <double kAccuracyMultiplier, BoysRole kRole, std::size_t... kOrders>
+template <BoysRole kRole, std::size_t... kOrders>
 constexpr NarrowRationalRegionAF32Pairs AssembleNarrowRationalF32(
     std::index_sequence<kOrders...>) noexcept {
     NarrowRationalRegionAF32Pairs pairs{};
-    (CopyNarrowRationalF32Row<kAccuracyMultiplier, kRole, static_cast<int>(kOrders)>(pairs), ...);
+    (CopyNarrowRationalF32Row< kRole, static_cast<int>(kOrders)>(pairs), ...);
     return pairs;
 }
 
-template <double kAccuracyMultiplier, BoysRole kRole>
+template <BoysRole kRole>
 constexpr NarrowRationalRegionAF32Pairs NarrowRationalRegionAF32Degrees() noexcept {
-    return AssembleNarrowRationalF32<kAccuracyMultiplier, kRole>(
+    return AssembleNarrowRationalF32< kRole>(
         std::make_index_sequence<kMaxOrder + 1>{});
 }
 
 // Region B's narrow seed is one pair per narrow piece rather than one for the
 // region, so the cut is the same reading as the shipped one taken once per
 // piece.
-template <double kAccuracyMultiplier, BoysRole kRole>
+template <BoysRole kRole>
 constexpr NarrowRationalRegionBF32Pairs NarrowRationalRegionBF32Degrees() noexcept {
-    constexpr double kBudget = RegionBBudget(kRole);
     NarrowRationalRegionBF32Pairs pairs{};
 
     for (int piece = 0; piece < f32::kNarrowRatBPiecesCountF32; ++piece)
@@ -1207,9 +1161,7 @@ constexpr NarrowRationalRegionBF32Pairs NarrowRationalRegionBF32Degrees() noexce
                         static_cast<std::size_t>(row.offset + row.numdeg + 1),
                         row.numdeg,
                         row.dendeg,
-                        kAccuracyMultiplier,
                         RegionBAmplification(0),
-                        kBudget,
                         pairs.num[index],
                         pairs.den[index]);
     }
@@ -1239,9 +1191,7 @@ struct RationalNarrowRegionBPairs {
 };
 
 // The per-order reading: one pair per narrow piece, at A = 1.
-template <double kAccuracyMultiplier>
 constexpr RationalNarrowRegionAPairs RationalNarrowRegionADegrees() noexcept {
-    constexpr double kBudget = RegionABudget(BoysRole::kDoubleBatch);
     RationalNarrowRegionAPairs pairs{};
 
     for (int p = 0; p < static_cast<int>(std::size(kNarrowAPieces)); ++p)
@@ -1256,9 +1206,7 @@ constexpr RationalNarrowRegionAPairs RationalNarrowRegionADegrees() noexcept {
                         static_cast<std::size_t>(kNarrowRatAOffset[index] + numDeg + 1),
                         numDeg,
                         denDeg,
-                        kAccuracyMultiplier,
                         1.0,
-                        kBudget,
                         pairs.num[index],
                         pairs.den[index]);
     }
@@ -1268,7 +1216,7 @@ constexpr RationalNarrowRegionAPairs RationalNarrowRegionADegrees() noexcept {
 
 // The batch seed's reading of the same table: the amplification is the piece's
 // own w(b) here and 1 above.
-template <double kAccuracyMultiplier, BoysRole kRole>
+template <BoysRole kRole>
 constexpr RationalNarrowRegionAPairs RationalNarrowRegionASeedDegrees() noexcept {
     static_assert(RoleUsesBatchAmplification(kRole),
                   "this reading of the narrow rational pair is the batch recursion's - the cut "
@@ -1276,7 +1224,6 @@ constexpr RationalNarrowRegionAPairs RationalNarrowRegionASeedDegrees() noexcept
                   "it belongs to a batch role; a role whose region-A seed is the order's own "
                   "value pays A = 1 and reads RationalNarrowRegionADegrees instead");
 
-    constexpr double kBudget = RegionABudget(kRole);
     RationalNarrowRegionAPairs pairs{};
 
     for (int order = 0; order <= kMaxOrder; ++order)
@@ -1294,9 +1241,7 @@ constexpr RationalNarrowRegionAPairs RationalNarrowRegionASeedDegrees() noexcept
                             static_cast<std::size_t>(kNarrowRatAOffset[index] + numDeg + 1),
                             numDeg,
                             denDeg,
-                            kAccuracyMultiplier,
                             RegionAAmplification(order, piece.b),
-                            kBudget,
                             pairs.num[index],
                             pairs.den[index]);
         }
@@ -1306,9 +1251,7 @@ constexpr RationalNarrowRegionAPairs RationalNarrowRegionASeedDegrees() noexcept
 }
 
 // The narrow region-B seed's pairs, one per piece, at order 0's amplification.
-template <double kAccuracyMultiplier>
 constexpr RationalNarrowRegionBPairs RationalNarrowRegionBDegrees() noexcept {
-    constexpr double kBudget = RegionBBudget(BoysRole::kDoubleBatch);
     RationalNarrowRegionBPairs pairs{};
 
     for (int piece = 0; piece < kNarrowBPieces; ++piece)
@@ -1323,9 +1266,7 @@ constexpr RationalNarrowRegionBPairs RationalNarrowRegionBDegrees() noexcept {
                         static_cast<std::size_t>(kNarrowRatBOffset[index] + numDeg + 1),
                         numDeg,
                         denDeg,
-                        kAccuracyMultiplier,
                         RegionBAmplification(0),
-                        kBudget,
                         pairs.num[index],
                         pairs.den[index]);
     }

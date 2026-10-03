@@ -122,23 +122,6 @@ struct ProbeTimeRequest {
     /// Arguments in the batch.
     unsigned long long count;
 
-    /// The accuracy rung the region runs at: one of kDeviceRungs
-    /// (boys_cuda_options.hpp), and m = 1 when the caller names none. It is the
-    /// axis this probe's classes are keyed on beside the precision and the
-    /// question.
-    ///
-    /// What it selects differs between the two routes. A launched region runs
-    /// the entry's full-accuracy kernel at m = 1 and the same entry's
-    /// effective-degree kernel at any other rung, which is what the host entries
-    /// do at the same multiplier: the relaxed degrees are read from the device
-    /// and not compiled in. An in-kernel region passes it to the device-callable
-    /// entry, which matches it against the rung the handle's tables were cut for
-    /// and refuses the call when the two differ. Nothing here decides which rung
-    /// is resident: the host side makes one resident before the rows that name it
-    /// are timed, and a rung that could not be made resident is a refusal the
-    /// report states.
-    double multiplier;
-
     /// Receives the region's device milliseconds.
     double* outMs;
 };

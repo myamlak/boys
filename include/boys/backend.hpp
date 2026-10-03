@@ -258,11 +258,10 @@ const char* DivisionFormName(DivisionForm form) noexcept;
 ///
 /// Every refusal names the work it would need, and none of them is a
 /// combination that cannot exist. What a lane refuses is a member of a partition it
-/// has not stored or a rung its tables do not admit.
+/// has not stored.
 ///
-/// The relaxed rungs and the across-orders packing axis are otherwise built: a
-/// rung of the narrow partition is derived against its own pieces rather than
-/// truncated from the shipped rows, and the packed lane reaches a per-order cut
+/// The across-orders packing axis is otherwise built: the packed lane reaches a
+/// per-order cut
 /// with a gathered fetch, reading each of the four orders it holds its own
 /// piece and coefficients instead of stepping one piece's coefficients at a
 /// fixed stride. This includes the single-precision lanes, whose narrow rung
@@ -276,7 +275,7 @@ enum class FitGranularity : std::uint8_t {
     /// 18, on the double lane, and two to four pieces an order, all at degree 10,
     /// on the single-precision lane; region B is one seed on both. A caller names
     /// it to read those tables.
-    kShipped = 0,
+    kCoarsest = 0,
 
     /// A narrower partition of both fitted regions, at the degrees the proved
     /// truncation bound gives a piece of that width at the bar the piece is read
@@ -532,14 +531,10 @@ struct RouteFit<FitRoute::kChebyshev, kScheme, FitGranularity::kUniform> {
 /// bound, under the rational route's name, with nothing reporting it. What the
 /// member must provide is stated on \c RationalFitUniform above.
 ///
-/// The grid's rung is refused where a policy names one - the table stores one
-/// pair per interval and no per-order effective degree, so a relaxed rung has
-/// nothing to cut by. Giving this member one is a fit to derive rather than a
-/// switch to flip: the rung bodies resolve their fit through
-/// \c detail::RationalRouteFitAtRung, whose conditional reads every partition
-/// but the shipped one as the narrow one, so a uniform rung reaching it would
-/// be answered by the narrow member's pairs under the grid's name - the
-/// substitution this declaration is here to make impossible.
+/// This member is the grid's own: a caller naming the rational route over the
+/// grid is answered by the pairs fitted over the grid, and never by the narrow
+/// member's pairs under the grid's name - the substitution this declaration is
+/// here to make impossible.
 template <EvalScheme kScheme>
 struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kUniform> {
     /// The single rational member over the grid, one pair per interval.
@@ -549,7 +544,7 @@ struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kUniform> {
 /// The rational family: one fit under either scheme, because its coefficients
 /// are a monomial numerator and denominator with no Chebyshev form to sum.
 template <EvalScheme kScheme>
-struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kShipped> {
+struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kCoarsest> {
     /// The single rational fit, shared by both schemes.
     using Type = RationalFit;
 };

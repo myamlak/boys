@@ -109,7 +109,7 @@ bool GranularityFrom(const std::string& word, boys::FitGranularity& out) {
     }
 
     if (word == "shipped") {
-        out = boys::FitGranularity::kShipped;
+        out = boys::FitGranularity::kCoarsest;
         return true;
     }
 

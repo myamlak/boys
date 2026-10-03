@@ -19,13 +19,13 @@ int main()
 
     using Shipped = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
                                      boys::BoysBudget::kFloat, boys::PackAxis::kArguments,
-                                     boys::FitGranularity::kShipped,
+                                     boys::FitGranularity::kCoarsest,
                                      boys::DivisionForm::kExactDivision>;
 
     std::array<double, boys::kMaxBoysOrder + 1> default_ladder{};
     std::array<double, boys::kMaxBoysOrder + 1> named_ladder{};
     boys::BoysAllOrders(nmax, x, default_ladder);
-    boys::BoysAllOrders<1.0, Shipped>(nmax, x, named_ladder);
+    boys::BoysAllOrders<Shipped>(nmax, x, named_ladder);
 
     std::printf("k   default policy            named policy\n");
     double worst = 0.0;
@@ -40,7 +40,7 @@ int main()
     const double bound = boys::BoysAccuracyGuaranteed(
                              boys::Precision::kFp64, boys::FitRoute::kChebyshev,
                              boys::EvalScheme::kSplitClenshaw, boys::PackAxis::kArguments,
-                             boys::FitGranularity::kShipped, boys::AccuracyTier::kReference)
+                             boys::FitGranularity::kCoarsest)
                              .value;
     std::printf("worst disagreement: %.2g (guaranteed error <= %.2g)\n", worst, bound);
     return (worst <= bound) ? 0 : 1;

@@ -20,7 +20,7 @@ int main()
 
     const boys::AccuracyFigure bound = boys::BoysAccuracyGuaranteed(
         boys::Precision::kFp64, boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner,
-        boys::PackAxis::kArguments, boys::FitGranularity::kNarrow, boys::AccuracyTier::kReference);
+        boys::PackAxis::kArguments, boys::FitGranularity::kNarrow);
 
     std::printf("F_%d(%.4g) = %.17g\n", n, x, f);
     std::printf("guaranteed error <= %.2g  (from %s)\n", bound.value, bound.source);

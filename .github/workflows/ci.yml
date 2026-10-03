@@ -72,11 +72,11 @@ concurrency:
 # the twelve region entry points (see the guard's comment in src/boys_simd.cpp).
 #
 # Every leg runs the gate the two original legs established: build, ctest (the
-# kernel contract tests, multiplier tests, C-surface tests, boundary pins, the
+# kernel contract tests, C-surface tests, boundary pins, the
 # BOUNDARY-CHECK standalone over the committed reference grid, the dispatch
 # assertion, and the two CONSUMER checks - a translation unit that includes
 # only <boys/boys.hpp> and exercises the whole documented surface, and one that
-# names multipliers the library does not pre-instantiate and links no library
+# names what the library does not pre-instantiate and links no library
 # at all), the generator byte-identity protocol (each generator's own --check
 # over the committed files; the writes a regeneration makes stay local, which
 # CONTRIBUTING.md states as a rule), and the
@@ -561,8 +561,7 @@ jobs:
       # compiler, no network - so it is scoped to one combination like the
       # generator step above, and it is as fast as reading four files. It runs
       # --strict, which is the setting it is meant to be trusted under: a
-      # mismatch fails, and so does a documented bound whose stated value holds
-      # at one multiplier and not at another.
+      # mismatch in the published prose fails the leg.
       #
       # Two verdicts are reports and never fail the leg, and both are printed
       # every run rather than filtered out: "not derivable", where the sentence
@@ -721,8 +720,8 @@ jobs:
           ctest --test-dir build-defaults-tuned --output-on-failure
       # The device surface is described by five hand-written lists and nothing
       # reconciled them, so they disagreed: four rows of the option enumeration
-      # named entries that had never been declared in any commit - and because
-      # those rows were served at every rung, carried report rows with bounds and
+      # named entries that had never been declared in any commit - and they
+      # carried report rows with bounds and
       # built = true, were launched by the measurement tool through a twin's
       # launcher, and were claimed by the accuracy gate, four mechanisms consumed
       # the description without one asking whether the entry was there.
@@ -752,23 +751,21 @@ jobs:
         if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_host_entry_bijection.py --check
-      # The tier and the scheme arms have the same exposure one layer down, and no
-      # compiler sees all of it. gcc and clang catch an arm the switch is missing
-      # through -Wswitch, but only while the switch has no `default` arm, and the
-      # two batch dispatches in boys_impl.hpp keep one for the values cast in from
-      # outside the enumeration - measured on this tree: with a tier added to the
-      # enumeration, gcc emits nothing at all inside boys_impl.hpp while turning
-      # the `default` into the sentinel's arm brings back every one of them. MSVC
-      # emits nothing for an unhandled enumerator at /W4 either way, and it is the
-      # toolchain the release is verified on.
+      # The scheme arms have the same exposure one layer down, and no compiler sees
+      # all of it. gcc and clang catch an arm the switch is missing through
+      # -Wswitch, but only while the switch has no `default` arm, and a switch that
+      # keeps one for the values cast in from outside the enumeration swallows a
+      # new enumerator exactly as quietly. MSVC emits nothing for an unhandled
+      # enumerator at /W4 either way, and it is the toolchain the release is
+      # verified on.
       #
       # This step is the compiler's own rule applied to every switch uniformly:
-      # every enumerator of AccuracyTier and of OrdersScheme is named as an arm of
-      # every switch that dispatches on it. An arm list stopping short of one is
-      # not a crash - each of those switches falls through to the reference rung
-      # or the certified sum - so the caller is handed a different option from the
-      # one it named, silently, and the probe books the cell as measured.
-      - name: Arms (every tier and scheme named by every switch over it)
+      # every enumerator of OrdersScheme is named as an arm of every switch that
+      # dispatches on it. An arm list stopping short of one is not a crash - each
+      # of those switches falls through to the certified sum - so the caller is
+      # handed a different option from the one it named, silently, and the probe
+      # books the cell as measured.
+      - name: Arms (every scheme named by every switch over it)
         if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_enum_arms_covered.py --check

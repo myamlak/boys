@@ -30,15 +30,11 @@
 //     the last group is partial and the lane's tail runs beside the vector body.
 //     The sweep runs every nmax from 0 to kMaxBoysOrder: every remainder there is.
 //
-//  3. A RUNG THAT DOES NOT REACH THE LANE. A policy naming a relaxed
-//     multiplier must return the fits cut to that rung's degrees, and the
-//     per-order lane at the same policy and multiplier is what that is.
-//
-//  4. A CALL THAT ANSWERS WITH THE WRONG TABLE. A policy naming the rational
+//  3. A CALL THAT ANSWERS WITH THE WRONG TABLE. A policy naming the rational
 //     route must return that route's own region-A fits, whose denominator is a
 //     second Horner array at a per-lane offset.
 //
-//  5. AN ENTRY THAT PARTS FROM ITS SIBLING. The two fetches are the same lane
+//  4. AN ENTRY THAT PARTS FROM ITS SIBLING. The two fetches are the same lane
 //     and must return the same bits.
 //
 // Each sweep is measured twice from the same values: against the library's own
@@ -129,13 +125,12 @@ std::vector<float> RegionAGridF32() {
 // The per-order lane the packed lane must reproduce: the certified float single
 // entry at the same policy with the shipped packing axis, the axis the default
 // policy names.
-template <double kMultiplier, class Policy>
-float PerOrder(int n, float x) noexcept {
+template <class Policy> float PerOrder(int n, float x) noexcept {
     using ArgsAxis = boys::EvalPolicy<Policy::kRoute,
                                        Policy::kScheme,
                                        Policy::kBudget,
                                        boys::PackAxis::kArguments>;
-    return boys::BoysSingleF32<kMultiplier, ArgsAxis>(n, x);
+    return boys::BoysSingleF32<ArgsAxis>(n, x);
 }
 
 // The double lane at the same order and argument: the function the float lane is a
@@ -163,8 +158,7 @@ struct SweepTotals {
 // One policy's sweep: every order from 0 to kNmax, every argument of the grid.
 // `differing` counts the values that are not the per-order value bit for bit, and
 // both measurements are this sweep's own, added to the caller's totals.
-template <double kMultiplier, class Policy>
-void SweepPolicy(const char* name, SweepTotals& totals) {
+template <class Policy> void SweepPolicy(const char* name, SweepTotals& totals) {
     const std::vector<float> grid = RegionAGridF32();
     std::vector<float> packed(static_cast<std::size_t>(kNmax) + 1, 0.0f);
     std::size_t mineDiffering = 0;
@@ -177,11 +171,11 @@ void SweepPolicy(const char* name, SweepTotals& totals) {
 
     for (float x : grid)
     {
-        boys::BoysAllOrdersF32<kMultiplier, Policy>(kNmax, x, packed.data());
+        boys::BoysAllOrdersF32<Policy>(kNmax, x, packed.data());
 
         for (int n = 0; n <= kNmax; ++n)
         {
-            const float one = PerOrder<kMultiplier, Policy>(n, x);
+            const float one = PerOrder<Policy>(n, x);
             const float mine = packed[static_cast<std::size_t>(n)];
             const double fromPerOrder =
                 std::abs(static_cast<double>(mine) - static_cast<double>(one));
@@ -246,9 +240,6 @@ void SweepPolicy(const char* name, SweepTotals& totals) {
 template <boys::FitRoute kRoute, boys::EvalScheme kScheme, boys::BoysBudget kBudget>
 using Orders = boys::EvalPolicy<kRoute, kScheme, kBudget, boys::PackAxis::kOrders>;
 
-constexpr double kRung64 = boys::AccuracyMultiplier(boys::AccuracyTier::kRelaxed64);
-constexpr double kRungMax = boys::AccuracyMultiplier(boys::AccuracyTier::kRelaxed65536);
-
 } // namespace
 
 // The axis is the one the caller named, and the default is still the shipped one.
@@ -259,8 +250,8 @@ static_assert(Orders<boys::FitRoute::kChebyshev,
 static_assert(boys::EvalPolicy<>{}.kPack == boys::PackAxis::kArguments,
               "the default axis moved");
 
-// Every configuration the lane carries, at the reference multiplier: three schemes
-// on the shipped route and the rational route, at both budgets.
+// Every configuration the lane carries: three schemes on the shipped route and
+// the rational route, at both budgets.
 TEST(BoysOrdersF32, ThePackedLaneIsThePerOrderValue) {
     if (!boys::BoysAvx2Available())
     {
@@ -269,25 +260,21 @@ TEST(BoysOrdersF32, ThePackedLaneIsThePerOrderValue) {
 
     SweepTotals totals{};
 
-    SweepPolicy<1.0,
-                Orders<boys::FitRoute::kChebyshev,
+    SweepPolicy<Orders<boys::FitRoute::kChebyshev,
                        boys::EvalScheme::kSplitClenshaw,
-                       boys::BoysBudget::kFloat>>("cheb/split kFloat m=1", totals);
-    SweepPolicy<1.0,
-                Orders<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner,
-                       boys::BoysBudget::kFloat>>("cheb/horner kFloat m=1", totals);
-    SweepPolicy<1.0,
-                Orders<boys::FitRoute::kRationalMinimax,
-                       boys::EvalScheme::kSplitClenshaw,
-                       boys::BoysBudget::kFloat>>("rational/split kFloat m=1", totals);
-    SweepPolicy<1.0,
-                Orders<boys::FitRoute::kRationalMinimax,
+                       boys::BoysBudget::kFloat>>("cheb/split kFloat", totals);
+    SweepPolicy<Orders<boys::FitRoute::kChebyshev,
                        boys::EvalScheme::kHorner,
-                       boys::BoysBudget::kFloat>>("rational/horner kFloat m=1", totals);
-    SweepPolicy<1.0,
-                Orders<boys::FitRoute::kChebyshev,
+                       boys::BoysBudget::kFloat>>("cheb/horner kFloat", totals);
+    SweepPolicy<Orders<boys::FitRoute::kRationalMinimax,
                        boys::EvalScheme::kSplitClenshaw,
-                       boys::BoysBudget::kFp16>>("cheb/split kFp16 m=1", totals);
+                       boys::BoysBudget::kFloat>>("rational/split kFloat", totals);
+    SweepPolicy<Orders<boys::FitRoute::kRationalMinimax,
+                       boys::EvalScheme::kHorner,
+                       boys::BoysBudget::kFloat>>("rational/horner kFloat", totals);
+    SweepPolicy<Orders<boys::FitRoute::kChebyshev,
+                       boys::EvalScheme::kSplitClenshaw,
+                       boys::BoysBudget::kFp16>>("cheb/split kFp16", totals);
 
     EXPECT_GT(totals.compared, 0u);
 
@@ -307,64 +294,6 @@ TEST(BoysOrdersF32, ThePackedLaneIsThePerOrderValue) {
     EXPECT_LE(totals.worstFromTruth, kF32Bar)
         << "the packed lane is outside the float lane's documented bar: worst "
         << totals.worstFromTruth << " at x=" << totals.truthAt << " n=" << totals.truthOrder;
-}
-
-// The relaxed rungs, where the lane reads a table of certified cuts rather than the
-// whole fit: the effective-degree table for the Chebyshev route, the pair table for
-// the rational one, on this lane's default partition. The bar is the rung's own -
-// the float lane's documented bar multiplied by the multiplier the rung names, the
-// same fit cut to fewer degrees at a correspondingly larger error.
-//
-// The rational route over this partition is a rung of its own rather than a cut of
-// the Chebyshev row, because the criterion runs over the pairs' coefficients. The
-// lane carried those rungs in its instantiation set while reading every piece whole,
-// so a rung was answered with the reference rung's values: 901 of 2304 values parted
-// from the per-order lane at m = 64 and 2296 of 2304 at m = 65536, which this sweep
-// holds shut.
-TEST(BoysOrdersF32, TheRelaxedRungsAreTheRungsOwnReading) {
-    if (!boys::BoysAvx2Available())
-    {
-        GTEST_SKIP() << "the AVX2 tier is not available on this target";
-    }
-
-    SweepTotals totals{};
-
-    SweepPolicy<kRung64,
-                Orders<boys::FitRoute::kChebyshev,
-                       boys::EvalScheme::kSplitClenshaw,
-                       boys::BoysBudget::kFloat>>("cheb/split kFloat m=64", totals);
-    SweepPolicy<kRungMax,
-                Orders<boys::FitRoute::kChebyshev,
-                       boys::EvalScheme::kSplitClenshaw,
-                       boys::BoysBudget::kFloat>>("cheb/split kFloat m=65536", totals);
-    SweepPolicy<kRungMax,
-                Orders<boys::FitRoute::kChebyshev,
-                       boys::EvalScheme::kSplitClenshaw,
-                       boys::BoysBudget::kFp16>>("cheb/split kFp16 m=65536", totals);
-    SweepPolicy<kRung64,
-                Orders<boys::FitRoute::kRationalMinimax,
-                       boys::EvalScheme::kHorner,
-                       boys::BoysBudget::kFloat>>("rational/horner kFloat m=64", totals);
-    SweepPolicy<kRungMax,
-                Orders<boys::FitRoute::kRationalMinimax,
-                       boys::EvalScheme::kHorner,
-                       boys::BoysBudget::kFloat>>("rational/horner kFloat m=65536", totals);
-
-    EXPECT_GT(totals.compared, 0u);
-
-    if (kScalarIsFused())
-    {
-        EXPECT_EQ(totals.differing, 0u)
-            << "the rung did not reach the packed lane: its values are not the per-order lane's "
-               "at the same multiplier. Worst "
-            << totals.worstFromPerOrder << " at x=" << totals.perOrderAt
-            << " n=" << totals.perOrderOrder;
-    }
-
-    EXPECT_LE(totals.worstFromTruth, kRungMax * kF32Bar)
-        << "the rung's value is outside the bound the rung names: worst " << totals.worstFromTruth
-        << " at x=" << totals.truthAt << " n=" << totals.truthOrder << " against "
-        << kRungMax * kF32Bar;
 }
 
 // The gathered fetch and the composed fetch are one lane and must return the same bits.
@@ -439,11 +368,11 @@ TEST(BoysOrdersF32, TheAxisIsDefinedPastItsOwnDomain) {
 
     for (float x : grid)
     {
-        boys::BoysAllOrdersF32<1.0, Policy>(kNmax, x, packed.data());
+        boys::BoysAllOrdersF32<Policy>(kNmax, x, packed.data());
 
         for (int n = 0; n <= kNmax; ++n)
         {
-            const float one = PerOrder<1.0, Policy>(n, x);
+            const float one = PerOrder<Policy>(n, x);
             const float mine = packed[static_cast<std::size_t>(n)];
             const double difference =
                 std::abs(static_cast<double>(mine) - static_cast<double>(one));
@@ -500,11 +429,11 @@ TEST(BoysOrdersF32, EveryGroupTailIsThePerOrderValue) {
     {
         for (float x : grid)
         {
-            boys::BoysAllOrdersF32<1.0, Policy>(nmax, x, packed.data());
+            boys::BoysAllOrdersF32<Policy>(nmax, x, packed.data());
 
             for (int n = 0; n <= nmax; ++n)
             {
-                const float one = PerOrder<1.0, Policy>(n, x);
+                const float one = PerOrder<Policy>(n, x);
                 const float mine = packed[static_cast<std::size_t>(n)];
                 ++compared;
 
@@ -552,17 +481,13 @@ using SingleF32 =
     boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
                      boys::PackAxis::kArguments, kGranularity, boys::DivisionForm::kExactDivision>;
 
-// What one rung of the uniform partition answers, over the band between the
-// grid's join and kX1, read two ways: against the same policy's reference
-// reading, and against the shipped policy's reference reading.
-template <double kM, boys::EvalScheme kScheme>
-void UniformRungSweep(std::size_t& compared,
-                      std::size_t& moved,
-                      std::size_t& fromReference,
-                      float& movedAt,
-                      int& movedOrder) {
+// What the uniform partition answers over the band between the grid's join and
+// kX1, read against the shipped (coarsest) partition's own value there.
+template <boys::EvalScheme kScheme>
+void UniformPastJoinSweep(std::size_t& compared, std::size_t& fromShipped, float& firstAt,
+                          int& firstOrder) {
     using Uniform = SingleF32<kScheme, boys::FitGranularity::kUniform>;
-    using Shipped = SingleF32<kScheme, boys::FitGranularity::kShipped>;
+    using Shipped = SingleF32<kScheme, boys::FitGranularity::kCoarsest>;
 
     const float lo = boys::detail::f32::kFlatHiF32;
     const float hi = static_cast<float>(boys::detail::kX1);
@@ -573,22 +498,16 @@ void UniformRungSweep(std::size_t& compared,
 
         for (int n = 0; n <= 8; ++n)
         {
-            const float reference = boys::BoysSingleF32<1.0, Uniform>(n, x);
-            const float got = boys::BoysSingleF32<kM, Uniform>(n, x);
-            const float shipped = boys::BoysSingleF32<1.0, Shipped>(n, x);
+            const float shipped = boys::BoysSingleF32<Shipped>(n, x);
+            const float got = boys::BoysSingleF32<Uniform>(n, x);
 
             ++compared;
 
-            if (got != reference)
-            {
-                ++moved;
-                movedAt = x;
-                movedOrder = n;
-            }
-
             if (got != shipped)
             {
-                ++fromReference;
+                ++fromShipped;
+                firstAt = x;
+                firstOrder = n;
             }
         }
     }
@@ -596,57 +515,38 @@ void UniformRungSweep(std::size_t& compared,
 
 } // namespace
 
-// The uniform partition's answer does not read the multiplier.
+// Above the uniform grid's join the entry's region path answers, and it must
+// answer with the partition the caller named.
 //
 // The partition's cells are the grid's, stored at the degrees the derivation fitted
-// them at, so a rung of it is the reference reading and not a cut of one: the
-// criterion that would cut it scans the dropped tail to the first degree that fits
-// the rung's budget, and the full degree's tail is zero, so the scan reaches it at
-// every multiplier. Above the grid's join the entry's region path answers, and it
-// must answer with the partition it answers with at m = 1. The alternative is the
-// rung body's fit, which resolves every partition but the shipped one to the NARROW
-// pieces (ChebyshevFit32AtRung): a uniform policy reaching it was answered by the
-// narrow member's region-B seed bit for bit over the whole of [kFlatHiF32, kX1),
-// where m = 1 returned the shipped member's value - certified numbers, from a
-// partition the caller never named, with nothing reporting it.
+// them at, and the grid's own domain ends at kFlatHiF32; past it the entry's region
+// path takes over, and a caller who named the uniform partition must still receive
+// it there. The alternative is a fit that resolves every partition but the shipped
+// one to the NARROW pieces: a uniform policy reaching it is answered by the narrow
+// member's region-B seed bit for bit over the whole of [kFlatHiF32, kX1) - certified
+// numbers, from a partition the caller never named, with nothing reporting it.
 //
-// The test is therefore stated on values rather than on a table: raising the
-// multiplier changes nothing about what a uniform policy returns, anywhere in its
-// domain. The second reading is what names the substitution.
-TEST(BoysOrdersF32, TheUniformPartitionsAnswerDoesNotReadTheMultiplier) {
+// The test is therefore stated on values rather than on a table: over that band a
+// uniform policy must return the shipped member's value.
+TEST(BoysOrdersF32, TheUniformPartitionsAnswerPastItsJoinIsTheShippedMember) {
     std::size_t compared = 0;
-    std::size_t moved = 0;
-    std::size_t fromReference = 0;
-    float movedAt = 0.0f;
-    int movedOrder = -1;
+    std::size_t fromShipped = 0;
+    float firstAt = 0.0f;
+    int firstOrder = -1;
 
-    const auto sweep = [&]<double kM>(int) {
-        UniformRungSweep<kM, boys::EvalScheme::kSplitClenshaw>(
-            compared, moved, fromReference, movedAt, movedOrder);
-        UniformRungSweep<kM, boys::EvalScheme::kHorner>(compared, moved, fromReference, movedAt,
-                                                        movedOrder);
-    };
+    UniformPastJoinSweep<boys::EvalScheme::kSplitClenshaw>(
+        compared, fromShipped, firstAt, firstOrder);
+    UniformPastJoinSweep<boys::EvalScheme::kHorner>(compared, fromShipped, firstAt, firstOrder);
 
-    sweep.template operator()<64.0>(0);
-    sweep.template operator()<256.0>(0);
-    sweep.template operator()<1024.0>(0);
-    sweep.template operator()<4096.0>(0);
-    sweep.template operator()<16384.0>(0);
-    sweep.template operator()<65536.0>(0);
-
-    std::printf("  uniform partition over [kFlatHiF32, kX1): %zu values, %zu read the multiplier, "
-                "%zu differ from the shipped member's reference value\n",
+    std::printf("  uniform partition over [kFlatHiF32, kX1): %zu values, %zu differ from the "
+                "shipped member's value\n",
                 compared,
-                moved,
-                fromReference);
+                fromShipped);
 
     EXPECT_GT(compared, 0u);
 
-    EXPECT_EQ(moved, 0u)
-        << "the uniform partition's value changed with the multiplier at x=" << movedAt
-        << " n=" << movedOrder << ": a rung reached a partition the caller did not name";
-
-    EXPECT_EQ(fromReference, 0u)
-        << "the uniform partition's value past the grid's join is not the member the reference "
-           "multiplier reads there";
+    EXPECT_EQ(fromShipped, 0u)
+        << "the uniform partition's value past the grid's join is not the shipped member's, first "
+           "at x="
+        << firstAt << " n=" << firstOrder;
 }

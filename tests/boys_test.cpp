@@ -758,12 +758,12 @@ TEST(BoysTest, SimdMatchesScalarWhenAvailable) {
                                         boys::EvalScheme::kSplitClenshaw,
                                         boys::BoysBudget::kFloat,
                                         boys::PackAxis::kArguments,
-                                        boys::FitGranularity::kShipped>;
+                                        boys::FitGranularity::kCoarsest>;
 
     for (std::size_t i = 0; i < kCount; ++i)
     {
         double scalar[boys::kMaxBoysOrder + 1];
-        boys::BoysAllOrders<1.0, LanePolicy>(n, x[i], scalar);
+        boys::BoysAllOrders<LanePolicy>(n, x[i], scalar);
 
         for (int k = 0; k <= n; ++k)
         {

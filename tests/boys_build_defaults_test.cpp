@@ -319,7 +319,7 @@ TEST(BuildDefaultsTest, AnUnnamedCallIsTheSeamPolicysCall) {
             std::array<double, boys::kMaxBoysOrder + 1> named{};
 
             boys::BoysAllOrders(nmax, x, unnamed.data());
-            boys::BoysAllOrders<boys::kBoysFullAccuracyMultiplier, SeamPolicy>(
+            boys::BoysAllOrders<SeamPolicy>(
                 nmax, x, named.data());
 
             for (int order = 0; order <= nmax; ++order) {
@@ -336,7 +336,7 @@ TEST(BuildDefaultsTest, AnUnnamedCallIsTheSeamPolicysCall) {
             ++singleCells;
 
             if (boys::BoysSingle(4, x) !=
-                boys::BoysSingle<boys::kBoysFullAccuracyMultiplier, SeamPolicy>(4, x)) {
+                boys::BoysSingle<SeamPolicy>(4, x)) {
                 ++singleMoved;
             }
         }

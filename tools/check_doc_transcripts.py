@@ -165,11 +165,18 @@ ROWS = re.compile(
     re.S,
 )
 
-# The members of a LaneContractInfo row: precision, name, bound, additive,
-# plainAdditive, source. The last is the one this check reads, and a revision
-# that adds a field is a construct the readers below name rather than a row read
+# The members of a LaneContractInfo row this check reads: precision, name, bound,
+# additive, plainAdditive, source. The last of them is the one whose string this
+# check reads. A row may leave the members after it to their defaults - the plain
+# reciprocal's own sentence is one - so a row carries at least these and at most
+# the struct's own count, and a revision that adds a field the row has to write
+# before `source` is a construct the readers below name rather than a row read
 # short.
 FIELDS = 6
+
+# The members LaneContractInfo declares: the six above and the plain
+# reciprocal's own sentence, which trails `source` and which no row has to write.
+STRUCT_FIELDS = 7
 
 # One or more adjacent string literals - which is how a value longer than a
 # line is written here - and the escape sequences decoded below.
@@ -412,10 +419,12 @@ def read_source_strings(path: pathlib.Path) -> list[SourceString]:
         if not (row.startswith("{") and row.endswith("}")):
             raise CheckError(f"{where}: not a braced initialiser ({row[:60]!r} ...)")
         members = split_members(row[1:-1], ",")
-        if len(members) != FIELDS:
+        if not FIELDS <= len(members) <= STRUCT_FIELDS:
             raise CheckError(
-                f"{where}: {len(members)} members, and LaneContractInfo has {FIELDS} "
-                f"(precision, name, bound, additive, plainAdditive, source); the last is the one read here"
+                f"{where}: {len(members)} members, and a row carries {FIELDS} to {STRUCT_FIELDS} "
+                f"of LaneContractInfo's (precision, name, bound, additive, plainAdditive, source, "
+                f"plainSource); `source`, the last of the six this check reads, is the one it "
+                f"reads here"
             )
         lane = " ".join(join_literals(members[1], where).split()) or f"row {index}"
         source = " ".join(join_literals(members[FIELDS - 1], where).split())

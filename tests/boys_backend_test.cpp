@@ -264,14 +264,14 @@ static_assert(boys::kDefaultEvalScheme == boys::EvalScheme::kHorner,
 // A replacement is read instead of the committed file rather than beside it, so the names
 // it carries are this build's. A replacement naming the shipped set, and a seam that
 // stopped delivering the file, both come out as the committed values.
-constexpr bool kShippedDefaultsInForce =
+constexpr bool kCoarsestDefaultsInForce =
     boys::kDefaultFitRoute == boys::FitRoute::kChebyshev &&
     boys::kDefaultEvalScheme == boys::EvalScheme::kHorner &&
     boys::kDefaultPackAxis == boys::PackAxis::kArguments &&
     boys::kDefaultDivisionForm == boys::DivisionForm::kRefinedReciprocal &&
     boys::kDefaultFitGranularity == boys::FitGranularity::kNarrow;
 
-static_assert(!kShippedDefaultsInForce,
+static_assert(!kCoarsestDefaultsInForce,
               "the defaults header in force names all five shipped values, so this build has "
               "chosen nothing: point BOYS_BUILD_DEFAULTS at a header that moves at least one "
               "axis, or unset it to build the shipped configuration");
@@ -295,7 +295,7 @@ static_assert(boys::kDefaultPackAxis == boys::PackAxis::kArguments,
               "the fixture's packing axis is not in force");
 static_assert(boys::kDefaultDivisionForm == boys::DivisionForm::kPlainReciprocal,
               "the fixture's division form is not in force");
-static_assert(boys::kDefaultFitGranularity == boys::FitGranularity::kShipped,
+static_assert(boys::kDefaultFitGranularity == boys::FitGranularity::kCoarsest,
               "the fixture's fit granularity is not in force");
 #endif
 #endif
@@ -328,7 +328,7 @@ TEST(BackendTest, TheUnnamedCallIsTheDefaultThisBuildWasCompiledWith) {
             std::array<double, boys::kMaxBoysOrder + 1> shipped{};
 
             BoysAllOrders(nmax, x, built.data());
-            BoysAllOrders<boys::kBoysFullAccuracyMultiplier, Shipped>(nmax, x, shipped.data());
+            BoysAllOrders<Shipped>(nmax, x, shipped.data());
 
             for (int order = 0; order <= nmax; ++order) {
                 ++cells;
@@ -362,15 +362,15 @@ TEST(BackendTest, TheUnnamedCallIsTheDefaultThisBuildWasCompiledWith) {
 
 // Naming the narrow partition is answered from its own tables; combinations with no
 // table for the named partition are refused where they are named rather than answered
-// from another partition's fits. Those refusals are static_asserts inside `RouteFit`
-// and `RationalRouteFitAtRung`, so a test that has to compile cannot exercise one:
+// from another partition's fits. Those refusals are static_asserts inside `RouteFit`,
+// so a test that has to compile cannot exercise one:
 // what is pinned here is the default. The member itself is measured in the accuracy
 // gate. The two are named and not numbered on purpose - a line number into a header
 // this tree is still moving rots, and a reader who needs the site greps the symbol.
 TEST(BackendTest, ThePartitionNamesRoundTrip) {
-    EXPECT_STREQ(boys::GranularityName(boys::FitGranularity::kShipped), "shipped");
+    EXPECT_STREQ(boys::GranularityName(boys::FitGranularity::kCoarsest), "shipped");
     EXPECT_STREQ(boys::GranularityName(boys::FitGranularity::kNarrow), "narrow");
-    EXPECT_STRNE(boys::GranularityName(boys::FitGranularity::kShipped),
+    EXPECT_STRNE(boys::GranularityName(boys::FitGranularity::kCoarsest),
                  boys::GranularityName(boys::FitGranularity::kNarrow));
 
     // A partition this build serves is a row of the enumeration: a name the enumeration does
@@ -411,23 +411,16 @@ TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
     EXPECT_STREQ(uniform->name, boys::GranularityName(boys::FitGranularity::kUniform));
     EXPECT_STRNE(uniform->name, "unknown");
 
-    // Both routes, both packing axes and every rung of the enumeration, as the row states them.
+    // Both routes and both packing axes, as the row states them.
     EXPECT_TRUE(boys::FitGranularityHasRoute(*uniform, boys::FitRoute::kChebyshev));
     EXPECT_TRUE(boys::FitGranularityHasRoute(*uniform, boys::FitRoute::kRationalMinimax));
     EXPECT_TRUE(boys::FitGranularityHasAxis(*uniform, boys::PackAxis::kArguments));
     EXPECT_TRUE(boys::FitGranularityHasAxis(*uniform, boys::PackAxis::kOrders));
-    EXPECT_EQ(uniform->rungs, static_cast<int>(boys::AccuracyTier::kRelaxed65536) + 1)
-        << "a rung of the uniform partition is the stored cells read uncut, so the row claims "
-           "every rung the enumeration names";
 
     // The row's fields against the accessor that answers a caller, over every combination of
     // the other axes: a combination the accessor serves and the row does not claim is a claim
     // the row is missing, and one the row claims and the accessor refuses is a route or an
     // axis the build does not have.
-    //
-    // The rung count is the row's own, for either route: a rung of this partition is the
-    // stored cells read uncut, and the rational member's pairs are stored and read at every
-    // multiplier by the same reading.
     std::size_t served = 0;
     std::size_t claimedCount = 0;
 
@@ -437,53 +430,47 @@ TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
         {
             for (const boys::PackAxisInfo& axis : boys::BoysPackAxes())
             {
-                for (int raw = 0; raw <= static_cast<int>(boys::AccuracyTier::kRelaxed65536);
-                     ++raw)
+                const boys::AccuracyFigure figure = boys::BoysAccuracyGuaranteed(
+                    boys::Precision::kFp64, route.route, scheme.scheme, axis.axis,
+                    boys::FitGranularity::kUniform);
+                const bool claimed =
+                    boys::FitGranularityHasRoute(*uniform, route.route) &&
+                    boys::FitGranularityHasAxis(*uniform, axis.axis);
+
+                EXPECT_EQ(figure.available, claimed)
+                    << "the uniform row says " << (claimed ? "served" : "refused")
+                    << " at route " << static_cast<int>(route.route) << ", scheme "
+                    << static_cast<int>(scheme.scheme) << ", axis "
+                    << static_cast<int>(axis.axis) << " and the accessor answers "
+                    << (figure.available ? "served" : "no") << ": " << figure.reason;
+
+                if (claimed)
                 {
-                    const boys::AccuracyFigure figure = boys::BoysAccuracyGuaranteed(
-                        boys::Precision::kFp64, route.route, scheme.scheme, axis.axis,
-                        boys::FitGranularity::kUniform, static_cast<boys::AccuracyTier>(raw));
-                    const bool claimed =
-                        boys::FitGranularityHasRoute(*uniform, route.route) &&
-                        boys::FitGranularityHasAxis(*uniform, axis.axis) && raw < uniform->rungs;
+                    ++claimedCount;
+                }
 
-                    EXPECT_EQ(figure.available, claimed)
-                        << "the uniform row says " << (claimed ? "served" : "refused")
-                        << " at route " << static_cast<int>(route.route) << ", scheme "
-                        << static_cast<int>(scheme.scheme) << ", axis "
-                        << static_cast<int>(axis.axis) << ", m = "
-                        << boys::AccuracyMultiplier(static_cast<boys::AccuracyTier>(raw))
-                        << " and the accessor answers " << (figure.available ? "served" : "no")
-                        << ": " << figure.reason;
-
-                    if (claimed)
-                    {
-                        ++claimedCount;
-                    }
-
-                    if (figure.available)
-                    {
-                        ++served;
-                        EXPECT_GT(figure.value, 0.0) << "a served combination carries no figure";
-                        EXPECT_NE(figure.source[0], '\0')
-                            << "a served combination does not say where its figure comes from";
-                        EXPECT_EQ(figure.reason[0], '\0')
-                            << "a served combination carries the reason of a refusal: "
-                            << figure.reason;
-                    }
-                    else
-                    {
-                        EXPECT_NE(figure.reason[0], '\0')
-                            << "a refused combination is refused without a reason";
-                    }
+                if (figure.available)
+                {
+                    ++served;
+                    EXPECT_GT(figure.value, 0.0) << "a served combination carries no figure";
+                    EXPECT_NE(figure.source[0], '\0')
+                        << "a served combination does not say where its figure comes from";
+                    EXPECT_EQ(figure.reason[0], '\0')
+                        << "a served combination carries the reason of a refusal: "
+                        << figure.reason;
+                }
+                else
+                {
+                    EXPECT_NE(figure.reason[0], '\0')
+                        << "a refused combination is refused without a reason";
                 }
             }
         }
     }
 
     // The count is held to the rows' own claim rather than to a literal - it was 64, and it
-    // went stale as soon as the rational member's rungs were served. `claimed` comes from the
-    // row's own declarations, whose rungs, routes and axes are asserted above, so the equality
+    // went stale as soon as the rational member's cells were served. `claimed` comes from the
+    // row's own declarations, whose routes and axes are asserted above, so the equality
     // below is the same claim without the snapshot.
     EXPECT_GT(claimedCount, 0u) << "the uniform row claims nothing at all";
     EXPECT_EQ(served, claimedCount)
@@ -511,8 +498,8 @@ TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
 
     for (const double x : kArguments)
     {
-        boys::BoysAllOrders<1.0, UniformPolicy>(kNmax, x, values.data());
-        boys::BoysAllOrders<1.0, NarrowPolicy>(kNmax, x, narrow.data());
+        boys::BoysAllOrders<UniformPolicy>(kNmax, x, values.data());
+        boys::BoysAllOrders<NarrowPolicy>(kNmax, x, narrow.data());
 
         for (int n = 0; n <= kNmax; ++n)
         {
@@ -553,8 +540,8 @@ TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
 
     for (const double x : kArguments)
     {
-        boys::BoysAllOrders<1.0, UniformRatPolicy>(kNmax, x, rational.data());
-        boys::BoysAllOrders<1.0, NarrowRatPolicy>(kNmax, x, narrowRational.data());
+        boys::BoysAllOrders<UniformRatPolicy>(kNmax, x, rational.data());
+        boys::BoysAllOrders<NarrowRatPolicy>(kNmax, x, narrowRational.data());
 
         for (int n = 0; n <= kNmax; ++n)
         {
@@ -683,9 +670,9 @@ TEST(BackendTest, TheDivisionFormReachesTheLaddersItDocuments) {
     std::array<double, kNmax + 1> dReference{};
 
     const auto sweepDouble = [&](double x, bool downward) {
-        BoysAllOrders<boys::kBoysFullAccuracyMultiplier, DExact>(kNmax, x, dExact.data());
-        BoysAllOrders<boys::kBoysFullAccuracyMultiplier, DPlain>(kNmax, x, dPlain.data());
-        BoysAllOrders<boys::kBoysFullAccuracyMultiplier, DRefined>(kNmax, x, dRefined.data());
+        BoysAllOrders<DExact>(kNmax, x, dExact.data());
+        BoysAllOrders<DPlain>(kNmax, x, dPlain.data());
+        BoysAllOrders<DRefined>(kNmax, x, dRefined.data());
 
         for (int n = 0; n <= kNmax; ++n) {
             const std::size_t sn = static_cast<std::size_t>(n);
@@ -704,9 +691,9 @@ TEST(BackendTest, TheDivisionFormReachesTheLaddersItDocuments) {
     };
 
     const auto sweepFloat = [&](float x, bool downward) {
-        BoysAllOrdersF32<boys::kBoysFullAccuracyMultiplier, DExact>(kNmax, x, fExact.data());
-        BoysAllOrdersF32<boys::kBoysFullAccuracyMultiplier, DPlain>(kNmax, x, fPlain.data());
-        BoysAllOrdersF32<boys::kBoysFullAccuracyMultiplier, DRefined>(kNmax, x, fRefined.data());
+        BoysAllOrdersF32<DExact>(kNmax, x, fExact.data());
+        BoysAllOrdersF32<DPlain>(kNmax, x, fPlain.data());
+        BoysAllOrdersF32<DRefined>(kNmax, x, fRefined.data());
 
         // The reference this lane's plain form is measured against: the double lane at the
         // same argument, whose own published figure is 5.5e-14 - five to six digits inside
@@ -714,8 +701,7 @@ TEST(BackendTest, TheDivisionFormReachesTheLaddersItDocuments) {
         // error and not the reference's. The argument is the float one widened rather than
         // the double the sweep walked in with, so no part of the difference is the float
         // argument's own rounding.
-        BoysAllOrders<boys::kBoysFullAccuracyMultiplier, DExact>(
-            kNmax, static_cast<double>(x), dReference.data());
+        BoysAllOrders<DExact>(kNmax, static_cast<double>(x), dReference.data());
 
         for (int n = 0; n <= kNmax; ++n) {
             const std::size_t sn = static_cast<std::size_t>(n);
@@ -814,7 +800,7 @@ static_assert(boys::detail::kFitCarriesUniform<boys::detail::RationalFitUniform>
 
 static_assert(!boys::detail::kFitCarriesUniform<
                   boys::detail::ChebyshevFit<boys::EvalScheme::kHorner,
-                                             boys::FitGranularity::kShipped>>,
+                                             boys::FitGranularity::kCoarsest>>,
               "the derived Chebyshev family has no grid table: its granularity parameter is a "
               "two-case conditional, and an answer for the grid here is the substitution the "
               "trait exists to catch");
@@ -822,26 +808,22 @@ static_assert(!boys::detail::kFitCarriesUniform<boys::detail::RationalFit>,
               "the shipped rational member has no grid table");
 static_assert(!boys::detail::kFitCarriesUniform<boys::detail::RationalFitNarrow>,
               "the narrow rational member has no grid table");
-static_assert(!boys::detail::kFitCarriesUniform<boys::detail::RationalFitNarrowAtRung<1.0>>,
-              "a rung form of the derived rational family has no grid table either: a rung of "
-              "the grid is the stored cells read uncut and not a cut of another partition's "
-              "pairs");
 
 namespace {
 
 using GridFit = boys::detail::UniformFit<boys::EvalScheme::kHorner>;
 using DerivedFit =
-    boys::detail::ChebyshevFit<boys::EvalScheme::kHorner, boys::FitGranularity::kShipped>;
+    boys::detail::ChebyshevFit<boys::EvalScheme::kHorner, boys::FitGranularity::kCoarsest>;
 
 static_assert(boys::detail::FitAnswersPartition<GridFit>(boys::FitGranularity::kUniform),
               "the grid's member answers the grid");
 
 // A grid member answers the grid and nothing else: reading it as the shipped or the narrow
 // partition would be a substitution in the other direction, and the same one.
-static_assert(!boys::detail::FitAnswersPartition<GridFit>(boys::FitGranularity::kShipped));
+static_assert(!boys::detail::FitAnswersPartition<GridFit>(boys::FitGranularity::kCoarsest));
 static_assert(!boys::detail::FitAnswersPartition<GridFit>(boys::FitGranularity::kNarrow));
 
-static_assert(boys::detail::FitAnswersPartition<DerivedFit>(boys::FitGranularity::kShipped),
+static_assert(boys::detail::FitAnswersPartition<DerivedFit>(boys::FitGranularity::kCoarsest),
               "the derived family's own two partitions are what it answers");
 static_assert(boys::detail::FitAnswersPartition<DerivedFit>(boys::FitGranularity::kNarrow));
 static_assert(!boys::detail::FitAnswersPartition<DerivedFit>(boys::FitGranularity::kUniform),
@@ -891,11 +873,11 @@ TEST(BackendTest, TheGuardedBatchedEntriesReadTheGridsOwnTable) {
     std::vector<double> planes(kArguments.size() * static_cast<std::size_t>(kNmax + 1), 0.0);
     std::vector<std::size_t> workspace(boys::BoysAllNWorkspaceSize(kArguments.size()));
 
-    boys::BoysAllN<1.0, UniformPolicy>(kNmax,
-                                       kArguments.data(),
-                                       planes.data(),
-                                       kArguments.size(),
-                                       workspace.data());
+    boys::BoysAllN<UniformPolicy>(kNmax,
+                                  kArguments.data(),
+                                  planes.data(),
+                                  kArguments.size(),
+                                  workspace.data());
 
     std::size_t moved = 0;
 
@@ -904,8 +886,8 @@ TEST(BackendTest, TheGuardedBatchedEntriesReadTheGridsOwnTable) {
         std::array<double, kNmax + 1> perOrder{};
         std::array<double, kNmax + 1> narrow{};
 
-        boys::BoysAllOrders<1.0, UniformPolicy>(kNmax, kArguments[i], perOrder.data());
-        boys::BoysAllOrders<1.0, NarrowPolicy>(kNmax, kArguments[i], narrow.data());
+        boys::BoysAllOrders<UniformPolicy>(kNmax, kArguments[i], perOrder.data());
+        boys::BoysAllOrders<NarrowPolicy>(kNmax, kArguments[i], narrow.data());
 
         for (int n = 0; n <= kNmax; ++n)
         {
@@ -929,16 +911,16 @@ TEST(BackendTest, TheGuardedBatchedEntriesReadTheGridsOwnTable) {
     // at every argument of the array.
     std::vector<double> fixed(kArguments.size(), 0.0);
 
-    boys::BoysFixedN<1.0, UniformPolicy>(kNmax / 2,
-                                         kArguments.data(),
-                                         fixed.data(),
-                                         kArguments.size());
+    boys::BoysFixedN<UniformPolicy>(kNmax / 2,
+                                    kArguments.data(),
+                                    fixed.data(),
+                                    kArguments.size());
 
     for (std::size_t i = 0; i < kArguments.size(); ++i)
     {
         // Parenthesised: the template argument list carries a comma, which the assertion's
         // own macro would otherwise read as a second argument of its own.
-        EXPECT_EQ(fixed[i], (boys::BoysSingle<1.0, UniformPolicy>(kNmax / 2, kArguments[i])))
+        EXPECT_EQ(fixed[i], (boys::BoysSingle<UniformPolicy>(kNmax / 2, kArguments[i])))
             << "the fixed-order entry's grid path is the single-order body's own reading, and "
             << "they part at x = " << kArguments[i];
     }

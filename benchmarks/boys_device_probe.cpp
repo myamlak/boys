@@ -7,14 +7,45 @@
 // is a failure here and not a paragraph.
 #include "boys/boys_cuda_probe.hpp"
 
+#include <array>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
+#include <fstream>
 #include <string>
 #include <vector>
 
 namespace {
+
+/// The moment a run started, in UTC, the way the option probe writes it too: a written file
+/// belongs to the host and the run that produced it, and this is the run.
+std::string Timestamp() {
+    const std::time_t now = std::time(nullptr);
+    std::array<char, 32> buffer{};
+    std::tm utc{};
+
+#ifdef _MSC_VER
+    gmtime_s(&utc, &now);
+#else
+    gmtime_r(&now, &utc);
+#endif
+
+    std::strftime(buffer.data(), buffer.size(), "%Y-%m-%dT%H:%M:%SZ", &utc);
+    return std::string(buffer.data());
+}
+
+/// The card and the moment, as the file a run writes states them: a device figure belongs to
+/// the card it was taken on, so a reader holding the file has to be able to tell which one.
+std::string TakenAt(const boys::DeviceProbeReport& report, const std::string& started) {
+    if (report.device.name.empty())
+    {
+        return started;
+    }
+
+    return report.device.name + ", " + started;
+}
 
 /// A double as the help prints it: enough to name the value, no more.
 std::string Number(double value) {
@@ -64,6 +95,13 @@ void Usage(const boys::DeviceProbeOptions& defaults) {
                 "  --only=A,B,C       measure only these entries, named as the report\n"
                 "                     prints them (default: every entry this build\n"
                 "                     offers)\n"
+                "  --emit-defaults=F  write this run's own device classes as a replacement\n"
+                "                     for the build-defaults seam, in the format its\n"
+                "                     BOYS_BUILD_DEFAULT_ROWS consumes, and report which\n"
+                "                     classes carry a measured row and which carry none and\n"
+                "                     why. The file is what the CMake option\n"
+                "                     BOYS_BUILD_DEFAULTS points a build at; a run that\n"
+                "                     measured no device class writes no file.\n"
                 "  --help             this text\n"
                 "\n"
                 "Transfer and host submission are outside the timed region by design: the\n"
@@ -122,6 +160,8 @@ std::vector<std::string> SplitNames(const char* text) {
 
 int main(int argc, char** argv) {
     boys::DeviceProbeOptions options;
+    std::string emitDefaults;
+    const std::string started = Timestamp();
 
     for (int i = 1; i < argc; ++i)
     {
@@ -131,6 +171,18 @@ int main(int argc, char** argv) {
         {
             Usage(options);
             return 0;
+        } else if (arg.rfind("--emit-defaults=", 0) == 0)
+        {
+            emitDefaults = arg.c_str() + 16;
+        } else if (arg == "--emit-defaults")
+        {
+            if (i + 1 >= argc)
+            {
+                std::fprintf(stderr, "boys-device-probe: --emit-defaults needs a file name\n");
+                return 2;
+            }
+
+            emitDefaults = argv[++i];
         } else if (arg.rfind("--device=", 0) == 0)
         {
             options.device = std::atoi(arg.c_str() + 9);
@@ -195,6 +247,61 @@ int main(int argc, char** argv) {
 
     const std::string text = boys::FormatDeviceOptionProbe(report);
     std::fputs(text.c_str(), stdout);
+
+    // The device half of the seam this run implies, where the caller asked for it: the
+    // classes it carries a row for and the ones it refuses, then the file itself. A run
+    // that measured no device class has nothing to write and the entry says so with an
+    // empty text, which is a failure of this command's own contract rather than a result:
+    // the file would be a transcription of the seam and not a measurement.
+    if (!emitDefaults.empty())
+    {
+        const boys::DeviceDefaultsEmission emission =
+            boys::FormatDeviceBuildDefaults(report, TakenAt(report, started));
+
+        std::printf("\nthe seam rows this run can write - one per (device, precision, shape) class:\n");
+
+        for (const std::string& line : emission.emitted)
+        {
+            std::printf("  written: %s\n", line.c_str());
+        }
+
+        for (const std::string& line : emission.refused)
+        {
+            std::printf("  no row:  %s\n", line.c_str());
+        }
+
+        if (emission.text.empty())
+        {
+            std::fprintf(stderr,
+                         "boys-device-probe: no defaults written - this run measured no device "
+                         "class, so there is no ranking to write\n");
+            return 3;
+        }
+
+        // A std::ofstream and not the C stdio the option probe's writer uses: this target
+        // carries the CUDA toolkit's include directories, and there the CRT marks fopen
+        // deprecated under the tree's own /WX, so the portable C++ stream is what compiles.
+        std::ofstream file(emitDefaults, std::ios::binary | std::ios::trunc);
+
+        if (!file)
+        {
+            std::fprintf(stderr, "boys-device-probe: cannot write '%s'\n", emitDefaults.c_str());
+            return 3;
+        }
+
+        file.write(emission.text.data(), static_cast<std::streamsize>(emission.text.size()));
+        file.close();
+
+        if (!file)
+        {
+            std::fprintf(stderr, "boys-device-probe: short write to '%s'\n", emitDefaults.c_str());
+            return 3;
+        }
+
+        std::printf("defaults written: %s | %zu byte(s) | point a build at it with "
+                    "-DBOYS_BUILD_DEFAULTS=%s\n",
+                    emitDefaults.c_str(), emission.text.size(), emitDefaults.c_str());
+    }
 
     // The report's own last block, read back as the exit status: the closure holds, or
     // a member of the option space is in no state and this run says so with a non-zero

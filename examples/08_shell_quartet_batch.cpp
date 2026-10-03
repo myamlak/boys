@@ -74,8 +74,7 @@ int main()
     const boys::AccuracyFigure guaranteed =
         boys::BoysAccuracyGuaranteed(boys::Precision::kFp64, boys::kDefaultFitRoute,
                                      boys::kDefaultEvalScheme, boys::kDefaultPackAxis,
-                                     boys::kDefaultFitGranularity,
-                                     boys::AccuracyTier::kReference);
+                                     boys::kDefaultFitGranularity);
     std::printf("guaranteed error per value:             %.3g  (%s)\n", guaranteed.value,
                 guaranteed.source);
 

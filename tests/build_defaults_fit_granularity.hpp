@@ -24,14 +24,12 @@
 //
 // The member this file does not name is kUniform: the batched bodies refused it until this
 // revision and now hand it to the path that reads the grid (the accuracy gate's entry
-// book measures their six cells), so what remains of that member's refusal is the rational
-// route's rung selector, which refuses a rung of it at compile time (the static_assert in
-// RationalRouteFitAtRung, include/boys/boys_impl.hpp). Nothing in this tree names it, so a
-// build naming it is unmeasured rather than refused. This axis offers three values and not
-// one: kNarrow and kShipped are both reachable, and CONTRIBUTING.md states which choice a
-// build cannot move. The shipped partition is also the one the library reads back most
-// often - the accuracy gate is defined at it, the packed lane carries it at every rung beside the
-// narrow one, and the entries' own fallbacks name it - so a build resolving it is a
+// book measures their six cells), so that refusal is gone, and nothing in this tree names
+// the member: a build naming it is unmeasured rather than refused. This axis offers three
+// values and not one: kNarrow and kCoarsest are both reachable, and CONTRIBUTING.md states
+// which choice a build cannot move. The shipped partition is also the one the library reads
+// back most often - the accuracy gate is defined at it, the packed lane carries it beside
+// the narrow one, and the entries' own fallbacks name it - so a build resolving it is a
 // configuration the library already exercises rather than a path this file invents.
 //
 // WHAT THIS CONFIGURE MEETS BEFORE IT MEETS THE AXIS
@@ -39,18 +37,18 @@
 // The replaced-build branch of tests/boys_backend_test.cpp reads all five axes this file
 // names, so it refuses a replacement only when every one of them is the shipped value:
 //
-//   constexpr bool kShippedDefaultsInForce =
+//   constexpr bool kCoarsestDefaultsInForce =
 //       boys::kDefaultFitRoute == boys::FitRoute::kChebyshev &&
 //       boys::kDefaultEvalScheme == boys::EvalScheme::kHorner &&
 //       boys::kDefaultPackAxis == boys::PackAxis::kArguments &&
 //       boys::kDefaultDivisionForm == boys::DivisionForm::kRefinedReciprocal &&
 //       boys::kDefaultFitGranularity == boys::FitGranularity::kNarrow;
-//   static_assert(!kShippedDefaultsInForce, "the defaults header in force names all five
+//   static_assert(!kCoarsestDefaultsInForce, "the defaults header in force names all five
 //   shipped values, so this build has chosen nothing: point BOYS_BUILD_DEFAULTS at a header
 //   that moves at least one axis, or unset it to build the shipped configuration");
 //
 // Four of those five comparisons hold for the values this file names and the fifth does not:
-// kShipped is not the committed file's kNarrow, which is the axis this file moves. The
+// kCoarsest is not the committed file's kNarrow, which is the axis this file moves. The
 // message's "at least one axis" is what the predicate reads now, and a header that moved no
 // axis at all is the only one refused, so under this fixture the guard passes exactly when
 // the fit granularity took effect. What this configure reports first is therefore the axis's
@@ -64,7 +62,7 @@
 
 // Moved: the partition the certified lanes are defined by, in place of the narrow
 // partition the committed file names.
-#define BOYS_BUILD_DEFAULT_FIT_GRANULARITY FitGranularity::kShipped
+#define BOYS_BUILD_DEFAULT_FIT_GRANULARITY FitGranularity::kCoarsest
 
 // Shipped: the committed file's own values, so that the fit granularity above is the
 // single value this build resolves differently from the shipped configuration.

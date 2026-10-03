@@ -1,9 +1,7 @@
 // The C linkage surface contract (boys_c.h): scalar/batch entries match the
-// C++ lanes, the multiplier dispatch is exact over the library's accuracy-rung
-// vocabulary, and the validation rules return the documented status codes.
+// C++ lanes, and the validation rules return the documented status codes.
 #include "boys/boys.hpp"
 #include "boys/boys_c.h"
-#include "boys/boys_cuda_options.hpp"
 #include "boys/boys_effective_degrees.hpp"
 #include "boys/boys_impl.hpp"
 
@@ -26,36 +24,6 @@ constexpr int kSampleOrders[] = {0, 1, 2, 3, 7, 16, 31, 32};
 // A value no Boys entry returns: F_n(x) is positive and at most 1 for every
 // supported order and argument, so a negative marker says "not written".
 constexpr double kUnwritten = -1.0;
-
-// The rungs this file sweeps, ascending. Spelled out because a rung is a
-// template argument at a case here and cannot be read out of a table.
-constexpr double kRungs[] = {
-    1.0, 2.0, 10.0, 64.0, 100.0, 256.0, 1024.0, 4096.0, 1e4, 16384.0, 65536.0, 1e8};
-
-// Whether the twelve above are the device lane's kDeviceRungs
-// (boys_cuda_options.hpp), element by element and in order — the table the C
-// surface's multiplier entries and the C++ tiers dispatch over.
-constexpr bool RungsAreTheLibrarysSet() noexcept {
-    if (std::size(kRungs) != boys::kDeviceRungs.size())
-    {
-        return false;
-    }
-
-    for (std::size_t i = 0; i < std::size(kRungs); ++i)
-    {
-        if (kRungs[i] != boys::kDeviceRungs[i])
-        {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-static_assert(RungsAreTheLibrarysSet(),
-              "the rungs this file sweeps must be kDeviceRungs (boys_cuda_options.hpp), in its "
-              "order: the C surface's multiplier entries serve that vocabulary, and this file is "
-              "what holds their dispatch to it");
 
 double RefSingle(int n, double x) {
     double value = 0.0;
@@ -83,78 +51,6 @@ TEST(BoysCTest, FloatMatchesCppLane) {
             ASSERT_EQ(BoysFloat(n, xf, &value), BOYS_SUCCESS);
             EXPECT_FLOAT_EQ(value, boys::BoysSingleF32(n, xf)) << "n=" << n << " x=" << x;
         }
-    }
-}
-
-// The dispatch is exact over the rung vocabulary: each relaxed entry must be
-// bit-identical to the direct C++ instantiation at that m, and must succeed.
-template <double kM> void CheckMultiplierLane(int n, double x) {
-    double viaC = 0.0;
-    ASSERT_EQ(BoysDoubleWithMultiplier(kM, n, x, &viaC), BOYS_SUCCESS)
-        << "m=" << kM << ": the double entry must serve every rung of the vocabulary";
-    EXPECT_DOUBLE_EQ(viaC, boys::BoysSingle<kM>(n, x)) << "m=" << kM << " n=" << n << " x=" << x;
-}
-
-// The same for the single-precision entry, at its own lane's asserted bounds.
-template <double kM> void CheckFloatMultiplierLane(int n, float x) {
-    float viaC = 0.0f;
-    ASSERT_EQ(BoysFloatWithMultiplier(kM, n, x, &viaC), BOYS_SUCCESS)
-        << "m=" << kM << ": the float entry must serve every rung of the vocabulary";
-    EXPECT_FLOAT_EQ(viaC, boys::BoysSingleF32<kM>(n, x)) << "m=" << kM << " n=" << n << " x=" << x;
-}
-
-TEST(BoysCTest, DoubleMultiplierDispatchMatchesCpp) {
-    for (int n : kSampleOrders)
-    {
-        for (double x : kSampleXs)
-        {
-            CheckMultiplierLane<1.0>(n, x);
-            CheckMultiplierLane<2.0>(n, x);
-            CheckMultiplierLane<10.0>(n, x);
-            CheckMultiplierLane<64.0>(n, x);
-            CheckMultiplierLane<100.0>(n, x);
-            CheckMultiplierLane<256.0>(n, x);
-            CheckMultiplierLane<1024.0>(n, x);
-            CheckMultiplierLane<4096.0>(n, x);
-            CheckMultiplierLane<1e4>(n, x);
-            CheckMultiplierLane<16384.0>(n, x);
-            CheckMultiplierLane<65536.0>(n, x);
-            CheckMultiplierLane<1e8>(n, x);
-        }
-    }
-}
-
-TEST(BoysCTest, FloatMultiplierDispatchMatchesCpp) {
-    for (int n : kSampleOrders)
-    {
-        for (double x : kSampleXs)
-        {
-            const float xf = static_cast<float>(x);
-            CheckFloatMultiplierLane<1.0>(n, xf);
-            CheckFloatMultiplierLane<2.0>(n, xf);
-            CheckFloatMultiplierLane<10.0>(n, xf);
-            CheckFloatMultiplierLane<64.0>(n, xf);
-            CheckFloatMultiplierLane<100.0>(n, xf);
-            CheckFloatMultiplierLane<256.0>(n, xf);
-            CheckFloatMultiplierLane<1024.0>(n, xf);
-            CheckFloatMultiplierLane<4096.0>(n, xf);
-            CheckFloatMultiplierLane<1e4>(n, xf);
-            CheckFloatMultiplierLane<16384.0>(n, xf);
-            CheckFloatMultiplierLane<65536.0>(n, xf);
-            CheckFloatMultiplierLane<1e8>(n, xf);
-        }
-    }
-}
-
-// The table itself, walked as data, so a rung added to the vocabulary - and to
-// the library - without a case in the C surface's dispatch fails here.
-TEST(BoysCTest, ServesEveryRungOfTheVocabulary) {
-    for (const double m : kRungs)
-    {
-        double viaC = 0.0;
-        float viaCf = 0.0f;
-        EXPECT_EQ(BoysDoubleWithMultiplier(m, 3, 0.5, &viaC), BOYS_SUCCESS) << "m=" << m;
-        EXPECT_EQ(BoysFloatWithMultiplier(m, 3, 0.5f, &viaCf), BOYS_SUCCESS) << "m=" << m;
     }
 }
 
@@ -330,29 +226,6 @@ TEST(BoysCTest, RejectsInvalidArguments) {
     // Zero count is a no-op, even with null pointers.
     EXPECT_EQ(BoysDoubleBatch(32, 0, nullptr, nullptr), BOYS_SUCCESS);
     EXPECT_EQ(BoysFloatBatch(32, 0, nullptr, nullptr), BOYS_SUCCESS);
-}
-
-TEST(BoysCTest, RejectsUnsupportedMultipliers) {
-    double value = 0.0;
-    float fvalue = 0.0f;
-    EXPECT_EQ(BoysDoubleWithMultiplier(0.5, 0, 0.5, &value), BOYS_ERROR_UNSUPPORTED_MULTIPLIER);
-    EXPECT_EQ(BoysDoubleWithMultiplier(3.0, 0, 0.5, &value), BOYS_ERROR_UNSUPPORTED_MULTIPLIER);
-    EXPECT_EQ(BoysDoubleWithMultiplier(-1.0, 0, 0.5, &value), BOYS_ERROR_UNSUPPORTED_MULTIPLIER);
-    EXPECT_EQ(BoysFloatWithMultiplier(1.5, 0, 0.5f, &fvalue), BOYS_ERROR_UNSUPPORTED_MULTIPLIER);
-    // Argument validation precedes the multiplier dispatch.
-    EXPECT_EQ(BoysDoubleWithMultiplier(1.5, -1, 0.5, &value), BOYS_ERROR_INVALID_ARGUMENT);
-
-    // Exact equality: a value between two rungs, or outside the set, is refused.
-    const double kBetweenRungs[] = {
-        0.999, 1.5, 3.0, 32.0, 128.0, 512.0, 2048.0, 8192.0, 32768.0, 1e5, 1e6, 1e9};
-
-    for (const double m : kBetweenRungs)
-    {
-        EXPECT_EQ(BoysDoubleWithMultiplier(m, 0, 0.5, &value), BOYS_ERROR_UNSUPPORTED_MULTIPLIER)
-            << "m=" << m;
-        EXPECT_EQ(BoysFloatWithMultiplier(m, 0, 0.5f, &fvalue), BOYS_ERROR_UNSUPPORTED_MULTIPLIER)
-            << "m=" << m;
-    }
 }
 
 } // namespace

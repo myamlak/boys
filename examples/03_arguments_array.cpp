@@ -36,7 +36,7 @@ int main()
     const double bound = boys::BoysAccuracyGuaranteed(
                              boys::Precision::kFp64, boys::FitRoute::kChebyshev,
                              boys::EvalScheme::kHorner, boys::PackAxis::kArguments,
-                             boys::FitGranularity::kNarrow, boys::AccuracyTier::kReference)
+                             boys::FitGranularity::kNarrow)
                              .value;
     std::printf("worst gap against BoysSingle: %.2g (guaranteed error <= %.2g)\n", worst, bound);
     return (worst <= bound) ? 0 : 1;

@@ -20,26 +20,6 @@ extern "C" {
 int BoysCudaUploadTables();
 int BoysCudaDeviceTableAddresses(void** out);
 int BoysCudaDeviceTableAddressesTail(void** out);
-int BoysCudaEffTablesResident(double m);
-int BoysCudaUploadEffTables(double m,
-                            const int* degA,
-                            const int* degB,
-                            const int* narrowA,
-                            const int* narrowB,
-                            const int* narrowB32,
-                            const int* monoA,
-                            const int* monoB,
-                            const int* narrowMonoA,
-                            const int* narrowMonoB,
-                            const int* narrowMonoB32,
-                            const int* ratSeedA,
-                            const int* ratOrdA,
-                            const int* ratB,
-                            const int* ratB32,
-                            const int* narrowRatSeedA,
-                            const int* narrowRatOrdA,
-                            const int* narrowRatB,
-                            const int* narrowRatB32);
 int BoysCudaLaunchSingleF32(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchSingleF32Fast(
@@ -65,31 +45,13 @@ int BoysCudaLaunchAllOrdersF32NarrowRat(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32Orders(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllOrdersF32OrdersEff(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32NarrowOrders(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllOrdersF32NarrowEff(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllOrdersF32NarrowOrdersEff(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllOrdersF32NarrowMonoEff(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllOrdersF32NarrowOrdersMonoEff(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32NarrowOrdersMono(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32OrdersRat(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32NarrowOrdersRat(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllOrdersF32RatEff(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllOrdersF32NarrowRatEff(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllOrdersF32OrdersRatEff(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllOrdersF32NarrowOrdersRatEff(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchSingleF64(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
@@ -101,74 +63,33 @@ int BoysCudaLaunchAllOrdersF64UniformHorner(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64Orders(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllOrdersF64OrdersEff(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64Narrow(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllOrdersF64NarrowEff(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64NarrowOrders(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllOrdersF64NarrowOrdersEff(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64Mono(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllOrdersF64MonoEff(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64OrdersMono(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllOrdersF64OrdersMonoEff(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64NarrowMono(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllOrdersF64NarrowMonoEff(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64NarrowOrdersMono(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllOrdersF64NarrowOrdersMonoEff(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64Rat(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllOrdersF64RatEff(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64OrdersRat(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllOrdersF64OrdersRatEff(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64NarrowRat(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllOrdersF64NarrowRatEff(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64NarrowOrdersRat(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllOrdersF64NarrowOrdersRatEff(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllNF64(int nmax, const double* x, double* out, std::size_t count, void* stream);
-int BoysCudaLaunchSingleF32Eff(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
-int BoysCudaLaunchSingleF32EffFast(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllOrdersF32Eff(
-    const int* n, const double* x, float* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllNF32Eff(
-    int nmax, const double* x, float* out, std::size_t count, void* stream);
-int BoysCudaLaunchSingleF64Eff(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllOrdersF64Eff(
-    const int* n, const double* x, double* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllNF64Eff(
-    int nmax, const double* x, double* out, std::size_t count, void* stream);
 #if BoysFp16
 int BoysCudaLaunchSingleF16(
     const int* n, const void* x, void* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF16(
     const int* n, const void* x, void* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllNF16(int nmax, const void* x, void* out, std::size_t count, void* stream);
-int BoysCudaLaunchSingleF16Eff(
-    const int* n, const void* x, void* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllOrdersF16Eff(
-    const int* n, const void* x, void* out, std::size_t count, void* stream);
-int BoysCudaLaunchAllNF16Eff(int nmax, const void* x, void* out, std::size_t count, void* stream);
 #endif
 }
 
@@ -214,417 +135,10 @@ BoysStatus RunLaunch(
 
 } // namespace
 
-namespace {
-// ---------------------------------------------------------------------------
-// The accuracy-multiplier effective-degree tables. A CUDA-safe include list cannot
-// see the constexpr degree machinery, so the host layer computes the six lanes'
-// degree tables here and uploads them through BoysCudaUploadEffTables, which caches
-// per (device, m). The lane order matches the cDegEff lane axis in boys_cuda.cu:
-//   0 = double single, 1 = double batch, 2 = float single, 3 = float batch,
-//   4 = fp16 single, 5 = fp16 batch.
-// degA layout: [lane][order][pieceInOrder]; degB layout: [lane][order].
-// ---------------------------------------------------------------------------
-// kMaxPieces in boys_cuda.cu (anonymous namespace there - spelled out here to keep
-// the two layout formulas in lockstep).
-constexpr int kEffLaneCount = 6;
-constexpr int kEffMaxOrder = detail::kMaxOrder;
-constexpr int kEffMaxPieces = 12;
-// The flat relaxed image's lane stride: the wider of the two piece tables,
-// which is the same count boys_cuda.cu cuts its own copy of it with.
-constexpr int kRelaxedStride = detail::kPieceStart[detail::kMaxOrder + 1] >
-                                       detail::f32::kPieceStart[detail::kMaxOrder + 1]
-                                   ? detail::kPieceStart[detail::kMaxOrder + 1]
-                                   : detail::f32::kPieceStart[detail::kMaxOrder + 1];
-
-std::array<int, kEffLaneCount*(kEffMaxOrder + 1) * kEffMaxPieces> gEffDegA{};
-std::array<int, kEffLaneCount*(kEffMaxOrder + 1)> gEffDegB{};
-
-// The narrow partition's cut, flat over the partition's rows as the derivation returns
-// it and as the device lane indexes it. One table and not a lane axis: the entries
-// carrying the partition are the double batch, so this is that role's table.
-constexpr int kNarrowFlatPieces = detail::kNarrowAPieceStart[detail::kMaxOrder + 1];
-constexpr int kNarrowFlatB = detail::kNarrowBPieces * (kEffMaxOrder + 1);
-
-std::array<int, kNarrowFlatPieces> gNarrowDegA{};
-std::array<int, kNarrowFlatB> gNarrowDegB{};
-
-// The float lane's own cut of that rung, region B alone. The float lane's region-A seed
-// is the double lane's piece table, so the rung cuts that lane's region A and this lane's
-// is its region B: a different fit, over this lane's 4 pieces at degree 6 rather than the
-// double lane's 5 at degree 10.
-constexpr int kNarrowFlatB32 = detail::f32::kNarrowBPiecesF32 * (kEffMaxOrder + 1);
-std::array<int, kNarrowFlatB32> gNarrowDegB32{};
-
-// The monomial scheme's cut of the same rung, over the same pieces. Region A is order-major
-// as the CUDA lane's cDegEff axis is, and region B is one row per order, read at order 0 by
-// the batch shape. One table and not a lane axis, for the reason the narrow partition's is
-// one.
-std::array<int, (kEffMaxOrder + 1) * kEffMaxPieces> gMonoDegA{};
-std::array<int, kEffMaxOrder + 1> gMonoDegB{};
-std::array<int, kNarrowFlatPieces> gNarrowMonoDegA{};
-std::array<int, kNarrowFlatB> gNarrowMonoDegB{};
-
-// The float lane's own cut of that rung in the monomial basis, region B alone and for the
-// reason gNarrowDegB32 gives: this lane's region-A seed is the double lane's, so a rung cuts
-// this lane's region-B pieces in the basis its scheme sums them in.
-constexpr int kNarrowMonoFlatB32 = detail::f32::kNarrowBPiecesF32 * (kEffMaxOrder + 1);
-std::array<int, kNarrowMonoFlatB32> gNarrowMonoDegB32{};
-
-// Which multiplier the host-side tables above were last computed for. A record of the HOST
-// computation and not of what the device holds: answering residency from it would skip the
-// upload a second device still needs, and that device's kernels would read a zero table.
-double gEffCachedM = -1.0;
-
-template <double kAccuracyMultiplier, detail::BoysRole kRole, bool kDoublePieces>
-void FillEffLane(int lane) {
-    static constexpr auto kDegreesA = detail::RegionADegrees<kAccuracyMultiplier, kRole>();
-    static constexpr auto kDegreesB = detail::RegionBDegrees<kAccuracyMultiplier, kRole>();
-    const auto& pieceStart = kDoublePieces ? detail::kPieceStart : detail::f32::kPieceStart;
-
-    for (int order = 0; order <= detail::kMaxOrder; ++order)
-    {
-        for (int p = pieceStart[static_cast<std::size_t>(order)];
-             p < pieceStart[static_cast<std::size_t>(order) + 1];
-             ++p)
-        {
-            const int pieceInOrder = p - pieceStart[static_cast<std::size_t>(order)];
-            gEffDegA[static_cast<std::size_t>(lane * (kEffMaxOrder + 1) * kEffMaxPieces +
-                                              order * kEffMaxPieces + pieceInOrder)] =
-                kDegreesA[static_cast<std::size_t>(p)];
-        }
-    }
-
-    for (int order = 0; order <= detail::kMaxOrder; ++order)
-    {
-        gEffDegB[static_cast<std::size_t>(lane * (kEffMaxOrder + 1) + order)] =
-            kDegreesB[static_cast<std::size_t>(order)];
-    }
-}
-
-// The narrow partition's cut for one multiplier, for the role the entries that carry it
-// have. Region B is kept in the whole derived form, flat over (piece, order), rather than
-// at the order-0 column the batch shape reads.
-template <double kAccuracyMultiplier> void FillNarrowLane() {
-    static constexpr auto kDegreesA =
-        detail::NarrowRegionADegrees<kAccuracyMultiplier, detail::BoysRole::kDoubleBatch>();
-    static constexpr auto kDegreesB =
-        detail::NarrowRegionBDegrees<kAccuracyMultiplier, detail::BoysRole::kDoubleBatch>();
-
-    for (int p = 0; p < kNarrowFlatPieces; ++p)
-    {
-        gNarrowDegA[static_cast<std::size_t>(p)] = kDegreesA[static_cast<std::size_t>(p)];
-    }
-
-    for (int k = 0; k < kNarrowFlatB; ++k)
-    {
-        gNarrowDegB[static_cast<std::size_t>(k)] = kDegreesB[static_cast<std::size_t>(k)];
-    }
-}
-
-// The same partition's cut for the float lane, region B alone and for the reason the table
-// above states. The role is the float batch's, the shape the entries carrying the partition
-// have.
-template <double kAccuracyMultiplier> void FillNarrowF32Lane() {
-    static constexpr auto kDegreesB =
-        detail::NarrowRegionBDegrees<kAccuracyMultiplier, detail::BoysRole::kF32Batch>();
-
-    for (int k = 0; k < kNarrowFlatB32; ++k)
-    {
-        gNarrowDegB32[static_cast<std::size_t>(k)] = kDegreesB[static_cast<std::size_t>(k)];
-    }
-}
-
-// The double batch's cut of the shipped and the narrow fits in the monomial basis: the same
-// derivations as the Chebyshev tables above at the other form of the same stored table
-// (TailBasis::kMonomial), which is what a Horner rung drops its coefficients from.
-template <double kAccuracyMultiplier> void FillMonoLane() {
-    static constexpr auto kDegreesA = detail::RegionADegrees<kAccuracyMultiplier,
-                                                             detail::BoysRole::kDoubleBatch,
-                                                             detail::TailBasis::kMonomial>();
-    static constexpr auto kDegreesB = detail::RegionBDegrees<kAccuracyMultiplier,
-                                                             detail::BoysRole::kDoubleBatch,
-                                                             detail::TailBasis::kMonomial>();
-
-    for (int order = 0; order <= detail::kMaxOrder; ++order)
-    {
-        for (int p = detail::kPieceStart[static_cast<std::size_t>(order)];
-             p < detail::kPieceStart[static_cast<std::size_t>(order) + 1];
-             ++p)
-        {
-            const int pieceInOrder = p - detail::kPieceStart[static_cast<std::size_t>(order)];
-            gMonoDegA[static_cast<std::size_t>(order * kEffMaxPieces + pieceInOrder)] =
-                kDegreesA[static_cast<std::size_t>(p)];
-        }
-
-        gMonoDegB[static_cast<std::size_t>(order)] =
-            kDegreesB[static_cast<std::size_t>(order)];
-    }
-}
-
-template <double kAccuracyMultiplier> void FillNarrowMonoLane() {
-    static constexpr auto kDegreesA = detail::NarrowRegionADegrees<kAccuracyMultiplier,
-                                                                  detail::BoysRole::kDoubleBatch,
-                                                                  detail::TailBasis::kMonomial>();
-    static constexpr auto kDegreesB = detail::NarrowRegionBDegrees<kAccuracyMultiplier,
-                                                                  detail::BoysRole::kDoubleBatch,
-                                                                  detail::TailBasis::kMonomial>();
-
-    for (int p = 0; p < kNarrowFlatPieces; ++p)
-    {
-        gNarrowMonoDegA[static_cast<std::size_t>(p)] = kDegreesA[static_cast<std::size_t>(p)];
-    }
-
-    for (int k = 0; k < kNarrowFlatB; ++k)
-    {
-        gNarrowMonoDegB[static_cast<std::size_t>(k)] = kDegreesB[static_cast<std::size_t>(k)];
-    }
-}
-
-// The same partition's cut for the float lane in that other basis: the two choices the fill
-// above makes, one of them moved. The role is the float batch's and the basis is the
-// monomial one, which is what a Horner rung reads.
-template <double kAccuracyMultiplier> void FillNarrowMonoF32Lane() {
-    static constexpr auto kDegreesB = detail::NarrowRegionBDegrees<kAccuracyMultiplier,
-                                                                  detail::BoysRole::kF32Batch,
-                                                                  detail::TailBasis::kMonomial>();
-
-    for (int k = 0; k < kNarrowMonoFlatB32; ++k)
-    {
-        gNarrowMonoDegB32[static_cast<std::size_t>(k)] = kDegreesB[static_cast<std::size_t>(k)];
-    }
-}
-
-// The fit route's cut of the same rung, two ints per cell: the numerator's cut degree then
-// the denominator's, the pair the criterion certifies together. Region A lands twice because
-// the route's cut is per reading - the arguments shape seeds at its top order's piece and
-// pays that piece's w(b), the orders shape reads each order's own piece at A = 1 - and both
-// are taken from the derivation over the partition's rows and reshaped to the lane's (order,
-// pieceInOrder) indexing. Region B is one pair either way.
-constexpr int kRatCutCells = (kEffMaxOrder + 1) * kEffMaxPieces * 2;
-constexpr int kNarrowRatCutPieces = detail::kNarrowBPieces * 2;
-
-std::array<int, kRatCutCells> gRatSeedA{};
-std::array<int, kRatCutCells> gRatOrdA{};
-std::array<int, 2> gRatB{};
-std::array<int, kNarrowFlatPieces * 2> gNarrowRatSeedA{};
-std::array<int, kNarrowFlatPieces * 2> gNarrowRatOrdA{};
-std::array<int, kNarrowRatCutPieces> gNarrowRatB{};
-
-// The same two region-B pairs for the float lane: the tables the float rows of the route
-// read at a rung, cut by the same criterion over that lane's own coefficients. Two tables and
-// not one read twice: the float lane's pairs are its own fit, and a degree cut from the
-// double lane's coefficients is a cut of a fit this lane does not read.
-constexpr int kNarrowRatCutPiecesF32 = detail::f32::kNarrowRatBPiecesCountF32 * 2;
-
-std::array<int, 2> gRatBDeg32{};
-std::array<int, kNarrowRatCutPiecesF32> gNarrowRatBDeg32{};
-
-template <double kAccuracyMultiplier> void FillRatLane() {
-    static constexpr auto kSeed = detail::RationalRegionASeedDegrees<kAccuracyMultiplier,
-                                                                    detail::BoysRole::kDoubleBatch>();
-    static constexpr auto kOrd = detail::RationalRegionADegrees<kAccuracyMultiplier>();
-    static constexpr auto kB = detail::RationalRegionBDegrees<kAccuracyMultiplier>();
-
-    for (int order = 0; order <= detail::kMaxOrder; ++order)
-    {
-        for (int p = detail::kPieceStart[static_cast<std::size_t>(order)];
-             p < detail::kPieceStart[static_cast<std::size_t>(order) + 1];
-             ++p)
-        {
-            const int pieceInOrder = p - detail::kPieceStart[static_cast<std::size_t>(order)];
-            const std::size_t cell = static_cast<std::size_t>(order * kEffMaxPieces + pieceInOrder);
-            const std::size_t index = static_cast<std::size_t>(p);
-            gRatSeedA[cell * 2] = kSeed.num[index];
-            gRatSeedA[cell * 2 + 1] = kSeed.den[index];
-            gRatOrdA[cell * 2] = kOrd.num[index];
-            gRatOrdA[cell * 2 + 1] = kOrd.den[index];
-        }
-    }
-
-    gRatB[0] = kB.num[0];
-    gRatB[1] = kB.den[0];
-}
-
-template <double kAccuracyMultiplier> void FillNarrowRatLane() {
-    static constexpr auto kSeed =
-        detail::RationalNarrowRegionASeedDegrees<kAccuracyMultiplier,
-                                                detail::BoysRole::kDoubleBatch>();
-    static constexpr auto kOrd = detail::RationalNarrowRegionADegrees<kAccuracyMultiplier>();
-    static constexpr auto kB = detail::RationalNarrowRegionBDegrees<kAccuracyMultiplier>();
-
-    for (int p = 0; p < kNarrowFlatPieces; ++p)
-    {
-        const std::size_t index = static_cast<std::size_t>(p);
-        gNarrowRatSeedA[index * 2] = kSeed.num[index];
-        gNarrowRatSeedA[index * 2 + 1] = kSeed.den[index];
-        gNarrowRatOrdA[index * 2] = kOrd.num[index];
-        gNarrowRatOrdA[index * 2 + 1] = kOrd.den[index];
-    }
-
-    for (int k = 0; k < detail::kNarrowBPieces; ++k)
-    {
-        const std::size_t index = static_cast<std::size_t>(k);
-        gNarrowRatB[index * 2] = kB.num[index];
-        gNarrowRatB[index * 2 + 1] = kB.den[index];
-    }
-}
-
-// The same two pairs for the float lane, at that lane's own role: the derivation is the
-// float batch's, the shape the rows carrying the route on that lane have.
-template <double kAccuracyMultiplier> void FillRatF32Lane() {
-    static constexpr auto kB =
-        detail::RationalRegionBF32Degrees<kAccuracyMultiplier, detail::BoysRole::kF32Batch>();
-
-    gRatBDeg32[0] = kB.num[0];
-    gRatBDeg32[1] = kB.den[0];
-}
-
-template <double kAccuracyMultiplier> void FillNarrowRatF32Lane() {
-    static constexpr auto kB = detail::NarrowRationalRegionBF32Degrees<kAccuracyMultiplier,
-                                                                      detail::BoysRole::kF32Batch>();
-
-    for (int k = 0; k < detail::f32::kNarrowRatBPiecesCountF32; ++k)
-    {
-        const std::size_t index = static_cast<std::size_t>(k);
-        gNarrowRatBDeg32[index * 2] = kB.num[index];
-        gNarrowRatBDeg32[index * 2 + 1] = kB.den[index];
-    }
-}
-
-// The six CUDA lanes' roles: the double batch seed evaluates the DOUBLE
-// piece table even for the float/fp16 batch lanes (RoleUsesDoubleTables —
-// the downward recursion amplifies float seed errors beyond their budgets).
-template <double kAccuracyMultiplier> BoysStatus EnsureEffTables() {
-    // Whether the device in hand already holds these tables is the .cu's question: its record
-    // names the device as well as the multiplier, so asking it keeps a device switch from being
-    // answered with the previous device's tables.
-    if (BoysCudaEffTablesResident(kAccuracyMultiplier) == 1)
-    {
-        return BoysStatus::kSuccess;
-    }
-
-    // The host-side tables depend on the multiplier alone and are computed once per multiplier;
-    // the upload decides for itself, answering for whichever device it is about to write to.
-    if (gEffCachedM != kAccuracyMultiplier)
-    {
-        FillEffLane<kAccuracyMultiplier, detail::BoysRole::kDoubleSingle, true>(0);
-        FillEffLane<kAccuracyMultiplier, detail::BoysRole::kDoubleBatch, true>(1);
-        FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Single, false>(2);
-        FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Batch, true>(3);
-        FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Fp16Single, false>(4);
-        FillEffLane<kAccuracyMultiplier, detail::BoysRole::kF32Fp16Batch, true>(5);
-        FillNarrowLane<kAccuracyMultiplier>();
-        FillNarrowF32Lane<kAccuracyMultiplier>();
-        FillMonoLane<kAccuracyMultiplier>();
-        FillNarrowMonoLane<kAccuracyMultiplier>();
-        FillNarrowMonoF32Lane<kAccuracyMultiplier>();
-        FillRatLane<kAccuracyMultiplier>();
-        FillNarrowRatLane<kAccuracyMultiplier>();
-        FillRatF32Lane<kAccuracyMultiplier>();
-        FillNarrowRatF32Lane<kAccuracyMultiplier>();
-        gEffCachedM = kAccuracyMultiplier;
-    }
-
-    return FromLaunchCode(BoysCudaUploadEffTables(kAccuracyMultiplier,
-                                                 gEffDegA.data(),
-                                                 gEffDegB.data(),
-                                                 gNarrowDegA.data(),
-                                                 gNarrowDegB.data(),
-                                                 gNarrowDegB32.data(),
-                                                 gMonoDegA.data(),
-                                                 gMonoDegB.data(),
-                                                 gNarrowMonoDegA.data(),
-                                                 gNarrowMonoDegB.data(),
-                                                 gNarrowMonoDegB32.data(),
-                                                 gRatSeedA.data(),
-                                                 gRatOrdA.data(),
-                                                 gRatB.data(),
-                                                 gRatBDeg32.data(),
-                                                 gNarrowRatSeedA.data(),
-                                                 gNarrowRatOrdA.data(),
-                                                 gNarrowRatB.data(),
-                                                 gNarrowRatBDeg32.data()));
-}
-
-// ---------------------------------------------------------------------------
-// The run-time rung of the launched entries.
-//
-// Every entry above is instantiated once per rung; the AtRung siblings take the rung as a
-// run-time argument instead. Each arm below is one rung of kDeviceRungs in the table's own
-// order, and its body is the same two steps the template spelling takes - make that rung
-// resident, then run that rung's launcher - so a call answers at the rung it was handed and
-// never at another.
-//
-// One rung is resident at a time, on the per-(device, m) upload this entry shares with the
-// device-callable ones: an AtRung call at a relaxed rung retires whichever other relaxed rung
-// was resident, and a device-callable entry asked for that rung then reports it. m = 1 has no
-// relaxed table, is resident from the first upload and retires nothing.
-//
-// A multiplier the table does not hold has no arm and is refused - no launcher reached, the
-// caller's output untouched - rather than answered at whichever rung is resident, which is the
-// one outcome the rung argument exists to rule out, and a value outside the twelve is resident
-// at none of them.
-// ---------------------------------------------------------------------------
-
-// One rung's own step: the tables, then the launcher that reads them. The launchers of a rung
-// are not templates - one compiled launcher serves every relaxed rung, because what selects
-// the rung is which degree tables are resident rather than which kernel runs - so this is the
-// whole of what an arm adds over the reference rung's.
-template <double kAccuracyMultiplier, typename Eff, typename... Args>
-BoysStatus LaunchEffRung(Eff eff, Args... args) {
-    const BoysStatus status = EnsureEffTables<kAccuracyMultiplier>();
-
-    if (status != BoysStatus::kSuccess)
-    {
-        return status;
-    }
-
-    return RunLaunch(eff, args...);
-}
-
-// The dispatch every AtRung entry is written with: `full` is the entry's full-accuracy
-// launcher, `eff` the one that reads the resident rung, `args` the entry's own launch
-// arguments.
-template <typename Full, typename Eff, typename... Args>
-BoysStatus LaunchAtRung(double multiplier, Full full, Eff eff, Args... args) {
-    switch (DeviceRungIndex(multiplier))
-    {
-    case 0:
-        return RunLaunch(full, args...);
-    case 1:
-        return LaunchEffRung<2.0>(eff, args...);
-    case 2:
-        return LaunchEffRung<10.0>(eff, args...);
-    case 3:
-        return LaunchEffRung<64.0>(eff, args...);
-    case 4:
-        return LaunchEffRung<100.0>(eff, args...);
-    case 5:
-        return LaunchEffRung<256.0>(eff, args...);
-    case 6:
-        return LaunchEffRung<1024.0>(eff, args...);
-    case 7:
-        return LaunchEffRung<4096.0>(eff, args...);
-    case 8:
-        return LaunchEffRung<1e4>(eff, args...);
-    case 9:
-        return LaunchEffRung<16384.0>(eff, args...);
-    case 10:
-        return LaunchEffRung<65536.0>(eff, args...);
-    case 11:
-        return LaunchEffRung<1e8>(eff, args...);
-    default:
-        return BoysStatus::kInvalidArgument;
-    }
-}
-
-} // namespace
-
 BoysStatus BoysCuda::InitializeTables() {
     return FromLaunchCode(BoysCudaUploadTables());
 }
 
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::DeviceTables(BoysDeviceTables* out) {
     if (out == nullptr)
     {
@@ -633,9 +147,9 @@ BoysStatus BoysCuda::DeviceTables(BoysDeviceTables* out) {
 
     // The address order BoysCudaDeviceTableAddresses fills, one slot per symbol: the double
     // lane's pieceStart, offset, a, b, deg, coeffs and region-B seed, then the float lane's
-    // seven, then the relaxed image's three - the resident rung's scalar, its region-A degrees
-    // and its region-B degrees - then the uniform grid's four pools. Both sides state the
-    // order; the .cu cannot name this type and this file cannot name a symbol.
+    // seven, then three reserved slots the export fills with null, then the uniform grid's four
+    // pools. Both sides state the order; the .cu cannot name this type and this file cannot
+    // name a symbol.
     void* addresses[21] = {};
     const BoysStatus status = FromLaunchCode(BoysCudaDeviceTableAddresses(addresses));
 
@@ -656,19 +170,6 @@ BoysStatus BoysCuda::DeviceTables(BoysDeviceTables* out) {
         return tailStatus;
     }
 
-    // The rung is made resident before the handle that reads it is handed over.
-    // The full-accuracy tables are not in that image: a call at m = 1 has
-    // nothing to upload and leaves whatever relaxed rung is resident in place.
-    if constexpr (kAccuracyMultiplier != kBoysFullAccuracyMultiplier)
-    {
-        const BoysStatus rung = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (rung != BoysStatus::kSuccess)
-        {
-            return rung;
-        }
-    }
-
     BoysDeviceTables tables;
     tables.pieceStart = static_cast<const int*>(addresses[0]);
     tables.pieceOffset = static_cast<const int*>(addresses[1]);
@@ -686,21 +187,11 @@ BoysStatus BoysCuda::DeviceTables(BoysDeviceTables* out) {
     tables.coeffs32 = static_cast<const float*>(addresses[12]);
     tables.bSeedCoeffs32 = static_cast<const float*>(addresses[13]);
     tables.bSeedDeg32 = detail::f32::kBDeg;
-    tables.relaxedRung = static_cast<const double*>(addresses[14]);
-    const int* const relaxedA = static_cast<const int*>(addresses[15]);
-    const int* const relaxedB = static_cast<const int*>(addresses[16]);
+    // Slots 14 to 16 are reserved and exported null: the handle's relaxed-residency fields stay
+    // at the defaults their type gives them, and no reading of this handle consults them.
 
-    for (int lane = 0; lane < kEffLaneCount; ++lane)
-    {
-        // The flat image's lane stride is the wider of the two piece tables (boys_cuda.cu
-        // counts the same one from the same constants), so one axis serves both.
-        tables.relaxedDegA[lane] = relaxedA + lane * kRelaxedStride;
-        tables.relaxedDegB[lane] = relaxedB + lane * (kEffMaxOrder + 1);
-    }
-
-    // The uniform grid's pools: the same image at every multiplier, never retired. Each cell
-    // carries the degree the grid's own cell law placed it at, a rung's degree table says
-    // nothing about it, and there is no relaxed image of it to make resident.
+    // The uniform grid's pools: one image, never retired. Each cell carries the degree the
+    // grid's own cell law placed it at, and no degree table beside it states anything about it.
     tables.flatCoeffs = static_cast<const double*>(addresses[17]);
     tables.flatMonoCoeffs = static_cast<const double*>(addresses[18]);
     tables.flatCoeffs32 = static_cast<const float*>(addresses[19]);
@@ -708,14 +199,17 @@ BoysStatus BoysCuda::DeviceTables(BoysDeviceTables* out) {
 
     // The narrow partition's and the fit route's tables, in the order the tail export fills
     // them: the partition's double lane (slots 0 to 13), its float lane (14 to 23), the route on
-    // the shipped partition and then on the narrow one (24 to 34 and 35 to 45), and the route's
+    // the coarsest partition and then on the narrow one (24 to 34 and 35 to 45), and the route's
     // region-B pair in the float lane (46 to 49).
+    //
+    // The export fills the handles' *Relaxed* slots with null - those fields are read by no
+    // entry of this revision - and they are assigned here all the same, because the slot order
+    // is the one thing these two files have to state twice.
     //
     // A handle that carried none of these refused every call that reads one with
     // kTablesNotReady, the entries and the tables they read both existing. The names are the
-    // handle's own fields and the slots are the order's positions, which is the one thing these
-    // two files have to state twice - the .cu cannot name this type and this file cannot name a
-    // symbol.
+    // handle's own fields and the slots are the order's positions - the .cu cannot name this
+    // type and this file cannot name a symbol.
     tables.narrowPieceStart = static_cast<const int*>(tail[0]);
     tables.narrowPieceOffset = static_cast<const int*>(tail[1]);
     tables.narrowPieceA = static_cast<const double*>(tail[2]);
@@ -802,7 +296,7 @@ BoysStatus BoysCuda::DeviceTables(BoysDeviceTables* out) {
     return BoysStatus::kSuccess;
 }
 
-template <double kAccuracyMultiplier, RegionBExp kExp>
+template <RegionBExp kExp>
 BoysStatus BoysCuda::SingleF32(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
@@ -810,36 +304,16 @@ BoysStatus BoysCuda::SingleF32(
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == 1.0)
+    // The two readings differ only in the region-B exponential.
+    if constexpr (kExp == RegionBExp::kFast)
     {
-        // Byte-identical to the full-accuracy path.
-        if constexpr (kExp == RegionBExp::kFast)
-        {
-            return RunLaunch(BoysCudaLaunchSingleF32Fast, n, x, out, count, stream);
-        } else
-        {
-            return RunLaunch(BoysCudaLaunchSingleF32, n, x, out, count, stream);
-        }
+        return RunLaunch(BoysCudaLaunchSingleF32Fast, n, x, out, count, stream);
     } else
     {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        if constexpr (kExp == RegionBExp::kFast)
-        {
-            return RunLaunch(BoysCudaLaunchSingleF32EffFast, n, x, out, count, stream);
-        } else
-        {
-            return RunLaunch(BoysCudaLaunchSingleF32Eff, n, x, out, count, stream);
-        }
+        return RunLaunch(BoysCudaLaunchSingleF32, n, x, out, count, stream);
     }
 }
 
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF32(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
@@ -847,23 +321,9 @@ BoysStatus BoysCuda::AllOrdersF32(
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == 1.0)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF32, n, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllOrdersF32Eff, n, x, out, count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF32, n, x, out, count, stream);
 }
 
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllNF32(
     int nmax, const double* x, float* out, std::size_t count, void* stream) {
     const auto valid = CheckOrder(nmax);
@@ -878,23 +338,9 @@ BoysStatus BoysCuda::AllNF32(
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == 1.0)
-    {
-        return RunLaunch(BoysCudaLaunchAllNF32, nmax, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllNF32Eff, nmax, x, out, count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllNF32, nmax, x, out, count, stream);
 }
 
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::SingleF64(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
@@ -902,23 +348,9 @@ BoysStatus BoysCuda::SingleF64(
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == 1.0)
-    {
-        return RunLaunch(BoysCudaLaunchSingleF64, n, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchSingleF64Eff, n, x, out, count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchSingleF64, n, x, out, count, stream);
 }
 
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF64(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
@@ -926,23 +358,9 @@ BoysStatus BoysCuda::AllOrdersF64(
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == 1.0)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF64, n, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllOrdersF64Eff, n, x, out, count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF64, n, x, out, count, stream);
 }
 
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF64Orders(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
@@ -950,23 +368,9 @@ BoysStatus BoysCuda::AllOrdersF64Orders(
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == 1.0)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF64Orders, n, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllOrdersF64OrdersEff, n, x, out, count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF64Orders, n, x, out, count, stream);
 }
 
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF64Narrow(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
@@ -974,26 +378,11 @@ BoysStatus BoysCuda::AllOrdersF64Narrow(
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == 1.0)
-    {
-        // The full-accuracy kernels read the degrees the partition was stored at, which
-        // BoysCudaUploadTables has already placed; nothing about the rung is uploaded here, so
-        // this path leaves a resident rung alone.
-        return RunLaunch(BoysCudaLaunchAllOrdersF64Narrow, n, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowEff, n, x, out, count, stream);
-    }
+    // The kernels read the degrees the partition was stored at, which BoysCudaUploadTables
+    // has already placed.
+    return RunLaunch(BoysCudaLaunchAllOrdersF64Narrow, n, x, out, count, stream);
 }
 
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF64NarrowOrders(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
@@ -1001,25 +390,11 @@ BoysStatus BoysCuda::AllOrdersF64NarrowOrders(
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == 1.0)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrders, n, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrdersEff, n, x, out, count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrders, n, x, out, count, stream);
 }
 
 // The monomial scheme's four shapes: the entries above's path, with the launcher naming the
 // pool and the summation the scheme reads.
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF64Mono(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
@@ -1027,23 +402,9 @@ BoysStatus BoysCuda::AllOrdersF64Mono(
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == 1.0)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF64Mono, n, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllOrdersF64MonoEff, n, x, out, count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF64Mono, n, x, out, count, stream);
 }
 
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF64OrdersMono(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
@@ -1051,23 +412,9 @@ BoysStatus BoysCuda::AllOrdersF64OrdersMono(
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == 1.0)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF64OrdersMono, n, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllOrdersF64OrdersMonoEff, n, x, out, count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF64OrdersMono, n, x, out, count, stream);
 }
 
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF64NarrowMono(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
@@ -1075,23 +422,9 @@ BoysStatus BoysCuda::AllOrdersF64NarrowMono(
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == 1.0)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowMono, n, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowMonoEff, n, x, out, count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowMono, n, x, out, count, stream);
 }
 
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
@@ -1099,25 +432,11 @@ BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono(
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == 1.0)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrdersMono, n, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrdersMonoEff, n, x, out, count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrdersMono, n, x, out, count, stream);
 }
 
 // The fit route's four shapes, on the same path: the launcher names the pair a piece is read
 // from, and the route's cut is per reading, so each shape's launcher names which cut it reads.
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF64Rat(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
@@ -1125,23 +444,9 @@ BoysStatus BoysCuda::AllOrdersF64Rat(
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == 1.0)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF64Rat, n, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllOrdersF64RatEff, n, x, out, count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF64Rat, n, x, out, count, stream);
 }
 
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF64OrdersRat(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
@@ -1149,23 +454,9 @@ BoysStatus BoysCuda::AllOrdersF64OrdersRat(
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == 1.0)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF64OrdersRat, n, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllOrdersF64OrdersRatEff, n, x, out, count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF64OrdersRat, n, x, out, count, stream);
 }
 
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF64NarrowRat(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
@@ -1173,23 +464,9 @@ BoysStatus BoysCuda::AllOrdersF64NarrowRat(
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == 1.0)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowRat, n, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowRatEff, n, x, out, count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowRat, n, x, out, count, stream);
 }
 
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
@@ -1197,23 +474,9 @@ BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat(
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == 1.0)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrdersRat, n, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrdersRatEff, n, x, out, count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrdersRat, n, x, out, count, stream);
 }
 
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllNF64(
     int nmax, const double* x, double* out, std::size_t count, void* stream) {
     const auto valid = CheckOrder(nmax);
@@ -1228,24 +491,10 @@ BoysStatus BoysCuda::AllNF64(
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == 1.0)
-    {
-        return RunLaunch(BoysCudaLaunchAllNF64, nmax, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllNF64Eff, nmax, x, out, count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllNF64, nmax, x, out, count, stream);
 }
 
 #if BoysFp16
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::SingleF16(
     const int* n, const F16* x, F16* out, std::size_t count, void* stream) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
@@ -1253,23 +502,9 @@ BoysStatus BoysCuda::SingleF16(
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == 1.0)
-    {
-        return RunLaunch(BoysCudaLaunchSingleF16, n, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchSingleF16Eff, n, x, out, count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchSingleF16, n, x, out, count, stream);
 }
 
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF16(
     const int* n, const F16* x, F16* out, std::size_t count, void* stream) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
@@ -1277,23 +512,9 @@ BoysStatus BoysCuda::AllOrdersF16(
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == 1.0)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF16, n, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllOrdersF16Eff, n, x, out, count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF16, n, x, out, count, stream);
 }
 
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllNF16(int nmax, const F16* x, F16* out, std::size_t count, void* stream) {
     const auto valid = CheckOrder(nmax);
 
@@ -1307,375 +528,40 @@ BoysStatus BoysCuda::AllNF16(int nmax, const F16* x, F16* out, std::size_t count
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == 1.0)
-    {
-        return RunLaunch(BoysCudaLaunchAllNF16, nmax, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllNF16Eff, nmax, x, out, count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllNF16, nmax, x, out, count, stream);
 }
 #endif // BoysFp16
 
-// The AtRung siblings of the entries above: one definition each, one rung dispatch each.
-// They are not templates - the rung is the call's argument - and every one of them is the
-// entry's own prologue followed by LaunchAtRung, where the argument becomes a rung of
-// kDeviceRungs. CheckOrder comes before the launch where the entry checks it, so an nmax
-// outside the range is reported whether or not the rung is served and whatever the batch's
-// count is.
-
-
-// The f32 single sibling is a template for the same reason the entry is: the exponential
-// selects which arithmetic runs and not how much accuracy is bought, so it stays where the
-// call site writes it while the rung moves into the call. Both of the entry's calibrated
-// pairs are defined, which is what its own two instantiations are.
-template <RegionBExp kExp>
-BoysStatus BoysCuda::SingleF32AtRung(
-    double multiplier, const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    if constexpr (kExp == RegionBExp::kFast)
-    {
-        return LaunchAtRung(multiplier, BoysCudaLaunchSingleF32Fast, BoysCudaLaunchSingleF32EffFast,
-                            n, x, out, count, stream);
-    }
-    else
-    {
-        return LaunchAtRung(multiplier, BoysCudaLaunchSingleF32, BoysCudaLaunchSingleF32Eff, n, x,
-                            out, count, stream);
-    }
-}
-
-
-BoysStatus BoysCuda::AllOrdersF32AtRung(
-    double multiplier, const int* n, const double* x, float* out, std::size_t count,
-    void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF32,
-                        BoysCudaLaunchAllOrdersF32Eff, n, x, out, count, stream);
-}
-
-
-BoysStatus BoysCuda::AllNF32AtRung(
-    double multiplier, int nmax, const double* x, float* out, std::size_t count,
-    void* stream) {
-    const auto valid = CheckOrder(nmax);
-
-    if (valid != BoysStatus::kSuccess)
-    {
-        return valid;
-    }
-
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllNF32,
-                        BoysCudaLaunchAllNF32Eff, nmax, x, out, count, stream);
-}
-
-
-BoysStatus BoysCuda::SingleF64AtRung(
-    double multiplier, const int* n, const double* x, double* out, std::size_t count,
-    void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchSingleF64,
-                        BoysCudaLaunchSingleF64Eff, n, x, out, count, stream);
-}
-
-
-BoysStatus BoysCuda::AllOrdersF64AtRung(
-    double multiplier, const int* n, const double* x, double* out, std::size_t count,
-    void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF64,
-                        BoysCudaLaunchAllOrdersF64Eff, n, x, out, count, stream);
-}
-
-
-BoysStatus BoysCuda::AllOrdersF64NarrowAtRung(
-    double multiplier, const int* n, const double* x, double* out, std::size_t count,
-    void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF64Narrow,
-                        BoysCudaLaunchAllOrdersF64NarrowEff, n, x, out, count, stream);
-}
-
-
-BoysStatus BoysCuda::AllOrdersF64OrdersAtRung(
-    double multiplier, const int* n, const double* x, double* out, std::size_t count,
-    void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF64Orders,
-                        BoysCudaLaunchAllOrdersF64OrdersEff, n, x, out, count, stream);
-}
-
-
-BoysStatus BoysCuda::AllOrdersF64NarrowOrdersAtRung(
-    double multiplier, const int* n, const double* x, double* out, std::size_t count,
-    void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF64NarrowOrders,
-                        BoysCudaLaunchAllOrdersF64NarrowOrdersEff, n, x, out, count, stream);
-}
-
-
-BoysStatus BoysCuda::AllOrdersF64MonoAtRung(
-    double multiplier, const int* n, const double* x, double* out, std::size_t count,
-    void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF64Mono,
-                        BoysCudaLaunchAllOrdersF64MonoEff, n, x, out, count, stream);
-}
-
-
-BoysStatus BoysCuda::AllOrdersF64OrdersMonoAtRung(
-    double multiplier, const int* n, const double* x, double* out, std::size_t count,
-    void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF64OrdersMono,
-                        BoysCudaLaunchAllOrdersF64OrdersMonoEff, n, x, out, count, stream);
-}
-
-
-BoysStatus BoysCuda::AllOrdersF64NarrowMonoAtRung(
-    double multiplier, const int* n, const double* x, double* out, std::size_t count,
-    void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF64NarrowMono,
-                        BoysCudaLaunchAllOrdersF64NarrowMonoEff, n, x, out, count, stream);
-}
-
-
-BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMonoAtRung(
-    double multiplier, const int* n, const double* x, double* out, std::size_t count,
-    void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF64NarrowOrdersMono,
-                        BoysCudaLaunchAllOrdersF64NarrowOrdersMonoEff, n, x, out, count, stream);
-}
-
-
-BoysStatus BoysCuda::AllOrdersF64RatAtRung(
-    double multiplier, const int* n, const double* x, double* out, std::size_t count,
-    void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF64Rat,
-                        BoysCudaLaunchAllOrdersF64RatEff, n, x, out, count, stream);
-}
-
-
-BoysStatus BoysCuda::AllOrdersF64OrdersRatAtRung(
-    double multiplier, const int* n, const double* x, double* out, std::size_t count,
-    void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF64OrdersRat,
-                        BoysCudaLaunchAllOrdersF64OrdersRatEff, n, x, out, count, stream);
-}
-
-
-BoysStatus BoysCuda::AllOrdersF64NarrowRatAtRung(
-    double multiplier, const int* n, const double* x, double* out, std::size_t count,
-    void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF64NarrowRat,
-                        BoysCudaLaunchAllOrdersF64NarrowRatEff, n, x, out, count, stream);
-}
-
-
-BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRatAtRung(
-    double multiplier, const int* n, const double* x, double* out, std::size_t count,
-    void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF64NarrowOrdersRat,
-                        BoysCudaLaunchAllOrdersF64NarrowOrdersRatEff, n, x, out, count, stream);
-}
-
-
-namespace {
-
-// The rung-argument sibling of the uniform route's rows, on both lanes and both packing axes:
-// the route's table has no cut to make, so one arithmetic answers at every rung.
-//
-// One body and not twelve: the entry is the call's first argument, so which rungs it answers
-// at is the entry's own axis, read from DeviceEntryServedAtRung (boys_cuda_options.hpp) - the
-// one statement of it, which the option space's rows, the probe and this dispatch all read
-// rather than a list each. A rung the entry does not serve is refused here, before anything
-// is launched or written, rather than answered at another rung's arithmetic; a served rung
-// delivers the row's own, the dispatch being LaunchAtRung's.
-//
-// The route's rows store one degree for every order and interval, and the criterion admits that
-// degree at every multiplier (its Delta(deg) is zero, so the full degree is always admissible -
-// boys_effective_degrees.hpp, EffectiveDegree). Every rung is served by the route's own
-// coefficients, and the row's bound at a rung is its figure times m; what a rung buys is no
-// less work, since the shorter degree a relaxation would read is not derived here, and deriving
-// one is owed work rather than a property of the route.
-template <typename Launcher, typename Value>
-BoysStatus RungServedByEntry(
-    DeviceEntry entry,
-    double multiplier,
-    Launcher launcher,
-    const int* n,
-    const double* x,
-    Value* out,
-    std::size_t count,
-    void* stream) {
-    if (!DeviceEntryServedAtRung(entry, multiplier))
-    {
-        return BoysStatus::kInvalidArgument;
-    }
-
-    return LaunchAtRung(multiplier, launcher, launcher, n, x, out, count, stream);
-}
-
-} // namespace
-
-
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF64Uniform(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    // The route's table is stored at one degree for every order and interval, so no rung's
-    // criterion cuts it and there is no shorter image of it to make resident: every rung's
-    // arithmetic is this one degree, which is why the multiplier selects no table here and the
-    // entry serves every rung of the lane. A call at a rung makes that rung resident, so a
-    // device-callable entry asked at it afterwards finds it.
-    static_assert(DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF64Uniform, kAccuracyMultiplier),
-                  "this entry does not serve the rung this instantiation names: which rungs it "
-                  "serves is DeviceEntryServedAtRung (boys_cuda_options.hpp)");
+    // The route's table is stored at one degree for every order and interval, so there is no
+    // shorter image of it to cut: that one degree is the arithmetic this entry documents.
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF64Uniform, n, x, out, count, stream);
-    } else
-    {
-        return LaunchEffRung<kAccuracyMultiplier>(BoysCudaLaunchAllOrdersF64Uniform, n, x, out,
-                                                 count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF64Uniform, n, x, out, count, stream);
 }
 
 
-BoysStatus BoysCuda::AllOrdersF64UniformAtRung(
-    double multiplier, const int* n, const double* x, double* out, std::size_t count,
-    void* stream) {
-    return RungServedByEntry(DeviceEntry::kAllOrdersF64Uniform, multiplier,
-                             BoysCudaLaunchAllOrdersF64Uniform, n, x, out, count, stream);
-}
-
-
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF64UniformHorner(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
     // The other form of the same table, at the same contract: the degree is a property of the
-    // stored table and not of the basis it is summed in, so every rung is served and reads this
-    // one degree.
-    static_assert(
-        DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF64UniformHorner, kAccuracyMultiplier),
-        "this entry does not serve the rung this instantiation names: which rungs it serves is "
-        "DeviceEntryServedAtRung (boys_cuda_options.hpp)");
+    // stored table and not of the basis it is summed in.
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF64UniformHorner, n, x, out, count, stream);
-    } else
-    {
-        return LaunchEffRung<kAccuracyMultiplier>(BoysCudaLaunchAllOrdersF64UniformHorner, n, x, out,
-                                                  count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF64UniformHorner, n, x, out, count, stream);
 }
 
 
-BoysStatus BoysCuda::AllOrdersF64UniformHornerAtRung(
-    double multiplier, const int* n, const double* x, double* out, std::size_t count,
-    void* stream) {
-    return RungServedByEntry(DeviceEntry::kAllOrdersF64UniformHorner, multiplier,
-                             BoysCudaLaunchAllOrdersF64UniformHorner, n, x, out, count, stream);
-}
-
-
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF64OrdersUniform(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    static_assert(DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF64OrdersUniform,
-                                         kAccuracyMultiplier),
-                  "this entry does not serve the rung this instantiation names: which rungs it "
-                  "serves is DeviceEntryServedAtRung (boys_cuda_options.hpp)");
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
@@ -1685,627 +571,228 @@ BoysStatus BoysCuda::AllOrdersF64OrdersUniform(
     // The route's one reading of the grid, and therefore the kernel
     // AllOrdersF64Uniform launches: the packing axis this entry names has one
     // member here, for the reason the header's declaration states.
-    if constexpr (kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF64Uniform, n, x, out, count, stream);
-    } else
-    {
-        return LaunchEffRung<kAccuracyMultiplier>(BoysCudaLaunchAllOrdersF64Uniform, n, x, out,
-                                                 count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF64Uniform, n, x, out, count, stream);
 }
 
 
-BoysStatus BoysCuda::AllOrdersF64OrdersUniformAtRung(
-    double multiplier, const int* n, const double* x, double* out, std::size_t count,
-    void* stream) {
-    return RungServedByEntry(DeviceEntry::kAllOrdersF64OrdersUniform, multiplier,
-                             BoysCudaLaunchAllOrdersF64Uniform, n, x, out, count, stream);
-}
-
-
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF64OrdersUniformHorner(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    static_assert(DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF64OrdersUniformHorner,
-                                         kAccuracyMultiplier),
-                  "this entry does not serve the rung this instantiation names: which rungs it "
-                  "serves is DeviceEntryServedAtRung (boys_cuda_options.hpp)");
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF64UniformHorner, n, x, out, count, stream);
-    } else
-    {
-        return LaunchEffRung<kAccuracyMultiplier>(BoysCudaLaunchAllOrdersF64UniformHorner, n, x, out,
-                                                  count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF64UniformHorner, n, x, out, count, stream);
 }
 
 
-BoysStatus BoysCuda::AllOrdersF64OrdersUniformHornerAtRung(
-    double multiplier, const int* n, const double* x, double* out, std::size_t count,
-    void* stream) {
-    return RungServedByEntry(DeviceEntry::kAllOrdersF64OrdersUniformHorner, multiplier,
-                             BoysCudaLaunchAllOrdersF64UniformHorner, n, x, out, count, stream);
-}
-
-
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF32Uniform(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
     // The float lane's uniform table is stored at one degree for every order and interval
-    // exactly as the double lane's is, so the same contract holds: no rung's criterion cuts it,
-    // every rung is served and reads this one degree. What the route's own placement of that
-    // degree buys is the lane's budget and nothing per rung.
-    static_assert(DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32Uniform, kAccuracyMultiplier),
-                  "this entry does not serve the rung this instantiation names: which rungs it "
-                  "serves is DeviceEntryServedAtRung (boys_cuda_options.hpp)");
+    // exactly as the double lane's is, so the same contract holds. What the route's own
+    // placement of that degree buys is the lane's table budget.
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF32Uniform, n, x, out, count, stream);
-    } else
-    {
-        return LaunchEffRung<kAccuracyMultiplier>(BoysCudaLaunchAllOrdersF32Uniform, n, x, out,
-                                                 count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF32Uniform, n, x, out, count, stream);
 }
 
 
-BoysStatus BoysCuda::AllOrdersF32UniformAtRung(
-    double multiplier, const int* n, const double* x, float* out, std::size_t count,
-    void* stream) {
-    return RungServedByEntry(DeviceEntry::kAllOrdersF32Uniform, multiplier,
-                             BoysCudaLaunchAllOrdersF32Uniform, n, x, out, count, stream);
-}
-
-
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF32UniformHorner(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    static_assert(
-        DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32UniformHorner, kAccuracyMultiplier),
-        "this entry does not serve the rung this instantiation names: which rungs it serves is "
-        "DeviceEntryServedAtRung (boys_cuda_options.hpp)");
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF32UniformHorner, n, x, out, count, stream);
-    } else
-    {
-        return LaunchEffRung<kAccuracyMultiplier>(BoysCudaLaunchAllOrdersF32UniformHorner, n, x, out,
-                                                  count, stream);
-    }
-}
-
-
-BoysStatus BoysCuda::AllOrdersF32UniformHornerAtRung(
-    double multiplier, const int* n, const double* x, float* out, std::size_t count,
-    void* stream) {
-    return RungServedByEntry(DeviceEntry::kAllOrdersF32UniformHorner, multiplier,
-                             BoysCudaLaunchAllOrdersF32UniformHorner, n, x, out, count, stream);
+    return RunLaunch(BoysCudaLaunchAllOrdersF32UniformHorner, n, x, out, count, stream);
 }
 
 
 // The grid's rational member, whose contract is the entry above's with one thing different:
 // the table it reads is one numerator/denominator pair per interval rather than one polynomial
-// per interval, so the launch below is a kernel of its own and not the Chebyshev one. No rung's
-// criterion cuts this table either, so every rung is served and the rung branch queues the same
-// launcher - the entry passed twice to RungServedByEntry is that statement rather than an
-// oversight.
-template <double kAccuracyMultiplier>
+// per interval, so the launch below is a kernel of its own and not the Chebyshev one.
 BoysStatus BoysCuda::AllOrdersF32UniformRat(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    static_assert(DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32UniformRat, kAccuracyMultiplier),
-                  "this entry does not serve the rung this instantiation names: which rungs it "
-                  "serves is DeviceEntryServedAtRung (boys_cuda_options.hpp)");
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF32UniformRat, n, x, out, count, stream);
-    } else
-    {
-        return LaunchEffRung<kAccuracyMultiplier>(BoysCudaLaunchAllOrdersF32UniformRat, n, x, out,
-                                                  count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF32UniformRat, n, x, out, count, stream);
 }
 
-BoysStatus BoysCuda::AllOrdersF32UniformRatAtRung(
-    double multiplier, const int* n, const double* x, float* out, std::size_t count,
-    void* stream) {
-    return RungServedByEntry(DeviceEntry::kAllOrdersF32UniformRat, multiplier,
-                             BoysCudaLaunchAllOrdersF32UniformRat, n, x, out, count, stream);
-}
-
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF32UniformRatHorner(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    static_assert(
-        DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32UniformRatHorner, kAccuracyMultiplier),
-        "this entry does not serve the rung this instantiation names: which rungs it serves is "
-        "DeviceEntryServedAtRung (boys_cuda_options.hpp)");
 
-    return AllOrdersF32UniformRat<kAccuracyMultiplier>(n, x, out, count, stream);
+    return AllOrdersF32UniformRat(n, x, out, count, stream);
 }
 
-BoysStatus BoysCuda::AllOrdersF32UniformRatHornerAtRung(
-    double multiplier, const int* n, const double* x, float* out, std::size_t count,
-    void* stream) {
-    return RungServedByEntry(DeviceEntry::kAllOrdersF32UniformRatHorner, multiplier,
-                             BoysCudaLaunchAllOrdersF32UniformRat, n, x, out, count, stream);
-}
-
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF64UniformRat(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    static_assert(DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF64UniformRat, kAccuracyMultiplier),
-                  "this entry does not serve the rung this instantiation names: which rungs it "
-                  "serves is DeviceEntryServedAtRung (boys_cuda_options.hpp)");
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF64UniformRat, n, x, out, count, stream);
-    } else
-    {
-        return LaunchEffRung<kAccuracyMultiplier>(BoysCudaLaunchAllOrdersF64UniformRat, n, x, out,
-                                                  count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF64UniformRat, n, x, out, count, stream);
 }
 
-BoysStatus BoysCuda::AllOrdersF64UniformRatAtRung(
-    double multiplier, const int* n, const double* x, double* out, std::size_t count,
-    void* stream) {
-    return RungServedByEntry(DeviceEntry::kAllOrdersF64UniformRat, multiplier,
-                             BoysCudaLaunchAllOrdersF64UniformRat, n, x, out, count, stream);
-}
-
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF64UniformRatHorner(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    static_assert(
-        DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF64UniformRatHorner, kAccuracyMultiplier),
-        "this entry does not serve the rung this instantiation names: which rungs it serves is "
-        "DeviceEntryServedAtRung (boys_cuda_options.hpp)");
 
-    return AllOrdersF64UniformRat<kAccuracyMultiplier>(n, x, out, count, stream);
+    return AllOrdersF64UniformRat(n, x, out, count, stream);
 }
-
-BoysStatus BoysCuda::AllOrdersF64UniformRatHornerAtRung(
-    double multiplier, const int* n, const double* x, double* out, std::size_t count,
-    void* stream) {
-    return RungServedByEntry(DeviceEntry::kAllOrdersF64UniformRatHorner, multiplier,
-                             BoysCudaLaunchAllOrdersF64UniformRat, n, x, out, count, stream);
-}
-
 
 // The grid's rational member over the route's other packing axis, which has one member here:
 // the pair is stored per interval at the interval's own pair and stored count, so no gather
-// has a stride to step and the launch below is the per-argument entry's kernel. No rung's
-// criterion cuts this table either, so every rung is served and the rung branch queues the
-// same launcher.
-template <double kAccuracyMultiplier>
+// has a stride to step and the launch below is the per-argument entry's kernel.
 BoysStatus BoysCuda::AllOrdersF32OrdersUniformRat(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    static_assert(DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32OrdersUniformRat,
-                                         kAccuracyMultiplier),
-                  "this entry does not serve the rung this instantiation names: which rungs it "
-                  "serves is DeviceEntryServedAtRung (boys_cuda_options.hpp)");
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF32UniformRat, n, x, out, count, stream);
-    } else
-    {
-        return LaunchEffRung<kAccuracyMultiplier>(BoysCudaLaunchAllOrdersF32UniformRat, n, x, out,
-                                                  count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF32UniformRat, n, x, out, count, stream);
 }
 
-BoysStatus BoysCuda::AllOrdersF32OrdersUniformRatAtRung(
-    double multiplier, const int* n, const double* x, float* out, std::size_t count,
-    void* stream) {
-    return RungServedByEntry(DeviceEntry::kAllOrdersF32OrdersUniformRat, multiplier,
-                             BoysCudaLaunchAllOrdersF32UniformRat, n, x, out, count, stream);
-}
-
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF32OrdersUniformRatHorner(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    static_assert(
-        DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32OrdersUniformRatHorner,
-                                kAccuracyMultiplier),
-        "this entry does not serve the rung this instantiation names: which rungs it serves is "
-        "DeviceEntryServedAtRung (boys_cuda_options.hpp)");
 
-    return AllOrdersF32OrdersUniformRat<kAccuracyMultiplier>(n, x, out, count, stream);
+    return AllOrdersF32OrdersUniformRat(n, x, out, count, stream);
 }
-
-BoysStatus BoysCuda::AllOrdersF32OrdersUniformRatHornerAtRung(
-    double multiplier, const int* n, const double* x, float* out, std::size_t count,
-    void* stream) {
-    return RungServedByEntry(DeviceEntry::kAllOrdersF32OrdersUniformRatHorner, multiplier,
-                             BoysCudaLaunchAllOrdersF32UniformRat, n, x, out, count, stream);
-}
-
 
 // The same four on the double lane's grid: that lane's own pair per interval over its own
-// intervals, read by that lane's launcher, and the same reason for the rung branch.
-template <double kAccuracyMultiplier>
+// intervals, read by that lane's launcher.
 BoysStatus BoysCuda::AllOrdersF64OrdersUniformRat(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    static_assert(DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF64OrdersUniformRat,
-                                         kAccuracyMultiplier),
-                  "this entry does not serve the rung this instantiation names: which rungs it "
-                  "serves is DeviceEntryServedAtRung (boys_cuda_options.hpp)");
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF64UniformRat, n, x, out, count, stream);
-    } else
-    {
-        return LaunchEffRung<kAccuracyMultiplier>(BoysCudaLaunchAllOrdersF64UniformRat, n, x, out,
-                                                  count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF64UniformRat, n, x, out, count, stream);
 }
 
-BoysStatus BoysCuda::AllOrdersF64OrdersUniformRatAtRung(
-    double multiplier, const int* n, const double* x, double* out, std::size_t count,
-    void* stream) {
-    return RungServedByEntry(DeviceEntry::kAllOrdersF64OrdersUniformRat, multiplier,
-                             BoysCudaLaunchAllOrdersF64UniformRat, n, x, out, count, stream);
-}
-
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF64OrdersUniformRatHorner(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    static_assert(
-        DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF64OrdersUniformRatHorner,
-                                kAccuracyMultiplier),
-        "this entry does not serve the rung this instantiation names: which rungs it serves is "
-        "DeviceEntryServedAtRung (boys_cuda_options.hpp)");
 
-    return AllOrdersF64OrdersUniformRat<kAccuracyMultiplier>(n, x, out, count, stream);
+    return AllOrdersF64OrdersUniformRat(n, x, out, count, stream);
 }
 
-BoysStatus BoysCuda::AllOrdersF64OrdersUniformRatHornerAtRung(
-    double multiplier, const int* n, const double* x, double* out, std::size_t count,
-    void* stream) {
-    return RungServedByEntry(DeviceEntry::kAllOrdersF64OrdersUniformRatHorner, multiplier,
-                             BoysCudaLaunchAllOrdersF64UniformRat, n, x, out, count, stream);
-}
-
-
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF32Narrow(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    // The lane's narrow partition has a cut to make at a rung, and this lane holds it: region
-    // B's degrees are the float lane's own (NarrowRegionBDegrees over the float pieces,
-    // FillNarrowF32Lane) and are resident from the rung's own upload. Region A needs no table
-    // beside them because this lane's region-A seed is the double lane's, whose cut the same
-    // upload carries.
-    static_assert(DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32Narrow, kAccuracyMultiplier),
-                  "this entry does not serve the rung this instantiation names: which rungs it "
-                  "serves is DeviceEntryServedAtRung (boys_cuda_options.hpp)");
+    // The lane's narrow partition reads region B's degrees as the float lane's own
+    // (NarrowRegionBDegrees over the float pieces). Region A needs no table beside them
+    // because this lane's region-A seed is the double lane's.
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF32Narrow, n, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowEff, n, x, out, count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF32Narrow, n, x, out, count, stream);
 }
 
 
-BoysStatus BoysCuda::AllOrdersF32NarrowAtRung(
-    double multiplier, const int* n, const double* x, float* out, std::size_t count,
-    void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF32Narrow,
-                        BoysCudaLaunchAllOrdersF32NarrowEff, n, x, out, count, stream);
-}
-
-
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF32NarrowMono(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    // The other form of the partition above, whose rung cut this lane holds in that form: the
-    // degrees are the monomial coefficients' own (NarrowRegionBDegrees at TailBasis::kMonomial,
-    // FillNarrowMonoF32Lane), and a rung's arithmetic is the monomial pool read at them. Region
-    // A is no second table here either: this lane's region-A seed is the double lane's monomial
-    // narrow lane, the rung's own cut of a table this lane derives.
-    static_assert(DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32NarrowMono, kAccuracyMultiplier),
-                  "this entry does not serve the rung this instantiation names: which rungs it "
-                  "serves is DeviceEntryServedAtRung (boys_cuda_options.hpp)");
+    // The other form of the partition above: the degrees are the monomial coefficients' own
+    // (NarrowRegionBDegrees at TailBasis::kMonomial). Region A is no second table here either:
+    // this lane's region-A seed is the double lane's narrow monomial table.
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowMono, n, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowMonoEff, n, x, out, count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowMono, n, x, out, count, stream);
 }
 
 
-BoysStatus BoysCuda::AllOrdersF32NarrowMonoAtRung(
-    double multiplier, const int* n, const double* x, float* out, std::size_t count,
-    void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF32NarrowMono,
-                        BoysCudaLaunchAllOrdersF32NarrowMonoEff, n, x, out, count, stream);
-}
-
-
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF32Rat(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    // The lane's rational route has a cut to make at a rung and this lane makes it: the
-    // region-B pair is this lane's own fit, cut by the same criterion over its own coefficients
-    // (RationalRegionBF32Degrees, FillRatF32Lane), and region A's seed is the double lane's
-    // pair at the rung's cut, which the same upload carries.
-    static_assert(DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32Rat, kAccuracyMultiplier),
-                  "this entry does not serve the rung this instantiation names: which rungs it "
-                  "serves is DeviceEntryServedAtRung (boys_cuda_options.hpp)");
+    // The lane's rational route reads this lane's own fit: the region-B pair's degrees are its
+    // own (RationalRegionBF32Degrees), and region A's seed is the double lane's pair.
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF32Rat, n, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllOrdersF32RatEff, n, x, out, count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF32Rat, n, x, out, count, stream);
 }
 
 
-BoysStatus BoysCuda::AllOrdersF32RatAtRung(
-    double multiplier, const int* n, const double* x, float* out, std::size_t count,
-    void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF32Rat, BoysCudaLaunchAllOrdersF32RatEff,
-                        n, x, out, count, stream);
-}
-
-
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF32RatHorner(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
     // The other scheme name of the route above, over the same pair: both names reach one
-    // kernel, one arithmetic and one rung axis.
-    static_assert(DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32RatHorner, kAccuracyMultiplier),
-                  "this entry does not serve the rung this instantiation names: which rungs it "
-                  "serves is DeviceEntryServedAtRung (boys_cuda_options.hpp)");
+    // kernel and one arithmetic.
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return AllOrdersF32Rat<kAccuracyMultiplier>(n, x, out, count, stream);
+    return AllOrdersF32Rat(n, x, out, count, stream);
 }
 
 
-BoysStatus BoysCuda::AllOrdersF32RatHornerAtRung(
-    double multiplier, const int* n, const double* x, float* out, std::size_t count,
-    void* stream) {
-    return AllOrdersF32RatAtRung(multiplier, n, x, out, count, stream);
-}
-
-
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF32NarrowRat(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
     // The route above on the narrow partition, whose region-B pair is this lane's
-    // own fit there: a rung cuts it as it cuts the shipped partition's.
-    static_assert(
-        DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32NarrowRat, kAccuracyMultiplier),
-        "this entry does not serve the rung this instantiation names: which rungs it serves is "
-        "DeviceEntryServedAtRung (boys_cuda_options.hpp)");
+    // own fit there, read at its own degrees.
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowRat, n, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowRatEff, n, x, out, count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowRat, n, x, out, count, stream);
 }
 
 
-BoysStatus BoysCuda::AllOrdersF32NarrowRatAtRung(
-    double multiplier, const int* n, const double* x, float* out, std::size_t count,
-    void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF32NarrowRat,
-                        BoysCudaLaunchAllOrdersF32NarrowRatEff, n, x, out, count, stream);
-}
-
-
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF32NarrowRatHorner(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
     // The other scheme name of the pair above, over the same kernel.
-    static_assert(
-        DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32NarrowRatHorner, kAccuracyMultiplier),
-        "this entry does not serve the rung this instantiation names: which rungs it serves is "
-        "DeviceEntryServedAtRung (boys_cuda_options.hpp)");
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return AllOrdersF32NarrowRat<kAccuracyMultiplier>(n, x, out, count, stream);
+    return AllOrdersF32NarrowRat(n, x, out, count, stream);
 }
 
 
-BoysStatus BoysCuda::AllOrdersF32NarrowRatHornerAtRung(
-    double multiplier, const int* n, const double* x, float* out, std::size_t count,
-    void* stream) {
-    return AllOrdersF32NarrowRatAtRung(multiplier, n, x, out, count, stream);
-}
-
-
-// The float lane's orders axis, one pair per shape: the entry whose multiplier is its template
-// argument, and the rung-argument sibling. Every row here serves every rung, each answering at
-// one out of this lane's own cut of the table it sums - the shipped partition's under both its
-// names, the narrow partition's in both bases, the rational route's out of its own float pairs
-// - and each states that through the assertion below rather than by the shape of the body, so a
-// row whose rungs move cannot leave a body behind.
-template <double kAccuracyMultiplier>
+// The float lane's orders axis, one pair per shape: the same table its per-argument twin
+// reads, gathered at each order's own piece rather than shared across the batch, so the
+// coarsest partition under both its names, the narrow partition in both bases and the
+// rational route out of its own float pairs each have both packings.
 BoysStatus BoysCuda::AllOrdersF32Orders(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    static_assert(DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32Orders, kAccuracyMultiplier),
-                  "this entry does not serve the rung this instantiation names: which rungs it "
-                  "serves is DeviceEntryServedAtRung (boys_cuda_options.hpp)");
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF32Orders, n, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllOrdersF32OrdersEff, n, x, out, count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF32Orders, n, x, out, count, stream);
 }
 
 
-BoysStatus BoysCuda::AllOrdersF32OrdersAtRung(
-    double multiplier, const int* n, const double* x, float* out, std::size_t count,
-    void* stream) {
-    // The two launchers and not one, because this row's table has a cut to make: a relaxed
-    // rung reads the rung's own degrees and a full-accuracy call the stored ones, so the pair
-    // is what the compile-time spelling picks between and what this sibling has to pick
-    // between as well. A row of the uniform grid takes one launcher through RungServedByEntry
-    // for the opposite reason: its table is stored at one degree per interval.
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF32Orders,
-                        BoysCudaLaunchAllOrdersF32OrdersEff, n, x, out, count, stream);
-}
-
-
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF32NarrowOrders(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    static_assert(
-        DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32NarrowOrders, kAccuracyMultiplier),
-        "this entry does not serve the rung this instantiation names: which rungs it serves is "
-        "DeviceEntryServedAtRung (boys_cuda_options.hpp)");
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
@@ -2313,44 +800,13 @@ BoysStatus BoysCuda::AllOrdersF32NarrowOrders(
     }
 
     // The same two tables its per-argument twin reads, on the other axis: the
-    // rung is a property of the stored fit and not of the reading.
-    if constexpr (kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowOrders, n, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowOrdersEff, n, x, out, count, stream);
-    }
+    // degrees are a property of the stored fit and not of the reading.
+    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowOrders, n, x, out, count, stream);
 }
 
 
-BoysStatus BoysCuda::AllOrdersF32NarrowOrdersAtRung(
-    double multiplier, const int* n, const double* x, float* out, std::size_t count,
-    void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF32NarrowOrders,
-                        BoysCudaLaunchAllOrdersF32NarrowOrdersEff, n, x, out, count, stream);
-}
-
-
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF32NarrowOrdersMono(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    static_assert(
-        DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32NarrowOrdersMono, kAccuracyMultiplier),
-        "this entry does not serve the rung this instantiation names: which rungs it serves is "
-        "DeviceEntryServedAtRung (boys_cuda_options.hpp)");
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
@@ -2358,1576 +814,96 @@ BoysStatus BoysCuda::AllOrdersF32NarrowOrdersMono(
     }
 
     // The same two tables its per-argument twin reads, on the other axis: the
-    // rung is a property of the stored fit and not of the reading.
-    if constexpr (kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowOrdersMono, n, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowOrdersMonoEff, n, x, out, count, stream);
-    }
+    // degrees are a property of the stored fit and not of the reading.
+    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowOrdersMono, n, x, out, count, stream);
 }
 
 
-BoysStatus BoysCuda::AllOrdersF32NarrowOrdersMonoAtRung(
-    double multiplier, const int* n, const double* x, float* out, std::size_t count,
-    void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF32NarrowOrdersMono,
-                        BoysCudaLaunchAllOrdersF32NarrowOrdersMonoEff, n, x, out, count, stream);
-}
-
-
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF32OrdersRat(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    static_assert(DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32OrdersRat, kAccuracyMultiplier),
-                  "this entry does not serve the rung this instantiation names: which rungs it "
-                  "serves is DeviceEntryServedAtRung (boys_cuda_options.hpp)");
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF32OrdersRat, n, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllOrdersF32OrdersRatEff, n, x, out, count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF32OrdersRat, n, x, out, count, stream);
 }
 
 
-BoysStatus BoysCuda::AllOrdersF32OrdersRatAtRung(
-    double multiplier, const int* n, const double* x, float* out, std::size_t count,
-    void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF32OrdersRat,
-                        BoysCudaLaunchAllOrdersF32OrdersRatEff, n, x, out, count, stream);
-}
-
-
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF32OrdersRatHorner(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    static_assert(
-        DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32OrdersRatHorner, kAccuracyMultiplier),
-        "this entry does not serve the rung this instantiation names: which rungs it serves is "
-        "DeviceEntryServedAtRung (boys_cuda_options.hpp)");
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return AllOrdersF32OrdersRat<kAccuracyMultiplier>(n, x, out, count, stream);
+    return AllOrdersF32OrdersRat(n, x, out, count, stream);
 }
 
 
-BoysStatus BoysCuda::AllOrdersF32OrdersRatHornerAtRung(
-    double multiplier, const int* n, const double* x, float* out, std::size_t count,
-    void* stream) {
-    return AllOrdersF32OrdersRatAtRung(multiplier, n, x, out, count, stream);
-}
-
-
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRat(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    static_assert(
-        DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32NarrowOrdersRat, kAccuracyMultiplier),
-        "this entry does not serve the rung this instantiation names: which rungs it serves is "
-        "DeviceEntryServedAtRung (boys_cuda_options.hpp)");
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowOrdersRat, n, x, out, count, stream);
-    } else
-    {
-        const auto status = EnsureEffTables<kAccuracyMultiplier>();
-
-        if (status != BoysStatus::kSuccess)
-        {
-            return status;
-        }
-
-        return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowOrdersRatEff, n, x, out, count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowOrdersRat, n, x, out, count, stream);
 }
 
 
-BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRatAtRung(
-    double multiplier, const int* n, const double* x, float* out, std::size_t count,
-    void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF32NarrowOrdersRat,
-                        BoysCudaLaunchAllOrdersF32NarrowOrdersRatEff, n, x, out, count, stream);
-}
-
-
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRatHorner(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    static_assert(DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32NarrowOrdersRatHorner,
-                                         kAccuracyMultiplier),
-                  "this entry does not serve the rung this instantiation names: which rungs it "
-                  "serves is DeviceEntryServedAtRung (boys_cuda_options.hpp)");
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    return AllOrdersF32NarrowOrdersRat<kAccuracyMultiplier>(n, x, out, count, stream);
+    return AllOrdersF32NarrowOrdersRat(n, x, out, count, stream);
 }
 
 
-BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRatHornerAtRung(
-    double multiplier, const int* n, const double* x, float* out, std::size_t count,
-    void* stream) {
-    return AllOrdersF32NarrowOrdersRatAtRung(multiplier, n, x, out, count, stream);
-}
-
-
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF32OrdersUniform(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
     // The route's one reading of the grid, and therefore the kernel
     // AllOrdersF32Uniform launches: the packing axis this entry names has one
     // member here, for the reason the header's declaration states.
-    static_assert(
-        DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32OrdersUniform, kAccuracyMultiplier),
-        "this entry does not serve the rung this instantiation names: which rungs it serves is "
-        "DeviceEntryServedAtRung (boys_cuda_options.hpp)");
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF32Uniform, n, x, out, count, stream);
-    } else
-    {
-        return LaunchEffRung<kAccuracyMultiplier>(BoysCudaLaunchAllOrdersF32Uniform, n, x, out,
-                                                 count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF32Uniform, n, x, out, count, stream);
 }
 
 
-BoysStatus BoysCuda::AllOrdersF32OrdersUniformAtRung(
-    double multiplier, const int* n, const double* x, float* out, std::size_t count,
-    void* stream) {
-    return RungServedByEntry(DeviceEntry::kAllOrdersF32OrdersUniform, multiplier,
-                             BoysCudaLaunchAllOrdersF32Uniform, n, x, out, count, stream);
-}
-
-
-template <double kAccuracyMultiplier>
 BoysStatus BoysCuda::AllOrdersF32OrdersUniformHorner(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    static_assert(DeviceEntryServedAtRung(DeviceEntry::kAllOrdersF32OrdersUniformHorner,
-                                         kAccuracyMultiplier),
-                  "this entry does not serve the rung this instantiation names: which rungs it "
-                  "serves is DeviceEntryServedAtRung (boys_cuda_options.hpp)");
 
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
     {
         return BoysStatus::kDeviceError;
     }
 
-    if constexpr (kAccuracyMultiplier == kBoysFullAccuracyMultiplier)
-    {
-        return RunLaunch(BoysCudaLaunchAllOrdersF32UniformHorner, n, x, out, count, stream);
-    } else
-    {
-        return LaunchEffRung<kAccuracyMultiplier>(BoysCudaLaunchAllOrdersF32UniformHorner, n, x, out,
-                                                  count, stream);
-    }
+    return RunLaunch(BoysCudaLaunchAllOrdersF32UniformHorner, n, x, out, count, stream);
 }
 
-
-BoysStatus BoysCuda::AllOrdersF32OrdersUniformHornerAtRung(
-    double multiplier, const int* n, const double* x, float* out, std::size_t count,
-    void* stream) {
-    return RungServedByEntry(DeviceEntry::kAllOrdersF32OrdersUniformHorner, multiplier,
-                             BoysCudaLaunchAllOrdersF32UniformHorner, n, x, out, count, stream);
-}
-
-
-BoysStatus BoysCuda::AllNF64AtRung(
-    double multiplier, int nmax, const double* x, double* out, std::size_t count,
-    void* stream) {
-    const auto valid = CheckOrder(nmax);
-
-    if (valid != BoysStatus::kSuccess)
-    {
-        return valid;
-    }
-
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllNF64,
-                        BoysCudaLaunchAllNF64Eff, nmax, x, out, count, stream);
-}
-
-
-#if BoysFp16
-
-BoysStatus BoysCuda::SingleF16AtRung(
-    double multiplier, const int* n, const F16* x, F16* out, std::size_t count,
-    void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchSingleF16,
-                        BoysCudaLaunchSingleF16Eff, n, x, out, count, stream);
-}
-
-
-BoysStatus BoysCuda::AllOrdersF16AtRung(
-    double multiplier, const int* n, const F16* x, F16* out, std::size_t count,
-    void* stream) {
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllOrdersF16,
-                        BoysCudaLaunchAllOrdersF16Eff, n, x, out, count, stream);
-}
-
-
-BoysStatus BoysCuda::AllNF16AtRung(
-    double multiplier, int nmax, const F16* x, F16* out, std::size_t count,
-    void* stream) {
-    const auto valid = CheckOrder(nmax);
-
-    if (valid != BoysStatus::kSuccess)
-    {
-        return valid;
-    }
-
-    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
-    {
-        return BoysStatus::kDeviceError;
-    }
-
-    return LaunchAtRung(multiplier, BoysCudaLaunchAllNF16,
-                        BoysCudaLaunchAllNF16Eff, nmax, x, out, count, stream);
-}
-
-#endif // BoysFp16
 
 // ---------------------------------------------------------------------------
-// Explicit instantiations at the rungs this lane serves, kDeviceRungs
-// (boys_cuda_options.hpp). The entry definitions live in this TU (the header stays
-// CUDA-runtime-free), so call sites in other TUs link only the instantiations spelled
-// out here - m = 1.0 first (the full-accuracy pin), then this lane's own relaxation
-// sample set, then the option space's rungs below. The f32 single entry is instantiated
-// once per calibrated (multiplier, exponential) pair it offers; the uniform route's six
-// entries at every rung of the lane, the eleven relaxed ones at the end of this list,
-// because that is the axis their rows state; every other entry has one arithmetic and one
-// instantiation per multiplier.
+// The one templated entry of this lane: the f32 single entry's compile-time choice
+// of region-B exponential. The entry definitions live in this TU (the header stays
+// CUDA-runtime-free), so call sites in other TUs link the instantiations spelled out
+// here; every other entry of this lane is a plain function defined above.
 // ---------------------------------------------------------------------------
-// The one rung-argument sibling that is itself a template: the f32 single entry's
-// exponential axis is a compile-time choice of arithmetic, so this entry has two
-// instantiations of its sibling and not twelve, and which rung it answers at is the
-// run-time argument dispatched above.
-template BoysStatus BoysCuda::SingleF32AtRung<RegionBExp::kAccurate>(
-    double, const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::SingleF32AtRung<RegionBExp::kFast>(
-    double, const int*, const double*, float*, std::size_t, void*);
-
-template BoysStatus BoysCuda::SingleF32<1.0>(const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::SingleF32<1.0, RegionBExp::kFast>(
+template BoysStatus BoysCuda::SingleF32<RegionBExp::kAccurate>(
     const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32<1.0>(
+template BoysStatus BoysCuda::SingleF32<RegionBExp::kFast>(
     const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF32<1.0>(int, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::SingleF64<1.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64<1.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Narrow<1.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Orders<1.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrders<1.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Mono<1.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersMono<1.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowMono<1.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono<1.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Rat<1.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersRat<1.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowRat<1.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat<1.0>(
-    const int*, const double*, double*, std::size_t, void*);
-// The uniform route's reference instantiation, the first of the twelve each of its six entries
-// carries: the route's rung axis is the lane's whole set, and the other eleven are spelled at
-// the end of this list. A rung of this route is not a second arithmetic - there is no shorter
-// image of the table to cut - so what a rung adds over this instantiation is the residency of
-// the rung the call names.
-template BoysStatus BoysCuda::AllOrdersF64Uniform<1.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformHorner<1.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniform<1.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformHorner<1.0>(
-    const int*, const double*, double*, std::size_t, void*);
-// The float lane's partition and grid carry the same one each, for their own
-// reasons (boys_cuda_options.hpp, DeviceEntryServedAtRung).
-template BoysStatus BoysCuda::AllOrdersF32Uniform<1.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformHorner<1.0>(
-    const int*, const double*, float*, std::size_t, void*);
-// The grid's rational member on both lanes, whose rungs are the rungs above
-// (boys_cuda_options.hpp, DeviceEntryServedAtRung).
-template BoysStatus BoysCuda::AllOrdersF32UniformRat<1.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformRatHorner<1.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformRat<1.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformRatHorner<1.0>(
-    const int*, const double*, double*, std::size_t, void*);
-// The grid's rational member over its orders row: the rungs and the launchers of the four
-// above, whose arm of DeviceEntryServedAtRung they share (boys_cuda_options.hpp).
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformRat<1.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformRatHorner<1.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformRat<1.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformRatHorner<1.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Narrow<1.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowMono<1.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Rat<1.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32RatHorner<1.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowRat<1.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowRatHorner<1.0>(
-    const int*, const double*, float*, std::size_t, void*);
-// The float lane's orders axis at its full-accuracy form: the shipped partition's row, the two
-// uniform-grid rows, whose rungs are the lane's whole set, beside the narrow partition's and
-// the rational route's, whose relaxed instantiations are spelled at the end of this list.
-template BoysStatus BoysCuda::AllOrdersF32Orders<1.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrders<1.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersMono<1.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersRat<1.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersRatHorner<1.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRat<1.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRatHorner<1.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniform<1.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformHorner<1.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF64<1.0>(int, const double*, double*, std::size_t, void*);
-#if BoysFp16
-template BoysStatus BoysCuda::SingleF16<1.0>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF16<1.0>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF16<1.0>(int, const F16*, F16*, std::size_t, void*);
-#endif
-template BoysStatus BoysCuda::SingleF32<2.0>(const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::SingleF32<2.0, RegionBExp::kFast>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32<2.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF32<2.0>(int, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::SingleF64<2.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64<2.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Narrow<2.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Orders<2.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrders<2.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Mono<2.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersMono<2.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowMono<2.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono<2.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Rat<2.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersRat<2.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowRat<2.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat<2.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF64<2.0>(int, const double*, double*, std::size_t, void*);
-#if BoysFp16
-template BoysStatus BoysCuda::SingleF16<2.0>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF16<2.0>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF16<2.0>(int, const F16*, F16*, std::size_t, void*);
-#endif
-template BoysStatus BoysCuda::SingleF32<10.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::SingleF32<10.0, RegionBExp::kFast>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32<10.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF32<10.0>(int, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::SingleF64<10.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64<10.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Narrow<10.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Orders<10.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrders<10.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Mono<10.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersMono<10.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowMono<10.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono<10.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Rat<10.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersRat<10.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowRat<10.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat<10.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF64<10.0>(int, const double*, double*, std::size_t, void*);
-#if BoysFp16
-template BoysStatus BoysCuda::SingleF16<10.0>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF16<10.0>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF16<10.0>(int, const F16*, F16*, std::size_t, void*);
-#endif
-template BoysStatus BoysCuda::SingleF32<100.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::SingleF32<100.0, RegionBExp::kFast>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32<100.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF32<100.0>(int, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::SingleF64<100.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64<100.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Narrow<100.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Orders<100.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrders<100.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Mono<100.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersMono<100.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowMono<100.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono<100.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Rat<100.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersRat<100.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowRat<100.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat<100.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF64<100.0>(int, const double*, double*, std::size_t, void*);
-#if BoysFp16
-template BoysStatus BoysCuda::SingleF16<100.0>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF16<100.0>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF16<100.0>(int, const F16*, F16*, std::size_t, void*);
-#endif
-template BoysStatus BoysCuda::SingleF32<1e4>(const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::SingleF32<1e4, RegionBExp::kFast>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32<1e4>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF32<1e4>(int, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::SingleF64<1e4>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64<1e4>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Narrow<1e4>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Orders<1e4>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrders<1e4>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Mono<1e4>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersMono<1e4>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowMono<1e4>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono<1e4>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Rat<1e4>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersRat<1e4>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowRat<1e4>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat<1e4>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF64<1e4>(int, const double*, double*, std::size_t, void*);
-#if BoysFp16
-template BoysStatus BoysCuda::SingleF16<1e4>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF16<1e4>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF16<1e4>(int, const F16*, F16*, std::size_t, void*);
-#endif
-template BoysStatus BoysCuda::SingleF32<1e8>(const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::SingleF32<1e8, RegionBExp::kFast>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32<1e8>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF32<1e8>(int, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::SingleF64<1e8>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64<1e8>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Narrow<1e8>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Orders<1e8>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrders<1e8>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Mono<1e8>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersMono<1e8>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowMono<1e8>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono<1e8>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Rat<1e8>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersRat<1e8>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowRat<1e8>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat<1e8>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF64<1e8>(int, const double*, double*, std::size_t, void*);
-#if BoysFp16
-template BoysStatus BoysCuda::SingleF16<1e8>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF16<1e8>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF16<1e8>(int, const F16*, F16*, std::size_t, void*);
-#endif
-
-// ---------------------------------------------------------------------------
-// The option space's rungs on this lane: the CPU tier lane's seven multipliers
-// (AccuracyTier), instantiated exactly as the lane's own rungs are - the same entries,
-// the same degree tables cut at that multiplier - so the set the API answers for and the
-// set the kernels are compiled at are one, kDeviceRungs (boys_cuda_options.hpp), twelve
-// multipliers wide.
-// ---------------------------------------------------------------------------
-
-template BoysStatus BoysCuda::SingleF32<64.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::SingleF32<64.0, RegionBExp::kFast>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32<64.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF32<64.0>(int, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::SingleF64<64.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64<64.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Narrow<64.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Orders<64.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrders<64.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Mono<64.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersMono<64.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowMono<64.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono<64.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Rat<64.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersRat<64.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowRat<64.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat<64.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF64<64.0>(int, const double*, double*, std::size_t, void*);
-#if BoysFp16
-template BoysStatus BoysCuda::SingleF16<64.0>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF16<64.0>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF16<64.0>(int, const F16*, F16*, std::size_t, void*);
-#endif
-
-template BoysStatus BoysCuda::SingleF32<256.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::SingleF32<256.0, RegionBExp::kFast>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32<256.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF32<256.0>(int, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::SingleF64<256.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64<256.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Narrow<256.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Orders<256.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrders<256.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Mono<256.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersMono<256.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowMono<256.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono<256.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Rat<256.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersRat<256.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowRat<256.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat<256.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF64<256.0>(int, const double*, double*, std::size_t, void*);
-#if BoysFp16
-template BoysStatus BoysCuda::SingleF16<256.0>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF16<256.0>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF16<256.0>(int, const F16*, F16*, std::size_t, void*);
-#endif
-
-template BoysStatus BoysCuda::SingleF32<1024.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::SingleF32<1024.0, RegionBExp::kFast>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32<1024.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF32<1024.0>(int, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::SingleF64<1024.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64<1024.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Narrow<1024.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Orders<1024.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrders<1024.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Mono<1024.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersMono<1024.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowMono<1024.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono<1024.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Rat<1024.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersRat<1024.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowRat<1024.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat<1024.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF64<1024.0>(int, const double*, double*, std::size_t, void*);
-#if BoysFp16
-template BoysStatus BoysCuda::SingleF16<1024.0>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF16<1024.0>(
-    const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF16<1024.0>(int, const F16*, F16*, std::size_t, void*);
-#endif
-
-template BoysStatus BoysCuda::SingleF32<4096.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::SingleF32<4096.0, RegionBExp::kFast>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32<4096.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF32<4096.0>(int, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::SingleF64<4096.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64<4096.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Narrow<4096.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Orders<4096.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrders<4096.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Mono<4096.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersMono<4096.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowMono<4096.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono<4096.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Rat<4096.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersRat<4096.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowRat<4096.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat<4096.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF64<4096.0>(int, const double*, double*, std::size_t, void*);
-#if BoysFp16
-template BoysStatus BoysCuda::SingleF16<4096.0>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF16<4096.0>(
-    const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF16<4096.0>(int, const F16*, F16*, std::size_t, void*);
-#endif
-
-template BoysStatus BoysCuda::SingleF32<16384.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::SingleF32<16384.0, RegionBExp::kFast>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32<16384.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF32<16384.0>(int, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::SingleF64<16384.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64<16384.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Narrow<16384.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Orders<16384.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrders<16384.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Mono<16384.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersMono<16384.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowMono<16384.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono<16384.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Rat<16384.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersRat<16384.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowRat<16384.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat<16384.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF64<16384.0>(int, const double*, double*, std::size_t, void*);
-#if BoysFp16
-template BoysStatus BoysCuda::SingleF16<16384.0>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF16<16384.0>(
-    const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF16<16384.0>(int, const F16*, F16*, std::size_t, void*);
-#endif
-
-template BoysStatus BoysCuda::SingleF32<65536.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::SingleF32<65536.0, RegionBExp::kFast>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32<65536.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF32<65536.0>(int, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::SingleF64<65536.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64<65536.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Narrow<65536.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Orders<65536.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrders<65536.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Mono<65536.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersMono<65536.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowMono<65536.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono<65536.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Rat<65536.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersRat<65536.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowRat<65536.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat<65536.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF64<65536.0>(int, const double*, double*, std::size_t, void*);
-#if BoysFp16
-template BoysStatus BoysCuda::SingleF16<65536.0>(const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF16<65536.0>(
-    const int*, const F16*, F16*, std::size_t, void*);
-template BoysStatus BoysCuda::AllNF16<65536.0>(int, const F16*, F16*, std::size_t, void*);
-#endif
-
-// The uniform route's rows at the rungs above them: the same eleven, for the same six entries,
-// because the route's rung axis is the lane's whole set. The table is stored at one degree for
-// every order and interval, so each of these reads that one degree and the rung it names is the
-// rung its call makes resident. Spelled per (entry, rung) and not shared, because the surface a
-// caller writes against is a name and a rung: a rung missing here is a call site that does not
-// link, which the header's declaration cannot express.
-template BoysStatus BoysCuda::AllOrdersF64Uniform<2.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Uniform<10.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Uniform<64.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Uniform<100.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Uniform<256.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Uniform<1024.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Uniform<4096.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Uniform<1e4>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Uniform<16384.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Uniform<65536.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64Uniform<1e8>(
-    const int*, const double*, double*, std::size_t, void*);
-
-template BoysStatus BoysCuda::AllOrdersF64UniformHorner<2.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformHorner<10.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformHorner<64.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformHorner<100.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformHorner<256.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformHorner<1024.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformHorner<4096.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformHorner<1e4>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformHorner<16384.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformHorner<65536.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformHorner<1e8>(
-    const int*, const double*, double*, std::size_t, void*);
-
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniform<2.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniform<10.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniform<64.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniform<100.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniform<256.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniform<1024.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniform<4096.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniform<1e4>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniform<16384.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniform<65536.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniform<1e8>(
-    const int*, const double*, double*, std::size_t, void*);
-
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformHorner<2.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformHorner<10.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformHorner<64.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformHorner<100.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformHorner<256.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformHorner<1024.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformHorner<4096.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformHorner<1e4>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformHorner<16384.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformHorner<65536.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformHorner<1e8>(
-    const int*, const double*, double*, std::size_t, void*);
-
-template BoysStatus BoysCuda::AllOrdersF32Uniform<2.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Uniform<10.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Uniform<64.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Uniform<100.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Uniform<256.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Uniform<1024.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Uniform<4096.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Uniform<1e4>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Uniform<16384.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Uniform<65536.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Uniform<1e8>(
-    const int*, const double*, float*, std::size_t, void*);
-
-// The grid's rational member at the same eleven rungs, on both lanes, for the reason the rows
-// above give: no rung's criterion cuts this table either, so every rung reads the stored pairs
-// uncut and the same launcher runs.
-template BoysStatus BoysCuda::AllOrdersF32UniformRat<2.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformRat<10.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformRat<64.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformRat<100.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformRat<256.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformRat<1024.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformRat<4096.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformRat<1e4>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformRat<16384.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformRat<65536.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformRat<1e8>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformRatHorner<2.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformRatHorner<10.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformRatHorner<64.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformRatHorner<100.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformRatHorner<256.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformRatHorner<1024.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformRatHorner<4096.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformRatHorner<1e4>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformRatHorner<16384.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformRatHorner<65536.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformRatHorner<1e8>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformRat<2.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformRat<10.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformRat<64.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformRat<100.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformRat<256.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformRat<1024.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformRat<4096.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformRat<1e4>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformRat<16384.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformRat<65536.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformRat<1e8>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformRatHorner<2.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformRatHorner<10.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformRatHorner<64.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformRatHorner<100.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformRatHorner<256.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformRatHorner<1024.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformRatHorner<4096.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformRatHorner<1e4>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformRatHorner<16384.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformRatHorner<65536.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64UniformRatHorner<1e8>(
-    const int*, const double*, double*, std::size_t, void*);
-
-template BoysStatus BoysCuda::AllOrdersF32UniformHorner<2.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformHorner<10.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformHorner<64.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformHorner<100.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformHorner<256.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformHorner<1024.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformHorner<4096.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformHorner<1e4>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformHorner<16384.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformHorner<65536.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32UniformHorner<1e8>(
-    const int*, const double*, float*, std::size_t, void*);
-
-// The float lane's orders rows whose table has a cut to make - the shipped partition's, over
-// the float batch lane's own cut of the float Chebyshev table - and the two uniform rows,
-// which are the route's one reading of the grid at every rung. Their reference instantiations
-// are above; these are the other eleven rungs each serves, spelled for the reason the uniform
-// route's six are: the row's axis is the lane's whole set and the rung that makes it resident
-// is the rung the call named.
-template BoysStatus BoysCuda::AllOrdersF32Orders<2.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniform<2.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformHorner<2.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Orders<10.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniform<10.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformHorner<10.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Orders<64.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniform<64.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformHorner<64.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Orders<100.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniform<100.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformHorner<100.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Orders<256.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniform<256.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformHorner<256.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Orders<1024.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniform<1024.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformHorner<1024.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Orders<4096.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniform<4096.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformHorner<4096.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Orders<1e4>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniform<1e4>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformHorner<1e4>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Orders<16384.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniform<16384.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformHorner<16384.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Orders<65536.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniform<65536.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformHorner<65536.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Orders<1e8>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniform<1e8>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformHorner<1e8>(
-    const int*, const double*, float*, std::size_t, void*);
-
-// The grid's rational member over its orders row at the same eleven rungs, on both lanes, for
-// the reason the block above gives: one pair per interval and no per-order column, so no
-// rung's criterion cuts this table and every rung reads the stored pair uncut.
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformRat<2.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformRat<10.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformRat<64.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformRat<100.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformRat<256.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformRat<1024.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformRat<4096.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformRat<1e4>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformRat<16384.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformRat<65536.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformRat<1e8>(
-    const int*, const double*, float*, std::size_t, void*);
-
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformRatHorner<2.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformRatHorner<10.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformRatHorner<64.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformRatHorner<100.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformRatHorner<256.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformRatHorner<1024.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformRatHorner<4096.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformRatHorner<1e4>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformRatHorner<16384.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformRatHorner<65536.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersUniformRatHorner<1e8>(
-    const int*, const double*, float*, std::size_t, void*);
-
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformRat<2.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformRat<10.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformRat<64.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformRat<100.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformRat<256.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformRat<1024.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformRat<4096.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformRat<1e4>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformRat<16384.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformRat<65536.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformRat<1e8>(
-    const int*, const double*, double*, std::size_t, void*);
-
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformRatHorner<2.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformRatHorner<10.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformRatHorner<64.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformRatHorner<100.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformRatHorner<256.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformRatHorner<1024.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformRatHorner<4096.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformRatHorner<1e4>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformRatHorner<16384.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformRatHorner<65536.0>(
-    const int*, const double*, double*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF64OrdersUniformRatHorner<1e8>(
-    const int*, const double*, double*, std::size_t, void*);
-
-// The narrow partition's two rows, whose rung cut this lane now derives,
-// uploads and reads: the eleven relaxed instantiations each, beside the
-// reference one in the block above.
-template BoysStatus BoysCuda::AllOrdersF32Narrow<2.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrders<2.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Narrow<10.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrders<10.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Narrow<64.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrders<64.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Narrow<100.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrders<100.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Narrow<256.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrders<256.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Narrow<1024.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrders<1024.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Narrow<4096.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrders<4096.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Narrow<1e4>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrders<1e4>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Narrow<16384.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrders<16384.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Narrow<65536.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrders<65536.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Narrow<1e8>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrders<1e8>(
-    const int*, const double*, float*, std::size_t, void*);
-
-// The same partition in the other basis, whose rung cut is a table of that
-// basis's own (NarrowRegionBDegrees at TailBasis::kMonomial): the eleven
-// relaxed instantiations each, beside the reference one in the block above.
-template BoysStatus BoysCuda::AllOrdersF32NarrowMono<2.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersMono<2.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowMono<10.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersMono<10.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowMono<64.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersMono<64.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowMono<100.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersMono<100.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowMono<256.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersMono<256.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowMono<1024.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersMono<1024.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowMono<4096.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersMono<4096.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowMono<1e4>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersMono<1e4>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowMono<16384.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersMono<16384.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowMono<65536.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersMono<65536.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowMono<1e8>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersMono<1e8>(
-    const int*, const double*, float*, std::size_t, void*);
-
-// The fit route's rows on the float lane, whose rung cut this lane derives, uploads and reads:
-// the eleven relaxed instantiations each, beside the reference one above, and one per scheme
-// name because the route's two names are two rows of the book even where they are one kernel.
-template BoysStatus BoysCuda::AllOrdersF32Rat<2.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32RatHorner<2.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowRat<2.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowRatHorner<2.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersRat<2.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersRatHorner<2.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRat<2.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRatHorner<2.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Rat<10.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32RatHorner<10.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowRat<10.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowRatHorner<10.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersRat<10.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersRatHorner<10.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRat<10.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRatHorner<10.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Rat<64.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32RatHorner<64.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowRat<64.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowRatHorner<64.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersRat<64.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersRatHorner<64.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRat<64.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRatHorner<64.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Rat<100.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32RatHorner<100.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowRat<100.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowRatHorner<100.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersRat<100.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersRatHorner<100.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRat<100.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRatHorner<100.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Rat<256.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32RatHorner<256.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowRat<256.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowRatHorner<256.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersRat<256.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersRatHorner<256.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRat<256.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRatHorner<256.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Rat<1024.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32RatHorner<1024.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowRat<1024.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowRatHorner<1024.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersRat<1024.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersRatHorner<1024.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRat<1024.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRatHorner<1024.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Rat<4096.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32RatHorner<4096.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowRat<4096.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowRatHorner<4096.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersRat<4096.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersRatHorner<4096.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRat<4096.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRatHorner<4096.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Rat<1e4>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32RatHorner<1e4>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowRat<1e4>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowRatHorner<1e4>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersRat<1e4>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersRatHorner<1e4>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRat<1e4>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRatHorner<1e4>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Rat<16384.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32RatHorner<16384.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowRat<16384.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowRatHorner<16384.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersRat<16384.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersRatHorner<16384.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRat<16384.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRatHorner<16384.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Rat<65536.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32RatHorner<65536.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowRat<65536.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowRatHorner<65536.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersRat<65536.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersRatHorner<65536.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRat<65536.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRatHorner<65536.0>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32Rat<1e8>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32RatHorner<1e8>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowRat<1e8>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowRatHorner<1e8>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersRat<1e8>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32OrdersRatHorner<1e8>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRat<1e8>(
-    const int*, const double*, float*, std::size_t, void*);
-template BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRatHorner<1e8>(
-    const int*, const double*, float*, std::size_t, void*);
-// The handle for each rung the lane serves, kDeviceRungs (boys_cuda_options.hpp) - one
-// instantiation per rung, the same list the entries above are compiled at, because the rung a
-// handle is filled at is the rung its entries then read. m = 1 is the default argument's own
-// instantiation; each other makes its own rung resident.
-template BoysStatus BoysCuda::DeviceTables<kBoysFullAccuracyMultiplier>(BoysDeviceTables*);
-template BoysStatus BoysCuda::DeviceTables<2.0>(BoysDeviceTables*);
-template BoysStatus BoysCuda::DeviceTables<10.0>(BoysDeviceTables*);
-template BoysStatus BoysCuda::DeviceTables<64.0>(BoysDeviceTables*);
-template BoysStatus BoysCuda::DeviceTables<100.0>(BoysDeviceTables*);
-template BoysStatus BoysCuda::DeviceTables<256.0>(BoysDeviceTables*);
-template BoysStatus BoysCuda::DeviceTables<1024.0>(BoysDeviceTables*);
-template BoysStatus BoysCuda::DeviceTables<4096.0>(BoysDeviceTables*);
-template BoysStatus BoysCuda::DeviceTables<1e4>(BoysDeviceTables*);
-template BoysStatus BoysCuda::DeviceTables<16384.0>(BoysDeviceTables*);
-template BoysStatus BoysCuda::DeviceTables<65536.0>(BoysDeviceTables*);
-template BoysStatus BoysCuda::DeviceTables<1e8>(BoysDeviceTables*);
 
 // ---------------------------------------------------------------------------
 // The device option space.
@@ -3949,27 +925,21 @@ constexpr bool kFp16Served = false;
 constexpr const char* kFp16Refusal = "the fp16 seam is closed in this build (BoysFp16 = 0)";
 #endif
 
-// The documented forms, as the entries of this header state them. The multiplier m enters
-// every one, and the two constant parts that are not the lane's own bound are why the form is
-// carried beside the number: the fast f32 option's seed contribution and the fp16 lane's half
-// ULP are terms a report must state and cannot fold into one figure.
-constexpr const char* kFormF64 = "m * 5.5e-14";
-constexpr const char* kFormF32 = "m * 1.5e-7";
-constexpr const char* kFormF32Fast = "m * 1.5e-7 + 8e-8";
-constexpr const char* kFormF16 = "m * 1e-7 + half an ULP of the returned value";
+// The documented forms, as the entries of this header state them. Two constant parts that are
+// not the lane's own bound are why the form is carried beside the number: the fast f32 option's
+// seed contribution and the fp16 lane's half ULP are terms a report must state and cannot fold
+// into one figure.
+constexpr const char* kFormF64 = "5.5e-14";
+constexpr const char* kFormF32 = "1.5e-7";
+constexpr const char* kFormF32Fast = "1.5e-7 + 8e-8";
+constexpr const char* kFormF16 = "1e-7 + half an ULP of the returned value";
 
-// The figures at m = 1, with any term a returned value decides dropped, which
-// is the fp16 half ULP and nothing else: every other form is a number here.
+// The figures, with any term a returned value decides dropped, which is the
+// fp16 half ULP and nothing else: every other form is a number here.
 constexpr double kBoundF64 = 5.5e-14;
 constexpr double kBoundF32 = 1.5e-7;
 constexpr double kBoundF32Fast = 1.5e-7 + 8e-8;
 constexpr double kBoundF16 = 1e-7;
-
-// The one bound term in this table the accuracy multiplier does not scale: the fast region-B
-// exponential's corrected seed, whose form adds 8e-8 to the truncated bound. It is the
-// difference of the two figures above rather than a third spelling of 8e-8, so the rows cannot
-// drift from it.
-constexpr double kFastSeedFixed = kBoundF32Fast - kBoundF32;
 
 constexpr DeviceOptionInfo kDeviceOptions[] = {
     {DeviceEntry::kSingleF64, "single-fp64", DeviceOptionGroup::kLaunched,
@@ -3983,7 +953,7 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
     {DeviceEntry::kSingleF32Fast, "single-fp32-fast", DeviceOptionGroup::kLaunched,
      DeviceOptionPrecision::kFp32, DeviceOptionShape::kSingle, DeviceOptionQuestion::kSingle,
      DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF32Single, kBoundF32Fast,
-     kFormF32Fast, true, nullptr, kDefaultEvalScheme, kDefaultFitRoute, kFastSeedFixed},
+     kFormF32Fast, true, nullptr},
     {DeviceEntry::kSingleF16, "single-fp16", DeviceOptionGroup::kLaunched,
      DeviceOptionPrecision::kFp16, DeviceOptionShape::kSingle, DeviceOptionQuestion::kSingle,
      DeviceOptionAxis::kNone, RegionBExp::kAccurate, BoysDeviceLane::kF16Single, kBoundF16,
@@ -4017,19 +987,19 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
     {DeviceEntry::kAllOrdersF64Mono, "all-orders-fp64-mono", DeviceOptionGroup::kLaunched,
      DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kScheme, RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64,
-     kFormF64, true, nullptr, EvalScheme::kHorner},
+     kFormF64, true, nullptr},
     {DeviceEntry::kAllOrdersF64OrdersMono, "all-orders-fp64-orders-mono",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme, RegionBExp::kAccurate,
-     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kHorner},
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
     {DeviceEntry::kAllOrdersF64NarrowMono, "all-orders-fp64-narrow-mono",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme, RegionBExp::kAccurate,
-     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kHorner},
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
     {DeviceEntry::kAllOrdersF64NarrowOrdersMono, "all-orders-fp64-narrow-orders-mono",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme, RegionBExp::kAccurate,
-     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kHorner},
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
 
     // The fit route's rows, one per scheme name the surface offers on it. Both names select one
     // arithmetic - the pair is stored once and summed by Horner - so each pair of rows below
@@ -4038,42 +1008,35 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
     {DeviceEntry::kAllOrdersF64Rat, "all-orders-fp64-rat", DeviceOptionGroup::kLaunched,
      DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRoute, RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64,
-     kFormF64, true, nullptr, EvalScheme::kSplitClenshaw, FitRoute::kRationalMinimax},
+     kFormF64, true, nullptr},
     {DeviceEntry::kAllOrdersF64RatHorner, "all-orders-fp64-rat-horner",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
-     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kHorner,
-     FitRoute::kRationalMinimax},
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
     {DeviceEntry::kAllOrdersF64OrdersRat, "all-orders-fp64-orders-rat",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
-     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kSplitClenshaw,
-     FitRoute::kRationalMinimax},
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
     {DeviceEntry::kAllOrdersF64OrdersRatHorner, "all-orders-fp64-orders-rat-horner",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
-     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kHorner,
-     FitRoute::kRationalMinimax},
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
     {DeviceEntry::kAllOrdersF64NarrowRat, "all-orders-fp64-narrow-rat",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
-     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kSplitClenshaw,
-     FitRoute::kRationalMinimax},
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
     {DeviceEntry::kAllOrdersF64NarrowRatHorner, "all-orders-fp64-narrow-rat-horner",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
-     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kHorner,
-     FitRoute::kRationalMinimax},
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
     {DeviceEntry::kAllOrdersF64NarrowOrdersRat, "all-orders-fp64-narrow-orders-rat",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
-     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kSplitClenshaw,
-     FitRoute::kRationalMinimax},
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
     {DeviceEntry::kAllOrdersF64NarrowOrdersRatHorner, "all-orders-fp64-narrow-orders-rat-horner",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
-     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kHorner,
-     FitRoute::kRationalMinimax},
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
 
     // The uniform route's four rows. One route and not four: the table stores both forms of
     // every fit and both are certified (the two rows of kFlatRows), and it stores one fit per
@@ -4093,19 +1056,19 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
     {DeviceEntry::kAllOrdersF64Uniform, "all-orders-fp64-uniform",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kPartition, RegionBExp::kAccurate,
-     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kSplitClenshaw},
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
     {DeviceEntry::kAllOrdersF64UniformHorner, "all-orders-fp64-uniform-horner",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme, RegionBExp::kAccurate,
-     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kHorner},
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
     {DeviceEntry::kAllOrdersF64OrdersUniform, "all-orders-fp64-orders-uniform",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kPartition, RegionBExp::kAccurate,
-     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kSplitClenshaw},
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
     {DeviceEntry::kAllOrdersF64OrdersUniformHorner, "all-orders-fp64-orders-uniform-horner",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme, RegionBExp::kAccurate,
-     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kHorner},
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
 
     // The same grid on its RATIONAL route, the four rows the enumerators above name. The pair is
     // stored in the monomial form the family is stored in everywhere, so both scheme names reach
@@ -4115,54 +1078,44 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
     {DeviceEntry::kAllOrdersF64UniformRat, "all-orders-fp64-uniform-rat",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
-     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kSplitClenshaw,
-     FitRoute::kRationalMinimax},
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
     {DeviceEntry::kAllOrdersF64UniformRatHorner, "all-orders-fp64-uniform-rat-horner",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
-     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kHorner,
-     FitRoute::kRationalMinimax},
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
     {DeviceEntry::kAllOrdersF64OrdersUniformRat, "all-orders-fp64-orders-uniform-rat",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
-     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kSplitClenshaw,
-     FitRoute::kRationalMinimax},
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
     {DeviceEntry::kAllOrdersF64OrdersUniformRatHorner, "all-orders-fp64-orders-uniform-rat-horner",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
-     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr, EvalScheme::kHorner,
-     FitRoute::kRationalMinimax},
+     BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
 
     // The float lane's own partition and its own grid, which the device lane had no row for. Both
     // are the lane's tables and not a re-cut of the double lane's: the narrow pieces are the float
     // lane's 218 at degree 6 against the double lane's 311 at degree 10, and the grid is 245
     // intervals at degree 4.
     //
-    // The grid's two rows serve every rung of this lane, because no rung's criterion cuts a table
-    // stored at one degree per order and interval: the rung's arithmetic is that one degree, and
-    // what a rung of it does not buy is less work. The narrow partition's two rows carry every
-    // rung too, each in its own basis - FillNarrowF32Lane's Chebyshev table for the row above,
-    // FillNarrowMonoF32Lane's monomial one for the row below - beside the double lane's region-A
-    // cut the same upload carries. Each row's own entry states the rungs it answers at, and the
-    // rung mask the report carries is read from that statement and not listed here.
+    // The grid's rows read the table's one degree per order and interval. The narrow
+    // partition's two rows each carry their own basis: the Chebyshev table for the row above,
+    // the monomial one for the row below.
     {DeviceEntry::kAllOrdersF32Narrow, "all-orders-fp32-narrow",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kPartition, RegionBExp::kAccurate,
-     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr,
-     EvalScheme::kSplitClenshaw},
+     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
     {DeviceEntry::kAllOrdersF32NarrowMono, "all-orders-fp32-narrow-mono",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme, RegionBExp::kAccurate,
-     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr, EvalScheme::kHorner},
+     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
     {DeviceEntry::kAllOrdersF32Uniform, "all-orders-fp32-uniform",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kPartition, RegionBExp::kAccurate,
-     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr,
-     EvalScheme::kSplitClenshaw},
+     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
     {DeviceEntry::kAllOrdersF32UniformHorner, "all-orders-fp32-uniform-horner",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme, RegionBExp::kAccurate,
-     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr, EvalScheme::kHorner},
+     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
 
 
     // The float lane's rational route, one pair of rows per partition. The route is a family
@@ -4176,42 +1129,35 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
     {DeviceEntry::kAllOrdersF32Rat, "all-orders-fp32-rat", DeviceOptionGroup::kLaunched,
      DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRoute, RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32,
-     kFormF32, true, nullptr, EvalScheme::kSplitClenshaw, FitRoute::kRationalMinimax},
+     kFormF32, true, nullptr},
     {DeviceEntry::kAllOrdersF32RatHorner, "all-orders-fp32-rat-horner",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
-     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr, EvalScheme::kHorner,
-     FitRoute::kRationalMinimax},
+     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
     {DeviceEntry::kAllOrdersF32NarrowRat, "all-orders-fp32-narrow-rat",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
-     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr, EvalScheme::kSplitClenshaw,
-     FitRoute::kRationalMinimax},
+     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
     {DeviceEntry::kAllOrdersF32NarrowRatHorner, "all-orders-fp32-narrow-rat-horner",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
-     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr, EvalScheme::kHorner,
-     FitRoute::kRationalMinimax},
+     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
     // The grid on the rational route, the float lane's own member over its own intervals. The
     // bound is this lane's, as the piecewise rational rows' is: the member is certified in this
     // lane's arithmetic against this lane's bar.
     {DeviceEntry::kAllOrdersF32UniformRat, "all-orders-fp32-uniform-rat",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
-     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr, EvalScheme::kSplitClenshaw,
-     FitRoute::kRationalMinimax},
+     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
     {DeviceEntry::kAllOrdersF32UniformRatHorner, "all-orders-fp32-uniform-rat-horner",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
-     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr, EvalScheme::kHorner,
-     FitRoute::kRationalMinimax},
+     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
 
-    // The float lane's other packing axis, the counterpart of the shipped, narrow and rational
+    // The float lane's other packing axis, the counterpart of the coarsest, narrow and rational
     // rows above. The bound each row states is the row it answers with: the axis changes which
     // fit an order's value is read from in region A and not the lane's arithmetic or the accuracy
-    // of the stored table, so a row of it carries its per-argument twin's figure and form. The
-    // rung mask is read from the entry, as every row's is, and nothing here states it a second
-    // time.
+    // of the stored table, so a row of it carries its per-argument twin's figure and form.
     {DeviceEntry::kAllOrdersF32Orders, "all-orders-fp32-orders", DeviceOptionGroup::kLaunched,
      DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kPacking, RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32,
@@ -4223,35 +1169,31 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
     {DeviceEntry::kAllOrdersF32NarrowOrdersMono, "all-orders-fp32-narrow-orders-mono",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme, RegionBExp::kAccurate,
-     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr, EvalScheme::kHorner},
+     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
     {DeviceEntry::kAllOrdersF32OrdersRat, "all-orders-fp32-orders-rat",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
-     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr, EvalScheme::kSplitClenshaw,
-     FitRoute::kRationalMinimax},
+     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
     {DeviceEntry::kAllOrdersF32OrdersRatHorner, "all-orders-fp32-orders-rat-horner",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
-     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr, EvalScheme::kHorner,
-     FitRoute::kRationalMinimax},
+     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
     {DeviceEntry::kAllOrdersF32NarrowOrdersRat, "all-orders-fp32-narrow-orders-rat",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
-     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr, EvalScheme::kSplitClenshaw,
-     FitRoute::kRationalMinimax},
+     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
     {DeviceEntry::kAllOrdersF32NarrowOrdersRatHorner, "all-orders-fp32-narrow-orders-rat-horner",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
-     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr, EvalScheme::kHorner,
-     FitRoute::kRationalMinimax},
+     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
     {DeviceEntry::kAllOrdersF32OrdersUniform, "all-orders-fp32-orders-uniform",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kPartition, RegionBExp::kAccurate,
-     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr, EvalScheme::kSplitClenshaw},
+     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
     {DeviceEntry::kAllOrdersF32OrdersUniformHorner, "all-orders-fp32-orders-uniform-horner",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme, RegionBExp::kAccurate,
-     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr, EvalScheme::kHorner},
+     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
 
     // The same two rows on the lane's other packing axis, which for this route has one member:
     // the grid's rows are stored per interval at the interval's own pair, so no gather has a
@@ -4259,13 +1201,11 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
     {DeviceEntry::kAllOrdersF32OrdersUniformRat, "all-orders-fp32-orders-uniform-rat",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
-     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr, EvalScheme::kSplitClenshaw,
-     FitRoute::kRationalMinimax},
+     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
     {DeviceEntry::kAllOrdersF32OrdersUniformRatHorner, "all-orders-fp32-orders-uniform-rat-horner",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
-     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr, EvalScheme::kHorner,
-     FitRoute::kRationalMinimax},
+     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
 
     {DeviceEntry::kAllNF64, "all-n-fp64", DeviceOptionGroup::kLaunched,
      DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllN, DeviceOptionQuestion::kAllN,
@@ -4291,8 +1231,7 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
     {DeviceEntry::kDeviceSingleF32Fast, "device-single-fp32-fast",
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp32, DeviceOptionShape::kSingle,
      DeviceOptionQuestion::kSingle, DeviceOptionAxis::kRegionBExp, RegionBExp::kFast,
-     BoysDeviceLane::kF32Single, kBoundF32Fast, kFormF32Fast, true, nullptr, kDefaultEvalScheme,
-     kDefaultFitRoute, kFastSeedFixed},
+     BoysDeviceLane::kF32Single, kBoundF32Fast, kFormF32Fast, true, nullptr},
     {DeviceEntry::kDeviceSingleF16, "device-single-fp16", DeviceOptionGroup::kDeviceCallable,
      DeviceOptionPrecision::kFp16, DeviceOptionShape::kSingle, DeviceOptionQuestion::kSingle,
      DeviceOptionAxis::kNone, RegionBExp::kAccurate, BoysDeviceLane::kF16Single, kBoundF16,
@@ -4343,9 +1282,7 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
     // option its launched row above names, in the group a caller reaches through the handle
     // instead of through a launch: precision, shape, question, axis, scheme, route, lane and
     // bound are that row's, because the arithmetic is that row's, and the two rows differ in the
-    // group and the name. The rung axis is the launched row's too, read from that row
-    // (DeviceEntryServedAtRung) rather than stated again here, so the two rows of an option
-    // cannot disagree about which rungs this build holds a cut for.
+    // group and the name.
     {DeviceEntry::kDeviceAllOrdersF64Narrow, "device-all-orders-fp64-narrow",
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kPartition,
@@ -4353,38 +1290,31 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
     {DeviceEntry::kDeviceAllOrdersF64NarrowMono, "device-all-orders-fp64-narrow-mono",
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme,
-     RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr,
-     EvalScheme::kHorner},
+     RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
     {DeviceEntry::kDeviceAllOrdersF64Rat, "device-all-orders-fp64-rat",
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr,
-     EvalScheme::kSplitClenshaw, FitRoute::kRationalMinimax},
+     RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
     {DeviceEntry::kDeviceAllOrdersF64RatHorner, "device-all-orders-fp64-rat-horner",
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr,
-     EvalScheme::kHorner, FitRoute::kRationalMinimax},
+     RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
     {DeviceEntry::kDeviceAllOrdersF64NarrowRat, "device-all-orders-fp64-narrow-rat",
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr,
-     EvalScheme::kSplitClenshaw, FitRoute::kRationalMinimax},
+     RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
     {DeviceEntry::kDeviceAllOrdersF64NarrowRatHorner, "device-all-orders-fp64-narrow-rat-horner",
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr,
-     EvalScheme::kHorner, FitRoute::kRationalMinimax},
+     RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
     {DeviceEntry::kDeviceAllOrdersF64Uniform, "device-all-orders-fp64-uniform",
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kPartition,
-     RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr,
-     EvalScheme::kSplitClenshaw},
+     RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
     {DeviceEntry::kDeviceAllOrdersF64UniformHorner, "device-all-orders-fp64-uniform-horner",
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme,
-     RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr,
-     EvalScheme::kHorner},
+     RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
 
     // The grid's rational member, in the caller's own kernel. Every launched row of this lane has
     // a device-callable twin, and this one's is the same body: the entry reads the handle's
@@ -4392,65 +1322,53 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
     {DeviceEntry::kDeviceAllOrdersF64UniformRat, "device-all-orders-fp64-uniform-rat",
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr,
-     EvalScheme::kSplitClenshaw, FitRoute::kRationalMinimax},
+     RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
     {DeviceEntry::kDeviceAllOrdersF64UniformRatHorner, "device-all-orders-fp64-uniform-rat-horner",
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr,
-     EvalScheme::kHorner, FitRoute::kRationalMinimax},
+     RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
 
     {DeviceEntry::kDeviceAllOrdersF32Narrow, "device-all-orders-fp32-narrow",
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp32,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kPartition,
-     RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr,
-     EvalScheme::kSplitClenshaw},
+     RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
     {DeviceEntry::kDeviceAllOrdersF32NarrowMono, "device-all-orders-fp32-narrow-mono",
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp32,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme,
-     RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr,
-     EvalScheme::kHorner},
+     RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
     {DeviceEntry::kDeviceAllOrdersF32Rat, "device-all-orders-fp32-rat",
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp32,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr,
-     EvalScheme::kSplitClenshaw, FitRoute::kRationalMinimax},
+     RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
     {DeviceEntry::kDeviceAllOrdersF32RatHorner, "device-all-orders-fp32-rat-horner",
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp32,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr,
-     EvalScheme::kHorner, FitRoute::kRationalMinimax},
+     RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
     {DeviceEntry::kDeviceAllOrdersF32NarrowRat, "device-all-orders-fp32-narrow-rat",
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp32,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr,
-     EvalScheme::kSplitClenshaw, FitRoute::kRationalMinimax},
+     RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
     {DeviceEntry::kDeviceAllOrdersF32NarrowRatHorner, "device-all-orders-fp32-narrow-rat-horner",
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp32,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr,
-     EvalScheme::kHorner, FitRoute::kRationalMinimax},
+     RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
     {DeviceEntry::kDeviceAllOrdersF32Uniform, "device-all-orders-fp32-uniform",
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp32,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kPartition,
-     RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr,
-     EvalScheme::kSplitClenshaw},
+     RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
     {DeviceEntry::kDeviceAllOrdersF32UniformHorner, "device-all-orders-fp32-uniform-horner",
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp32,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme,
-     RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr,
-     EvalScheme::kHorner},
+     RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
 
     {DeviceEntry::kDeviceAllOrdersF32UniformRat, "device-all-orders-fp32-uniform-rat",
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp32,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr,
-     EvalScheme::kSplitClenshaw, FitRoute::kRationalMinimax},
+     RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
     {DeviceEntry::kDeviceAllOrdersF32UniformRatHorner, "device-all-orders-fp32-uniform-rat-horner",
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp32,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr,
-     EvalScheme::kHorner, FitRoute::kRationalMinimax},
+     RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
 };
 
 // The report's contract, checked at compile time: one row per DeviceEntry, row i is entry i.

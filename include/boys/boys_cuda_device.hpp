@@ -48,11 +48,9 @@
 /// Every failure is a BoysDeviceStatus the caller branches on, and a call that fails
 /// writes nothing: no truncated ladder, no partial fill. An order outside the range is
 /// \c kOrderOutOfRange; an order whose values do not fit the caller's array is
-/// \c kCapacityTooSmall; a handle that carries no tables is \c kTablesNotReady; a
-/// multiplier that is not the resident rung is \c kMultiplierNotResident. The checks
-/// are ordered tables, then order, then capacity, then rung: a request that is
-/// malformed is reported as malformed whether or not the rung it names is resident, so
-/// a caller that sees \c kMultiplierNotResident has a well-formed request and one thing
+/// \c kCapacityTooSmall; a handle that carries no tables is \c kTablesNotReady. The
+/// checks are ordered tables, then order, then capacity: a request that is malformed is
+/// reported as malformed, so a caller branching on these statuses always has one thing
 /// to fix.
 ///
 /// **Cost in registers.** A caller keeping the whole ladder live holds order + 1
@@ -75,34 +73,15 @@
 /// without the qualifier and reads the handle through a generic pointer, which
 /// is correct and slower; the arithmetic is identical either way.
 ///
-/// **The accuracy multiplier.** Every entry takes the multiplier as its last argument,
-/// defaulted to m = 1, so the default is the strictest rung and a call can never be
-/// relaxed by omission. The rung is a run-time argument here rather than the template
-/// argument the batch entries take, because it replaces a degree table read inside the
-/// caller's own kernel rather than selecting a kernel: one compiled entry serves every
-/// rung, and the caller names the rung where its own work decides it.
+/// **Accuracy.** Every entry answers with the arithmetic its tables were stored at,
+/// which is the arithmetic the corresponding batch entry documents: the bound below is
+/// the lane's own figure and not a multiple of it.
 ///
-/// A rung is served only while it is resident. The relaxed degree tables are one set,
-/// cut for one multiplier at a time — the one the last BoysCuda::DeviceTables call
-/// named, on the same per-(device, m) upload the batch entries share — so an entry
-/// asked for any other rung returns \c kMultiplierNotResident and writes nothing,
-/// rather than running the full-accuracy arithmetic under a relaxed name or a relaxed
-/// one under a name that promises more. m = 1 needs no such table, is resident from the
-/// first upload, and is never refused this way.
-///
-/// The multiplier is matched exactly against the one DeviceTables was instantiated
-/// with, and a value below 1.0 is refused like any other rung that is not resident (the
-/// library's compile-time entries make it a compile-time error; here it is a status).
-/// So a caller names a rung the way the library does — one of the twelve of
-/// kDeviceRungs (boys_cuda_options.hpp): the option space's 1, 64, 256, 1024, 4096,
-/// 16384 and 65536, beside this lane's own 1, 2, 10, 100, 1e4 and 1e8 — and reads the
-/// status instead of assuming the rung is still the resident one.
-///
-/// **The bound.** Every entry holds the lane's documented bound for its precision at
-/// the rung it was asked for — the same bound the corresponding batch entry documents,
-/// because it is the same arithmetic: m times the m = 1 bound. The device gate measures
-/// these entries against the committed high-precision reference grid at every rung, and
-/// reports the worst ratio in the same vocabulary as every other lane.
+/// **The bound.** Every entry holds the lane's documented bound for its precision: the
+/// same bound the corresponding batch entry documents, because it is the same
+/// arithmetic. The device gate measures these entries against the committed
+/// high-precision reference grid and reports the worst ratio in the same vocabulary as
+/// every other lane.
 ///
 /// \ingroup boys
 
@@ -130,20 +109,14 @@ enum class BoysDeviceStatus : int {
     /// The caller's array holds fewer than order + 1 values. Nothing was
     /// written.
     kCapacityTooSmall,
-    /// The handle carries no relaxed degree tables for the multiplier the call
-    /// named: a different rung is the resident one, or none has been uploaded.
-    /// Nothing was written. The full-accuracy rung, m = 1, is never refused
-    /// this way — it is the table the handle carries from the first upload.
-    kMultiplierNotResident,
 };
 
 /// \cond
 namespace detail {
 
-// Where a lane's effective degrees come from, resolved once per call rather than once
-// per order. The rungs differ here and nowhere else: the piece edges, the coefficient
-// pool and the piece count are the same tables for every multiplier, and the degree a
-// fit is cut to is the whole of what a rung buys.
+// Where a lane's degrees come from, resolved once per call rather than once per order:
+// the piece edges, the coefficient pool and the piece count are the handle's tables,
+// and the degrees a lane reads are the ones its tables were stored at.
 //
 // The region-A table is read in the calling lane's own piece indexing — the double
 // lane's for kF64Single, kF64Batch, kF32Batch and kF16Batch, whose region-A seed is
@@ -289,202 +262,26 @@ __device__ __forceinline__ bool DeviceOrderValid(int order) {
     return order >= 0 && order <= kMaxBoysOrder;
 }
 
-// Which lane's degrees a call reads, resolved once per call from the rung the caller
-// named. m = 1 reads the handle's own full-accuracy tables, and every other rung reads
-// the resident relaxed set, which the lane index selects.
-//
-// The lanes whose region-A seed is the double piece table are the double single entry
-// and the three family entries; the two single entries of the narrow precisions seed
-// from the float piece table. That is the same split the batch kernels' lane objects
-// make (boys_cuda.cu), and it is what makes the piece index below the calling lane's
-// own.
+// Which lane's degrees a call reads, resolved once per call. The lanes whose region-A
+// seed is the double piece table are the double entries and the two batch entries of
+// the narrow precisions; the two single entries of the narrow precisions seed from the
+// float piece table. That is the same split the batch kernels' lane objects make
+// (boys_cuda.cu), and it is what makes the piece index below the calling lane's own.
 //
 // The batch lanes read the order-0 region-B entry and the single lanes the entry for
-// the order the recursion has reached; stride carries that, and stride 0 is also what
-// the full-accuracy case reads, where the degree is one scalar in the handle rather
-// than a table.
+// the order the recursion has reached; stride carries that, and stride 0 is what every
+// call reads here, where the degree is one scalar in the handle rather than a table.
 template <BoysDeviceLane kLane>
-__device__ __forceinline__ BoysDeviceStatus DeviceDegrees(
-    const BoysDeviceTables& tables, double multiplier, Degrees* out) {
-    constexpr int kLaneIndex = static_cast<int>(kLane);
+__device__ __forceinline__ Degrees DeviceStoredDegrees(const BoysDeviceTables& tables) {
     constexpr bool kDoublePieces =
         kLane != BoysDeviceLane::kF32Single && kLane != BoysDeviceLane::kF16Single;
-    constexpr bool kBatch = kLane == BoysDeviceLane::kF64Batch ||
-                            kLane == BoysDeviceLane::kF32Batch ||
-                            kLane == BoysDeviceLane::kF16Batch;
 
-    if (multiplier == kBoysFullAccuracyMultiplier)
-    {
-        out->regionA = kDoublePieces ? tables.pieceDeg : tables.pieceDeg32;
-        out->regionB =
-            kDoublePieces ? static_cast<const int*>(&tables.bSeedDeg) : &tables.bSeedDeg32;
-        out->stride = 0;
-        return BoysDeviceStatus::kSuccess;
-    }
-
-    if (multiplier < kBoysFullAccuracyMultiplier || tables.relaxedRung == nullptr ||
-        *tables.relaxedRung != multiplier || tables.relaxedDegA[kLaneIndex] == nullptr ||
-        tables.relaxedDegB[kLaneIndex] == nullptr)
-    {
-        return BoysDeviceStatus::kMultiplierNotResident;
-    }
-
-    out->regionA = tables.relaxedDegA[kLaneIndex];
-    out->regionB = tables.relaxedDegB[kLaneIndex];
-    out->stride = kBatch ? 0 : 1;
-    return BoysDeviceStatus::kSuccess;
-}
-
-// Where a narrow-partition lane's degrees come from, resolved once per call. The
-// partition's piece indexing is its own — order n's pieces are entries n and n+1
-// of the handle's narrowPieceStart — so both tables are read at that index and
-// no stride constant has to agree with the library.
-//
-// regionB is the resident rung's cut of region B's seed, one degree per piece
-// and per order of the recursion, and the piece's own order-0 entry is the one a
-// batch-shaped lane reads because that seed is F_0's fit. It is null at the
-// full-accuracy multiplier, where the seed is stored at one degree for every
-// piece and that degree is a constant of the table rather than a value the
-// handle carries.
-struct NarrowDegrees {
-    const int* regionA;
-    const int* regionB;
-};
-
-template <bool kMonomial>
-__device__ __forceinline__ BoysDeviceStatus DeviceNarrowDegrees(
-    const BoysDeviceTables& tables, double multiplier, NarrowDegrees* out) {
-    const int* const cutA =
-        kMonomial ? tables.narrowMonoRelaxedDegA : tables.narrowRelaxedDegA;
-    const int* const cutB =
-        kMonomial ? tables.narrowMonoRelaxedDegB : tables.narrowRelaxedDegB;
-
-    if (multiplier == kBoysFullAccuracyMultiplier)
-    {
-        out->regionA = tables.narrowStoredDeg;
-        out->regionB = nullptr;
-        return BoysDeviceStatus::kSuccess;
-    }
-
-    if (multiplier < kBoysFullAccuracyMultiplier || tables.relaxedRung == nullptr ||
-        *tables.relaxedRung != multiplier || cutA == nullptr || cutB == nullptr)
-    {
-        return BoysDeviceStatus::kMultiplierNotResident;
-    }
-
-    out->regionA = cutA;
-    out->regionB = cutB;
-    return BoysDeviceStatus::kSuccess;
-}
-
-// Where the float lane's narrow partition's region-B seed is cut at the resident
-// rung: one table per basis, and null at the full-accuracy multiplier, where the
-// seed is stored at one degree for every piece and that degree is a constant of
-// the table rather than a value the handle carries.
-//
-// Region A has no table beside it on this lane: these entries seed region A from
-// the double lane's narrow pieces, which is what DeviceNarrowDegrees resolves for
-// the seed lane of the same call, so the half a rung cuts for this lane is
-// region B's and the two resolvers are one pair.
-template <bool kMonomial>
-__device__ __forceinline__ BoysDeviceStatus DeviceNarrowDegrees32(
-    const BoysDeviceTables& tables, double multiplier, const int** out) {
-    const int* const cutB =
-        kMonomial ? tables.narrowMonoRelaxedDegB32 : tables.narrowRelaxedDegB32;
-
-    if (multiplier == kBoysFullAccuracyMultiplier)
-    {
-        *out = nullptr;
-        return BoysDeviceStatus::kSuccess;
-    }
-
-    if (multiplier < kBoysFullAccuracyMultiplier || tables.relaxedRung == nullptr ||
-        *tables.relaxedRung != multiplier || cutB == nullptr)
-    {
-        return BoysDeviceStatus::kMultiplierNotResident;
-    }
-
-    *out = cutB;
-    return BoysDeviceStatus::kSuccess;
-}
-
-// Where the float lane's fit route's region-B pair is cut at the resident rung:
-// false at the full-accuracy multiplier, where the pair is read at the degrees
-// the table carries, and true at a rung whose cut the handle holds. It is the
-// float counterpart of RatDegrees' reading one lane down.
-//
-// Region A needs no table beside it here either: these entries seed region A from
-// the double lane's pairs, which is what DeviceRatDegrees resolves for the seed
-// lane of the same call, so the half a rung cuts for this lane is region B's.
-template <bool kNarrow>
-__device__ __forceinline__ BoysDeviceStatus DeviceRatDegrees32(
-    const BoysDeviceTables& tables, double multiplier, bool* relaxed) {
-    if (multiplier == kBoysFullAccuracyMultiplier)
-    {
-        *relaxed = false;
-        return BoysDeviceStatus::kSuccess;
-    }
-
-    const int* const cut = kNarrow ? tables.narrowRatRelaxedDegB32 : tables.ratRelaxedDegB32;
-
-    if (multiplier < kBoysFullAccuracyMultiplier || tables.relaxedRung == nullptr ||
-        *tables.relaxedRung != multiplier || cut == nullptr)
-    {
-        return BoysDeviceStatus::kMultiplierNotResident;
-    }
-
-    *relaxed = true;
-    return BoysDeviceStatus::kSuccess;
-}
-
-// Where a fit-route lane's region-A degrees come from, resolved once per call.
-// The route's cut is a pair per piece and comes in two readings, and the reading
-// a device-callable entry makes is the ladder's: region A descends from the top
-// order's own piece, so the cut the handle carries is the one that reading takes.
-//
-// The two members are the pair's two degrees and the stride says how to reach
-// the denominator from the numerator: the stored degrees are two tables of one
-// degree per piece, and a cut leaves them interleaved with the denominator
-// second, which is why the resident rung's reading is one pointer and a stride.
-//
-// relaxed says which of the route's two readings of a degree this rung is: the
-// degrees the fit was stored at, or the resident rung's cut of them. Region B's
-// seed is read whole rather than per piece on the shipped partition, so its
-// degrees are matched to the same reading, and a lane that read the cut while
-// the call was for the stored degrees — or the other way round — would sum a
-// fit it was not asked for.
-struct RatDegrees {
-    const int* num;
-    const int* den;
-    int stride;
-    bool relaxed;
-};
-
-template <bool kNarrow>
-__device__ __forceinline__ BoysDeviceStatus DeviceRatDegrees(
-    const BoysDeviceTables& tables, double multiplier, RatDegrees* out) {
-    if (multiplier == kBoysFullAccuracyMultiplier)
-    {
-        out->num = kNarrow ? tables.narrowRatNumDeg : tables.ratNumDeg;
-        out->den = kNarrow ? tables.narrowRatDenDeg : tables.ratDenDeg;
-        out->stride = 1;
-        out->relaxed = false;
-        return BoysDeviceStatus::kSuccess;
-    }
-
-    const int* const cut = kNarrow ? tables.narrowRatSeedDeg : tables.ratSeedDeg;
-
-    if (multiplier < kBoysFullAccuracyMultiplier || tables.relaxedRung == nullptr ||
-        *tables.relaxedRung != multiplier || cut == nullptr)
-    {
-        return BoysDeviceStatus::kMultiplierNotResident;
-    }
-
-    out->num = cut;
-    out->den = cut + 1;
-    out->stride = 2;
-    out->relaxed = true;
-    return BoysDeviceStatus::kSuccess;
+    Degrees out;
+    out.regionA = kDoublePieces ? tables.pieceDeg : tables.pieceDeg32;
+    out.regionB =
+        kDoublePieces ? static_cast<const int*>(&tables.bSeedDeg) : &tables.bSeedDeg32;
+    out.stride = 0;
+    return out;
 }
 
 // The narrow partition as a lane object, one per stored form of region A. The
@@ -499,7 +296,6 @@ __device__ __forceinline__ BoysDeviceStatus DeviceRatDegrees(
 template <bool kMono>
 struct NarrowLane64 {
     const BoysDeviceTables* tables;
-    NarrowDegrees deg;
 
     static constexpr bool kMonomial = kMono;
 
@@ -522,7 +318,7 @@ struct NarrowLane64 {
     }
 
     __device__ __forceinline__ int Deg(int order, int piece) const {
-        return deg.regionA[tables->narrowPieceStart[order] + piece];
+        return tables->narrowStoredDeg[tables->narrowPieceStart[order] + piece];
     }
 
     __device__ __forceinline__ double BSeed(double x, int) const {
@@ -537,20 +333,17 @@ struct NarrowLane64 {
         const double b = tables->narrowBEdges[piece + 1];
         const double t = 2.0 * (x - a) / (b - a) - 1.0;
         const double* const c = kMono ? tables->narrowBMonoCoeffs : tables->narrowBCoeffs;
-        const int stored = kNarrowBDeg;
-        const int cut = deg.regionB == nullptr
-                            ? stored
-                            : deg.regionB[piece * (kMaxBoysOrder + 1)];
+        const int degree = kNarrowBDeg;
 
         // The form of the lane selects the summation here as it does in region A:
         // the two forms are one fit stored twice, and summing either one with the
         // other's reader would read the half of the table that is not there.
         if constexpr (kMono)
         {
-            return DeviceHornerMono(c + piece * (stored + 1), cut, t);
+            return DeviceHornerMono(c + piece * (degree + 1), degree, t);
         } else
         {
-            return DeviceClenshawSplit(c + piece * (stored + 1), cut, t);
+            return DeviceClenshawSplit(c + piece * (degree + 1), degree, t);
         }
     }
 };
@@ -561,13 +354,6 @@ struct NarrowLane64 {
 template <bool kMono>
 struct NarrowLane32 {
     const BoysDeviceTables* tables;
-
-    /// The resident rung's cut of region B's seed, at the piece's order-0 entry,
-    /// or null at the full-accuracy multiplier where the seed is read at the
-    /// degree the table was stored at. It is the float lane's counterpart of
-    /// NarrowLane64's \c deg.regionB, and the two are cut by the same rung from
-    /// each lane's own pieces.
-    const int* degB = nullptr;
 
     static constexpr bool kMonomial = kMono;
 
@@ -606,23 +392,20 @@ struct NarrowLane32 {
         const float t = 2.0f * (x - a) / (b - a) - 1.0f;
         const float* const c =
             kMono ? tables->narrowBMonoCoeffs32 : tables->narrowBCoeffs32;
-        const int stored = f32::kNarrowBDegF32;
-        const int cut = degB == nullptr ? stored : degB[piece * (kMaxBoysOrder + 1)];
-
-        return kMono ? DeviceHornerMono32(c + piece * (stored + 1), cut, t)
-                         : DeviceClenshawSplit32(c + piece * (stored + 1), cut, t);
+        const int degree = f32::kNarrowBDegF32;
+        return kMono ? DeviceHornerMono32(c + piece * (degree + 1), degree, t)
+                         : DeviceClenshawSplit32(c + piece * (degree + 1), degree, t);
     }
 };
 
 // The fit route as a lane object, one per partition, at the reading its entry
-// makes. Its pieces are the partition's own — the shipped piece tables for one
+// makes. Its pieces are the partition's own — the coarsest piece tables for one
 // and the narrow ones for the other — and what the lane adds is the pair: the
 // numerator's block and the denominator's, the two degrees, and the seed the
 // region-B recursion starts from.
 template <bool kNarrow>
 struct RatLane64 {
     const BoysDeviceTables* tables;
-    RatDegrees deg;
 
     static constexpr bool kRational = true;
 
@@ -663,19 +446,19 @@ struct RatLane64 {
     }
 
     __device__ __forceinline__ int NumDeg(int order, int piece) const {
-        return deg.num[Flat(order, piece) * deg.stride];
+        return (kNarrow ? tables->narrowRatNumDeg : tables->ratNumDeg)[Flat(order, piece)];
     }
 
     __device__ __forceinline__ int DenDeg(int order, int piece) const {
-        return deg.den[Flat(order, piece) * deg.stride];
+        return (kNarrow ? tables->narrowRatDenDeg : tables->ratDenDeg)[Flat(order, piece)];
     }
 
     __device__ __forceinline__ double BSeed(double x, int) const {
         if constexpr (!kNarrow)
         {
             const double t = 2.0 * (x - kX0) / (kX1 - kX0) - 1.0;
-            const int numDeg = deg.relaxed ? tables->ratRelaxedDegB[0] : kRatBnumDeg;
-            const int denDeg = deg.relaxed ? tables->ratRelaxedDegB[1] : kRatBdenDeg;
+            const int numDeg = kRatBnumDeg;
+            const int denDeg = kRatBdenDeg;
 
             return DeviceRatSum(tables->ratBNum, numDeg, tables->ratBDen, denDeg, t);
         } else
@@ -694,10 +477,8 @@ struct RatLane64 {
             const int* const denDeg = tables->narrowRatBDenDeg;
             const double* const c = tables->narrowRatBCoeffs +
                                     tables->narrowRatBOffset[piece];
-            const int numDeg = deg.relaxed ? tables->narrowRatRelaxedDegB[2 * piece]
-                                           : stored[piece];
-            const int den = deg.relaxed ? tables->narrowRatRelaxedDegB[2 * piece + 1]
-                                        : denDeg[piece];
+            const int numDeg = stored[piece];
+            const int den = denDeg[piece];
 
             return DeviceRatSum(c, numDeg, c + stored[piece] + 1, den, t);
         }
@@ -711,12 +492,6 @@ template <bool kNarrow>
 struct RatLane32 {
     const BoysDeviceTables* tables;
 
-    /// Whether the seed is read at the resident rung's cut of the pair rather
-    /// than at the degrees the table was stored at. It is the float counterpart
-    /// of RatLane64's \c deg.relaxed, and the cut table it selects is this
-    /// lane's own : the double lane's pair is other coefficients.
-    bool relaxed = false;
-
     __device__ __forceinline__ float BSeed(float x, int) const {
         const float t = 2.0f * (x - static_cast<float>(kX0)) /
                             static_cast<float>(kX1 - kX0) -
@@ -724,8 +499,8 @@ struct RatLane32 {
 
         if constexpr (!kNarrow)
         {
-            const int numDeg = relaxed ? tables->ratRelaxedDegB32[0] : f32::kRatBnumDeg;
-            const int denDeg = relaxed ? tables->ratRelaxedDegB32[1] : f32::kRatBdenDeg;
+            const int numDeg = f32::kRatBnumDeg;
+            const int denDeg = f32::kRatBdenDeg;
 
             return DeviceRatSum32(tables->ratBNum32, numDeg, tables->ratBDen32, denDeg, t);
         } else
@@ -744,16 +519,15 @@ struct RatLane32 {
             const float* const c = tables->narrowRatBCoeffs32 +
                                    tables->narrowRatBOffset32[piece];
             const int storedNum = tables->narrowRatBStoredNumDeg32[piece];
-            const int numDeg = relaxed ? tables->narrowRatRelaxedDegB32[2 * piece] : storedNum;
-            const int denDeg = relaxed ? tables->narrowRatRelaxedDegB32[2 * piece + 1]
-                                       : tables->narrowRatBDenDeg32[piece];
+            const int numDeg = storedNum;
+            const int denDeg = tables->narrowRatBDenDeg32[piece];
 
             return DeviceRatSum32(c, numDeg, c + storedNum + 1, denDeg, u);
         }
     }
 };
 
-// The readiness test for a partition or a route whose geometry is not the shipped
+// The readiness test for a partition or a route whose geometry is not the coarsest
 // piece table: the same one-pointer test as DeviceReady, on a pointer the entry's
 // own body reads.
 __device__ __forceinline__ BoysDeviceStatus DeviceGroupReady(const void* first) {
@@ -770,34 +544,6 @@ __device__ __forceinline__ BoysDeviceStatus DeviceGroupReady2(const void* first,
                                                               const void* second) {
     return first != nullptr && second != nullptr ? BoysDeviceStatus::kSuccess
                                                  : BoysDeviceStatus::kTablesNotReady;
-}
-
-// The rung test of an entry whose table has no cut to make: the full-accuracy
-// multiplier always, and another multiplier while it is the one the handle was
-// made resident at.
-//
-// A table stored at one degree for every order and every interval is admissible
-// at every rung — no rung's criterion cuts a degree out of it — so the rung a
-// call names is answered by the table's own coefficients and delivers that
-// rung's arithmetic, which is the same statement the launched rows of such a
-// route make. A call at a multiplier that is neither the full-accuracy one nor
-// the handle's resident rung is refused: that is a handle whose tables were cut
-// for another rung, and what such a call cannot be given is a table this build
-// does not hold.
-__device__ __forceinline__ BoysDeviceStatus DeviceResidentRung(const BoysDeviceTables& tables,
-                                                               double multiplier) {
-    if (multiplier == kBoysFullAccuracyMultiplier)
-    {
-        return BoysDeviceStatus::kSuccess;
-    }
-
-    if (multiplier < kBoysFullAccuracyMultiplier || tables.relaxedRung == nullptr ||
-        *tables.relaxedRung != multiplier)
-    {
-        return BoysDeviceStatus::kMultiplierNotResident;
-    }
-
-    return BoysDeviceStatus::kSuccess;
 }
 
 // The three checks every ladder-shaped entry makes before it touches a table, in
@@ -830,10 +576,6 @@ __device__ __forceinline__ BoysDeviceStatus DeviceLadderRequest(
 /// \param order      the order n, 0..kMaxBoysOrder
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_n(x); untouched unless kSuccess is returned
-/// \param multiplier the accuracy multiplier, m >= 1.0, matched exactly against
-///        the rung BoysCuda::DeviceTables made resident. The bound delivered is
-///        m times the m = 1 bound: 1e-15 below the region-A edge, 3e-14 through
-///        the extended band and region B, 5.5e-14 in region C.
 ///
 /// \pre \c x >= 0, as for the batch entries. A negative argument names a
 ///      different function than the one the tables fit, and is not checked: the
@@ -843,14 +585,12 @@ __device__ __forceinline__ BoysDeviceStatus DeviceLadderRequest(
 ///
 /// \returns kSuccess after writing F_n(x); kTablesNotReady when \c tables
 /// carries no tables; kOrderOutOfRange when \c order is outside
-/// 0..kMaxBoysOrder; kMultiplierNotResident when \c multiplier is not the
-/// resident rung. A refused call writes nothing.
+/// 0..kMaxBoysOrder. A refused call writes nothing.
 __device__ BoysDeviceStatus BoysDeviceSingleF64(
     const BoysDeviceTables& tables,
     int order,
     double x,
-    double* out,
-    double multiplier = kBoysFullAccuracyMultiplier) {
+    double* out) {
     const BoysDeviceStatus ready = detail::DeviceReady(tables);
 
     if (ready != BoysDeviceStatus::kSuccess)
@@ -863,14 +603,7 @@ __device__ BoysDeviceStatus BoysDeviceSingleF64(
         return BoysDeviceStatus::kOrderOutOfRange;
     }
 
-    detail::Degrees deg;
-    const BoysDeviceStatus rung =
-        detail::DeviceDegrees<BoysDeviceLane::kF64Single>(tables, multiplier, &deg);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
-    }
+    const detail::Degrees deg = detail::DeviceStoredDegrees<BoysDeviceLane::kF64Single>(tables);
 
     *out = detail::DeviceSingleF64(detail::TableLane64{&tables, deg}, order, x);
     return BoysDeviceStatus::kSuccess;
@@ -883,24 +616,19 @@ __device__ BoysDeviceStatus BoysDeviceSingleF64(
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_order(x), order + 1 consecutive doubles
 /// \param capacity   the number of doubles \c out holds
-/// \param multiplier the accuracy multiplier, as BoysDeviceSingleF64 states. The
-///        family reads its region-B degree at the order-0 entry, so one rung
-///        covers the whole ladder.
 ///
 /// \pre \c x >= 0, as BoysDeviceSingleF64 states.
 /// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
 ///      kCapacityTooSmall and writes nothing.
 ///
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange, kCapacityTooSmall or kMultiplierNotResident otherwise, in
-/// every case without writing.
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64(const BoysDeviceTables& tables,
                                                    int order,
                                                    double x,
                                                    double* out,
-                                                   int capacity,
-                                                   double multiplier =
-                                                       kBoysFullAccuracyMultiplier) {
+                                                   int capacity) {
     const BoysDeviceStatus ready = detail::DeviceReady(tables);
 
     if (ready != BoysDeviceStatus::kSuccess)
@@ -918,14 +646,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64(const BoysDeviceTables& table
         return BoysDeviceStatus::kCapacityTooSmall;
     }
 
-    detail::Degrees deg;
-    const BoysDeviceStatus rung =
-        detail::DeviceDegrees<BoysDeviceLane::kF64Batch>(tables, multiplier, &deg);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
-    }
+    const detail::Degrees deg = detail::DeviceStoredDegrees<BoysDeviceLane::kF64Batch>(tables);
 
     detail::DeviceAllOrdersF64(detail::TableLane64{&tables, deg}, order, x, [&](int l, double v) {
         out[l] = v;
@@ -947,19 +668,16 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64(const BoysDeviceTables& table
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_kTopOrder(x), kTopOrder + 1 consecutive
 ///                   doubles
-/// \param multiplier the accuracy multiplier, as BoysDeviceSingleF64 states
 ///
 /// \pre \c x >= 0, as BoysDeviceSingleF64 states.
 ///
 /// \returns kSuccess after writing kTopOrder + 1 values; kTablesNotReady when
-/// \c tables carries no tables, or kMultiplierNotResident when \c multiplier is
-/// not the resident rung. There is no order or capacity check: the top order is
-/// compiled in and \c out is the caller's declaration.
+/// \c tables carries no tables. There is no order or capacity check: the top
+/// order is compiled in and \c out is the caller's declaration.
 template <int kTopOrder>
 __device__ BoysDeviceStatus BoysDeviceAllNF64(const BoysDeviceTables& tables,
                                               double x,
-                                              double* out,
-                                              double multiplier = kBoysFullAccuracyMultiplier) {
+                                              double* out) {
     static_assert(kTopOrder >= 0 && kTopOrder <= kMaxBoysOrder,
                   "the top order must be inside 0..kMaxBoysOrder");
 
@@ -970,14 +688,7 @@ __device__ BoysDeviceStatus BoysDeviceAllNF64(const BoysDeviceTables& tables,
         return ready;
     }
 
-    detail::Degrees deg;
-    const BoysDeviceStatus rung =
-        detail::DeviceDegrees<BoysDeviceLane::kF64Batch>(tables, multiplier, &deg);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
-    }
+    const detail::Degrees deg = detail::DeviceStoredDegrees<BoysDeviceLane::kF64Batch>(tables);
 
     detail::DeviceAllOrdersF64(detail::TableLane64{&tables, deg}, kTopOrder, x,
                                [&](int l, double v) {
@@ -1001,21 +712,18 @@ __device__ BoysDeviceStatus BoysDeviceAllNF64(const BoysDeviceTables& tables,
 /// \param order      the top order, 0..kMaxBoysOrder
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param sink       receives (l, F_l(x)) for every l in 0..order
-/// \param multiplier the accuracy multiplier, as BoysDeviceSingleF64 states
 ///
 /// \pre \c x >= 0, as BoysDeviceSingleF64 states.
 /// \pre \c sink is device-callable and its own work does not fault.
 ///
 /// \returns kSuccess once every order has been handed to \c sink;
-/// kTablesNotReady, kOrderOutOfRange or kMultiplierNotResident otherwise, in
-/// which case \c sink is not called at all.
+/// kTablesNotReady or kOrderOutOfRange otherwise, in which case \c sink is
+/// not called at all.
 template <typename Sink>
 __device__ BoysDeviceStatus BoysDeviceEachOrderF64(const BoysDeviceTables& tables,
                                                    int order,
                                                    double x,
-                                                   Sink sink,
-                                                   double multiplier =
-                                                       kBoysFullAccuracyMultiplier) {
+                                                   Sink sink) {
     const BoysDeviceStatus ready = detail::DeviceReady(tables);
 
     if (ready != BoysDeviceStatus::kSuccess)
@@ -1028,14 +736,7 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderF64(const BoysDeviceTables& table
         return BoysDeviceStatus::kOrderOutOfRange;
     }
 
-    detail::Degrees deg;
-    const BoysDeviceStatus rung =
-        detail::DeviceDegrees<BoysDeviceLane::kF64Batch>(tables, multiplier, &deg);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
-    }
+    const detail::Degrees deg = detail::DeviceStoredDegrees<BoysDeviceLane::kF64Batch>(tables);
 
     detail::DeviceAllOrdersF64(detail::TableLane64{&tables, deg}, order, x, sink);
     return BoysDeviceStatus::kSuccess;
@@ -1049,7 +750,7 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderF64(const BoysDeviceTables& table
 /// Below the join every order is summed from its own block and none is built from
 /// another, which is why every block is stored at one degree. Above kFlatHi the call
 /// falls to the asymptotic every other route ends in, so the figure a caller places
-/// this entry by is the double batch lane's bound, scaled by m at a rung.
+/// this entry by is the double batch lane's bound.
 ///
 /// The arithmetic is the launched row's kernel's (boys_cuda.cu,
 /// BoysAllOrdersF64FlatKernel): the two differ in where the coefficients come from
@@ -1060,27 +761,19 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderF64(const BoysDeviceTables& table
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
 /// \param capacity   the number of values \c out holds
-/// \param multiplier the accuracy multiplier, m >= 1.0, matched exactly against
-///        the rung BoysCuda::DeviceTables made resident, as every entry of this
-///        header is. No rung's criterion cuts this route's table, so every resident
-///        rung is served by its own coefficients and a rung the handle is not
-///        resident for is refused with kMultiplierNotResident, as the launched rows
-///        of this route answer.
 ///
 /// \pre \c x >= 0, as BoysDeviceSingleF64 states.
 /// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
 ///      kCapacityTooSmall and writes nothing.
 ///
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange, kCapacityTooSmall or kMultiplierNotResident otherwise, in
-/// every case without writing.
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Uniform(const BoysDeviceTables& tables,
                                                           int order,
                                                           double x,
                                                           double* out,
-                                                          int capacity,
-                                                          double multiplier =
-                                                              kBoysFullAccuracyMultiplier) {
+                                                          int capacity) {
     const BoysDeviceStatus ready = detail::DeviceFlatReady(tables);
 
     if (ready != BoysDeviceStatus::kSuccess)
@@ -1096,13 +789,6 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Uniform(const BoysDeviceTables
     if (capacity < order + 1)
     {
         return BoysDeviceStatus::kCapacityTooSmall;
-    }
-
-    const BoysDeviceStatus rung = detail::DeviceResidentRung(tables, multiplier);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
     }
 
     detail::DeviceAllOrdersF64Flat<false>(tables.flatCoeffs, tables.flatMonoCoeffs,
@@ -1125,25 +811,18 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Uniform(const BoysDeviceTables
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
 /// \param capacity   the number of values \c out holds
-/// \param multiplier the accuracy multiplier, m >= 1.0, matched exactly against
-///        the rung BoysCuda::DeviceTables made resident, as every entry of this
-///        header is. No rung's criterion cuts this route's table, so every resident
-///        rung is served by its own coefficients and a rung the handle is not
-///        resident for is refused with kMultiplierNotResident, as the launched rows
-///        of this route answer.
 /// \pre \c x >= 0, as BoysDeviceSingleF64 states.
 /// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
 ///      kCapacityTooSmall and writes nothing.
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange, kCapacityTooSmall or kMultiplierNotResident otherwise, in
-/// every case without writing.
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64UniformHorner(
     const BoysDeviceTables& tables,
     int order,
     double x,
     double* out,
-    int capacity,
-    double multiplier = kBoysFullAccuracyMultiplier) {
+    int capacity) {
     const BoysDeviceStatus ready = detail::DeviceFlatReady(tables);
 
     if (ready != BoysDeviceStatus::kSuccess)
@@ -1159,13 +838,6 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64UniformHorner(
     if (capacity < order + 1)
     {
         return BoysDeviceStatus::kCapacityTooSmall;
-    }
-
-    const BoysDeviceStatus rung = detail::DeviceResidentRung(tables, multiplier);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
     }
 
     detail::DeviceAllOrdersF64Flat<true>(tables.flatCoeffs, tables.flatMonoCoeffs,
@@ -1191,15 +863,12 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64UniformHorner(
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
 /// \param capacity   the caller's out capacity, which must be >= order + 1
-/// \param multiplier the rung, which this route reads no degree of
 /// \return kSuccess, or a refusal naming the argument that was not servable
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64UniformRat(const BoysDeviceTables& tables,
                                                              int order,
                                                              double x,
                                                              double* out,
-                                                             int capacity,
-                                                             double multiplier =
-                                                                 kBoysFullAccuracyMultiplier) {
+                                                             int capacity) {
     const BoysDeviceStatus ready = detail::DeviceFlatRatReady(tables);
 
     if (ready != BoysDeviceStatus::kSuccess)
@@ -1215,13 +884,6 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64UniformRat(const BoysDeviceTab
     if (capacity < order + 1)
     {
         return BoysDeviceStatus::kCapacityTooSmall;
-    }
-
-    const BoysDeviceStatus rung = detail::DeviceResidentRung(tables, multiplier);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
     }
 
     detail::DeviceAllOrdersF64FlatRat(tables.flatRatCoeffs, tables.flatRatNumDeg,
@@ -1242,7 +904,6 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64UniformRat(const BoysDeviceTab
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_order(x), order + 1 consecutive doubles
 /// \param capacity   the number of doubles \c out holds
-/// \param multiplier the accuracy multiplier, as BoysDeviceSingleF64 states
 ///
 /// \returns what BoysDeviceAllOrdersF64UniformRat returns, and its refusals with
 /// it: this name is that entry's and adds none of its own.
@@ -1251,15 +912,14 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64UniformRatHorner(
     int order,
     double x,
     double* out,
-    int capacity,
-    double multiplier = kBoysFullAccuracyMultiplier) {
-    return BoysDeviceAllOrdersF64UniformRat(tables, order, x, out, capacity, multiplier);
+    int capacity) {
+    return BoysDeviceAllOrdersF64UniformRat(tables, order, x, out, capacity);
 }
 
 /// F_n(x) in single precision, inside the caller's kernel.
 ///
 /// The float lane's bound is the one the f32 batch entries document; this
-/// entry is the same arithmetic at m = 1, and it takes the lane's own choice of
+/// entry is the same arithmetic, and it takes the lane's own choice of
 /// region-B exponential.
 ///
 /// \tparam kExp  the region-B exponential to evaluate; the default is
@@ -1278,20 +938,16 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64UniformRatHorner(
 /// \param order      the order n, 0..kMaxBoysOrder
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_n(x); untouched unless kSuccess is returned
-/// \param multiplier the accuracy multiplier, as BoysDeviceSingleF64 states. The
-///        bound delivered is m times the one the option above names.
 ///
 /// \pre \c x >= 0; \c out is a device-writable location for one float.
 ///
 /// \returns kSuccess after writing F_n(x); kTablesNotReady, kOrderOutOfRange or
-/// kMultiplierNotResident otherwise, without writing.
+/// otherwise, without writing.
 template <RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceSingleF32(const BoysDeviceTables& tables,
                                                 int order,
                                                 float x,
-                                                float* out,
-                                                double multiplier =
-                                                    kBoysFullAccuracyMultiplier) {
+                                                float* out) {
     const BoysDeviceStatus ready = detail::DeviceReady(tables);
 
     if (ready != BoysDeviceStatus::kSuccess)
@@ -1304,14 +960,7 @@ __device__ BoysDeviceStatus BoysDeviceSingleF32(const BoysDeviceTables& tables,
         return BoysDeviceStatus::kOrderOutOfRange;
     }
 
-    detail::Degrees deg;
-    const BoysDeviceStatus rung =
-        detail::DeviceDegrees<BoysDeviceLane::kF32Single>(tables, multiplier, &deg);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
-    }
+    const detail::Degrees deg = detail::DeviceStoredDegrees<BoysDeviceLane::kF32Single>(tables);
 
     *out = detail::DeviceSingleF32<kExp == RegionBExp::kFast>(detail::TableLane32{&tables, deg},
                                                               order,
@@ -1330,20 +979,17 @@ __device__ BoysDeviceStatus BoysDeviceSingleF32(const BoysDeviceTables& tables,
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_order(x), order + 1 consecutive floats
 /// \param capacity   the number of floats \c out holds
-/// \param multiplier the accuracy multiplier, as BoysDeviceAllOrdersF64 states
 ///
 /// \pre \c x >= 0; \c order + 1 <= \c capacity, or the call is refused.
 ///
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange, kCapacityTooSmall or kMultiplierNotResident otherwise, in
-/// every case without writing.
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32(const BoysDeviceTables& tables,
                                                    int order,
                                                    float x,
                                                    float* out,
-                                                   int capacity,
-                                                   double multiplier =
-                                                       kBoysFullAccuracyMultiplier) {
+                                                   int capacity) {
     const BoysDeviceStatus ready = detail::DeviceReady(tables);
 
     if (ready != BoysDeviceStatus::kSuccess)
@@ -1361,18 +1007,11 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32(const BoysDeviceTables& table
         return BoysDeviceStatus::kCapacityTooSmall;
     }
 
-    // One rung for both lane objects: the batch lane's region-A degree is
+    // One resolution for both lane objects: the batch lane's region-A degree is
     // indexed by the double piece table and its region-B degree by the float
     // one, which is what the two lane objects read it with. Only the seed lane
     // reads a degree here; the returned degrees come from the other.
-    detail::Degrees deg;
-    const BoysDeviceStatus rung =
-        detail::DeviceDegrees<BoysDeviceLane::kF32Batch>(tables, multiplier, &deg);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
-    }
+    const detail::Degrees deg = detail::DeviceStoredDegrees<BoysDeviceLane::kF32Batch>(tables);
 
     detail::DeviceAllOrdersF32(detail::TableLane64{&tables, deg},
                                detail::TableLane32{&tables, deg},
@@ -1390,17 +1029,15 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32(const BoysDeviceTables& table
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_kTopOrder(x), kTopOrder + 1 consecutive
 ///                   floats
-/// \param multiplier the accuracy multiplier, as BoysDeviceAllOrdersF64 states
 ///
 /// \pre \c x >= 0.
 ///
-/// \returns kSuccess after writing kTopOrder + 1 values; kTablesNotReady or
-/// kMultiplierNotResident otherwise.
+/// \returns kSuccess after writing kTopOrder + 1 values; kTablesNotReady
+/// otherwise.
 template <int kTopOrder>
 __device__ BoysDeviceStatus BoysDeviceAllNF32(const BoysDeviceTables& tables,
                                               float x,
-                                              float* out,
-                                              double multiplier = kBoysFullAccuracyMultiplier) {
+                                              float* out) {
     static_assert(kTopOrder >= 0 && kTopOrder <= kMaxBoysOrder,
                   "the top order must be inside 0..kMaxBoysOrder");
 
@@ -1411,14 +1048,7 @@ __device__ BoysDeviceStatus BoysDeviceAllNF32(const BoysDeviceTables& tables,
         return ready;
     }
 
-    detail::Degrees deg;
-    const BoysDeviceStatus rung =
-        detail::DeviceDegrees<BoysDeviceLane::kF32Batch>(tables, multiplier, &deg);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
-    }
+    const detail::Degrees deg = detail::DeviceStoredDegrees<BoysDeviceLane::kF32Batch>(tables);
 
     detail::DeviceAllOrdersF32(detail::TableLane64{&tables, deg},
                                detail::TableLane32{&tables, deg},
@@ -1438,20 +1068,16 @@ __device__ BoysDeviceStatus BoysDeviceAllNF32(const BoysDeviceTables& tables,
 /// \param order      the top order, 0..kMaxBoysOrder
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param sink       receives (l, F_l(x)) for every l in 0..order
-/// \param multiplier the accuracy multiplier, as BoysDeviceAllOrdersF64 states
 ///
 /// \pre \c x >= 0; \c sink is device-callable.
 ///
 /// \returns kSuccess once every order has been handed to \c sink;
-/// kTablesNotReady, kOrderOutOfRange or kMultiplierNotResident otherwise, with
-/// \c sink not called.
+/// kTablesNotReady or kOrderOutOfRange otherwise, with \c sink not called.
 template <typename Sink>
 __device__ BoysDeviceStatus BoysDeviceEachOrderF32(const BoysDeviceTables& tables,
                                                    int order,
                                                    float x,
-                                                   Sink sink,
-                                                   double multiplier =
-                                                       kBoysFullAccuracyMultiplier) {
+                                                   Sink sink) {
     const BoysDeviceStatus ready = detail::DeviceReady(tables);
 
     if (ready != BoysDeviceStatus::kSuccess)
@@ -1464,14 +1090,7 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderF32(const BoysDeviceTables& table
         return BoysDeviceStatus::kOrderOutOfRange;
     }
 
-    detail::Degrees deg;
-    const BoysDeviceStatus rung =
-        detail::DeviceDegrees<BoysDeviceLane::kF32Batch>(tables, multiplier, &deg);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
-    }
+    const detail::Degrees deg = detail::DeviceStoredDegrees<BoysDeviceLane::kF32Batch>(tables);
 
     detail::DeviceAllOrdersF32(detail::TableLane64{&tables, deg},
                                detail::TableLane32{&tables, deg},
@@ -1489,7 +1108,7 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderF32(const BoysDeviceTables& table
 /// [0, kFlatHi). It is the lane's table throughout — region A's seed is the grid's own
 /// block rather than the double piece table the float lane's piecewise entries seed
 /// from, and every sum below the join is a float one — so the bound is the float lane's
-/// bound, scaled by m at a relaxed rung.
+/// own.
 ///
 /// The interval's edges are the correctly rounded float quotients iv/7 and (iv + 1)/7,
 /// which is the grid the fits were measured on. Above kFlatHi the call falls to the
@@ -1500,26 +1119,19 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderF32(const BoysDeviceTables& table
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
 /// \param capacity   the number of values \c out holds
-/// \param multiplier the accuracy multiplier, m >= 1.0, matched against the rung
-///        BoysCuda::DeviceTables made resident for the reason
-///        BoysDeviceAllOrdersF64Uniform gives: the grid is stored at one degree
-///        for every order and every interval, so every resident rung of it is
-///        served by the table's own coefficients.
 ///
 /// \pre \c x >= 0, as BoysDeviceSingleF64 states.
 /// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
 ///      kCapacityTooSmall and writes nothing.
 ///
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange, kCapacityTooSmall or kMultiplierNotResident otherwise, in
-/// every case without writing.
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Uniform(const BoysDeviceTables& tables,
                                                           int order,
                                                           float x,
                                                           float* out,
-                                                          int capacity,
-                                                          double multiplier =
-                                                              kBoysFullAccuracyMultiplier) {
+                                                          int capacity) {
     const BoysDeviceStatus ready = detail::DeviceFlatReady32(tables);
 
     if (ready != BoysDeviceStatus::kSuccess)
@@ -1535,13 +1147,6 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Uniform(const BoysDeviceTables
     if (capacity < order + 1)
     {
         return BoysDeviceStatus::kCapacityTooSmall;
-    }
-
-    const BoysDeviceStatus rung = detail::DeviceResidentRung(tables, multiplier);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
     }
 
     detail::DeviceAllOrdersF32Flat<false>(tables.flatCoeffs32, tables.flatMonoCoeffs32,
@@ -1562,22 +1167,18 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Uniform(const BoysDeviceTables
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
 /// \param capacity   the number of values \c out holds
-/// \param multiplier the accuracy multiplier, m >= 1.0, matched against the rung
-///        BoysCuda::DeviceTables made resident for the reason
-///        BoysDeviceAllOrdersF64Uniform gives.
 /// \pre \c x >= 0, as BoysDeviceSingleF64 states.
 /// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
 ///      kCapacityTooSmall and writes nothing.
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange, kCapacityTooSmall or kMultiplierNotResident otherwise, in
-/// every case without writing.
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformHorner(
     const BoysDeviceTables& tables,
     int order,
     float x,
     float* out,
-    int capacity,
-    double multiplier = kBoysFullAccuracyMultiplier) {
+    int capacity) {
     const BoysDeviceStatus ready = detail::DeviceFlatReady32(tables);
 
     if (ready != BoysDeviceStatus::kSuccess)
@@ -1595,13 +1196,6 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformHorner(
         return BoysDeviceStatus::kCapacityTooSmall;
     }
 
-    const BoysDeviceStatus rung = detail::DeviceResidentRung(tables, multiplier);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
-    }
-
     detail::DeviceAllOrdersF32Flat<true>(tables.flatCoeffs32, tables.flatMonoCoeffs32,
                                          tables.flatDegs32, tables.flatOffsets32, order, x,
                                          [&](int l, float v) { out[l] = v; });
@@ -1612,7 +1206,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformHorner(
 /// kernel.
 ///
 /// One numerator/denominator pair per interval of the same grid the two entries
-/// above read, summed by the two Horner sums and the division the lane's shipped
+/// above read, summed by the two Horner sums and the division the lane's coarsest
 /// and narrow rational routes are summed by (DeviceRatSum32). The route is a
 /// family and not a basis, so there is one stored form and the Horner entry
 /// below is a forwarder to this one rather than a second arithmetic.
@@ -1629,15 +1223,12 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformHorner(
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
 /// \param capacity   the caller's out capacity, which must be >= order + 1
-/// \param multiplier the rung, which this route reads no degree of
 /// \return kSuccess, or a refusal naming the argument that was not servable
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformRat(const BoysDeviceTables& tables,
                                                              int order,
                                                              float x,
                                                              float* out,
-                                                             int capacity,
-                                                             double multiplier =
-                                                                 kBoysFullAccuracyMultiplier) {
+                                                             int capacity) {
     const BoysDeviceStatus ready = detail::DeviceFlatRatReady32(tables);
 
     if (ready != BoysDeviceStatus::kSuccess)
@@ -1655,17 +1246,6 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformRat(const BoysDeviceTab
         return BoysDeviceStatus::kCapacityTooSmall;
     }
 
-    // The rung is not read as a degree - this member stores one pair per interval
-    // and no per-order effective-degree column, so every rung's own arithmetic is
-    // the route's - but it is still checked, because a multiplier the lane holds
-    // no rung for is not an argument this entry can be asked at.
-    const BoysDeviceStatus rung = detail::DeviceResidentRung(tables, multiplier);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
-    }
-
     detail::DeviceAllOrdersF32FlatRat(tables.flatRatCoeffs32, tables.flatRatNumDeg32,
                                       tables.flatRatDenDeg32, tables.flatRatStored32,
                                       tables.flatRatOffsets32, order, x,
@@ -1677,7 +1257,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformRat(const BoysDeviceTab
 ///
 /// A forwarder and not a second body: the rational member is stored in one form,
 /// so both scheme names a caller may use reach one arithmetic - the same relation
-/// the lane's shipped and narrow rational pairs stand in. Contract, bound and
+/// the lane's coarsest and narrow rational pairs stand in. Contract, bound and
 /// refusals are BoysDeviceAllOrdersF32UniformRat's.
 ///
 /// \param tables     the handle BoysCuda::DeviceTables filled
@@ -1685,7 +1265,6 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformRat(const BoysDeviceTab
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_order(x), order + 1 consecutive floats
 /// \param capacity   the number of floats \c out holds
-/// \param multiplier the accuracy multiplier, as BoysDeviceSingleF32 states
 ///
 /// \returns what BoysDeviceAllOrdersF32UniformRat returns, and its refusals with
 /// it: this name is that entry's and adds none of its own.
@@ -1694,9 +1273,8 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformRatHorner(
     int order,
     float x,
     float* out,
-    int capacity,
-    double multiplier = kBoysFullAccuracyMultiplier) {
-    return BoysDeviceAllOrdersF32UniformRat(tables, order, x, out, capacity, multiplier);
+    int capacity) {
+    return BoysDeviceAllOrdersF32UniformRat(tables, order, x, out, capacity);
 }
 
 #if BoysFp16
@@ -1711,20 +1289,16 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformRatHorner(
 /// \param order      the order n, 0..kMaxBoysOrder
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_n(x) in fp16; untouched unless kSuccess is returned
-/// \param multiplier the accuracy multiplier, as BoysDeviceSingleF64 states. The
-///        bound delivered is m * 1e-7 plus the returned value's half ULP.
 ///
 /// \pre \c x is a binary16 value, hence >= 0 and finite; \c out is a
 ///      device-writable location for one __half.
 ///
 /// \returns kSuccess after writing F_n(x); kTablesNotReady, kOrderOutOfRange or
-/// kMultiplierNotResident otherwise, without writing.
+/// otherwise, without writing.
 __device__ BoysDeviceStatus BoysDeviceSingleF16(const BoysDeviceTables& tables,
                                                 int order,
                                                 __half x,
-                                                __half* out,
-                                                double multiplier =
-                                                    kBoysFullAccuracyMultiplier) {
+                                                __half* out) {
     const BoysDeviceStatus ready = detail::DeviceReady(tables);
 
     if (ready != BoysDeviceStatus::kSuccess)
@@ -1737,14 +1311,7 @@ __device__ BoysDeviceStatus BoysDeviceSingleF16(const BoysDeviceTables& tables,
         return BoysDeviceStatus::kOrderOutOfRange;
     }
 
-    detail::Degrees deg;
-    const BoysDeviceStatus rung =
-        detail::DeviceDegrees<BoysDeviceLane::kF16Single>(tables, multiplier, &deg);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
-    }
+    const detail::Degrees deg = detail::DeviceStoredDegrees<BoysDeviceLane::kF16Single>(tables);
 
     *out = __float2half(detail::DeviceSingleF32<false>(
         detail::TableLane32{&tables, deg}, order, __half2float(x)));
@@ -1758,21 +1325,18 @@ __device__ BoysDeviceStatus BoysDeviceSingleF16(const BoysDeviceTables& tables,
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_order(x), order + 1 consecutive __half
 /// \param capacity   the number of __half values \c out holds
-/// \param multiplier the accuracy multiplier, as BoysDeviceAllOrdersF64 states
 ///
 /// \pre \c x is a binary16 value; \c order + 1 <= \c capacity, or the call is
 ///      refused.
 ///
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange, kCapacityTooSmall or kMultiplierNotResident otherwise, in
-/// every case without writing.
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF16(const BoysDeviceTables& tables,
                                                    int order,
                                                    __half x,
                                                    __half* out,
-                                                   int capacity,
-                                                   double multiplier =
-                                                       kBoysFullAccuracyMultiplier) {
+                                                   int capacity) {
     const BoysDeviceStatus ready = detail::DeviceReady(tables);
 
     if (ready != BoysDeviceStatus::kSuccess)
@@ -1790,14 +1354,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF16(const BoysDeviceTables& table
         return BoysDeviceStatus::kCapacityTooSmall;
     }
 
-    detail::Degrees deg;
-    const BoysDeviceStatus rung =
-        detail::DeviceDegrees<BoysDeviceLane::kF16Batch>(tables, multiplier, &deg);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
-    }
+    const detail::Degrees deg = detail::DeviceStoredDegrees<BoysDeviceLane::kF16Batch>(tables);
 
     detail::DeviceAllOrdersF32(detail::TableLane64{&tables, deg},
                                detail::TableLane32{&tables, deg},
@@ -1815,17 +1372,15 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF16(const BoysDeviceTables& table
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_kTopOrder(x), kTopOrder + 1 consecutive
 ///                   __half values
-/// \param multiplier the accuracy multiplier, as BoysDeviceAllOrdersF64 states
 ///
 /// \pre \c x is a binary16 value.
 ///
-/// \returns kSuccess after writing kTopOrder + 1 values; kTablesNotReady or
-/// kMultiplierNotResident otherwise.
+/// \returns kSuccess after writing kTopOrder + 1 values; kTablesNotReady
+/// otherwise.
 template <int kTopOrder>
 __device__ BoysDeviceStatus BoysDeviceAllNF16(const BoysDeviceTables& tables,
                                               __half x,
-                                              __half* out,
-                                              double multiplier = kBoysFullAccuracyMultiplier) {
+                                              __half* out) {
     static_assert(kTopOrder >= 0 && kTopOrder <= kMaxBoysOrder,
                   "the top order must be inside 0..kMaxBoysOrder");
 
@@ -1836,14 +1391,7 @@ __device__ BoysDeviceStatus BoysDeviceAllNF16(const BoysDeviceTables& tables,
         return ready;
     }
 
-    detail::Degrees deg;
-    const BoysDeviceStatus rung =
-        detail::DeviceDegrees<BoysDeviceLane::kF16Batch>(tables, multiplier, &deg);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
-    }
+    const detail::Degrees deg = detail::DeviceStoredDegrees<BoysDeviceLane::kF16Batch>(tables);
 
     detail::DeviceAllOrdersF32(detail::TableLane64{&tables, deg},
                                detail::TableLane32{&tables, deg},
@@ -1863,20 +1411,16 @@ __device__ BoysDeviceStatus BoysDeviceAllNF16(const BoysDeviceTables& tables,
 /// \param order      the top order, 0..kMaxBoysOrder
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param sink       receives (l, F_l(x)) for every l in 0..order
-/// \param multiplier the accuracy multiplier, as BoysDeviceAllOrdersF64 states
 ///
 /// \pre \c x is a binary16 value; \c sink is device-callable.
 ///
 /// \returns kSuccess once every order has been handed to \c sink;
-/// kTablesNotReady, kOrderOutOfRange or kMultiplierNotResident otherwise, with
-/// \c sink not called.
+/// kTablesNotReady or kOrderOutOfRange otherwise, with \c sink not called.
 template <typename Sink>
 __device__ BoysDeviceStatus BoysDeviceEachOrderF16(const BoysDeviceTables& tables,
                                                    int order,
                                                    __half x,
-                                                   Sink sink,
-                                                   double multiplier =
-                                                       kBoysFullAccuracyMultiplier) {
+                                                   Sink sink) {
     const BoysDeviceStatus ready = detail::DeviceReady(tables);
 
     if (ready != BoysDeviceStatus::kSuccess)
@@ -1889,14 +1433,7 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderF16(const BoysDeviceTables& table
         return BoysDeviceStatus::kOrderOutOfRange;
     }
 
-    detail::Degrees deg;
-    const BoysDeviceStatus rung =
-        detail::DeviceDegrees<BoysDeviceLane::kF16Batch>(tables, multiplier, &deg);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
-    }
+    const detail::Degrees deg = detail::DeviceStoredDegrees<BoysDeviceLane::kF16Batch>(tables);
 
     detail::DeviceAllOrdersF32(detail::TableLane64{&tables, deg},
                                detail::TableLane32{&tables, deg},
@@ -1910,20 +1447,14 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderF16(const BoysDeviceTables& table
 // ---------------------------------------------------------------------------
 // the narrow partition, and the fit route, in the caller's own kernel
 // ---------------------------------------------------------------------------
-// The axes the launched group carries beyond the shipped partition and the Chebyshev
+// The axes the launched group carries beyond the coarsest partition and the Chebyshev
 // scheme, in the shapes this header offers. Each entry is the same ladder as its
-// sibling on the shipped partition and differs in the tables its lane reads
+// sibling on the coarsest partition and differs in the tables its lane reads
 // (boys_cuda_arithmetic.hpp).
 //
-// The rung a call names is matched against the one BoysCuda::DeviceTables made
-// resident, as everywhere in this header. The narrow partitions are cut per rung
-// on both lanes and this build holds every cut of them — the double lane's
-// degrees and the float lane's region-B cut, one table per basis — so those
-// entries answer at every rung of the lane, each reading the cut the same rung
-// leaves for the form it sums. The float lane's rational tables have no rung cut
-// here at all: an entry over them answers at the full-accuracy multiplier and
-// names the rung it refuses, as its launched row does, and that refusal is the
-// handle's to lift when the route's cuts are derived rather than the table's.
+// Every entry below reads the tables its lane was stored with, as every entry of
+// this header does: region A's degrees and region B's own degrees come from the
+// handle, and no entry of this group resolves a second reading of either.
 
 /// F_0(x)..F_n(x) in double precision from the narrow partition, inside the
 /// caller's kernel.
@@ -1938,25 +1469,19 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderF16(const BoysDeviceTables& table
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
 /// \param capacity   the number of values \c out holds
-/// \param multiplier the accuracy multiplier, m >= 1.0, matched exactly against
-///        the rung BoysCuda::DeviceTables made resident. The bound delivered is
-///        m times the double batch lane's, which is the bound the launched row
-///        of this partition documents.
 ///
 /// \pre \c x >= 0, as BoysDeviceSingleF64 states.
 /// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
 ///      kCapacityTooSmall and writes nothing.
 ///
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange, kCapacityTooSmall or kMultiplierNotResident otherwise, in
-/// every case without writing.
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Narrow(const BoysDeviceTables& tables,
                                                          int order,
                                                          double x,
                                                          double* out,
-                                                         int capacity,
-                                                         double multiplier =
-                                                             kBoysFullAccuracyMultiplier) {
+                                                         int capacity) {
     const BoysDeviceStatus request =
         detail::DeviceLadderRequest(tables.narrowPieceStart, order, capacity);
 
@@ -1965,16 +1490,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Narrow(const BoysDeviceTables&
         return request;
     }
 
-    detail::NarrowDegrees deg;
-    const BoysDeviceStatus rung =
-        detail::DeviceNarrowDegrees<false>(tables, multiplier, &deg);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
-    }
-
-    detail::DeviceAllOrdersF64(detail::NarrowLane64<false>{&tables, deg}, order, x,
+    detail::DeviceAllOrdersF64(detail::NarrowLane64<false>{&tables}, order, x,
                                [&](int l, double v) { out[l] = v; });
     return BoysDeviceStatus::kSuccess;
 }
@@ -1997,25 +1513,20 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Narrow(const BoysDeviceTables&
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
 /// \param capacity   the number of values \c out holds
-/// \param multiplier the accuracy multiplier, m >= 1.0, matched exactly against
-///        the rung BoysCuda::DeviceTables made resident. The bound delivered is
-///        m times the double batch lane's, which is the bound the launched row
-///        of this partition documents.
 ///
 /// \pre \c x >= 0, as BoysDeviceSingleF64 states.
 /// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
 ///      kCapacityTooSmall and writes nothing.
 ///
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange, kCapacityTooSmall or kMultiplierNotResident otherwise, in
-/// every case without writing.
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowMono(
     const BoysDeviceTables& tables,
     int order,
     double x,
     double* out,
-    int capacity,
-    double multiplier = kBoysFullAccuracyMultiplier) {
+    int capacity) {
     const BoysDeviceStatus request =
         detail::DeviceLadderRequest(tables.narrowPieceStart, order, capacity);
 
@@ -2024,16 +1535,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowMono(
         return request;
     }
 
-    detail::NarrowDegrees deg;
-    const BoysDeviceStatus rung =
-        detail::DeviceNarrowDegrees<true>(tables, multiplier, &deg);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
-    }
-
-    detail::DeviceAllOrdersF64(detail::NarrowLane64<true>{&tables, deg}, order, x,
+    detail::DeviceAllOrdersF64(detail::NarrowLane64<true>{&tables}, order, x,
                                [&](int l, double v) { out[l] = v; });
     return BoysDeviceStatus::kSuccess;
 }
@@ -2041,39 +1543,33 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowMono(
 /// F_0(x)..F_n(x) in double precision from the fit route, inside the caller's
 /// kernel.
 ///
-/// The route the CPU lane names \c FitRoute::kRational: the same pieces as the shipped
+/// The route the CPU lane names \c FitRoute::kRational: the same pieces as the coarsest
 /// partition, each stored as a numerator and a denominator and read as the quotient of
 /// the two sums. The division is the arithmetic's own — one per piece — and it is the
 /// whole of what separates this route from the Chebyshev one, whose fits are
 /// polynomials.
 ///
-/// The route's region-A fit is cut per reading, and this entry makes the ladder's: the
-/// seed's cut is the one the resident rung's table holds.
+/// The route's region-A fit is read at the degrees its table stores, and region
+/// B's seed at the degrees its own table stores.
 ///
 /// \param tables     the handle BoysCuda::DeviceTables filled
 /// \param order      the order n, 0..kMaxBoysOrder
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
 /// \param capacity   the number of values \c out holds
-/// \param multiplier the accuracy multiplier, m >= 1.0, matched exactly against
-///        the rung BoysCuda::DeviceTables made resident. The bound delivered is
-///        m times the double batch lane's, which is the bound the launched row
-///        of this route documents.
 ///
 /// \pre \c x >= 0, as BoysDeviceSingleF64 states.
 /// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
 ///      kCapacityTooSmall and writes nothing.
 ///
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange, kCapacityTooSmall or kMultiplierNotResident otherwise, in
-/// every case without writing.
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Rat(const BoysDeviceTables& tables,
                                                       int order,
                                                       double x,
                                                       double* out,
-                                                      int capacity,
-                                                      double multiplier =
-                                                          kBoysFullAccuracyMultiplier) {
+                                                      int capacity) {
     const BoysDeviceStatus request =
         detail::DeviceLadderRequest(tables.ratCoeffs, order, capacity);
 
@@ -2082,15 +1578,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Rat(const BoysDeviceTables& ta
         return request;
     }
 
-    detail::RatDegrees deg;
-    const BoysDeviceStatus rung = detail::DeviceRatDegrees<false>(tables, multiplier, &deg);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
-    }
-
-    detail::DeviceAllOrdersF64(detail::RatLane64<false>{&tables, deg}, order, x,
+    detail::DeviceAllOrdersF64(detail::RatLane64<false>{&tables}, order, x,
                                [&](int l, double v) { out[l] = v; });
     return BoysDeviceStatus::kSuccess;
 }
@@ -2107,24 +1595,19 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Rat(const BoysDeviceTables& ta
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
 /// \param capacity   the number of values \c out holds
-/// \param multiplier the accuracy multiplier, m >= 1.0, matched exactly against
-///        the rung BoysCuda::DeviceTables made resident. The bound delivered is
-///        m times the double batch lane's, which is the bound the launched row
-///        of this route documents.
 /// \pre \c x >= 0, as BoysDeviceSingleF64 states.
 /// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
 ///      kCapacityTooSmall and writes nothing.
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange, kCapacityTooSmall or kMultiplierNotResident otherwise, in
-/// every case without writing.
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64RatHorner(
     const BoysDeviceTables& tables,
     int order,
     double x,
     double* out,
-    int capacity,
-    double multiplier = kBoysFullAccuracyMultiplier) {
-    return BoysDeviceAllOrdersF64Rat(tables, order, x, out, capacity, multiplier);
+    int capacity) {
+    return BoysDeviceAllOrdersF64Rat(tables, order, x, out, capacity);
 }
 
 /// F_0(x)..F_n(x) in double precision from the fit route on the narrow
@@ -2132,34 +1615,28 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64RatHorner(
 ///
 /// The two axes together: the narrow partition's per-order pieces, stored as numerator
 /// and denominator pairs, with region B's piecewise seed stored as a pair as well. Both
-/// of the route's readings are cut on this partition, and this entry makes the
-/// ladder's, as BoysDeviceAllOrdersF64Rat does. The bound is the double batch lane's at
-/// the rung named.
+/// halves of the route are read at the degrees their tables store, as
+/// BoysDeviceAllOrdersF64Rat does. The bound is the double batch lane's.
 ///
 /// \param tables     the handle BoysCuda::DeviceTables filled
 /// \param order      the order n, 0..kMaxBoysOrder
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
 /// \param capacity   the number of values \c out holds
-/// \param multiplier the accuracy multiplier, m >= 1.0, matched exactly against
-///        the rung BoysCuda::DeviceTables made resident. The bound delivered is
-///        m times the double batch lane's, which is the bound the launched row
-///        of this route documents.
 ///
 /// \pre \c x >= 0, as BoysDeviceSingleF64 states.
 /// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
 ///      kCapacityTooSmall and writes nothing.
 ///
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange, kCapacityTooSmall or kMultiplierNotResident otherwise, in
-/// every case without writing.
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowRat(
     const BoysDeviceTables& tables,
     int order,
     double x,
     double* out,
-    int capacity,
-    double multiplier = kBoysFullAccuracyMultiplier) {
+    int capacity) {
     const BoysDeviceStatus request =
         detail::DeviceLadderRequest(tables.narrowRatCoeffs, order, capacity);
 
@@ -2168,15 +1645,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowRat(
         return request;
     }
 
-    detail::RatDegrees deg;
-    const BoysDeviceStatus rung = detail::DeviceRatDegrees<true>(tables, multiplier, &deg);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
-    }
-
-    detail::DeviceAllOrdersF64(detail::RatLane64<true>{&tables, deg}, order, x,
+    detail::DeviceAllOrdersF64(detail::RatLane64<true>{&tables}, order, x,
                                [&](int l, double v) { out[l] = v; });
     return BoysDeviceStatus::kSuccess;
 }
@@ -2192,24 +1661,19 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowRat(
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
 /// \param capacity   the number of values \c out holds
-/// \param multiplier the accuracy multiplier, m >= 1.0, matched exactly against
-///        the rung BoysCuda::DeviceTables made resident. The bound delivered is
-///        m times the double batch lane's, which is the bound the launched row
-///        of this route documents.
 /// \pre \c x >= 0, as BoysDeviceSingleF64 states.
 /// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
 ///      kCapacityTooSmall and writes nothing.
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange, kCapacityTooSmall or kMultiplierNotResident otherwise, in
-/// every case without writing.
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowRatHorner(
     const BoysDeviceTables& tables,
     int order,
     double x,
     double* out,
-    int capacity,
-    double multiplier = kBoysFullAccuracyMultiplier) {
-    return BoysDeviceAllOrdersF64NarrowRat(tables, order, x, out, capacity, multiplier);
+    int capacity) {
+    return BoysDeviceAllOrdersF64NarrowRat(tables, order, x, out, capacity);
 }
 
 /// F_0(x)..F_n(x) in float precision from the narrow partition, inside the
@@ -2226,29 +1690,19 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowRatHorner(
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
 /// \param capacity   the number of values \c out holds
-/// \param multiplier the accuracy multiplier, matched exactly against the rung
-///        BoysCuda::DeviceTables made resident, as the grid entries' is: this
-///        partition's own tables are cut per rung and this build holds every cut of
-///        them, so a call at the resident rung reads this lane's region-B seed at that
-///        rung's degree. Another multiplier is refused with kMultiplierNotResident
-///        rather than answered from the stored table or from the double lane's cut.
-///        The bound delivered is the float batch lane's, the bound the launched row of
-///        this partition documents.
 ///
 /// \pre \c x >= 0, as BoysDeviceSingleF64 states.
 /// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
 ///      kCapacityTooSmall and writes nothing.
 ///
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange, kCapacityTooSmall or kMultiplierNotResident otherwise, in
-/// every case without writing.
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Narrow(const BoysDeviceTables& tables,
                                                          int order,
                                                          double x,
                                                          float* out,
-                                                         int capacity,
-                                                         double multiplier =
-                                                             kBoysFullAccuracyMultiplier) {
+                                                         int capacity) {
     const BoysDeviceStatus lanes =
         detail::DeviceGroupReady2(tables.narrowPieceStart, tables.narrowStoredDeg);
 
@@ -2265,27 +1719,10 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Narrow(const BoysDeviceTables&
         return request;
     }
 
-    // The rung cuts both halves at once: region A's seed is the double lane's
-    // narrow pieces, whose cut the handle carries, and region B's is this lane's
-    // own, cut by the same criterion over the same rung.
-    detail::NarrowDegrees seed;
-    const BoysDeviceStatus rung = detail::DeviceNarrowDegrees<false>(tables, multiplier, &seed);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
-    }
-
-    const int* cutB = nullptr;
-    const BoysDeviceStatus tail = detail::DeviceNarrowDegrees32<false>(tables, multiplier, &cutB);
-
-    if (tail != BoysDeviceStatus::kSuccess)
-    {
-        return tail;
-    }
-
-    detail::DeviceAllOrdersF32(detail::NarrowLane64<false>{&tables, seed},
-                               detail::NarrowLane32<false>{&tables, cutB},
+    // Both halves read the same seed of the same partition: region A's is the double
+    // lane's narrow pieces and region B's is this lane's own piecewise fit over them.
+    detail::DeviceAllOrdersF32(detail::NarrowLane64<false>{&tables},
+                               detail::NarrowLane32<false>{&tables},
                                order,
                                static_cast<float>(x),
                                [&](int l, float v) { out[l] = v; });
@@ -2304,25 +1741,20 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Narrow(const BoysDeviceTables&
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
 /// \param capacity   the number of values \c out holds
-/// \param multiplier the accuracy multiplier, with the rung axis
-///        BoysDeviceAllOrdersF32Narrow states: this entry's float region-B pool
-///        is that row's other form, cut by the same criterion over the same rung,
-///        so the multipliers it is served at are its row's and no others
 ///
 /// \pre \c x >= 0, as BoysDeviceSingleF64 states.
 /// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
 ///      kCapacityTooSmall and writes nothing.
 ///
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange, kCapacityTooSmall or kMultiplierNotResident otherwise, in
-/// every case without writing.
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowMono(
     const BoysDeviceTables& tables,
     int order,
     double x,
     float* out,
-    int capacity,
-    double multiplier = kBoysFullAccuracyMultiplier) {
+    int capacity) {
     const BoysDeviceStatus lanes =
         detail::DeviceGroupReady2(tables.narrowPieceStart, tables.narrowStoredDeg);
 
@@ -2340,26 +1772,10 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowMono(
     }
 
     // The same pair of halves the Chebyshev entry above resolves, at this form
-    // of the same seed: the rung cuts the double lane's pieces for region A and
-    // this lane's own monomial seed for region B.
-    detail::NarrowDegrees seed;
-    const BoysDeviceStatus rung = detail::DeviceNarrowDegrees<true>(tables, multiplier, &seed);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
-    }
-
-    const int* cutB = nullptr;
-    const BoysDeviceStatus tail = detail::DeviceNarrowDegrees32<true>(tables, multiplier, &cutB);
-
-    if (tail != BoysDeviceStatus::kSuccess)
-    {
-        return tail;
-    }
-
-    detail::DeviceAllOrdersF32(detail::NarrowLane64<true>{&tables, seed},
-                               detail::NarrowLane32<true>{&tables, cutB},
+    // of the same seed: the double lane's pieces for region A and this lane's
+    // own monomial seed for region B.
+    detail::DeviceAllOrdersF32(detail::NarrowLane64<true>{&tables},
+                               detail::NarrowLane32<true>{&tables},
                                order,
                                static_cast<float>(x),
                                [&](int l, float v) { out[l] = v; });
@@ -2369,7 +1785,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowMono(
 /// F_0(x)..F_n(x) in float precision from the fit route, inside the caller's
 /// kernel.
 ///
-/// The route's pair on the shipped partition, with region A seeded from the
+/// The route's pair on the coarsest partition, with region A seeded from the
 /// double lane's pairs and region B from the float lane's own pair — the split
 /// the launched row makes, and the reason a float seed is never amplified.
 ///
@@ -2378,27 +1794,19 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowMono(
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
 /// \param capacity   the number of values \c out holds
-/// \param multiplier the accuracy multiplier. This route's float lane has a
-///        region-B pair whose rung cut this build does not hold, so m = 1 is the
-///        only multiplier it is served at, and any other is refused with
-///        kMultiplierNotResident rather than answered from a cut of one side of
-///        the body. The bound delivered is the float batch lane's, which is the
-///        bound the launched row of this route documents.
 ///
 /// \pre \c x >= 0, as BoysDeviceSingleF64 states.
 /// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
 ///      kCapacityTooSmall and writes nothing.
 ///
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange, kCapacityTooSmall or kMultiplierNotResident otherwise, in
-/// every case without writing.
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Rat(const BoysDeviceTables& tables,
                                                       int order,
                                                       double x,
                                                       float* out,
-                                                      int capacity,
-                                                      double multiplier =
-                                                          kBoysFullAccuracyMultiplier) {
+                                                      int capacity) {
     const BoysDeviceStatus lanes =
         detail::DeviceGroupReady2(tables.ratCoeffs, tables.ratBNum32);
 
@@ -2415,27 +1823,10 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Rat(const BoysDeviceTables& ta
         return request;
     }
 
-    // The rung cuts both halves at once: region A's seed is the double lane's
-    // pair at the rung's reading of it, and region B's is this lane's own pair
-    // cut by the same criterion over its own coefficients.
-    detail::RatDegrees deg;
-    const BoysDeviceStatus rung = detail::DeviceRatDegrees<false>(tables, multiplier, &deg);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
-    }
-
-    bool relaxed = false;
-    const BoysDeviceStatus seed = detail::DeviceRatDegrees32<false>(tables, multiplier, &relaxed);
-
-    if (seed != BoysDeviceStatus::kSuccess)
-    {
-        return seed;
-    }
-
-    detail::DeviceAllOrdersF32(detail::RatLane64<false>{&tables, deg},
-                               detail::RatLane32<false>{&tables, relaxed},
+    // Both halves read the stored fit: region A's seed is the double lane's pair and
+    // region B's is this lane's own pair over its own coefficients.
+    detail::DeviceAllOrdersF32(detail::RatLane64<false>{&tables},
+                               detail::RatLane32<false>{&tables},
                                order,
                                static_cast<float>(x),
                                [&](int l, float v) { out[l] = v; });
@@ -2453,26 +1844,19 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Rat(const BoysDeviceTables& ta
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
 /// \param capacity   the number of values \c out holds
-/// \param multiplier the accuracy multiplier. This route's float lane has a
-///        region-B pair whose rung cut this build does not hold, so m = 1 is the
-///        only multiplier it is served at, and any other is refused with
-///        kMultiplierNotResident rather than answered from a cut of one side of
-///        the body. The bound delivered is the float batch lane's, which is the
-///        bound the launched row of this route documents.
 /// \pre \c x >= 0, as BoysDeviceSingleF64 states.
 /// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
 ///      kCapacityTooSmall and writes nothing.
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange, kCapacityTooSmall or kMultiplierNotResident otherwise, in
-/// every case without writing.
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32RatHorner(
     const BoysDeviceTables& tables,
     int order,
     double x,
     float* out,
-    int capacity,
-    double multiplier = kBoysFullAccuracyMultiplier) {
-    return BoysDeviceAllOrdersF32Rat(tables, order, x, out, capacity, multiplier);
+    int capacity) {
+    return BoysDeviceAllOrdersF32Rat(tables, order, x, out, capacity);
 }
 
 /// F_0(x)..F_n(x) in float precision from the fit route on the narrow partition,
@@ -2483,34 +1867,26 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32RatHorner(
 /// lane's narrow pairs in region A and the float lane's piecewise pair in
 /// region B.
 ///
-/// The rung is the one BoysDeviceAllOrdersF32Rat states: this route's float lane
-/// has a region-B pair whose rung cut this build does not hold, so m = 1 is the
-/// only multiplier served here and any other is refused with
-/// kMultiplierNotResident.
 ///
 /// \param tables     the handle BoysCuda::DeviceTables filled
 /// \param order      the order n, 0..kMaxBoysOrder
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
 /// \param capacity   the number of values \c out holds
-/// \param multiplier the accuracy multiplier, with the rung axis stated above.
-///        The bound delivered is the float batch lane's, which is the bound the
-///        launched row of this route documents.
 ///
 /// \pre \c x >= 0, as BoysDeviceSingleF64 states.
 /// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
 ///      kCapacityTooSmall and writes nothing.
 ///
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange, kCapacityTooSmall or kMultiplierNotResident otherwise, in
-/// every case without writing.
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowRat(
     const BoysDeviceTables& tables,
     int order,
     double x,
     float* out,
-    int capacity,
-    double multiplier = kBoysFullAccuracyMultiplier) {
+    int capacity) {
     const BoysDeviceStatus lanes =
         detail::DeviceGroupReady2(tables.narrowRatCoeffs, tables.narrowRatBCoeffs32);
 
@@ -2527,27 +1903,11 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowRat(
         return request;
     }
 
-    // The same pair of halves the shipped entry resolves, on this partition: the
-    // double lane's narrow pairs at the rung's cut for region A, and this lane's
-    // own narrow pair at the same rung's cut for region B.
-    detail::RatDegrees deg;
-    const BoysDeviceStatus rung = detail::DeviceRatDegrees<true>(tables, multiplier, &deg);
-
-    if (rung != BoysDeviceStatus::kSuccess)
-    {
-        return rung;
-    }
-
-    bool relaxed = false;
-    const BoysDeviceStatus seed = detail::DeviceRatDegrees32<true>(tables, multiplier, &relaxed);
-
-    if (seed != BoysDeviceStatus::kSuccess)
-    {
-        return seed;
-    }
-
-    detail::DeviceAllOrdersF32(detail::RatLane64<true>{&tables, deg},
-                               detail::RatLane32<true>{&tables, relaxed},
+    // The same pair of halves the coarsest entry resolves, on this partition: the
+    // double lane's narrow pairs for region A, and this lane's own narrow pair for
+    // region B.
+    detail::DeviceAllOrdersF32(detail::RatLane64<true>{&tables},
+                               detail::RatLane32<true>{&tables},
                                order,
                                static_cast<float>(x),
                                [&](int l, float v) { out[l] = v; });
@@ -2565,23 +1925,19 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowRat(
 /// \param x          the argument, >= 0, formed by the calling thread
 /// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
 /// \param capacity   the number of values \c out holds
-/// \param multiplier the accuracy multiplier, with the rung axis stated above.
-///        The bound delivered is the float batch lane's, which is the bound the
-///        launched row of this route documents.
 /// \pre \c x >= 0, as BoysDeviceSingleF64 states.
 /// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
 ///      kCapacityTooSmall and writes nothing.
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange, kCapacityTooSmall or kMultiplierNotResident otherwise, in
-/// every case without writing.
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowRatHorner(
     const BoysDeviceTables& tables,
     int order,
     double x,
     float* out,
-    int capacity,
-    double multiplier = kBoysFullAccuracyMultiplier) {
-    return BoysDeviceAllOrdersF32NarrowRat(tables, order, x, out, capacity, multiplier);
+    int capacity) {
+    return BoysDeviceAllOrdersF32NarrowRat(tables, order, x, out, capacity);
 }
 
 } // namespace boys

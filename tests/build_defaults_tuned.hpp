@@ -67,9 +67,8 @@
 // lane keeps four orders of one argument in a register, and this call produces
 // exactly one order at every argument of the array, so there are not four orders
 // here to fill a lane with". A build that named kOrders here would fail to
-// compile in the library's own sources - src/boys.cpp's tier selectors
-// instantiate the single-order entry at EvalPolicy<> - which is the answer and
-// not a default.
+// compile in the library's own sources - src/boys.cpp instantiates the
+// single-order entry at EvalPolicy<> - which is the answer and not a default.
 #define BOYS_BUILD_DEFAULT_PACK_AXIS PackAxis::kArguments
 
 // Moved: one reciprocal per divisor and one product per step, in place of the
@@ -86,14 +85,11 @@
 // cannot move: that is the packing axis, and CONTRIBUTING.md says so. The
 // granularity's uniform member was refused by the batched bodies until this
 // revision and those bodies now hand it to the path that reads the grid, so that
-// refusal is gone; what remains of the member's own refusal is the rational
-// route's rung selector, which refuses a rung of it at compile time (the
-// static_assert in RationalRouteFitAtRung, include/boys/boys_impl.hpp). No
-// fixture in this tree names the member, so a build naming it is unmeasured
-// here. kShipped is the reference partition: the accuracy gate reads it
-// (tests/boys_accuracy_gate.cpp), the packed lane carries it at every rung beside
-// the narrow one, and the entries' own fallbacks name it.
-#define BOYS_BUILD_DEFAULT_FIT_GRANULARITY FitGranularity::kShipped
+// refusal is gone, and no fixture in this tree names the member: a build naming
+// it is unmeasured here. kCoarsest is the reference partition: the accuracy gate
+// reads it (tests/boys_accuracy_gate.cpp), the packed lane carries it beside the
+// narrow one, and the entries' own fallbacks name it.
+#define BOYS_BUILD_DEFAULT_FIT_GRANULARITY FitGranularity::kCoarsest
 
 // The moves above are the compile-time half of the seam check, and this file's
 // own configure is the only reading there is for them: the `Build defaults`

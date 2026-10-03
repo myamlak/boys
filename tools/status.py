@@ -212,8 +212,8 @@ def main() -> int:
     print()
 
     overall = True
-    for name, fn in (("HOST   (four lanes x route x scheme x partition x packing x rung)", host_space),
-                     ("DEVICE (classes over precision x shape x rung)", device_space)):
+    for name, fn in (("HOST   (four lanes x route x scheme x partition x packing)", host_space),
+                     ("DEVICE (classes over precision x shape)", device_space)):
         summary, lines, closed = fn()
         print(f"{name}")
         print(f"  {summary}")
@@ -225,7 +225,6 @@ def main() -> int:
 
     print("SPACES THIS REPORT DOES NOT COVER")
     for space in ("the 32-cell entry book (accounted separately by the gate)",
-                  "the m != 1 rungs (only m = 1 decides a default)",
                   "any space a build configuration other than the recorded one would have"):
         print(f"  - {space}")
     print()

@@ -116,16 +116,16 @@ struct ProductModeInfo {
     ModeCertification certification; ///< what the row's bound is a measurement of
     const char* model; ///< the arithmetic or accumulator the bound is a claim about
     int parts; ///< products per operand: 1, 2 or 3
-    double fitTerm; ///< the multiplier-scaled term of the bound: m * fitTerm
-    double floor; ///< the multiplier-independent floor the format adds
+    double fitTerm; ///< the fit's own term of the bound
+    double floor; ///< the floor the format adds beside it
     double delivered; ///< swept worst |F̂ − F| over region A at the reference multiplier
 };
 
 /// The region-A transform's arithmetic modes this build carries, one row each,
 /// with the bound and the certification of each.
 ///
-/// The rows are in the enumeration's order. A row's bound over region A at
-/// multiplier \c m is `m * fitTerm + floor`.
+/// The rows are in the enumeration's order. A row's bound over region A is
+/// `fitTerm + floor`.
 ///
 /// \returns the modes, with their bounds and their certifications
 ///
@@ -154,12 +154,8 @@ std::span<const ProductModeInfo> BoysProductModes() noexcept;
 /// Threading: single-threaded and pure, like every entry in this library. The
 /// entry allocates nothing and touches no shared state.
 ///
-/// \tparam kMode               the mode whose arithmetic the product is
-///                             evaluated in; see ProductMode
-/// \tparam kAccuracyMultiplier see BoysSingle. The multiplier truncates the
-///                             band's fits to a width every order in the band
-///                             admits. It is inert for the two split modes
-///                             across the documented range and live for kFp64.
+/// \tparam kMode the mode whose arithmetic the product is evaluated in; see
+///              ProductMode
 /// \param band  which band every argument of the call lies in
 /// \param nmax  highest order, 0..kMaxBoysOrder
 /// \param x     array of count arguments, each inside `band`
@@ -170,7 +166,7 @@ std::span<const ProductModeInfo> BoysProductModes() noexcept;
 ///      and must not overlap. Every x[i] must lie in `band`.
 ///
 /// \ingroup boys
-template <ProductMode kMode, double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+template <ProductMode kMode>
 void BoysRegionAProduct(RegionABand band,
                         int nmax,
                         const double* x,
@@ -178,20 +174,20 @@ void BoysRegionAProduct(RegionABand band,
                         std::size_t count) noexcept;
 
 /// \cond
-// Explicit instantiations of the entry above at the default multiplier, hidden
+// Explicit instantiations of the entry above, hidden
 // from the API reference: a default call site links against these instead of
 // compiling the kernel in its own translation unit.
-extern template void BoysRegionAProduct<ProductMode::kFp64, kBoysFullAccuracyMultiplier>(
+extern template void BoysRegionAProduct<ProductMode::kFp64>(
     RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
-extern template void BoysRegionAProduct<ProductMode::kTf32x3, kBoysFullAccuracyMultiplier>(
+extern template void BoysRegionAProduct<ProductMode::kTf32x3>(
     RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
-extern template void BoysRegionAProduct<ProductMode::kBf16x6, kBoysFullAccuracyMultiplier>(
+extern template void BoysRegionAProduct<ProductMode::kBf16x6>(
     RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
-extern template void BoysRegionAProduct<ProductMode::kTf32, kBoysFullAccuracyMultiplier>(
+extern template void BoysRegionAProduct<ProductMode::kTf32>(
     RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
-extern template void BoysRegionAProduct<ProductMode::kBf16, kBoysFullAccuracyMultiplier>(
+extern template void BoysRegionAProduct<ProductMode::kBf16>(
     RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
-extern template void BoysRegionAProduct<ProductMode::kFp16, kBoysFullAccuracyMultiplier>(
+extern template void BoysRegionAProduct<ProductMode::kFp16>(
     RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
 
 // The kernel behind the entry declared above, defined here so that every
@@ -375,14 +371,15 @@ inline constexpr int kMaxBandDegree = BandOf<0>().degree > BandOf<1>().degree
                                           ? BandOf<0>().degree
                                           : BandOf<1>().degree;
 
-/// The band's degree at a multiplier. One product carries every order at one
-/// width, so the width is the smallest d' for which the dropped tail of every
-/// order in the band is within the relaxation budget. Amplification is one: the
-/// lane returns each order's own fit, so no seed error re-enters a recursion.
+/// The band's degree. One product carries every order at one width, so the
+/// width is the smallest d' whose dropped tail vanishes for every order in the
+/// band - the full degree, and the scan reports it rather than assuming it.
+/// Amplification is one: the lane returns each order's own fit, so no seed
+/// error re-enters a recursion.
 ///
 /// The scan walks the same evaluation domain as the shipped degree tables
 /// (0, 1, 2, then even degrees).
-template <int kIndex> constexpr int BandDegreeAtMultiplier(double m) noexcept {
+template <int kIndex> constexpr int BandDegree() noexcept {
     constexpr BandSpec spec = BandOf<kIndex>();
 
     for (int dPrime = 0; dPrime <= spec.degree; ++dPrime)
@@ -396,8 +393,8 @@ template <int kIndex> constexpr int BandDegreeAtMultiplier(double m) noexcept {
 
         for (int order = 0; order <= kMaxOrder && admissible; ++order)
         {
-            admissible = CoefficientTail(kCoeffs, BandOffset<kIndex>(order), spec.degree, dPrime) <=
-                         (m - 1.0) * RegionABudget(BoysRole::kDoubleSingle);
+            admissible =
+                CoefficientTail(kCoeffs, BandOffset<kIndex>(order), spec.degree, dPrime) <= 0.0;
         }
 
         if (admissible)
@@ -418,15 +415,12 @@ inline constexpr std::size_t kProductTile = 32;
 
 /// The product for one band: out[k * count + i] = F_k(x[i]), every argument in
 /// the band, by C . T in the mode's arithmetic.
-template <int kIndex, typename Policy, double kAccuracyMultiplier>
+template <int kIndex, typename Policy>
 void RegionAProductBand(int nmax, const double* x, double* out, std::size_t count) noexcept {
-    static_assert(kAccuracyMultiplier >= 1.0,
-                  "kAccuracyMultiplier must be >= 1.0 (1.0 = full static accuracy)");
-
     using Value = typename Policy::Value;
     constexpr int kParts = Policy::kParts;
     constexpr BandSpec kBand = BandOf<kIndex>();
-    constexpr int kWidth = BandDegreeAtMultiplier<kIndex>(kAccuracyMultiplier) + 1;
+    constexpr int kWidth = BandDegree<kIndex>() + 1;
     constexpr int kOrders = kMaxOrder + 1;
 
     // The kept products: every part pairing whose part indices sum below the
@@ -604,7 +598,7 @@ void RegionAProductBand(int nmax, const double* x, double* out, std::size_t coun
 
 } // namespace detail
 
-template <ProductMode kMode, double kAccuracyMultiplier>
+template <ProductMode kMode>
 void BoysRegionAProduct(RegionABand band, int nmax, const double* x, double* out,
                         std::size_t count) noexcept {
     assert(nmax >= 0 && nmax <= kMaxBoysOrder);
@@ -615,10 +609,10 @@ void BoysRegionAProduct(RegionABand band, int nmax, const double* x, double* out
 
     if (band == RegionABand::kA2)
     {
-        detail::RegionAProductBand<1, Policy, kAccuracyMultiplier>(nmax, x, out, count);
+        detail::RegionAProductBand<1, Policy>(nmax, x, out, count);
     } else
     {
-        detail::RegionAProductBand<0, Policy, kAccuracyMultiplier>(nmax, x, out, count);
+        detail::RegionAProductBand<0, Policy>(nmax, x, out, count);
     }
 }
 

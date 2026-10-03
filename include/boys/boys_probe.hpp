@@ -10,13 +10,14 @@
 /// machine it was written on. This entry measures the ranking where it is called
 /// and reports what it found, including how confident it is.
 ///
-/// Options are ranked only inside a class: one precision, one accuracy rung and
-/// one question shape. Everything else an option varies — fit route, scheme,
-/// region partition, packing axis, division form, and whether a sorted array is
-/// declared — is an interchangeable way of computing one answer, so it competes
-/// inside the class and never divides it. The default this report names is the
-/// fastest measured row of the certified double lane's reference class for the
-/// all-orders shape.
+/// Options are ranked only inside a class: one precision and one question shape.
+/// Everything else an option varies — fit route, scheme, region partition,
+/// packing axis, division form, and whether a sorted array is declared — is an
+/// interchangeable way of computing one answer, so it competes inside the class
+/// and never divides it. Every option is evaluated at the library's
+/// full-accuracy multiplier, so the class's documented figure is the only one its
+/// members are held to. The default this report names is the fastest measured row
+/// of the certified double lane's class for the all-orders shape.
 ///
 /// Timing is paired: every option is called once in every round, and two options
 /// are compared through the ratio of their times within one round, so a clock
@@ -162,7 +163,8 @@ struct OptionProbePass {
 /// Precision is the choice the caller has already made, not one traded for
 /// speed: an option is only ever ordered against an option of its own precision.
 /// The documented bound is a column of each class rather than its key, so a
-/// class's leader is the fastest option at *some* accuracy in that precision.
+/// class's leader is the fastest option that computes the class's answer in that
+/// precision.
 ///
 /// \ingroup boys
 enum class OptionPrecision : int {
@@ -251,7 +253,7 @@ struct OptionProbeMeasurement {
     std::string name;
 
     /// The precision of the class this option is ranked in, and the first of the
-    /// three parts of that class's key.
+    /// two parts of that class's key.
     OptionPrecision precision = OptionPrecision::kFp64;
 
     /// The axes the option instantiates, as the library reports them. A
@@ -263,12 +265,7 @@ struct OptionProbeMeasurement {
     PackAxis pack = PackAxis::kArguments; ///< the packing axis its entry carries
     DivisionForm division = kDefaultDivisionForm; ///< the form its steps divide in
 
-    /// The accuracy rung it evaluates at, the second part of its class's key:
-    /// two options of one precision at different rungs document different bounds
-    /// and are not alternatives to each other.
-    AccuracyTier tier = AccuracyTier::kReference;
-
-    /// The question shape it answers, the third part of its class's key. An
+    /// The question shape it answers, the second part of its class's key. An
     /// option is only ordered against options of the same shape.
     OptionProbeShape shape = OptionProbeShape::kAllOrders;
 
@@ -414,34 +411,31 @@ enum class OptionProbeDefaultHow : int {
 /// \ingroup boys
 std::string OptionProbeDefaultHowName(OptionProbeDefaultHow how);
 
-/// One class's ranking: the options of one precision at one accuracy rung for
-/// one question shape, fastest measured first.
+/// One class's ranking: the options of one precision for one question shape,
+/// fastest measured first.
 ///
-/// A class is the only set the probe orders inside, and its key is the precision,
-/// the rung and the shape — never a comparison of documented figures, since a
-/// figure belongs to one lane. So the leader is the fastest option *at that
-/// accuracy, for that question*.
+/// A class is the only set the probe orders inside, and its key is the precision
+/// and the shape — never a comparison of documented figures, since a figure
+/// belongs to one lane. So the leader is the fastest option *for that question*
+/// in that precision.
 ///
 /// \ingroup boys
 struct OptionProbeClass {
     /// The precision this class is.
     OptionPrecision precision = OptionPrecision::kFp64;
 
-    /// The accuracy rung this class is.
-    AccuracyTier tier = AccuracyTier::kReference;
-
     /// The question shape this class is: what every row of it hands back.
     OptionProbeShape shape = OptionProbeShape::kAllOrders;
 
-    /// The class's whole key, as a report prints it: the precision, the rung and
-    /// the question shape, in that order — "fp64 m=1 all-orders".
+    /// The class's whole key, as a report prints it: the precision and the
+    /// question shape, in that order — "fp64 all-orders".
     std::string name;
 
     /// The bound every row of this class documents, read from the library.
     double bound = 0.0;
 
     /// This class's measured options, fastest first by cost per argument. Empty
-    /// when nothing of this precision and rung was measured.
+    /// when nothing of this precision and shape was measured.
     std::vector<std::string> ranked;
 
     /// The fastest of them, empty when the class is empty.
@@ -465,9 +459,9 @@ struct OptionProbeClass {
     OptionProbeDefaultHow how = OptionProbeDefaultHow::kNone;
 
     /// Members documenting a figure other than the leader's, each named with its
-    /// own: a class is keyed on the precision, the rung and the shape, not on a
-    /// bound, so such a row is in the class and is reported here rather than
-    /// ranked as an equal silently.
+    /// own: a class is keyed on the precision and the shape, not on a bound, so
+    /// such a row is in the class and is reported here rather than ranked as an
+    /// equal silently.
     std::vector<std::string> differingBounds;
 
     /// What the class's ordering rests on, or why it was not made.
@@ -519,9 +513,6 @@ struct OptionProbeCell {
     /// cell because it is part of the combination an option runs.
     DivisionForm division = kDefaultDivisionForm;
 
-    /// The accuracy rung this cell fixes.
-    AccuracyTier tier = AccuracyTier::kReference;
-
     /// Whether this build serves the cell, so a served cell has an option row in
     /// this report unless the run was narrowed by ProbeOptions::only, or the cell
     /// belongs to the device lane: that lane's entries need a CUDA device, so its
@@ -538,12 +529,12 @@ struct OptionProbeCell {
 /// \ingroup boys
 enum class OptionProbeVerdict : int {
     /// The probe named a default: one option of the certified double lane's
-    /// precision at the reference rung. The report's \c defaultHow says whether
-    /// the class's own rounds placed it or a refinement vote confirmed it.
+    /// precision. The report's \c defaultHow says whether the class's own rounds
+    /// placed it or a refinement vote confirmed it.
     kRecommend = 0,
     /// The probe declined, for exactly one reason: no option of the certified
-    /// double lane's precision at the reference rung was measured at all, so there
-    /// was no pool to name a default from. A refusal always says which.
+    /// double lane's precision was measured at all, so there was no pool to name a
+    /// default from. A refusal always says which.
     kCannotDetermine,
 };
 
@@ -558,11 +549,6 @@ enum class OptionProbeVerdict : int {
 struct OptionProbeRefinement {
     /// The precision of the class that was refined.
     OptionPrecision precision = OptionPrecision::kFp64;
-
-    /// The accuracy rung of the class that was refined, which is the reference
-    /// rung: a stage re-runs the pool the default may be taken from, and the
-    /// looser rungs are reported from their own measured rounds alone.
-    AccuracyTier tier = AccuracyTier::kReference;
 
     /// The question shape of the class that was refined. A stage refines one
     /// class and no other, so its tied set is the class's own.
@@ -751,15 +737,15 @@ struct OptionProbeReport {
     double referenceBound = 0.0;
 
     /// Whether the probe named a winner. False means no option of the certified
-    /// double lane's precision at the reference rung was measured, so there was no
-    /// pool to choose a default from.
+    /// double lane's precision was measured, so there was no pool to choose a
+    /// default from.
     OptionProbeVerdict verdict = OptionProbeVerdict::kCannotDetermine;
 
     /// **The default combination, and there is exactly one of it whenever the pool
-    /// was measured at all.** It is the certified double lane's precision, at the
-    /// reference rung, for the all-orders shape — a class whose members are all
-    /// built at the library's full-accuracy multiplier, so choosing among them
-    /// trades nothing but speed within one question.
+    /// was measured at all.** It is the certified double lane's precision for the
+    /// all-orders shape — a class whose members are all built at the library's
+    /// full-accuracy multiplier, so choosing among them trades nothing but speed
+    /// within one question.
     ///
     /// It is **the row the report's own figures put first in that class** —
     /// \c fastestAtReferenceAccuracy — whether the class ordered or the run could
@@ -823,15 +809,202 @@ struct OptionProbeReport {
     bool hasDefault = false;
 };
 
+/// The option space counted: every cell of every class this build enumerates, each
+/// in exactly one state, the arithmetic over those states, and the verdict.
+///
+/// **The space is the library's and not this report's.** Its total is the product
+/// of the axes the library reports for each class — the routes the class's own
+/// lane reports its fits in, the schemes, the partitions of the fitted regions, the
+/// packing axes and the division forms — summed over
+/// every class this build carries: the four precision classes this machine
+/// measures and the device lane's book, which it cannot run. Three readings of that
+/// total are held to each other: the product of the axes (\c admitted), this
+/// closure's own walk of those axes (\c walked), and the two books the report
+/// carries (\c enumerated, from \c OptionProbeReport::cells and \c ::deviceCells).
+/// A class a later change adds to the axes and not to the walk, or a cell a book
+/// carries and no axis admits, shows up here as a number and not as an absence.
+///
+/// **The members are the closure's own walk and not the report's books**, so a run
+/// that carried no book at all still owes every cell of the space it did not
+/// present: those cells are \c unaccounted, and the count in no state is that
+/// number rather than an absence.
+///
+/// **The states partition the space.** A cell is served by the library or refused
+/// by it, and a served cell is in exactly one of the states below. A refused cell
+/// is the library's own answer, with its own reason, and the work it describes is
+/// unbuilt rather than impossible. A served cell of the device lane's book is
+/// counted apart and not against this build: an entry of that lane is a call on a
+/// CUDA device, so no cell of it can be run here whatever arithmetic the library
+/// documents for it.
+///
+/// **Nothing else is a state, and \c unaccounted counts the cells in none of
+/// them.** A cell there is one the library serves and this run neither measured,
+/// skipped by its own request, nor has a reason for: the closure says so rather
+/// than counting it into the nearest state, and the report's last line fails on it.
+///
+/// \c closed is the verdict that line prints: the states sum to \c total, the three
+/// readings of the total agree, \c unaccounted is zero, and the run's own option
+/// table carries exactly the rows the space owes it — the places of the served
+/// cells the request named, plus the rows that are no cell of the space at all.
+/// Those last are the call shapes the axes are not crossed with, counted in
+/// \c shapesNotCrossed and named in the report, and the cells their crossing would
+/// add are \c crossedOwed. It is what the probe's driver returns its exit status
+/// from, so a closure that does not close is a failed run and not a printed remark.
+///
+/// \ingroup boys
+struct OptionProbeClosure {
+    /// Classes the space is spread over: the precision classes this machine
+    /// measures, plus the device lane's book.
+    std::size_t classes = 0;
+
+    /// The cells the library's own axes admit across those classes: the space's
+    /// total, and the sum the report below prints in its own class-by-class terms.
+    std::size_t admitted = 0;
+
+    /// The cells the closure's own walk of those axes enumerates: the members the
+    /// states below are placed on.
+    std::size_t walked = 0;
+
+    /// The cells the report's own two books carry. Read from
+    /// \c OptionProbeReport::cells and \c ::deviceCells, so it is the enumerated
+    /// space and not a second reading of the axes.
+    std::size_t enumerated = 0;
+
+    /// The space's own total, which is \c admitted. The bar the states are held to.
+    std::size_t total = 0;
+
+    /// Served cells this run took a figure for.
+    std::size_t measured = 0;
+
+    /// Served cells whose row this run carried and whose rounds produced no figure.
+    std::size_t offeredNoFigure = 0;
+
+    /// Served cells of a class this machine measures whose row this run's request
+    /// did not name: the space is stated whole and the run measured what was asked
+    /// for.
+    std::size_t notAsked = 0;
+
+    /// Served cells this build's backend table carries no arithmetic for, so no row
+    /// was built for them.
+    std::size_t unoffered = 0;
+
+    /// Served cells of a lane this build's own seam does not declare, so no row was
+    /// built for them.
+    std::size_t notCarried = 0;
+
+    /// Served cells of the device lane's book, which no body on this machine runs.
+    /// Counted apart and not against the library or this report.
+    std::size_t deviceNotRun = 0;
+
+    /// Cells the library refuses, each with the library's own reason in the
+    /// coverage above: unbuilt work the library owes.
+    std::size_t refused = 0;
+
+    /// The seven states above summed, which is the left-hand side the report prints
+    /// and the bar the space's own total is held to.
+    std::size_t states = 0;
+
+    /// Cells in no state above. Zero for every run whose closure closes, and the
+    /// count the verdict fails on.
+    std::size_t unaccounted = 0;
+
+    /// Rows this run's own option table carries: \c OptionProbeReport::measurements.
+    std::size_t rows = 0;
+
+    /// The places the space owes this run's request: one per served cell of a class
+    /// this machine measures that a body of this build carries and the request
+    /// named. The device lane's book owes none, having no body here, and a cell this
+    /// build carries no arithmetic or no seam for owes none either.
+    std::size_t rowsOwed = 0;
+
+    /// Of the rows the run carries, the ones that are no cell of the space: the call
+    /// shapes the six axes are not crossed with, each measured at its own default
+    /// policy alone. Counted from the rows themselves, by name, and not from a list.
+    std::size_t shapesNotCrossed = 0;
+
+    /// The cells the crossing of those shapes with the axes would add: for each such
+    /// row, the cells of its own class, less the one cell it is measured
+    /// at. The outstanding work the report names in prose, as a number.
+    std::size_t crossedOwed = 0;
+
+    /// Whether the closure holds; see this struct's own note.
+    bool closed = false;
+};
+
+/// Counts the option space one report was taken over; see \c OptionProbeClosure.
+///
+/// It reads this build's own tables, the library's axis reporting and the report's
+/// own record of the run, and nothing else, so a report built by hand is counted
+/// the same way a measured one is — which is what lets a test hold the counting
+/// without a machine.
+///
+/// It allocates — the walk of the space — so unlike the
+/// device lane's counterpart it is not \c noexcept: an allocation failure is a real
+/// outcome here, as it is in \c RunOptionProbe.
+///
+/// \param report the report to count
+///
+/// \returns the counts, with \c closed the verdict on them
+///
+/// \ingroup boys
+OptionProbeClosure OptionProbeSpaceClosure(const OptionProbeReport& report);
+
+/// This run's own rankings as a replacement for the build-defaults seam, in the
+/// format that seam's `BOYS_BUILD_DEFAULT_ROWS` consumes.
+///
+/// \c DefaultPolicy resolves an unnamed call through
+/// `include/boys/boys_build_defaults.hpp`, whose rows were a transcription until
+/// this entry existed: a row can be written down wrong in ways a checker cannot
+/// see, because a checker can tell whether a row is *reachable* and not whether
+/// it was *earned*. This is the other direction - the file a run measured - and
+/// the command the seam's own header names is `boys-option-probe --emit-defaults
+/// <file>`, which writes what this returns.
+///
+/// **It writes a measured row or no row.** A class this run ranked carries the
+/// combination that won its class, marked with the figure and the
+/// way it was reached; a class whose ranking was a single entry standing alone is
+/// marked a choice, because a walkover is not a comparison. A class the run
+/// ranked no cell of carries the file's own five at that lane's budget and is
+/// marked as that - the seam's own fallback, stated rather than guessed, because
+/// the seam's list must name every class it carries or the build stops compiling.
+/// The block the report prints names both sets.
+///
+/// **The classes are the seam's own, read from its macro list**, so a class the
+/// seam carries and this run did not rank is written as a fallback row and a
+/// class it does not carry is absent here too. The spellings of the measured
+/// cells are this header's own enumerators, so the file compiles in the build
+/// that wrote it in either direction of the half-format keying: the two half
+/// formats are one lane and one row, and a run whose two half winners differed
+/// says so in the report rather than folding them.
+///
+/// The text is a valid `BOYS_BUILD_DEFAULTS` replacement: it carries the five
+/// names, the row list, and no `BOYS_BUILD_DEFAULTS_SHIPPED`, so a build pointed
+/// at it defines `BOYS_BUILD_DEFAULTS_REPLACED` and reads it instead of the
+/// committed file.
+///
+/// \param report  a report, from RunOptionProbe
+/// \param takenAt when the run was taken, as the caller's own clock spells it: the
+///                library reads no clock, and a row is a figure taken on one host
+///                at one time, so the date belongs to the caller who has one
+///
+/// \returns the header's text, or an empty string for a run that measured no
+///          class at all: there is no measurement to write, and a file of
+///          fallback rows written from a run that ranked nothing would be a
+///          transcription again
+///
+/// \ingroup boys
+std::string FormatBuildDefaults(const OptionProbeReport& report,
+                                const std::string& takenAt = std::string());
+
 /// Measures every evaluation option this build offers on this machine.
 ///
 /// The options are enumerated from the library rather than from a list: the
 /// arithmetic each option runs in is resolved against backend::BoysBackends(), so
 /// one whose arithmetic the build does not carry is reported through
-/// OptionProbeReport::unoffered; the rungs are found by asking the library what
-/// each tier it can name delivers; and the axes a policy carries are walked over
+/// OptionProbeReport::unoffered; and the axes a policy carries are walked over
 /// the sets the library reports, once per precision lane, so the coverage section
-/// can account for every cell of the space, served or refused.
+/// can account for every cell of the space, served or refused. Every option is
+/// evaluated at the library's full-accuracy multiplier.
 ///
 /// The pass protocol in ProbeOptions is then run: every pass carries runs of the
 /// fixed-work canary beside its rounds, and each round calls every option once in

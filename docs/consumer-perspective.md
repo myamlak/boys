@@ -1,7 +1,7 @@
 # Choosing a lane
 
 This note is written for a reader who has not built the library yet and has not chosen anything yet.
-The words it needs — *lane*, *region*, *rung* — are defined on [the API reference's landing
+The words it needs — *lane*, *region*, *partition* — are defined on [the API reference's landing
 page](mainpage.md). What follows is about the choice rather than about the code.
 
 `docs/lane-contract.md` states what each lane guarantees and where it stops. This note is about the
@@ -20,8 +20,8 @@ binding constraint. In production codes:
 
 All of those are larger than a 1e-14 error here. **Tightening this function past 1e-14 buys nothing
 unless those move too.** Your calculation is almost certainly limited by something else. If so, the
-double lane's default accuracy is already more than enough. The multiplier is then a way to buy speed,
-not a way to buy accuracy you need.
+double lane's accuracy is already more than enough, and the choice to make is which combination of
+fits and arithmetic is cheapest for it on your machine — not how much error to tolerate.
 
 ## When you do need the double lane
 
@@ -89,28 +89,22 @@ axes. Each of them is a decision a caller can make:
   order, or four orders at one argument;
 - **the division form** — how each step of the recurrence divides: exactly, by a plain reciprocal, or
   by a reciprocal refined back to the correctly-rounded quotient. That last one is bit-identical to
-  dividing and costs two fused multiply-adds to get there;
-- **the accuracy rung** — how far the stored fit is cut for this call, which is what the accuracy
-  multiplier names.
+  dividing and costs two fused multiply-adds to get there.
 
-**Five of the six are names resolved where the code is written; the sixth is the call's own
-argument.** The route, the scheme, the partition, the packing axis and the division form are written
-into the call site. The rung is the one a caller may need to decide at run time. The split is
-deliberate. How much accuracy you can afford may only be known at run time: from the size of the
-system you were handed, or from how many self-consistent-field cycles you are prepared to spend. The
-rung therefore has to be something you can compute there. Which fits to read and how to sum them is a
-decision made once, while the code is being written. A call site that resolved it on every call would
-pay, every time, to rediscover what its author already knew. So those five are resolved where they
-are named and nowhere else: there is no combination to look up at the call, no name to match and no
+**Every axis is a name resolved where the code is written.** The route, the scheme, the partition,
+the packing axis and the division form are written into the call site, and there is nothing left over
+to decide per call. That is deliberate: which fits to read and how to sum them is a decision made
+once, while the code is being written, and a call site that resolved it on every call would pay,
+every time, to rediscover what its author already knew. So the axes are resolved where they are
+named and nowhere else: there is no combination to look up at the call, no name to match and no
 registry to consult. A call costs nothing beyond the arithmetic it asked for.
 
 **The library defaults what a caller has not decided, and the line between the two is the one the
-library draws.** Precision, accuracy rung and the shape of the question are the caller's, because
-they change what comes back: which arithmetic is used, how much error it is allowed, and whether the
-call answers for one order or for a ladder of them, at one argument or across an array of arguments.
-The five structural axes are the library's to default. Each precision has one setting that a call
-naming nothing receives. A caller who cares about one of them may name it; a caller who does not is
-not asked to.
+library draws.** Precision and the shape of the question are the caller's, because they change what
+comes back: which arithmetic is used, and whether the call answers for one order or for a ladder of
+them, at one argument or across an array of arguments. The five structural axes are the library's to
+default. Each precision has one setting that a call naming nothing receives. A caller who cares
+about one of them may name it; a caller who does not is not asked to.
 
 **Where the recommendation comes from: a measurement taken where you deploy.** Which combination is
 cheapest depends on the machine, on whether your compiler fuses a product-plus-add into one
@@ -118,8 +112,8 @@ rounding, and on how your arguments arrive. So the library carries the measureme
 recommendation. The probe in this tree (`boys-option-probe`) ranks the combinations your build
 offers and prints the accuracy each one delivered beside its cost. You can then see whether a faster
 row was faster at the same accuracy or at a lower one. Choosing is a development-time act: run it
-once, read the row it puts first for your precision, your rung and the shape of your question, and
-write that combination's name into the call site. **The figures belong to the host they were taken
+once, read the row it puts first for your precision and the shape of your question, and write that
+combination's name into the call site. **The figures belong to the host they were taken
 on** — a ranking taken somewhere else is not evidence about your machine. The device lane carries a
 probe of the same kind for a card (`boys-device-probe`), because which entry is cheapest on a card
 is a property of the card.

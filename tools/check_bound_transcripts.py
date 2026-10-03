@@ -177,8 +177,13 @@ LANE_ROWS = re.compile(
     r"[A-Za-z_][A-Za-z0-9_]*\s*=\s*\{\{(?P<rows>.*?)\}\};",
     re.S,
 )
-# precision, name, bound, additive, source.
-LANE_MEMBERS = 6
+# precision, name, bound, additive, plainAdditive, source, plainSource.
+LANE_MEMBERS = 7
+# The members of a row this check reads - precision, name, bound, additive,
+# plainAdditive - and so the fewest a row may carry: a trailing member left to
+# its default is not written in the initialiser, which is why the count is a
+# range and not one number.
+LANE_MEMBERS_READ = 5
 
 # The column of the header's contract table, by the label this check reads it
 # under. Matching is by prefix so a parenthesised range beside a label - the
@@ -771,10 +776,11 @@ def read_lanes(
         if not (row.startswith("{") and row.endswith("}")):
             raise CheckError(f"{where}: not a braced initialiser ({ascii_safe(row[:60])} ...)")
         members = split_members(row[1:-1], ",")
-        if len(members) != LANE_MEMBERS:
+        if not LANE_MEMBERS_READ <= len(members) <= LANE_MEMBERS:
             raise CheckError(
-                f"{where}: {len(members)} members, and LaneContractInfo has {LANE_MEMBERS} "
-                f"(precision, name, bound, additive, source)"
+                f"{where}: {len(members)} members, and a lane row carries {LANE_MEMBERS_READ} to "
+                f"{LANE_MEMBERS} of LaneContractInfo's (precision, name, bound, additive, "
+                f"plainAdditive, source, plainSource)"
             )
         if re.fullmatch(r'"[^"\\]*"', members[1].strip()) is None:
             raise CheckError(

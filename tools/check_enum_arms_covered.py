@@ -1,24 +1,23 @@
 #!/usr/bin/env python3
-r"""Check that every switch over a tier or a scheme names every enumerator of it.
+r"""Check that every switch over a scheme names every enumerator of it.
 
-`AccuracyTier` and `OrdersScheme` are each dispatched by hand-written `case` lists, and the whole
-guard around them rests on a claim nothing proves: that the arm list is complete. The `static_assert`
-beside those dispatches proves the NAMING MAP is total - every enumerator is named in `TierRung` or
-`SchemeIsNamed` - and the arms read their rung through that map. It says nothing about the arms
-themselves, and an enumerator named in the map but given no arm still falls through.
+`OrdersScheme` is dispatched by hand-written `case` lists, and the whole guard around them rests on a
+claim nothing proves: that the arm list is complete. The `static_assert` beside those dispatches
+proves the NAMING MAP is total - every enumerator is named in `SchemeIsNamed` - and the arms read
+their scheme through that map. It says nothing about the arms themselves, and an enumerator named in
+the map but given no arm still falls through.
 
 What falls through is not a crash. Every one of these switches ends in a body that answers with the
-reference precision or the certified summation - the slowest, most accurate option - so a tier or a
-scheme with no arm is served at full accuracy under its own name, silently. That is a substitution:
-the caller named a rung and got another one, and the probe books the cell as measured.
+certified summation - the slowest, most accurate option - so a scheme with no arm is served under its
+own name, silently. That is a substitution: the caller named one scheme and got another one, and the
+probe books the cell as measured.
 
 On gcc and clang `-Wswitch` catches the omission, and this tree builds `-Werror`, so the ubuntu legs
-go red. It catches only the switches that have NO `default` arm, which is not all of them:
-`AllOrdersF64AtRung` and `AllOrdersF32AtRung` keep a `default: break;` for the values cast in from
-outside the enumeration, and that arm swallows a new enumerator exactly as quietly. On MSVC at /W4
-nothing catches it anywhere - C4062 is not in /W4 - and MSVC is the toolchain the release is
-verified on. This check is what covers the gap: it is the compiler's own rule, applied to every
-switch uniformly, including the two the compiler cannot see.
+go red. It catches only the switches that have NO `default` arm, which is not all of them: a switch
+that keeps a `default: break;` for the values cast in from outside the enumeration swallows a new
+enumerator exactly as quietly. On MSVC at /W4 nothing catches it anywhere - C4062 is not in /W4 - and
+MSVC is the toolchain the release is verified on. This check is what covers the gap: it is the
+compiler's own rule, applied to every switch uniformly, including the ones the compiler cannot see.
 
 Usage:
   python3 tools/check_enum_arms_covered.py --check
@@ -36,12 +35,11 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 
 # The enumeration, and the file that declares it, as paths under --root.
 ENUMS = {
-    "AccuracyTier": "include/boys/boys.hpp",
     "OrdersScheme": "src/boys_orders_simd.hpp",
 }
 
-# Every file a switch over one of those two can appear in: the library, the probe, the headers a
-# consumer compiles, and the tests that dispatch on a tier the way a consumer does.
+# Every file a switch over it can appear in: the library, the probe, the headers a consumer
+# compiles, and the tests that dispatch on a scheme the way a consumer does.
 SCAN = (
     "src/boys.cpp",
     "src/boys_orders_simd.cpp",
@@ -51,10 +49,10 @@ SCAN = (
     "tests/consumer_option_space.cpp",
 )
 
-# The sentinel each enumeration ends with: "one past the last member, and not a member". A switch is
-# not required to name it - it is not a rung and not a scheme, and the two batch dispatches answer
-# it through their `default` arm instead - so it is excluded from the set that must be covered and
-# reported separately when it is absent, because a switch that names it is the stronger shape.
+# The sentinel the enumeration ends with: "one past the last member, and not a member". A switch is
+# not required to name it - it is not a scheme, and the batch dispatch answers it through its
+# `default` arm instead - so it is excluded from the set that must be covered and reported
+# separately when it is absent, because a switch that names it is the stronger shape.
 SENTINEL = "kCount"
 
 CASE = re.compile(r"\bcase\s+(\w+)::(\w+)\s*:")
@@ -254,7 +252,7 @@ def main() -> int:
                     print(
                         f"  the switch falls through to the body below it, so {', '.join(gap)} "
                         f"{'is' if len(gap) == 1 else 'are'} answered as the entry that body "
-                        f"serves - the caller named one rung and is given another, and the probe "
+                        f"serves - the caller named one scheme and is given another, and the probe "
                         f"books the cell as measured",
                         file=sys.stderr,
                     )

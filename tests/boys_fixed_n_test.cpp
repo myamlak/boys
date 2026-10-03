@@ -2,19 +2,17 @@
 // arguments at one fixed order, the batch shape of angular-momentum-grouped
 // integral-engine inner loops.
 //
-// Each element runs the BoysSingle region bodies verbatim (m = 1: the certified
-// path, bit-identical by construction; m > 1: the same bodies at the single-lane
-// effective degrees), so the accuracy assertions reuse the double-single per-region
-// bounds (1e-15 / 3e-14 / 5.5e-14) over the committed reference grid, and the
-// identity tests assert bitwise agreement with BoysSingle at every sampled
-// multiplier. The layout tests pin the strided surface (out[i * stride] = F_n(x[i]),
-// stride >= 1 in doubles, default 1) and the alignment contract (natural double
-// alignment only - the entry is scalar; buffers over-aligned like the AVX2 lanes'
-// are accepted unchanged).
+// Each element runs the BoysSingle region bodies verbatim - the certified path -
+// so the accuracy assertions reuse the double-single per-region bounds
+// (1e-15 / 3e-14 / 5.5e-14) over the committed reference grid, and the identity
+// tests assert bitwise agreement with BoysSingle. The layout tests pin the
+// strided surface (out[i * stride] = F_n(x[i]), stride >= 1 in doubles, default 1)
+// and the alignment contract (natural double alignment only - the entry is scalar;
+// buffers over-aligned like the AVX2 lanes' are accepted unchanged).
 //
-// The sampled-m instantiations compile from the internal headers; the m = 1 call
-// sites below route to the library's certified instantiation (extern-template
-// surface in boys.hpp, explicit instantiation in boys.cpp).
+// The default-policy call sites below route to the library's certified
+// instantiation (extern-template surface in boys.hpp, explicit instantiation in
+// boys.cpp).
 
 #include "boys/boys.hpp"
 #include "boys/boys_effective_degrees.hpp"
@@ -145,16 +143,6 @@ double RegionBound(BoysRegion region) {
     return 0.0; // unreachable
 }
 
-// The sampled-m set of the accuracy suite.
-template <typename Fn> void ForEachSampledMultiplier(Fn&& fn) {
-    fn.template operator()<1.0>();
-    fn.template operator()<2.0>();
-    fn.template operator()<10.0>();
-    fn.template operator()<100.0>();
-    fn.template operator()<1e4>();
-    fn.template operator()<1e8>();
-}
-
 struct RegionWorsts {
     double a = 0.0;
     double b = 0.0;
@@ -183,10 +171,9 @@ struct RegionWorsts {
     }
 };
 
-void PrintWorsts(const char* lane, double m, const RegionWorsts& worst) {
-    std::printf("%s m=%.0e: worst region A %.3e, B %.3e, C %.3e, extended band %.3e\n",
+void PrintWorsts(const char* lane, const RegionWorsts& worst) {
+    std::printf("%s: worst region A %.3e, B %.3e, C %.3e, extended band %.3e\n",
                 lane,
-                m,
                 worst.a,
                 worst.b,
                 worst.c,
@@ -211,9 +198,9 @@ std::vector<double> SweepXOf(const GridColumns& grid, int n) {
     return xs;
 }
 
-// --- Grid accuracy: |BoysFixedN value - reference| <= m * B_region per element ---
+// --- Grid accuracy: |BoysFixedN value - reference| <= B_region per element ---
 
-template <double kM> void SweepGridAccuracy(const GridColumns& grid) {
+void SweepGridAccuracy(const GridColumns& grid) {
     RegionWorsts worst;
     std::vector<double> out;
 
@@ -222,36 +209,35 @@ template <double kM> void SweepGridAccuracy(const GridColumns& grid) {
         const std::vector<double>& xs = grid.x[static_cast<std::size_t>(n)];
         const std::vector<double>& want = grid.want[static_cast<std::size_t>(n)];
         out.resize(xs.size());
-        BoysFixedN<kM>(n, xs.data(), out.data(), xs.size());
+        BoysFixedN(n, xs.data(), out.data(), xs.size());
 
         for (std::size_t i = 0; i < xs.size(); ++i)
         {
-            const double bound = kM * RegionBound(RegionOf(xs[i]));
+            const double bound = RegionBound(RegionOf(xs[i]));
             const double error = std::abs(out[i] - want[i]);
-            EXPECT_LE(error, bound) << "m=" << kM << " n=" << n << " x=" << xs[i]
-                                    << " got=" << out[i] << " want=" << want[i];
+            EXPECT_LE(error, bound) << "n=" << n << " x=" << xs[i] << " got=" << out[i]
+                                    << " want=" << want[i];
             worst.Update(error, xs[i]);
         }
     }
 
-    PrintWorsts("fixed-n vector", kM, worst);
+    PrintWorsts("fixed-n vector", worst);
 }
 
-// --- Identity: bitwise agreement with BoysSingle per element, at every m ------
+// --- Identity: bitwise agreement with BoysSingle per element -----------------
 
-template <double kM> void SweepSingleIdentity(const GridColumns& grid) {
+void SweepSingleIdentity(const GridColumns& grid) {
     std::vector<double> out;
 
     for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
     {
         const std::vector<double> xs = SweepXOf(grid, n);
         out.resize(xs.size());
-        BoysFixedN<kM>(n, xs.data(), out.data(), xs.size());
+        BoysFixedN(n, xs.data(), out.data(), xs.size());
 
         for (std::size_t i = 0; i < xs.size(); ++i)
         {
-            EXPECT_EQ(out[i], BoysSingle<kM>(n, xs[i]))
-                << "m=" << kM << " n=" << n << " x=" << xs[i];
+            EXPECT_EQ(out[i], BoysSingle(n, xs[i])) << "n=" << n << " x=" << xs[i];
         }
     }
 }
@@ -260,25 +246,12 @@ template <double kM> void SweepSingleIdentity(const GridColumns& grid) {
 
 TEST(BoysFixedNTest, GridSweepMatchesReferenceAtM1) {
     const GridColumns grid = BuildColumns(gReference);
-    SweepGridAccuracy<1.0>(grid);
-}
-
-TEST(BoysFixedNTest, GridSweepMatchesReferenceAtSampledMultipliers) {
-    const GridColumns grid = BuildColumns(gReference);
-    ForEachSampledMultiplier([&grid]<double kM>() {
-        // if constexpr, not if: kM is a non-type template parameter, so this
-        // condition is a compile-time constant, and MSVC on arm64 warns (C4127),
-        // which /WX promotes to an error; x86_64 folds it without a word.
-        if constexpr (kM != 1.0)
-        {
-            SweepGridAccuracy<kM>(grid);
-        }
-    });
+    SweepGridAccuracy(grid);
 }
 
 TEST(BoysFixedNTest, ElementWiseBitIdentityWithBoysSingle) {
     const GridColumns grid = BuildColumns(gReference);
-    ForEachSampledMultiplier([&grid]<double kM>() { SweepSingleIdentity<kM>(grid); });
+    SweepSingleIdentity(grid);
 }
 
 // The strided output layout: out[i * stride] = F_n(x[i]); only the stride
@@ -395,15 +368,14 @@ TEST(BoysFixedNTest, TheRationalRouteIsCarriedAndIsBoysSingle) {
 
         for (std::size_t i = 0; i < args.size(); ++i)
         {
-            BoysFixedN<1.0, RoutePolicy<boys::FitRoute::kRationalMinimax>>(
-                n, &args[i], &got[i], 1);
+            BoysFixedN<RoutePolicy<boys::FitRoute::kRationalMinimax>>(n, &args[i], &got[i], 1);
         }
 
         for (std::size_t i = 0; i < args.size(); ++i)
         {
             const double rational =
-                BoysSingle<1.0, RoutePolicy<boys::FitRoute::kRationalMinimax>>(n, args[i]);
-            const double shipped = BoysSingle<1.0, RoutePolicy<boys::FitRoute::kChebyshev>>(n, args[i]);
+                BoysSingle<RoutePolicy<boys::FitRoute::kRationalMinimax>>(n, args[i]);
+            const double shipped = BoysSingle<RoutePolicy<boys::FitRoute::kChebyshev>>(n, args[i]);
 
             if (std::memcmp(&got[i], &rational, sizeof(double)) != 0)
             {
@@ -430,7 +402,7 @@ TEST(BoysFixedNTest, TheDefaultRouteIsUnchangedByTheRouteAxis) {
 
     for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
     {
-        BoysFixedN<1.0, RoutePolicy<boys::FitRoute::kChebyshev>>(n, args.data(), got.data(), args.size());
+        BoysFixedN<RoutePolicy<boys::FitRoute::kChebyshev>>(n, args.data(), got.data(), args.size());
 
         for (std::size_t i = 0; i < args.size(); ++i)
         {

@@ -139,6 +139,6 @@ static_assert(boys::kDefaultPackAxis == boys::PackAxis::kArguments,
               "the fit-granularity fixture's packing axis is not the committed value");
 static_assert(boys::kDefaultDivisionForm == boys::DivisionForm::kRefinedReciprocal,
               "the fit-granularity fixture's division form is not the committed value");
-static_assert(boys::kDefaultFitGranularity == boys::FitGranularity::kShipped,
+static_assert(boys::kDefaultFitGranularity == boys::FitGranularity::kCoarsest,
               "the fit-granularity fixture's fit granularity is not in force");
 #endif

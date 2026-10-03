@@ -1,17 +1,17 @@
 #include "boys/boys_transform.hpp"
 
-// The default multiplier's explicit instantiations. The extern-template
-// declarations in the public header route the default call sites here, so a
-// caller that names no multiplier links against these instead of compiling the
-// kernel again in its own translation unit.
+// The entry's explicit instantiations. The extern-template declarations in the
+// public header route a default call site here, so a caller that names no mode
+// links against these instead of compiling the kernel again in its own
+// translation unit.
 
 namespace boys {
 
-template void BoysRegionAProduct<ProductMode::kTf32, kBoysFullAccuracyMultiplier>(
+template void BoysRegionAProduct<ProductMode::kTf32>(
     RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
-template void BoysRegionAProduct<ProductMode::kBf16, kBoysFullAccuracyMultiplier>(
+template void BoysRegionAProduct<ProductMode::kBf16>(
     RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
-template void BoysRegionAProduct<ProductMode::kFp16, kBoysFullAccuracyMultiplier>(
+template void BoysRegionAProduct<ProductMode::kFp16>(
     RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
 
 std::span<const ProductModeInfo> BoysProductModes() noexcept {
@@ -72,11 +72,11 @@ std::span<const ProductModeInfo> BoysProductModes() noexcept {
     return std::span<const ProductModeInfo>(kRows);
 }
 
-template void BoysRegionAProduct<ProductMode::kFp64, kBoysFullAccuracyMultiplier>(
+template void BoysRegionAProduct<ProductMode::kFp64>(
     RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
-template void BoysRegionAProduct<ProductMode::kTf32x3, kBoysFullAccuracyMultiplier>(
+template void BoysRegionAProduct<ProductMode::kTf32x3>(
     RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
-template void BoysRegionAProduct<ProductMode::kBf16x6, kBoysFullAccuracyMultiplier>(
+template void BoysRegionAProduct<ProductMode::kBf16x6>(
     RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
 
 } // namespace boys

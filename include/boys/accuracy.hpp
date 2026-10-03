@@ -21,11 +21,9 @@ namespace boys {
 /// Highest Boys order supported by the kernel.
 inline constexpr int kMaxBoysOrder = 32;
 
-/// The default accuracy multiplier of every lane: m = 1 is full static
-/// accuracy, bit-identical to the certified lanes (the documented
-/// contract).
-/// Larger m values trade certified accuracy for work via compile-time degree
-/// truncation (see the contract table in the boys/boys.hpp preamble).
+/// The accuracy multiplier of every lane, and the only one: m = 1 is full static
+/// accuracy, bit-identical to the certified lanes (the documented contract).
+/// Every bound this library documents is this multiplier's figure.
 inline constexpr double kBoysFullAccuracyMultiplier = 1.0;
 
 /// Which certified fit serves a region, where the library carries more than

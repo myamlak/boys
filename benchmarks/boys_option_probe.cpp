@@ -3,7 +3,10 @@
 //
 // The exit status is 0 whether or not a default was named — a refusal is one of
 // this tool's results, not a failure of it — so a script that wants the verdict
-// reads it from the text.
+// reads it from the text. The one run that fails is one whose option space does
+// not close, which the report's last block prints: a space whose cells do not add
+// up is a defect in the accounting and not a result, and a closure check that
+// could not fail would be a decoration.
 #include "boys/boys_probe.hpp"
 
 #include <array>
@@ -11,6 +14,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -95,6 +99,13 @@ void Usage() {
                "                     build offers). A name that is no option of this\n"
                "                     library, a cell the library refuses, and an option\n"
                "                     this build does not carry are answered apart.\n"
+               "  --emit-defaults=F  write this run's own rankings as a replacement for\n"
+               "                     the build-defaults seam, in the format its\n"
+               "                     BOYS_BUILD_DEFAULT_ROWS consumes, and report which\n"
+               "                     classes carry a measured row and which carry the\n"
+               "                     seam's own five. The file is what the CMake option\n"
+               "                     BOYS_BUILD_DEFAULTS points a build at; a run that\n"
+               "                     measured no class writes no file.\n"
                "  --help             this text\n"
                "\n"
                "The result is about this machine, this build and this process. It is\n"
@@ -106,6 +117,7 @@ void Usage() {
 
 int main(int argc, char** argv) {
     boys::ProbeOptions options;
+    std::string emitDefaults;
 
     for (int i = 1; i < argc; ++i)
     {
@@ -115,6 +127,18 @@ int main(int argc, char** argv) {
         {
             Usage();
             return 0;
+        } else if (arg.rfind("--emit-defaults=", 0) == 0)
+        {
+            emitDefaults = arg.c_str() + 16;
+        } else if (arg == "--emit-defaults")
+        {
+            if (i + 1 >= argc)
+            {
+                std::fprintf(stderr, "boys-option-probe: --emit-defaults needs a file name\n");
+                return 2;
+            }
+
+            emitDefaults = argv[++i];
         } else if (arg.rfind("--count=", 0) == 0)
         {
             options.count = static_cast<std::size_t>(std::strtoull(arg.c_str() + 8, nullptr, 10));
@@ -180,5 +204,44 @@ int main(int argc, char** argv) {
 
     const std::string text = boys::FormatOptionProbe(report);
     std::fputs(text.c_str(), stdout);
-    return 0;
+
+    // The seam this run implies, where the caller asked for it: the rows a build pointed at
+    // the file compiles. A run that ranked no class has nothing to write and the entry says
+    // so with an empty text, which is a failure of this command's own contract rather than a
+    // result - the file would be a transcription of the seam and not a measurement.
+    if (!emitDefaults.empty())
+    {
+        const std::string headerText = boys::FormatBuildDefaults(report, started);
+
+        if (headerText.empty())
+        {
+            std::fprintf(stderr,
+                         "boys-option-probe: no defaults written - this run measured no class, "
+                         "so there is no ranking to write\n");
+            return 3;
+        }
+
+        std::ofstream file(emitDefaults, std::ios::binary);
+
+        if (!file)
+        {
+            std::fprintf(stderr, "boys-option-probe: cannot write '%s'\n", emitDefaults.c_str());
+            return 3;
+        }
+
+        file << headerText;
+        file.close();
+
+        if (!file)
+        {
+            std::fprintf(stderr, "boys-option-probe: short write to '%s'\n", emitDefaults.c_str());
+            return 3;
+        }
+
+        std::printf("defaults written: %s | %zu byte(s) | point a build at it with "
+                    "-DBOYS_BUILD_DEFAULTS=%s\n",
+                    emitDefaults.c_str(), headerText.size(), emitDefaults.c_str());
+    }
+
+    return boys::OptionProbeSpaceClosure(report).closed ? 0 : 1;
 }

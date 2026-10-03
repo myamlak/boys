@@ -65,11 +65,9 @@
 // Callers must check BoysAvx2Available() before invoking these; the kernels are
 // FMA chains, so the predicate requires the FMA feature bit as well.
 //
-// Every region entry is a template on kAccuracyMultiplier, compiled twice under
-// if constexpr: the m = 1 branch is the full-accuracy body verbatim (the
-// bit-identity pin), the relaxed branch passes the per-piece / per-order
-// effective degrees into the degree-parameterized Clenshaw variants. The
-// default m = 1 instantiations live at the bottom of this TU.
+// Every region entry runs the full-accuracy body: the per-piece and
+// per-order effective degrees are read from the tables the fits were certified
+// at, so the Clenshaw variants below read them directly.
 
 namespace boys::detail {
 namespace {
@@ -269,7 +267,6 @@ bool BoysAvx2Available() noexcept {
 
 namespace boys::detail {
 
-template <double kAccuracyMultiplier>
 void BoysRegionASimd(int n, const double* x, double* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(BoysAvx2Available());
@@ -277,7 +274,6 @@ void BoysRegionASimd(int n, const double* x, double* out, std::size_t count) noe
     const int first = detail::kPieceStart[n];
     const int last = detail::kPieceStart[n + 1];
 
-    if constexpr (kAccuracyMultiplier == 1.0)
     {
         for (std::size_t i = 0; i + 3 < count; i += 4)
         {
@@ -295,33 +291,11 @@ void BoysRegionASimd(int n, const double* x, double* out, std::size_t count) noe
 
             _mm256_storeu_pd(out + i, acc);
         }
-    } else
-    {
-        static constexpr auto kDegrees =
-            detail::RegionADegrees<kAccuracyMultiplier, detail::BoysRole::kDoubleSingle>();
-
-        for (std::size_t i = 0; i + 3 < count; i += 4)
-        {
-            const __m256d xv = _mm256_loadu_pd(x + i);
-            __m256d acc = _mm256_setzero_pd();
-
-            for (int p = first; p < last; ++p)
-            {
-                const detail::OrderPiece& piece = detail::kPieces[p];
-                const __m256d mask =
-                    _mm256_and_pd(_mm256_cmp_pd(xv, _mm256_set1_pd(piece.a), _CMP_GE_OQ),
-                                  _mm256_cmp_pd(xv, _mm256_set1_pd(piece.b), _CMP_LT_OQ));
-                acc = _mm256_blendv_pd(
-                    acc, Clenshaw4SplitDeg(piece, kDegrees[static_cast<std::size_t>(p)], xv), mask);
-            }
-
-            _mm256_storeu_pd(out + i, acc);
-        }
     }
 
     for (std::size_t i = count - (count % 4); i < count; ++i)
     {
-        out[i] = BoysSingle<kAccuracyMultiplier>(n, x[i]);
+        out[i] = BoysSingle<>(n, x[i]);
     }
 }
 
@@ -331,14 +305,12 @@ void BoysRegionASimd(int n, const double* x, double* out, std::size_t count) noe
 // multiplies it through the ladder - the plain reciprocal, not the kRefinedReciprocal
 // the entries default to - so wired as it stands it would divide in a form no caller
 // named.
-template <double kAccuracyMultiplier>
 void BoysRegionBSimd(int n, const double* x, double* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(BoysAvx2Available());
 
     static const ExpTable expTable;
 
-    if constexpr (kAccuracyMultiplier == 1.0)
     {
         for (std::size_t i = 0; i + 3 < count; i += 4)
         {
@@ -356,33 +328,12 @@ void BoysRegionBSimd(int n, const double* x, double* out, std::size_t count) noe
                 _mm256_storeu_pd(out + (l + 1) * count + i, f);
             }
         }
-    } else
-    {
-        static constexpr auto kDegreesB =
-            detail::RegionBDegrees<kAccuracyMultiplier, detail::BoysRole::kDoubleBatch>();
-
-        for (std::size_t i = 0; i + 3 < count; i += 4)
-        {
-            const __m256d xv = _mm256_loadu_pd(x + i);
-            __m256d f = ClenshawB4Deg(kDegreesB[static_cast<std::size_t>(n)], xv);
-            const __m256d expx = expTable.Eval4(xv);
-            const __m256d invx = _mm256_div_pd(_mm256_set1_pd(1.0), xv);
-            _mm256_storeu_pd(out + i, f);
-
-            for (int l = 0; l < n; ++l)
-            {
-                f = _mm256_fmadd_pd(
-                    _mm256_set1_pd(l + 0.5), f, _mm256_mul_pd(_mm256_set1_pd(-0.5), expx));
-                f = _mm256_mul_pd(f, invx);
-                _mm256_storeu_pd(out + (l + 1) * count + i, f);
-            }
-        }
     }
 
     for (std::size_t i = count - (count % 4); i < count; ++i)
     {
         double batch[kMaxBoysOrder + 1];
-        BoysAllOrders<kAccuracyMultiplier>(n, x[i], batch);
+        BoysAllOrders<>(n, x[i], batch);
 
         for (int l = 0; l <= n; ++l)
         {
@@ -400,7 +351,6 @@ void BoysRegionBSimd(int n, const double* x, double* out, std::size_t count) noe
 // form and wiring it is a signature change, and its vector body forms 1/x once and
 // multiplies it through the ladder - the plain reciprocal, not the kRefinedReciprocal
 // the entries default to.
-template <double kAccuracyMultiplier>
 void BoysRegionCSimd(int n, const double* x, double* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(BoysAvx2Available());
@@ -421,7 +371,7 @@ void BoysRegionCSimd(int n, const double* x, double* out, std::size_t count) noe
 
     for (std::size_t i = count - (count % 4); i < count; ++i)
     {
-        out[i] = BoysSingle<kAccuracyMultiplier>(n, x[i]);
+        out[i] = BoysSingle<>(n, x[i]);
     }
 }
 
@@ -504,12 +454,12 @@ struct F16Lane {
         std::memcpy(p, raw, sizeof(raw));
     }
 
-    template <double kAccuracyMultiplier> static HalfT Single(int n, HalfT x) noexcept {
-        return BoysSingleF16<kAccuracyMultiplier>(n, x);
+    static HalfT Single(int n, HalfT x) noexcept {
+        return BoysSingleF16<>(n, x);
     }
 
-    template <double kAccuracyMultiplier> static void Batch(int n, HalfT x, HalfT* out) noexcept {
-        BoysAllOrdersF16<kAccuracyMultiplier>(n, x, out);
+    static void Batch(int n, HalfT x, HalfT* out) noexcept {
+        BoysAllOrdersF16<>(n, x, out);
     }
 };
 
@@ -540,12 +490,12 @@ struct Bf16Lane {
         std::memcpy(p, raw, sizeof(raw));
     }
 
-    template <double kAccuracyMultiplier> static HalfT Single(int n, HalfT x) noexcept {
-        return BoysSingleBf16<kAccuracyMultiplier>(n, x);
+    static HalfT Single(int n, HalfT x) noexcept {
+        return BoysSingleBf16<>(n, x);
     }
 
-    template <double kAccuracyMultiplier> static void Batch(int n, HalfT x, HalfT* out) noexcept {
-        BoysAllOrdersBf16<kAccuracyMultiplier>(n, x, out);
+    static void Batch(int n, HalfT x, HalfT* out) noexcept {
+        BoysAllOrdersBf16<>(n, x, out);
     }
 };
 
@@ -553,7 +503,7 @@ struct Bf16Lane {
 // scalar tails call the half-lane scalar entries; the vector bodies hold the
 // same documented bound as those entries but are not bit-identical to them (the
 // bodies run the fp32 fit at full degree where the scalar lane truncates it).
-template <typename Lane, double kAccuracyMultiplier>
+template <typename Lane>
 void RegionASimdHalf(int n,
                      const typename Lane::HalfT* x,
                      typename Lane::HalfT* out,
@@ -561,7 +511,6 @@ void RegionASimdHalf(int n,
     const int first = detail::f32::kPieceStart[n];
     const int last = detail::f32::kPieceStart[n + 1];
 
-    if constexpr (kAccuracyMultiplier == 1.0)
     {
         for (std::size_t i = 0; i + 7 < count; i += 8)
         {
@@ -579,46 +528,21 @@ void RegionASimdHalf(int n,
 
             Lane::Store(out + i, acc);
         }
-    } else
-    {
-        static constexpr auto kDegrees =
-            detail::RegionADegrees<kAccuracyMultiplier, detail::BoysRole::kF32Fp16Single>();
-
-        for (std::size_t i = 0; i + 7 < count; i += 8)
-        {
-            const __m256 xv = Lane::Load(x + i);
-            __m256 acc = _mm256_setzero_ps();
-
-            for (int p = first; p < last; ++p)
-            {
-                const detail::f32::OrderPiece& piece = detail::f32::kPieces[p];
-                const __m256 mask =
-                    _mm256_and_ps(_mm256_cmp_ps(xv, _mm256_set1_ps(piece.a), _CMP_GE_OQ),
-                                  _mm256_cmp_ps(xv, _mm256_set1_ps(piece.b), _CMP_LT_OQ));
-                acc = _mm256_blendv_ps(
-                    acc,
-                    Clenshaw8SplitF32Deg(piece, kDegrees[static_cast<std::size_t>(p)], xv),
-                    mask);
-            }
-
-            Lane::Store(out + i, acc);
-        }
     }
 
     for (std::size_t i = count - (count % 8); i < count; ++i)
     {
-        out[i] = Lane::template Single<kAccuracyMultiplier>(n, x[i]);
+        out[i] = Lane::Single(n, x[i]);
     }
 }
 
-template <typename Lane, double kAccuracyMultiplier>
+template <typename Lane>
 void RegionBSimdHalf(int n,
                      const typename Lane::HalfT* x,
                      typename Lane::HalfT* out,
                      std::size_t count) noexcept {
     static const ExpTable expTable;
 
-    if constexpr (kAccuracyMultiplier == 1.0)
     {
         for (std::size_t i = 0; i + 7 < count; i += 8)
         {
@@ -642,35 +566,12 @@ void RegionBSimdHalf(int n,
                 Lane::Store(out + (l + 1) * count + i, f);
             }
         }
-    } else
-    {
-        static constexpr auto kDegreesB =
-            detail::RegionBDegrees<kAccuracyMultiplier, detail::BoysRole::kF32Fp16Single>();
-
-        for (std::size_t i = 0; i + 7 < count; i += 8)
-        {
-            const __m256 xv = Lane::Load(x + i);
-            __m256 f = ClenshawB8F32Deg(kDegreesB[static_cast<std::size_t>(n)], xv);
-            const __m256 expx = Eval8Exp(expTable, xv);
-            Lane::Store(out + i, f);
-
-            for (int l = 0; l < n; ++l)
-            {
-                // Division, not a rounded reciprocal: see the m = 1 arm.
-                f = _mm256_div_ps(
-                    _mm256_fmadd_ps(_mm256_set1_ps(static_cast<float>(l) + 0.5f),
-                                    f,
-                                    _mm256_mul_ps(_mm256_set1_ps(-0.5f), expx)),
-                    xv);
-                Lane::Store(out + (l + 1) * count + i, f);
-            }
-        }
     }
 
     for (std::size_t i = count - (count % 8); i < count; ++i)
     {
         typename Lane::HalfT batch[kMaxBoysOrder + 1];
-        Lane::template Batch<kAccuracyMultiplier>(n, x[i], batch);
+        Lane::Batch(n, x[i], batch);
 
         for (int l = 0; l <= n; ++l)
         {
@@ -679,7 +580,7 @@ void RegionBSimdHalf(int n,
     }
 }
 
-template <typename Lane, double kAccuracyMultiplier>
+template <typename Lane>
 void RegionCSimdHalf(int n,
                      const typename Lane::HalfT* x,
                      typename Lane::HalfT* out,
@@ -701,7 +602,7 @@ void RegionCSimdHalf(int n,
 
     for (std::size_t i = count - (count % 8); i < count; ++i)
     {
-        out[i] = Lane::template Single<kAccuracyMultiplier>(n, x[i]);
+        out[i] = Lane::Single(n, x[i]);
     }
 }
 
@@ -712,7 +613,6 @@ bool F16cAvailable() noexcept {
     return available;
 }
 
-template <double kAccuracyMultiplier>
 void BoysRegionASimdF16(int n, const F16* x, F16* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(BoysAvx2Available());
@@ -721,16 +621,15 @@ void BoysRegionASimdF16(int n, const F16* x, F16* out, std::size_t count) noexce
     {
         for (std::size_t i = 0; i < count; ++i)
         {
-            out[i] = BoysSingleF16<kAccuracyMultiplier>(n, x[i]);
+            out[i] = BoysSingleF16<>(n, x[i]);
         }
 
         return;
     }
 
-    RegionASimdHalf<F16Lane, kAccuracyMultiplier>(n, x, out, count);
+    RegionASimdHalf<F16Lane>(n, x, out, count);
 }
 
-template <double kAccuracyMultiplier>
 void BoysRegionBSimdF16(int n, const F16* x, F16* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(BoysAvx2Available());
@@ -741,7 +640,7 @@ void BoysRegionBSimdF16(int n, const F16* x, F16* out, std::size_t count) noexce
 
         for (std::size_t i = 0; i < count; ++i)
         {
-            BoysAllOrdersF16<kAccuracyMultiplier>(n, x[i], batch);
+            BoysAllOrdersF16<>(n, x[i], batch);
 
             for (int l = 0; l <= n; ++l)
             {
@@ -752,10 +651,9 @@ void BoysRegionBSimdF16(int n, const F16* x, F16* out, std::size_t count) noexce
         return;
     }
 
-    RegionBSimdHalf<F16Lane, kAccuracyMultiplier>(n, x, out, count);
+    RegionBSimdHalf<F16Lane>(n, x, out, count);
 }
 
-template <double kAccuracyMultiplier>
 void BoysRegionCSimdF16(int n, const F16* x, F16* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(BoysAvx2Available());
@@ -764,16 +662,15 @@ void BoysRegionCSimdF16(int n, const F16* x, F16* out, std::size_t count) noexce
     {
         for (std::size_t i = 0; i < count; ++i)
         {
-            out[i] = BoysSingleF16<kAccuracyMultiplier>(n, x[i]);
+            out[i] = BoysSingleF16<>(n, x[i]);
         }
 
         return;
     }
 
-    RegionCSimdHalf<F16Lane, kAccuracyMultiplier>(n, x, out, count);
+    RegionCSimdHalf<F16Lane>(n, x, out, count);
 }
 
-template <double kAccuracyMultiplier>
 void BoysRegionASimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(BoysAvx2Available());
@@ -782,16 +679,15 @@ void BoysRegionASimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
     {
         for (std::size_t i = 0; i < count; ++i)
         {
-            out[i] = BoysSingleBf16<kAccuracyMultiplier>(n, x[i]);
+            out[i] = BoysSingleBf16<>(n, x[i]);
         }
 
         return;
     }
 
-    RegionASimdHalf<Bf16Lane, kAccuracyMultiplier>(n, x, out, count);
+    RegionASimdHalf<Bf16Lane>(n, x, out, count);
 }
 
-template <double kAccuracyMultiplier>
 void BoysRegionBSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(BoysAvx2Available());
@@ -802,7 +698,7 @@ void BoysRegionBSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
 
         for (std::size_t i = 0; i < count; ++i)
         {
-            BoysAllOrdersBf16<kAccuracyMultiplier>(n, x[i], batch);
+            BoysAllOrdersBf16<>(n, x[i], batch);
 
             for (int l = 0; l <= n; ++l)
             {
@@ -813,10 +709,9 @@ void BoysRegionBSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
         return;
     }
 
-    RegionBSimdHalf<Bf16Lane, kAccuracyMultiplier>(n, x, out, count);
+    RegionBSimdHalf<Bf16Lane>(n, x, out, count);
 }
 
-template <double kAccuracyMultiplier>
 void BoysRegionCSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(BoysAvx2Available());
@@ -825,13 +720,13 @@ void BoysRegionCSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
     {
         for (std::size_t i = 0; i < count; ++i)
         {
-            out[i] = BoysSingleBf16<kAccuracyMultiplier>(n, x[i]);
+            out[i] = BoysSingleBf16<>(n, x[i]);
         }
 
         return;
     }
 
-    RegionCSimdHalf<Bf16Lane, kAccuracyMultiplier>(n, x, out, count);
+    RegionCSimdHalf<Bf16Lane>(n, x, out, count);
 }
 #endif // BoysFp16
 
@@ -862,17 +757,15 @@ bool BoysAvx2Available() noexcept {
 
 namespace boys::detail {
 
-template <double kAccuracyMultiplier>
 void BoysRegionASimd(int n, const double* x, double* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
 
     for (std::size_t i = 0; i < count; ++i)
     {
-        out[i] = BoysSingle<kAccuracyMultiplier>(n, x[i]);
+        out[i] = BoysSingle<>(n, x[i]);
     }
 }
 
-template <double kAccuracyMultiplier>
 // No entry point calls this lane here either, and it takes no policy, only the
 // multiplier, so wiring it is a signature change. It forms no reciprocal of its own:
 // the run goes to the scalar lane at that lane's unnamed division form, the build
@@ -884,7 +777,7 @@ void BoysRegionBSimd(int n, const double* x, double* out, std::size_t count) noe
 
     for (std::size_t i = 0; i < count; ++i)
     {
-        BoysAllOrders<kAccuracyMultiplier>(n, x[i], batch);
+        BoysAllOrders<>(n, x[i], batch);
 
         for (int l = 0; l <= n; ++l)
         {
@@ -893,7 +786,6 @@ void BoysRegionBSimd(int n, const double* x, double* out, std::size_t count) noe
     }
 }
 
-template <double kAccuracyMultiplier>
 // No entry point calls this lane here either, and it takes no policy, only the
 // multiplier, so wiring it is a signature change. It forms no reciprocal of its own:
 // the run goes to the scalar lane at that lane's unnamed division form, the build
@@ -903,22 +795,20 @@ void BoysRegionCSimd(int n, const double* x, double* out, std::size_t count) noe
 
     for (std::size_t i = 0; i < count; ++i)
     {
-        out[i] = BoysSingle<kAccuracyMultiplier>(n, x[i]);
+        out[i] = BoysSingle<>(n, x[i]);
     }
 }
 
 #if BoysFp16
-template <double kAccuracyMultiplier>
 void BoysRegionASimdF16(int n, const F16* x, F16* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
 
     for (std::size_t i = 0; i < count; ++i)
     {
-        out[i] = BoysSingleF16<kAccuracyMultiplier>(n, x[i]);
+        out[i] = BoysSingleF16<>(n, x[i]);
     }
 }
 
-template <double kAccuracyMultiplier>
 void BoysRegionBSimdF16(int n, const F16* x, F16* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
 
@@ -926,7 +816,7 @@ void BoysRegionBSimdF16(int n, const F16* x, F16* out, std::size_t count) noexce
 
     for (std::size_t i = 0; i < count; ++i)
     {
-        BoysAllOrdersF16<kAccuracyMultiplier>(n, x[i], batch);
+        BoysAllOrdersF16<>(n, x[i], batch);
 
         for (int l = 0; l <= n; ++l)
         {
@@ -935,27 +825,24 @@ void BoysRegionBSimdF16(int n, const F16* x, F16* out, std::size_t count) noexce
     }
 }
 
-template <double kAccuracyMultiplier>
 void BoysRegionCSimdF16(int n, const F16* x, F16* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
 
     for (std::size_t i = 0; i < count; ++i)
     {
-        out[i] = BoysSingleF16<kAccuracyMultiplier>(n, x[i]);
+        out[i] = BoysSingleF16<>(n, x[i]);
     }
 }
 
-template <double kAccuracyMultiplier>
 void BoysRegionASimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
 
     for (std::size_t i = 0; i < count; ++i)
     {
-        out[i] = BoysSingleBf16<kAccuracyMultiplier>(n, x[i]);
+        out[i] = BoysSingleBf16<>(n, x[i]);
     }
 }
 
-template <double kAccuracyMultiplier>
 void BoysRegionBSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
 
@@ -963,7 +850,7 @@ void BoysRegionBSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
 
     for (std::size_t i = 0; i < count; ++i)
     {
-        BoysAllOrdersBf16<kAccuracyMultiplier>(n, x[i], batch);
+        BoysAllOrdersBf16<>(n, x[i], batch);
 
         for (int l = 0; l <= n; ++l)
         {
@@ -972,13 +859,12 @@ void BoysRegionBSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
     }
 }
 
-template <double kAccuracyMultiplier>
 void BoysRegionCSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
 
     for (std::size_t i = 0; i < count; ++i)
     {
-        out[i] = BoysSingleBf16<kAccuracyMultiplier>(n, x[i]);
+        out[i] = BoysSingleBf16<>(n, x[i]);
     }
 }
 #endif // BoysFp16
@@ -987,46 +873,8 @@ void BoysRegionCSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
 
 #endif // BOYS_SIMD_X86
 
-// The default (m = 1) instantiations behind the extern-template declarations
-// in boys.hpp.
 namespace boys::detail {
-template void BoysRegionASimd<kBoysFullAccuracyMultiplier>(int n,
-                                                           const double* x,
-                                                           double* out,
-                                                           std::size_t count) noexcept;
-template void BoysRegionBSimd<kBoysFullAccuracyMultiplier>(int n,
-                                                           const double* x,
-                                                           double* out,
-                                                           std::size_t count) noexcept;
-template void BoysRegionCSimd<kBoysFullAccuracyMultiplier>(int n,
-                                                           const double* x,
-                                                           double* out,
-                                                           std::size_t count) noexcept;
 #if BoysFp16
-template void BoysRegionASimdF16<kBoysFullAccuracyMultiplier>(int n,
-                                                              const F16* x,
-                                                              F16* out,
-                                                              std::size_t count) noexcept;
-template void BoysRegionBSimdF16<kBoysFullAccuracyMultiplier>(int n,
-                                                              const F16* x,
-                                                              F16* out,
-                                                              std::size_t count) noexcept;
-template void BoysRegionCSimdF16<kBoysFullAccuracyMultiplier>(int n,
-                                                              const F16* x,
-                                                              F16* out,
-                                                              std::size_t count) noexcept;
-template void BoysRegionASimdBf16<kBoysFullAccuracyMultiplier>(int n,
-                                                               const Bf16* x,
-                                                               Bf16* out,
-                                                               std::size_t count) noexcept;
-template void BoysRegionBSimdBf16<kBoysFullAccuracyMultiplier>(int n,
-                                                               const Bf16* x,
-                                                               Bf16* out,
-                                                               std::size_t count) noexcept;
-template void BoysRegionCSimdBf16<kBoysFullAccuracyMultiplier>(int n,
-                                                               const Bf16* x,
-                                                               Bf16* out,
-                                                               std::size_t count) noexcept;
 #endif // BoysFp16
 
 } // namespace boys::detail

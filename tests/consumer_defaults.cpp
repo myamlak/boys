@@ -8,9 +8,8 @@
 // parameter already defaults to - and the two spellings are compared on values as
 // well, because a type-level argument is not a value-level one. Second, where one
 // precision's default is not another's (the half lanes run the fp16 engine budget, the
-// is not another's (the half lanes run the fp16 engine budget, the float lane the
-// float one), the entry is compared against the alias-composed call bit for bit, and
-// beside it against the float lane's default.
+// float lane the float one), the entry is compared against the alias-composed call bit
+// for bit, and beside it against the float lane's default.
 //
 // The second claim's rows are the one place a difference is expected and is not a
 // failure.
@@ -70,8 +69,6 @@ using Fp16AllOrders = boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::k
 using Bf16Single = Fp16Single;  // the two half formats are one lane at one budget
 using Bf16AllOrders = Fp16AllOrders;
 
-constexpr double kFull = boys::kBoysFullAccuracyMultiplier;
-
 // The name denotes the type the entry's parameter defaults to: `EvalPolicy<>` for the
 // double and float lanes; for the half lanes the same axes under the fp16 engine budget.
 static_assert(std::is_same_v<Fp64Default, boys::EvalPolicy<>>);
@@ -107,15 +104,13 @@ static_assert(Fp16Default::kGranularity == boys::kDefaultFitGranularity);
 // comparison cannot be written as one; the two controls that can say no compare in main().
 template <auto Left, auto Right> constexpr bool SameCall = (Left == Right);
 
-static_assert(SameCall<&boys::BoysSingle<kFull>, &boys::BoysSingle<kFull, Fp64Default>>);
-static_assert(SameCall<&boys::BoysAllOrders<kFull>, &boys::BoysAllOrders<kFull, Fp64AllOrders>>);
-static_assert(SameCall<&boys::BoysFixedN<kFull>, &boys::BoysFixedN<kFull, Fp64Default>>);
-static_assert(
-    SameCall<&boys::BoysAllNAtOrders<kFull>, &boys::BoysAllNAtOrders<kFull, Fp64Default>>);
-static_assert(SameCall<&boys::BoysSingleF32<kFull>, &boys::BoysSingleF32<kFull, Fp32Default>>);
-static_assert(
-    SameCall<&boys::BoysAllOrdersF32<kFull>, &boys::BoysAllOrdersF32<kFull, Fp32AllOrders>>);
-static_assert(SameCall<&boys::BoysAllNF32<kFull>, &boys::BoysAllNF32<kFull, Fp32Default>>);
+static_assert(SameCall<&boys::BoysSingle<>, &boys::BoysSingle<Fp64Default>>);
+static_assert(SameCall<&boys::BoysAllOrders<>, &boys::BoysAllOrders<Fp64AllOrders>>);
+static_assert(SameCall<&boys::BoysFixedN<>, &boys::BoysFixedN<Fp64Default>>);
+static_assert(SameCall<&boys::BoysAllNAtOrders<>, &boys::BoysAllNAtOrders<Fp64Default>>);
+static_assert(SameCall<&boys::BoysSingleF32<>, &boys::BoysSingleF32<Fp32Default>>);
+static_assert(SameCall<&boys::BoysAllOrdersF32<>, &boys::BoysAllOrdersF32<Fp32AllOrders>>);
+static_assert(SameCall<&boys::BoysAllNF32<>, &boys::BoysAllNF32<Fp32Default>>);
 
 // --- the comparison ---------------------------------------------------------
 
@@ -323,8 +318,8 @@ int main() {
     {
         Row row = SingleOrderRow<double>(
             xs,
-            [](int n, double x) { return boys::BoysSingle<kFull, Fp64Default>(n, x); },
-            [](int n, double x) { return boys::BoysSingle<kFull>(n, x); });
+            [](int n, double x) { return boys::BoysSingle<Fp64Default>(n, x); },
+            [](int n, double x) { return boys::BoysSingle<>(n, x); });
         row.name = "fp64 BoysSingle";
         Print(row);
         ++rows;
@@ -334,9 +329,9 @@ int main() {
         Row row = AllOrdersRow<double>(
             xs,
             [](double x, double* out) {
-                boys::BoysAllOrders<kFull, Fp64AllOrders>(boys::kMaxBoysOrder, x, out);
+                boys::BoysAllOrders<Fp64AllOrders>(boys::kMaxBoysOrder, x, out);
             },
-            [](double x, double* out) { boys::BoysAllOrders<kFull>(boys::kMaxBoysOrder, x, out); });
+            [](double x, double* out) { boys::BoysAllOrders<>(boys::kMaxBoysOrder, x, out); });
         row.name = "fp64 BoysAllOrders";
         Print(row);
         ++rows;
@@ -346,10 +341,10 @@ int main() {
         Row row = ManyArgRow(
             xs,
             [](int nmax, const double* x, std::size_t count, double* out, std::size_t* workspace) {
-                boys::BoysAllN<kFull, Fp64Default>(nmax, x, out, count, workspace);
+                boys::BoysAllN<Fp64Default>(nmax, x, out, count, workspace);
             },
             [](int nmax, const double* x, std::size_t count, double* out, std::size_t* workspace) {
-                boys::BoysAllN<kFull>(nmax, x, out, count, workspace);
+                boys::BoysAllN<>(nmax, x, out, count, workspace);
             });
         row.name = "fp64 BoysAllN";
         Print(row);
@@ -360,10 +355,10 @@ int main() {
         Row row = ManyArgRow(
             xs,
             [](int nmax, const double* x, std::size_t count, double* out, std::size_t*) {
-                boys::BoysAllN<kFull, Fp64Default>(nmax, x, out, count, boys::BoysSortedArgs{});
+                boys::BoysAllN<Fp64Default>(nmax, x, out, count, boys::BoysSortedArgs{});
             },
             [](int nmax, const double* x, std::size_t count, double* out, std::size_t*) {
-                boys::BoysAllN<kFull>(nmax, x, out, count, boys::BoysSortedArgs{});
+                boys::BoysAllN<>(nmax, x, out, count, boys::BoysSortedArgs{});
             });
         row.name = "fp64 BoysAllN (sorted tag)";
         Print(row);
@@ -374,10 +369,10 @@ int main() {
         Row row = FixedOrderRow<double>(
             xs,
             [](int n, const double* x, std::size_t count, double* out) {
-                boys::BoysFixedN<kFull, Fp64Default>(n, x, out, count);
+                boys::BoysFixedN<Fp64Default>(n, x, out, count);
             },
             [](int n, const double* x, std::size_t count, double* out) {
-                boys::BoysFixedN<kFull>(n, x, out, count);
+                boys::BoysFixedN<>(n, x, out, count);
             });
         row.name = "fp64 BoysFixedN";
         Print(row);
@@ -390,9 +385,9 @@ int main() {
         Row row = SingleOrderRow<float>(
             xs,
             [](int n, double x) {
-                return boys::BoysSingleF32<kFull, Fp32Default>(n, static_cast<float>(x));
+                return boys::BoysSingleF32<Fp32Default>(n, static_cast<float>(x));
             },
-            [](int n, double x) { return boys::BoysSingleF32<kFull>(n, static_cast<float>(x)); });
+            [](int n, double x) { return boys::BoysSingleF32<>(n, static_cast<float>(x)); });
         row.name = "fp32 BoysSingleF32";
         Print(row);
         ++rows;
@@ -402,11 +397,11 @@ int main() {
         Row row = AllOrdersRow<float>(
             xs,
             [](double x, float* out) {
-                boys::BoysAllOrdersF32<kFull, Fp32AllOrders>(
+                boys::BoysAllOrdersF32<Fp32AllOrders>(
                     boys::kMaxBoysOrder, static_cast<float>(x), out);
             },
             [](double x, float* out) {
-                boys::BoysAllOrdersF32<kFull>(boys::kMaxBoysOrder, static_cast<float>(x), out);
+                boys::BoysAllOrdersF32<>(boys::kMaxBoysOrder, static_cast<float>(x), out);
             });
         row.name = "fp32 BoysAllOrdersF32";
         Print(row);
@@ -415,18 +410,20 @@ int main() {
     }
 
     // --- half ---------------------------------------------------------------
-    // The half lanes' entries take no policy, so the entry is compared against the call
-    // the name composes to: the documented name is the entry's arithmetic. Those entries
-    // sit behind the BoysFp16 seam, so a closed-seam build says so below.
+    // The half lane's entry takes a policy like the float lane's and defaults to the fp16
+    // lane's, so the row compares the entry as a caller writes it against the float
+    // lane's entry at that same policy, converted: the documented name is the entry's
+    // arithmetic. Those entries sit behind the BoysFp16 seam, so a closed-seam build says
+    // so below.
 #if BoysFp16
     {
         Row row = SingleOrderRow<F16>(
             xs,
             [](int n, double x) {
-                return boys::BoysSingleF16<kFull>(n, F16(static_cast<float>(x)));
+                return boys::BoysSingleF16<>(n, F16(static_cast<float>(x)));
             },
             [](int n, double x) {
-                return static_cast<F16>(boys::BoysSingleF32<kFull, Fp16Single>(
+                return static_cast<F16>(boys::BoysSingleF32<Fp16Single>(
                     n, static_cast<float>(F16(static_cast<float>(x)))));
             });
         row.name = "fp16 BoysSingleF16";
@@ -439,10 +436,10 @@ int main() {
         Row row = AllOrdersRow<F16>(
             xs,
             [](double x, F16* out) {
-                boys::BoysAllOrdersF16<kFull>(boys::kMaxBoysOrder, F16(static_cast<float>(x)), out);
+                boys::BoysAllOrdersF16<>(boys::kMaxBoysOrder, F16(static_cast<float>(x)), out);
             },
             [&scratch](double x, F16* out) {
-                boys::BoysAllOrdersF32<kFull, Fp16AllOrders>(
+                boys::BoysAllOrdersF32<Fp16AllOrders>(
                     boys::kMaxBoysOrder,
                     static_cast<float>(F16(static_cast<float>(x))),
                     scratch.data());
@@ -461,10 +458,10 @@ int main() {
         Row row = SingleOrderRow<Bf16>(
             xs,
             [](int n, double x) {
-                return boys::BoysSingleBf16<kFull>(n, Bf16(static_cast<float>(x)));
+                return boys::BoysSingleBf16<>(n, Bf16(static_cast<float>(x)));
             },
             [](int n, double x) {
-                return static_cast<Bf16>(boys::BoysSingleF32<kFull, Bf16Single>(
+                return static_cast<Bf16>(boys::BoysSingleF32<Bf16Single>(
                     n, static_cast<float>(Bf16(static_cast<float>(x)))));
             });
         row.name = "bf16 BoysSingleBf16";
@@ -477,11 +474,11 @@ int main() {
         Row row = AllOrdersRow<Bf16>(
             xs,
             [](double x, Bf16* out) {
-                boys::BoysAllOrdersBf16<kFull>(
+                boys::BoysAllOrdersBf16<>(
                     boys::kMaxBoysOrder, Bf16(static_cast<float>(x)), out);
             },
             [&scratch](double x, Bf16* out) {
-                boys::BoysAllOrdersF32<kFull, Bf16AllOrders>(
+                boys::BoysAllOrdersF32<Bf16AllOrders>(
                     boys::kMaxBoysOrder,
                     static_cast<float>(Bf16(static_cast<float>(x))),
                     scratch.data());
@@ -498,18 +495,17 @@ int main() {
     }
 
     // --- why the names are not one name --------------------------------------
-    // Past the reference multiplier the budget decides the rung, so the half lanes'
-    // default and the float lane's are two arithmetics; this row prints how many cells
-    // they part on and is not a failure either way. m = 1 is inert and would read zero,
-    // so the row is taken at m = 2.
-    std::printf("  (rows below compare a half lane against the FLOAT lane's default, "
-                "m = 2, where the budget decides the rung)\n");
+    // The half lanes' default and the float lane's are two arithmetics, the engine budget
+    // being the one axis on which they part; this row prints how many cells they differ
+    // on and is not a failure either way.
+    std::printf("  (rows below compare a half lane against the FLOAT lane's default, which "
+                "is the other engine budget)\n");
     {
         Row row = SingleOrderRow<F16>(
             xs,
-            [](int n, double x) { return boys::BoysSingleF16<2.0>(n, F16(static_cast<float>(x))); },
+            [](int n, double x) { return boys::BoysSingleF16<>(n, F16(static_cast<float>(x))); },
             [](int n, double x) {
-                return static_cast<F16>(boys::BoysSingleF32<2.0, Fp32Default>(
+                return static_cast<F16>(boys::BoysSingleF32<Fp32Default>(
                     n, static_cast<float>(F16(static_cast<float>(x)))));
             });
         row.name = "fp16 vs the float lane's default";
@@ -519,10 +515,10 @@ int main() {
         Row row = SingleOrderRow<Bf16>(
             xs,
             [](int n, double x) {
-                return boys::BoysSingleBf16<2.0>(n, Bf16(static_cast<float>(x)));
+                return boys::BoysSingleBf16<>(n, Bf16(static_cast<float>(x)));
             },
             [](int n, double x) {
-                return static_cast<Bf16>(boys::BoysSingleF32<2.0, Fp32Default>(
+                return static_cast<Bf16>(boys::BoysSingleF32<Fp32Default>(
                     n, static_cast<float>(Bf16(static_cast<float>(x)))));
             });
         row.name = "bf16 vs the float lane's default";
@@ -536,9 +532,8 @@ int main() {
     // static assertion because the sanitizer configuration rejects the comparison in any
     // constant-expression context (see SameCall above).
     {
-        const bool singleIsHalf = &boys::BoysSingle<kFull> == &boys::BoysSingle<kFull, Fp16Default>;
-        const bool singleF32IsHalf =
-            &boys::BoysSingleF32<kFull> == &boys::BoysSingleF32<kFull, Fp16Default>;
+        const bool singleIsHalf = &boys::BoysSingle<> == &boys::BoysSingle<Fp16Default>;
+        const bool singleF32IsHalf = &boys::BoysSingleF32<> == &boys::BoysSingleF32<Fp16Default>;
 
         std::printf("  negative control: the fp16 default and the float default are %s on "
                     "BoysSingle, %s on BoysSingleF32\n",

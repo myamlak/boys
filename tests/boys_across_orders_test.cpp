@@ -24,16 +24,13 @@
 //     differ by their routes' arithmetic - stated here, not left to be discovered.
 //
 //  5. A CALL THAT ANSWERS WITH THE WRONG TABLE. A policy naming the rational
-//     route must return that route's own region-A fits; a relaxed multiplier must
-//     return the fits cut to that rung. The two schemes certify differently: the
-//     Chebyshev table has a droppable tail at the first rung and the monomial
-//     table has none, so there the rung's values are the reference multiplier's
-//     bit for bit.
+//     route must return that route's own region-A fits, and a policy naming the
+//     narrow or the uniform partition must read that partition's own pieces
+//     rather than another's under the name it was given.
 //
-//  6. A FIGURE THAT IS NOT MET. Both opened calls are measured on the committed
-//     reference grid at the figure the library publishes for them: the route at
-//     the batch budget its fits hold, the rung at the multiplier times the m = 1
-//     contract of the table it reads.
+//  6. A FIGURE THAT IS NOT MET. The opened call is measured on the committed
+//     reference grid at the figure the library publishes for it: the route at
+//     the batch budget its fits hold.
 //
 //  7. A LANE THAT FETCHES THE WRONG PARTITION'S PIECES. The narrow partition cuts
 //     region A per order, so the axis fetches each packed order its own piece
@@ -234,7 +231,7 @@ struct BarShortfall {
     double x = 0.0;
 };
 
-template <double kMultiplier, class Policy, class Bar>
+template <class Policy, class Bar>
 BarShortfall PolicyAgainstReference(const std::vector<ReferenceCell>& cells, Bar bar) {
     BarShortfall worst;
     double worstFraction = -1.0;
@@ -242,7 +239,7 @@ BarShortfall PolicyAgainstReference(const std::vector<ReferenceCell>& cells, Bar
 
     for (const ReferenceCell& cell : cells)
     {
-        boys::BoysAllOrders<kMultiplier, Policy>(kNmax, cell.x, out.data());
+        boys::BoysAllOrders<Policy>(kNmax, cell.x, out.data());
         const double error = std::abs(out[static_cast<std::size_t>(cell.n)] - cell.value);
         const double figure = bar(cell.x);
 
@@ -281,8 +278,7 @@ TEST(BoysAcrossOrders, SplitClenshawIsTheAcrossArgumentsLaneBitForBit) {
         for (int l = 0; l <= kNmax; ++l)
         {
             duplicate.assign(4, x);
-            boys::detail::BoysRegionASimd<boys::kBoysFullAccuracyMultiplier>(
-                l, duplicate.data(), lanes.data(), 4);
+            boys::detail::BoysRegionASimd(l, duplicate.data(), lanes.data(), 4);
             ++compared;
 
             if (!SameBits(ours[static_cast<std::size_t>(l)], lanes[0]))
@@ -480,26 +476,26 @@ namespace {
 template <boys::EvalScheme kScheme>
 using OrdersPolicy =
     boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
-                     boys::PackAxis::kOrders, boys::FitGranularity::kShipped>;
+                     boys::PackAxis::kOrders, boys::FitGranularity::kCoarsest>;
 
 // The same axis with the rational route named: one of the two opened calls.
 template <boys::EvalScheme kScheme>
 using RationalOrdersPolicy =
     boys::EvalPolicy<boys::FitRoute::kRationalMinimax, kScheme, boys::BoysBudget::kFloat,
-                     boys::PackAxis::kOrders, boys::FitGranularity::kShipped>;
+                     boys::PackAxis::kOrders, boys::FitGranularity::kCoarsest>;
 
 // The rational route read one order at a time: the lane the routed axis's own reading has to be.
 template <boys::EvalScheme kScheme>
 using RationalPerOrderPolicy =
     boys::EvalPolicy<boys::FitRoute::kRationalMinimax, kScheme, boys::BoysBudget::kFloat,
-                     boys::PackAxis::kArguments, boys::FitGranularity::kShipped>;
+                     boys::PackAxis::kArguments, boys::FitGranularity::kCoarsest>;
 
 // The per-order lane the entry falls back to outside the packed interval: the
 // certified scalar single entry, the one lane the axis cannot be formed on.
 template <boys::EvalScheme kScheme>
 using PerOrderPolicy =
     boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
-                     boys::PackAxis::kArguments, boys::FitGranularity::kShipped>;
+                     boys::PackAxis::kArguments, boys::FitGranularity::kCoarsest>;
 
 // The narrow partition on the axis: region-A pieces cut per order, so the
 // packed lane fetches each of the four orders it packs its own piece. The
@@ -517,18 +513,14 @@ using NarrowPerOrderPolicy =
     boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
                      boys::PackAxis::kArguments, boys::FitGranularity::kNarrow>;
 
-// The first relaxed rung, as a caller names it: a tier, not a multiplier.
-constexpr double kRungMultiplier = boys::AccuracyMultiplier(boys::AccuracyTier::kRelaxed64);
-
 // The uniform partition on the axis: one fixed grid over the whole fitted
 // domain, not a cut of region A, so pieces are of one width and every order of a
 // cell is stored at one degree. The grid is interval-major - every order of one
 // interval lies one stride from the next order's, the shape the shipped lane's
 // fetch already steps - with the interval found by a multiply and a truncation
-// rather than a scan of piece edges; a rung is the stored cells read uncut, so
-// the axis serves every rung the enumeration names. The rational member over the
-// same grid stores one pair per interval and has no stride between orders, so its
-// cell is served by the certified scalar orders lane (boys_orders_simd.cpp).
+// rather than a scan of piece edges. The rational member over the same grid
+// stores one pair per interval and has no stride between orders, so its cell is
+// served by the certified scalar orders lane (boys_orders_simd.cpp).
 template <boys::EvalScheme kScheme>
 using UniformOrdersPolicy =
     boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
@@ -563,7 +555,7 @@ TEST(BoysAcrossOrders, ThePublicAxisIsThePackedLane) {
 
     for (double x : grid)
     {
-        boys::BoysAllOrders<1.0, OrdersPolicy<boys::EvalScheme::kSplitClenshaw>>(
+        boys::BoysAllOrders<OrdersPolicy<boys::EvalScheme::kSplitClenshaw>>(
             kNmax, x, viaEntry.data());
         boys::detail::BoysAllOrdersSimdComposed(
             boys::detail::OrdersScheme::kSplitClenshaw, kNmax, x, viaLane.data(), 1);
@@ -600,7 +592,7 @@ TEST(BoysAcrossOrders, ThePublicAxisIsDefinedPastItsOwnDomain) {
 
     for (double x : arguments)
     {
-        boys::BoysAllOrders<1.0, OrdersPolicy<boys::EvalScheme::kSplitClenshaw>>(
+        boys::BoysAllOrders<OrdersPolicy<boys::EvalScheme::kSplitClenshaw>>(
             kNmax, x, out.data());
 
         for (int l = 0; l <= kNmax; ++l)
@@ -608,7 +600,7 @@ TEST(BoysAcrossOrders, ThePublicAxisIsDefinedPastItsOwnDomain) {
             // The certified scalar single lane at the policy the entry was called
             // with: the default entry is a different policy, and a measurement moves it.
             const double single =
-                boys::BoysSingle<1.0, PerOrderPolicy<boys::EvalScheme::kSplitClenshaw>>(l, x);
+                boys::BoysSingle<PerOrderPolicy<boys::EvalScheme::kSplitClenshaw>>(l, x);
 
             if (!SameBits(out[static_cast<std::size_t>(l)], single))
             {
@@ -657,11 +649,11 @@ TEST(BoysAcrossOrders, TheRationalRouteOnTheAxisIsTheRoutesOwnReading) {
 
         for (double x : grid)
         {
-            boys::BoysAllOrders<1.0, RoutedAxisPolicy<boys::FitRoute::kRationalMinimax, kScheme>>(
+            boys::BoysAllOrders<RoutedAxisPolicy<boys::FitRoute::kRationalMinimax, kScheme>>(
                 kNmax, x, ours.data());
             boys::BoysAllOrdersWithRoute(
                 boys::FitRoute::kRationalMinimax, kScheme, kNmax, x, routed.data());
-            boys::BoysAllOrders<1.0, RoutedAxisPolicy<boys::FitRoute::kChebyshev, kScheme>>(
+            boys::BoysAllOrders<RoutedAxisPolicy<boys::FitRoute::kChebyshev, kScheme>>(
                 kNmax, x, shipped.data());
 
             for (int l = 0; l <= kNmax; ++l)
@@ -748,13 +740,13 @@ TEST(BoysAcrossOrders, TheNarrowPartitionOnTheAxisIsTheNarrowLanesOwnReading) {
 
         for (double x : grid)
         {
-            boys::BoysAllOrders<1.0, NarrowOrdersPolicy<kScheme>>(kNmax, x, packed.data());
-            boys::BoysAllOrders<1.0, OrdersPolicy<kScheme>>(kNmax, x, shippedLane.data());
+            boys::BoysAllOrders<NarrowOrdersPolicy<kScheme>>(kNmax, x, packed.data());
+            boys::BoysAllOrders<OrdersPolicy<kScheme>>(kNmax, x, shippedLane.data());
 
             for (int l = 0; l <= kNmax; ++l)
             {
                 perOrder[static_cast<std::size_t>(l)] =
-                    boys::BoysSingle<1.0, NarrowPerOrderPolicy<kScheme>>(l, x);
+                    boys::BoysSingle<NarrowPerOrderPolicy<kScheme>>(l, x);
             }
 
             for (int l = 0; l <= kNmax; ++l)
@@ -850,10 +842,10 @@ TEST(BoysAcrossOrders, WhereTheNarrowAxisPartsFromThePerOrderLaneTheReferenceIsO
 
         for (const ReferenceCell& cell : cells)
         {
-            boys::BoysAllOrders<1.0, NarrowOrdersPolicy<kScheme>>(kNmax, cell.x, packed.data());
+            boys::BoysAllOrders<NarrowOrdersPolicy<kScheme>>(kNmax, cell.x, packed.data());
             const double axis = packed[static_cast<std::size_t>(cell.n)];
             const double perOrder =
-                boys::BoysSingle<1.0, NarrowPerOrderPolicy<kScheme>>(cell.n, cell.x);
+                boys::BoysSingle<NarrowPerOrderPolicy<kScheme>>(cell.n, cell.x);
             const double axisError = std::abs(axis - cell.value);
             const double perOrderError = std::abs(perOrder - cell.value);
             const double partBy = std::abs(axis - perOrder);
@@ -964,11 +956,11 @@ TEST(BoysAcrossOrders, TheUniformGridOnTheAxisIsThePerOrderLaneBitForBit) {
 
         for (const double x : sweep)
         {
-            boys::BoysAllOrders<1.0, UniformOrdersPolicy<kScheme>>(kNmax, x, packed.data());
+            boys::BoysAllOrders<UniformOrdersPolicy<kScheme>>(kNmax, x, packed.data());
 
             for (int l = 0; l <= kNmax; ++l)
             {
-                const double lane = boys::BoysSingle<1.0, UniformPerOrderPolicy<kScheme>>(l, x);
+                const double lane = boys::BoysSingle<UniformPerOrderPolicy<kScheme>>(l, x);
                 const double delta = std::abs(packed[static_cast<std::size_t>(l)] - lane);
 
                 ++mineCompared;
@@ -1015,253 +1007,21 @@ TEST(BoysAcrossOrders, TheUniformGridOnTheAxisIsThePerOrderLaneBitForBit) {
 #endif
 }
 
-// The rung on the axis: a call naming a relaxed multiplier reads the degrees that
-// multiplier's criterion certifies for the table its scheme sums, and outside the
-// packed interval it is the rung's own per-order lane. The certification differs by
-// scheme - the Chebyshev table has a droppable tail at this rung, the monomial table
-// does not - so each scheme is held to its own table's reading: values move where a
-// degree was cut and are the reference multiplier's bit for bit where none was.
-//
-// The extended band is the exception: the reference rung answers [kExtendedBX0, kX0)
-// from the band's seed and its upward recursion while a relaxed one keeps the
-// region-A fit, so the two read different things by design - stated in the band's
-// comment in boys_impl.hpp as the m = 1 lane's alone. Its cells are counted apart,
-// and the band joins the identity only where the orders axis is the packed lane and
-// both calls are that one body.
-//
-// The fallback is that per-order lane's body compiled in the packed unit rather than
-// here, and region B's recurrence ends each step in a multiply and a subtract a
-// compiler may round as one operation or as two, so there the identity is held to a
-// stated slack, with the count and the worst printed.
-TEST(BoysAcrossOrders, TheRelaxedRungOnTheAxisIsTheRungsOwnReading) {
-    const std::vector<double> grid = RegionAGrid();
-    std::vector<double> rung(static_cast<std::size_t>(kNmax) + 1);
-    std::vector<double> reference(static_cast<std::size_t>(kNmax) + 1);
-
-    const auto countMoved = [&]<boys::EvalScheme kScheme>(const char* name) {
-        constexpr auto kCut = boys::detail::RegionADegrees<kRungMultiplier,
-                                                           boys::detail::BoysRole::kDoubleSingle,
-                                                           boys::detail::SchemeTailBasis<kScheme>()>();
-        std::size_t cutPieces = 0;
-
-        for (std::size_t p = 0; p < kCut.size(); ++p)
-        {
-            if (kCut[p] < boys::detail::kPieces[p].deg)
-            {
-                ++cutPieces;
-            }
-        }
-
-        std::size_t differing = 0;
-        std::size_t differingInBand = 0;
-        double worst = 0.0;
-
-        for (double x : grid)
-        {
-            boys::BoysAllOrders<kRungMultiplier, OrdersPolicy<kScheme>>(kNmax, x, rung.data());
-            boys::BoysAllOrders<1.0, OrdersPolicy<kScheme>>(kNmax, x, reference.data());
-
-            for (int l = 0; l <= kNmax; ++l)
-            {
-                const double a = rung[static_cast<std::size_t>(l)];
-                const double b = reference[static_cast<std::size_t>(l)];
-
-                if (!SameBits(a, b))
-                {
-                    // The extended band is the one interval where the two multipliers are
-                    // two readings rather than one table read twice: the reference rung
-                    // answers [kExtendedBX0, kX0) from the band's seed and its upward
-                    // recursion, the relaxed branch keeps the region-A fit. Counted apart so
-                    // the identity below is claimed only where both readings really are the fit.
-                    if (x >= boys::detail::kExtendedBX0)
-                    {
-                        ++differingInBand;
-                    } else
-                    {
-                        ++differing;
-                    }
-
-                    worst = std::max(worst, std::abs(a - b));
-                }
-            }
-        }
-
-        std::printf("  rung m = %g on the axis, %-14s: the criterion cuts %zu of %zu piece "
-                    "degrees, %zu order values moved outside the band, %zu inside it, worst %e\n",
-                    kRungMultiplier,
-                    name,
-                    cutPieces,
-                    kCut.size(),
-                    differing,
-                    differingInBand,
-                    worst);
-
-        if (cutPieces == 0)
-        {
-            EXPECT_EQ(differing, 0u) << name << ": the table is certified whole at this rung, so "
-                                     << "outside the band the values have to be the reference "
-                                     << "rung's";
-
-            if (VectorTier())
-            {
-                EXPECT_EQ(differingInBand, 0u)
-                    << name << ": on a host whose orders axis is the packed lane both readings "
-                    << "are that lane's body, so no cut means the band's values are the "
-                    << "reference rung's too";
-            }
-        } else
-        {
-            EXPECT_GT(differing, 0u) << name << ": the multiplier did not reach the fits";
-        }
-    };
-
-    const auto compareFallback = [&]<boys::EvalScheme kScheme>(const char* name) {
-        // Past the lane's interval the entry runs the certified scalar single lane at the
-        // same multiplier, one order at a time, so a rung is defined for every argument the
-        // library accepts and its values there are the rung's per-order lane's. Past kX1 that
-        // recurrence reads no fit at all and only multiplies and divides, so no build can
-        // round a step two ways and the two readings have to agree bit for bit. Inside region
-        // B the step is a multiply and a subtract a compiler may fuse, chosen separately by
-        // the packed unit and this file - the packed unit's flags only make it likelier to
-        // differ - so there the comparison is bounded, with the count and the worst printed.
-        constexpr double kFallbackArithmeticSlack = 1e-14;
-        const double pastRegionB[] = {boys::detail::kX1, 31.0, 200.0};
-        const double insideRegionB[] = {boys::detail::kX0, boys::detail::kX0 + 1e-9, 20.0};
-
-        std::size_t compared = 0;
-        std::size_t differing = 0;
-
-        for (double x : pastRegionB)
-        {
-            boys::BoysAllOrders<kRungMultiplier, OrdersPolicy<kScheme>>(kNmax, x, rung.data());
-
-            for (int l = 0; l <= kNmax; ++l)
-            {
-                const double single =
-                    boys::BoysSingle<kRungMultiplier, PerOrderPolicy<kScheme>>(l, x);
-                ++compared;
-
-                if (!SameBits(rung[static_cast<std::size_t>(l)], single))
-                {
-                    ++differing;
-                }
-            }
-        }
-
-        std::printf("  rung m = %g fallback past kX1, %-14s: %zu of %zu order values bit-identical "
-                    "to the rung's per-order lane\n",
-                    kRungMultiplier,
-                    name,
-                    compared - differing,
-                    compared);
-
-        EXPECT_EQ(differing, 0u) << name << ": past kX1 this recurrence multiplies and divides and "
-                                 << "never adds, so a build cannot round it two ways and the "
-                                 << "fallback has to be the rung's per-order lane bit for bit";
-
-        // The slack stands in for the rounding the two units may disagree about, measured
-        // at 1.6e-16 over both schemes and set an order above that. What tells a wrong
-        // reading from a licence is the moved count, not the slack: both its readings come
-        // from one unit, and the rung's own region-B table parts from the reference
-        // multiplier's by 1.5e-12 at kX0 and 1.4e-13 at 20.
-        constexpr auto kCutB =
-            boys::detail::RegionBDegrees<kRungMultiplier,
-                                         boys::detail::BoysRole::kDoubleSingle,
-                                         boys::detail::SchemeTailBasis<kScheme>()>();
-        std::size_t cutOrders = 0;
-
-        for (int order = 0; order <= kNmax; ++order)
-        {
-            if (kCutB[static_cast<std::size_t>(order)] < boys::detail::kBDeg)
-            {
-                ++cutOrders;
-            }
-        }
-
-        std::size_t insideCompared = 0;
-        std::size_t insideDiffering = 0;
-        std::size_t moved = 0;
-        double worst = 0.0;
-
-        for (double x : insideRegionB)
-        {
-            boys::BoysAllOrders<kRungMultiplier, OrdersPolicy<kScheme>>(kNmax, x, rung.data());
-            boys::BoysAllOrders<1.0, OrdersPolicy<kScheme>>(kNmax, x, reference.data());
-
-            for (int l = 0; l <= kNmax; ++l)
-            {
-                const double atRung = rung[static_cast<std::size_t>(l)];
-                const double single =
-                    boys::BoysSingle<kRungMultiplier, PerOrderPolicy<kScheme>>(l, x);
-                ++insideCompared;
-
-                if (!SameBits(atRung, reference[static_cast<std::size_t>(l)]))
-                {
-                    ++moved;
-                }
-
-                if (!SameBits(atRung, single))
-                {
-                    ++insideDiffering;
-                    worst = std::max(worst, std::abs(atRung - single));
-                }
-            }
-        }
-
-        std::printf("  rung m = %g fallback inside region B, %-14s: %zu of %zu order values "
-                    "bit-identical to the rung's per-order lane, worst %e; the rung cut %zu of %d "
-                    "seed degrees and moved %zu of %zu values against the reference rung\n",
-                    kRungMultiplier,
-                    name,
-                    insideCompared - insideDiffering,
-                    insideCompared,
-                    worst,
-                    cutOrders,
-                    kNmax + 1,
-                    moved,
-                    insideCompared);
-
-        EXPECT_LE(worst, kFallbackArithmeticSlack)
-            << name << ": the fallback inside region B is further from the rung's per-order lane "
-            << "than the rounding two compilations of it may differ by";
-
-        if (cutOrders == 0)
-        {
-            EXPECT_EQ(moved, 0u) << name << ": the region-B seed table is certified whole at this "
-                                 << "rung, so the values have to be the reference rung's";
-        } else
-        {
-            EXPECT_GT(moved, 0u) << name << ": the multiplier did not reach the region-B seed";
-        }
-    };
-
-    countMoved.template operator()<boys::EvalScheme::kSplitClenshaw>("split clenshaw");
-    countMoved.template operator()<boys::EvalScheme::kHorner>("horner");
-    compareFallback.template operator()<boys::EvalScheme::kSplitClenshaw>("split clenshaw");
-    compareFallback.template operator()<boys::EvalScheme::kHorner>("horner");
-}
-
-// The rational route at a rung, split by which fit answers the cell. A route is a
+// The rational route on the axis, split by which fit answers the cell. A route is a
 // selector: BoysFitRoutes() reports the domain each takes over, which the library
 // calls the place where "naming it may change a value". Region A's rational route hands
 // an order over at that order's own end of the region (kTierThresholds); below that end
 // the partition's per-order fit answers the cell, under either route's name.
 //
-// A rung changes the degrees a fit is read at, not which fit answers a cell: a fallback
-// cell at a rung is the shipped lane's value at that multiplier, and a served cell is
-// the route's own pair at the same multiplier. This test holds that as two counts, the
-// second required nonzero so a lane ignoring the route it named cannot pass.
-//
-// The two axes part on the first count, and the parting is the per-order lane's: its
-// rational rung body answers the fallback cell from the fits as stored rather than from
-// the rung's degrees, returning the reference multiplier's value there. The count is
-// printed with this axis's own value, a reader needing both to judge them; asserted is
-// this axis's reading, which is also what it returns at the reference multiplier.
+// This test holds that as two counts: a fallback cell is the shipped lane's value, and
+// a served cell is the route's own pair. The second count is required nonzero so a lane
+// ignoring the route it named cannot pass, and the count of fallback cells that are the
+// per-order rational lane's reading is printed beside it, a reader needing both.
 //
 // The comparison is exact where the build's scalar multiply-add is one-rounding (every
 // release and CI leg but the `BOYS_MULADD_SEPARATE` leg); elsewhere the two are two
-// arithmetics and the fallback's agreement is bounded at the rung's own figure.
-TEST(BoysAcrossOrders, TheRationalRungOnTheAxisIsTheShippedLanesReadingOfTheCellItDoesNotAnswer) {
+// arithmetics and each half's agreement is bounded at the figure its lane publishes.
+TEST(BoysAcrossOrders, TheRationalRoutesFallbackCellsAreTheShippedLanesReading) {
     if (!VectorTier())
     {
         GTEST_SKIP() << "the AVX2 tier is not available on this target";
@@ -1283,9 +1043,8 @@ TEST(BoysAcrossOrders, TheRationalRungOnTheAxisIsTheShippedLanesReadingOfTheCell
 
         for (double x : grid)
         {
-            boys::BoysAllOrders<kRungMultiplier, RationalOrdersPolicy<kScheme>>(
-                kNmax, x, routed.data());
-            boys::BoysAllOrders<kRungMultiplier, OrdersPolicy<kScheme>>(kNmax, x, shipped.data());
+            boys::BoysAllOrders<RationalOrdersPolicy<kScheme>>(kNmax, x, routed.data());
+            boys::BoysAllOrders<OrdersPolicy<kScheme>>(kNmax, x, shipped.data());
 
             // The route's own handover rule, at the entry's nmax: the orders
             // whose own end of region A this argument has reached, and no more.
@@ -1301,16 +1060,15 @@ TEST(BoysAcrossOrders, TheRationalRungOnTheAxisIsTheShippedLanesReadingOfTheCell
             {
                 const std::size_t at = static_cast<std::size_t>(l);
                 const double fromPerOrder =
-                    boys::BoysSingle<kRungMultiplier, RationalPerOrderPolicy<kScheme>>(l, x);
+                    boys::BoysSingle<RationalPerOrderPolicy<kScheme>>(l, x);
 
                 if (l >= served)
                 {
                     // The cell the route's selector does not answer: the partition's
-                    // fit cut to this rung, which is the shipped lane's value here.
+                    // own fit, which is the shipped lane's value here.
                     ++fallbackCells;
 
-                    const double shippedHere =
-                        boys::BoysSingle<kRungMultiplier, PerOrderPolicy<kScheme>>(l, x);
+                    const double shippedHere = boys::BoysSingle<PerOrderPolicy<kScheme>>(l, x);
 
                     if (!SameBits(routed[at], shippedHere))
                     {
@@ -1343,10 +1101,10 @@ TEST(BoysAcrossOrders, TheRationalRungOnTheAxisIsTheShippedLanesReadingOfTheCell
             }
         }
 
-        std::printf("  rational rung on the axis, %-14s: %zu served cells, %zu differ from the "
+        std::printf("  rational route on the axis, %-14s: %zu served cells, %zu differ from the "
                     "per-order rational lane, worst %.3e; %zu fallback cells, %zu differ from the "
-                    "shipped lane's value at this rung, worst %.3e, of which %zu are the per-order "
-                    "lane's uncut reading; %zu served cells tell the two routes apart\n",
+                    "shipped lane's value, worst %.3e, of which %zu are the per-order rational "
+                    "lane's reading; %zu served cells tell the two routes apart\n",
                     name,
                     servedCells,
                     servedDiffering,
@@ -1360,21 +1118,19 @@ TEST(BoysAcrossOrders, TheRationalRungOnTheAxisIsTheShippedLanesReadingOfTheCell
 #if defined(BOYS_MULADD_SEPARATE) && BOYS_MULADD_SEPARATE
         // This build's scalar route is the two-rounding one, so the axis and the
         // per-order entry are two arithmetics: what is asserted is that each half is
-        // inside the figure the rung names for it, counts still printed.
-        EXPECT_LE(worstServed,
-                  kRungMultiplier *
-                      boys::detail::RegionABudget(boys::detail::BoysRole::kDoubleBatch))
-            << name << ": the routed half is outside the route's own figure at this rung";
-        EXPECT_LE(worstFallback, kRungMultiplier * kSingleBarA)
-            << name << ": the fallback half is outside the shipped lane's figure at this rung";
+        // inside the figure its lane publishes, counts still printed.
+        EXPECT_LE(worstServed, boys::detail::RegionABudget(boys::detail::BoysRole::kDoubleBatch))
+            << name << ": the routed half is outside the route's own figure";
+        EXPECT_LE(worstFallback, kSingleBarA)
+            << name << ": the fallback half is outside the shipped lane's figure";
 #else
         EXPECT_EQ(servedDiffering, 0u)
             << name << ": the cells the route's selector takes over are not the rational route's "
-                       "own reading at this rung, worst "
+                       "own reading, worst "
             << worstServed;
         EXPECT_EQ(fallbackDiffering, 0u)
-            << name << ": the cells the route does not answer are not the shipped lane's value at "
-                       "this rung, worst "
+            << name << ": the cells the route does not answer are not the shipped lane's value, "
+                       "worst "
             << worstFallback;
 #endif
         EXPECT_GT(discriminating, 0u)
@@ -1386,12 +1142,11 @@ TEST(BoysAcrossOrders, TheRationalRungOnTheAxisIsTheShippedLanesReadingOfTheCell
     sweep.template operator()<boys::EvalScheme::kHorner>("horner");
 }
 
-// The two opened calls' figures, measured where every other row is: against the
+// The opened call's figure, measured where every other row is: against the
 // committed 80-digit reference grid, over its region-A cells, at the figure the library
-// states. The route's fits hold the batch budget in region A; the rung's truncated fits
-// are cut against the multiplier times the m = 1 contract of the table they are read
-// from, so the rung's figure is that product, both read off the library's own tables.
-TEST(BoysAcrossOrders, TheOpenedCallsMeetTheirFiguresOnTheReferenceGrid) {
+// states. The route's fits hold the batch budget in region A, read off the library's own
+// table.
+TEST(BoysAcrossOrders, TheOpenedCallMeetsItsFigureOnTheReferenceGrid) {
     const std::vector<ReferenceCell> cells = RegionAReference();
 
     if (cells.empty())
@@ -1401,16 +1156,12 @@ TEST(BoysAcrossOrders, TheOpenedCallsMeetTheirFiguresOnTheReferenceGrid) {
 
     constexpr double kRouteBound =
         boys::detail::RegionABudget(boys::detail::BoysRole::kDoubleBatch);
-    constexpr double kRungBound = kRungMultiplier *
-                                  boys::detail::RegionABudget(boys::detail::BoysRole::kDoubleSingle);
 
-    // A batch-route or rung cell is documented at one figure wherever it sits, so its bar is flat.
+    // A batch-route cell is documented at one figure wherever it sits, so its bar is flat.
     const auto routeBar = [](double) { return kRouteBound; };
-    const auto rungBar = [](double) { return kRungBound; };
 
-    const auto measure = [&]<double kMultiplier, class Policy, class Bar>(const char* label,
-                                                                          Bar bar) {
-        const BarShortfall worst = PolicyAgainstReference<kMultiplier, Policy>(cells, bar);
+    const auto measure = [&]<class Policy, class Bar>(const char* label, Bar bar) {
+        const BarShortfall worst = PolicyAgainstReference<Policy>(cells, bar);
 
         std::printf("  %-34s worst %.6e at n = %d, x = %.12g  (figure %.2e)\n",
                     label,
@@ -1421,19 +1172,15 @@ TEST(BoysAcrossOrders, TheOpenedCallsMeetTheirFiguresOnTheReferenceGrid) {
         EXPECT_LE(worst.error, worst.figure) << label;
     };
 
-    measure.template operator()<1.0, RationalOrdersPolicy<boys::EvalScheme::kSplitClenshaw>>(
+    measure.template operator()<RationalOrdersPolicy<boys::EvalScheme::kSplitClenshaw>>(
         "rational route, split clenshaw", routeBar);
-    measure.template operator()<1.0, RationalOrdersPolicy<boys::EvalScheme::kHorner>>(
+    measure.template operator()<RationalOrdersPolicy<boys::EvalScheme::kHorner>>(
         "rational route, horner", routeBar);
-    measure.template operator()<kRungMultiplier, OrdersPolicy<boys::EvalScheme::kSplitClenshaw>>(
-        "rung m=64 shipped route, split clenshaw", rungBar);
-    measure.template operator()<kRungMultiplier, OrdersPolicy<boys::EvalScheme::kHorner>>(
-        "rung m=64 shipped route, horner", rungBar);
     // The narrow partition reads the single lane's own fits one order at a time, so
     // its rows carry the lane's figures, each cell judged at its own region's.
-    measure.template operator()<1.0, NarrowOrdersPolicy<boys::EvalScheme::kSplitClenshaw>>(
+    measure.template operator()<NarrowOrdersPolicy<boys::EvalScheme::kSplitClenshaw>>(
         "narrow partition on the axis, split clenshaw", SingleBar);
-    measure.template operator()<1.0, NarrowOrdersPolicy<boys::EvalScheme::kHorner>>(
+    measure.template operator()<NarrowOrdersPolicy<boys::EvalScheme::kHorner>>(
         "narrow partition on the axis, horner", SingleBar);
 
     std::printf("  cells: %zu region-A cells of the committed reference grid\n", cells.size());

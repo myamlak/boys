@@ -5,10 +5,10 @@
 /// and no test in this tree would have caught either before it reached CI:
 ///
 ///   * a row named `PackAxis::kOrders`, whose body the library holds OUT OF LINE at a
-///     fixed list of multipliers. A caller naming no policy therefore linked at the
-///     six multipliers the library instantiates and failed at every other — and the
-///     failure is a link error at the *call site*, not at the table, so the row that
-///     caused it reads as correct;
+///     fixed list of instantiations. A caller naming no policy therefore linked only
+///     where that list held the policy the default resolves to, and failed at every
+///     other — and the failure is a link error at the *call site*, not at the table,
+///     so the row that caused it reads as correct;
 ///   * three single-precision entries were declared `extern template` at a policy the
 ///     default now resolves to. An extern declaration PROMISES a definition held
 ///     elsewhere; the library holds a fixed list, and the instantiation a default
@@ -21,15 +21,8 @@
 ///
 /// WHAT THIS FILE DOES. It is a consumer: it includes the public header and nothing
 /// else, and for every entry that takes a class default it calls that entry NAMING NO
-/// POLICY — twice, at the default accuracy multiplier and at one the library cannot
-/// have listed. Naming nothing is the whole point; naming a policy explicitly reaches
-/// a different instantiation and would not test the default at all.
-///
-/// The multiplier matters as much as the policy. A default call at the library's own
-/// multiplier can be satisfied by an instantiation the library happens to hold; a
-/// default call at an arbitrary multiplier can only be satisfied if the body is
-/// reachable from the header. Those are two different promises and the second is the
-/// one that broke.
+/// POLICY. Naming nothing is the whole point; naming a policy explicitly reaches a
+/// different instantiation and would not test the default at all.
 ///
 /// A class the table carries that has no entry at all does not appear here — it
 /// cannot, since there is nothing to call — and that is the other half of the same
@@ -51,68 +44,47 @@ namespace {
 constexpr int kOrder = 3;
 constexpr double kArgument = 0.75;
 
-/// A multiplier no list of instantiations holds. Chosen to be one no rung names, so a
-/// default call at it cannot be answered by an instantiation written for a rung.
-constexpr double kUnlistedMultiplier = 3.7;
-
 TEST(BoysDefaultsLink, TheDoubleLaneAnswersEveryShapeWithNoPolicyNamed) {
     double ladder[kOrder + 1] = {};
     const std::array<double, 3> xs = {0.25, 0.75, 1.5};
-    std::array<double, 3> out = {};
+    // The many-argument entries write (nmax + 1) * count slots, not count: the grid is
+    // order-major, so the array is sized by the grid while the call's own count is the
+    // number of arguments. The workspace is sized by that count too.
+    std::array<double, (kOrder + 1) * 3> out = {};
     std::array<std::size_t, 3> workspace = {};
     const std::array<int, 3> ns = {0, 1, 2};
 
-    // Default multiplier: the instantiation the library is expected to hold.
+    // The default policy's instantiation: the entry must reach a definition and a value.
     EXPECT_TRUE(std::isfinite(boys::BoysSingle(kOrder, kArgument)));
     boys::BoysAllOrders(kOrder, kArgument, ladder);
     EXPECT_TRUE(std::isfinite(ladder[kOrder]));
-    boys::BoysFixedN(kOrder, xs.data(), out.data(), out.size());
-    boys::BoysAllN(kOrder, xs.data(), out.data(), out.size(), workspace.data());
-    boys::BoysAllNAtOrders(ns.data(), xs.data(), out.data(), out.size());
-
-    // An unlisted multiplier: only reachable if the body is reachable from the header.
-    EXPECT_TRUE(std::isfinite(boys::BoysSingle<kUnlistedMultiplier>(kOrder, kArgument)));
-    boys::BoysAllOrders<kUnlistedMultiplier>(kOrder, kArgument, ladder);
-    boys::BoysFixedN<kUnlistedMultiplier>(kOrder, xs.data(), out.data(), out.size());
-    boys::BoysAllN<kUnlistedMultiplier>(kOrder, xs.data(), out.data(), out.size(),
-                                        workspace.data());
-    boys::BoysAllNAtOrders<kUnlistedMultiplier>(ns.data(), xs.data(), out.data(), out.size());
+    boys::BoysFixedN(kOrder, xs.data(), out.data(), xs.size());
+    boys::BoysAllN(kOrder, xs.data(), out.data(), xs.size(), workspace.data());
+    boys::BoysAllNAtOrders(ns.data(), xs.data(), out.data(), xs.size());
 }
 
 TEST(BoysDefaultsLink, TheSinglePrecisionLaneAnswersEveryShapeWithNoPolicyNamed) {
     float ladder[kOrder + 1] = {};
     const std::array<float, 3> xs = {0.25f, 0.75f, 1.5f};
-    std::array<float, 3> out = {};
+    std::array<float, (kOrder + 1) * 3> out = {};
 
     EXPECT_TRUE(std::isfinite(boys::BoysSingleF32(kOrder, static_cast<float>(kArgument))));
     boys::BoysAllOrdersF32(kOrder, static_cast<float>(kArgument), ladder);
     EXPECT_TRUE(std::isfinite(ladder[kOrder]));
-    boys::BoysAllNF32(kOrder, xs.data(), out.data(), out.size());
-
-    EXPECT_TRUE(std::isfinite(
-        boys::BoysSingleF32<kUnlistedMultiplier>(kOrder, static_cast<float>(kArgument))));
-    boys::BoysAllOrdersF32<kUnlistedMultiplier>(kOrder, static_cast<float>(kArgument), ladder);
-    boys::BoysAllNF32<kUnlistedMultiplier>(kOrder, xs.data(), out.data(), out.size());
+    boys::BoysAllNF32(kOrder, xs.data(), out.data(), xs.size());
 }
 
 #if BoysFp16
 TEST(BoysDefaultsLink, TheHalfLaneAnswersBothFormatsWithNoPolicyNamed) {
-    F16 ladder16[kOrder + 1] = {};
-    Bf16 ladderBf[kOrder + 1] = {};
-    const F16 x16 = static_cast<F16>(kArgument);
-    const Bf16 xBf = static_cast<Bf16>(kArgument);
+    boys::F16 ladder16[kOrder + 1] = {};
+    boys::Bf16 ladderBf[kOrder + 1] = {};
+    const boys::F16 x16 = static_cast<boys::F16>(kArgument);
+    const boys::Bf16 xBf = static_cast<boys::Bf16>(kArgument);
 
     EXPECT_TRUE(std::isfinite(static_cast<double>(boys::BoysSingleF16(kOrder, x16))));
     boys::BoysAllOrdersF16(kOrder, x16, ladder16);
     EXPECT_TRUE(std::isfinite(static_cast<double>(boys::BoysSingleBf16(kOrder, xBf))));
     boys::BoysAllOrdersBf16(kOrder, xBf, ladderBf);
-
-    EXPECT_TRUE(std::isfinite(
-        static_cast<double>(boys::BoysSingleF16<kUnlistedMultiplier>(kOrder, x16))));
-    boys::BoysAllOrdersF16<kUnlistedMultiplier>(kOrder, x16, ladder16);
-    EXPECT_TRUE(std::isfinite(
-        static_cast<double>(boys::BoysSingleBf16<kUnlistedMultiplier>(kOrder, xBf))));
-    boys::BoysAllOrdersBf16<kUnlistedMultiplier>(kOrder, xBf, ladderBf);
 }
 #endif // BoysFp16
 

@@ -27,7 +27,29 @@
 #define AppendPackedBackends AppendPackedBackendsFromShippedUnit
 #define DetectF16c DetectF16cFromShippedUnit
 #define F16cAvailable F16cAvailableFromShippedUnit
+// The nine region entries stopped being templates when the accuracy rung was removed, so
+// they no longer reach this unit as instantiations it may leave to the library: each is a
+// definition of the library's own name now, and is renamed here for the length of the
+// include, which is the treatment the note above asks for.
+#define BoysRegionASimd BoysRegionASimdFromShippedUnit
+#define BoysRegionASimdF16 BoysRegionASimdF16FromShippedUnit
+#define BoysRegionASimdBf16 BoysRegionASimdBf16FromShippedUnit
+#define BoysRegionBSimd BoysRegionBSimdFromShippedUnit
+#define BoysRegionBSimdF16 BoysRegionBSimdF16FromShippedUnit
+#define BoysRegionBSimdBf16 BoysRegionBSimdBf16FromShippedUnit
+#define BoysRegionCSimd BoysRegionCSimdFromShippedUnit
+#define BoysRegionCSimdF16 BoysRegionCSimdF16FromShippedUnit
+#define BoysRegionCSimdBf16 BoysRegionCSimdBf16FromShippedUnit
 #include "boys_simd.cpp"
+#undef BoysRegionASimdF16
+#undef BoysRegionASimdBf16
+#undef BoysRegionASimd
+#undef BoysRegionBSimdF16
+#undef BoysRegionBSimdBf16
+#undef BoysRegionBSimd
+#undef BoysRegionCSimdF16
+#undef BoysRegionCSimdBf16
+#undef BoysRegionCSimd
 #undef F16cAvailable
 #undef DetectF16c
 #undef AppendPackedBackends

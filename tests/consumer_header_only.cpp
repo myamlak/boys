@@ -1,11 +1,16 @@
 // Consumer check: are the lane templates' definitions reachable from the public
 // headers alone, with no library on the link line? The library pre-instantiates
-// the default multiplier and the sampled rungs, so only a multiplier outside
-// that set proves anything: this target links nothing (CMakeLists.txt asserts
-// the empty link line) and names two it does not export.
+// the default policy's entries, so only a policy outside that set proves
+// anything: this target links nothing (CMakeLists.txt asserts the empty link
+// line) and names two it does not export.
+//
+// The two policies flip one structural axis away from the build's own default and
+// leave the division form, the one axis that moves a lane's guaranteed figure, so
+// each combination named here is one the lane carries and one that is judged
+// against the figure its lane documents.
 //
 // Values are judged against the committed 45-digit grid, with the double lane at
-// the multiplier this file names as the oracle, so a composed bound includes the
+// the policy this file names as the oracle, so a composed bound includes the
 // oracle's own figure.
 //
 // Run:  cmake --build <build> --target boys-consumer-header-only, then
@@ -20,6 +25,7 @@
 #include <deque>
 #include <fstream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 // The library's private src/ is deliberately not on this file's include path;
@@ -204,22 +210,24 @@ std::vector<double> DistinctArgs(const std::vector<Cell>& cells) {
 
 // --- the documented bounds --------------------------------------------------
 
-double SingleBound(double x, double m) {
+/// The bound is the lane's and not the combination's, so the named policy is judged against the
+/// same figures the default policy's entry documents.
+double SingleBound(double x) {
     if (x < 1.0855)
     {
-        return m * 1e-15;
+        return 1e-15;
     }
 
     if (x < boys::kRegionAEnd)
     {
-        return m * 3e-14;
+        return 3e-14;
     }
 
-    return m * 5.5e-14;
+    return 5.5e-14;
 }
 
-double BatchBound(double m) {
-    return m * 5.5e-14;
+double BatchBound() {
+    return 5.5e-14;
 }
 
 // The ULP of a representation at a magnitude, for the half-ULP ceilings below.
@@ -236,100 +244,131 @@ double QuantumOf(double v, int significandBits) {
 }
 #endif // BoysFp16
 
-// fp16/bf16 I/O lane ceilings: m * 1e-7 of the certified float engine, plus one half-ULP per value.
+// fp16/bf16 I/O lane ceilings: 1e-7 of the certified float engine, plus one half-ULP per value.
 #if BoysFp16
-double F16IoBound(double returned, double m) {
-    return m * 1e-7 + 0.5 * QuantumOf(returned, 10);
+double F16IoBound(double returned) {
+    return 1e-7 + 0.5 * QuantumOf(returned, 10);
 }
 
-double Bf16IoBound(double returned, double m) {
-    return m * 1e-7 + 0.5 * QuantumOf(returned, 7);
+double Bf16IoBound(double returned) {
+    return 1e-7 + 0.5 * QuantumOf(returned, 7);
 }
 #endif // BoysFp16
 
-double ProductBound(boys::ProductMode mode, double m) {
-    return mode == boys::ProductMode::kFp64 ? m * 1e-15 : m * 1e-15 + 2.5e-7;
+// The two policies this check names. Neither is one the library pre-instantiates
+// (the `<>` entries are), so every instantiation below must link from the headers
+// alone. Each flips one structural axis away from the build's own default and
+// leaves the rest - so the combination is one the lane carries - and neither
+// flips the division form, the one axis that moves a lane's guaranteed figure.
+constexpr boys::FitRoute kOtherRoute = boys::kDefaultFitRoute == boys::FitRoute::kChebyshev
+                                           ? boys::FitRoute::kRationalMinimax
+                                           : boys::FitRoute::kChebyshev;
+constexpr boys::EvalScheme kOtherScheme = boys::kDefaultEvalScheme == boys::EvalScheme::kHorner
+                                              ? boys::EvalScheme::kSplitClenshaw
+                                              : boys::EvalScheme::kHorner;
+
+using First = boys::EvalPolicy<kOtherRoute, boys::kDefaultEvalScheme, boys::BoysBudget::kFloat,
+                               boys::kDefaultPackAxis, boys::kDefaultFitGranularity>;
+using Second = boys::EvalPolicy<boys::kDefaultFitRoute, kOtherScheme, boys::BoysBudget::kFloat,
+                                boys::kDefaultPackAxis, boys::kDefaultFitGranularity>;
+// The half lanes run the fp16 engine budget, so their policies name it.
+using FirstHalf = boys::EvalPolicy<kOtherRoute, boys::kDefaultEvalScheme, boys::BoysBudget::kFp16,
+                                   boys::kDefaultPackAxis, boys::kDefaultFitGranularity>;
+using SecondHalf = boys::EvalPolicy<boys::kDefaultFitRoute, kOtherScheme, boys::BoysBudget::kFp16,
+                                    boys::kDefaultPackAxis, boys::kDefaultFitGranularity>;
+
+// The claim every call below rests on: a named policy is not the type its entry was
+// pre-instantiated at, so the call is an instantiation this translation unit owes a definition for,
+// and one it can only get from the headers. A build whose default row named the combination above
+// would fold the call onto the library's own instantiation and this check would prove nothing.
+static_assert(
+    !std::is_same_v<First, boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kSingle>>);
+static_assert(
+    !std::is_same_v<First, boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>>);
+static_assert(
+    !std::is_same_v<Second, boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kSingle>>);
+static_assert(
+    !std::is_same_v<Second, boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>>);
+static_assert(
+    !std::is_same_v<FirstHalf, boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kSingle>>);
+static_assert(
+    !std::is_same_v<FirstHalf,
+                    boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kAllOrders>>);
+static_assert(
+    !std::is_same_v<SecondHalf, boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kSingle>>);
+static_assert(
+    !std::is_same_v<SecondHalf,
+                    boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kAllOrders>>);
+
+/// The label a rule carries for a named policy: the axis that policy flips away from the build's
+/// own default, which is what makes it an instantiation the library does not pre-instantiate.
+template <class Policy>
+const char* PolicyLabel() {
+    return Policy::kRoute != boys::kDefaultFitRoute ? "the other route" : "the other scheme";
 }
 
-/// The multipliers this check names. Neither is one the library pre-instantiates
-/// (m = 1, 64, 256, 1024, 4096, 16384 and 65536 are), so every instantiation
-/// below must link from the headers alone.
-constexpr double kFirst = 3.0;
-constexpr double kSecond = 100.0;
-constexpr double kOracleBound = kFirst * 5.5e-14;
+constexpr double kOracleBound = 5.5e-14;
 constexpr double kUnwritten = -1.0;
 
 // --- the checks -------------------------------------------------------------
 
+/// The double lane's whole family at one named policy: the single, all-orders and fixed-N entries
+/// over the grid, and the fixed-N entry's values against the single entry's bit for bit. The
+/// instantiation is this file's: the policy is not the type the library pre-instantiates.
+template <class Policy>
 void CheckDoubleLanes(Report& report, const std::vector<Cell>& cells) {
     char name[160] = {};
 
-    for (const double m : {kFirst, kSecond})
+    std::snprintf(name, sizeof(name), "BoysSingle<%s> (grid sweep, no library)",
+                  PolicyLabel<Policy>());
+    Rule& single = NewRule(name);
+    std::snprintf(name, sizeof(name), "BoysAllOrders<%s> (grid sweep, no library)",
+                  PolicyLabel<Policy>());
+    Rule& batch = NewRule(name);
+    std::snprintf(name, sizeof(name), "BoysFixedN<%s> (grid sweep, no library)",
+                  PolicyLabel<Policy>());
+    Rule& fixed = NewRule(name);
+
+    for (const Cell& cell : cells)
     {
-        std::snprintf(name, sizeof(name), "BoysSingle<m = %g> (grid sweep, no library)", m);
-        Rule& single = NewRule(name);
-        std::snprintf(name, sizeof(name), "BoysAllOrders<m = %g> (grid sweep, no library)", m);
-        Rule& batch = NewRule(name);
-        std::snprintf(name, sizeof(name), "BoysFixedN<m = %g> (grid sweep, no library)", m);
-        Rule& fixed = NewRule(name);
+        const double got = boys::BoysSingle<Policy>(cell.n, cell.x);
+        Judge(single, got, cell.value, SingleBound(cell.x), cell.n, cell.x);
+    }
+
+    std::size_t differing = 0;
+
+    for (const double x : DistinctArgs(cells))
+    {
+        double all[boys::kMaxBoysOrder + 1] = {};
+        boys::BoysAllOrders<Policy>(boys::kMaxBoysOrder, x, all);
 
         for (const Cell& cell : cells)
         {
-            const double got = m == kFirst ? boys::BoysSingle<kFirst>(cell.n, cell.x)
-                                           : boys::BoysSingle<kSecond>(cell.n, cell.x);
-            Judge(single, got, cell.value, SingleBound(cell.x, m), cell.n, cell.x);
-        }
-
-        std::size_t differing = 0;
-
-        for (const double x : DistinctArgs(cells))
-        {
-            double all[boys::kMaxBoysOrder + 1] = {};
-
-            if (m == kFirst)
+            if (cell.x != x)
             {
-                boys::BoysAllOrders<kFirst>(boys::kMaxBoysOrder, x, all);
-            } else
-            {
-                boys::BoysAllOrders<kSecond>(boys::kMaxBoysOrder, x, all);
+                continue;
             }
 
-            for (const Cell& cell : cells)
+            double plain = kUnwritten;
+            boys::BoysFixedN<Policy>(cell.n, &x, &plain, 1, 1);
+
+            Judge(batch, all[cell.n], cell.value, BatchBound(), cell.n, cell.x);
+            Judge(fixed, plain, cell.value, SingleBound(cell.x), cell.n, cell.x);
+
+            const double one = boys::BoysSingle<Policy>(cell.n, x);
+
+            if (plain != one)
             {
-                if (cell.x != x)
-                {
-                    continue;
-                }
-
-                double plain = kUnwritten;
-
-                if (m == kFirst)
-                {
-                    boys::BoysFixedN<kFirst>(cell.n, &x, &plain, 1, 1);
-                } else
-                {
-                    boys::BoysFixedN<kSecond>(cell.n, &x, &plain, 1, 1);
-                }
-
-                Judge(batch, all[cell.n], cell.value, BatchBound(m), cell.n, cell.x);
-                Judge(fixed, plain, cell.value, SingleBound(cell.x, m), cell.n, cell.x);
-
-                const double one = m == kFirst ? boys::BoysSingle<kFirst>(cell.n, x)
-                                               : boys::BoysSingle<kSecond>(cell.n, x);
-
-                if (plain != one)
-                {
-                    ++differing;
-                }
+                ++differing;
             }
         }
-
-        Require(report, differing == 0, "BoysFixedN returns what BoysSingle returns, bit for bit");
-
-        Covered("boys::BoysSingle<m>");
-        Covered("boys::BoysAllOrders<m>");
-        Covered("boys::BoysFixedN<m>");
     }
+
+    Require(report, differing == 0, "BoysFixedN returns what BoysSingle returns, bit for bit");
+
+    Covered("boys::BoysSingle<Policy>");
+    Covered("boys::BoysAllOrders<Policy>");
+    Covered("boys::BoysFixedN<Policy>");
 }
 
 void CheckManyArgumentLanes(Report& report, const std::vector<Cell>& cells) {
@@ -344,24 +383,24 @@ void CheckManyArgumentLanes(Report& report, const std::vector<Cell>& cells) {
     std::vector<double> reversed(count);
     std::reverse_copy(args.begin(), args.end(), reversed.begin());
 
-    Rule& withWorkspace = NewRule("BoysAllN<m = 3> (caller's workspace, no library)");
-    Rule& sorted = NewRule("BoysAllN<m = 3> (BoysSortedArgs, no library)");
-    Rule& unsorted = NewRule("BoysAllN<m = 3> (arguments in the caller's order)");
+    Rule& withWorkspace = NewRule("BoysAllN<the other route> (caller's workspace, no library)");
+    Rule& sorted = NewRule("BoysAllN<the other route> (BoysSortedArgs, no library)");
+    Rule& unsorted = NewRule("BoysAllN<the other route> (arguments in the caller's order)");
 
-    boys::BoysAllN<kFirst>(boys::kMaxBoysOrder, args.data(), planes.data(), count, nullptr);
-    boys::BoysAllN<kFirst>(
+    boys::BoysAllN<First>(boys::kMaxBoysOrder, args.data(), planes.data(), count, nullptr);
+    boys::BoysAllN<First>(
         boys::kMaxBoysOrder, args.data(), workspacePlanes.data(), count, workspace.data());
     Require(report,
             std::equal(planes.begin(), planes.end(), workspacePlanes.begin()),
             "the caller's workspace returns the same planes as the internal one");
 
-    boys::BoysAllN<kFirst>(
+    boys::BoysAllN<First>(
         boys::kMaxBoysOrder, args.data(), sortedPlanes.data(), count, boys::BoysSortedArgs{});
     Require(report,
             std::equal(planes.begin(), planes.end(), sortedPlanes.begin()),
             "the sorted-argument overload returns the same planes as the sorting one");
 
-    boys::BoysAllN<kFirst>(
+    boys::BoysAllN<First>(
         boys::kMaxBoysOrder, reversed.data(), shuffledPlanes.data(), count, nullptr);
 
     std::size_t missing = 0;
@@ -370,11 +409,11 @@ void CheckManyArgumentLanes(Report& report, const std::vector<Cell>& cells) {
     {
         for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
         {
-            const Cell* first = Find(cells, n, args[i]);
+            const Cell* firstCell = Find(cells, n, args[i]);
             const Cell* last = Find(cells, n, reversed[i]);
             const std::size_t index = static_cast<std::size_t>(n) * count + i;
 
-            if (first == nullptr || last == nullptr)
+            if (firstCell == nullptr || last == nullptr)
             {
                 ++missing;
                 continue;
@@ -382,33 +421,36 @@ void CheckManyArgumentLanes(Report& report, const std::vector<Cell>& cells) {
 
             Judge(withWorkspace,
                   workspacePlanes[index],
-                  first->value,
-                  BatchBound(kFirst),
+                  firstCell->value,
+                  BatchBound(),
                   n,
                   args[i]);
-            Judge(sorted, sortedPlanes[index], first->value, BatchBound(kFirst), n, args[i]);
-            Judge(unsorted, shuffledPlanes[index], last->value, BatchBound(kFirst), n, reversed[i]);
+            Judge(sorted, sortedPlanes[index], firstCell->value, BatchBound(), n, args[i]);
+            Judge(unsorted, shuffledPlanes[index], last->value, BatchBound(), n, reversed[i]);
         }
     }
 
     Require(report, missing == 0, "the grid carries every cell this check looks up");
-    Covered("boys::BoysAllN<m>");
-    Covered("boys::BoysAllN<m> (BoysSortedArgs)");
+    Covered("boys::BoysAllN<Policy>");
+    Covered("boys::BoysAllN<Policy> (BoysSortedArgs)");
     Covered("boys::BoysSortedArgs");
     Covered("boys::BoysAllNWorkspaceSize");
 }
 
+/// The float lane's two entries at one named policy, judged against the double lane at the same
+/// converted argument: the composed bound is the float lane's own figure plus the oracle's.
+template <class Policy>
 void CheckFloatLane(const std::vector<Cell>& cells) {
-    Rule& single = NewRule("BoysSingleF32<m = 3> (vs the double lane at float(x), no library)");
-    Rule& batch = NewRule("BoysAllOrdersF32<m = 3> (vs the double lane at float(x), no library)");
-    const double bound = 3.0 * 1.5e-7 + kOracleBound;
+    Rule& single = NewRule("BoysSingleF32<the other route> (vs the double lane at float(x))");
+    Rule& batch = NewRule("BoysAllOrdersF32<the other route> (vs the double lane, float(x))");
+    const double bound = 1.5e-7 + kOracleBound;
 
     for (const Cell& cell : cells)
     {
         const float xf = static_cast<float>(cell.x);
-        const double oracle = boys::BoysSingle<kFirst>(cell.n, static_cast<double>(xf));
+        const double oracle = boys::BoysSingle<First>(cell.n, static_cast<double>(xf));
         Judge(single,
-              static_cast<double>(boys::BoysSingleF32<kFirst>(cell.n, xf)),
+              static_cast<double>(boys::BoysSingleF32<Policy>(cell.n, xf)),
               oracle,
               bound,
               cell.n,
@@ -419,30 +461,31 @@ void CheckFloatLane(const std::vector<Cell>& cells) {
     {
         const float xf = static_cast<float>(x);
         float out[boys::kMaxBoysOrder + 1] = {};
-        boys::BoysAllOrdersF32<kFirst>(boys::kMaxBoysOrder, xf, out);
+        boys::BoysAllOrdersF32<Policy>(boys::kMaxBoysOrder, xf, out);
 
         for (const Cell& cell : cells)
         {
             if (cell.x == x)
             {
-                const double oracle = boys::BoysSingle<kFirst>(cell.n, static_cast<double>(xf));
+                const double oracle = boys::BoysSingle<First>(cell.n, static_cast<double>(xf));
                 Judge(batch, static_cast<double>(out[cell.n]), oracle, bound, cell.n, cell.x);
             }
         }
     }
 
-    Covered("boys::BoysSingleF32<m>");
-    Covered("boys::BoysAllOrdersF32<m>");
+    Covered("boys::BoysSingleF32<Policy>");
+    Covered("boys::BoysAllOrdersF32<Policy>");
 }
 
 // The fp16/bf16 I/O lanes the BoysFp16 seam declares; with the seam closed main
 // reports them as not carried by this build rather than dropping them in silence.
 #if BoysFp16
+template <class Policy>
 void CheckHalfIo(const std::vector<Cell>& cells) {
-    Rule& f16Single = NewRule("BoysSingleF16<m = 3> (cells above its bound, no library)");
-    Rule& bf16Single = NewRule("BoysSingleBf16<m = 3> (cells above its bound, no library)");
-    Rule& f16Batch = NewRule("BoysAllOrdersF16<m = 3> (cells above its bound, no library)");
-    Rule& bf16Batch = NewRule("BoysAllOrdersBf16<m = 3> (cells above its bound, no library)");
+    Rule& f16Single = NewRule("BoysSingleF16<the other route> (cells above its bound)");
+    Rule& bf16Single = NewRule("BoysSingleBf16<the other route> (cells above its bound)");
+    Rule& f16Batch = NewRule("BoysAllOrdersF16<the other route> (cells above its bound)");
+    Rule& bf16Batch = NewRule("BoysAllOrdersBf16<the other route> (cells above its bound)");
     std::size_t past = 0;
 
     for (const Cell& cell : cells)
@@ -450,15 +493,16 @@ void CheckHalfIo(const std::vector<Cell>& cells) {
         const float xf = static_cast<float>(cell.x);
         const boys::F16 h = boys::F16(xf);
         const boys::Bf16 b = boys::Bf16(xf);
-        const double oracleF16 = boys::BoysSingle<kFirst>(cell.n, static_cast<double>(h));
-        const double oracleBf16 = boys::BoysSingle<kFirst>(cell.n, static_cast<double>(b));
-        const double gotF16 = static_cast<double>(boys::BoysSingleF16<kFirst>(cell.n, h));
-        const double gotBf16 = static_cast<double>(boys::BoysSingleBf16<kFirst>(cell.n, b));
-        const double boundF16 = F16IoBound(gotF16, 3.0);
-        const double boundBf16 = Bf16IoBound(gotBf16, 3.0);
+        const double oracleF16 = boys::BoysSingle<First>(cell.n, static_cast<double>(h));
+        const double oracleBf16 = boys::BoysSingle<First>(cell.n, static_cast<double>(b));
+        const double gotF16 = static_cast<double>(boys::BoysSingleF16<Policy>(cell.n, h));
+        const double gotBf16 = static_cast<double>(boys::BoysSingleBf16<Policy>(cell.n, b));
+        const double boundF16 = F16IoBound(gotF16);
+        const double boundBf16 = Bf16IoBound(gotBf16);
 
-        // The ceiling the header states, widened by the oracle's own bound:
-        // the reference here is the lane at m = 3, not the certified one.
+        // The ceiling the header states, widened by the oracle's own bound: the
+        // reference here is the double lane's named policy, whose own figure
+        // composes with the half lane's.
         const double ceilingF16 = boundF16 + kOracleBound;
         const double ceilingBf16 = boundBf16 + kOracleBound;
 
@@ -483,8 +527,8 @@ void CheckHalfIo(const std::vector<Cell>& cells) {
         const boys::Bf16 b = boys::Bf16(xf);
         boys::F16 outF16[boys::kMaxBoysOrder + 1] = {};
         boys::Bf16 outBf16[boys::kMaxBoysOrder + 1] = {};
-        boys::BoysAllOrdersF16<kFirst>(boys::kMaxBoysOrder, h, outF16);
-        boys::BoysAllOrdersBf16<kFirst>(boys::kMaxBoysOrder, b, outBf16);
+        boys::BoysAllOrdersF16<Policy>(boys::kMaxBoysOrder, h, outF16);
+        boys::BoysAllOrdersBf16<Policy>(boys::kMaxBoysOrder, b, outBf16);
 
         for (const Cell& cell : cells)
         {
@@ -493,12 +537,12 @@ void CheckHalfIo(const std::vector<Cell>& cells) {
                 continue;
             }
 
-            const double oracleF16 = boys::BoysSingle<kFirst>(cell.n, static_cast<double>(h));
-            const double oracleBf16 = boys::BoysSingle<kFirst>(cell.n, static_cast<double>(b));
+            const double oracleF16 = boys::BoysSingle<First>(cell.n, static_cast<double>(h));
+            const double oracleBf16 = boys::BoysSingle<First>(cell.n, static_cast<double>(b));
             const double gotF16 = static_cast<double>(outF16[cell.n]);
             const double gotBf16 = static_cast<double>(outBf16[cell.n]);
-            const double ceilingF16 = F16IoBound(gotF16, 3.0) + kOracleBound;
-            const double ceilingBf16 = Bf16IoBound(gotBf16, 3.0) + kOracleBound;
+            const double ceilingF16 = F16IoBound(gotF16) + kOracleBound;
+            const double ceilingBf16 = Bf16IoBound(gotBf16) + kOracleBound;
 
             if (std::abs(oracleF16) > ceilingF16)
             {
@@ -515,115 +559,12 @@ void CheckHalfIo(const std::vector<Cell>& cells) {
     std::printf("  %-56s %zu cells at or below the fp16 lane's bound\n",
                 "fp16/bf16 lanes (outside their bound's reach)",
                 past);
-    Covered("boys::BoysSingleF16<m>");
-    Covered("boys::BoysAllOrdersF16<m>");
-    Covered("boys::BoysSingleBf16<m>");
-    Covered("boys::BoysAllOrdersBf16<m>");
+    Covered("boys::BoysSingleF16<Policy>");
+    Covered("boys::BoysAllOrdersF16<Policy>");
+    Covered("boys::BoysSingleBf16<Policy>");
+    Covered("boys::BoysAllOrdersBf16<Policy>");
 }
 #endif // BoysFp16
-
-/// The region-A transform: its definition has to be in the header for any
-/// multiplier outside the sampled set, in all three modes.
-void CheckProductModes(Report& report, const std::vector<Cell>& cells) {
-    struct ModeSpec {
-        boys::ProductMode mode;
-        double multiplier;
-        const char* name;
-    };
-
-    const ModeSpec kModes[] = {{boys::ProductMode::kFp64, kFirst, "kFp64, m = 3"},
-                               {boys::ProductMode::kFp64, kSecond, "kFp64, m = 100"},
-                               {boys::ProductMode::kTf32x3, kFirst, "kTf32x3, m = 3"},
-                               {boys::ProductMode::kBf16x6, kFirst, "kBf16x6, m = 3"}};
-    const std::vector<double> all = DistinctArgs(cells);
-
-    for (const ModeSpec& mode : kModes)
-    {
-        for (const boys::RegionABand band : {boys::RegionABand::kA1, boys::RegionABand::kA2})
-        {
-            const bool lower = band == boys::RegionABand::kA1;
-            std::vector<double> args;
-
-            for (const double x : all)
-            {
-                const bool inBand = lower ? x < boys::kRegionA1Edge
-                                          : x >= boys::kRegionA1Edge && x < boys::kRegionAEnd;
-
-                if (inBand)
-                {
-                    args.push_back(x);
-                }
-            }
-
-            const std::string name = std::string("BoysRegionAProduct<") + mode.name +
-                                     (lower ? ", kA1, no library>" : ", kA2, no library>");
-            Rule& rule = NewRule(name);
-            std::vector<double> out(args.size() * (boys::kMaxBoysOrder + 1));
-            std::fill(out.begin(), out.end(), kUnwritten);
-
-            if (mode.mode == boys::ProductMode::kFp64 && mode.multiplier == kFirst)
-            {
-                boys::BoysRegionAProduct<boys::ProductMode::kFp64, kFirst>(
-                    band, boys::kMaxBoysOrder, args.data(), out.data(), args.size());
-            } else if (mode.mode == boys::ProductMode::kFp64)
-            {
-                boys::BoysRegionAProduct<boys::ProductMode::kFp64, kSecond>(
-                    band, boys::kMaxBoysOrder, args.data(), out.data(), args.size());
-            } else if (mode.mode == boys::ProductMode::kTf32x3)
-            {
-                boys::BoysRegionAProduct<boys::ProductMode::kTf32x3, kFirst>(
-                    band, boys::kMaxBoysOrder, args.data(), out.data(), args.size());
-            } else
-            {
-                boys::BoysRegionAProduct<boys::ProductMode::kBf16x6, kFirst>(
-                    band, boys::kMaxBoysOrder, args.data(), out.data(), args.size());
-            }
-
-            for (std::size_t i = 0; i < args.size(); ++i)
-            {
-                for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
-                {
-                    const Cell* cell = Find(cells, n, args[i]);
-
-                    if (cell != nullptr)
-                    {
-                        Judge(rule,
-                              out[static_cast<std::size_t>(n) * args.size() + i],
-                              cell->value,
-                              ProductBound(mode.mode, mode.multiplier),
-                              n,
-                              args[i]);
-                    }
-                }
-            }
-
-            // Documented: count may be 0, and then nothing is written.
-            double untouched[2] = {kUnwritten, kUnwritten};
-            const double one[1] = {args.empty() ? 0.0 : args[0]};
-
-            if (mode.mode == boys::ProductMode::kFp64)
-            {
-                boys::BoysRegionAProduct<boys::ProductMode::kFp64, kFirst>(
-                    band, 0, one, untouched, 0);
-            } else if (mode.mode == boys::ProductMode::kTf32x3)
-            {
-                boys::BoysRegionAProduct<boys::ProductMode::kTf32x3, kFirst>(
-                    band, 0, one, untouched, 0);
-            } else
-            {
-                boys::BoysRegionAProduct<boys::ProductMode::kBf16x6, kFirst>(
-                    band, 0, one, untouched, 0);
-            }
-
-            Require(report,
-                    untouched[0] == kUnwritten && untouched[1] == kUnwritten,
-                    "BoysRegionAProduct writes nothing for count = 0");
-        }
-
-        Covered("boys::ProductMode");
-        Covered("boys::BoysRegionAProduct (three modes, no library)");
-    }
-}
 
 } // namespace
 
@@ -639,20 +580,36 @@ int main(int argc, char** argv) {
 
     std::printf("header-only consumer check: this binary links no library\n");
     Report report;
-    CheckDoubleLanes(report, cells);
+    CheckDoubleLanes<First>(report, cells);
+    CheckDoubleLanes<Second>(report, cells);
     CheckManyArgumentLanes(report, cells);
-    CheckFloatLane(cells);
+    CheckFloatLane<First>(cells);
 #if BoysFp16
-    CheckHalfIo(cells);
+    CheckHalfIo<FirstHalf>(cells);
 #else
     // Stated rather than skipped: this build does not carry the lane.
     std::printf("  %-56s not carried by this build (BoysFp16 = 0)\n",
                 "fp16/bf16 lanes (not checked)");
 #endif
-    CheckProductModes(report, cells);
 
     std::printf("consumer check through <boys/boys.hpp> alone: %zu grid cells\n", cells.size());
     PrintRules();
+
+    // The violations PrintRules has just listed are this check's own verdict. A
+    // sweep whose cells may exceed the bound their lane documents and still exit 0
+    // is a check that cannot fail, so every rule's count is summed into the one
+    // assertion that decides the exit code. The float and the half lanes hold no
+    // Report of their own and reach no other assertion, so this is also the only
+    // place their bounds are answered for.
+    std::size_t exceeded = 0;
+
+    for (const Rule& rule : gRules)
+    {
+        exceeded += rule.exceeded;
+    }
+
+    Require(report, exceeded == 0, "every grid cell is within the bound its lane documents");
+
     std::printf("  %zu assertions, %zu failed; %zu documented entries covered\n",
                 report.assertions,
                 report.failed,

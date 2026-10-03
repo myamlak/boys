@@ -19,7 +19,7 @@
 //                    off-domain errors are recorded as the scheme's honest cost)
 //   lut-f64       <= 1e-12 (LUT values <= 5.5e-14 plus degree-5 Taylor
 //                    truncation ~1e-15)
-//   fp16-single   GPU vs the shipped CPU fp16 lane, <= 3.5e-7 + 1 full ULP
+//   fp16-single   GPU vs the coarsest CPU fp16 lane, <= 3.5e-7 + 1 full ULP
 //                    (the GPU-vs-CPU comparison contract)
 #include "boys/boys.hpp"
 #include "boys/boys_cuda.hpp"
@@ -63,7 +63,7 @@ std::vector<Item> UniformInputs() {
     return items;
 }
 
-// The reference series for the LUT rows beyond the shipped range:
+// The reference series for the LUT rows beyond the coarsest range:
 // F_n(x) = 0.5 * e^{-x} * sum_l x^l / prod_{j=0}^{l} (n + j + 1/2).
 // All-positive terms, no cancellation; F_n(0) = 1/(2n+1) at the l = 0 term.
 double StableSeriesF(int n, double x) {
@@ -436,7 +436,7 @@ int SelfCheck(const std::vector<Item>& items,
         failed += !pass;
     }
 
-    // fp16-single: GPU vs the shipped CPU fp16 lane (BoysSingleF16) on the same
+    // fp16-single: GPU vs the coarsest CPU fp16 lane (BoysSingleF16) on the same
     // fp16 inputs; the ULP term absorbs the rounding-boundary flips between the
     // two float engines. The absolute contract (m * 1e-7 + 1/2 ULP against the
     // exact value) is the CPU lane's own.

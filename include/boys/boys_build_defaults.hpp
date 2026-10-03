@@ -121,9 +121,10 @@
 ///
 /// **EVERY HOST CLASS THE LIBRARY CARRIES HAS A ROW**, and a class without one
 /// is a build error rather than a call answered by something else. The list
-/// below is the host's three lanes by five shapes: fifteen rows, one per class,
-/// and a list that carried fourteen would stop compiling rather than hand the
-/// missing class's callers a combination nobody chose.
+/// below is one row per class the host's entries reach: five shapes on the double lane, three on
+/// the single-precision lane and two on the half lane, because a shape no entry carries has no
+/// default to state. A list missing one of them stops compiling rather than handing
+/// the missing class's callers a combination nobody chose.
 /// `tests/boys_default_policy_test.cpp` asks for each class by name, and the
 /// emission below is what writes them all.
 ///
@@ -158,14 +159,14 @@
 #define BOYS_BUILD_DEFAULT_ROWS(X)\
     /* measured: m = 1 all-orders ladder, 92.89 ns per argument */\
     X(kHost, kFp64, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal)\
+      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal)\
     /* measured: m = 1 all-orders ladder, the refinement vote's winner */\
-    X(kHost, kFp32, kAllOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner,\
+    X(kHost, kFp32, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kPlainReciprocal)\
+      DivisionForm::kRefinedReciprocal)\
     /* measured: the vote's winner; the one lane both half formats run */\
-    X(kHost, kFp16, kAllOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner, BoysBudget::kFp16,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal)\
+    X(kHost, kFp16, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
+      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal)\
     /* the five macros above: no probe run has ranked this shape on any lane */\
     X(kHost, kFp64, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal)\

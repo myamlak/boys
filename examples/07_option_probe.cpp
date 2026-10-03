@@ -27,12 +27,11 @@ int main()
     std::printf("measured %zu options on %d logical processors\n", report.measurements.size(),
                 report.logicalProcessors);
 
-    // The group a new caller lives in: full accuracy, double precision, the
-    // shape that hands back one argument's whole ladder.
+    // The group a new caller lives in: double precision, the shape that hands
+    // back one argument's whole ladder.
     for (const boys::OptionProbeClass& group : report.classes)
     {
         if (group.precision != boys::OptionPrecision::kFp64 ||
-            group.tier != boys::AccuracyTier::kReference ||
             group.shape != boys::OptionProbeShape::kAllOrders)
         {
             continue;
