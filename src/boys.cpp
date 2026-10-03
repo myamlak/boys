@@ -238,7 +238,12 @@ float BoysSingleF32WithRoute(FitRoute route, int n, float x) noexcept {
     // the default entry's code for those arguments.
     if (route == FitRoute::kRationalMinimax)
     {
-        return detail::SingleOrderF32Body<detail::RationalFit32<>>(n, x);
+        // The region-B exponential is read off the policy this entry's other arm
+        // runs rather than restated: a row and the arithmetic it names are one
+        // statement, and this entry is the default policy's call under a route
+        // argument.
+        return detail::SingleOrderF32Body<detail::RationalFit32<>, kDefaultDivisionForm,
+                                          DefaultPolicyFp32::kRegionBExp>(n, x);
     }
 
     return BoysSingleF32<>(n, x);
@@ -376,6 +381,30 @@ std::span<const PackAxisInfo> BoysPackAxes() noexcept {
     static const std::array<PackAxisInfo, 2> rows = {{
         {PackAxis::kArguments, PackAxisName(PackAxis::kArguments), 4, 0.0, detail::kX0, 1e-15},
         {PackAxis::kOrders, PackAxisName(PackAxis::kOrders), 4, 0.0, detail::kX0, 1e-15},
+    }};
+
+    return rows;
+}
+
+const char* RegionBExpName(RegionBExp exp) noexcept {
+    switch (exp)
+    {
+    case RegionBExp::kAccurate:
+        return "accurate";
+    case RegionBExp::kFast:
+        return "fast";
+    }
+
+    return "unknown";
+}
+
+std::span<const RegionBExpInfo> BoysRegionBExps() noexcept {
+    // Every row is served by every entry that has a region-B ladder: the member is
+    // read inside the ladder's own seed, so naming one selects arithmetic and never
+    // an entry, and there is no combination of the other axes it is missing from.
+    static const std::array<RegionBExpInfo, 2> rows = {{
+        {RegionBExp::kAccurate, RegionBExpName(RegionBExp::kAccurate)},
+        {RegionBExp::kFast, RegionBExpName(RegionBExp::kFast)},
     }};
 
     return rows;
@@ -759,7 +788,7 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
     // where the lane's other two forms deliver 1.08354e-07 at worst. The
     // difference is 6.68e-8, and the term published is 1e-7, which bounds it
     // with the margin a guarantee needs.
-    static const std::array<LaneContractInfo, 4> rows = {{
+    static const std::array<LaneContractInfo, 6> rows = {{
         {Precision::kFp64, "fp64", 5.5e-14, 0.0, 0.0, "throughout, every region"},
         {Precision::kFp32, "fp32", 1.5e-7, 0.0, 1e-7,
          "every region, at exact division and the refined reciprocal",
@@ -783,6 +812,38 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
          "revision, so the device lane has no form to key a figure by. A revision that gave the "
          "device entries the axis would owe this row the same measurement the two rows above "
          "carry"},
+        // The device's double lane is the fourth lane that names no division form, and the
+        // figure it publishes is the double lane's own: the entries of this lane read the
+        // double lane's piece tables and its region-B seed, and the bound the CUDA surface
+        // states for them is 5.5e-14, which is the number the host double lane's row carries
+        // (boys/boys_cuda.hpp, SingleF64 and AllOrdersF64, each stating "|error| <= 5.5e-14").
+        // It is stated apart from that row because it is a different lane: this one is a
+        // device lane, its entries a host without a CUDA device cannot run, and the figure a
+        // consumer holding a `kFp64Device` class reads must be this lane's own statement
+        // rather than the host row's beside it.
+        {Precision::kFp64Device, "fp64-device", 5.5e-14, 0.0, 0.0,
+         "the double lane's figure over the whole of x >= 0 on this lane's own entries, which "
+         "publish it as \"|error| <= 5.5e-14\" (boys/boys_cuda.hpp, SingleF64 and AllOrdersF64). "
+         "It is the host double lane's number because it is the same arithmetic over the same "
+         "pieces; it is this row's because the lane is this lane's - a device class asked for "
+         "its bound is answered here and not by the host row beside this one",
+         ""},
+        // The device's half lane computes in the float lane's bodies and stores what it
+        // returns, so the base is the half lane's and not the float lane's: 1e-7 is the figure
+        // the CUDA surface states for this lane (boys/boys_cuda.hpp, SingleF16 and
+        // AllOrdersF16), with the value-dependent term kept in the sentence below rather than
+        // folded into the number, which is how the device option table states the same form
+        // (src/boys_cuda.cpp, kFormF16 against kBoundF16).
+        {Precision::kFp16Device, "fp16-device", 1e-7, 0.0, 0.0,
+         "plus half of the last representable digit of the returned value, which is a term of "
+         "the value the caller receives and not of the call: the lane computes in the float "
+         "lane's bodies and stores half, so it cannot be more accurate than the format it stores "
+         "in, and where the value falls at or below the format's floor no accuracy is claimed at "
+         "all. The base is the figure the device lane's own half entries publish "
+         "(boys/boys_cuda.hpp, SingleF16 and AllOrdersF16). This row carries no form dimension "
+         "for the reason the fp32-device row beside it gives: the division form is a host policy "
+         "field and is named by none of the CUDA surface's headers at this revision",
+         ""},
     }};
 
     return rows;
@@ -938,6 +999,106 @@ Carriage CarriesDevice(FitRoute route,
     return {true, ""};
 }
 
+// The device's double lane, whose rule this is. It is a device lane and not the
+// host double lane under another name: its entries are the CUDA surface's own
+// (BoysCuda::AllOrdersF64 and the family beside it), a host without a CUDA device
+// cannot run one of them, and the figure it publishes is stated in its own row of
+// BoysLaneContracts.
+//
+// What this lane carries, read off the fp64 rows of the option table
+// (src/boys_cuda.cpp), which are the entries the lane itself builds:
+//
+//   * both routes over the coarsest partition, on both packing axes and under
+//     both scheme names (all-orders-fp64 with all-orders-fp64-orders, the mono
+//     pair beside them, and the rational pairs all-orders-fp64-rat with
+//     -rat-horner);
+//   * the narrow partition the same way (all-orders-fp64-narrow with its
+//     orders twin and their monomial and rational names);
+//   * the uniform grid the same way (all-orders-fp64-uniform and
+//     all-orders-fp64-uniform-horner with their orders twins, and the grid's
+//     rational pairs).
+//
+// Every cell the cross of that table names is therefore a row of the lane, and
+// the arms below refuse a value outside the enumerations rather than a cell the
+// lane does not build - which is the same shape as the fp32 device lane's rule
+// beside this one, and it is a statement about a different set of entries: the
+// rows above are read from the fp64 rows of the table, and the fp32 rule reads
+// the fp32 rows of it.
+//
+// The lane names no division form and answers at m = 1 alone, for the reason the
+// fp32 device lane's rule gives: the rung is not a build's to choose, and the
+// form is a field of the host policy, which no CUDA surface header names.
+Carriage CarriesDeviceF64(FitRoute route,
+                          EvalScheme scheme,
+                          PackAxis axis,
+                          FitGranularity granularity) noexcept {
+    const std::size_t r = static_cast<std::size_t>(route);
+    const std::size_t s = static_cast<std::size_t>(scheme);
+    const std::size_t a = static_cast<std::size_t>(axis);
+    const std::size_t g = static_cast<std::size_t>(granularity);
+    if (r >= BoysFitRoutes().size() || s >= BoysEvalSchemes().size() ||
+        a >= BoysPackAxes().size() || g >= BoysFitGranularities().size())
+    {
+        return {false,
+                "the value named is outside the enumeration this library serves, so it names no "
+                "combination: name a route, a scheme, a packing axis and a partition from "
+                "the enumerations this revision publishes"};
+    }
+
+    return {true, ""};
+}
+
+// The device's half lane, whose rule this is. It builds one combination at this
+// revision and not a table of them: the lane's entries are the fp16 single call
+// and the two batch calls (src/boys_cuda.cu, BoysAllOrdersF16Kernel and its
+// siblings; the rows of the option table are single-fp16, all-orders-fp16 and
+// all-n-fp16), and every one of them reads the coarsest partition's Chebyshev
+// pieces on the arguments axis, summed by the split Clenshaw recurrence, under
+// the half budget.
+//
+// So this carrier carries that one cell and refuses the rest, and the refusal is
+// a statement of what is owed rather than a boundary: the other two partitions,
+// the rational route and the orders reading of this lane are a table nobody has
+// cut and a kernel nobody has written for the half format, which is work of the
+// same kind the other lanes' rows were built by. Refusing them here is what keeps
+// a caller who names one from being answered by the float lane's arithmetic under
+// the half lane's name.
+//
+// Naming the cell in the terms the cross uses: the Chebyshev route, the split
+// Clenshaw scheme, the arguments packing axis, the coarsest partition.
+Carriage CarriesDeviceF16(FitRoute route,
+                          EvalScheme scheme,
+                          PackAxis axis,
+                          FitGranularity granularity) noexcept {
+    const std::size_t r = static_cast<std::size_t>(route);
+    const std::size_t s = static_cast<std::size_t>(scheme);
+    const std::size_t a = static_cast<std::size_t>(axis);
+    const std::size_t g = static_cast<std::size_t>(granularity);
+    if (r >= BoysFitRoutes().size() || s >= BoysEvalSchemes().size() ||
+        a >= BoysPackAxes().size() || g >= BoysFitGranularities().size())
+    {
+        return {false,
+                "the value named is outside the enumeration this library serves, so it names no "
+                "combination: name a route, a scheme, a packing axis and a partition from "
+                "the enumerations this revision publishes"};
+    }
+
+    if (route == FitRoute::kChebyshev && scheme == EvalScheme::kSplitClenshaw &&
+        axis == PackAxis::kArguments && granularity == FitGranularity::kCoarsest)
+    {
+        return {true, ""};
+    }
+
+    return {false,
+            "the device's half lane builds one combination at this revision: the coarsest "
+            "partition's Chebyshev pieces on the arguments axis, summed by the split Clenshaw "
+            "recurrence (src/boys_cuda.cu, the fp16 kernels behind BoysCuda::AllOrdersF16 and its "
+            "single and all-N siblings). The narrow and uniform partitions of this lane, its "
+            "rational route and the orders reading of it are a table nobody has cut and a kernel "
+            "nobody has written for the half format, so this cell is owed work rather than a "
+            "shape the lane cannot have"};
+}
+
 } // namespace
 
 AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
@@ -967,6 +1128,10 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
         {
         case Precision::kFp32Device:
             return CarriesDevice(route, scheme, axis, granularity);
+        case Precision::kFp64Device:
+            return CarriesDeviceF64(route, scheme, axis, granularity);
+        case Precision::kFp16Device:
+            return CarriesDeviceF16(route, scheme, axis, granularity);
         case Precision::kFp32:
         case Precision::kFp16:
             return CarriesSingle(route, scheme, axis, granularity);
@@ -1076,7 +1241,10 @@ AccuracyFigure BoysAccuracyDelivered(Precision precision,
         return figure;
     }
 
-    if (precision == Precision::kFp16)
+    // Both of the half lanes answer this way, the host's and the device's: the device half lane
+    // computes in the float lane's bodies and stores half, so what the caller receives carries
+    // the same format quantum the host half lane's return does.
+    if (precision == Precision::kFp16 || precision == Precision::kFp16Device)
     {
         figure.available = false;
         figure.reason =
@@ -1115,7 +1283,11 @@ AccuracyFigure BoysAccuracyDelivered(Precision precision,
         }
     }
 
-    if (precision == Precision::kFp64)
+    // The device's double lane reads the double lane's pieces and its partitions are the same
+    // threesome cut on those pieces, so the rows this figure is taken over are the double
+    // lane's. It is a mirror of that lane's reading and not a second measurement, which is what
+    // this accessor is: a figure a combination was measured to deliver.
+    if (precision == Precision::kFp64 || precision == Precision::kFp64Device)
     {
         source = "BoysFitRoutes(), BoysFitGranularities() and BoysEvalSchemes()";
 
