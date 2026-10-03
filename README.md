@@ -700,8 +700,14 @@ Optional builds: `-DBUILD_BENCHMARKS=ON` for the CPU benchmark drivers, which ar
 design, and `-DBUILD_CUDA=ON`, which needs the CUDA toolkit.
 
 `-DBOYS_MULADD_SEPARATE=ON` moves the scalar multiply-add off the platform's fused call. On a target
-with the fused instruction there is nothing to move and the option changes no result; on a target
-without one the fused step is a library call per recurrence step, and this option removes it. It is a
+with the fused instruction the fused step is one instruction and there is no call to remove, but the
+option is not inert: it asks for two roundings where the fused call gives one, and on MSVC x64
+Release it delivers them — 4.63e-15 on the double single band where the fused route reads 3.22e-15,
+and 7.49e-08 on the float single lane where the fused route reads 6.36e-08, which is the
+separate-route column of the multiply-add table above. A compiler that contracts a bare
+product-plus-add compiles the separate spelling onto the fused step, and the delivered figures are
+then the same under either selection. On a target without the fused instruction the fused step is a
+library call per recurrence step, and this option removes it. Where the compiler delivers it, it is a
 **different arithmetic** — two roundings rather than one — and it has its own measured bound, which
 `docs/lane-contract.md` states lane by lane. `BoysBackends()` reports which route is in force.
 `-DBOYS_WERROR=OFF` drops `-WX` for a consumer whose compiler warning noise this tree has not been

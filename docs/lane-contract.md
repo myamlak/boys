@@ -621,17 +621,18 @@ library on another compiler is a second measurement rather than a confirmation o
 | lane | region | fused | separate | bound |
 |---|---|---|---|---|
 | double, single | x < 1.0855252345349333 | 2.22e-16 | 2.22e-16 | 1e-15 |
-| double, single | 1.0855252345349333 ≤ x < 11.899848152108484 | 3.22e-15 | 3.07e-15 | 3e-14 |
-| double, single | 11.899848152108484 ≤ x < 28.98933773882074 | 7.52e-16 | 9.94e-15 | 3e-14 |
+| double, single | 1.0855252345349333 ≤ x < 11.899848152108484 | 3.22e-15 | 4.63e-15 | 3e-14 |
+| double, single | 11.899848152108484 ≤ x < 28.98933773882074 | 7.52e-16 | 7.52e-16 | 3e-14 |
 | double, single | x ≥ 28.98933773882074 | 5e-14 | 5e-14 | 5.5e-14 |
-| float, single | all arguments | 6.36e-08 | 1.24e-07 | 1.5e-07 |
+| float, single | all arguments | 6.36e-08 | 7.49e-08 | 1.5e-07 |
 | float, batch | all arguments | 1.08e-07 | 1.08e-07 | 1.5e-07 |
 
 **No lane is held back on the fused route.** Every scalar lane holds its published bound at both
 routes, so the alternative is offered everywhere and no lane's figure is withdrawn. The float single
-entry is the one that moves furthest, from 0.424 of its bound to 0.824: a
-rise of 0.40 of a bound that is 1.5e-7 and nothing else, which leaves 0.176 of it in hand. That is
-the tightest margin on this page and the one to watch if the float fits ever change.
+entry is the one that moves furthest, from 0.424 of its bound to 0.499: a rise of 0.075 of a bound
+that is 1.5e-7 and nothing else, which leaves 0.501 of it in hand. The band row is the other one that
+moves, from 0.107 of its bound to 0.154. The closest figure in this table is region C's 0.909 of its
+5.5e-14, which no route moves.
 
 **Where a lane does not move, the reason differs.** Above x = 28.98933773882074 the closed form
 reads no coefficient the route selects, and the one refinement its recurrence takes is written with
@@ -710,22 +711,23 @@ whole of it, against the same reference the table above uses:
 | lane | region | contracted | not contracted | bound |
 |---|---|---|---|---|
 | double, single | x < 1.0855252345349333 | 2.22e-16 | 2.22e-16 | 1e-15 |
-| double, single | 1.0855252345349333 ≤ x < 11.899848152108484 | 3.29e-15 | 3.22e-15 | 3e-14 |
-| double, single | 11.899848152108484 ≤ x < 28.98933773882074 | 9.94e-15 | 7.52e-16 | 3e-14 |
+| double, single | 1.0855252345349333 ≤ x < 11.899848152108484 | 2.74e-15 | 3.22e-15 | 3e-14 |
+| double, single | 11.899848152108484 ≤ x < 28.98933773882074 | 7.5e-16 | 7.52e-16 | 3e-14 |
 | double, single | x ≥ 28.98933773882074 | 5e-14 | 5e-14 | 5.5e-14 |
-| float, single | all arguments | 1.29e-07 | 6.36e-08 | 1.5e-07 |
-| float, batch | all arguments | 1.29e-07 | 1.08e-07 | 1.5e-07 |
+| float, single | all arguments | 6.36e-08 | 6.36e-08 | 1.5e-07 |
+| float, batch | all arguments | 9.11e-08 | 1.08e-07 | 1.5e-07 |
 
-The double lane's first, third and fourth rows do not move at all: the same worst cell, to the digit,
-on both arithmetics. What moves is its band between 1.0855 and 11.8998, whose worst cell is n = 16 at
-x = 4.89985 without contraction and n = 32 at x = 10.7836 with it, and both float lanes, whose worst
-cell is n = 0 at x = 0.072854 without contraction and n = 32 at x = 11.9447 with it. The
-not-contracted column was measured on four
-configurations — MSVC on arm64, MSVC on x86-64, clang on x86-64 and AppleClang on x86-64 — which
-agree to the digit, two architectures and three compilers reaching one figure. The contracted column
-was measured on AppleClang on arm64, and reproduced on x86-64 by building with `-mfma`: the same six
-figures to the digit, and the same worst cell down to its order and argument, from two compilers on
-two architectures. That is the pair worth reading together, because it is what the licence turns on —
+The double lane's first and fourth rows do not move at all: the same worst cell, to the digit, on
+both arithmetics. Its third row keeps its worst cell, n = 32 at x = 11.8998, and reads 7.5e-16
+contracted against 7.52e-16 not. What moves is its band between 1.0855 and 11.8998, whose worst cell
+is n = 16 at x = 4.89985 without contraction and n = 8 at x = 2.05179 with it, and the float batch
+lane with it, whose worst cell is n = 0 at x = 11.151 without contraction and n = 0 at x = 11.2499
+with it. The float single lane is the one that does not move: n = 0 at x = 0.80868 either way, at
+6.36e-08. The not-contracted column was measured on four configurations — MSVC on arm64, MSVC on
+x86-64, clang on x86-64 and AppleClang on x86-64 — which agree to the digit, two architectures and
+three compilers reaching one figure. The contracted column was measured on x86-64 by building with
+`-mfma`, which is the flag that licenses the contraction there, and the figures under it are that
+build's. That is the pair worth reading together, because it is what the licence turns on —
 gcc and clang contract a bare product-plus-add when the target can form one, and only one of the two
 architectures can without being told to.
 
@@ -738,8 +740,9 @@ passes there. What is missing is the printed figure alone — ctest shows a pass
 under `-V`, and that leg does not carry the reading step the other five do — and the column it would
 fill is the contracted one, which the two measurements above already give.
 
-**Every bound on this page holds on both.** The contracted arithmetic's 3.29e-15 is 0.11 of its 3e-14
-and its 1.29e-07 is 0.859 of its 1.5e-07, and no cell of any lane exceeded its bound on any of the
+**Every bound on this page holds on both.** The contracted arithmetic's 2.74e-15 is 0.0915 of its 3e-14,
+its float single row's 6.36e-08 is 0.424 of its 1.5e-07 and its float batch row's 9.11e-08 is 0.607 of
+that same 1.5e-07, and no cell of any lane exceeded its bound on any of the
 six configurations. Five of them print `39 of 39` documented claims met; on the sixth, gcc on arm64,
 the gate is the `boys-accuracy-gate --strict` test in its ctest run, and that test passes. Its
 consumer check prints 55 rule rows and every one reports zero cells above its bound. What a caller
