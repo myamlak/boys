@@ -671,12 +671,11 @@ and by nothing else. So the route's float half is a report about an arithmetic t
 not a choice a caller can reach — the third gap, and the one that is a work item rather than a
 property of the axis.
 
-The across-orders lane (`src/boys_orders_simd.cpp`) is a packed lane this revision does not route: it
-spells its own `vfmadd` at each of its steps, so it is one-rounding whatever the build says and its
-values do not move between the routes — **0 of 32,868** values of the across-orders double lane and
-**0 of 2560** of its float sibling differ across the two builds. A caller who selects the separate
-route and calls `BoysAllOrders` therefore gets the fused arithmetic on the arguments that lane
-serves, which is the second gap.
+The across-orders lane (`src/boys_orders_simd.cpp`) is a packed lane this revision routes: its steps
+read the selection the build made, so its values move between the routes — **5,067 of 32,868** values
+of the across-orders double lane and **3,723 of 32,868** of the float lane differ across the two
+builds. At the fused route the lane's values are unchanged from before the route reached it: the same
+hash over all 38,068 rows of the dump.
 
 **The separate route does not remove every call, and the remainder is deliberate.** The transform
 lane's own product contains no fused step at all — its splits are exact by construction and its
@@ -922,9 +921,9 @@ fits and **3e-14** on the extended band. At the certified split
 Clenshaw scheme its values are the across-arguments lane's values **bit for bit** — one exact
 comparison over 3,009 arguments and every order, 99,297 of 99,297 values, with no tolerance, because
 a reordered step or a coefficient read one index out would still return a plausible number. That
-comparison is the fused route's: on a separate-route build the two are two arithmetics, because this
-lane spells its own fused step while the across-arguments lane carries the route the build selected.
-There **62,110 of 99,297** values are bit-identical and the two part by at most **2.220e-16**,
+comparison is the fused route's: on a separate-route build the two are two arithmetics, and both lanes
+carry the route the build selected while still spelling their steps apart.
+There **93,934 of 99,297** values are bit-identical and the two part by at most **2.220e-16**,
 inside the region's 1e-15, and the lane's own test carries both legs. That row
 is the shipped partition's, for the reason in the paragraph above; on the narrow partition the same
 question is answered by the reference table instead. Past
