@@ -1048,41 +1048,50 @@ state its own-degree summation would have started from. The claim is therefore t
 packed value is the per-order value — and it is asserted as bit-identity rather than as a tolerance,
 on the same reasoning the double lane's is.
 
-**The direction of the difference between the two lanes is the multiply-add route.** The packed lane
-names its own instruction (`vfmadd`) and is contraction-free whatever the build says, so it performs
-one rounding where a scalar build with `BOYS_MULADD_SEPARATE=ON` performs two. On the default fused
-build the two are the same arithmetic and the values are the same bits — **0 of 999,240** swept values
-differ (five policies, every `nmax` from 0 to 32 and five
-arguments past the lane's own interval) — so on that build the agreement is asserted without a
-tolerance. On the two-rounding build they part, and a difference between two lanes is then
-not a statement about either one's accuracy, so both are measured against the double lane, whose own
-error is a double lane's and is a reference at this scale:
+**The route is not what separates the two lanes: both run the one the build selected.** The two
+packed backends are templates over the route, defaulted to that selection (`src/boys_backend_simd.hpp`,
+`Avx2Fp64` and `Avx2Fp32`), and the across-orders lane's own steps read the same selection, so a build
+with `BOYS_MULADD_SEPARATE=ON` hands the packed lane the two-rounding form on the same terms as the
+scalar lane. The packed lane is contraction-free in the way the build asked for, not whatever the
+build says. The two lanes are therefore one arithmetic on both builds, and the values are the same
+bits on both: **0 of 879,351** swept values differ and the worst parting is 0.000e+00, on the
+two-rounding build as on the fused one.
 
-| policy, two-rounding build | packed, from the double lane | per-order, from the double lane | packed versus per-order | bar |
+Those 879,351 values are this tree's own sweeps, every one of them run by
+`tests/boys_orders_f32_test.cpp` on whichever build it is compiled into: 199,815 values from five
+policies — chebyshev and rational minimax, each under split Clenshaw and Horner, and the fp16
+budget's chebyshev split — over the 1,211 arguments of the lane's region-A grid and every order 0 to
+32; 679,371 values from every `nmax` in that range over the same arguments; and 165 values from five
+arguments past the lane's own interval. The counts and the zeros are the same on both builds. The
+assertion that reads the count is made where the build is fused; where it is two-rounding the test
+prints the same count and is compiled not to assert it (`tests/boys_orders_f32_test.cpp`, the
+`kScalarIsFused()` guard).
+
+What does move between the builds is the distance from the double lane, and it stays inside the bar:
+
+| policy | packed, from the double lane, fused build | packed, from the double lane, two-rounding build | packed versus per-order | bar |
 | --- | --- | --- | --- | --- |
-| chebyshev, split Clenshaw | 1.297e-07 | 1.297e-07 | 1.192e-07 | 1.5e-07 |
-| chebyshev, Horner | 9.029e-08 | 9.029e-08 | 1.192e-07 | 1.5e-07 |
-| rational minimax, split Clenshaw | **1.309e-07** | **1.727e-07** | 1.788e-07 | 1.5e-07 |
-| rational minimax, Horner | 1.309e-07 | 1.727e-07 | 1.788e-07 | 1.5e-07 |
+| chebyshev, split Clenshaw | 1.069e-07 | 1.069e-07 | 0 of 39,963 | 1.5e-07 |
+| chebyshev, Horner | 6.988e-08 | 7.886e-08 | 0 of 39,963 | 1.5e-07 |
+| rational minimax, split Clenshaw | **1.433e-07** | **1.210e-07** | 0 of 39,963 | 1.5e-07 |
+| rational minimax, Horner | 1.433e-07 | 1.210e-07 | 0 of 39,963 | 1.5e-07 |
+| chebyshev, split Clenshaw, fp16 budget | 1.069e-07 | 1.069e-07 | 0 of 39,963 | 1.5e-07 |
 
-Read the middle three columns together. **On the Chebyshev route the two lanes are one number and it
-is inside the bar. On the rational route they are not one number, and the lane that is outside the bar
-is the per-order one**: 1.727e-07 against the 1.5e-07 that route is certified against, where the
-packed lane reads 1.309e-07 and is inside it. The pair difference of 1.788e-07 is the two-rounding
-scalar lane's excess and not the packed lane's, which is why the lane's test measures against the
-double lane on that build rather than against its sibling: a sibling that is itself over the bar
-cannot be the reference a bar is read against. This is the same defect class as the gate's
-pre-existing red row on the same build — `float.route.delivered float.policy.single`, 1.56625e-07
-against 1.5e-07 at `n = 16, x = 0.0781091`, a row the axis does not touch — which
-is a property of the region-A rational fit under two-rounding arithmetic and not of this lane.
+Read the middle three columns together. **The packed lane is inside the 1.5e-07 the region-A float
+fits are certified against on both builds**, and the per-order lane reads the same number as the
+packed one in every row because the two lanes are one arithmetic there: the last column is a count of
+zero, not a tolerance. Neither build has a lane over the bar and its sibling inside it, so the double
+lane remains the reference both are read against, and there is no build on which a sibling has to
+stand in for it.
 
-On the fused build, which is the default, the packed lane's own error is 1.297e-07 on the Chebyshev
-route and 1.309e-07 on the rational one, both inside the bar, and the per-order lane's is the same
-number because the two lanes are one arithmetic there. The gate's float book carries a row for this
-axis, measured against the committed mpmath reference grid at the lane's own bar: **56,694
-cells**, delivered **1.03e-07** against **1.5e-07**, a ratio of **0.685**, with the worst cell at
-`n = 0, x = 0.684828`. The per-order entry's row over the same cells delivers 1.08e-07, so the axis
-moves which lane evaluates and not the figure the entry meets.
+The gate's float book carries a row for this axis, measured against the committed mpmath reference
+grid at the lane's own bar, and it prints the same figures on the two-rounding build as on the fused
+one: **56,694 cells**, delivered **1.03e-07** against **1.5e-07**, a ratio of **0.685**, with the
+worst cell at `n = 0, x = 0.684828`. The batch entry's own row over the same cells, packing the
+arguments axis and not this one, delivers 1.08e-07 on both builds, so naming this axis moves which
+lane evaluates and not the figure the entry meets. The float route book is not red on either build:
+the gate reports 0 of its 4 rows short by more than a tenth of the bar, the worst by 0.0915 of it, and
+exits 0 with every documented claim met on both.
 
 **Outside region A the axis is not what is running.** Past `x = 11.8998` the entry answers from the
 certified scalar single lane at the policy the caller named, one order at a time, which is the same
