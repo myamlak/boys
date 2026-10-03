@@ -92,9 +92,10 @@ The axes a caller does not choose — the fit route, the evaluation scheme, the 
 fitted regions and the packing axis — are columns inside the class, and compete in one ranking. The
 default is taken from the certified double lane's precision, answering the shape the probe's workload
 asks. A faster row of another precision or of the other shape is therefore never a candidate for it.
-Within that class the default
-is the row the run's own figures put first, so the name printed and the table printed beside it
-never disagree about which option is cheapest.
+Within that class the default is the
+row the class's own rounds put first where they order it, and the row the refinement's vote named
+where they cannot separate its members; where the vote named another tied row, both figures are
+printed beside the name.
 
 When a class cannot be ordered, the run still ends with one combination. A class cannot be ordered
 when a pair's within-round ratio band straddles one, or when too few rounds exist for a band. The

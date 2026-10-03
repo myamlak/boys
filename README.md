@@ -748,20 +748,23 @@ caller does not choose are columns inside the class and compete in one ranking. 
 from the certified double lane's precision, answering
 the shape this probe's workload asks: a faster row of another precision, or of
 the other shape is a different class and never a default candidate. Within that class the default is
-the row the run's own figures put first, so the name it prints and the table it prints it beside
-never disagree about which option is cheapest. **A class that held no row for a member of an axis
-prints a `NOT COMPARED:` line naming that member**, because a default read as a race it never ran is
-worse than no default: the partition axis is the one this library's shipped default states as a
-comparison, and a run whose rows are all one partition has not compared partitions at all.
+the row the class's own rounds put first where they order it, and the row the refinement's vote named
+where they cannot separate its members; where the vote named another tied row, that row is the
+default and the figures of both are printed beside it. **A class that held no row for a member of an
+axis prints a `NOT COMPARED:` line naming that member**, because a default read as a race it never
+ran is worse than no default: the partition axis is the one this library's shipped default states as
+a comparison, and a run whose rows are all one partition has not compared partitions at all.
 
 When a class cannot be ordered — a pair whose within-round ratio band straddles one, or too few
 rounds for a band to exist — the run still ends with one combination, and it says how it reached it.
 The options the class left tied are re-run alone at a longer protocol (more passes over more rounds,
-set by `--refine-runs` and `--refine-factor`) and voted on. That vote is read against the run it
-refines: where it names the same row, the report says the re-run confirmed it; where it names
-another, the report prints both figures and says the class's top entries cannot be separated by the
-run, and the default is the row the report's own table puts first — never a row its own figures show
-behind another. A class that holds one option names that option: one entry is not a ranking, and
+set by `--refine-runs` and `--refine-factor`) and voted on. That vote decides: options the class
+cannot separate are settled by which was fastest in most runs, so the row it names is the default,
+and the report says whether every one of those runs led with it or only most of them. The row the
+report's own table puts first is kept beside it as the record of what the shorter protocol said, and
+where the vote named another, the report prints both figures and says the class's top entries cannot
+be separated by the run — never naming a row its own figures show behind another. A class that holds
+one option names that option: one entry is not a ranking, and
 there is no alternative to it. A run in which no option produced a figure at all reports `CANNOT
 DETERMINE` and the number of paired rounds a band needs, rather than a name it never measured — and
 it offers no fallback read from a
@@ -857,19 +860,20 @@ rounds and reports that kernel's own spread; it is a diagnostic that gates nothi
 work read by the same clock the entries ran on measures the clock as much as the card, and a rule
 that discarded a pass on it would discard the measurement rather than the machine. What a shape's
 ordering is made in is the spread of the paired ratios. A shape whose own rounds cannot separate two
-entries still ends with exactly one of them — always the one its own figures put first, the row its
-own table lists first, so a caller never meets a default the figures beside it contradict. The
-entries the shape could not place behind the leader are re-run alone at a longer protocol, set by
-`--refine-runs` and `--refine-factor`, and what those runs decide is *how* that entry was reached:
-a unanimous re-run that named it, a majority that named it, or a vote that named another entry, which
-is a tie the runs could not break. Those are three answers of different strength, and the report says
-which one it is making, with the vote printed run by run. A shape whose rows the run's own checks set
-aside — a subtraction that resolved nothing, a figure the repetition control could not hold — is not
-left without an answer: the rows it did produce a figure for go to that same stage, and the shape ends
-with one of them, named with the way it was reached rather than as an ordering this shape's own
-rounds established. A shape holding one entry names that entry, since there is no alternative to
-name and one entry is not a ranking; a shape that produced no figure at all is the one case that
-reports `CANNOT DETERMINE` and names no entry, and the reason says which count or which row was
+entries still ends with exactly one of them: the entries it could not place behind the leader are
+re-run alone at a longer protocol, set by `--refine-runs` and `--refine-factor`, and the entry that
+led most of those runs is the shape's default — never a row its own figures show behind another.
+The row the shape's own table lists first is kept beside it as the record of the shorter protocol
+said, so a caller reads both. Whether the vote was unanimous, a majority, or split across several
+entries is *how* that entry was reached: three answers of different strength, and the report says
+which one it is making, with the vote printed run by run. A shape whose rows the run's own checks
+set aside — a subtraction that resolved nothing, a figure the repetition control could not hold —
+is not left without an answer: the rows it did produce a figure for go to that same stage, and the
+shape ends with one of them, named with the way it was reached rather than as an ordering this
+shape's own rounds established. A shape holding one entry names that entry, since there is no
+alternative to name and one entry is not a ranking; a shape that produced no figure at all is the
+one case that reports `CANNOT DETERMINE` and names no entry, and the reason says which count or
+which row was
 missing. Where a shape was not ordered outright, every entry it could not place behind the leader is
 printed with the band that pair fell in and in how many rounds each was the slower of the two.
 

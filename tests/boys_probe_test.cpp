@@ -538,13 +538,24 @@ TEST(ProbeTest, ARecommendationLeavesNoRivalUnplaced) {
         ASSERT_NE(leader, nullptr);
         EXPECT_EQ(doubles->leader, leader->name);
 
-        // The invariant the whole report rests on: the default is the row the report's
-        // own figures put first in the class the rule names. Whether the class ordered,
-        // the refinement runs agreed or they named another row, the name printed as the
-        // default is the name the class block prints first.
-        EXPECT_EQ(report.recommended, leader->name)
-            << "the default is not the cheapest row of its own class by the figures printed "
-               "beside it";
+        // The invariant the whole report rests on: the default is a row of the class the rule
+        // names, and which row is what the way-it-was-reached says. Where the class could not
+        // be ordered and the refinement ran, the vote names it; where there was no vote to
+        // take, the class's own printed figure is all there is to go on, and the name is the
+        // one that figure puts first. Either way both rows are printed, and where they differ
+        // the difference is what says the class's top entries cannot be separated.
+        const boys::OptionProbeRefinement* vote = nullptr;
+
+        for (const boys::OptionProbeRefinement& refinement : report.refinements) {
+            if (refinement.precision == OptionPrecision::kFp64 &&
+                refinement.shape == boys::OptionProbeShape::kAllOrders) {
+                vote = &refinement;
+            }
+        }
+
+        const bool voted = vote != nullptr && vote->ran && !vote->winner.empty();
+        EXPECT_EQ(report.recommended, voted ? vote->winner : leader->name)
+            << "the default is not the row the report's own rule names for its class";
 
         if (report.defaultHow == OptionProbeDefaultHow::kOrdered) {
             EXPECT_TRUE(report.inseparable.empty()) << "an ordering left a rival unplaced";
@@ -576,8 +587,9 @@ TEST(ProbeTest, ARecommendationLeavesNoRivalUnplaced) {
             << "a tie was decided with no refinement run behind the choice";
 
         // From here the class is tied, and the way the report says the tie was reached
-        // has to match the vote's own record: the vote naming this row is what kRefined
-        // and kVote mean, and a vote that named another row is a kChosenAmongEquals.
+        // has to match the vote's own record: the vote naming this row - unanimously or by
+        // a majority - is what kRefined and kVote mean, and a vote that ran and could not
+        // settle on one row is a kChosenAmongEquals.
         const boys::OptionProbeRefinement& stage = report.refinements.front();
         const bool voteNamesThisRow = stage.winner == report.recommended;
 
@@ -728,13 +740,17 @@ TEST(ProbeTest, AnOrderingNeedsFourPairedRounds) {
 
     EXPECT_EQ(stage.precision, OptionPrecision::kFp64);
 
-    // The default is the class's own fastest row by the printed figure. The vote
-    // is the same question asked again at a longer protocol: it confirms that row
-    // or names another, and it may not name a row the figures beside it put behind.
+    // The default is the row the refinement's vote named. The vote is the same question
+    // asked again at a longer protocol - options this run cannot separate are settled by
+    // which was fastest in most runs - and the class's own fastest figure is the record of
+    // what the shorter protocol put first. Both rows are re-measured by the vote, and where
+    // the two differ the difference is what says the class's top entries cannot be separated.
     const OptionProbeMeasurement* classLeader = ReferenceLeader(report);
     ASSERT_NE(classLeader, nullptr);
-    EXPECT_EQ(report.recommended, classLeader->name)
-        << "the default is not the class's own fastest row by the printed figure";
+    EXPECT_EQ(report.recommended, stage.winner)
+        << "the default is not the row the refinement vote named";
+    EXPECT_NE(std::find(stage.pool.begin(), stage.pool.end(), classLeader->name), stage.pool.end())
+        << "the class's own fastest row was not one of the rows the vote re-measured";
     EXPECT_EQ(report.defaultHow,
               stage.winner == report.recommended
                   ? (stage.unanimous

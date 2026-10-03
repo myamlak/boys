@@ -2600,14 +2600,14 @@ std::vector<double> PrintedFigures(const OptionProbeReport& report) {
 /// library's own full-accuracy multiplier, for the all-orders shape this probe's
 /// workload asks, whose members were all built at that multiplier and all hand
 /// back the
-/// same thing, so choosing among them trades nothing but speed. It is that class's
-/// fastest row by the figure this report prints, and the ways of reaching it are
-/// the ways of confirming that row: the class's own ordering, or the vote over the
-/// refinement stage RunOptionProbe ran over the tied options alone — repeated runs
-/// at a larger protocol, which name the same row or another one, and are reported
-/// with what they said either way. A vote for another row is reported as the run
-/// saying the class's top entries cannot be separated, and the default stays the
-/// row the figures put first. The report never leaves the caller without a
+/// same thing, so choosing among them trades nothing but speed. Where the class's
+/// own rounds order it, the default is that class's fastest row by the figure this
+/// report prints; where they cannot place one row behind another, the tie is
+/// re-run alone at a larger protocol and the row that led most of those runs is
+/// the default, with the row the printed figures put first kept beside it as the
+/// record of what the shorter protocol said. Both rows are re-measured by the
+/// vote, and where they differ the difference is what says the class's top entries
+/// cannot be separated. The report never leaves the caller without a
 /// default, and never names one by counting the library's tables.
 ///
 /// \param report the report to conclude on, whose measurements and refinement
@@ -2877,10 +2877,10 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
     const OptionProbeRefinement* stage =
         refinement_of(OptionPrecision::kFp64, kWorkloadShape);
 
-    // The default is the class's own fastest row by the figure this report prints
-    // - the row the class block lists first - and nothing else it was measured
-    // with may name another. What the refinement can do is confirm that row or
-    // fail to, which is what the way-it-was-reached says.
+    // Where the class's own rounds ordered it, the default is the row they put first;
+    // where they could not place one row behind another, the vote over the refinement
+    // stage RunOptionProbe ran over the tied rows alone decides, and the row the
+    // printed figures put first is kept beside it as the record of the shorter protocol.
     if (pool.size() == 1)
     {
         // Read before the ordering branch, not after it: a class holding one
@@ -3289,8 +3289,8 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
         }
 
         confidence = Text(
-            "LOW: this run could not separate the options of the class%s, so '%s' is the row its "
-            "own figures put first among options it cannot tell apart - the way it was reached is "
+            "LOW: this run could not separate the options of the class%s, so '%s' is one of the rows "
+            "it cannot tell apart - the way it was reached is "
             "stated above and it is not a ranking",
             voteClause.c_str(), report.recommended.c_str());
         break;

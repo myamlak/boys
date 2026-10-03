@@ -390,9 +390,9 @@ enum class OptionProbeDefaultHow : int {
     /// The same re-runs, with a majority rather than all of them leading with the
     /// entry the report names.
     kVote,
-    /// The class's top entries could not be separated: the entry is the row the
-    /// report's own figures put first among options it cannot tell apart, named
-    /// as that and not as a ranking.
+    /// The class's top entries could not be separated, and the vote did not
+    /// settle which of them leads: it was split across several rows, no run placed
+    /// a leader, or no vote was taken at all. Named as that and not as a ranking.
     kChosenAmongEquals,
 };
 
@@ -747,18 +747,25 @@ struct OptionProbeReport {
     /// full-accuracy multiplier, so choosing among them trades nothing but speed
     /// within one question.
     ///
-    /// It is **the row the report's own figures put first in that class** —
-    /// \c fastestAtReferenceAccuracy — whether the class ordered or the run could
-    /// not separate its members. \c defaultHow says how that row was confirmed.
+    /// **It is the row the refinement stage's vote named, where that stage ran** —
+    /// the members a class's own rounds cannot separate are settled by which was
+    /// fastest in most of the stage's runs, and \c defaultHow says how that vote
+    /// came out. \c fastestAtReferenceAccuracy is the record of the shorter
+    /// protocol: it is printed beside the name, and where the two differ the
+    /// difference is what says the class's top entries cannot be separated. A class
+    /// the stage did not reach — one its own rounds ordered, one holding a single
+    /// row, one whose rounds produced no figure to refine — is named by the row its
+    /// own figures put first.
     /// Empty exactly when \c verdict is \c kCannotDetermine.
     std::string recommended;
 
     /// How \c recommended was reached. \c kOrdered is a measured ordering;
-    /// \c kRefined and \c kVote are the refinement runs naming this same row;
-    /// \c kChosenAmongEquals is a tie this run could not break, including a
-    /// refinement vote that named another row — the default is the row the run's
-    /// own figures put first, not the row the vote preferred. \c kOnlyEntry
-    /// appears when the caller narrowed the run to a class of one.
+    /// \c kRefined and \c kVote are the refinement runs naming this same row,
+    /// unanimously and by a majority respectively; \c kChosenAmongEquals is a tie
+    /// the vote itself could not break — it was split across several rows, no run
+    /// placed a leader, or the stage never ran, and in the last two of those the
+    /// row named is the one the run's own figures put first. \c kOnlyEntry appears
+    /// when the caller narrowed the run to a class of one.
     OptionProbeDefaultHow defaultHow = OptionProbeDefaultHow::kNone;
 
     /// The members of an axis that the class behind \c recommended held no row
@@ -774,9 +781,10 @@ struct OptionProbeReport {
     std::vector<std::string> defaultClassAbsent;
 
     /// The fastest option of the certified lane's reference class by the main run's
-    /// own rounds alone, empty when no option of that class was measured. It is what
-    /// \c recommended names whenever the class holds more than one measured
-    /// option.
+    /// own rounds alone, empty when no option of that class was measured. It is the
+    /// record of what the shorter protocol put first: where the refinement's vote
+    /// named another tied row, that row is \c recommended and this one is the figure
+    /// the two are read against.
     std::string fastestAtReferenceAccuracy;
 
     /// The fastest option measured, whatever its precision, empty when none was
