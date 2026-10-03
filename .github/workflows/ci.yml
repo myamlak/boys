@@ -529,6 +529,19 @@ jobs:
         if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_required_checks_are_armed.py --check
+      # Every gate below this line runs on the failure of the ones above it, and
+      # that is what `always()` is for here: without it the first gate to fail
+      # ends the leg and the rest report nothing - the leg states one finding and
+      # is read as though that were the only one there was. That is not
+      # hypothetical: the step above failed on a leg whose examples check, Doxygen
+      # gate and every docs gate had never been run at all, and two of those were
+      # already red on committed content.
+      #
+      # This is the file's own idiom for a step that has to run on a leg that has
+      # already failed (see the build-facts row steps, and the reason stated
+      # there), and the gates below read the tree and the build this leg has
+      # already made, so each answer is one a reader wants even when another gate
+      # has gone red. A gate is not less true for standing beside a failure.
       # The packed orders lane is a template instantiated once per cell, and its
       # cells are written out twice - as `extern template` declarations in
       # include/boys/boys_impl.hpp and as definitions in src/boys_orders_simd.cpp.
@@ -538,10 +551,11 @@ jobs:
       # in every translation unit that calls it. No other gate in this file reads
       # either list, so this step is the only thing that does.
       - name: Packed orders cells (declared against instantiated)
-        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_orders_packed_cells.py --check
       - name: Boundary standalone check
+        if: ${{ always() }}
         run: |
           mkdir -p boundary-run
           g++ -std=c++17 -O2 tests/boys_boundary_standalone.cpp -o boundary-run/boys-boundary-check
@@ -570,7 +584,7 @@ jobs:
       # suppression list - the material is in the log, and the line under the
       # counts says which of the two the exit status is about.
       - name: Docs (arithmetic in the published prose)
-        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_doc_arithmetic.py --strict
       # The lane rows' `source` members are what the example programs print,
@@ -595,7 +609,7 @@ jobs:
       # compiler, no network - so it is scoped to one combination like the
       # gates above it.
       - name: Docs (the runs the prose quotes)
-        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_doc_transcripts.py --check
       # The accuracy gate judges every lane and region against a bound, and
@@ -620,7 +634,7 @@ jobs:
       # no build, no compiler, no network - so it is scoped to one combination
       # like the gates above it, and it is as fast as reading four files.
       - name: Docs (the bounds the gate transcribes)
-        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_bound_transcripts.py --check
       # The step above holds the README's printed-run table to the gate's
@@ -632,7 +646,7 @@ jobs:
       # prints from. It cannot see a difference only a build would show, and it
       # says so; what it can see is a record of a tree that has moved.
       - name: Docs (the gate's recorded run, against this revision)
-        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_recorded_run.py
       # The two consumer documents quote what the examples print, and nothing read those runs back:
@@ -663,7 +677,7 @@ jobs:
       # `.venv/bin/python` here exits 127 - command not found - because on a Debug leg there is no
       # venv at all, which is what the first version of this step did on CI run 3.
       - name: Examples (the runs the two documents quote)
-        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Debug' }}
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Debug' }}
         run: |
           python3 tools/check_example_transcripts.py --check --examples-dir build
       # The build-defaults seam offers a consumer five choices, and until this
@@ -681,7 +695,7 @@ jobs:
       # It is the cheap half - a choice that stops being read at all, which is
       # the half that goes quiet.
       - name: Docs (the choices the build-defaults seam offers)
-        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_seam_macros.py --check
       # The same seam read the expensive way, and the half the step above cannot
@@ -711,7 +725,7 @@ jobs:
       # rather than dropped for that reason: a second tree registering one fewer
       # test than the tree beside it would be a configuration nobody declared.
       - name: Build defaults (tuned fixture built and tested)
-        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           cmake -S . -B build-defaults-tuned -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
             -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF -DBOYS_EXPECT_AVX2=1 \
@@ -732,7 +746,7 @@ jobs:
       # member is an option the library advertises and cannot deliver, and a
       # member with no row is an entry no book describes or counts.
       - name: Device (the options booked against the entries declared)
-        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_device_entry_bijection.py --check
       # The host surface had the same exposure one layer up, and no step read it:
@@ -748,9 +762,28 @@ jobs:
       # second list, so the table cannot agree with itself while disagreeing with
       # the code.
       - name: Host (the shapes booked against the names declared)
-        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_host_entry_bijection.py --check
+      # The defaults table is the third hand-written list read against the entries
+      # themselves, and until this step nothing read it: a row for a class no entry
+      # reaches is a default a caller cannot ask for, and it is invisible - the
+      # table reads complete, and the only symptom is that the class cannot be
+      # called. Every build break of 2026-10-02 came from two of these three lists
+      # disagreeing while each read correct from inside the list being read.
+      #
+      # This step is the bijection the header's own prose states, in both
+      # directions: a row whose class no entry names is a class the library does
+      # not offer, and an entry naming an unrowed class is one the build refuses
+      # anyway, so seeing it here means the two lists were read differently.
+      #
+      # It reads include/boys/boys_build_defaults.hpp and the three public headers
+      # and nothing else - no build, no compiler, no network - so it is scoped to
+      # one combination like the two steps above it.
+      - name: Defaults (the rows booked against the entries declared)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_default_rows_have_entries.py
       # The scheme arms have the same exposure one layer down, and no compiler sees
       # all of it. gcc and clang catch an arm the switch is missing through
       # -Wswitch, but only while the switch has no `default` arm, and a switch that
@@ -766,11 +799,11 @@ jobs:
       # handed a different option from the one it named, silently, and the probe
       # books the cell as measured.
       - name: Arms (every scheme named by every switch over it)
-        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_enum_arms_covered.py --check
       - name: Docs (zero-warning Doxygen gate)
-        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: cmake --build build --target boys-docs
   # -------------------------------------------------------------------------
   # ubuntu-latest, AddressSanitizer + UndefinedBehaviorSanitizer. For kernel

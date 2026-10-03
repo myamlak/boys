@@ -133,9 +133,18 @@ LIBRARY = REPO / "src" / "boys.cpp"
 # finding this check raises when the path is absent says so.
 RUN = REPO / "tests" / "data" / "boys_accuracy_gate_run.txt"
 
-# The middle dot the documents write a figure after, kept as an escape so this
-# file is ASCII: `m<dot>5.5e-14` is how both documents state a multiplied bound.
-MULT = re.compile(r"m[\u00b7*]\s*(?P<num>\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)")
+# A bound the documents state, read in either spelling they write it in: the
+# rung-era `m<dot>5.5e-14`, whose multiplier is the caller's choice and not part
+# of the figure, and the plain `<sign> 1.5e-7` every cell writes now that m = 1
+# is the only setting. The middle dot is kept as an escape so this file is ASCII.
+#
+# The sign is what keeps the reading tight: the same cells carry prose numbers
+# (`below x = 11.899848152108484`) that are not figures and that this must not
+# pick up. A number followed by ULP is the unit form below and not this one, so
+# the same figure is never read twice out of one cell.
+BOUND = re.compile(
+    r"\u2264\s*(?:m[\u00b7*]\s*)?(?P<num>\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)(?!\s*ULP)"
+)
 # The additive form, `m<dot>1.5e-7 + 8e-8`, which the README's fast device row
 # and the library's own additive member both state. A trailing `+ 1/2 ULP`
 # carries no number and is prose, not a figure.
@@ -330,11 +339,20 @@ TIES = (
     Tie("kNativeUlpBound", "native half", ("C",), "native half", unit="ulp"),
 )
 
-# The gate's other statement of a tied figure, under a name of its own: the
-# float lane's rung bar, which is that lane's published figure read for rung
-# accounting. It is held to the same cells as the primary, so it cannot drift
-# away from the document while the primary stays put.
-ALIASES = (("kF32RungRegionBound", "kBoundFloat"),)
+# The gate's other statements of a tied figure, under a name of their own: a
+# constant that states a figure a tie already holds, written a second time for an
+# accounting of its own. Each is held to the same cells as its primary, so it
+# cannot drift away from the document while the primary stays put.
+#
+# EMPTY, and it went empty with the constant rather than to make a run pass: the
+# one entry here was `kF32RungRegionBound`, the float lane's published figure read
+# for the accuracy rung's accounting, and the rung is REMOVED from this tree - the
+# removal took the rung, its multiplier and every reader of that bar with it, and
+# no file of the tree declares the constant any more. A constant that is not there
+# is not a second statement of the figure, so there is nothing left for this list
+# to hold. It stays for the next one: a figure written twice is what this check
+# exists for, and a name added here is held to the primary's cells from then on.
+ALIASES: tuple[tuple[str, str], ...] = ()
 
 LIBRARY_TIES = (
     # The double batch entry is a double-precision entry: the README's row for
@@ -610,7 +628,7 @@ def region_row(table: Table, region_column: int, lane: str, region: str) -> Row:
 def figures_in(text: str) -> list[tuple[float, str, str]]:
     """Every bound figure in one cell, as (value, unit, as written)."""
     found: list[tuple[float, str, str]] = []
-    for match in MULT.finditer(text):
+    for match in BOUND.finditer(text):
         found.append((float(match.group("num")), "absolute", match.group(0)))
         addend = ADDEND.match(text[match.end() :])
         if addend is not None:
