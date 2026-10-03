@@ -48,6 +48,18 @@ ARITHMETIC = re.compile(r"the arithmetic:\s*([\d\s+]+)=\s*(\d+)")
 REVISION = re.compile(r"accuracy gate,\s*revision\s+([0-9a-f]{7,40})")
 LANES = re.compile(r"over\s+(\d+)\s+lane\(s\)")
 
+# An arithmetic with NUMBERS in it. The words alone are not evidence: `src/boys_probe.cpp` contains
+# the literal format strings ("MEMBERS:", "the arithmetic: %s = %zu") because it is the code that
+# prints them, so a phrase test reads the source as a run. It did exactly that.
+ARITHMETIC_WITH_NUMBERS = re.compile(r"the arithmetic:\s*\d+(?:\s*\+\s*\d+)+\s*=\s*\d+")
+
+
+def has_closure(text: str) -> bool:
+    """A whole closure block: four markers and an arithmetic that actually carries numbers."""
+    return (bool(ARITHMETIC_WITH_NUMBERS.search(text))
+            and "MEMBERS:" in text and "the space's own total:" in text
+            and "the verdict:" in text)
+
 
 def head_revision() -> str:
     try:
@@ -163,8 +175,7 @@ def device_space() -> tuple[str, list[str], bool]:
                 # while discussing a run, and reading that as a closure is exactly the wrong read this
                 # tool exists to make impossible: it printed a bookkeeping file as a measurement and
                 # reported the block "present but not in the shape this reads".
-                if all(marker in text for marker in ("MEMBERS:", "the arithmetic:",
-                                                     "the space's own total:", "the verdict:")):
+                if has_closure(text) and "BoysDeviceOptions" in text:
                     carrying.append(path)
 
     if not carrying:
@@ -260,11 +271,24 @@ def probe_space() -> tuple[str, list[str], bool]:
     right one. The tool's own contract is that a space with no arithmetic is printed ABSENT and never
     omitted, because a space missing from a status is indistinguishable from a space that is complete.
     """
-    return ("ABSENT: no log under .claude/tmp carries the probe's own closure for this tool to read",
-            [f"  the probe prints an arithmetic of its own, over a space that is not the gate's;",
-             f"  the closures on disk here are the gate's and the device probe's. This space is",
-             f"  printed as a hole rather than left out of the status entirely.",
-             f"  owed: a probe run whose log lands where this tool searches, and a reader for it."],
+    # NOT READ, and the reason is measured rather than assumed. This tool was extended to read this
+    # space and it read the WRONG one: among the closures on disk that are not the device probe's
+    # there are at least three different spaces - the host probe's own cell cross (360), the option
+    # book's axes cross (720), and the region-B axis book (720) - and nothing in a closure says which
+    # space its arithmetic is over. It picked the newest, which was the option book's, and printed
+    # 720 members as this space's answer.
+    #
+    # "A closure read the wrong way is worse than one not read" is this tool's own contract, so the
+    # space goes back to being a hole until a reader can tell the three apart. What that needs is a
+    # stamp: the probe's closure should name the space it closes over, the way its arithmetic names
+    # its own terms.
+    return ("ABSENT: the closures on disk carry three different spaces and none says which it is",
+            ["  the probe prints an arithmetic of its own, over a space that is not the gate's;",
+             "  files on disk carry closures for the host probe's cell cross, the option book and",
+             "  the region-B book, and a closure does not state which space its arithmetic closes",
+             "  over. Picking the newest read the option book's 720 as this space's answer, so this",
+             "  space is printed as a hole rather than left out of the status entirely.",
+             "  owed: a probe run for keeps, and a stamp by which its closure can be identified."],
             False)
 
 
