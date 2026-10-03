@@ -197,23 +197,25 @@ ranked against a timing. The option probe below is what ranks any of them, on th
 **Each default is a choice between two ways of computing one answer and not between two accuracies**, so
 a version that moves one costs no accuracy at any call site that names nothing.
 
-The rows above are bounds, and a bound is not the figure a lane delivers. Two lanes are delivered at
-a different figure depending on one property of the build — whether the compiler fuses a bare
-product-plus-add into a single rounding. **The architecture does not decide it**: of the six
-configurations measured, gcc and AppleClang on arm64 contract one and MSVC on arm64 does not, so the
-MSVC arm64 build delivers the x86-64 figures rather than its own architecture's. Against the
-committed reference grid:
+The rows above are bounds, and a bound is not the figure a lane delivers. Two rows are delivered at a
+different figure depending on which multiply-add the lane evaluates — one rounding or two — and the
+build decides which that is, because a build that contracts a bare product-plus-add compiles the
+separate selection onto the fused step: `RouteInForce` (`include/boys/backend.hpp`) reports the fused
+route there whatever the selection says. Against the committed reference grid, built both ways — the
+default fused route and the `BOYS_MULADD_SEPARATE=ON` separate route — on MSVC x64 Release at this
+revision:
 
-| lane | region | contracted | not contracted | bound |
+| lane | region | fused route | separate route | bound |
 |---|---|---|---|---|
-| double, single | 1.0855 ≤ x < 11.8998 | 3.29e-15 | 3.22e-15 | 3e-14 |
-| float, single | all arguments | 1.29e-07 | 1.06e-07 | 1.5e-07 |
-| float, batch | all arguments | 1.29e-07 | 1.08e-07 | 1.5e-07 |
+| double, single | 1.0855 ≤ x < 11.8998 | 3.22e-15 | 4.63e-15 | 3e-14 |
+| float, single | all arguments | 6.36e-08 | 7.49e-08 | 1.5e-07 |
+| float, batch | all arguments | 1.08e-07 | 1.08e-07 | 1.5e-07 |
 
-Those three rows are the whole of what moves: the double lane's other three regions deliver the same
-worst cell, to the digit, on both arithmetics. The not-contracted column is measured on MSVC on
-arm64, MSVC on x86-64, clang on x86-64 and AppleClang on x86-64; the contracted column on AppleClang
-on arm64, and reproduced on x86-64 by building with `-mfma`.
+The band row and the float single row are the whole of what moves: the double lane's other three
+regions and the float batch lane deliver the same worst cell, to the digit, on both routes. A figure
+is the compiler's as well as the route's: a build that contracts delivers the fused route whatever
+the selection says, and g++ there reads 2.74e-15 on the band, 6.36e-08 on float single and 9.11e-08
+on float batch, against MSVC's 3.22e-15, 6.36e-08 and 1.08e-07.
 
 Every bound holds either way, and the configure step **measures** which arithmetic a build runs by
 compiling and running a bare product-plus-add rather than inferring it from the architecture name;
@@ -528,10 +530,11 @@ different piece in each of the eight lanes and the eight coefficient bases are f
 rather than stepped at a stride. The eight lanes share the degree the group is summed at, and a lane
 whose own fit is cut shorter reads zeros above its own cut — which is that lane's own polynomial, and
 down the sum it is that lane's own arithmetic, so the packed value is the per-order value and not a
-value near it. Measured over region A and every order, the packed lane
-and the per-order lane differ in **0 of 999240 values**; the gate carries a row for this axis beside
-the per-order one, judged against the committed reference grid at the float lane's own 1.5e-7, and
-its worst cell reads **1.06e-07**, a ratio of 0.705 to the bar.
+value near it. Measured over region A and every order at four builds — MSVC x64 and g++ x86-64, each
+at both route selections — the packed lane and the per-order lane differ in **0 of 879351 values**:
+199815 over the region-A sweeps, 679371 over every nmax 0..32, and 165 past the ledger. The gate
+carries a row for this axis beside the per-order one, judged against the committed reference grid at
+the float lane's own 1.5e-7, and its worst cell reads **1.03e-07**, a ratio of 0.685 to the bar.
 
 **On this lane the axis is not the cheaper way to get the values.** It retires 3.06 times fewer
 instructions and 2.61 times fewer retired slots than the per-order loop it replaces, which is what

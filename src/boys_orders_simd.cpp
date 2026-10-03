@@ -41,8 +41,8 @@ namespace {
 // the same selection the scalar backend and the packed backends read
 // (boys/backend.hpp, kSelectedRoute), and this lane's steps run that arithmetic
 // rather than one of their own: the fused step is one instruction and one
-// rounding, the separate step a product and a sum and two roundings, and the
-// same stored fit summed at the two is two values.
+// rounding, the separate step a product and a sum, and the same stored fit
+// summed at the two is two values.
 //
 // The route is a template argument on the lane's kernels and bodies, as it is on
 // the packed backends (boys_backend_simd.hpp): the public entries name
@@ -50,11 +50,14 @@ namespace {
 // caller inside this file that names the other gets that arithmetic, so one
 // build can hold the two against each other.
 //
-// Both spellings are written out and neither is left to the compiler's
-// contraction setting. The fused step is the round-to-nearest fused intrinsic;
-// the separate step is two named instructions, which is two roundings on every
-// build the lane is compiled on. A bare `a * b + c` would be the fused step
-// wherever the target contracts and would not be the separate route at all.
+// Both spellings are written out: the fused step is the round-to-nearest fused
+// intrinsic, the separate step a product and a sum rather than a bare
+// `a * b + c`, which would be the fused step wherever the target contracts and
+// would not be the separate route at all. The two named instructions are not
+// beyond contraction either - g++ 15.2.0 at -O2 -mfma compiles
+// `_mm256_add_ps(_mm256_mul_ps(a, b), c)` to the fused instruction - so on such
+// a build this lane's separate selection delivers the fused route's values, and
+// `-ffp-contract=off` is what makes the spelling two roundings.
 //
 // The subtraction form is the same choice one operation along: `a * b - c` is
 // one instruction and one rounding at the fused route, and a product and a

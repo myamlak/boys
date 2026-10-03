@@ -166,23 +166,25 @@ the caller's own kernel rather than branching within one.
 
 "ULP" is the last representable digit of the result in the format concerned.
 
-The rows above are bounds, and a bound is not the figure a lane delivers. Two lanes deliver a
-different figure depending on one property of the build: whether the compiler fuses a bare
-product-plus-add into a single rounding. **The architecture does not decide it.** Of the six
-configurations measured, gcc and AppleClang on arm64 contract one, and MSVC on arm64 does not. The
-MSVC arm64 build therefore delivers the x86-64 figures rather than its own architecture's. At the
-default, against the committed reference grid:
+The rows above are bounds, and a bound is not the figure a lane delivers. Two rows deliver a
+different figure depending on which multiply-add the lane evaluates — one rounding or two — and the
+build decides which that is, because a build that contracts a bare product-plus-add compiles the
+separate selection onto the fused step: the `RouteInForce` the backend report is built from asks that
+question and returns the fused route there whatever the selection says. Against the committed
+reference grid, built both ways — the default fused route and the `BOYS_MULADD_SEPARATE=ON` separate
+route — on MSVC x64 Release at this revision:
 
-| lane | region | contracted | not contracted | bound |
+| lane | region | fused route | separate route | bound |
 |---|---|---|---|---|
-| double, single | 1.0855 ≤ x < 11.8998 | 3.29e-15 | 3.22e-15 | 3e-14 |
-| float, single | all arguments | 1.29e-07 | 1.06e-07 | 1.5e-07 |
-| float, batch | all arguments | 1.29e-07 | 1.08e-07 | 1.5e-07 |
+| double, single | 1.0855 ≤ x < 11.8998 | 3.22e-15 | 4.63e-15 | 3e-14 |
+| float, single | all arguments | 6.36e-08 | 7.49e-08 | 1.5e-07 |
+| float, batch | all arguments | 1.08e-07 | 1.08e-07 | 1.5e-07 |
 
-Those three rows are the whole of what moves. The double lane's other three regions deliver the same
-worst cell on both arithmetics. The not-contracted column is measured on MSVC on arm64, MSVC on
-x86-64, clang on x86-64 and AppleClang on x86-64. The contracted column is measured on AppleClang on
-arm64 and reproduced on x86-64 by building with `-mfma`.
+The band row and the float single row are the whole of what moves: the double lane's other three
+regions and the float batch lane deliver the same worst cell, to the digit, on both routes. A figure
+is the compiler's as well as the route's: a build that contracts delivers the fused route whatever
+the selection says, and g++ there reads 2.74e-15 on the band, 6.36e-08 on float single and 9.11e-08
+on float batch, against MSVC's 3.22e-15, 6.36e-08 and 1.08e-07.
 
 Every bound holds either way. A build must not infer which arithmetic it runs from the name of its
 architecture: the configure step measures it by compiling and running a bare product-plus-add, and

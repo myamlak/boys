@@ -70,9 +70,13 @@ bool SameBitsF32(float a, float b) noexcept {
     return std::memcmp(&a, &b, sizeof(float)) == 0;
 }
 
-// Whether the scalar arithmetic this build compiles is the one-rounding route.
-// The packed lane runs whatever this build selected, so the two lanes are one
-// route either way; the scalar lane the values are compared with is not.
+// Whether the two lanes this file compares run one arithmetic. Both read the
+// build's multiply-add selection, but the packed lane spells its own steps from
+// it (kSelectedRoute, src/boys_orders_simd.cpp) while the scalar lane the values
+// are compared with takes it through the build's contraction, which compiles the
+// separate selection onto the fused step (include/boys/backend.hpp, RouteInForce).
+// So the bit-identity below is asserted where the fused route is selected, and
+// printed rather than asserted where the separate route is.
 constexpr bool kScalarIsFused() noexcept {
 #if defined(BOYS_MULADD_SEPARATE) && BOYS_MULADD_SEPARATE
     return false;

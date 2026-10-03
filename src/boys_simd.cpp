@@ -197,8 +197,8 @@ private:
 // One body for every packed width and precision: which multiply-add a step
 // uses, and how many roundings it makes, is the backend's, and the body below
 // is written once against it. What stays here is the mapped argument, in the
-// packed lanes' own form - the interval reached with a single fused step rather
-// than the scalar lanes' two.
+// packed lanes' own form - the interval reached through one multiply-add of the
+// backend's route, rather than the scaled division the scalar lane forms it with.
 template <backend::ArithmeticBackend B, typename Piece>
 typename B::Packed RegionAClenshaw(const typename B::Value* c,
                                    const Piece& piece,

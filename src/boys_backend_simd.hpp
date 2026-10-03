@@ -6,19 +6,22 @@
 // surface, so the packed backends are named here and reported through
 // boys::backend::BoysBackends rather than declared in include/boys/backend.hpp.
 //
-// Both are contraction-free by construction: every step names its instruction,
-// so no setting of the contraction flag changes what they compute. What
-// Contracts() reports for them is the separate question of whether a bare
-// product-plus-add in this arithmetic would fuse.
+// Every step names its instruction, so the two arithmetics are told apart in
+// the source. They are not told apart on every build, and the compiler decides:
+// a compiler that contracts a bare product-plus-add contracts
+// `_mm256_add_ps(_mm256_mul_ps(a, b), c)` to the fused instruction as well (g++
+// 15.2.0, -O2 -mfma, both widths), and the separate route then delivers the
+// fused route's values. What Contracts() reports for them is the separate
+// question of whether a bare product-plus-add in this arithmetic would fuse.
 //
 // Each carries its route as a template parameter rather than as a constant, so
 // one build instantiates either arithmetic and a test holds the two against
 // each other. The default is the build's selection, which is where the scalar
 // pair reads its route from too, so a call site that names none gets the
-// arithmetic the library reports. Being contraction-free by construction is
-// what lets the separate route mean two roundings here on every build: the
-// product and the sum are two named instructions, so no propagation of the
-// contraction flag into this arithmetic can make them one.
+// arithmetic the library reports. Where the compiler contracts, the separate
+// route here is the fused arithmetic whatever the selection says, and
+// `-ffp-contract=off` is the setting that makes the separate spelling two
+// roundings.
 
 #include "boys/backend.hpp"
 
