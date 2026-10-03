@@ -95,9 +95,21 @@ def host_space() -> tuple[str, list[str], bool]:
     unaccounted = int((UNCOVERED.search(text) or [0, 0])[1])
 
     revision = (REVISION.search(text) or [None, "unknown"])[1]
-    head = head_revision()
-    stale = "" if not head or head.startswith(revision) or revision.startswith(head) else \
-            f"   STALE: this run is {revision[:9]}, HEAD is {head[:9]}"
+    # IS IT CURRENT: asked of the checker that owns the question, not decided here. This used to
+    # compare the run's revision stamp with HEAD and call any mismatch STALE, which is a cruder
+    # question than the one that matters - whether a file the gate PRINTS FROM has changed - and it
+    # reported a false NOT CLOSED on a record that tools/check_recorded_run.py calls clean, because
+    # two ordinary commits had landed since. A wrong NOT CLOSED is as bad as a wrong CLOSED.
+    stale = ""
+    try:
+        checked = subprocess.run([sys.executable,
+                                  os.path.join(REPO, "tools", "check_recorded_run.py")],
+                                 capture_output=True, text=True, timeout=180, cwd=REPO)
+        if checked.returncode != 0:
+            stale = (f"   NOT CURRENT: tools/check_recorded_run.py exits {checked.returncode} - "
+                     f"the run is {revision[:9]}")
+    except Exception:
+        stale = f"   UNCHECKED: the recorded run is {revision[:9]} and the checker could not be run"
 
     lines = [
         f"  served                 {served:>6}",
@@ -271,25 +283,62 @@ def probe_space() -> tuple[str, list[str], bool]:
     right one. The tool's own contract is that a space with no arithmetic is printed ABSENT and never
     omitted, because a space missing from a status is indistinguishable from a space that is complete.
     """
-    # NOT READ, and the reason is measured rather than assumed. This tool was extended to read this
-    # space and it read the WRONG one: among the closures on disk that are not the device probe's
-    # there are at least three different spaces - the host probe's own cell cross (360), the option
-    # book's axes cross (720), and the region-B axis book (720) - and nothing in a closure says which
-    # space its arithmetic is over. It picked the newest, which was the option book's, and printed
-    # 720 members as this space's answer.
-    #
-    # "A closure read the wrong way is worse than one not read" is this tool's own contract, so the
-    # space goes back to being a hole until a reader can tell the three apart. What that needs is a
-    # stamp: the probe's closure should name the space it closes over, the way its arithmetic names
-    # its own terms.
-    return ("ABSENT: the closures on disk carry three different spaces and none says which it is",
-            ["  the probe prints an arithmetic of its own, over a space that is not the gate's;",
-             "  files on disk carry closures for the host probe's cell cross, the option book and",
-             "  the region-B book, and a closure does not state which space its arithmetic closes",
-             "  over. Picking the newest read the option book's 720 as this space's answer, so this",
-             "  space is printed as a hole rather than left out of the status entirely.",
-             "  owed: a probe run for keeps, and a stamp by which its closure can be identified."],
-            False)
+    # IDENTIFIED, and only because the probe stamps its own output. The first line of a run is
+    # `boys option probe | started <ts> | finished <ts> | seed <n> | verdict <v>`, which is the stamp
+    # this space lacked: three other closures sit on disk - the host probe's cell cross, the option
+    # book's axes cross and the region-B book, two of them also totalling 720 - and none of them says
+    # which space its arithmetic is over. Reading "the newest whole closure" printed the option
+    # book's 720 as this space's answer once; this reads the probe's own header instead.
+    runs = []
+    for root, dirs, names in os.walk(os.path.join(REPO, ".claude")):
+        # Other lanes' worktrees are whole build trees: walking them reached a locked object file
+        # and this tool died with a PermissionError rather than reporting a status. Nothing this
+        # reader needs is in there - a probe run lands in .claude/tmp or .claude/lane-status.
+        dirs[:] = [d for d in dirs if d != "worktrees"]
+        for name in names:
+            path = os.path.join(root, name)
+            try:
+                if os.path.getsize(path) > 8 * 1024 * 1024:
+                    continue
+                with open(path, encoding="utf-8", errors="replace") as handle:
+                    first = handle.readline()
+            except OSError:
+                continue
+            if first.startswith("boys option probe | started"):
+                runs.append(path)
+
+    if not runs:
+        return ("ABSENT: no file under .claude is a probe run (none starts with the probe's own header)",
+                ["  the probe stamps its first line `boys option probe | started ... | verdict ...`;",
+                 "  nothing on disk carries it, so this space is printed as a hole rather than left",
+                 "  out of the status entirely. Owed: a probe run."], False)
+
+    newest = max(runs, key=os.path.getmtime)
+    with open(newest, encoding="utf-8", errors="replace") as handle:
+        first = handle.readline().rstrip()
+    text = read(newest)
+    found = ARITHMETIC_WITH_NUMBERS.search(text)
+    total = found.group(0).rsplit("=", 1)[1].strip() if found else "?"
+
+    lines = [f"  source                 {os.path.basename(newest)}",
+             f"  the run's own header   {first[:120]}"]
+    closed = False
+    if found:
+        body = found.group(0).split("the arithmetic:")[1].strip()
+        lhs, rhs = body.split("=")
+        parts = [int(n) for n in re.findall(r"\d+", lhs)]
+        lines.append(f"  the run's own arithmetic {body.strip()}")
+        # The probe's own states, exactly as the gate's: a part that does not sum is open, and the
+        # 144 device cells are a state of their own - an entry of that lane is a call on a CUDA
+        # device, which no cell of this host can run whatever the library documents for it. That is
+        # the same shape as the host space's "not runnable here", and it does not open the space.
+        closed = sum(parts) == int(rhs.strip())
+        lines.append(f"  unchanged                 the arithmetic sums" if closed else
+                     f"  DISAGREES with the total: {' + '.join(map(str, parts))} = {sum(parts)}")
+    else:
+        lines.append("  the file is a probe run but carries no arithmetic this reads")
+    # A probe run is a measurement of one machine at one moment, and the header names when.
+    return (f"{total} member(s) measured", lines, closed)
 
 
 def main() -> int:
