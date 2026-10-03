@@ -46,6 +46,7 @@ NOT_RUNNABLE = re.compile(
 UNCOVERED = re.compile(r"^\s*(\d+)\s+offered and covered by no cell of this block", re.M)
 ARITHMETIC = re.compile(r"the arithmetic:\s*([\d\s+]+)=\s*(\d+)")
 REVISION = re.compile(r"accuracy gate,\s*revision\s+([0-9a-f]{7,40})")
+LANES = re.compile(r"over\s+(\d+)\s+lane\(s\)")
 
 
 def head_revision() -> str:
@@ -212,14 +213,55 @@ def device_space() -> tuple[str, list[str], bool]:
     return (f"{measured} of {space} measured, {unaccounted} in no state", lines, closed)
 
 
+def host_label() -> str:
+    """The host space's label, with its lane count READ FROM THE RUN rather than written here.
+
+    This said "four lanes" until the tree grew to six, at which point the label became a false
+    statement about the very artifact it summarises. A count written into a status is a count that
+    goes stale in silence, which is the failure this whole tool exists to make impossible.
+    """
+    found = LANES.search(read(RUN))
+    lanes = found.group(1) if found else "an unread number of"
+    return f"HOST   ({lanes} lanes x route x scheme x partition x packing)"
+
+
+def probe_space() -> tuple[str, list[str], bool]:
+    """The host probe's own cell space - the THIRD arithmetic, reported as a hole, not omitted.
+
+    The probe prints a closure of its own (measured + offered-no-figure + not-asked + unoffered +
+    not-carried + device-not-run + refused). It is a different space from the gate's: the gate's
+    arithmetic is the option space's served/refused count, while the probe's is the cell cross it
+    walks. On 2026-10-03 those read `96 of 96 served` and `288 + 0 + 0 + 0 + 0 + 72 + 0 = 360` - two
+    arithmetics over the same library, neither derivable from the other.
+
+    It is reported ABSENT rather than read, and the reason is measured rather than assumed: the
+    closures on disk under the directory this tool searches were listed on 2026-10-03 and they carry
+    the gate's and the device probe's arithmetic only (`72 + 0 + 24 + 0 + 0 = 96`,
+    `87 + 0 + 0 + 0 + 0 = 87`, and rung-era ones at 672 and 1044). The probe that prints the 360 ran
+    in a pinned worktree and its closure reached no log here, so there is nothing to read.
+
+    Reading it is owed work, and it is not done here because **a closure read the wrong way is worse
+    than one not read** - the point of this tool is that a wrong arithmetic is never printed as a
+    right one. The tool's own contract is that a space with no arithmetic is printed ABSENT and never
+    omitted, because a space missing from a status is indistinguishable from a space that is complete.
+    """
+    return ("ABSENT: no log under .claude/tmp carries the probe's own closure for this tool to read",
+            [f"  the probe prints an arithmetic of its own, over a space that is not the gate's;",
+             f"  the closures on disk here are the gate's and the device probe's. This space is",
+             f"  printed as a hole rather than left out of the status entirely.",
+             f"  owed: a probe run whose log lands where this tool searches, and a reader for it."],
+            False)
+
+
 def main() -> int:
     print("COMPLETION STATUS - one arithmetic per option space")
     print(f"HEAD {head_revision()[:12] or 'unknown'}")
     print()
 
     overall = True
-    for name, fn in (("HOST   (four lanes x route x scheme x partition x packing)", host_space),
-                     ("DEVICE (classes over precision x shape)", device_space)):
+    for name, fn in ((host_label(), host_space),
+                     ("DEVICE (classes over precision x shape)", device_space),
+                     ("PROBE  (the host probe's own cell space)", probe_space)):
         summary, lines, closed = fn()
         print(f"{name}")
         print(f"  {summary}")
