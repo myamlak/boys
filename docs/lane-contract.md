@@ -1550,8 +1550,11 @@ Each of the three is compared against the exact host reference: the fused route 
 separate route against a rounded product followed by a rounded add. The rows that carry the figure are
 how many of the compared cells the two routes part on — the route is a choice of arithmetic and not a
 spelling of one — and that the arithmetic the build delivers is the reported route and not the other
-one. The same checks run over the uniform ladder the batch entry launches, so the route is shown to
-reach the arithmetic that produces a batch figure and not only the step the lane is named for.
+one. The same checks run over the uniform ladder the batch entry launches, in both stored forms and
+both precisions, and once through the shipped entries themselves — `BoysCuda::AllOrdersF64Uniform`
+and its three siblings, whose arithmetic the library's own translation unit compiled — so the route is
+shown to reach the arithmetic that produces a batch figure, and to have reached the build's kernels
+rather than only the reader's.
 
 **The run that prints these figures.** The first command prints the identity of each name and the
 in-force default as numbers rather than as a checkmark:
