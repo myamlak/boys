@@ -1461,6 +1461,440 @@ public:
         void* stream,
         DivisionForm form = kDefaultDivisionForm);
 
+    /// The fp16 counterparts of the float lane's other bodies: each entry
+    /// below computes what the float entry of the same name computes
+    /// (AllOrdersF32Narrow and the family beside it), at the same tables, the
+    /// same partitions, the same seed lane and the same arithmetic, and stores
+    /// what it returns as fp16. The half lane's own definition is that it runs
+    /// the float engine's bodies, so an entry of it is not a second arithmetic:
+    /// it is that body with `__half` I/O around it.
+    ///
+    /// Each is named for the float entry it mirrors, with `F16` in place of
+    /// `F32`, so the two lanes' surfaces are one table read twice rather than
+    /// two tables. The contract each carries is the one its float counterpart's
+    /// declaration states, and every one of them takes the device pointers, the
+    /// stream and the division form \c AllOrdersF16 above takes. None of them
+    /// takes the ordering precondition: that belongs to the uniform-order shapes
+    /// (\c AllNF16), and every entry here carries a per-element order array.
+    ///
+    /// The figure they answer at is \c Precision::kFp16Device's own row of
+    /// \c BoysLaneContracts, which is `1e-7` plus half of the last representable
+    /// digit of the returned value. It is not the float lane's \c 1.5e-7: the
+    /// return is stored half, and the store is this lane's.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16
+    ///   values, order-major as \c AllOrdersF16 writes it
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs, of the three certified
+    ///   forms (DivisionForm, boys/accuracy.hpp)
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16Narrow(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDivisionForm);
+
+    /// \c AllOrdersF32NarrowMono's arithmetic and contract, stored fp16: the
+    /// narrow partition in its monomial basis, which is the form the Horner
+    /// scheme name sums.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16NarrowMono(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDivisionForm);
+
+    /// \c AllOrdersF32Rat's arithmetic and contract, stored fp16: the rational
+    /// route over the coarsest partition. The route's pair is stored in one form
+    /// and read by Horner, so both scheme names reach this one entry.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16Rat(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDivisionForm);
+
+    /// \c AllOrdersF16Rat under the route's other scheme name. A forwarder and
+    /// not a second arithmetic: it runs \c AllOrdersF16Rat's kernel and returns
+    /// its status.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16RatHorner(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDivisionForm);
+
+    /// \c AllOrdersF32NarrowRat's arithmetic and contract, stored fp16: the
+    /// rational route over the narrow partition, with the same two scheme names
+    /// reaching one kernel that \c AllOrdersF16Rat states.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16NarrowRat(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDivisionForm);
+
+    /// \c AllOrdersF16NarrowRat under the route's other scheme name. A
+    /// forwarder and not a second arithmetic.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16NarrowRatHorner(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDivisionForm);
+
+    /// \c AllOrdersF32Uniform's arithmetic and contract, stored fp16: the float
+    /// lane's uniform grid in its Chebyshev blocks.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16Uniform(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDivisionForm);
+
+    /// \c AllOrdersF32UniformHorner's arithmetic and contract, stored fp16. The
+    /// grid's two entries are two stored forms of one fit and not two
+    /// arithmetics, for the reason the float declaration states.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16UniformHorner(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDivisionForm);
+
+    /// \c AllOrdersF32UniformRat's arithmetic and contract, stored fp16: the
+    /// grid's rational route, with the same two scheme names reaching one
+    /// kernel that \c AllOrdersF16Rat states.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16UniformRat(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDivisionForm);
+
+    /// \c AllOrdersF16UniformRat under the route's other scheme name. A
+    /// forwarder and not a second arithmetic.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16UniformRatHorner(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDivisionForm);
+
+    /// \c AllOrdersF32Orders' arithmetic and contract, stored fp16: the float
+    /// lane's other packing axis over the coarsest partition. It reads region A
+    /// one fit per order rather than seeding the top order's fit and bringing
+    /// the lower orders down a recurrence, and it is one entry for both scheme
+    /// names, as its float counterpart is.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16Orders(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDivisionForm);
+
+    /// \c AllOrdersF32NarrowOrders' arithmetic and contract, stored fp16: the
+    /// orders axis over the narrow partition.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16NarrowOrders(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDivisionForm);
+
+    /// \c AllOrdersF32NarrowOrdersMono's arithmetic and contract, stored fp16:
+    /// the orders axis over the narrow partition in its monomial basis.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16NarrowOrdersMono(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDivisionForm);
+
+    /// \c AllOrdersF32OrdersRat's arithmetic and contract, stored fp16: the
+    /// orders axis on the rational route over the coarsest partition, with the
+    /// route's two scheme names reaching one kernel.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16OrdersRat(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDivisionForm);
+
+    /// \c AllOrdersF16OrdersRat under the route's other scheme name. A
+    /// forwarder and not a second arithmetic.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16OrdersRatHorner(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDivisionForm);
+
+    /// \c AllOrdersF32NarrowOrdersRat's arithmetic and contract, stored fp16:
+    /// the orders axis on the rational route over the narrow partition, with
+    /// the route's two scheme names reaching one kernel.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16NarrowOrdersRat(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDivisionForm);
+
+    /// \c AllOrdersF16NarrowOrdersRat under the route's other scheme name. A
+    /// forwarder and not a second arithmetic.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16NarrowOrdersRatHorner(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDivisionForm);
+
+    /// \c AllOrdersF32OrdersUniform's arithmetic and contract, stored fp16. The
+    /// grid's cells carry their own degree and block start, so the route's
+    /// packing axis has one member here and this entry runs the kernel
+    /// \c AllOrdersF16Uniform launches.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16OrdersUniform(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDivisionForm);
+
+    /// The grid's monomial basis over the orders axis: the kernel
+    /// \c AllOrdersF16UniformHorner launches, for the reason
+    /// \c AllOrdersF16OrdersUniform states.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16OrdersUniformHorner(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDivisionForm);
+
+    /// The grid's rational route over the orders axis: the kernel
+    /// \c AllOrdersF16UniformRat launches, for the reason
+    /// \c AllOrdersF16OrdersUniform states.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16OrdersUniformRat(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDivisionForm);
+
+    /// \c AllOrdersF16OrdersUniformRat under the route's other scheme name. A
+    /// forwarder and not a second arithmetic.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16OrdersUniformRatHorner(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDivisionForm);
+
 #endif // BoysFp16
 };
 

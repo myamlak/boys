@@ -1342,6 +1342,105 @@ private:
     T* mPtr = nullptr;
     std::size_t mCount = 0;
 };
+
+/// The fp16 entry one member of the half device lane's cross is measured
+/// through, read at each entry's default policy.
+///
+/// The half lane's definition is that it runs the float lane's bodies and
+/// stores what they return, so its map is the float map above read a second
+/// time with the fp16 name of each entry: the same member of the cross reaches
+/// the same arithmetic, and the fp16 row of that arithmetic is the entry a
+/// caller of the half lane names. The correspondence is the one the option
+/// table states row for row (src/boys_cuda.cpp, the fp16 rows beside the fp32
+/// ones), so a half entry added without its float counterpart - or given a
+/// different member - is a difference this map reads and the cross reports as a
+/// cell covered by no measurement.
+///
+/// \param route     the member's fit route
+/// \param scheme    the member's summation
+/// \param partition the member's partition
+/// \param axis      the member's packing axis
+///
+/// \returns the launched half entry that serves the member, or \c nullptr for a
+///          partition this library does not carry, which the cross never names
+///          because it enumerates BoysFitGranularities()
+constexpr auto GateDeviceHalfEntry(boys::FitRoute route,
+                                   boys::EvalScheme scheme,
+                                   boys::FitGranularity partition,
+                                   boys::PackAxis axis) noexcept
+    -> boys::BoysStatus (*)(const int*, const boys::F16*, boys::F16*, std::size_t, void*,
+                            boys::DivisionForm) {
+    const bool orders = axis == boys::PackAxis::kOrders;
+    const bool horner = scheme == boys::EvalScheme::kHorner;
+    const bool rational = route == boys::FitRoute::kRationalMinimax;
+
+    if (partition == boys::FitGranularity::kCoarsest)
+    {
+        if (rational)
+        {
+            if (orders)
+            {
+                return horner ? &boys::BoysCuda::AllOrdersF16OrdersRatHorner
+                              : &boys::BoysCuda::AllOrdersF16OrdersRat;
+            }
+
+            return horner ? &boys::BoysCuda::AllOrdersF16RatHorner
+                          : &boys::BoysCuda::AllOrdersF16Rat;
+        }
+
+        return orders ? &boys::BoysCuda::AllOrdersF16Orders : &boys::BoysCuda::AllOrdersF16;
+    }
+
+    if (partition == boys::FitGranularity::kNarrow)
+    {
+        if (rational)
+        {
+            if (orders)
+            {
+                return horner ? &boys::BoysCuda::AllOrdersF16NarrowOrdersRatHorner
+                              : &boys::BoysCuda::AllOrdersF16NarrowOrdersRat;
+            }
+
+            return horner ? &boys::BoysCuda::AllOrdersF16NarrowRatHorner
+                          : &boys::BoysCuda::AllOrdersF16NarrowRat;
+        }
+
+        if (orders)
+        {
+            return horner ? &boys::BoysCuda::AllOrdersF16NarrowOrdersMono
+                          : &boys::BoysCuda::AllOrdersF16NarrowOrders;
+        }
+
+        return horner ? &boys::BoysCuda::AllOrdersF16NarrowMono
+                      : &boys::BoysCuda::AllOrdersF16Narrow;
+    }
+
+    if (partition == boys::FitGranularity::kUniform)
+    {
+        if (rational)
+        {
+            if (orders)
+            {
+                return horner ? &boys::BoysCuda::AllOrdersF16OrdersUniformRatHorner
+                              : &boys::BoysCuda::AllOrdersF16OrdersUniformRat;
+            }
+
+            return horner ? &boys::BoysCuda::AllOrdersF16UniformRatHorner
+                          : &boys::BoysCuda::AllOrdersF16UniformRat;
+        }
+
+        if (orders)
+        {
+            return horner ? &boys::BoysCuda::AllOrdersF16OrdersUniformHorner
+                          : &boys::BoysCuda::AllOrdersF16OrdersUniform;
+        }
+
+        return horner ? &boys::BoysCuda::AllOrdersF16UniformHorner
+                      : &boys::BoysCuda::AllOrdersF16Uniform;
+    }
+
+    return nullptr;
+}
 #endif // BOYS_GATE_CUDA
 
 } // namespace
@@ -9847,10 +9946,14 @@ int main(int argc, char** argv) {
     //                              execute it: a build without the CUDA lane has
     //                              none of the device lane's entries in its
     //                              binary, and a build that has them needs a
-    //                              device to run them on. A fact about the build
-    //                              and the machine rather than about the lane -
-    //                              the row carries which of the two it is - and
-    //                              it is counted apart rather than failing.
+    //                              device to run them on, and a build that ran
+    //                              one device lane's arm still has no arm for
+    //                              the other. A fact about the build, the
+    //                              machine and this gate rather than about the
+    //                              lane - the row carries which of the three it
+    //                              is, and the third is owed work on this gate
+    //                              - and it is counted apart rather than
+    //                              failing.
     //
     // The arithmetic the block prints is the thing that makes a missing cell
     // visible rather than a smaller number nobody notices:
@@ -9940,6 +10043,7 @@ int main(int argc, char** argv) {
     const std::span<const boys::LaneContractInfo> combLaneRows = boys::BoysLaneContracts();
     const int combLaneCount = static_cast<int>(combLaneRows.size());
     const int combDeviceLane = static_cast<int>(boys::Precision::kFp32Device);
+    const int combDeviceHalfLane = static_cast<int>(boys::Precision::kFp16Device);
     const int combHalfLane = static_cast<int>(boys::Precision::kFp16);
 
     /// Whether a lane is one of the device's three, which are the three precisions the device
@@ -10680,6 +10784,21 @@ int main(int argc, char** argv) {
     GateDeviceBuffer<float> combDeviceValues(combDeviceCells);
     std::vector<float> combDeviceOut(combDeviceCells);
 
+    // The half arm's own buffers, over the same argument slots at the value the
+    // half lane evaluates at (the reference's own x16 column, which is the
+    // argument rounded to the format this lane's callers pass). They are the
+    // same allocation shape as the float arm's and are separate because the
+    // element type is the lane's: a half entry reads and writes fp16.
+    std::vector<boys::F16> combDeviceHalfX(ref.count);
+    GateDeviceBuffer<boys::F16> combDeviceHalfArgs(ref.count);
+    GateDeviceBuffer<boys::F16> combDeviceHalfValues(combDeviceCells);
+    std::vector<boys::F16> combDeviceHalfOut(combDeviceCells);
+
+    for (std::size_t i = 0; i < ref.count; ++i)
+    {
+        combDeviceHalfX[i] = boys::F16(static_cast<float>(ref.x16[i]));
+    }
+
     // The buffers are the sweep's own and the arm below reads them, so what
     // they could not do is asked once, here, rather than inside the sweep: a
     // device that refuses an allocation or an upload is a device that measures
@@ -10687,7 +10806,8 @@ int main(int argc, char** argv) {
     // are said in.
     if (deviceLaneUsable &&
         (!combDeviceN.Upload(combDeviceTops) || !combDeviceX.Upload(ref.xf) ||
-         !combDeviceValues.ok()))
+         !combDeviceValues.ok() || !combDeviceHalfArgs.Upload(combDeviceHalfX) ||
+         !combDeviceHalfValues.ok()))
     {
         deviceLaneUsable = false;
         deviceLaneAbsence =
@@ -10795,11 +10915,106 @@ int main(int argc, char** argv) {
                                      a.movedByForm[2]}});
         };
 
-    // The arm, over every member of the cross the device lane claims: four
-    // axes of the space read off the same tables the cross enumerates them
-    // from. The count is the cross's own arithmetic for this lane
-    // (routes x schemes x partitions x axes) and the claim side below is what
-    // holds this list to it.
+    // The half device arm: the same members of the cross, read through the
+    // fp16 entries at the arguments and figures the reference's own x16 and
+    // value16 columns carry - the argument rounded to the format this lane's
+    // callers pass, which is what its entries read, so the figures here are
+    // comparable cell by cell with the host half lane's above.
+    //
+    // The lane publishes a figure and a term: half a representable digit of the
+    // value the entry returned rides beside the base, because the store is the
+    // format's and not the arithmetic's. So the reading is judged the way the
+    // host half lane's is - at the base plus that term, formed per value from
+    // the value that came back - and an argument whose return sits at or below
+    // the figure is the format's floor, which this row counts rather than
+    // passes.
+    const auto combDeviceHalfSweep =
+        [&]<boys::FitRoute kRoute, boys::EvalScheme kScheme, boys::PackAxis kAxis,
+            boys::FitGranularity kGran>(int lane) {
+            const double laneBound = combLaneRows[static_cast<std::size_t>(lane)].bound;
+            const double laneAdd = combLaneRows[static_cast<std::size_t>(lane)].additive;
+
+            constexpr auto kEntry = GateDeviceHalfEntry(kRoute, kScheme, kGran, kAxis);
+
+            if (kEntry == nullptr)
+            {
+                std::printf("  the half device lane: no entry of this build's CUDA surface "
+                            "serves a member the cross names, so no cell here "
+                            "measures it\n");
+                failed = true;
+
+                return;
+            }
+
+            CombAccum a;
+
+            // The figure the row is judged by, computed the way the lane's
+            // own contract states it: the base, plus the term the lane adds
+            // beside it - on this lane the half-ULP of the value returned,
+            // which is added per value below and not here.
+            a.bound = laneBound + laneAdd;
+            a.ceiling = a.bound;
+
+            const boys::BoysStatus status = kEntry(combDeviceN.get(),
+                                                   combDeviceHalfArgs.get(),
+                                                   combDeviceHalfValues.get(),
+                                                   ref.count,
+                                                   nullptr,
+                                                   kGateDivisionForm);
+
+            if (status != boys::BoysStatus::kSuccess ||
+                cudaDeviceSynchronize() != cudaSuccess ||
+                !combDeviceHalfValues.Download(combDeviceHalfOut))
+            {
+                std::printf("  the half device lane: the entry for one member of the cross "
+                            "did not run (BoysStatus %d), so that member "
+                            "is measured by no cell here\n",
+                            static_cast<int>(status));
+                failed = true;
+
+                return;
+            }
+
+            for (int n = 0; n <= nmax; ++n)
+            {
+                for (std::size_t i = 0; i < ref.count; ++i)
+                {
+                    const std::size_t e = ref.Index(n, i);
+                    const double got[1] = {
+                        static_cast<double>(combDeviceHalfOut[e])};
+                    const double ulp[1] = {
+                        a.ceiling > 0.0 ? halfUlp(got[0]) : 0.0};
+
+                    a.addAtForms(n, ref.x16[i], got, 1, ref.v16[e], ulp);
+                }
+            }
+
+            combMeasured.push_back({lane,
+                                    static_cast<int>(kRoute),
+                                    static_cast<int>(kScheme),
+                                    static_cast<int>(kGran),
+                                    static_cast<int>(kAxis),
+                                    a.cells,
+                                    a.below,
+                                    a.over,
+                                    a.worst,
+                                    a.bound,
+                                    a.judgedTo,
+                                    a.worstN,
+                                    a.worstX,
+                                    kDeviceForm,
+                                    a.forms,
+                                    a.moved,
+                                    a.compared,
+                                    {a.movedByForm[0], a.movedByForm[1],
+                                     a.movedByForm[2]}});
+        };
+
+    // The arm, over every member of the cross the two device lanes this gate
+    // launches claim: four axes of the space read off the same tables the
+    // cross enumerates them from. The count is the cross's own arithmetic for
+    // each lane (routes x schemes x partitions x axes) and the claim side
+    // below is what holds each list to it.
     if (deviceLaneUsable)
     {
         combDeviceSweep.template operator()<boys::FitRoute::kChebyshev,
@@ -10900,18 +11115,129 @@ int main(int argc, char** argv) {
                                             boys::EvalScheme::kHorner,
                                             boys::PackAxis::kOrders,
                                             boys::FitGranularity::kUniform>(combDeviceLane);
+
+        // The half device lane, one reading per member of its cross: the same
+        // list, at the same shape, through the fp16 names of the same entries.
+        combDeviceHalfSweep.template operator()<boys::FitRoute::kChebyshev,
+                                                boys::EvalScheme::kSplitClenshaw,
+                                                boys::PackAxis::kArguments,
+                                                boys::FitGranularity::kCoarsest>(combDeviceHalfLane);
+        combDeviceHalfSweep.template operator()<boys::FitRoute::kChebyshev,
+                                                boys::EvalScheme::kHorner,
+                                                boys::PackAxis::kArguments,
+                                                boys::FitGranularity::kCoarsest>(combDeviceHalfLane);
+        combDeviceHalfSweep.template operator()<boys::FitRoute::kRationalMinimax,
+                                                boys::EvalScheme::kSplitClenshaw,
+                                                boys::PackAxis::kArguments,
+                                                boys::FitGranularity::kCoarsest>(combDeviceHalfLane);
+        combDeviceHalfSweep.template operator()<boys::FitRoute::kRationalMinimax,
+                                                boys::EvalScheme::kHorner,
+                                                boys::PackAxis::kArguments,
+                                                boys::FitGranularity::kCoarsest>(combDeviceHalfLane);
+        combDeviceHalfSweep.template operator()<boys::FitRoute::kChebyshev,
+                                                boys::EvalScheme::kSplitClenshaw,
+                                                boys::PackAxis::kOrders,
+                                                boys::FitGranularity::kCoarsest>(combDeviceHalfLane);
+        combDeviceHalfSweep.template operator()<boys::FitRoute::kChebyshev,
+                                                boys::EvalScheme::kHorner,
+                                                boys::PackAxis::kOrders,
+                                                boys::FitGranularity::kCoarsest>(combDeviceHalfLane);
+        combDeviceHalfSweep.template operator()<boys::FitRoute::kRationalMinimax,
+                                                boys::EvalScheme::kSplitClenshaw,
+                                                boys::PackAxis::kOrders,
+                                                boys::FitGranularity::kCoarsest>(combDeviceHalfLane);
+        combDeviceHalfSweep.template operator()<boys::FitRoute::kRationalMinimax,
+                                                boys::EvalScheme::kHorner,
+                                                boys::PackAxis::kOrders,
+                                                boys::FitGranularity::kCoarsest>(combDeviceHalfLane);
+
+        combDeviceHalfSweep.template operator()<boys::FitRoute::kChebyshev,
+                                                boys::EvalScheme::kSplitClenshaw,
+                                                boys::PackAxis::kArguments,
+                                                boys::FitGranularity::kNarrow>(combDeviceHalfLane);
+        combDeviceHalfSweep.template operator()<boys::FitRoute::kChebyshev,
+                                                boys::EvalScheme::kHorner,
+                                                boys::PackAxis::kArguments,
+                                                boys::FitGranularity::kNarrow>(combDeviceHalfLane);
+        combDeviceHalfSweep.template operator()<boys::FitRoute::kRationalMinimax,
+                                                boys::EvalScheme::kSplitClenshaw,
+                                                boys::PackAxis::kArguments,
+                                                boys::FitGranularity::kNarrow>(combDeviceHalfLane);
+        combDeviceHalfSweep.template operator()<boys::FitRoute::kRationalMinimax,
+                                                boys::EvalScheme::kHorner,
+                                                boys::PackAxis::kArguments,
+                                                boys::FitGranularity::kNarrow>(combDeviceHalfLane);
+        combDeviceHalfSweep.template operator()<boys::FitRoute::kChebyshev,
+                                                boys::EvalScheme::kSplitClenshaw,
+                                                boys::PackAxis::kOrders,
+                                                boys::FitGranularity::kNarrow>(combDeviceHalfLane);
+        combDeviceHalfSweep.template operator()<boys::FitRoute::kChebyshev,
+                                                boys::EvalScheme::kHorner,
+                                                boys::PackAxis::kOrders,
+                                                boys::FitGranularity::kNarrow>(combDeviceHalfLane);
+        combDeviceHalfSweep.template operator()<boys::FitRoute::kRationalMinimax,
+                                                boys::EvalScheme::kSplitClenshaw,
+                                                boys::PackAxis::kOrders,
+                                                boys::FitGranularity::kNarrow>(combDeviceHalfLane);
+        combDeviceHalfSweep.template operator()<boys::FitRoute::kRationalMinimax,
+                                                boys::EvalScheme::kHorner,
+                                                boys::PackAxis::kOrders,
+                                                boys::FitGranularity::kNarrow>(combDeviceHalfLane);
+
+        combDeviceHalfSweep.template operator()<boys::FitRoute::kChebyshev,
+                                                boys::EvalScheme::kSplitClenshaw,
+                                                boys::PackAxis::kArguments,
+                                                boys::FitGranularity::kUniform>(combDeviceHalfLane);
+        combDeviceHalfSweep.template operator()<boys::FitRoute::kChebyshev,
+                                                boys::EvalScheme::kHorner,
+                                                boys::PackAxis::kArguments,
+                                                boys::FitGranularity::kUniform>(combDeviceHalfLane);
+        combDeviceHalfSweep.template operator()<boys::FitRoute::kRationalMinimax,
+                                                boys::EvalScheme::kSplitClenshaw,
+                                                boys::PackAxis::kArguments,
+                                                boys::FitGranularity::kUniform>(combDeviceHalfLane);
+        combDeviceHalfSweep.template operator()<boys::FitRoute::kRationalMinimax,
+                                                boys::EvalScheme::kHorner,
+                                                boys::PackAxis::kArguments,
+                                                boys::FitGranularity::kUniform>(combDeviceHalfLane);
+        combDeviceHalfSweep.template operator()<boys::FitRoute::kChebyshev,
+                                                boys::EvalScheme::kSplitClenshaw,
+                                                boys::PackAxis::kOrders,
+                                                boys::FitGranularity::kUniform>(combDeviceHalfLane);
+        combDeviceHalfSweep.template operator()<boys::FitRoute::kChebyshev,
+                                                boys::EvalScheme::kHorner,
+                                                boys::PackAxis::kOrders,
+                                                boys::FitGranularity::kUniform>(combDeviceHalfLane);
+        combDeviceHalfSweep.template operator()<boys::FitRoute::kRationalMinimax,
+                                                boys::EvalScheme::kSplitClenshaw,
+                                                boys::PackAxis::kOrders,
+                                                boys::FitGranularity::kUniform>(combDeviceHalfLane);
+        combDeviceHalfSweep.template operator()<boys::FitRoute::kRationalMinimax,
+                                                boys::EvalScheme::kHorner,
+                                                boys::PackAxis::kOrders,
+                                                boys::FitGranularity::kUniform>(combDeviceHalfLane);
     }
 #endif // BOYS_GATE_CUDA
 
-    // Whether the device lane was measured here, and the sentence its members
-    // are counted apart with where it was not. The two are one statement: a
-    // member of that lane is either a row this run measured on the card, or it
-    // is counted apart for a reason this build and this host can be asked
-    // about - and never for the lane's identity, which is what the reason used
-    // to be.
+    // Whether the device lanes were measured here, and the sentences their
+    // members are counted apart with where they were not. A member of one of
+    // those lanes is either a row this run measured on the card, or it is
+    // counted apart for a reason this build and this host can be asked about -
+    // and never for the lane's identity, which is what the reason used to be.
+    //
+    // The second sentence is the one case that is neither: a build whose arms
+    // ran has a working device and entries in its binary, and a device lane
+    // left over is one this gate has no arm for. That is owed work on the gate
+    // and is said as such, because the first sentence's words - no card, no
+    // entries - would be false of it.
 #ifdef BOYS_GATE_CUDA
     const bool deviceLaneMeasured = deviceLaneUsable;
     const std::string deviceLaneReason = deviceLaneAbsence;
+    const std::string deviceLaneNoArmReason =
+        "this build carries the CUDA lane (BUILD_CUDA=ON) and this host's device ran the arms this "
+        "gate has - the fp32 device lane's and the fp16 device lane's - so this cell is counted "
+        "apart because no arm of this gate launches this lane's entries, whose arm is owed work "
+        "here rather than a limit of the lane or of the card it would run on";
 #else
     const bool deviceLaneMeasured = false;
     const std::string deviceLaneReason =
@@ -10919,6 +11245,7 @@ int main(int argc, char** argv) {
         "this binary and no cell here can run them. A build with BUILD_CUDA=ON carries the lane "
         "and measures these members on the card, and this sentence is replaced there by the "
         "card's own reading";
+    const std::string deviceLaneNoArmReason = deviceLaneReason;
 #endif
 
     // ---- the cross, judged against what the accessor answers ----------------
@@ -11097,20 +11424,23 @@ int main(int argc, char** argv) {
                             c.state = "refused - owed";
                             c.source = guaranteed.reason;
                         } else if (combIsDeviceLane(lane) &&
-                                   !(lane == combDeviceLane && deviceLaneMeasured))
+                                   !(deviceLaneMeasured &&
+                                     (lane == combDeviceLane || lane == combDeviceHalfLane)))
                         {
                             // Not "the lane is a device lane": a cell is
                             // counted apart only where nothing here could run
-                            // it, and the sentence says which of the two - no
-                            // CUDA in this build, or no device this build can
-                            // open - is this run's. The arm this condition
-                            // names is the fp32 device lane's, so a build whose
-                            // arm ran leaves the fp64 and fp16 device lanes to
-                            // the hole below: that is the debt of an arm for
-                            // those two lanes, and this block will not cover a
-                            // cell of either with another lane's figure.
+                            // it, and the sentence says which case is this
+                            // run's. The arms this condition names are the
+                            // fp32 and fp16 device lanes', so a build whose
+                            // arms ran leaves the fp64 device lane counted
+                            // apart for a reason of its own - the arm, which
+                            // is owed work on this gate and not a limit of the
+                            // lane - while a build that ran no arm says so in
+                            // the words of the host that could not run one.
+                            // This block will not cover a cell of a lane with
+                            // another lane's figure.
                             c.state = "not runnable on this host";
-                            c.source = deviceLaneReason;
+                            c.source = deviceLaneMeasured ? deviceLaneNoArmReason : deviceLaneReason;
                             c.bound = guaranteed.value;
                         } else
                         {

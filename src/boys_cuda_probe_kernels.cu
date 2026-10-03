@@ -734,6 +734,25 @@ int BoysCudaLaunchAllNF64(int, int, const double*, double*, std::size_t, void*);
 int BoysCudaLaunchSingleF16(int, const int*, const void*, void*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF16(int, const int*, const void*, void*, std::size_t, void*);
 int BoysCudaLaunchAllNF16(int, int, const void*, void*, std::size_t, void*);
+// The lane's partition and route bodies, the same one-per-body list the float
+// lane's launchers above are declared in: a half entry reaches one of these and
+// no other, and the probe names the one each entry's row carries.
+int BoysCudaLaunchAllOrdersF16Narrow(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF16NarrowMono(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF16Rat(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF16NarrowRat(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF16Uniform(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF16UniformHorner(
+    int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF16UniformRat(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF16Orders(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF16NarrowOrders(
+    int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF16NarrowOrdersMono(
+    int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF16OrdersRat(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF16NarrowOrdersRat(
+    int, const int*, const void*, void*, std::size_t, void*);
 #endif // BoysFp16
 }
 
@@ -1155,6 +1174,63 @@ int LaunchLaunched(boys::DivisionForm form,
                                   out,
                                   count,
                                   stream);
+            break;
+        // The lane's partition and route bodies, one arm per entry of the
+        // option table that names one, in the table's own order. Two entries a
+        // scheme pair reaches share a launcher as they share a kernel: the
+        // forwarding entry's arm names the launcher its sibling names, so what
+        // is timed is the arithmetic the entry runs rather than a second name
+        // for it. The uniform grid's packing axis has one member, so its
+        // orders-axis entries run the per-argument kernel the table's own
+        // comment records.
+        case ProbeEntry::kAllOrdersF16Narrow:
+            BoysCudaLaunchAllOrdersF16Narrow(static_cast<int>(form), n, xh, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersF16NarrowMono:
+            BoysCudaLaunchAllOrdersF16NarrowMono(static_cast<int>(form), n, xh, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersF16Uniform:
+        case ProbeEntry::kAllOrdersF16OrdersUniform:
+            BoysCudaLaunchAllOrdersF16Uniform(static_cast<int>(form), n, xh, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersF16UniformHorner:
+        case ProbeEntry::kAllOrdersF16OrdersUniformHorner:
+            BoysCudaLaunchAllOrdersF16UniformHorner(
+                static_cast<int>(form), n, xh, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersF16Rat:
+        case ProbeEntry::kAllOrdersF16RatHorner:
+            BoysCudaLaunchAllOrdersF16Rat(static_cast<int>(form), n, xh, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersF16NarrowRat:
+        case ProbeEntry::kAllOrdersF16NarrowRatHorner:
+            BoysCudaLaunchAllOrdersF16NarrowRat(static_cast<int>(form), n, xh, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersF16UniformRat:
+        case ProbeEntry::kAllOrdersF16UniformRatHorner:
+        case ProbeEntry::kAllOrdersF16OrdersUniformRat:
+        case ProbeEntry::kAllOrdersF16OrdersUniformRatHorner:
+            BoysCudaLaunchAllOrdersF16UniformRat(static_cast<int>(form), n, xh, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersF16Orders:
+            BoysCudaLaunchAllOrdersF16Orders(static_cast<int>(form), n, xh, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersF16NarrowOrders:
+            BoysCudaLaunchAllOrdersF16NarrowOrders(
+                static_cast<int>(form), n, xh, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersF16NarrowOrdersMono:
+            BoysCudaLaunchAllOrdersF16NarrowOrdersMono(
+                static_cast<int>(form), n, xh, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersF16OrdersRat:
+        case ProbeEntry::kAllOrdersF16OrdersRatHorner:
+            BoysCudaLaunchAllOrdersF16OrdersRat(static_cast<int>(form), n, xh, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersF16NarrowOrdersRat:
+        case ProbeEntry::kAllOrdersF16NarrowOrdersRatHorner:
+            BoysCudaLaunchAllOrdersF16NarrowOrdersRat(
+                static_cast<int>(form), n, xh, out, count, stream);
             break;
 #else
         // As in LaunchInKernel: with the seam closed the fp16 arms are the only

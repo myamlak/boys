@@ -1332,12 +1332,14 @@ outside the bound its lane publishes lands in the last and fails it the same way
 zero in any run this book is held to**: every member the accessor offers is either measured by a row
 or counted under the two books that are not the library's to answer for.
 
-**Which members land in "not runnable on this host" is a property of the build and the machine, and
-this document does not record it.** A configuration built without CUDA counts the device lane's
-members there; a configuration built with it measures them on the card, and the figures are that
-card's, as every device figure is. What the contract fixes is the rule and not the population: a
-member the build cannot execute is counted apart and named with the reason, and it never fails the
-run — while a member the library carries and no row measures lands in the unaccounted count and does.
+**Which members land in "not runnable on this host" is a property of the build, the machine and the
+arms the gate launches, and this document does not record it.** A configuration built without CUDA
+counts the device lane's members there; a configuration built with it measures the device lanes its
+arms launch and counts the rest apart with the reason, the figures being that card's, as every
+device figure is. What the contract fixes is the rule and not the population: a member this run
+cannot execute is counted apart and named with the reason — no card, no entries, or no arm of this
+gate for that lane — and it never fails the run — while a member the library carries and no row
+measures lands in the unaccounted count and does.
 
 **The owed book reads zero, and that is the state the space is held to.** The last member it carried
 was **the rational route over the uniform grid** — a fit to derive over the grid's own intervals, since

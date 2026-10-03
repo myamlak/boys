@@ -1096,6 +1096,107 @@ __global__ void BoysAllNF16Kernel(int nmax,
                                           out[l * count + i] = __float2half(v);
                                       });
 }
+
+// The lane's other bodies, which are the float lane's bodies: the half lane's
+// own definition is that it runs the float engine's arithmetic and stores what
+// it returns, so an entry of it is the float kernel beside it with __half I/O
+// around the same body, the same seed lane and the same lane. Nothing below is
+// a second arithmetic - the seed lane and the lane of each launcher are the
+// ones the float kernel of that name hands its body (src/boys_cuda.cu, the
+// block above), and the float lane's own tables are what the grid kernels read.
+//
+// The seed lane's first argument is the double lane's piece table on the float
+// bodies (DeviceAllOrdersF32's own comment), which is why a half kernel names a
+// Lane64 seed: it is not a widening of this lane, it is the float lane's seed.
+template <DivisionForm kForm, typename SeedLane, typename Lane>
+__global__ void BoysAllOrdersF16LaneKernel(const int* n,
+                                           const __half* __restrict__ x,
+                                           __half* __restrict__ out,
+                                           size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    detail::DeviceAllOrdersF32<kForm>(SeedLane{},
+                                      Lane{},
+                                      n[i],
+                                      __half2float(x[i]),
+                                      [&](int l, float v) {
+                                          out[l * count + i] = __float2half(v);
+                                      });
+}
+
+// The float lane's grid, both stored bases of it, in the half lane's store.
+template <DivisionForm kForm, bool kMonomial>
+__global__ void BoysAllOrdersF16FlatKernel(const int* n,
+                                           const __half* __restrict__ x,
+                                           __half* __restrict__ out,
+                                           size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    detail::DeviceAllOrdersF32Flat<kForm, kMonomial>(dFlatCoeffsF32,
+                                                     dFlatMonoCoeffsF32,
+                                                     dFlatDegsF32,
+                                                     dFlatOffsetsF32,
+                                                     n[i],
+                                                     __half2float(x[i]),
+                                                     [&](int l, float v) {
+                                                         out[l * count + i] = __float2half(v);
+                                                     });
+}
+
+template <DivisionForm kForm>
+__global__ void BoysAllOrdersF16FlatRatKernel(const int* n,
+                                              const __half* __restrict__ x,
+                                              __half* __restrict__ out,
+                                              size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    detail::DeviceAllOrdersF32FlatRat<kForm>(dFlatRatCoeffsF32,
+                                             dFlatRatNumDegF32,
+                                             dFlatRatDenDegF32,
+                                             dFlatRatStoredF32,
+                                             dFlatRatOffsetsF32,
+                                             n[i],
+                                             __half2float(x[i]),
+                                             [&](int l, float v) {
+                                                 out[l * count + i] = __float2half(v);
+                                             });
+}
+
+// The orders reading, over the same seed/lane pairs the float lane's orders
+// kernels name.
+template <DivisionForm kForm, typename SeedLane, typename Lane>
+__global__ void BoysOrdersF16LaneKernel(const int* n,
+                                        const __half* __restrict__ x,
+                                        __half* __restrict__ out,
+                                        size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    detail::DeviceOrdersF32<kForm>(SeedLane{},
+                                   Lane{},
+                                   n[i],
+                                   __half2float(x[i]),
+                                   [&](int l, float v) { out[l * count + i] = __float2half(v); });
+}
 #endif // BoysFp16
 
 // ---------------------------------------------------------------------------
@@ -2552,6 +2653,129 @@ extern "C" int BoysCudaLaunchAllNF16(
         BoysAllNF16Kernel<kForm()>
             <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
                 nmax, static_cast<const __half*>(x), static_cast<__half*>(out), count);
+        return static_cast<int>(cudaGetLastError());
+    });
+}
+
+// The lane's other bodies, one launcher per body the float lane above launches:
+// the symbol a caller names is the choice, and the half lane's choice is the
+// same one (the launchers' own comment above the float block).
+extern "C" int BoysCudaLaunchAllOrdersF16Narrow(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF16LaneKernel<kForm(), Lane64Narrow, Lane32Narrow>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+                n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
+        return static_cast<int>(cudaGetLastError());
+    });
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF16NarrowMono(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF16LaneKernel<kForm(), Lane64NarrowMono, Lane32NarrowMono>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+                n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
+        return static_cast<int>(cudaGetLastError());
+    });
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF16Rat(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF16LaneKernel<kForm(), Lane64RatFull, Lane32Rat>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+                n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
+        return static_cast<int>(cudaGetLastError());
+    });
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF16NarrowRat(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF16LaneKernel<kForm(), Lane64NarrowRat, Lane32NarrowRat>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+                n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
+        return static_cast<int>(cudaGetLastError());
+    });
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF16Uniform(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF16FlatKernel<kForm(), false>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+                n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
+        return static_cast<int>(cudaGetLastError());
+    });
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF16UniformHorner(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF16FlatKernel<kForm(), true>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+                n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
+        return static_cast<int>(cudaGetLastError());
+    });
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF16UniformRat(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF16FlatRatKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+                n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
+        return static_cast<int>(cudaGetLastError());
+    });
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF16Orders(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysOrdersF16LaneKernel<kForm(), Lane64Full, Lane32Full>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+                n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
+        return static_cast<int>(cudaGetLastError());
+    });
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF16NarrowOrders(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysOrdersF16LaneKernel<kForm(), Lane64Narrow, Lane32Narrow>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+                n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
+        return static_cast<int>(cudaGetLastError());
+    });
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF16NarrowOrdersMono(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysOrdersF16LaneKernel<kForm(), Lane64NarrowMono, Lane32NarrowMono>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+                n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
+        return static_cast<int>(cudaGetLastError());
+    });
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF16OrdersRat(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysOrdersF16LaneKernel<kForm(), Lane64RatFull, Lane32Rat>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+                n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
+        return static_cast<int>(cudaGetLastError());
+    });
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF16NarrowOrdersRat(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysOrdersF16LaneKernel<kForm(), Lane64NarrowRat, Lane32NarrowRat>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+                n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
         return static_cast<int>(cudaGetLastError());
     });
 }

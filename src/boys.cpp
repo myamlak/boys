@@ -1051,24 +1051,34 @@ Carriage CarriesDeviceF64(FitRoute route,
     return {true, ""};
 }
 
-// The device's half lane, whose rule this is. It builds one combination at this
-// revision and not a table of them: the lane's entries are the fp16 single call
-// and the two batch calls (src/boys_cuda.cu, BoysAllOrdersF16Kernel and its
-// siblings; the rows of the option table are single-fp16, all-orders-fp16 and
-// all-n-fp16), and every one of them reads the coarsest partition's Chebyshev
-// pieces on the arguments axis, summed by the split Clenshaw recurrence, under
-// the half budget.
+// The device's half lane, whose rule this is. It is a device lane and not the
+// host half lane under another name: its entries are the CUDA surface's own
+// (BoysCuda::AllOrdersF16 and the family beside it), a host without a CUDA device
+// cannot run one of them, and the figure it publishes is stated in its own row of
+// BoysLaneContracts, which carries the half format's term.
 //
-// So this carrier carries that one cell and refuses the rest, and the refusal is
-// a statement of what is owed rather than a boundary: the other two partitions,
-// the rational route and the orders reading of this lane are a table nobody has
-// cut and a kernel nobody has written for the half format, which is work of the
-// same kind the other lanes' rows were built by. Refusing them here is what keeps
-// a caller who names one from being answered by the float lane's arithmetic under
-// the half lane's name.
+// What this lane carries, read off the fp16 rows of the option table
+// (src/boys_cuda.cpp), which are the entries the lane itself builds:
 //
-// Naming the cell in the terms the cross uses: the Chebyshev route, the split
-// Clenshaw scheme, the arguments packing axis, the coarsest partition.
+//   * both routes over the coarsest partition, on both packing axes and under
+//     both scheme names (all-orders-fp16 with all-orders-fp16-orders, and the
+//     rational pairs all-orders-fp16-rat with -rat-horner);
+//   * the narrow partition the same way (all-orders-fp16-narrow with its
+//     orders twin and their monomial and rational names);
+//   * the uniform grid the same way (all-orders-fp16-uniform and
+//     all-orders-fp16-uniform-horner with their orders twins, and the grid's
+//     rational pairs).
+//
+// Every cell the cross of that table names is therefore a row of the lane, and
+// the arms below refuse a value outside the enumerations rather than a cell the
+// lane does not build - which is the same shape as the fp32 device lane's rule
+// beside this one, and it is a statement about a different set of entries: the
+// rows above are read from the fp16 rows of the table, and the fp32 rule reads
+// the fp32 rows of it.
+//
+// The lane names no division form and answers at m = 1 alone, for the reason the
+// fp32 device lane's rule gives: the rung is not a build's to choose, and the
+// form is a field of the host policy, which no CUDA surface header names.
 Carriage CarriesDeviceF16(FitRoute route,
                           EvalScheme scheme,
                           PackAxis axis,
@@ -1086,20 +1096,7 @@ Carriage CarriesDeviceF16(FitRoute route,
                 "the enumerations this revision publishes"};
     }
 
-    if (route == FitRoute::kChebyshev && scheme == EvalScheme::kSplitClenshaw &&
-        axis == PackAxis::kArguments && granularity == FitGranularity::kCoarsest)
-    {
-        return {true, ""};
-    }
-
-    return {false,
-            "the device's half lane builds one combination at this revision: the coarsest "
-            "partition's Chebyshev pieces on the arguments axis, summed by the split Clenshaw "
-            "recurrence (src/boys_cuda.cu, the fp16 kernels behind BoysCuda::AllOrdersF16 and its "
-            "single and all-N siblings). The narrow and uniform partitions of this lane, its "
-            "rational route and the orders reading of it are a table nobody has cut and a kernel "
-            "nobody has written for the half format, so this cell is owed work rather than a "
-            "shape the lane cannot have"};
+    return {true, ""};
 }
 
 } // namespace

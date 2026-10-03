@@ -93,6 +93,30 @@ int BoysCudaLaunchAllOrdersF16(
     int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllNF16(
     int form, int nmax, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF16Narrow(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF16NarrowMono(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF16Rat(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF16NarrowRat(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF16Uniform(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF16UniformHorner(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF16UniformRat(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF16Orders(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF16NarrowOrders(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF16NarrowOrdersMono(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF16OrdersRat(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF16NarrowOrdersRat(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
 #endif
 }
 
@@ -613,6 +637,240 @@ BoysStatus BoysCuda::AllNF16(
     }
 
     return RunLaunch(BoysCudaLaunchAllNF16, nmax, x, out, count, stream, form);
+}
+
+// The half lane's other bodies. Each of these is its float counterpart above at the same kernel
+// body with the half store around it, so the line that decides what an entry runs is the one the
+// float entry of that name already states; what these add is the fp16 store and its own figure.
+BoysStatus BoysCuda::AllOrdersF16Narrow(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16Narrow, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF16NarrowMono(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16NarrowMono, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF16Uniform(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16Uniform, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF16UniformHorner(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16UniformHorner, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF16Rat(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The route's pair is stored in one form, so the two scheme names a caller may use reach this
+    // one kernel and the twin below forwards here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16Rat, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF16RatHorner(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the route above, over the same pair: both names reach one kernel
+    // and one arithmetic.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersF16Rat(n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF16NarrowRat(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16NarrowRat, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF16NarrowRatHorner(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the route above, over the same pair.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersF16NarrowRat(n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF16UniformRat(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16UniformRat, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF16UniformRatHorner(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the route above, over the same pair.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersF16UniformRat(n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF16Orders(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16Orders, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF16NarrowOrders(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16NarrowOrders, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF16NarrowOrdersMono(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16NarrowOrdersMono, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF16OrdersRat(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16OrdersRat, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF16OrdersRatHorner(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the route above, over the same pair.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersF16OrdersRat(n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF16NarrowOrdersRat(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16NarrowOrdersRat, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF16NarrowOrdersRatHorner(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the route above, over the same pair.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersF16NarrowOrdersRat(n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF16OrdersUniform(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    // The grid's packing axis has one member, so this entry and its float counterpart run the
+    // per-argument kernel of the grid rather than a gather of their own.
+    return RunLaunch(BoysCudaLaunchAllOrdersF16Uniform, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF16OrdersUniformHorner(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    // The grid's monomial blocks, the same kernel AllOrdersF16UniformHorner launches.
+    return RunLaunch(BoysCudaLaunchAllOrdersF16UniformHorner, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF16OrdersUniformRat(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    // The grid's rational route, one pair per interval and no second packing: the same kernel
+    // AllOrdersF16UniformRat launches.
+    return RunLaunch(BoysCudaLaunchAllOrdersF16UniformRat, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF16OrdersUniformRatHorner(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the route above, over the same pair.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersF16OrdersUniformRat(n, x, out, count, stream, form);
 }
 #endif // BoysFp16
 
@@ -1322,6 +1580,97 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
      BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
+
+    // The half lane's ladder family, the float lane's rows above entry for entry. The bound each
+    // row states is this lane's own: the arithmetic is the float lane's and the store is this
+    // lane's, so the figure is the float lane's with the half format's term, which is the fp16
+    // row's form and not a second bound.
+    {DeviceEntry::kAllOrdersF16Narrow, "all-orders-fp16-narrow",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kPartition, RegionBExp::kAccurate,
+     BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16NarrowMono, "all-orders-fp16-narrow-mono",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme, RegionBExp::kAccurate,
+     BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16Uniform, "all-orders-fp16-uniform",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kPartition, RegionBExp::kAccurate,
+     BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16UniformHorner, "all-orders-fp16-uniform-horner",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme, RegionBExp::kAccurate,
+     BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16Rat, "all-orders-fp16-rat", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRoute, RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16RatHorner, "all-orders-fp16-rat-horner",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16NarrowRat, "all-orders-fp16-narrow-rat",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16NarrowRatHorner, "all-orders-fp16-narrow-rat-horner",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16UniformRat, "all-orders-fp16-uniform-rat",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16UniformRatHorner, "all-orders-fp16-uniform-rat-horner",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served, kFp16Refusal},
+
+    // The half lane's other packing axis, the float lane's orders rows at this lane's store.
+    {DeviceEntry::kAllOrdersF16Orders, "all-orders-fp16-orders", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kPacking, RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16NarrowOrders, "all-orders-fp16-narrow-orders",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kPacking, RegionBExp::kAccurate,
+     BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16NarrowOrdersMono, "all-orders-fp16-narrow-orders-mono",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme, RegionBExp::kAccurate,
+     BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16OrdersRat, "all-orders-fp16-orders-rat",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16OrdersRatHorner, "all-orders-fp16-orders-rat-horner",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16NarrowOrdersRat, "all-orders-fp16-narrow-orders-rat",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16NarrowOrdersRatHorner, "all-orders-fp16-narrow-orders-rat-horner",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16OrdersUniform, "all-orders-fp16-orders-uniform",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kPartition, RegionBExp::kAccurate,
+     BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16OrdersUniformHorner, "all-orders-fp16-orders-uniform-horner",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme, RegionBExp::kAccurate,
+     BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16OrdersUniformRat, "all-orders-fp16-orders-uniform-rat",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16OrdersUniformRatHorner, "all-orders-fp16-orders-uniform-rat-horner",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
+     BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served, kFp16Refusal},
 
     {DeviceEntry::kAllNF64, "all-n-fp64", DeviceOptionGroup::kLaunched,
      DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllN, DeviceOptionQuestion::kAllN,
