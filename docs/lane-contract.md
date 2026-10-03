@@ -921,7 +921,11 @@ and is certified against the per-order region-A bar by cell, **|F̂ − F| ≤ 1
 fits and **3e-14** on the extended band. At the certified split
 Clenshaw scheme its values are the across-arguments lane's values **bit for bit** — one exact
 comparison over 3,009 arguments and every order, 99,297 of 99,297 values, with no tolerance, because
-a reordered step or a coefficient read one index out would still return a plausible number. That row
+a reordered step or a coefficient read one index out would still return a plausible number. That
+comparison is the fused route's: on a separate-route build the two are two arithmetics, because this
+lane spells its own fused step while the across-arguments lane carries the route the build selected.
+There **62,110 of 99,297** values are bit-identical and the two part by at most **2.220e-16**,
+inside the region's 1e-15, and the lane's own test carries both legs. That row
 is the shipped partition's, for the reason in the paragraph above; on the narrow partition the same
 question is answered by the reference table instead. Past
 `kX0` the entry runs the certified scalar single lane one order at a time, so it is defined for
