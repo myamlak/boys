@@ -2106,15 +2106,18 @@ TEST(ProbeTest, ARequestForOneCellIsClosedWithTheRestOfTheSpaceStated) {
 
 // The seam a run writes is a replacement for the seam it read, and not a report about one.
 // Every class the seam in force carries has a row - the seam's own list is read here the way
-// the probe reads it, so the two cannot disagree about which classes exist - the five names
-// are present, the marker the committed file defines and a replacement must not is absent,
-// and a run that ranked nothing writes nothing rather than a table of fallbacks. The defect
-// this pins is the one a hand-written table has: a row that nothing can be checked against,
-// where a row this path writes is one a run's own rounds placed first.
+// the probe reads it, and guarded the way the probe guards it, because a replacement may carry
+// no list at all ("WHAT A REPLACEMENT CARRIES", include/boys/boys_build_defaults.hpp) - the
+// five names are present, the marker the committed file defines and a replacement must not is
+// absent, and a run that ranked nothing writes nothing rather than a table of fallbacks. The
+// defect this pins is the one a hand-written table has: a row that nothing can be checked
+// against, where a row this path writes is one a run's own rounds placed first.
 TEST(ProbeTest, TheEmittedSeamIsAReplacementForTheSeamItRead) {
     const OptionProbeReport report = boys::RunOptionProbe(Timed());
     const std::string text = boys::FormatBuildDefaults(report, "a test run");
 
+#if defined(BOYS_BUILD_DEFAULT_ROWS)
+    // This build's seam carries a class list, so a run of it has a class to write a row for.
     ASSERT_FALSE(text.empty()) << "a run that measured a class writes a seam";
 
     // The five names a replacement must carry, the list macro, and the marker it must not:
@@ -2140,7 +2143,8 @@ TEST(ProbeTest, TheEmittedSeamIsAReplacementForTheSeamItRead) {
         BOYS_BUILD_DEFAULT_ROWS(BOYS_PROBE_TEST_SEAM_CLASS)};
 #undef BOYS_PROBE_TEST_SEAM_CLASS
 
-    ASSERT_GT(std::size(classes), 0u) << "the seam in force carries no class list";
+    ASSERT_GT(std::size(classes), 0u)
+        << "the seam in force carries a class list with no class in it";
 
     for (const auto& [precision, shape] : classes) {
         const std::string row = std::string("X(kHost, ") + precision + ", " + shape + ", ";
@@ -2154,6 +2158,19 @@ TEST(ProbeTest, TheEmittedSeamIsAReplacementForTheSeamItRead) {
     // to be written differently.
     EXPECT_NE(text.find("/* measured:"), std::string::npos);
     EXPECT_NE(text.find("/* a choice, not a measurement:"), std::string::npos);
+#else
+    // This build's seam carries no class list, which is a shape a replacement is allowed to
+    // have: the five names are then the whole of it, and include/boys/boys.hpp writes the table
+    // those five make - one row per host class, every cell the build's own choice, which its
+    // comment on that branch names the fixture overriding one of them as the case for. There is
+    // no class for the writer to key a row to, because the rows are one per class the seam
+    // names (src/boys_probe.cpp, SeamRows over SeamClasses), so a run of this build measures
+    // its cells and writes no seam at all. What it may not write is a file that defines the
+    // list macro with nothing under it: boys.hpp expands that list into the whole
+    // default-policy table, so an empty list is a hole at every class, and a build pointed at
+    // that file would fail to compile every call that names no policy.
+    EXPECT_TRUE(text.empty()) << "a build whose seam carries no class list wrote a seam";
+#endif
 
     // A run that ranked no class writes no file: there is no measurement in it, and a table
     // of fallback rows written from a run that measured nothing is the transcription this

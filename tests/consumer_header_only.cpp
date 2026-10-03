@@ -4,10 +4,11 @@
 // anything: this target links nothing (CMakeLists.txt asserts the empty link
 // line) and names two it does not export.
 //
-// The two policies flip one structural axis away from the build's own default and
-// leave the division form, the one axis that moves a lane's guaranteed figure, so
-// each combination named here is one the lane carries and one that is judged
-// against the figure its lane documents.
+// The two policies flip one structural axis away from the build's own default and name no
+// division form, so each combination named here is one the lane carries and runs the form the
+// build's own seam chose. The division form is the one axis that moves a lane's guaranteed
+// figure, so the figure a rule is judged against is the build's and not the shipped revision's:
+// each rule below reads the form in force and names the lane's own figures for it.
 //
 // Values are judged against the committed 45-digit grid, with the double lane at
 // the policy this file names as the oracle, so a composed bound includes the
@@ -439,11 +440,32 @@ void CheckManyArgumentLanes(Report& report, const std::vector<Cell>& cells) {
 
 /// The float lane's two entries at one named policy, judged against the double lane at the same
 /// converted argument: the composed bound is the float lane's own figure plus the oracle's.
+///
+/// The lane's figure is the one it publishes for the division form these entries run, which is
+/// not one figure: the lane's row carries a base of 1.5e-7 and, beside it, the term the plain
+/// reciprocal adds - 1.5e-7 plus 1e-7 under that form - because the form rounds once more per
+/// step (include/boys/boys.hpp, LaneContractInfo; include/boys/backend.hpp, DivisionForm states
+/// the same two figures, measured, for this lane of the three the axis has). Neither policy
+/// below names a form, so the form in force is the build's own default one, and a build whose
+/// seam moved that axis publishes and runs the second figure rather than the first. This target
+/// links no library, so `BoysLaneContracts()` is not reachable here and the two figures are
+/// written as the row states them; what sweeps the lane against an independent reference and
+/// holds it inside them is the accuracy gate's float book, tests/boys_accuracy_gate.cpp.
+///
+/// The term is what the plain form spends on the downward ladder, which is inside the batch
+/// shape and not inside the single one, so the batch rule is judged at the sum and the single
+/// rule at the base - the reading tests/boys_accuracy_test.cpp states for the same two shapes.
 template <class Policy>
 void CheckFloatLane(const std::vector<Cell>& cells) {
     Rule& single = NewRule("BoysSingleF32<the other route> (vs the double lane at float(x))");
     Rule& batch = NewRule("BoysAllOrdersF32<the other route> (vs the double lane, float(x))");
-    const double bound = 1.5e-7 + kOracleBound;
+
+    constexpr double kFloatLaneBase = 1.5e-7;
+    constexpr double kFloatPlainTerm = 1e-7;
+    const double plainTerm =
+        boys::kDefaultDivisionForm == boys::DivisionForm::kPlainReciprocal ? kFloatPlainTerm : 0.0;
+    const double singleBound = kFloatLaneBase + kOracleBound;
+    const double batchBound = kFloatLaneBase + plainTerm + kOracleBound;
 
     for (const Cell& cell : cells)
     {
@@ -452,7 +474,7 @@ void CheckFloatLane(const std::vector<Cell>& cells) {
         Judge(single,
               static_cast<double>(boys::BoysSingleF32<Policy>(cell.n, xf)),
               oracle,
-              bound,
+              singleBound,
               cell.n,
               cell.x);
     }
@@ -468,7 +490,7 @@ void CheckFloatLane(const std::vector<Cell>& cells) {
             if (cell.x == x)
             {
                 const double oracle = boys::BoysSingle<First>(cell.n, static_cast<double>(xf));
-                Judge(batch, static_cast<double>(out[cell.n]), oracle, bound, cell.n, cell.x);
+                Judge(batch, static_cast<double>(out[cell.n]), oracle, batchBound, cell.n, cell.x);
             }
         }
     }
