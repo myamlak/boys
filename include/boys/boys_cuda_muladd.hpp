@@ -44,7 +44,7 @@ namespace boys::detail {
 /// they are left alone here, because respelling them would move the fused
 /// route's certified values.
 inline constexpr backend::MulAddRoute kDeviceMulAddRoute =
-#if defined(BOYS_MULADD_SEPARATE)
+#if defined(BOYS_MULADD_SEPARATE) && BOYS_MULADD_SEPARATE
     backend::MulAddRoute::kSeparate;
 #else
     backend::MulAddRoute::kFused;
