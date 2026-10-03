@@ -149,23 +149,29 @@ def device_space() -> tuple[str, list[str], bool]:
     closure at all - which is a fact about the log, not about the library - so the search is for the
     block, and the absence of it is reported as the absence of a RUN rather than of a space.
     """
-    directory = os.path.join(REPO, ".claude", "tmp")
-    try:
-        names = [n for n in os.listdir(directory)
-                 if n.endswith(".log") and ("probe" in n.lower())]
-    except OSError:
-        names = []
-    if not names:
-        return ("ABSENT: no device probe log under .claude/tmp/", [], False)
+    carrying = []
+    for directory in (os.path.join(REPO, ".claude", "tmp"),
+                      os.path.join(REPO, ".claude", "lane-status")):
+        # os.walk, not listdir: a lane files its transcripts under
+        # .claude/lane-status/<lane>/, so the closures are one level deeper than the directory the
+        # first version of this searched. It reported the space ABSENT while the closure was on disk.
+        for root, _dirs, names in os.walk(directory):
+            for name in names:
+                path = os.path.join(root, name)
+                text = read(path)
+                # The WHOLE closure block, not the phrase. A lane's write-up quotes "the arithmetic:"
+                # while discussing a run, and reading that as a closure is exactly the wrong read this
+                # tool exists to make impossible: it printed a bookkeeping file as a measurement and
+                # reported the block "present but not in the shape this reads".
+                if all(marker in text for marker in ("MEMBERS:", "the arithmetic:",
+                                                     "the space's own total:", "the verdict:")):
+                    carrying.append(path)
 
-    carrying = [os.path.join(directory, n) for n in names]
-    carrying = [p for p in carrying if "the arithmetic:" in read(p)]
     if not carrying:
-        return (f"ABSENT: none of the {len(names)} probe log(s) on disk carries the closure block",
-                [f"  the probe prints a closure (MEMBERS / the arithmetic / the verdict);",
-                 f"  no log under .claude/tmp/ was written by a build that had it, so the device",
-                 f"  space cannot be closed from what is on disk. Re-run the probe.",
-                 f"  logs present: {len(names)}"], False)
+        return ("ABSENT: no file under .claude/tmp or .claude/lane-status carries a whole closure",
+                ["  the probe prints a closure (MEMBERS / the arithmetic / the space's own total /",
+                 "  the verdict) and no file on disk carries all four, so the device space cannot",
+                 "  be closed from what is here. Re-run the probe."], False)
 
     newest = max(carrying, key=os.path.getmtime)
     text = read(newest)
@@ -201,6 +207,15 @@ def device_space() -> tuple[str, list[str], bool]:
         labels = [f"state {i + 1}" for i in range(len(parts))]
 
     lines = [f"  source                 {os.path.basename(newest)}"]
+    # The closure carries NO revision, so "newest file on disk" is not the same as "current space".
+    # This tool reported CLOSED on a closure reading 87 members while the library's space was 261,
+    # because that file was the most recently written. The space sentence is printed verbatim so the
+    # reader can see which space the arithmetic closes over; the count alone would hide it.
+    space_line = re.search(r"^\s+the space:\s*(.+?)$", text, re.M)
+    if space_line:
+        lines.append(f"  the space it closes    {' '.join(space_line.group(1).split())[:150]}")
+    else:
+        lines.append("  the space it closes    (the closure states no space sentence)")
     for label, value in zip(labels, parts):
         lines.append(f"  {label[:22]:<22} {value:>6}")
     lines += [
