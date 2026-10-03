@@ -646,19 +646,37 @@ but the 16-bit representation term dominates every cell they measure, and the ro
 orders below it, so the sweep finds the same worst cell on both routes. The packed-half
 lane's chain is one multiply and one divide per order, so it takes no fused step either.
 
-**The two packed backends the report enumerates are inside the choice.** `avx2-fp64` and
-`avx2-fp32` — the four-wide region-A lane of `src/boys_simd.cpp` — carry the route as a template
-parameter and run the one the build selected, which is what `BoysBackends()` reports for them: the
-fused route's step is one `vfmadd`, the separate route's is a multiply and an add, and that second
-one is two roundings on every build because no compiler flag reaches an instruction the source
-named. What the packed lane does not pay is the call a target without the fused instruction charges
-the scalar lane for the same two roundings. The across-orders lane
-(`src/boys_orders_simd.cpp`) is a packed lane this revision does not route: it spells its own
-`vfmadd` at each of its steps, so it is one-rounding whatever the build says and its values do not
-move between the routes. It is reachable only through the orders axis, and the route's rows below
-are measured on the arguments axis, so no figure on this page rests on it — but a caller who
-selects the separate route and calls `BoysAllOrders` gets the fused arithmetic on the arguments
-that lane serves, which is a gap in the axis and not a property of it.
+**The packed backends the report enumerates are inside the choice.** `avx2-fp64` and `avx2-fp32`
+carry the route as a template parameter and are instantiated at the one the build selected, which is
+what `BoysBackends()` reports for them: the fused route's step is one `vfmadd`, the separate route's
+is a multiply and an add, and that second one is two roundings on every build because no compiler
+flag reaches an instruction the source named. What they do not pay is the call a target without the
+fused instruction charges the scalar lane for the same two roundings.
+
+Which entries that reaches is narrower than the pair. The double backend is the one with a consumer
+path: its region-A kernel is what `BoysAllN` runs on the arguments axis, and measured over that
+region at `nmax = 4`, **879 of 2560** values of the lane move between the two routes, against **7 of
+2560** before the route reached the kernel, while the kernel called directly on the same arguments
+moves **11 of 40**. The seven are not the kernel — the direct call moves nothing at all before the
+change — they sit where the lane's scalar tail is (`BoysSingle` at the end of the same body), and each
+reads the scalar lane's bits exactly, so the lane was never purely one-rounding on a two-rounding
+build.
+
+The float backend is instantiated at the selected route and `BoysBackends()` reports it, but no entry
+a consumer can call evaluates through it: the single-precision batch entry packs no arguments at all
+(`BoysAllNF32` walks its arguments one at a time and hands each to the all-orders body, which runs the
+across-orders lane), the half lane's own batch entry runs an f16-native ladder rather than this
+backend, and the packed half kernels that do use it are called by this tree's tests and benchmarks
+and by nothing else. So the route's float half is a report about an arithmetic the library compiles,
+not a choice a caller can reach — the third gap, and the one that is a work item rather than a
+property of the axis.
+
+The across-orders lane (`src/boys_orders_simd.cpp`) is a packed lane this revision does not route: it
+spells its own `vfmadd` at each of its steps, so it is one-rounding whatever the build says and its
+values do not move between the routes — **0 of 32,868** values of the across-orders double lane and
+**0 of 2560** of its float sibling differ across the two builds. A caller who selects the separate
+route and calls `BoysAllOrders` therefore gets the fused arithmetic on the arguments that lane
+serves, which is the second gap.
 
 **The separate route does not remove every call, and the remainder is deliberate.** The transform
 lane's own product contains no fused step at all — its splits are exact by construction and its
@@ -1163,9 +1181,13 @@ on a host without the vector tier, and past the uniform grid's end. A caller nam
 `kPlainReciprocal` together with `PackAxis::kOrders` is served plain steps on every order the packed
 lane hands over.
 
-**The path that does not carry it.** One, and it is stated here rather than left to be found: the
-**device lane**. `DivisionForm` is a field of the host policy and is named in no device header. The
-GPU surface carries its own axes, and this is not one of them.
+**The path that does not carry it.** None. The **device lane** carries it too: `DivisionForm` is a
+trailing parameter of every launched entry, `DeviceOptionAxis::kDivision` crosses each entry of the
+device option space with all three forms (`boys_cuda_options.hpp`), and the device probe reports, in
+every row it prints, the form that row was measured at. What the device lane does not carry is a
+*figure* per form — its bounds are published per lane and region, so a device row is read at the
+default form and no device figure is claimed for the other two. A caller who names a form on the
+card is served that form's arithmetic there as here.
 
 **The float lane's plain reciprocal carries its own figure.** The all-orders entries' region-A
 downward ladder divides by the step's constant rather than by the argument, and that step reads the
