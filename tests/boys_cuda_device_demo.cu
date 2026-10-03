@@ -11,10 +11,8 @@
 // holds, and every value written back is comparable with that grid cell for cell.
 //
 // A family entry writes kMaxBoysOrder + 1 values per element — the element's own
-// block — and a single entry writes one value per element. The rung is a kernel
-// parameter, as it is of every entry: the entry refuses the rungs whose degree
-// tables are not resident, and these kernels record that refusal per element and
-// write nothing for it.
+// block — and a single entry writes one value per element. An entry that refuses
+// a call records that refusal per element and writes nothing for it.
 
 #include "boys/boys_cuda_device.hpp"
 #include "boys_cuda_device_demo.hpp"
@@ -61,8 +59,7 @@ __global__ void BoysDeviceDemoLadder64Kernel(
     double* out,
     std::size_t count,
     int capacity,
-    int* status,
-    double multiplier) {
+    int* status) {
     const std::size_t i = Thread();
 
     if (i >= count)
@@ -75,7 +72,7 @@ __global__ void BoysDeviceDemoLadder64Kernel(
     double ladder[boys::kMaxBoysOrder + 1];
 
     const boys::BoysDeviceStatus got =
-        boys::BoysDeviceAllOrdersF64(tables, order, x, ladder, capacity, multiplier);
+        boys::BoysDeviceAllOrdersF64(tables, order, x, ladder, capacity);
     status[i] = static_cast<int>(got);
 
     if (got != boys::BoysDeviceStatus::kSuccess)
@@ -96,10 +93,9 @@ extern "C" int BoysDeviceDemoLadder64(const boys::BoysDeviceTables* tables,
                                       double* out,
                                       std::size_t count,
                                       int capacity,
-                                      int* status,
-                                      double multiplier) {
+                                      int* status) {
     BoysDeviceDemoLadder64Kernel<<<Blocks(count), 256>>>(*tables, n, rho, d2, out, count, capacity,
-                                                        status, multiplier);
+                                                        status);
     return static_cast<int>(cudaGetLastError());
 }
 
@@ -111,8 +107,7 @@ __global__ void BoysDeviceDemoAllN64Kernel(
     const double* d2,
     double* out,
     std::size_t count,
-    int* status,
-    double multiplier) {
+    int* status) {
     const std::size_t i = Thread();
 
     if (i >= count)
@@ -124,7 +119,7 @@ __global__ void BoysDeviceDemoAllN64Kernel(
     double ladder[boys::kMaxBoysOrder + 1];
 
     const boys::BoysDeviceStatus got =
-        boys::BoysDeviceAllNF64<boys::kMaxBoysOrder>(tables, x, ladder, multiplier);
+        boys::BoysDeviceAllNF64<boys::kMaxBoysOrder>(tables, x, ladder);
     status[i] = static_cast<int>(got);
 
     if (got != boys::BoysDeviceStatus::kSuccess)
@@ -143,10 +138,8 @@ extern "C" int BoysDeviceDemoAllN64(const boys::BoysDeviceTables* tables,
                                     const double* d2,
                                     double* out,
                                     std::size_t count,
-                                    int* status,
-                                    double multiplier) {
-    BoysDeviceDemoAllN64Kernel<<<Blocks(count), 256>>>(
-        *tables, rho, d2, out, count, status, multiplier);
+                                    int* status) {
+    BoysDeviceDemoAllN64Kernel<<<Blocks(count), 256>>>(*tables, rho, d2, out, count, status);
     return static_cast<int>(cudaGetLastError());
 }
 
@@ -159,8 +152,7 @@ __global__ void BoysDeviceDemoEach64Kernel(
     const double* d2,
     double* out,
     std::size_t count,
-    int* status,
-    double multiplier) {
+    int* status) {
     const std::size_t i = Thread();
 
     if (i >= count)
@@ -171,10 +163,10 @@ __global__ void BoysDeviceDemoEach64Kernel(
     const int order = n[i];
     const double x = rho[i] * d2[i];
 
-    const boys::BoysDeviceStatus got = boys::BoysDeviceEachOrderF64(
-        tables, order, x, [&](int l, double v) {
+    const boys::BoysDeviceStatus got =
+        boys::BoysDeviceEachOrderF64(tables, order, x, [&](int l, double v) {
             out[BlockStart(i) + static_cast<std::size_t>(l)] = v;
-        }, multiplier);
+        });
     status[i] = static_cast<int>(got);
 }
 
@@ -184,10 +176,8 @@ extern "C" int BoysDeviceDemoEach64(const boys::BoysDeviceTables* tables,
                                     const double* d2,
                                     double* out,
                                     std::size_t count,
-                                    int* status,
-                                    double multiplier) {
-    BoysDeviceDemoEach64Kernel<<<Blocks(count), 256>>>(
-        *tables, n, rho, d2, out, count, status, multiplier);
+                                    int* status) {
+    BoysDeviceDemoEach64Kernel<<<Blocks(count), 256>>>(*tables, n, rho, d2, out, count, status);
     return static_cast<int>(cudaGetLastError());
 }
 
@@ -200,8 +190,7 @@ __global__ void BoysDeviceDemoSingle64Kernel(
     const double* d2,
     double* out,
     std::size_t count,
-    int* status,
-    double multiplier) {
+    int* status) {
     const std::size_t i = Thread();
 
     if (i >= count)
@@ -212,8 +201,7 @@ __global__ void BoysDeviceDemoSingle64Kernel(
     const double x = rho[i] * d2[i];
     double value = 0.0;
 
-    const boys::BoysDeviceStatus got =
-        boys::BoysDeviceSingleF64(tables, n[i], x, &value, multiplier);
+    const boys::BoysDeviceStatus got = boys::BoysDeviceSingleF64(tables, n[i], x, &value);
     status[i] = static_cast<int>(got);
 
     if (got == boys::BoysDeviceStatus::kSuccess)
@@ -228,10 +216,8 @@ extern "C" int BoysDeviceDemoSingle64(const boys::BoysDeviceTables* tables,
                                       const double* d2,
                                       double* out,
                                       std::size_t count,
-                                      int* status,
-                                      double multiplier) {
-    BoysDeviceDemoSingle64Kernel<<<Blocks(count), 256>>>(
-        *tables, n, rho, d2, out, count, status, multiplier);
+                                      int* status) {
+    BoysDeviceDemoSingle64Kernel<<<Blocks(count), 256>>>(*tables, n, rho, d2, out, count, status);
     return static_cast<int>(cudaGetLastError());
 }
 
@@ -247,8 +233,7 @@ __global__ void BoysDeviceDemoLadder32Kernel(
     float* out,
     std::size_t count,
     int capacity,
-    int* status,
-    double multiplier) {
+    int* status) {
     const std::size_t i = Thread();
 
     if (i >= count)
@@ -261,7 +246,7 @@ __global__ void BoysDeviceDemoLadder32Kernel(
     float ladder[boys::kMaxBoysOrder + 1];
 
     const boys::BoysDeviceStatus got =
-        boys::BoysDeviceAllOrdersF32(tables, order, x, ladder, capacity, multiplier);
+        boys::BoysDeviceAllOrdersF32(tables, order, x, ladder, capacity);
     status[i] = static_cast<int>(got);
 
     if (got != boys::BoysDeviceStatus::kSuccess)
@@ -282,10 +267,9 @@ extern "C" int BoysDeviceDemoLadder32(const boys::BoysDeviceTables* tables,
                                       float* out,
                                       std::size_t count,
                                       int capacity,
-                                      int* status,
-                                      double multiplier) {
+                                      int* status) {
     BoysDeviceDemoLadder32Kernel<<<Blocks(count), 256>>>(*tables, n, rho, d2, out, count, capacity,
-                                                        status, multiplier);
+                                                        status);
     return static_cast<int>(cudaGetLastError());
 }
 
@@ -295,8 +279,7 @@ __global__ void BoysDeviceDemoAllN32Kernel(
     const double* d2,
     float* out,
     std::size_t count,
-    int* status,
-    double multiplier) {
+    int* status) {
     const std::size_t i = Thread();
 
     if (i >= count)
@@ -308,7 +291,7 @@ __global__ void BoysDeviceDemoAllN32Kernel(
     float ladder[boys::kMaxBoysOrder + 1];
 
     const boys::BoysDeviceStatus got =
-        boys::BoysDeviceAllNF32<boys::kMaxBoysOrder>(tables, x, ladder, multiplier);
+        boys::BoysDeviceAllNF32<boys::kMaxBoysOrder>(tables, x, ladder);
     status[i] = static_cast<int>(got);
 
     if (got != boys::BoysDeviceStatus::kSuccess)
@@ -327,10 +310,8 @@ extern "C" int BoysDeviceDemoAllN32(const boys::BoysDeviceTables* tables,
                                     const double* d2,
                                     float* out,
                                     std::size_t count,
-                                    int* status,
-                                    double multiplier) {
-    BoysDeviceDemoAllN32Kernel<<<Blocks(count), 256>>>(
-        *tables, rho, d2, out, count, status, multiplier);
+                                    int* status) {
+    BoysDeviceDemoAllN32Kernel<<<Blocks(count), 256>>>(*tables, rho, d2, out, count, status);
     return static_cast<int>(cudaGetLastError());
 }
 
@@ -341,8 +322,7 @@ __global__ void BoysDeviceDemoEach32Kernel(
     const double* d2,
     float* out,
     std::size_t count,
-    int* status,
-    double multiplier) {
+    int* status) {
     const std::size_t i = Thread();
 
     if (i >= count)
@@ -356,7 +336,7 @@ __global__ void BoysDeviceDemoEach32Kernel(
     const boys::BoysDeviceStatus got =
         boys::BoysDeviceEachOrderF32(tables, order, x, [&](int l, float v) {
             out[BlockStart(i) + static_cast<std::size_t>(l)] = v;
-        }, multiplier);
+        });
     status[i] = static_cast<int>(got);
 }
 
@@ -366,10 +346,8 @@ extern "C" int BoysDeviceDemoEach32(const boys::BoysDeviceTables* tables,
                                     const double* d2,
                                     float* out,
                                     std::size_t count,
-                                    int* status,
-                                    double multiplier) {
-    BoysDeviceDemoEach32Kernel<<<Blocks(count), 256>>>(
-        *tables, n, rho, d2, out, count, status, multiplier);
+                                    int* status) {
+    BoysDeviceDemoEach32Kernel<<<Blocks(count), 256>>>(*tables, n, rho, d2, out, count, status);
     return static_cast<int>(cudaGetLastError());
 }
 
@@ -380,8 +358,7 @@ __global__ void BoysDeviceDemoSingle32Kernel(
     const double* d2,
     float* out,
     std::size_t count,
-    int* status,
-    double multiplier) {
+    int* status) {
     const std::size_t i = Thread();
 
     if (i >= count)
@@ -392,8 +369,7 @@ __global__ void BoysDeviceDemoSingle32Kernel(
     const float x = static_cast<float>(rho[i] * d2[i]);
     float value = 0.0f;
 
-    const boys::BoysDeviceStatus got =
-        boys::BoysDeviceSingleF32(tables, n[i], x, &value, multiplier);
+    const boys::BoysDeviceStatus got = boys::BoysDeviceSingleF32(tables, n[i], x, &value);
     status[i] = static_cast<int>(got);
 
     if (got == boys::BoysDeviceStatus::kSuccess)
@@ -408,10 +384,8 @@ extern "C" int BoysDeviceDemoSingle32(const boys::BoysDeviceTables* tables,
                                       const double* d2,
                                       float* out,
                                       std::size_t count,
-                                      int* status,
-                                      double multiplier) {
-    BoysDeviceDemoSingle32Kernel<<<Blocks(count), 256>>>(
-        *tables, n, rho, d2, out, count, status, multiplier);
+                                      int* status) {
+    BoysDeviceDemoSingle32Kernel<<<Blocks(count), 256>>>(*tables, n, rho, d2, out, count, status);
     return static_cast<int>(cudaGetLastError());
 }
 
@@ -425,8 +399,7 @@ __global__ void BoysDeviceDemoSingle32ExpKernel(
     const double* d2,
     float* out,
     std::size_t count,
-    int* status,
-    double multiplier) {
+    int* status) {
     const std::size_t i = Thread();
 
     if (i >= count)
@@ -437,8 +410,7 @@ __global__ void BoysDeviceDemoSingle32ExpKernel(
     const float x = static_cast<float>(rho[i] * d2[i]);
     float value = 0.0f;
 
-    const boys::BoysDeviceStatus got =
-        boys::BoysDeviceSingleF32<kExp>(tables, n[i], x, &value, multiplier);
+    const boys::BoysDeviceStatus got = boys::BoysDeviceSingleF32<kExp>(tables, n[i], x, &value);
     status[i] = static_cast<int>(got);
 
     if (got == boys::BoysDeviceStatus::kSuccess)
@@ -453,10 +425,9 @@ extern "C" int BoysDeviceDemoSingle32Fast(const boys::BoysDeviceTables* tables,
                                           const double* d2,
                                           float* out,
                                           std::size_t count,
-                                          int* status,
-                                          double multiplier) {
+                                          int* status) {
     BoysDeviceDemoSingle32ExpKernel<boys::RegionBExp::kFast>
-        <<<Blocks(count), 256>>>(*tables, n, rho, d2, out, count, status, multiplier);
+        <<<Blocks(count), 256>>>(*tables, n, rho, d2, out, count, status);
     return static_cast<int>(cudaGetLastError());
 }
 
@@ -472,8 +443,7 @@ __global__ void BoysDeviceDemoLadder16Kernel(
     __half* out,
     std::size_t count,
     int capacity,
-    int* status,
-    double multiplier) {
+    int* status) {
     const std::size_t i = Thread();
 
     if (i >= count)
@@ -486,7 +456,7 @@ __global__ void BoysDeviceDemoLadder16Kernel(
     __half ladder[boys::kMaxBoysOrder + 1];
 
     const boys::BoysDeviceStatus got =
-        boys::BoysDeviceAllOrdersF16(tables, order, x, ladder, capacity, multiplier);
+        boys::BoysDeviceAllOrdersF16(tables, order, x, ladder, capacity);
     status[i] = static_cast<int>(got);
 
     if (got != boys::BoysDeviceStatus::kSuccess)
@@ -507,10 +477,9 @@ extern "C" int BoysDeviceDemoLadder16(const boys::BoysDeviceTables* tables,
                                       void* out,
                                       std::size_t count,
                                       int capacity,
-                                      int* status,
-                                      double multiplier) {
+                                      int* status) {
     BoysDeviceDemoLadder16Kernel<<<Blocks(count), 256>>>(
-        *tables, n, rho, d2, static_cast<__half*>(out), count, capacity, status, multiplier);
+        *tables, n, rho, d2, static_cast<__half*>(out), count, capacity, status);
     return static_cast<int>(cudaGetLastError());
 }
 
@@ -520,8 +489,7 @@ __global__ void BoysDeviceDemoAllN16Kernel(
     const double* d2,
     __half* out,
     std::size_t count,
-    int* status,
-    double multiplier) {
+    int* status) {
     const std::size_t i = Thread();
 
     if (i >= count)
@@ -533,7 +501,7 @@ __global__ void BoysDeviceDemoAllN16Kernel(
     __half ladder[boys::kMaxBoysOrder + 1];
 
     const boys::BoysDeviceStatus got =
-        boys::BoysDeviceAllNF16<boys::kMaxBoysOrder>(tables, x, ladder, multiplier);
+        boys::BoysDeviceAllNF16<boys::kMaxBoysOrder>(tables, x, ladder);
     status[i] = static_cast<int>(got);
 
     if (got != boys::BoysDeviceStatus::kSuccess)
@@ -552,10 +520,9 @@ extern "C" int BoysDeviceDemoAllN16(const boys::BoysDeviceTables* tables,
                                     const double* d2,
                                     void* out,
                                     std::size_t count,
-                                    int* status,
-                                    double multiplier) {
+                                    int* status) {
     BoysDeviceDemoAllN16Kernel<<<Blocks(count), 256>>>(
-        *tables, rho, d2, static_cast<__half*>(out), count, status, multiplier);
+        *tables, rho, d2, static_cast<__half*>(out), count, status);
     return static_cast<int>(cudaGetLastError());
 }
 
@@ -566,8 +533,7 @@ __global__ void BoysDeviceDemoEach16Kernel(
     const double* d2,
     __half* out,
     std::size_t count,
-    int* status,
-    double multiplier) {
+    int* status) {
     const std::size_t i = Thread();
 
     if (i >= count)
@@ -581,7 +547,7 @@ __global__ void BoysDeviceDemoEach16Kernel(
     const boys::BoysDeviceStatus got =
         boys::BoysDeviceEachOrderF16(tables, order, x, [&](int l, __half v) {
             out[BlockStart(i) + static_cast<std::size_t>(l)] = v;
-        }, multiplier);
+        });
     status[i] = static_cast<int>(got);
 }
 
@@ -591,10 +557,9 @@ extern "C" int BoysDeviceDemoEach16(const boys::BoysDeviceTables* tables,
                                     const double* d2,
                                     void* out,
                                     std::size_t count,
-                                    int* status,
-                                    double multiplier) {
+                                    int* status) {
     BoysDeviceDemoEach16Kernel<<<Blocks(count), 256>>>(
-        *tables, n, rho, d2, static_cast<__half*>(out), count, status, multiplier);
+        *tables, n, rho, d2, static_cast<__half*>(out), count, status);
     return static_cast<int>(cudaGetLastError());
 }
 
@@ -605,8 +570,7 @@ __global__ void BoysDeviceDemoSingle16Kernel(
     const double* d2,
     __half* out,
     std::size_t count,
-    int* status,
-    double multiplier) {
+    int* status) {
     const std::size_t i = Thread();
 
     if (i >= count)
@@ -617,8 +581,7 @@ __global__ void BoysDeviceDemoSingle16Kernel(
     const __half x = __float2half(static_cast<float>(rho[i] * d2[i]));
     __half value = __float2half(0.0f);
 
-    const boys::BoysDeviceStatus got =
-        boys::BoysDeviceSingleF16(tables, n[i], x, &value, multiplier);
+    const boys::BoysDeviceStatus got = boys::BoysDeviceSingleF16(tables, n[i], x, &value);
     status[i] = static_cast<int>(got);
 
     if (got == boys::BoysDeviceStatus::kSuccess)
@@ -633,10 +596,9 @@ extern "C" int BoysDeviceDemoSingle16(const boys::BoysDeviceTables* tables,
                                       const double* d2,
                                       void* out,
                                       std::size_t count,
-                                      int* status,
-                                      double multiplier) {
+                                      int* status) {
     BoysDeviceDemoSingle16Kernel<<<Blocks(count), 256>>>(
-        *tables, n, rho, d2, static_cast<__half*>(out), count, status, multiplier);
+        *tables, n, rho, d2, static_cast<__half*>(out), count, status);
     return static_cast<int>(cudaGetLastError());
 }
 #endif // BoysFp16
@@ -665,8 +627,7 @@ extern "C" int BoysDeviceDemoSingle16(const boys::BoysDeviceTables* tables,
         VALUE* out,                                                                               \
         std::size_t count,                                                                        \
         int capacity,                                                                             \
-        int* status,                                                                              \
-        double multiplier) {                                                                      \
+        int* status) {                                                                            \
         const std::size_t i = Thread();                                                           \
                                                                                                   \
         if (i >= count)                                                                           \
@@ -679,7 +640,7 @@ extern "C" int BoysDeviceDemoSingle16(const boys::BoysDeviceTables* tables,
         VALUE ladder[boys::kMaxBoysOrder + 1];                                                    \
                                                                                                   \
         const boys::BoysDeviceStatus got =                                                        \
-            boys::ENTRY(tables, order, x, ladder, capacity, multiplier);                          \
+            boys::ENTRY(tables, order, x, ladder, capacity);                                      \
         status[i] = static_cast<int>(got);                                                        \
                                                                                                   \
         if (got != boys::BoysDeviceStatus::kSuccess)                                              \
@@ -700,10 +661,9 @@ extern "C" int BoysDeviceDemoSingle16(const boys::BoysDeviceTables* tables,
                                                 VALUE* out,                                       \
                                                 std::size_t count,                                \
                                                 int capacity,                                     \
-                                                int* status,                                      \
-                                                double multiplier) {                              \
+                                                int* status) {                                    \
         BoysDeviceDemoLadder##SUFFIX##Kernel<<<Blocks(count), 256>>>(                             \
-            *tables, n, rho, d2, out, count, capacity, status, multiplier);                       \
+            *tables, n, rho, d2, out, count, capacity, status);                                   \
         return static_cast<int>(cudaGetLastError());                                              \
     }
 
@@ -744,8 +704,4 @@ extern "C" int BoysDeviceDemoStatusOrderOutOfRange() {
 
 extern "C" int BoysDeviceDemoStatusCapacityTooSmall() {
     return static_cast<int>(boys::BoysDeviceStatus::kCapacityTooSmall);
-}
-
-extern "C" int BoysDeviceDemoStatusMultiplierNotResident() {
-    return static_cast<int>(boys::BoysDeviceStatus::kMultiplierNotResident);
 }

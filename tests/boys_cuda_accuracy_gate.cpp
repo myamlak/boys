@@ -2151,8 +2151,7 @@ void MeasureDeviceLadder64(
                 double*,
                 std::size_t,
                 int,
-                int*,
-                double),
+                int*),
     boys::BoysStatus (*launch)(const int*, const double*, double*, std::size_t, void*)) {
     const std::size_t count = ref.count;
     const int nmax = boys::kMaxBoysOrder;
@@ -2168,9 +2167,6 @@ void MeasureDeviceLadder64(
     dD2.Upload(grid.d2);
     dOut.Upload(std::vector<double>(family, 0.0));
     dStatus.Upload(std::vector<int>(cells, -1));
-    // The launcher is reached through a pointer, so its accuracy argument - which
-    // the demo header still declares, defaulted, for the direct calls - has to be
-    // spelled here.
     CheckDemo(demo(&tables,
                    dN.get(),
                    dRho.get(),
@@ -2178,8 +2174,7 @@ void MeasureDeviceLadder64(
                    dOut.get(),
                    cells,
                    nmax + 1,
-                   dStatus.get(),
-                   boys::kBoysFullAccuracyMultiplier),
+                   dStatus.get()),
               name);
     std::vector<double> out(family);
     std::vector<int> status(cells);
@@ -2242,8 +2237,7 @@ void MeasureDeviceLadder32(
                 float*,
                 std::size_t,
                 int,
-                int*,
-                double),
+                int*),
     boys::BoysStatus (*launch)(const int*, const double*, float*, std::size_t, void*)) {
     const std::size_t count = ref.count;
     const int nmax = boys::kMaxBoysOrder;
@@ -2259,9 +2253,6 @@ void MeasureDeviceLadder32(
     dD2.Upload(grid.d2);
     dOut.Upload(std::vector<float>(family, 0.0f));
     dStatus.Upload(std::vector<int>(cells, -1));
-    // The launcher is reached through a pointer, so its accuracy argument - which
-    // the demo header still declares, defaulted, for the direct calls - has to be
-    // spelled here.
     CheckDemo(demo(&tables,
                    dN.get(),
                    dRho.get(),
@@ -2269,8 +2260,7 @@ void MeasureDeviceLadder32(
                    dOut.get(),
                    cells,
                    nmax + 1,
-                   dStatus.get(),
-                   boys::kBoysFullAccuracyMultiplier),
+                   dStatus.get()),
               name);
     std::vector<float> out(family);
     std::vector<int> status(cells);

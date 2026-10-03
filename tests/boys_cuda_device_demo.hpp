@@ -8,11 +8,6 @@
 // accepted. A family launcher writes kMaxBoysOrder + 1 values per element, in
 // the element's own block, and a single launcher writes one value per element;
 // \c status receives the entry's own status per element.
-//
-// The rung is the last argument, defaulted to m = 1: the entry refuses a rung
-// whose degree tables are not the resident ones, and a default naming a relaxed
-// rung would turn that refusal into a silent choice of whichever rung happened
-// to be resident.
 
 #include "boys/boys_device_tables.hpp"
 
@@ -26,16 +21,14 @@ extern "C" int BoysDeviceDemoLadder16(const boys::BoysDeviceTables* tables,
                                       void* out,
                                       std::size_t count,
                                       int capacity,
-                                      int* status,
-                                      double multiplier = boys::kBoysFullAccuracyMultiplier);
+                                      int* status);
 
 extern "C" int BoysDeviceDemoAllN16(const boys::BoysDeviceTables* tables,
                                     const double* rho,
                                     const double* d2,
                                     void* out,
                                     std::size_t count,
-                                    int* status,
-                                    double multiplier = boys::kBoysFullAccuracyMultiplier);
+                                    int* status);
 
 extern "C" int BoysDeviceDemoEach16(const boys::BoysDeviceTables* tables,
                                     const int* n,
@@ -43,8 +36,7 @@ extern "C" int BoysDeviceDemoEach16(const boys::BoysDeviceTables* tables,
                                     const double* d2,
                                     void* out,
                                     std::size_t count,
-                                    int* status,
-                                    double multiplier = boys::kBoysFullAccuracyMultiplier);
+                                    int* status);
 
 extern "C" int BoysDeviceDemoSingle16(const boys::BoysDeviceTables* tables,
                                       const int* n,
@@ -52,8 +44,7 @@ extern "C" int BoysDeviceDemoSingle16(const boys::BoysDeviceTables* tables,
                                       const double* d2,
                                       void* out,
                                       std::size_t count,
-                                      int* status,
-                                      double multiplier = boys::kBoysFullAccuracyMultiplier);
+                                      int* status);
 #endif // BoysFp16
 
 extern "C" int BoysDeviceDemoLadder32(const boys::BoysDeviceTables* tables,
@@ -63,16 +54,14 @@ extern "C" int BoysDeviceDemoLadder32(const boys::BoysDeviceTables* tables,
                                       float* out,
                                       std::size_t count,
                                       int capacity,
-                                      int* status,
-                                      double multiplier = boys::kBoysFullAccuracyMultiplier);
+                                      int* status);
 
 extern "C" int BoysDeviceDemoAllN32(const boys::BoysDeviceTables* tables,
                                     const double* rho,
                                     const double* d2,
                                     float* out,
                                     std::size_t count,
-                                    int* status,
-                                    double multiplier = boys::kBoysFullAccuracyMultiplier);
+                                    int* status);
 
 extern "C" int BoysDeviceDemoEach32(const boys::BoysDeviceTables* tables,
                                     const int* n,
@@ -80,8 +69,7 @@ extern "C" int BoysDeviceDemoEach32(const boys::BoysDeviceTables* tables,
                                     const double* d2,
                                     float* out,
                                     std::size_t count,
-                                    int* status,
-                                    double multiplier = boys::kBoysFullAccuracyMultiplier);
+                                    int* status);
 
 extern "C" int BoysDeviceDemoSingle32(const boys::BoysDeviceTables* tables,
                                       const int* n,
@@ -89,8 +77,7 @@ extern "C" int BoysDeviceDemoSingle32(const boys::BoysDeviceTables* tables,
                                       const double* d2,
                                       float* out,
                                       std::size_t count,
-                                      int* status,
-                                      double multiplier = boys::kBoysFullAccuracyMultiplier);
+                                      int* status);
 
 // The float single entry with the lane's other region-B exponential, so the
 // gate measures both options of the entry and the difference between them.
@@ -100,8 +87,7 @@ extern "C" int BoysDeviceDemoSingle32Fast(const boys::BoysDeviceTables* tables,
                                           const double* d2,
                                           float* out,
                                           std::size_t count,
-                                          int* status,
-                                          double multiplier = boys::kBoysFullAccuracyMultiplier);
+                                          int* status);
 
 extern "C" int BoysDeviceDemoLadder64(const boys::BoysDeviceTables* tables,
                                       const int* n,
@@ -110,16 +96,14 @@ extern "C" int BoysDeviceDemoLadder64(const boys::BoysDeviceTables* tables,
                                       double* out,
                                       std::size_t count,
                                       int capacity,
-                                      int* status,
-                                      double multiplier = boys::kBoysFullAccuracyMultiplier);
+                                      int* status);
 
 extern "C" int BoysDeviceDemoAllN64(const boys::BoysDeviceTables* tables,
                                     const double* rho,
                                     const double* d2,
                                     double* out,
                                     std::size_t count,
-                                    int* status,
-                                    double multiplier = boys::kBoysFullAccuracyMultiplier);
+                                    int* status);
 
 extern "C" int BoysDeviceDemoEach64(const boys::BoysDeviceTables* tables,
                                     const int* n,
@@ -127,8 +111,7 @@ extern "C" int BoysDeviceDemoEach64(const boys::BoysDeviceTables* tables,
                                     const double* d2,
                                     double* out,
                                     std::size_t count,
-                                    int* status,
-                                    double multiplier = boys::kBoysFullAccuracyMultiplier);
+                                    int* status);
 
 extern "C" int BoysDeviceDemoSingle64(const boys::BoysDeviceTables* tables,
                                       const int* n,
@@ -136,16 +119,15 @@ extern "C" int BoysDeviceDemoSingle64(const boys::BoysDeviceTables* tables,
                                       const double* d2,
                                       double* out,
                                       std::size_t count,
-                                      int* status,
-                                      double multiplier = boys::kBoysFullAccuracyMultiplier);
+                                      int* status);
 
 // The partition and route axes of the ladder shape, one launcher per entry.
 //
 // One spelling of the parameter list, instantiated per entry: the launcher's
 // shape and the definition's are then the same declaration rather than two that
 // have to agree, which is what this header is for. The entries are the ladder's
-// own — the same parameters, the same capacity and the same rung — over another
-// partition, another route or the other stored form.
+// own — the same parameters and the same capacity — over another partition,
+// another route or the other stored form.
 #define BOYS_DEVICE_DEMO_LADDER_DECL(SUFFIX, VALUE)                                                \
     extern "C" int BoysDeviceDemoLadder##SUFFIX(const boys::BoysDeviceTables* tables,              \
                                                 const int* n,                                      \
@@ -154,9 +136,7 @@ extern "C" int BoysDeviceDemoSingle64(const boys::BoysDeviceTables* tables,
                                                 VALUE* out,                                        \
                                                 std::size_t count,                                 \
                                                 int capacity,                                      \
-                                                int* status,                                       \
-                                                double multiplier =                                \
-                                                    boys::kBoysFullAccuracyMultiplier);
+                                                int* status);
 
 BOYS_DEVICE_DEMO_LADDER_DECL(64Narrow, double)
 BOYS_DEVICE_DEMO_LADDER_DECL(64NarrowMono, double)
@@ -188,4 +168,3 @@ BOYS_DEVICE_DEMO_LADDER_DECL(32UniformRatHorner, float)
 extern "C" int BoysDeviceDemoStatusSuccess();
 extern "C" int BoysDeviceDemoStatusOrderOutOfRange();
 extern "C" int BoysDeviceDemoStatusCapacityTooSmall();
-extern "C" int BoysDeviceDemoStatusMultiplierNotResident();
