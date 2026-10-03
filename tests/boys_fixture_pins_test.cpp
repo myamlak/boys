@@ -70,6 +70,8 @@ constexpr const char* kFixtureInForce =
     "the division-form fixture (tests/build_defaults_division_form.hpp)";
 #elif defined(BOYS_BUILD_DEFAULTS_TEST_FIXTURE_FIT_GRANULARITY)
     "the fit-granularity fixture (tests/build_defaults_fit_granularity.hpp)";
+#elif defined(BOYS_BUILD_DEFAULTS_TEST_ROWS)
+    "the row-list fixture (tests/build_defaults_rows.hpp)";
 #elif defined(BOYS_BUILD_DEFAULTS_SHIPPED)
     "none: the committed header, and the shipped choices";
 #else

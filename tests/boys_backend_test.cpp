@@ -290,17 +290,77 @@ static_assert(boys::kDefaultEvalScheme == boys::EvalScheme::kHorner,
 // A replacement is read instead of the committed file rather than beside it, so the names
 // it carries are this build's. A replacement naming the shipped set, and a seam that
 // stopped delivering the file, both come out as the committed values.
-constexpr bool kCoarsestDefaultsInForce =
+//
+// THE FIVE ARE ONE POINT, AND THE CLASS TABLE IS THE REST OF THE ANSWER. A replacement may
+// carry BOYS_BUILD_DEFAULT_ROWS, and where it does the table is expanded from those rows
+// INSTEAD of from the five (boys/boys.hpp expands one branch or the other, never both), so a
+// replacement whose five are the shipped five and whose rows move a class has chosen
+// something: the class policy. A guard reading only the five refuses exactly the file the
+// option probe writes - the emitted file carries the build's own five as the point a class
+// with no row resolves to, and its rows are the run's winners - which is the shape this
+// block was widened for. Both levels are read below, and a build that chose nothing at
+// either level is the one this refuses.
+constexpr bool kCoarsestFiveInForce =
     boys::kDefaultFitRoute == boys::FitRoute::kChebyshev &&
     boys::kDefaultEvalScheme == boys::EvalScheme::kHorner &&
     boys::kDefaultPackAxis == boys::PackAxis::kArguments &&
     boys::kDefaultDivisionForm == boys::DivisionForm::kRefinedReciprocal &&
     boys::kDefaultFitGranularity == boys::FitGranularity::kNarrow;
 
-static_assert(!kCoarsestDefaultsInForce,
-              "the defaults header in force names all five shipped values, so this build has "
-              "chosen nothing: point BOYS_BUILD_DEFAULTS at a header that moves at least one "
-              "axis, or unset it to build the shipped configuration");
+// Whether the class table answers this class with the combination the shipped build composes
+// from the shipped five.
+//
+// Read through detail::DefaultPolicyRow rather than through DefaultPolicy, because a class
+// the table carries no row for is not a class this question is about: DefaultPolicyFor
+// asserts on it - that absence is the seam's own build error - and a replacement is free to
+// carry fewer classes than the shipped table composes. The committed list carries the ten
+// classes the host's entries reach; the five-composed table carries fifteen; this guard reads
+// all fifteen whichever is in force. A class this table does not name is no evidence that the
+// replacement chose nothing, so it answers true here.
+template <boys::Precision kLane, boys::Shape kShape>
+constexpr bool ClassIsTheShippedCombination() noexcept
+{
+    using Row = boys::detail::DefaultPolicyRow<boys::Device::kHost, kLane, kShape>;
+
+    if constexpr (!Row::kCarried)
+    {
+        return true;
+    }
+    else
+    {
+        using Policy = typename Row::Type;
+
+        return Policy::kRoute == boys::FitRoute::kChebyshev &&
+               Policy::kScheme == boys::EvalScheme::kHorner &&
+               Policy::kBudget == boys::detail::LaneFallbackBudget(kLane) &&
+               Policy::kPack == boys::PackAxis::kArguments &&
+               Policy::kGranularity == boys::FitGranularity::kNarrow &&
+               Policy::kDivision == boys::DivisionForm::kRefinedReciprocal;
+    }
+}
+
+constexpr bool kCoarsestClassTableInForce =
+    ClassIsTheShippedCombination<boys::Precision::kFp64, boys::Shape::kSingle>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp64, boys::Shape::kFixedN>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp64, boys::Shape::kAllN>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp64, boys::Shape::kAllNAtOrders>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp64, boys::Shape::kAllOrders>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp32, boys::Shape::kSingle>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp32, boys::Shape::kFixedN>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp32, boys::Shape::kAllN>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp32, boys::Shape::kAllNAtOrders>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp32, boys::Shape::kAllOrders>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp16, boys::Shape::kSingle>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp16, boys::Shape::kFixedN>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp16, boys::Shape::kAllN>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp16, boys::Shape::kAllNAtOrders>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp16, boys::Shape::kAllOrders>();
+
+static_assert(!(kCoarsestFiveInForce && kCoarsestClassTableInForce),
+              "the defaults header in force names all five shipped values and answers every class "
+              "with the shipped combination, so this build has chosen nothing: point "
+              "BOYS_BUILD_DEFAULTS at a header that moves at least one of the five or that carries "
+              "a row moving a class, or unset it to build the shipped configuration");
 
 #if defined(BOYS_BUILD_DEFAULTS_TEST_FIXTURE)
 // The test's own override (tests/build_defaults_tuned.hpp), pinned by value so a configure
@@ -383,6 +443,18 @@ TEST(BackendTest, TheUnnamedCallIsTheDefaultThisBuildWasCompiledWith) {
     // assertion says an unnamed call follows the build's header.
     EXPECT_GT(moved, 0u) << "the fixture moves the scheme, so an unnamed call cannot hand back "
                             "the shipped policy's values";
+#elif defined(BOYS_BUILD_DEFAULTS_TEST_ROWS)
+    // The row-list fixture's five ARE the shipped five, so a value that differs here is the
+    // class's row answering where the five would have - which is the whole difference
+    // between a build whose table carries rows and one whose five are the only answer, and
+    // the assertion this branch exists for. Its row for the class this entry belongs to
+    // moves the scheme to the split Clenshaw recurrence, the move the tuned fixture makes
+    // above and for the same reason: different rounding, so the values move in their last
+    // places.
+    EXPECT_GT(moved, 0u) << "the row-list fixture moves the scheme of the class this entry "
+                            "belongs to, so an unnamed call cannot hand back the shipped policy's "
+                            "values: the row the build's table carries for the class is not being "
+                            "read";
 #endif
 }
 
