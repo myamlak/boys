@@ -807,13 +807,15 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
          "lane's too, before the format's own half digit is added to it"},
         {Precision::kFp32Device, "fp32-device", 1.5e-7, 8e-8, 0.0,
          "plus 8e-8 under the fast region-B exponential, which is the corrected seed's own "
-         "contribution. This row carries no form dimension and does not need one: the division "
-         "form is a host policy field and is named by none of the CUDA surface's headers at this "
-         "revision, so the device lane has no form to key a figure by. A revision that gave the "
-         "device entries the axis would owe this row the same measurement the two rows above "
-         "carry"},
-        // The device's double lane is the fourth lane that names no division form, and the
-        // figure it publishes is the double lane's own: the entries of this lane read the
+         "contribution. This row states one figure, read at this lane's own default form. The "
+         "device lane carries the axis: the form is a trailing parameter of every launched "
+         "entry, and DeviceOptionAxis::kDivision crosses each entry of the device option space "
+         "with all three (boys/boys_cuda_options.hpp). What the lane does not carry is a figure "
+         "measured per form, so the number above is this lane's at the default form and the "
+         "other two forms are owed the measurement the two rows above carry"},
+        // The device's double lane carries the axis like every other device lane, and states
+        // one figure for it; the figure it publishes is the double lane's own: the entries of
+        // this lane read the
         // double lane's piece tables and its region-B seed, and the bound the CUDA surface
         // states for them is 5.5e-14, which is the number the host double lane's row carries
         // (boys/boys_cuda.hpp, SingleF64 and AllOrdersF64, each stating "|error| <= 5.5e-14").
@@ -840,9 +842,10 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
          "lane's bodies and stores half, so it cannot be more accurate than the format it stores "
          "in, and where the value falls at or below the format's floor no accuracy is claimed at "
          "all. The base is the figure the device lane's own half entries publish "
-         "(boys/boys_cuda.hpp, SingleF16 and AllOrdersF16). This row carries no form dimension "
-         "for the reason the fp32-device row beside it gives: the division form is a host policy "
-         "field and is named by none of the CUDA surface's headers at this revision",
+         "(boys/boys_cuda.hpp, SingleF16 and AllOrdersF16). This row states one figure, read at "
+         "this lane's own default form, for the reason the fp32-device row beside it gives: the "
+         "device lane carries the axis and every entry of its option space runs every form, but "
+         "no device figure has been measured per form, and the measurement is owed",
          ""},
     }};
 

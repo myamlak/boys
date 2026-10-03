@@ -177,8 +177,9 @@ and bf16 lanes run that arithmetic and round at the boundary, so the same term s
 base, before the half digit above is added.
 
 `BoysAccuracyGuaranteed` takes the form as an argument and answers the figure for the form you name.
-The device lane carries no form to key one by: the axis is a host policy field the CUDA surface does
-not name.
+The device lane's row is read at that lane's own default form: the CUDA surface's entries carry the
+axis and every entry of the device option space runs every form, but no device figure has been
+measured per form, so the lane claims none for the other two.
 
 "ULP" is the last representable digit of the result in the format concerned.
 

@@ -704,8 +704,9 @@ using DefaultPolicy = typename DefaultPolicyFor<kPrecision, kShape, kDevice>::Ty
 /// on the lanes where that costs accuracy the plain form's figure is the base
 /// plus this term, and \c BoysAccuracyGuaranteed answers it when the caller
 /// names that form. It is 0.0 on every lane whose forms deliver one figure: the
-/// double lane's plain form stays inside the base everywhere, and the device
-/// lane names no form at all.
+/// double lane's plain form stays inside the base everywhere, and on the device
+/// lane, which carries the axis but has no figure measured per form, the row's
+/// one figure is read at that lane's own default form.
 ///
 /// \ingroup boys
 struct LaneContractInfo {
