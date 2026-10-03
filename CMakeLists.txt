@@ -1283,8 +1283,14 @@ if (BUILD_BENCHMARKS)
         # the surface a consumer calls; this tool exists so a person can get the
         # same report at a terminal without writing a program. Local-only by
         # construction: it needs the device.
+        #
+        # It links the host library beside the device one because the report it
+        # prints reads the host's own tables: the division forms a device row is
+        # the member of are boys::BoysDivisionForms() (boys/boys.hpp), and a tool
+        # that printed the space without them would be printing a projection of
+        # this library rather than this library's report.
         add_executable(boys-device-probe benchmarks/boys_device_probe.cpp)
-        target_link_libraries(boys-device-probe PRIVATE boys-cuda)
+        target_link_libraries(boys-device-probe PRIVATE boys-cuda boys)
         target_compile_features(boys-device-probe PRIVATE cxx_std_20)
         boys_strict_warnings(boys-device-probe)
     endif()

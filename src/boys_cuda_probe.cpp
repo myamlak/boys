@@ -414,11 +414,16 @@ template struct EveryValue<StatusIsNamed, DeviceProbeStatus>;
 /// One row of the library's report, with the label a probe row prints.
 struct EntryInfo {
     ProbeEntry entry;
-    const char* name;
+    std::string name;
     const char* precision;
     const char* shape;
     ProbeQuestion question;
     bool inKernel;
+
+    /// The division form this row's ladder steps divide in: the coordinate that
+    /// makes two rows of one entry different rows, and the value every region of
+    /// this row is dispatched at (\c ProbeTimeRequest::form).
+    DivisionForm form;
 
     /// The bound the library documents for this entry's precision, read from the library's own
     /// tables rather than measured here: what a lane delivers on a card is the accuracy gate's
@@ -811,9 +816,10 @@ std::string ClassNote(const DeviceProbeMeasurement& clause,
         "the caller has already chosen when they make the call: no entry of this class is an "
         "alternative to one of another class, and no entry of it was ordered against one. What "
         "varies inside the class is what the library picks on the caller's behalf — the fit route, "
-        "the evaluation scheme, the partition and the packing axis — so its winner is the fastest "
-        "%s entry of this question, at the bound its own row states, and the bound "
-        "column above is that figure.",
+        "the evaluation scheme, the partition and the packing axis — and the division form, which "
+        "the caller may name and which the build's own default supplies when they name none. So "
+        "its winner is the fastest %s row of this question, at the bound its own row states, and "
+        "the bound column above is that figure.",
         clause.precision.c_str(),
         asked.c_str(),
         clause.precision.c_str());
@@ -831,8 +837,66 @@ std::string ClassNote(const DeviceProbeMeasurement& clause,
     return text;
 }
 
+/// The name one row of this probe's option table is printed under: the library's own name for the
+/// entry, with the division form's own name appended where the row does not run the build's default
+/// form.
+///
+/// The row that carries no form segment is the row a caller who names no form reaches — every
+/// launched entry's trailing parameter defaults to \c kDefaultDivisionForm and every
+/// device-callable entry's template argument does too (boys_cuda.hpp) — so the form left
+/// unmarked is the form that row really divides in, and the two other members of the axis are
+/// marked. That is the option probe's own grammar for its cells (src/boys_probe.cpp,
+/// \c CellName) and it is read here for the same reason it is read there: without the segment,
+/// three rows of one entry would print one name, and a name is what the rankings beside this
+/// table conclude on.
+///
+/// The segment is the library's own spelling of the member (\c DivisionFormInfo::name,
+/// \c BoysDivisionForms) and not a second list here, so a form renamed in the library renames its
+/// rows.
+///
+/// \param option the library's row this probe row is a member of
+/// \param form   the division form this probe row is the member at
+///
+/// \returns the name, which is the entry's own where \p form is the build's default
+std::string ProbeRowName(const DeviceOptionInfo& option, DivisionForm form) {
+    std::string name = option.name;
+
+    if (form == kDefaultDivisionForm)
+    {
+        return name;
+    }
+
+    for (const DivisionFormInfo& member : BoysDivisionForms())
+    {
+        if (member.form == form)
+        {
+            name += "-";
+            name += member.name;
+            return name;
+        }
+    }
+
+    // A form outside the library's own enumeration cannot arrive: BoysDivisionForms() is
+    // what the crossing below reads the axis off, and this function is called with a
+    // member of it. Named rather than left to fall through, so that a value that did
+    // arrive is visible in the name it produces.
+    name += Text("-form-%d", static_cast<int>(form));
+    return name;
+}
+
 /// The option table, projected from the library's own report: one probe row per report row this
-/// build serves, and one unoffered entry per report row it does not, carrying the library's reason.
+/// build serves crossed with one member of the library's division-form axis, and one unoffered
+/// entry per report row this build does not serve, carrying the library's reason.
+///
+/// **The cross is the whole space and not a sample of it.** Every entry of this surface runs every
+/// form — the form is a trailing parameter of every launched entry and a template argument of every
+/// device-callable one, the axis's own rows say every entry this build carries runs every one of
+/// them (\c DivisionFormInfo, boys.hpp), and the kernel bodies are instantiated from it
+/// (src/boys_cuda_probe_kernels.cu, \c LaunchInKernel and \c LaunchLaunched) — so a row of the
+/// library's table is three rows here and none of the three is a spelling of another. A row this
+/// build does not serve is refused once and not three times: it is not an arithmetic this build can
+/// run at any form, so it stands in \c unoffered under the library's own name and carries the
+/// library's own reason.
 ///
 /// Nothing here names an option the library does not report: a row the library adds appears in this
 /// probe's table, and a row it refuses appears in the probe's list of what this build cannot serve,
@@ -851,13 +915,17 @@ std::vector<EntryInfo> EnumerateEntries(std::vector<std::string>& unoffered,
             continue;
         }
 
-        entries.push_back(EntryInfo{option.entry,
-                                    option.name,
-                                    PrecisionName(option.precision),
-                                    ShapeName(option.shape),
-                                    option.question,
-                                    option.group == DeviceOptionGroup::kDeviceCallable,
-                                    option.bound});
+        for (const DivisionFormInfo& member : BoysDivisionForms())
+        {
+            entries.push_back(EntryInfo{option.entry,
+                                        ProbeRowName(option, member.form),
+                                        PrecisionName(option.precision),
+                                        ShapeName(option.shape),
+                                        option.question,
+                                        option.group == DeviceOptionGroup::kDeviceCallable,
+                                        member.form,
+                                        option.bound});
+        }
     }
 
     return entries;
@@ -1048,11 +1116,12 @@ TimedEntry TimeEntry(const EntryInfo& info,
                      bool baselineFirst = false) {
     TimedEntry timed;
 
-    // The form this row is measured at. It is read off the entry rather than fixed here:
-    // a row is an entry crossed with a form, and the form a row carries is the one
-    // DeviceEntryAxesOf states for its entry, so the region dispatched below runs the
-    // arithmetic the row's own arithmetic column reports.
-    const int form = static_cast<int>(DeviceEntryAxesOf(info.entry).division);
+    // The form this row is measured at: the row's own coordinate and not a value chosen
+    // here, so the region dispatched below runs the arithmetic the row's own axes column
+    // reports. The row is an entry crossed with a form and the form is the crossed axis's
+    // member, so reading it off the entry instead would measure the default form three
+    // times under three names.
+    const int form = static_cast<int>(info.form);
 
     if (!info.inKernel)
     {
@@ -2563,8 +2632,9 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
 
     report.measurements.resize(entries.size());
 
-    // One row of this run's measurement table per entry of the option book this build serves, in
-    // the book's own order, so a round visits them in that order.
+    // One row of this run's measurement table per member of the option space this build serves —
+    // one per entry per division form, the entries in the book's own order and the forms in the
+    // axis's — so a round visits them in that order.
     for (std::size_t index = 0; index < entries.size(); ++index)
     {
         const EntryInfo& info = entries[index];
@@ -2574,6 +2644,7 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
         measurement.precision = info.precision;
         measurement.entryIndex = index;
         measurement.entry = info.entry;
+        measurement.form = info.form;
         measurement.shape = info.shape;
         measurement.question = QuestionName(info.question);
         measurement.route = info.inKernel ? "in-kernel" : "launched";
@@ -3623,12 +3694,17 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
 /// The place this run's grid carries for one member of the space, or nullptr where it
 /// carries none.
 ///
-/// The member is identified by its entry, which is what one row of this run's table is:
-/// a run measures one entry once, so a name and an entry are the same place.
-const DeviceProbeMeasurement* GridPlaceOf(const DeviceProbeReport& report, DeviceEntry entry) {
+/// The member is identified by its entry and its form, which is what one row of this
+/// run's table is: a run measures one entry at one form once, so the pair and the place
+/// are the same member. The name is deliberately not the key — a name is what the
+/// ranking concludes on and what a request selects by, and a member's identity is the
+/// arithmetic it runs rather than the spelling a report gives it.
+const DeviceProbeMeasurement* GridPlaceOf(const DeviceProbeReport& report,
+                                          DeviceEntry entry,
+                                          DivisionForm form) {
     for (const DeviceProbeMeasurement& place : report.measurements)
     {
-        if (place.entry == entry)
+        if (place.entry == entry && place.form == form)
         {
             return &place;
         }
@@ -3639,10 +3715,12 @@ const DeviceProbeMeasurement* GridPlaceOf(const DeviceProbeReport& report, Devic
 
 DeviceOptionClosure DeviceOptionSpaceClosure(const DeviceProbeReport& report) noexcept {
     const std::span<const DeviceOptionInfo> space = BoysDeviceOptions();
+    const std::span<const DivisionFormInfo> forms = BoysDivisionForms();
 
     DeviceOptionClosure closure;
     closure.rows = space.size();
-    closure.total = closure.rows;
+    closure.forms = forms.size();
+    closure.total = closure.rows * closure.forms;
 
     // One flag per (precision, question) the space admits: a table and not a list of
     // keys, so that the third reading of the space below allocates nothing. A class the
@@ -3660,57 +3738,67 @@ DeviceOptionClosure DeviceOptionSpaceClosure(const DeviceProbeReport& report) no
 
     for (const DeviceOptionInfo& row : space)
     {
-        // Whether this run's own request named the row. A request that names nothing
-        // asks for the whole space; one that names entries asks for those.
-        const bool asked = report.options.only.empty() ||
-                           std::find(report.options.only.begin(),
-                                     report.options.only.end(),
-                                     std::string(row.name)) != report.options.only.end();
-
-        // The order is the space's own: a row the build does not serve is refused with
-        // the library's reason and owed, whatever the run did with the others.
-        if (!row.built)
+        // The row is one member per form the library reports, and every count below is
+        // made once per member: the space this closure closes over is the cross and not
+        // its first column.
+        for (const DivisionFormInfo& member : forms)
         {
-            ++closure.refusedAndOwed;
-            continue;
+            // Whether this run's own request named the row. A request that names nothing
+            // asks for the whole space; one that names rows asks for those. The name is
+            // the member's own, so a request that named one form of an entry does not
+            // stand behind the other two.
+            const bool asked =
+                report.options.only.empty() ||
+                std::find(report.options.only.begin(),
+                          report.options.only.end(),
+                          ProbeRowName(row, member.form)) != report.options.only.end();
+
+            // The order is the space's own: a row the build does not serve is refused with
+            // the library's reason and owed, whatever the run did with the others, and it
+            // is owed at every form — one absence is one member of the cross per form.
+            if (!row.built)
+            {
+                ++closure.refusedAndOwed;
+                continue;
+            }
+
+            if (asked)
+            {
+                closure.gridPlacesOwed += 1;
+
+                // A member the space serves and this request named is a member of one class
+                // of the report, keyed on the precision and the question: this is the space's
+                // own count of the classes a run of this request has to print, and it is read
+                // off the rows rather than off the report it is held to.
+                const std::size_t slot = static_cast<std::size_t>(row.precision) * kQuestions +
+                                         static_cast<std::size_t>(row.question);
+                classes[slot] = true;
+            }
+
+            // The card would not hold the degree tables: the member was never presented to
+            // it, and that is this card's answer rather than the row's absence.
+            if (!report.tablesResident && !report.refusedTables.empty())
+            {
+                ++closure.notRunnable;
+                continue;
+            }
+
+            if (!asked && reachedTheGrid)
+            {
+                ++closure.notAsked;
+                continue;
+            }
+
+            const DeviceProbeMeasurement* place = GridPlaceOf(report, row.entry, member.form);
+
+            if (place != nullptr)
+            {
+                (place->measured ? closure.measured : closure.offeredNoFigure) += 1;
+                continue;
+            }
+
+            ++closure.unaccounted;
         }
-
-        if (asked)
-        {
-            closure.gridPlacesOwed += 1;
-
-            // A member the space serves and this request named is a member of one class
-            // of the report, keyed on the precision and the question: this is the space's
-            // own count of the classes a run of this request has to print, and it is read
-            // off the rows rather than off the report it is held to.
-            const std::size_t slot = static_cast<std::size_t>(row.precision) * kQuestions +
-                                     static_cast<std::size_t>(row.question);
-            classes[slot] = true;
-        }
-
-        // The card would not hold the degree tables: the row was never presented to it,
-        // and that is this card's answer rather than the row's absence.
-        if (!report.tablesResident && !report.refusedTables.empty())
-        {
-            ++closure.notRunnable;
-            continue;
-        }
-
-        if (!asked && reachedTheGrid)
-        {
-            ++closure.notAsked;
-            continue;
-        }
-
-        const DeviceProbeMeasurement* place = GridPlaceOf(report, row.entry);
-
-        if (place != nullptr)
-        {
-            (place->measured ? closure.measured : closure.offeredNoFigure) += 1;
-            continue;
-        }
-
-        ++closure.unaccounted;
     }
 
     closure.states = closure.measured + closure.offeredNoFigure + closure.refusedAndOwed +
@@ -3812,9 +3900,13 @@ void AppendOptionClosure(std::string& text, const DeviceProbeReport& report) {
             "run and no\n  member in two, so that a member the report does not account for is "
             "visible as a missing\n  number rather than as an absence:\n";
     text += Text("  the space: %zu row(s) of this library's own option table (BoysDeviceOptions,\n"
-                 "  include/boys/boys_cuda_options.hpp), one member per row: %zu member(s). The "
-                 "count is\n  the library's own and is not listed here.\n",
+                 "  include/boys/boys_cuda_options.hpp) crossed with the %zu division form(s) the\n"
+                 "  library reports (BoysDivisionForms, boys/boys.hpp), one member per (row, form): "
+                 "%zu\n  member(s). Every entry of this surface runs every form, so no cell of the "
+                 "cross is\n  empty. Both counts are the library's own and neither is listed "
+                 "here.\n",
                  closure.rows,
+                 closure.forms,
                  closure.total);
 
     text += Text("\n  MEMBERS: %zu of %zu member(s) of the option space are measured on this card "
@@ -3855,8 +3947,8 @@ void AppendOptionClosure(std::string& text, const DeviceProbeReport& report) {
                  closure.states,
                  closure.unaccounted);
     text += Text("                 the run's own grid: %zu place(s), against the %zu a run of this "
-                 "request owes\n                 the space (one place per row it serves and this "
-                 "request named)\n",
+                 "request owes\n                 the space (one place per member — row and form — it "
+                 "serves and this\n                 request named)\n",
                  closure.gridPlaces,
                  closure.gridPlacesOwed);
     text += Text("                 the classes the space admits: %zu, one per (precision, "
@@ -3920,15 +4012,18 @@ void AppendOptionClosure(std::string& text, const DeviceProbeReport& report) {
 ///
 /// This block is the probe's coverage statement and not a courtesy: the probe's option table is a
 /// projection of the library's, so every row listed here is either a row measured above or a
-/// refusal with the library's reason. `probeRows` is what the run actually carried - the
-/// measurement table's own names, in its own order - so the comparison is against the report this
-/// run printed and not against a second reading of the same source.
-/// /// \\param probeRows the entries the run carried a figure for
-/// /// \\param emptyRows the offered cells that produced no figure
-void AppendOptionSpace(std::string& text,
-                       const std::vector<std::string>& probeRows,
-                       std::size_t emptyRows) {
+/// refusal with the library's reason. The report is the run's own measurement table, so the
+/// comparison is against the report this run printed and not against a second reading of the same
+/// source.
+///
+/// **The second column counts members and does not flag a row.** A row of the library's table is
+/// one member of the cross per form the library reports, so the place this run carries for it is a
+/// number: a row carried at all three forms, one carried at one and not the others, and one this
+/// run carried no place for at all are three different facts, and a column that said "measured"
+/// for the first two would be reporting a projection of this run rather than this run.
+void AppendOptionSpace(std::string& text, const DeviceProbeReport& report) {
     const std::span<const DeviceOptionInfo> space = BoysDeviceOptions();
+    const std::span<const DivisionFormInfo> forms = BoysDivisionForms();
     std::size_t served = 0;
     std::size_t refused = 0;
     std::size_t launched = 0;
@@ -3940,40 +4035,79 @@ void AppendOptionSpace(std::string& text,
         (option.group == DeviceOptionGroup::kLaunched ? launched : inKernel) += 1;
     }
 
-    text += "\n\nthe option space - the library's own report of it, and the row this run carries "
-            "for each\n";
+    const std::size_t members = space.size() * forms.size();
 
-    if (probeRows.empty())
+    // The places this run carried a figure for, and the ones it carried and got no figure
+    // from: a place is a member the run offered to the device, and the two are different
+    // facts about it.
+    std::size_t measuredPlaces = 0;
+    std::size_t emptyPlaces = 0;
+
+    for (const DeviceProbeMeasurement& measurement : report.measurements)
+    {
+        (measurement.measured ? measuredPlaces : emptyPlaces) += 1;
+    }
+
+    text += "\n\nthe option space - the library's own report of it, crossed with the division forms "
+            "the\n  library reports, and the place this run carries for each member\n";
+
+    if (report.measurements.empty())
     {
         text += Text("  (BoysDeviceOptions, include/boys/boys_cuda_options.hpp): %zu option(s) = %zu "
-                     "launched + %zu\n  device-callable, %zu this build serves and %zu it "
-                     "refuses. No row was measured on\n  this run, so the second column says so "
-                     "rather than naming one.\n",
-                     space.size(), launched, inKernel, served, refused);
+                     "launched + %zu\n  device-callable, %zu this build serves and %zu it refuses; "
+                     "the entry's own row\n  crossed with the %zu division form(s) of "
+                     "BoysDivisionForms(): %zu member(s). No\n  place was measured on this run, so "
+                     "the second column says so rather than naming one.\n",
+                     space.size(), launched, inKernel, served, refused, forms.size(), members);
     } else
     {
         text += Text("  (BoysDeviceOptions, include/boys/boys_cuda_options.hpp): %zu option(s) = %zu "
-                     "launched + %zu\n  device-callable, %zu this build serves and %zu it "
-                     "refuses; %zu row(s) measured here\n",
-                     space.size(), launched, inKernel, served, refused, probeRows.size());
+                     "launched + %zu\n  device-callable, %zu this build serves and %zu it refuses; "
+                     "the entry's own row\n  crossed with the %zu division form(s) of "
+                     "BoysDivisionForms(): %zu member(s); %zu place(s)\n  measured here\n",
+                     space.size(), launched, inKernel, served, refused, forms.size(), members,
+                     measuredPlaces);
     }
 
-    text += Text("  One member per row of those tables, and %zu of the %zu row(s) this build serves "
-                 "produced no\n  figure here.\n",
-                 emptyRows,
-                 served);
+    text += Text("  One member per (row, form) of those tables, and %zu of the %zu place(s) this run "
+                 "carried\n  produced no figure here.\n",
+                 emptyPlaces,
+                 report.measurements.size());
 
-    text += "  report row                 probe row                  group     precision  shape       question    axes                                                                                                  lane        bound     documented form\n";
+    text += "  report row                 forms carried of 3          group     precision  shape       question    axes                                                                                                  lane        bound     documented form\n";
 
     for (const DeviceOptionInfo& option : space)
     {
-        // Whether this run carried a row for the option, by name: the run's measurement
-        // table holds one row per entry it measured, so a name is a place.
-        const std::string carried =
-            std::find(probeRows.begin(), probeRows.end(), std::string(option.name)) !=
-                    probeRows.end()
-                ? std::string("measured on this run")
-                : std::string("not measured on this run");
+        // How many of the row's own members this run carried a place for, and how many of
+        // those produced a figure: the row's entry and the member's form are the member's
+        // identity, so the count is read off the run's own table and not off its names.
+        std::size_t places = 0;
+        std::size_t withAFigure = 0;
+
+        for (const DivisionFormInfo& member : forms)
+        {
+            for (const DeviceProbeMeasurement& place : report.measurements)
+            {
+                if (place.entry == option.entry && place.form == member.form)
+                {
+                    ++places;
+                    withAFigure += place.measured ? 1u : 0u;
+                }
+            }
+        }
+
+        std::string carried;
+
+        if (places == 0)
+        {
+            carried = "not carried by this run";
+        } else if (places < forms.size())
+        {
+            carried = Text("%zu of %zu carried here", places, forms.size());
+        } else
+        {
+            carried = Text("%zu of %zu measured here", withAFigure, forms.size());
+        }
 
         text += Text("  %-26s %-26s %-9s %-10s %-11s %-11s %-101s %-11s %-9.2g %s\n",
                      option.name,
@@ -3988,13 +4122,16 @@ void AppendOptionSpace(std::string& text,
                      option.boundForm);
     }
 
-    // The other direction: a row this run carries that the library's report does
-    // not. A name is looked for once — an entry missing from the report is one fact.
+    // The other direction: a member this run carries that the library's report is not
+    // under. The entry is what the library's table names, so the member's entry is what
+    // is looked for — its own name carries the form's segment where the row does not run
+    // the build's default form, and is deliberately not a name the library answers for.
+    // A name is looked for once: an entry missing from the report is one fact.
     std::vector<std::string> unreported;
 
-    for (const std::string& name : probeRows)
+    for (const DeviceProbeMeasurement& place : report.measurements)
     {
-        if (std::find(unreported.begin(), unreported.end(), name) != unreported.end())
+        if (std::find(unreported.begin(), unreported.end(), place.name) != unreported.end())
         {
             continue;
         }
@@ -4003,12 +4140,12 @@ void AppendOptionSpace(std::string& text,
 
         for (const DeviceOptionInfo& option : space)
         {
-            reported = reported || option.name == name;
+            reported = reported || option.entry == place.entry;
         }
 
         if (!reported)
         {
-            unreported.push_back(name);
+            unreported.push_back(place.name);
         }
     }
 
@@ -4108,18 +4245,20 @@ const char* SeamGranularityCell(const DeviceOptionInfo& row) noexcept {
     return "FitGranularity::kCoarsest";
 }
 
-/// The division-form cell of a row: the form the entry's ladder steps divide in, as the
+/// The division-form cell of a row: the form the row's ladder steps divide in, as the
 /// default-policy table spells it.
 ///
-/// Read off the row's own entry and never listed beside it: \c DeviceOptionInfo::division is
-/// \c DeviceEntryAxesOf's statement of the form an entry's body performs its divisions in
-/// (boys_cuda_options.hpp), so this cell follows the arithmetic the lane and the kernel bodies
-/// name, and the build default the seam carries for the device half is what that statement
-/// resolves to.
+/// Read off the winning row and never listed beside it: a member of the option space is an entry
+/// crossed with a form (\c DeviceProbeMeasurement::form, boys_cuda_probe.hpp), and the figure the
+/// seam row carries was taken at the form that member states, so the cell follows the arithmetic
+/// the measurement ran rather than a form chosen where the row is written. An entry's own
+/// \c DeviceOptionInfo::division is \c DeviceEntryAxesOf's statement of the form its body performs
+/// its divisions in, which is the build's default (\c kDefaultDivisionForm, boys_cuda_options.hpp)
+/// and is the member of the cross that carries no form segment - so reading that field here would
+/// write the default under a figure measured at another form.
 ///
-/// \returns the cell, or \c nullptr for a value outside \c DivisionForm's enumerators - which
-///          \c DeviceEntryAxesOf states for no entry, its own assertion making an entry it has
-///          not been taught a compile error rather than a row here
+/// \returns the cell, or \c nullptr for a value outside \c DivisionForm's enumerators - which the
+///          crossing states for no member, since it reads the axis off \c BoysDivisionForms
 constexpr const char* SeamDivisionCell(DivisionForm form) noexcept {
     switch (form)
     {
@@ -4388,11 +4527,37 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
                 continue;
             }
 
+            // The row the class named: this run's own measurement of it, which is the row the
+            // ranking ordered and the row the figure beside this seam row was taken at. The name
+            // is looked up in the run's own table and not in the library's, because a winner at a
+            // form the build does not default to carries that form's segment (ProbeRowName) and is
+            // deliberately not a name the library's table answers for.
+            const DeviceProbeMeasurement* won = nullptr;
+
+            for (const DeviceProbeMeasurement& candidate : report.measurements)
+            {
+                if (winner == candidate.name)
+                {
+                    won = &candidate;
+                }
+            }
+
+            if (won == nullptr)
+            {
+                emission.refused.push_back(
+                    Text("%s: the row it named, '%s', is no row of this run's own option table",
+                         klass.c_str(), winner.c_str()));
+                continue;
+            }
+
+            // The library's own row for that member's entry: the route, the scheme and the
+            // packing cell are the entry's, which is the library's statement of what it runs
+            // rather than this run's.
             const DeviceOptionInfo* row = nullptr;
 
             for (const DeviceOptionInfo& candidate : BoysDeviceOptions())
             {
-                if (winner == candidate.name)
+                if (candidate.entry == won->entry)
                 {
                     row = &candidate;
                 }
@@ -4427,18 +4592,20 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
                 continue;
             }
 
-            // The division-form cell is the entry's own form (SeamDivisionCell), read from the
-            // same statement of what an entry runs as the packing cell above. An entry that
-            // states none is not a row this report can place, for the reason the packing cell's
-            // arm gives: DeviceEntryAxesOf answers kUnstatedDivisionForm only for an entry its
-            // switch has not been taught, which the assertion under that switch turns into a
-            // compile error, so this arm reads a value that cannot arrive.
-            const char* const formCell = SeamDivisionCell(row->division);
+            // The division-form cell is the form the winning row was measured at
+            // (SeamDivisionCell), which is the member's own coordinate and not the entry's field:
+            // the space is one entry crossed with three forms, and the figure this seam row
+            // carries was taken at the form the winner's own row names. Reading
+            // DeviceOptionInfo::division here would write the build's default under a figure
+            // measured at another form. A row stating none is not a row this report can place, for
+            // the reason the packing cell's arm gives: the crossing above reads the axis off
+            // BoysDivisionForms, so this arm reads a value that cannot arrive.
+            const char* const formCell = SeamDivisionCell(won->form);
 
             if (formCell == nullptr)
             {
                 emission.refused.push_back(
-                    Text("%s: the entry it named, '%s', states no division form, so no "
+                    Text("%s: the row it named, '%s', states no division form, so no "
                          "division-form cell of the seam is this row's",
                          klass.c_str(), winner.c_str()));
                 continue;
@@ -4509,10 +4676,10 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
     text += "/// the triple can hold the nine; one keyed with a single device precision cell holds one\n";
     text += "/// of them per shape.\n";
     text += "///\n";
-    text += "/// **What a device row's cells are, and what they are not.** The route, the scheme, the\n";
-    text += "/// packing and the division form are the entry's own (`DeviceEntryAxesOf`,\n";
-    text += "/// boys_cuda_options.hpp), read from the lane and the body its kernels name, and the\n";
-    text += "/// granularity is the partition it reads. The packing cell is the entry's own reading of\n";
+    text += "/// **What a device row's cells are, and what they are not.** The route, the scheme and the\n";
+    text += "/// packing are the entry's own (`DeviceEntryAxesOf`, boys_cuda_options.hpp), read from the\n";
+    text += "/// lane and the body its kernels name, and the granularity is the partition it reads. The\n";
+    text += "/// packing cell is the entry's own reading of\n";
     text += "/// region A in the axis the seam names `PackAxis`: the ladder - the top order's fit seeded\n";
     text += "/// and every lower order\n";
     text += "/// brought back down the recurrence, which is the per-argument reading - is\n";
@@ -4520,10 +4687,12 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
     text += "/// order class carries the arguments axis, because a call that produces one order has no\n";
     text += "/// second order to pack. The budget is the budget the class's lane carries: the float\n";
     text += "/// budget on the fp64 and fp32 lanes, the half budget on the fp16 one, whose degree\n";
-    text += "/// tables are not the float lane's. The division-form cell is the entry's own form, in the\n";
-    text += "/// axis the seam names `DivisionForm` and this lane `DeviceOptionAxis::kDivision`: every\n";
-    text += "/// entry of the space runs every form, so a row is an (entry, form) pair and the cell names\n";
-    text += "/// the form the figure beside it was measured at.\n";
+    text += "/// tables are not the float lane's. The division-form cell is the form the winning row was\n";
+    text += "/// measured at, in the axis the seam names `DivisionForm` and this lane\n";
+    text += "/// `DeviceOptionAxis::kDivision`: every entry of the space runs every form, so a row is an\n";
+    text += "/// (entry, form) pair and the cell names the form the figure beside it was measured at - the\n";
+    text += "/// form the winner's own row states, which is the build's default where that row won at the\n";
+    text += "/// default and that row's form where it did not.\n";
     text += "///\n";
     text += "/// **A row a probe named by there being no rival is a choice, not a measurement.** A\n";
     text += "/// device class whose winner won an ordering carries the marker a measurement carries;\n";
@@ -4610,7 +4779,7 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
         // reader of a failed run learns which options exist, which this build
         // refuses and which cells of the space they are, and what is missing is
         // the measurement.
-        AppendOptionSpace(text, std::vector<std::string>(), 0);
+        AppendOptionSpace(text, report);
         // And counted, which is where a failed run's coverage stands: the members
         // this run did not present to the device are in no state, and the verdict
         // names that rather than leaving the space uncounted.
@@ -5098,8 +5267,9 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
     // --- The rankings --------------------------------------------------------
     //
     // One class per precision and question shape: neither is traded for speed here,
-    // and what varies inside a class is what the library picks on the caller's
-    // behalf.
+    // and what varies inside a class is what the library picks on the caller's behalf
+    // plus the division form, which the caller may name and the build's default
+    // supplies when they do not.
     if (!report.classes.empty())
     {
         text += Text("\nrankings - one class per precision and question shape.\n"
@@ -5107,7 +5277,9 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
                      "much\n  precision the result needs, and what they are asking for. This run's "
                      "option table\n  carries %zu row(s) across %zu class(es), and no entry of one "
                      "class was ordered against\n  an entry of another. What varies inside a class "
-                     "is what the library picks on the\n  caller's behalf.\n",
+                     "is what the library picks on the\n  caller's behalf, and the division form, "
+                     "which the caller may name and the build's\n  own default supplies when they "
+                     "name none.\n",
                      report.measurements.size(),
                      report.classes.size());
     }
@@ -5492,40 +5664,11 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
 
     text += Text("\n%s\n", report.caveat.c_str());
 
-    {
-        std::vector<std::string> probeRows;
-
-        for (const DeviceProbeMeasurement& measurement : report.measurements)
-        {
-            // The rows this run has a figure for, and not every row of the space
-            // it holds a place for: a row the run carried and got no figure from
-            // is a place and not a measurement. The appendix counts what it names
-            // — 'row(s) measured here' — and a count that included the empty
-            // places would say a run carried an entry it never timed.
-            if (!measurement.measured)
-            {
-                continue;
-            }
-
-            probeRows.push_back(measurement.name);
-        }
-
-        // The places this run offered and got no figure from, which is a different
-        // fact from a row the space does not offer: the first was offered and
-        // produced nothing, the second is refused by the library's own contract
-        // and is counted where the rows are.
-        std::size_t emptyRows = 0;
-
-        for (const DeviceProbeMeasurement& measurement : report.measurements)
-        {
-            if (!measurement.measured)
-            {
-                ++emptyRows;
-            }
-        }
-
-        AppendOptionSpace(text, probeRows, emptyRows);
-    }
+    // The run's own measurement table, so the appendix reads the members this run
+    // carried rather than a second reading of the space: a row of the library's
+    // table is one member of the cross per form, and only the table says which of
+    // its members this run took a place on.
+    AppendOptionSpace(text, report);
 
     // The degree tables a run could not make resident, if any: a refusal with the
     // library's own reason and not a silence. It follows the option space, which is

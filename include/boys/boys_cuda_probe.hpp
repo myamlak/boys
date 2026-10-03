@@ -446,9 +446,17 @@ struct DeviceProbeOptions {
     /// the spread of the paired within-round ratios, which the report measures.
     double canarySpreadAlarm = 5.0;
 
-    /// The entries to measure, named as the report prints them. Empty measures
-    /// every entry this build offers, which is what a caller who has not chosen
+    /// The rows to measure, named as the report prints them. Empty measures
+    /// every row this build offers, which is what a caller who has not chosen
     /// yet wants.
+    ///
+    /// A row is an entry crossed with a division form
+    /// (\c DeviceProbeMeasurement::form), and the unit of a request is the row:
+    /// the name an entry carries unmarked is the default form's row, and its
+    /// other two members are named with the form's segment, so a request that
+    /// wants one entry at all three forms names all three of its rows — which is
+    /// the unit every count below this option is made in, the grid's places and
+    /// the rankings' rows alike.
     ///
     /// Naming a set narrows every figure and every conclusion below to that set:
     /// the fastest entry reported is then the fastest of the ones asked for. A
@@ -575,6 +583,15 @@ struct DeviceProbePass {
 struct DeviceProbeMeasurement {
     /// The entry's name, as the report prints it. A name appears once in a run's
     /// table, so the name and \c entryIndex identify a row between them.
+    ///
+    /// The name is the library's own name for the entry where the row runs the
+    /// build's default division form, and that name with the form's own segment
+    /// (a row of \c BoysDivisionForms(), boys.hpp) where it does not — the
+    /// grammar the option probe's cells are named by, on the same reading: the
+    /// row a caller who names no form reaches is the default form's, so the form
+    /// left unmarked is the form that row really divides in, and the two other
+    /// members of the axis are marked so that no two rows of one entry can print
+    /// the same name.
     std::string name;
 
     /// \c "fp64", \c "fp32" or \c "fp16": the arithmetic the entry runs in.
@@ -590,6 +607,20 @@ struct DeviceProbeMeasurement {
     /// entry fixes are the entry's own statement (\c DeviceEntryAxesOf,
     /// boys_cuda_options.hpp), and a row is judged against the entry it names.
     DeviceEntry entry = DeviceEntry::kSingleF64;
+
+    /// The division form this row's ladder steps divide in: which member of
+    /// \c BoysDivisionForms() (boys.hpp) the row was measured at.
+    ///
+    /// **A row is an entry crossed with a form and not an entry.** Every launched
+    /// entry takes the form as a trailing parameter and every device-callable one
+    /// as a template argument, all three of them certified for each
+    /// (\c BoysCuda, boys_cuda.hpp), so the same entry is a different row under
+    /// each of the three and this field is the coordinate that tells them apart.
+    /// It is the form the region was dispatched at
+    /// (\c probe_detail::ProbeTimeRequest::form), and it is stated on the row so
+    /// that the arithmetic a figure is about is read off the row and not
+    /// recovered from its name.
+    DivisionForm form = kDefaultDivisionForm;
 
     /// \c "single", \c "all-orders", \c "all-n" or \c "each-order": the shape of
     /// the call.
@@ -1372,10 +1403,16 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
 /// The device option space counted: every member of it in the state one run
 /// established for it, and the arithmetic that has to close.
 ///
-/// A member is one row of the space — a row of \c BoysDeviceOptions()
-/// (boys_cuda_options.hpp) — so the total is the table's own size, a projection of
-/// the library that cannot fall behind it. The states are what the run did with
-/// that member, and a member is in exactly one of them:
+/// A member is one row of the space crossed with one division form — a row of
+/// \c BoysDeviceOptions() (boys_cuda_options.hpp) at a member of
+/// \c BoysDivisionForms() (boys.hpp) — so the total is the product of those two
+/// tables' own sizes, both read from the library, and a projection of it that
+/// cannot fall behind it. Nothing is crossed that the library does not report a
+/// member for: every entry of this surface runs every form, which the axis's own
+/// rows state (\c DivisionFormInfo, boys.hpp: "every entry this build carries runs
+/// every one of them") and which the entries carry in their signatures
+/// (\c BoysCuda, boys_cuda.hpp). The states are what the run did with that
+/// member, and a member is in exactly one of them:
 ///
 ///   * \c measured — the run took a figure for the row;
 ///   * \c refusedAndOwed — the row is one this build does not serve, refused with the
@@ -1386,7 +1423,7 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
 ///   * \c offeredNoFigure — the run carried a place for the row and no round of it
 ///     produced a figure;
 ///   * \c notAsked — this run's own request (\c DeviceProbeOptions::only) named no such
-///     entry, so the row was never presented to the device; a run that never reached
+///     row, so the member was never presented to the device; a run that never reached
 ///     the grid at all places no member here.
 ///
 /// **Nothing else is a state, and \c unaccounted counts the members in none of
@@ -1404,11 +1441,12 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
 /// \ingroup boys
 struct DeviceOptionClosure {
     std::size_t rows = 0; ///< rows of the library's own option table, BoysDeviceOptions()
-    std::size_t total = 0; ///< the members of the space: one per row
+    std::size_t forms = 0; ///< division forms the library reports, BoysDivisionForms()
+    std::size_t total = 0; ///< the members of the space: one per row per form
 
     std::size_t measured = 0; ///< members this run took a figure for
     std::size_t refusedAndOwed = 0; ///< members of a row this build does not serve
-    std::size_t notRunnable = 0; ///< rows of a run whose tables the card would not hold
+    std::size_t notRunnable = 0; ///< members of a run whose tables the card would not hold
     std::size_t offeredNoFigure = 0; ///< places of this run's grid that produced no figure
     std::size_t notAsked = 0; ///< members this run's request never named
 
@@ -1421,9 +1459,9 @@ struct DeviceOptionClosure {
     std::size_t unaccounted = 0;
 
     /// Places this run's own measurement table carries, and the number a run of this
-    /// request owes the space: one per row it serves and the request named. The two are
-    /// read from different sources — the run's grid and the library's tables — and they
-    /// have to agree.
+    /// request owes the space: one per member — row and form — it serves and the request
+    /// named. The two are read from different sources — the run's grid and the library's
+    /// tables — and they have to agree.
     std::size_t gridPlaces = 0;
     std::size_t gridPlacesOwed = 0; ///< the places a run of this request owes the space
 

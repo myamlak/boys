@@ -1144,6 +1144,29 @@ TEST(DeviceProbe, AnAbsentDeviceIsAStatusAndNotACrash) {
     EXPECT_TRUE(report.measurements.empty());
 }
 
+/// The name one row of the crossed space is printed under, in the report's own grammar:
+/// the library's name for the entry where the row runs the build's default division form,
+/// and that name with the form's own segment where it does not.
+///
+/// Written here from the library's two tables rather than read back from the probe: a
+/// test that read the probe's own naming back would be reading the thing it is holding.
+/// The default carries no segment because that is the row a caller who names no form
+/// reaches (\c DeviceProbeOptions::only, boys_cuda_probe.hpp), and the two other members
+/// of the axis carry theirs so that no two rows of one entry print one name.
+std::string RowSpelling(const boys::DeviceOptionInfo& row, boys::DivisionForm form) {
+    if (form == boys::kDefaultDivisionForm) {
+        return row.name;
+    }
+
+    for (const boys::DivisionFormInfo& member : boys::BoysDivisionForms()) {
+        if (member.form == form) {
+            return std::string(row.name) + "-" + member.name;
+        }
+    }
+
+    return std::string(row.name) + "-unnamed-form";
+}
+
 /// The option space's rows, as a report carries them.
 ///
 /// The rows are the library's own and the text is rendered by the same function the
@@ -1163,6 +1186,8 @@ TEST(DeviceProbe, ARowIsServedOrRefusedAndTheSpaceIsCountedFromTheRows) {
     report.status = DeviceProbeStatus::kSuccess;
     report.device.name = "a device";
 
+    const std::size_t forms = boys::BoysDivisionForms().size();
+
     std::size_t refusedRows = 0;
     std::size_t servedRows = 0;
     std::size_t launchedRows = 0;
@@ -1173,7 +1198,9 @@ TEST(DeviceProbe, ARowIsServedOrRefusedAndTheSpaceIsCountedFromTheRows) {
         (row.group == boys::DeviceOptionGroup::kLaunched ? launchedRows : deviceRows) += 1;
 
         // A row this build does not serve carries the library's own reason and no other:
-        // the closure prints that reason rather than a sentence of its own invention.
+        // the closure prints that reason rather than a sentence of its own invention. Its
+        // absence is one fact and not one per form — no form of it is an arithmetic this
+        // build can run — so the grid below carries no place for it at any form.
         if (!row.built)
         {
             EXPECT_NE(row.refusedBecause, nullptr) << row.name;
@@ -1184,47 +1211,72 @@ TEST(DeviceProbe, ARowIsServedOrRefusedAndTheSpaceIsCountedFromTheRows) {
         EXPECT_EQ(row.refusedBecause, nullptr) << row.name;
         ++servedRows;
 
-        DeviceProbeMeasurement place;
-        place.name = row.name;
-        place.entry = row.entry;
-        report.measurements.push_back(place);
+        // One place per form the library reports, named as the report names a row: the
+        // default form's row carries no segment, the two other members of the axis do.
+        for (const boys::DivisionFormInfo& member : boys::BoysDivisionForms())
+        {
+            DeviceProbeMeasurement place;
+            place.name = RowSpelling(row, member.form);
+            place.entry = row.entry;
+            place.form = member.form;
+            report.measurements.push_back(place);
+        }
     }
+
+    const std::size_t servedMembers = servedRows * forms;
+    const std::size_t refusedMembers = refusedRows * forms;
+    const std::size_t members = space.size() * forms;
 
     const std::string text = boys::FormatDeviceOptionProbe(report);
 
     // Stated rather than left to be counted off the report: these are the figures the
     // appendix carries, and a reader checking a revision needs them printed.
-    std::printf("    space: %zu option(s) = %zu launched + %zu device-callable; %zu served, "
-                "%zu refused by this build\n",
+    std::printf("    space: %zu option(s) = %zu launched + %zu device-callable, crossed with %zu "
+                "division form(s): %zu member(s); %zu served, %zu refused by this build\n",
                 space.size(),
                 launchedRows,
                 deviceRows,
-                servedRows,
-                refusedRows);
+                forms,
+                members,
+                servedMembers,
+                refusedMembers);
 
-    // The space's own count, as the appendix states it, for coverage.
+    // The space's own count, as the appendix states it, for coverage: the rows of the
+    // library's table, the forms the library reports, and the product of the two.
     EXPECT_NE(text.find("the space: " + std::to_string(space.size()) +
                         " row(s) of this library's own option table"),
               std::string::npos)
         << text;
-    EXPECT_NE(text.find("one member per row: " + std::to_string(space.size()) + " member(s)"),
+    EXPECT_NE(text.find("crossed with the " + std::to_string(forms) + " division form(s)"),
+              std::string::npos)
+        << text;
+    EXPECT_NE(text.find("one member per (row, form): " + std::to_string(members)),
               std::string::npos)
         << text;
 
-    EXPECT_NE(text.find(std::to_string(refusedRows) +
+    EXPECT_NE(text.find(std::to_string(refusedMembers) +
                         " refused with the library's own reason and owed"),
               std::string::npos)
         << text;
 
-    // Every row this build serves is a place of this run's grid, and none produced a figure.
-    EXPECT_NE(text.find(std::to_string(servedRows) +
+    // Every member of every row this build serves is a place of this run's grid, and none
+    // produced a figure.
+    EXPECT_NE(text.find(std::to_string(servedMembers) +
                         " offered and this run carried a place for, producing no figure"),
               std::string::npos)
         << text;
 
-    EXPECT_NE(text.find("the run's own grid: " + std::to_string(servedRows) +
-                        " place(s), against the " + std::to_string(servedRows)),
+    EXPECT_NE(text.find("the run's own grid: " + std::to_string(servedMembers) +
+                        " place(s), against the " + std::to_string(servedMembers)),
               std::string::npos)
+        << text;
+
+    // The per-row column counts the row's own members rather than a flag about a suffix
+    // somewhere: the denominator is the forms the row stands at, so every row this build
+    // serves reads "of 3" beside its name. The numerator is the places of those that carry
+    // a figure, and this grid carries none - it is the grid without the card or the clock -
+    // so the count is the zero the report is owed rather than a claim of three figures.
+    EXPECT_NE(text.find("0 of " + std::to_string(forms) + " measured here"), std::string::npos)
         << text;
 }
 
@@ -1262,9 +1314,11 @@ const char* QuestionSpelling(boys::DeviceOptionQuestion question) {
 }
 
 /// A report whose measurement grid is the one the probe builds — a place per row this
-/// build serves, none of them measured, and one class per precision and question those
-/// places fall into — so the closure can be counted, and the text rendered, without a
-/// card or a clock. \p servedCells comes back as the places this build serves.
+/// build serves **crossed with each division form the library reports**, none of them
+/// measured, and one class per precision and question those places fall into — so the
+/// closure can be counted, and the text rendered, without a card or a clock.
+/// \p servedCells comes back as the places this build serves, which is the cross and not
+/// its first column.
 DeviceProbeReport GriddedReport(std::size_t& servedCells) {
     DeviceProbeReport report;
     report.status = DeviceProbeStatus::kSuccess;
@@ -1276,13 +1330,16 @@ DeviceProbeReport GriddedReport(std::size_t& servedCells) {
             continue;
         }
 
-        DeviceProbeMeasurement place;
-        place.name = row.name;
-        place.entry = row.entry;
-        place.precision = PrecisionSpelling(row.precision);
-        place.question = QuestionSpelling(row.question);
-        report.measurements.push_back(place);
-        ++servedCells;
+        for (const boys::DivisionFormInfo& member : boys::BoysDivisionForms()) {
+            DeviceProbeMeasurement place;
+            place.name = RowSpelling(row, member.form);
+            place.entry = row.entry;
+            place.form = member.form;
+            place.precision = PrecisionSpelling(row.precision);
+            place.question = QuestionSpelling(row.question);
+            report.measurements.push_back(place);
+            ++servedCells;
+        }
     }
 
     // One class per precision and question the places above fall into, which is what the
@@ -1309,8 +1366,9 @@ DeviceProbeReport GriddedReport(std::size_t& servedCells) {
 }
 
 /// The closure is the space counted, and every member of it is in exactly one state: the
-/// total is the library's own option table, the states add up to it, and the verdict the
-/// report's last line prints is that arithmetic's.
+/// total is the library's own option table **crossed with the division forms the library
+/// reports**, the states add up to it, and the verdict the report's last line prints is
+/// that arithmetic's.
 TEST(DeviceProbe, TheClosurePutsEveryMemberOfTheSpaceInOneState) {
     std::size_t servedCells = 0;
     DeviceProbeReport report = GriddedReport(servedCells);
@@ -1318,12 +1376,24 @@ TEST(DeviceProbe, TheClosurePutsEveryMemberOfTheSpaceInOneState) {
     ASSERT_GT(servedCells, 0u);
 
     const std::size_t rows = boys::BoysDeviceOptions().size();
-    const std::size_t total = rows;
+    const std::size_t forms = boys::BoysDivisionForms().size();
+    const std::size_t total = rows * forms;
+    std::size_t builtRows = 0;
+
+    for (const boys::DeviceOptionInfo& row : boys::BoysDeviceOptions()) {
+        builtRows += row.built ? 1u : 0u;
+    }
 
     // The grid is the run's own, and the total is the library's: the two are read from
-    // different sources and the closure demands they agree.
+    // different sources and the closure demands they agree. Every row this build serves
+    // is one member per form and no fewer - a grid that carried one form of a row would
+    // leave the other two unaccounted rather than counted.
+    EXPECT_EQ(servedCells, builtRows * forms);
+    EXPECT_GT(forms, 1u);
+
     const boys::DeviceOptionClosure offered = boys::DeviceOptionSpaceClosure(report);
     EXPECT_EQ(offered.rows, rows);
+    EXPECT_EQ(offered.forms, forms);
     EXPECT_EQ(offered.total, total);
     EXPECT_EQ(offered.states, total);
     EXPECT_EQ(offered.measured, 0u);
@@ -1346,6 +1416,19 @@ TEST(DeviceProbe, TheClosurePutsEveryMemberOfTheSpaceInOneState) {
     const std::string offeredText = boys::FormatDeviceOptionProbe(report);
     EXPECT_NE(offeredText.find("the arithmetic: 0 + "), std::string::npos) << offeredText;
     EXPECT_NE(offeredText.find("the verdict: PASS"), std::string::npos) << offeredText;
+
+    // And the cross is stated in the report's own words, not only in the counts: the total
+    // a reader checks is the product of two tables and both are named where it is printed.
+    EXPECT_NE(offeredText.find("the space: " + std::to_string(rows) +
+                               " row(s) of this library's own option table"),
+              std::string::npos)
+        << offeredText;
+    EXPECT_NE(offeredText.find("crossed with the " + std::to_string(forms) + " division form(s)"),
+              std::string::npos)
+        << offeredText;
+    EXPECT_NE(offeredText.find("one member per (row, form): " + std::to_string(total)),
+              std::string::npos)
+        << offeredText;
 
     for (DeviceProbeMeasurement& place : report.measurements) {
         place.measured = true;
@@ -1420,13 +1503,20 @@ TEST(DeviceProbe, AClosureOverARunThatMeasuredNothingFails) {
 /// A request that named a set is closed with the rest of the space stated: the members no
 /// name was given for are counted as not asked for rather than as members nothing
 /// accounts for, and the grid the run owes is the places of the rows it named.
+///
+/// **The row is the unit of a request and a row is an entry crossed with a form**, so the
+/// name a request carries is a member's own: the unmarked spelling asks for the default
+/// form's row and the marked spellings for the other two, and a request that wants an
+/// entry whole names all three of its rows.
 TEST(DeviceProbe, ARequestForOneEntryIsClosedWithTheRestOfTheSpaceStated) {
     std::string named;
     std::string namedPrecision;
     std::string namedQuestion;
+    const boys::DeviceOptionInfo* namedRow = nullptr;
 
     for (const boys::DeviceOptionInfo& row : boys::BoysDeviceOptions()) {
         if (row.built) {
+            namedRow = &row;
             named = row.name;
             namedPrecision = PrecisionSpelling(row.precision);
             namedQuestion = QuestionSpelling(row.question);
@@ -1435,10 +1525,11 @@ TEST(DeviceProbe, ARequestForOneEntryIsClosedWithTheRestOfTheSpaceStated) {
     }
 
     ASSERT_FALSE(named.empty());
+    ASSERT_NE(namedRow, nullptr);
 
     // The whole space's grid, for the members the space serves, and the grid a request for
-    // one entry builds: the probe builds its grid from the entries a request names, so
-    // every other row's places — and their classes — are absent from it.
+    // one row builds: the probe builds its grid from the rows a request names, so every
+    // other row's places — and their classes — are absent from it.
     std::size_t servedCells = 0;
     const DeviceProbeReport wholeSpace = GriddedReport(servedCells);
 
@@ -1463,6 +1554,11 @@ TEST(DeviceProbe, ARequestForOneEntryIsClosedWithTheRestOfTheSpaceStated) {
 
     const std::size_t placesOfTheNamedRow = report.measurements.size();
 
+    // The unmarked name is the default form's row and not all three members of the entry:
+    // the other two carry the form's segment, so a request naming one row asks for one
+    // place and the grid it owes is that row's.
+    EXPECT_EQ(placesOfTheNamedRow, 1u);
+
     ASSERT_GT(placesOfTheNamedRow, 0u);
     ASSERT_LT(placesOfTheNamedRow, servedCells);
 
@@ -1480,6 +1576,106 @@ TEST(DeviceProbe, ARequestForOneEntryIsClosedWithTheRestOfTheSpaceStated) {
     const std::string text = boys::FormatDeviceOptionProbe(report);
     EXPECT_NE(text.find("not asked for by this run's request"), std::string::npos) << text;
     EXPECT_NE(text.find("the verdict: PASS"), std::string::npos) << text;
+
+    // The same entry asked for whole: every form the library reports is a row of its own,
+    // so naming the entry's three rows is what asks for the entry at every form, and the
+    // grid the run owes is three places against the one the unmarked name asked for.
+    DeviceProbeReport everyForm;
+    everyForm.status = DeviceProbeStatus::kSuccess;
+    everyForm.device.name = "a device";
+    everyForm.classes = report.classes;
+
+    for (const boys::DivisionFormInfo& member : boys::BoysDivisionForms()) {
+        everyForm.options.only.push_back(RowSpelling(*namedRow, member.form));
+    }
+
+    for (const DeviceProbeMeasurement& place : wholeSpace.measurements) {
+        if (place.entry == namedRow->entry) {
+            DeviceProbeMeasurement measured = place;
+            measured.measured = true;
+            everyForm.measurements.push_back(measured);
+        }
+    }
+
+    ASSERT_EQ(everyForm.measurements.size(), boys::BoysDivisionForms().size());
+
+    const boys::DeviceOptionClosure whole = boys::DeviceOptionSpaceClosure(everyForm);
+
+    EXPECT_EQ(whole.measured, everyForm.measurements.size());
+    EXPECT_EQ(whole.notAsked, servedCells - everyForm.measurements.size());
+    EXPECT_EQ(whole.gridPlacesOwed, everyForm.measurements.size());
+    EXPECT_EQ(whole.unaccounted, 0u);
+    EXPECT_TRUE(whole.closed);
+
+    // The two counts are the two requests told apart by the cross and not by this test:
+    // the unmarked name asked for one member of the entry, the three names for three, and
+    // the difference is the form axis being enumerated rather than pinned to a row.
+    EXPECT_GT(whole.measured, closure.measured);
+    EXPECT_EQ(whole.measured - closure.measured, boys::BoysDivisionForms().size() - 1u);
+}
+
+/// The run's own grid is the cross and not its first column: a request that names one
+/// entry's rows is measured at one place per form, each carrying the form and the name the
+/// request named — so an enumeration that pinned the form to a row would fail here rather
+/// than measure one form three times under three names, and the closure over that run owes
+/// exactly those places.
+///
+/// This is the device's own table and not a report built here: the places below are the
+/// ones \c RunDeviceOptionProbe built, read off the run.
+TEST(DeviceProbe, ARequestForAnEntryAtEveryFormIsMeasuredAtEveryForm) {
+    const std::span<const boys::DivisionFormInfo> forms = boys::BoysDivisionForms();
+
+    ASSERT_GT(forms.size(), 1u);
+
+    const boys::DeviceOptionInfo* target = nullptr;
+
+    for (const boys::DeviceOptionInfo& row : boys::BoysDeviceOptions()) {
+        if (row.built && row.group == boys::DeviceOptionGroup::kLaunched) {
+            target = &row;
+            break;
+        }
+    }
+
+    ASSERT_NE(target, nullptr);
+
+    DeviceProbeOptions options = Small();
+
+    for (const boys::DivisionFormInfo& member : forms) {
+        options.only.push_back(RowSpelling(*target, member.form));
+    }
+
+    const DeviceProbeReport report = boys::RunDeviceOptionProbe(options);
+
+    ASSERT_EQ(report.status, DeviceProbeStatus::kSuccess);
+    ASSERT_EQ(report.measurements.size(), forms.size());
+
+    // One place per form, the entry's own, and the form each place carries is the one the
+    // request named rather than one value the run fixed for all of the entry's rows.
+    for (const boys::DivisionFormInfo& member : forms) {
+        const DeviceProbeMeasurement* place = nullptr;
+
+        for (const DeviceProbeMeasurement& candidate : report.measurements) {
+            if (candidate.entry == target->entry && candidate.form == member.form) {
+                place = &candidate;
+            }
+        }
+
+        EXPECT_NE(place, nullptr) << member.name;
+
+        if (place != nullptr) {
+            EXPECT_EQ(place->name, RowSpelling(*target, member.form)) << member.name;
+        }
+    }
+
+    // And the closure over that run: the places it carries are the places the request owed,
+    // against the whole space the library's two tables state.
+    const boys::DeviceOptionClosure closure = boys::DeviceOptionSpaceClosure(report);
+
+    EXPECT_EQ(closure.gridPlaces, forms.size());
+    EXPECT_EQ(closure.gridPlacesOwed, forms.size());
+    EXPECT_EQ(closure.unaccounted, 0u);
+    EXPECT_EQ(closure.states, closure.total);
+    EXPECT_EQ(closure.forms, forms.size());
 }
 
 } // namespace
