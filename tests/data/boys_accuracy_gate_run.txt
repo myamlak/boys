@@ -6,7 +6,7 @@ tiers        : n<=4 1.0855252345349333 | n<=8 2.0152977053351142 | n<=16 4.89787
 AVX2 tier    : present
 muladd route : scalar-fp64 fused (bare product-plus-add does not contract here)
 muladd route : scalar-fp32 fused (bare product-plus-add does not contract here)
-verdict      : strict (--strict: the default verdict, stated) - a claim this build carries and cannot verify at this revision fails the gate, while a claim whose subject this build does not carry is named with its reason and fails nothing here
+verdict      : strict (a claim this build carries and does not verify at this revision fails the gate; a claim whose subject this build does not carry is named with its reason and fails nothing here)
   EXCEEDED (record, not judged) double single / header x<x0  n=8 x=2.0152977053351142  err=1.01481e-15  bound=1e-15  ratio=1.015  ref=0.00988894 (1e-3)
   EXCEEDED (record, not judged) double single / header x<x0  n=8 x=2.0517859660248678  err=1.79023e-15  bound=1e-15  ratio=1.79  ref=0.00957867 (1e-3)
   EXCEEDED (record, not judged) double single / header x<x0  n=8 x=2.1247624874043751  err=1.0391e-15  bound=1e-15  ratio=1.039  ref=0.00898745 (1e-3)
@@ -107,7 +107,7 @@ the certified fit routes, measured:
   shipped partition's route does not answer with (the carriage that makes naming it an
   option rather than a spelling), worst piece value 2.21663e-14 away from the reference.
 
-accuracy gate, revision 83035e9
+accuracy gate, revision aa00a17
   reference: C:/Users/myaml/dev/boys-arm64diag/tests/data/boys_accuracy_gate_reference.csv (1718 arguments per order, 33 orders, independent of the code under test)
 per-lane, per-region: delivered error / documented bound
   lane                     region      points     real  delivered / claimed      max ratio (n, x)          vacuous no value
@@ -143,8 +143,8 @@ per-lane, per-region: delivered error / documented bound
 
   delivered / claimed = |F_hat(n,x) - F(n,x)| and the bound it was judged
              against, at the worst cell of the sweep; a claim whose bound is
-             per-region or per-value (the half lanes' half-ULP term) shows the pair at
-             that cell, not the base bound
+             per-region or per-value (the half lanes' half-ULP term) shows the
+             pair at that cell, not the base bound
   vacuous  = points where the documented bound is at least as large as
              |F_n(x)| itself, so any returned value in range passes
   no value = of those, points where the lane returned zero or a subnormal
@@ -180,10 +180,8 @@ published cells and ranges, measured:
       2.533e+05 to 2.955e+07  (5.40 to 7.47 orders)
   power-of-two rescale in binary16: 43293 (value, power) pairs checked in the
     normal range, 0 pairs where rounding and scaling disagreed
-  region C (the branch is one closed form, and its budget is the branch's own): worst
-    err 5e-14, against the branch's own 5.5e-14
   float lane's own floor where |F| >= 0.5: worst relative error 8.764e-08 at (n=0, x=1.41506);
-    the documented ceiling is about 6e-8, the budget 1.5e-7 absolute
+    the documented ceiling is about 6e-8, the m=1 budget 1.5e-7 absolute
 
 documented claims, each with one verdict:
   thresholds a claim labels approximate rather than exact - "about x = 16",
@@ -342,16 +340,15 @@ documented claims, each with one verdict:
       tree command, run by the operator, not by this binary: `ctest --test-dir build --output-on-failure`
       falsified by: class falsifier - a measured row: the sweep would have to deliver a cell over its bound (the row prints its cells, its worst cell and its failure count, so a non-zero failure count is what to look for), or cover none of the domain it names; a tree-command row: the named command would have to print a different number; a prose row: the document's wording would have to change to what the measurement contradicts
 
-  cells: 1808709 comparison cells across every lane, region and order, of which 853867 (47.2%) carry a bound at least as large as the value itself, so any return in range passes there and the cell cannot discriminate; the no-cell-over-budget statement above is carried by the remaining 954842 (52.8%). This is the vacuous column aggregated, not a separate finding, and it is the number to read before reading the green rows
+  cells: 918435 comparison cells across every lane, region and order, of which 412071 (44.9%) carry a bound at least as large as the value itself, so any return in range passes there and the cell cannot discriminate; the no-cell-over-budget statement above is carried by the remaining 506364 (55.1%). This is the vacuous column aggregated, not a separate finding, and it is the number to read before reading the green rows
 
-  RESULT: 39 of 39 claims met at this revision (33 verified outright, 6 met over a stated domain, 0 exceeded, 0 vacuous only, 0 evidence absent, 0 not carried by this build; none of the last four counted as met)
-          of those, 35 are certified by a measurement of this machine's own arithmetic and 4 rest on a software model of an accumulator and are NOT certified: a model is not a card, so a green row of the second kind is no evidence that a card is inside the bound it states
-          carried by the 954842 of 1808709 comparison cells (52.8%) that can discriminate: the other 853867 carry a bound at least as large as the value itself, so read the two numbers together
+  RESULT: 32 of 32 claims met at this revision (26 verified outright, 6 met over a stated domain, 0 exceeded, 0 vacuous only, 0 evidence absent, 0 not carried by this build; none of the last four counted as met)
+          of those, 28 are certified by a measurement of this machine's own arithmetic and 4 rest on a software model of an accumulator and are NOT certified: a model is not a card, so a green row of the second kind is no evidence that a card is inside the bound it states
+          carried by the 506364 of 918435 comparison cells (55.1%) that can discriminate: the other 412071 carry a bound at least as large as the value itself, so read the two numbers together
 
-  the routes are counted apart from the lanes: the lane RESULT above reads 39 of 39
-  claims carried by 954842 of 1808709 comparison cells, and the route rows, the float lane's
-  policy rows contribute 986206 cells of their own, none of
-  them in that total
+  the routes are counted apart from the lanes: the lane RESULT above reads 32 of 32
+  claims carried by 506364 of 918435 comparison cells, and the route rows and the float lane's
+  policy rows contribute 455764 cells of their own, none of them in that total
 
 the carriage of a named route by each entry that takes a policy: over the arguments
 its selector takes over, how many of them the entry answers differently once the route is
@@ -427,7 +424,7 @@ the certified fit routes, each with one verdict:
       worst 0.896 of the bar at (n=4, x=0.00014678): delivered 1.34471e-07 against 1.5e-07, over 147345 comparison cell(s) across the six rows; 0 row(s) whose published figure is short of this sweep's by more than a tenth of the bar, the worst by 0.0108 of it. The sweep and the generator's fit-time sweep run over different argument grids, so the two figures are not required to agree in either direction and the comparison is one-sided for that reason
       falsified by: class falsifier - a measured row: the sweep would have to deliver a cell over its bound (the row prints its cells, its worst cell and its failure count, so a non-zero failure count is what to look for), or cover none of the domain it names; a tree-command row: the named command would have to print a different number; a prose row: the document's wording would have to change to what the measurement contradicts
   [verified at this revision] the float lane's batch entry delivers, at every policy it accepts and every order over the interval that policy's seeds serve, no worse than the bar the lane publishes for the region the argument falls in - whether the seed is the double lane's fit at the policy's route and scheme, as region A's is, or this lane's, as region B's is
-      include/boys/boys.hpp, BoysAllOrdersF32; include/boys/boys_coefficients.hpp, kRegionAFitBar and kRegionBFitBar
+      include/boys/boys.hpp, BoysAllOrdersF32 and BoysLaneContracts(), whose row for the float lane carries the plain reciprocal's own term; include/boys/boys_coefficients.hpp, kRegionAFitBar and kRegionBFitBar
       worst 0.722 of the bar at (n=0, x=11.151): delivered 1.08354e-07 against 1.5e-07, over 147345 comparison cell(s) across the six rows, 0 of them outside the bar. Each row of the table above names its own worst cell
       falsified by: class falsifier - a measured row: the sweep would have to deliver a cell over its bound (the row prints its cells, its worst cell and its failure count, so a non-zero failure count is what to look for), or cover none of the domain it names; a tree-command row: the named command would have to print a different number; a prose row: the document's wording would have to change to what the measurement contradicts
   [verified at this revision] each policy the float lane's engines accept is read: on every row whose value a table of this lane's decides, naming a route or a scheme other than the shipped pair changes the float the engine answers with, over the cells the two policies cover in common; the batch entry's region-A rows, whose value comes from the double lane's fit at the pair the policy names, are reported apart rather than required to change
@@ -435,12 +432,16 @@ the certified fit routes, each with one verdict:
       0 of the 12 row(s) whose value a table of this lane's decides never differed from the shipped pair's value on any cell the row covers, which is what an engine that ignored the policy would answer; 0 row(s) of the sixteen were measured over no argument at all. The batch entry's region-A rows are reported apart: the scheme's row differs on 0 of 21285 cell(s), the route's on 14 of 21285, the narrow partition's on 1 of 21285 and the narrow partition's rational route on 18 of 21285, the last two differing where the lane's narrow fits take over from the shipped ones. The count is bitwise on the returned float, and it is the reading that makes the accuracy rows above evidence for the option rather than for the table
       falsified by: class falsifier - a measured row: the sweep would have to deliver a cell over its bound (the row prints its cells, its worst cell and its failure count, so a non-zero failure count is what to look for), or cover none of the domain it names; a tree-command row: the named command would have to print a different number; a prose row: the document's wording would have to change to what the measurement contradicts
 
-  RESULT (routes, counted apart from the lanes above): 18 of 18 route claims met at this revision (18 verified outright, 0 met over a stated domain, 0 exceeded, 0 vacuous only, 0 evidence absent, 0 not carried by this build; none of the last four counted as met)
+  route-reading sites this book does NOT sweep, and why (these are the sites the
+  route RESULT below does not cover):
+    0 site(s) above; none of them is a row of this book
+
+  RESULT (routes, counted apart from the lanes above): 15 of 15 route claims met at this revision (15 verified outright, 0 met over a stated domain, 0 exceeded, 0 vacuous only, 0 evidence absent, 0 not carried by this build; none of the last four counted as met)
 
 the evaluation-scheme rows: each scheme's stored fits over the interval each is defined on, and each public entry that names a scheme over the whole reference grid, against the committed reference
   arithmetic in force for scalar-fp64: fused (measured; the bound each row is judged against is this route's)
   scheme           row                deg  stored     cells bound it promises      worst delivered          ratio  worst cell             verdict
-  ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
   split-clenshaw   region A            20      21     21318 4.44089e-16            2.22045e-16                0.5  n=0, x=0.17485         verified at this revision
   split-clenshaw   region B            18      19       248 1.42109e-14            9.9365e-15               0.699  n=0, x=11.8998         verified at this revision
   split-clenshaw   extended band       24      25       409 2.22045e-16            1.11022e-16                0.5  n=0, x=1.09729         verified at this revision
@@ -467,10 +468,10 @@ the evaluation-scheme rows: each scheme's stored fits over the interval each is 
   A row's region reads '-' where the sweep covered no cell there; the reference line under this
   header is what every row is held to.
   the rows are held to the per-argument entry's own differences: such an argument in
-  each of A 122, band 383, B 115, C 0. Region C is no row's at this revision, so no
-  row is held to it
+  each of A 122, band 383, B 115, C 0. Region C is no row's, so
+  no row is held to it
   row                  cells    differ  A/band/B/C     verdict
-  ----------------------------------------------------------------------------------------------------------------------------
+  ------------------------------------------------------------------------------------------------------------------------------------
   region A             21318     13816  yes/yes/-/-    carried by the scheme it names
   region B               248        93  -/-/yes/-      carried by the scheme it names
   extended band          409       171  -/yes/-/-      carried by the scheme it names
@@ -494,27 +495,18 @@ the evaluation-scheme rows: each scheme's stored fits over the interval each is 
   SCHEME RESULT below does not cover, whatever its number says):
     - a route or a scheme other than the shipped pair, on the single-precision engines (BoysSingleF32, BoysAllOrdersF32) and the fp16/bf16 lanes built on them
         reads: the policy's fit route and its scheme
-        not swept because: not swept by this book, and not refused: a policy names a route and a scheme together, so this lane's rows are keyed on the pair and belong to the route book - float.policy.single, float.policy.batch and float.policy.carries, each judged against the bar the row documents. This book's rows are the scheme axis read on its own, through the entries that name a scheme, and no entry on this lane takes one: the engines take a policy. No entry on the fp16/bf16 lanes names a route at all. A revision that dropped the route book's policy rows would leave this site unswept and unrefused, which is what the run-time probe is read for
-    - a policy naming the rational route, at every double entry that takes a policy
-        reads: the policy's fit route
-        not swept because: not swept here, and not refused: the rational route's own degree table is derived and the pair is measured in the combinations block below, through the entries that name a route at run time. The carriage rows below cover the shipped route only, and that is the boundary this entry names
+        not swept because: not swept by this book, and not refused: a policy names a route and a scheme together, so this lane's rows are keyed on the pair and belong to the route book - float.policy.single, float.policy.batch and float.policy.carries, each judged against the bar the row documents. This book's rows are the scheme axis read on its own, through the entries that name a scheme, and no entry on this lane takes one: the engines take a policy. No entry on the fp16/bf16 lanes names a route at all. A revision that dropped that pair of the route book's rows would leave this site unswept and unrefused, which is what the run-time probe is read for
     - the region-A transform lane (BoysRegionAProduct and its modes)
         reads: no evaluation policy at all
         not swept because: its modes are the lane's own arguments rather than an EvalPolicy, so a scheme is not among the axes a caller can name there. Its claims are the transform rows above, judged against that lane's own table
     - the packed and half-precision lanes reached through the batch entries
         reads: their own arithmetic, named by the backend report
         not swept because: src/boys_simd.cpp and the half lanes name their instruction and their budget directly; the multiply-add route and the evaluation scheme are not selections they read, and BoysBackends() is where a caller asks what they run
-    4 site(s) above; none of them is a row of this book, and the SCHEME RESULT below
+    3 site(s) above; none of them is a row of this book, and the SCHEME RESULT below
     counts none of them
-  SCHEME RESULT: 44 of 44 scheme rows met at this revision (30 accuracy row(s) and
-                 14 carriage row(s), counted together)
-                 carried by the 712500 of 1236304 scheme cells (57.6%) that can discriminate: the other 523804 carry a bound at least as large as the value itself. These cells are not in the count above and do not move it
-  CARRIED: the single-precision engines compile a policy naming another route or
-  another scheme, so the degrees are the role's own, derived from the table that
-  policy's route and scheme actually read. The fp32 policy rows above measure
-  what they answer with, at both of the lane's region budgets, on both float
-  entries. The probe is the reading that says so; a revision that dropped the
-  derivation would print the refusal instead
+  SCHEME RESULT: 29 of 29 scheme rows met at this revision (20 accuracy row(s) and
+                 9 carriage row(s), counted together)
+                 carried by the 404138 of 669364 scheme cells (60.4%) that can discriminate: the other 265226 carry a bound at least as large as the value itself. These cells are not in the count above and do not move it
   CARRIED: the single-precision engines compile a policy naming the orders packing axis,
   and the float book above carries the row it owes at the lane's own bar, measured
   against the committed reference grid beside the per-order entry's row over the same
@@ -526,8 +518,8 @@ the evaluation-scheme rows: each scheme's stored fits over the interval each is 
   below with what it lacks; that list is the worklist
   kind       member                             sup  bnd  rch  note
   ------------------------------------------------------------------------------------------------------------------------------------------------------
-  scheme     split-clenshaw                     yes  yes  yes  21975 fit cell(s), 596177 entry cell(s), 0 failure(s)
-  scheme     horner                             yes  yes  yes  21975 fit cell(s), 596177 entry cell(s), 0 failure(s)
+  scheme     split-clenshaw                     yes  yes  yes  21975 fit cell(s), 312707 entry cell(s), 0 failure(s)
+  scheme     horner                             yes  yes  yes  21975 fit cell(s), 312707 entry cell(s), 0 failure(s)
   route      chebyshev                          yes  yes  yes  51068 cell(s), 0 failure(s) across both regions; 4 entry(ies) answer differently with it named
   route      rational-minimax                   yes  yes  yes  51068 cell(s), 0 failure(s) across both regions; 4 entry(ies) answer differently with it named
   stored fit split-clenshaw / region A          yes  yes  yes  21318 cell(s), 0 failure(s)
@@ -540,9 +532,9 @@ the evaluation-scheme rows: each scheme's stored fits over the interval each is 
   backend    scalar-fp32                        yes  yes  yes  reported route fused, the route in force is fused
   backend    avx2-fp64                          yes  yes  yes  reported route fused, the route in force is fused
   backend    avx2-fp32                          yes  yes  yes  reported route fused, the route in force is fused
-  granularity shipped                            yes  yes  yes  2819824 cell(s) at both schemes, 1543994 of them differing from the other partition's reading, 0 over the bar its row is judged at
-  granularity narrow                             yes  yes  yes  2819824 cell(s) at both schemes, 1543994 of them differing from the other partition's reading, 0 over the bar its row is judged at
-  granularity uniform                            n/a  n/a  n/a  this partition's members divide rather than the partition, and the combination book below measures both, at both schemes, on the cross's own partition axis
+  granularity shipped                            yes  yes  yes  402832 cell(s) at both schemes, 195786 of them differing from the other partition's reading, 0 over the bar its row is judged at
+  granularity narrow                             yes  yes  yes  402832 cell(s) at both schemes, 195786 of them differing from the other partition's reading, 0 over the bar its row is judged at
+  granularity uniform                            n/a  n/a  n/a  this book's rows hold the shipped and narrow partitions, and this partition's members are named here rather than left out of the list above in silence. The combination book below measures both, at both schemes, on the cross's own partition axis
   ------------------------------------------------------------------------------------------------------------------------------------------------------
   CARRIED: the batch and fixed-order entries compile a policy naming the rational
   route, and the route-carriage rows below measure what they answer with it: a
@@ -553,7 +545,7 @@ the evaluation-scheme rows: each scheme's stored fits over the interval each is 
   shipped pair, and the fp32 policy rows above measure what they answer with it: one
   row per policy, region and entry, each judged against the bar the lane publishes
   for that region, with the count of the row's cells that differ from the shipped
-  pair's value beside it.
+  pair's value beside it
   CARRIED: the single-precision engines accept an orders-axis policy, and the float
   book above carries the row it owes at the lane's own bar, measured against the
   committed reference grid beside the per-order entry's row over the same cells. The
@@ -568,8 +560,8 @@ the evaluation-scheme rows: each scheme's stored fits over the interval each is 
   CARRIED: the orders axis reads the narrow partition of region A: its pieces
   are cut per order, so the lane fetches each of the four orders it packs its
   own piece and coefficients instead of stepping one piece's coefficients at
-  a fixed stride, and the packing-axis rows above measure both schemes on both
-  entries, each against the shipped lane's own region-A
+  a fixed stride, and the packing-axis rows above measure both schemes, on
+  both entries, each against the shipped lane's own region-A
   figure - the bar the narrow pieces are cut under is the narrower of the
   two
   limits the library states at the call site (2). Each row's own line says which of
@@ -612,7 +604,7 @@ the evaluation-scheme rows: each scheme's stored fits over the interval each is 
   fp64, chebyshev, split-clenshaw, shipped, arguments        5.5e-14        4.45751e-14    5.5e-14        5e-14          throughout, every region
   fp32, chebyshev, split-clenshaw, shipped, arguments        1.5e-07        1.23617e-07    1.5e-07        1.7514e-07     every region, at exact division and the refined reciprocal
   fp16, chebyshev, split-clenshaw, shipped, arguments        1.5e-07        no figure      1.5e-07        1.7514e-07     the single-precision lane's own figure, plus half of the last representable digit of the returned value and claimed only where the value exceeds the sum. The half lane computes in that arithmetic and stores what it returns, so it cannot be more accurate than the lane whose arithmetic it runs: a bar below that figure is one no conforming host can keep, and a host whose rounding differs delivers the fit's own error through it. Beside the base, and under the same division form: the fp16 and bf16 entries run the single-precision engine's own bodies and round at the boundary (BoysAllOrdersF16, boys_impl.hpp), so the plain reciprocal's larger figure on that lane - 1.75140e-07 at n = 0, x = 9.74054909, 6.67e-8 above that lane's own worst of 1.08354e-07 - is this lane's too, before the format's own half digit is added to it
-  fp32-device, chebyshev, split-clenshaw, shipped, arguments 2.3e-07        1.42109e-14    2.3e-07        not measured   documented figure; this host cannot run the lane
+  fp32-device, chebyshev, split-clenshaw, shipped, arguments 2.3e-07        1.42109e-14    2.3e-07        1.28793e-07    plus 8e-8 under the fast region-B exponential, which is the corrected seed's own contribution. This row carries no form dimension and does not need one: the division form is a host policy field and is named by none of the CUDA surface's headers at this revision, so the device lane has no form to key a figure by. A revision that gave the device entries the axis would owe this row the same measurement the two rows above carry
 
   the combinations: every combination this library's own tables offer, each one either
   measured against the committed reference at the figure its lane publishes, or refused
@@ -695,30 +687,30 @@ the evaluation-scheme rows: each scheme's stored fits over the interval each is 
   fp16, rational-minimax, horner, narrow, orders                170082         0 1.15993e-07   0.000488531   certified and published
   fp16, rational-minimax, horner, uniform, arguments            170082         0 1.05761e-07   0.000488531   certified and published
   fp16, rational-minimax, horner, uniform, orders               170082         0 1.05761e-07   0.000488531   certified and published
-  fp32-device, chebyshev, split-clenshaw, shipped, arguments         0         0 0             2.3e-07       not runnable on this host
-  fp32-device, chebyshev, split-clenshaw, shipped, orders            0         0 0             2.3e-07       not runnable on this host
-  fp32-device, chebyshev, split-clenshaw, narrow, arguments          0         0 0             2.3e-07       not runnable on this host
-  fp32-device, chebyshev, split-clenshaw, narrow, orders             0         0 0             2.3e-07       not runnable on this host
-  fp32-device, chebyshev, split-clenshaw, uniform, arguments         0         0 0             2.3e-07       not runnable on this host
-  fp32-device, chebyshev, split-clenshaw, uniform, orders            0         0 0             2.3e-07       not runnable on this host
-  fp32-device, chebyshev, horner, shipped, arguments                 0         0 0             2.3e-07       not runnable on this host
-  fp32-device, chebyshev, horner, shipped, orders                    0         0 0             2.3e-07       not runnable on this host
-  fp32-device, chebyshev, horner, narrow, arguments                  0         0 0             2.3e-07       not runnable on this host
-  fp32-device, chebyshev, horner, narrow, orders                     0         0 0             2.3e-07       not runnable on this host
-  fp32-device, chebyshev, horner, uniform, arguments                 0         0 0             2.3e-07       not runnable on this host
-  fp32-device, chebyshev, horner, uniform, orders                    0         0 0             2.3e-07       not runnable on this host
-  fp32-device, rational-minimax, split-clenshaw, shipped, arguments         0         0 0             2.3e-07       not runnable on this host
-  fp32-device, rational-minimax, split-clenshaw, shipped, orders         0         0 0             2.3e-07       not runnable on this host
-  fp32-device, rational-minimax, split-clenshaw, narrow, arguments         0         0 0             2.3e-07       not runnable on this host
-  fp32-device, rational-minimax, split-clenshaw, narrow, orders         0         0 0             2.3e-07       not runnable on this host
-  fp32-device, rational-minimax, split-clenshaw, uniform, arguments         0         0 0             2.3e-07       not runnable on this host
-  fp32-device, rational-minimax, split-clenshaw, uniform, orders         0         0 0             2.3e-07       not runnable on this host
-  fp32-device, rational-minimax, horner, shipped, arguments          0         0 0             2.3e-07       not runnable on this host
-  fp32-device, rational-minimax, horner, shipped, orders             0         0 0             2.3e-07       not runnable on this host
-  fp32-device, rational-minimax, horner, narrow, arguments           0         0 0             2.3e-07       not runnable on this host
-  fp32-device, rational-minimax, horner, narrow, orders              0         0 0             2.3e-07       not runnable on this host
-  fp32-device, rational-minimax, horner, uniform, arguments          0         0 0             2.3e-07       not runnable on this host
-  fp32-device, rational-minimax, horner, uniform, orders             0         0 0             2.3e-07       not runnable on this host
+  fp32-device, chebyshev, split-clenshaw, shipped, arguments     56694         0 1.28793e-07   2.3e-07       certified and published
+  fp32-device, chebyshev, split-clenshaw, shipped, orders        56694         0 1.28793e-07   2.3e-07       certified and published
+  fp32-device, chebyshev, split-clenshaw, narrow, arguments      56694         0 1.12966e-07   2.3e-07       certified and published
+  fp32-device, chebyshev, split-clenshaw, narrow, orders         56694         0 4.03007e-08   2.3e-07       certified and published
+  fp32-device, chebyshev, split-clenshaw, uniform, arguments     56694         0 1.19971e-07   2.3e-07       certified and published
+  fp32-device, chebyshev, split-clenshaw, uniform, orders        56694         0 1.19971e-07   2.3e-07       certified and published
+  fp32-device, chebyshev, horner, shipped, arguments             56694         0 1.28793e-07   2.3e-07       certified and published
+  fp32-device, chebyshev, horner, shipped, orders                56694         0 1.28793e-07   2.3e-07       certified and published
+  fp32-device, chebyshev, horner, narrow, arguments              56694         0 1.12966e-07   2.3e-07       certified and published
+  fp32-device, chebyshev, horner, narrow, orders                 56694         0 3.81187e-08   2.3e-07       certified and published
+  fp32-device, chebyshev, horner, uniform, arguments             56694         0 1.19971e-07   2.3e-07       certified and published
+  fp32-device, chebyshev, horner, uniform, orders                56694         0 1.19971e-07   2.3e-07       certified and published
+  fp32-device, rational-minimax, split-clenshaw, shipped, arguments     56694         0 1.28793e-07   2.3e-07       certified and published
+  fp32-device, rational-minimax, split-clenshaw, shipped, orders     56694         0 1.28793e-07   2.3e-07       certified and published
+  fp32-device, rational-minimax, split-clenshaw, narrow, arguments     56694         0 1.12966e-07   2.3e-07       certified and published
+  fp32-device, rational-minimax, split-clenshaw, narrow, orders     56694         0 5.27022e-08   2.3e-07       certified and published
+  fp32-device, rational-minimax, split-clenshaw, uniform, arguments     56694         0 1.19971e-07   2.3e-07       certified and published
+  fp32-device, rational-minimax, split-clenshaw, uniform, orders     56694         0 1.19971e-07   2.3e-07       certified and published
+  fp32-device, rational-minimax, horner, shipped, arguments      56694         0 1.28793e-07   2.3e-07       certified and published
+  fp32-device, rational-minimax, horner, shipped, orders         56694         0 1.28793e-07   2.3e-07       certified and published
+  fp32-device, rational-minimax, horner, narrow, arguments       56694         0 1.12966e-07   2.3e-07       certified and published
+  fp32-device, rational-minimax, horner, narrow, orders          56694         0 5.27022e-08   2.3e-07       certified and published
+  fp32-device, rational-minimax, horner, uniform, arguments      56694         0 1.19971e-07   2.3e-07       certified and published
+  fp32-device, rational-minimax, horner, uniform, orders         56694         0 1.19971e-07   2.3e-07       certified and published
   ------------------------------------------------------------------------------------------------------------------------------------------------------
   fp32, chebyshev, split-clenshaw, shipped, arguments        measured here over the whole committed grid. The bound shown is 2.5e-07, not the lane's base: this lane publishes that figure for the plain reciprocal, and the row was read at every form
   fp32, chebyshev, split-clenshaw, shipped, orders           measured here over the whole committed grid. The bound shown is 2.5e-07, not the lane's base: this lane publishes that figure for the plain reciprocal, and the row was read at every form
@@ -841,14 +833,14 @@ the evaluation-scheme rows: each scheme's stored fits over the interval each is 
                                                              where the return is the format's floor rather than the arithmetic's, and they
                                                              are counted here rather than passed
   ------------------------------------------------------------------------------------------------------------------------------------------------------
-  COMBINATIONS: 504 of 672 member(s) of the option space are certified and published
+  COMBINATIONS: 96 of 96 member(s) of the option space are certified and published
                 0 refused with the library's own reason and owed
                 0 call-site limit(s) name unbuilt work and are owed the same way
-                168 not runnable on this host, counted apart and not against the library
+                0 not runnable on this host, counted apart and not against the library
                 0 offered and covered by no cell of this block
                 0 delivering outside the bound its lane publishes
-  the arithmetic: 504 + 0 + 168 + 0 + 0 = 672
-                 the space read off the tables a second way: 672 member(s) over 4 lane(s),
+  the arithmetic: 96 + 0 + 0 + 0 + 0 = 96
+                 the space read off the tables a second way: 96 member(s) over 4 lane(s),
                  a route axis of 2 2 2 2 route(s), 2 scheme(s), 3 partition(s),
                  2 axis(es)
                  the entry book's own 32 cell(s), the factor this arithmetic has none of:
@@ -856,39 +848,44 @@ the evaluation-scheme rows: each scheme's stored fits over the interval each is 
                  4 not applicable to the entry's shape = 32
                  the entry book's space read off the same tables a second way: 4 entry(ies) x 2 route(s) x 2 scheme(s),
                  2 axis(es) = 32
-                 the run's total with the entry factor: 672 + 32 = 704 cell(s)
-  the cross: 504 of 672 member(s) the accessor claims the library carries are certified and
+                 the run's total with the entry factor: 96 + 32 = 128 cell(s)
+  the cross: 96 of 96 member(s) the accessor claims the library carries are certified and
                 published by the rows above
-  the accessor: 0 row(s) refused without a figure, 168 answered for a lane this host
+  the accessor: 0 row(s) refused without a figure, 0 answered for a lane this host
                 cannot run, 0 whose guarantee differs from the figure the row is judged by,
                 and 16 whose delivered figure sits above what the whole call measured
                 the accessor's delivered figure is the worst over the fits the combination
                 names, and the call adds its recurrences over them: on this grid it sits
-                strictly below the whole call's measurement on 32 row(s), which is that relation
-                and not a disagreement, and it has no delivered figure at all on 456 row(s) -
+                strictly below the whole call's measurement on 56 row(s), which is that relation
+                and not a disagreement, and it has no delivered figure at all on 24 row(s) -
                 the half lane's error is the format's
-  the tolerance query: 672 carried row(s) asked at the figure each row is judged by and
-                answered inside it, 672 of them asked at half of that figure and answered
+  the tolerance query: 96 carried row(s) asked at the figure each row is judged by and
+                answered inside it, 96 of them asked at half of that figure and answered
                 outside it, 0 row(s) whose lane publishes no figure to halve, and 0
                 refused row(s) answered with no verdict and no figure. 0 disagreement(s)
                 with the figures the two accessors answer
 
-  the division form: every cell of the cross above was read at each of the 3 form(s)
-  BoysDivisionForms() answers, each form judged against the figure the row's own
-  lane publishes. The columns after the compared count are the values each form
-  past the first delivered differently from the first form's at the same order
-  and argument, against the values it was asked for. A lane whose column is zero
-  for every form is a lane the axis selects no arithmetic on: its three names reach
-  one body, and one is what it was certified at
+  the division form: every cell of the cross above on a lane whose entries carry the
+  axis was read at each of the 3 form(s) BoysDivisionForms() answers, each form
+  judged against the figure the row's own lane publishes. The columns after the
+  compared count are the values each form past the first delivered differently from
+  the first form's at the same order and argument, against the values it was asked
+  for. A lane whose column is zero for every form is a lane the axis selects no
+  arithmetic on: its three names reach one body, and one is what it was certified at. The
+  device lane's entries name no form at all (DivisionForm is a field of the host
+  policy and is named in no device header), so its rows carry one reading and no
+  comparison, and their form(s) column reads 1
     lane                        axis           cell(s)   form(s)    compared plain-reciprocal refined-reciprocal
-    fp64                        arguments     14286888         3     9524592     1982202           0
-    fp64                        orders        14286888         3     9524592     1748990           0
-    fp32                        arguments     14286888         3     9524592     1344346           0
-    fp32                        orders        14286888         3     9524592      935508           0
-    fp16                        arguments     14286888         3     9524592     1344402           0
-    fp16                        orders        14286888         3     9524592      935458           0
-    total                                                           57147552     8290906           0
-  OPTION SPACE: 36 of 36 member(s) supported, bounded and reachable
+    fp64                        arguments      2040984         3     1360656      281615           0
+    fp64                        orders         2040984         3     1360656      249997           0
+    fp32                        arguments      2040984         3     1360656      192034           0
+    fp32                        orders         2040984         3     1360656      133218           0
+    fp16                        arguments      2040984         3     1360656      192034           0
+    fp16                        orders         2040984         3     1360656      133218           0
+    fp32-device                 arguments       680328         1           0           0           0
+    fp32-device                 orders          680328         1           0           0           0
+    total                                                            8163936     1182116           0
+  OPTION SPACE: 16 of 16 member(s) supported, bounded and reachable
 
 the packing-axis rows: which of a call's values a packed lane carries, measured through the two entries the axis is carried on - the all-orders entry, whose call shape is four orders of one
 argument, and the plane entry, whose call shape has both - against the committed reference
@@ -911,17 +908,17 @@ argument, and the plane entry, whose call shape has both - against the committed
   horner           rat A..C                 56694 5.5e-14                5e-14                    0.909  n=32, x=28.9893        verified at this revision
   horner           rat pl A                 21318 5.5e-14                1.87088e-14               0.34  n=5, x=6.01541         verified at this revision
   horner           rat pl A..C              56694 5.5e-14                5e-14                    0.909  n=32, x=28.9893        verified at this revision
-  split-clenshaw   cheb A                   21318 1e-15                  2.22045e-16              0.222  n=0, x=1e-08           verified at this revision
-  split-clenshaw   cheb A..C                56694 5.5e-14                5e-14                    0.909  n=32, x=28.9893        verified at this revision
-  split-clenshaw   cheb pl A                21318 1e-15                  2.22045e-16              0.222  n=0, x=1e-08           verified at this revision
-  split-clenshaw   cheb pl A..C             56694 5.5e-14                5e-14                    0.909  n=32, x=28.9893        verified at this revision
-  horner           cheb A                   21318 1e-15                  2.22045e-16              0.222  n=0, x=4.94066e-324    verified at this revision
-  horner           cheb A..C                56694 5.5e-14                5e-14                    0.909  n=32, x=28.9893        verified at this revision
-  horner           cheb pl A                21318 1e-15                  2.22045e-16              0.222  n=0, x=4.94066e-324    verified at this revision
-  horner           cheb pl A..C             56694 5.5e-14                5e-14                    0.909  n=32, x=28.9893        verified at this revision
+  split-clenshaw   narrow cheb A            21318 1e-15                  2.22045e-16              0.222  n=0, x=1e-08           verified at this revision
+  split-clenshaw   narrow cheb A..C         56694 5.5e-14                5e-14                    0.909  n=32, x=28.9893        verified at this revision
+  split-clenshaw   narrow cheb pl A         21318 1e-15                  2.22045e-16              0.222  n=0, x=1e-08           verified at this revision
+  split-clenshaw   narrow cheb pl A..C      56694 5.5e-14                5e-14                    0.909  n=32, x=28.9893        verified at this revision
+  horner           narrow cheb A            21318 1e-15                  2.22045e-16              0.222  n=0, x=4.94066e-324    verified at this revision
+  horner           narrow cheb A..C         56694 5.5e-14                5e-14                    0.909  n=32, x=28.9893        verified at this revision
+  horner           narrow cheb pl A         21318 1e-15                  2.22045e-16              0.222  n=0, x=4.94066e-324    verified at this revision
+  horner           narrow cheb pl A..C      56694 5.5e-14                5e-14                    0.909  n=32, x=28.9893        verified at this revision
   ----------------------------------------------------------------------------------------------------------------------------------------------------------------
-  PACK RESULT: 168 of 168 packing-axis rows met at this revision
-                carried by the 4285376 of 6553008 axis cells (65.4%) that can discriminate: the other 2267632 carry a bound at least as large as the value itself. These cells are not in the counts above and do not move them
+  PACK RESULT: 24 of 24 packing-axis rows met at this revision
+                carried by the 644940 of 936144 axis cells (68.9%) that can discriminate: the other 291204 carry a bound at least as large as the value itself. These cells are not in the counts above and do not move them
 
 the granularity-axis rows: which partition of the fitted domain a call reads, measured at both members against the committed reference
   partition  scheme          row                              cells bound it promises      worst delivered          ratio  worst cell             verdict
@@ -965,12 +962,12 @@ the granularity-axis rows: which partition of the fitted domain a call reads, me
   rational x narrow -               region A pieces                  13497 3e-14                  2.21663e-14              0.739  n=2, x=9.88955         verified at this revision
   rational x narrow -               region B seed                      248 5e-14                  4.12448e-14              0.825  n=0, x=12              verified at this revision
   rational x narrow -               batch entry, A..C                56694 5.5e-14                5e-14                    0.909  n=32, x=28.9893        verified at this revision
-  ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-  GRANULARITY RESULT: 255 of 255 granularity-axis rows met at this revision
+  -------------------------------------------------------------------------------------------------------------------------------------------------------------
+  GRANULARITY RESULT: 39 of 39 granularity-axis rows met at this revision
   the trade the axis names: the shipped partition stores 1339 coefficient(s) in 67 row(s) over both fitted regions and one evaluation reads 19 to 21 of them;
                             the narrow partition stores 3476 in 316 rows and one evaluation reads 11. Naming it buys the smaller read at the larger table and the piece lookup, and is not a saving
                             the same partition on the rational route stores 2646 coefficient(s) in the same 316 row(s), one evaluation reading 6 to 9 of them
-                carried by the 4125493 of 5710087 axis cells (72.2%) that can discriminate: the other 1584594 carry a bound at least as large as the value itself. These cells are not in the counts above and do not move them
+                carried by the 657685 of 876103 axis cells (75.1%) that can discriminate: the other 218418 carry a bound at least as large as the value itself. These cells are not in the counts above and do not move them
 
 the entry book: the batched double-precision entries crossed with the uniform
 partition, per route, per scheme and per packing axis.
