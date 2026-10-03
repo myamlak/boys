@@ -10178,7 +10178,9 @@ int main(int argc, char** argv) {
     // off a CUDA build is every cell of all three lanes.
     const std::span<const boys::LaneContractInfo> combLaneRows = boys::BoysLaneContracts();
     const int combLaneCount = static_cast<int>(combLaneRows.size());
-    const int combDeviceLane = static_cast<int>(boys::Precision::kFp32Device);
+    // maybe_unused: only the CUDA arms below read this one, and a build with
+    // BUILD_CUDA=OFF compiles none of them.
+    [[maybe_unused]] const int combDeviceLane = static_cast<int>(boys::Precision::kFp32Device);
     const int combHalfLane = static_cast<int>(boys::Precision::kFp16);
 
     /// Whether a lane is one of the device's three, which are the three precisions the device
