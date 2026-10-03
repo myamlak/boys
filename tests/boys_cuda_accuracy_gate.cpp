@@ -895,6 +895,79 @@ void MeasureDeviceRowF32(const Reference& ref,
     }
 }
 
+#ifdef BOYS_CUDA_GATE_FP16
+// The half-precision launched rows, measured the way this lane's other fp16
+// entries are: against the reference at the argument the entry actually
+// evaluated, at the header's own bound - 1e-7 plus half of the last
+// representable digit of the value the entry returned - and with the format's
+// floor counted apart rather than judged. The fp32 sibling above cannot certify
+// one of these: its bound is the float lane's and its reference is the float
+// column, and a row measured at another precision's bar is a claim about
+// arithmetic that row does not run.
+//
+// One claim, the row's own: the name comes from the report's row for the entry,
+// so a name this gate invented could not pass the coverage check at the end of
+// this file, and a row the report carries is either certified here or counted
+// there.
+void MeasureDeviceRowF16(const Reference& ref,
+                         const Grid& grid,
+                         boys::DeviceEntry entry,
+                         boys::BoysStatus (*launch)(const int*,
+                                                    const boys::F16*,
+                                                    boys::F16*,
+                                                    std::size_t,
+                                                    void*,
+                                                    boys::DivisionForm)) {
+    const std::string name = Label(DeviceRow(entry).name);
+    const int row = AddClaim(name.c_str(), "A..C", kBoundHalfRow);
+    const std::size_t count = ref.count;
+    const int nmax = boys::kMaxBoysOrder;
+    const std::size_t cells = grid.cells;
+
+    // The launch is the fp64 sibling's, one lane down: `count` arguments and a
+    // ladder for each, so the output holds `count * (kMaxBoysOrder + 1)` values.
+    // The count handed to the entry is the number of arguments and not the size
+    // of that output, which is the same distinction the fp32 sibling's comment
+    // makes.
+    DevBuf<int> dN(count);
+    DevBuf<boys::F16> dX(count);
+    DevBuf<boys::F16> dOut(cells);
+    const std::vector<int> tops(count, nmax);
+    std::vector<boys::F16> hostX(count);
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        hostX[i] = boys::F16(static_cast<float>(ref.x[i]));
+    }
+
+    dN.Upload(tops);
+    dX.Upload(hostX);
+    CheckLaunch(launch(dN.get(), dX.get(), dOut.get(), count, nullptr, kGateDivisionForm),
+                name.c_str());
+    std::vector<boys::F16> out(cells);
+    dOut.Download(out);
+    Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+
+    for (int n = 0; n <= nmax; ++n)
+    {
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const std::size_t e = ref.Index(n, i);
+            const double got = static_cast<double>(out[e]);
+
+            Measure(row,
+                    n,
+                    ref.x16[i],
+                    got,
+                    ref.v16[e],
+                    ref.decade16[e],
+                    HalfBoundAt(got),
+                    Unrepresentable(got, kF16MinNormalExp));
+        }
+    }
+}
+#endif // BOYS_CUDA_GATE_FP16
+
 void SweepDeviceChoices(const Reference& ref, const Grid& grid) {
     const double pairBound = 2.0 * kBoundDoubleBatch;
 
@@ -1329,6 +1402,104 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid) {
         CompareDeviceWithHost<NarrowOrdersRatPolicy>(
             ref, grid, bothRatHornerOut, bothRatHornerHost);
     }
+}
+
+// The half lane's partition, route and packing axes, measured row by row the way
+// the float lane's are. The names are the report's, so the two sweeps differ in
+// the format and in nothing else: every member of the half device lane's option
+// space is named here, and a member added to that surface is certified by
+// nothing until its row appears below.
+void SweepHalfChoices(const Reference& ref, const Grid& grid) {
+#ifdef BOYS_CUDA_GATE_FP16
+    // The shipped partition's two other shapes: the narrow pieces, in the
+    // Clenshaw basis and in the monomial basis the Horner scheme name sums.
+    MeasureDeviceRowF16(
+        ref, grid, boys::DeviceEntry::kAllOrdersF16Narrow, &boys::BoysCuda::AllOrdersF16Narrow);
+    MeasureDeviceRowF16(ref,
+                        grid,
+                        boys::DeviceEntry::kAllOrdersF16NarrowMono,
+                        &boys::BoysCuda::AllOrdersF16NarrowMono);
+    // The uniform grid, its two scheme names, and the route's pair over it.
+    MeasureDeviceRowF16(
+        ref, grid, boys::DeviceEntry::kAllOrdersF16Uniform, &boys::BoysCuda::AllOrdersF16Uniform);
+    MeasureDeviceRowF16(ref,
+                        grid,
+                        boys::DeviceEntry::kAllOrdersF16UniformHorner,
+                        &boys::BoysCuda::AllOrdersF16UniformHorner);
+    MeasureDeviceRowF16(
+        ref, grid, boys::DeviceEntry::kAllOrdersF16Rat, &boys::BoysCuda::AllOrdersF16Rat);
+    MeasureDeviceRowF16(ref,
+                        grid,
+                        boys::DeviceEntry::kAllOrdersF16RatHorner,
+                        &boys::BoysCuda::AllOrdersF16RatHorner);
+    MeasureDeviceRowF16(ref,
+                        grid,
+                        boys::DeviceEntry::kAllOrdersF16NarrowRat,
+                        &boys::BoysCuda::AllOrdersF16NarrowRat);
+    MeasureDeviceRowF16(ref,
+                        grid,
+                        boys::DeviceEntry::kAllOrdersF16NarrowRatHorner,
+                        &boys::BoysCuda::AllOrdersF16NarrowRatHorner);
+    MeasureDeviceRowF16(ref,
+                        grid,
+                        boys::DeviceEntry::kAllOrdersF16UniformRat,
+                        &boys::BoysCuda::AllOrdersF16UniformRat);
+    MeasureDeviceRowF16(ref,
+                        grid,
+                        boys::DeviceEntry::kAllOrdersF16UniformRatHorner,
+                        &boys::BoysCuda::AllOrdersF16UniformRatHorner);
+    // The same tables and route on the packing axis's other side: the cut this
+    // row reads is the per-argument row's own.
+    MeasureDeviceRowF16(
+        ref, grid, boys::DeviceEntry::kAllOrdersF16Orders, &boys::BoysCuda::AllOrdersF16Orders);
+    MeasureDeviceRowF16(ref,
+                        grid,
+                        boys::DeviceEntry::kAllOrdersF16NarrowOrders,
+                        &boys::BoysCuda::AllOrdersF16NarrowOrders);
+    MeasureDeviceRowF16(ref,
+                        grid,
+                        boys::DeviceEntry::kAllOrdersF16NarrowOrdersMono,
+                        &boys::BoysCuda::AllOrdersF16NarrowOrdersMono);
+    MeasureDeviceRowF16(ref,
+                        grid,
+                        boys::DeviceEntry::kAllOrdersF16OrdersRat,
+                        &boys::BoysCuda::AllOrdersF16OrdersRat);
+    MeasureDeviceRowF16(ref,
+                        grid,
+                        boys::DeviceEntry::kAllOrdersF16OrdersRatHorner,
+                        &boys::BoysCuda::AllOrdersF16OrdersRatHorner);
+    MeasureDeviceRowF16(ref,
+                        grid,
+                        boys::DeviceEntry::kAllOrdersF16NarrowOrdersRat,
+                        &boys::BoysCuda::AllOrdersF16NarrowOrdersRat);
+    MeasureDeviceRowF16(ref,
+                        grid,
+                        boys::DeviceEntry::kAllOrdersF16NarrowOrdersRatHorner,
+                        &boys::BoysCuda::AllOrdersF16NarrowOrdersRatHorner);
+    MeasureDeviceRowF16(ref,
+                        grid,
+                        boys::DeviceEntry::kAllOrdersF16OrdersUniform,
+                        &boys::BoysCuda::AllOrdersF16OrdersUniform);
+    MeasureDeviceRowF16(ref,
+                        grid,
+                        boys::DeviceEntry::kAllOrdersF16OrdersUniformHorner,
+                        &boys::BoysCuda::AllOrdersF16OrdersUniformHorner);
+    MeasureDeviceRowF16(ref,
+                        grid,
+                        boys::DeviceEntry::kAllOrdersF16OrdersUniformRat,
+                        &boys::BoysCuda::AllOrdersF16OrdersUniformRat);
+    MeasureDeviceRowF16(ref,
+                        grid,
+                        boys::DeviceEntry::kAllOrdersF16OrdersUniformRatHorner,
+                        &boys::BoysCuda::AllOrdersF16OrdersUniformRatHorner);
+#else
+    // No entry to call: this build's fp16 seam is closed, and every fp16 device
+    // option is reported unbuilt, so the coverage check at the end of this file
+    // skips them rather than counting them against a surface this build has not
+    // got.
+    (void)ref;
+    (void)grid;
+#endif // BOYS_CUDA_GATE_FP16
 }
 
 void SweepFloat(const Reference& ref,
@@ -4178,6 +4349,7 @@ int main(int argc, char** argv) {
                     DeviceRow(boys::DeviceEntry::kSingleF32Fast, boys::RegionBExp::kFast).name);
     SweepHalf(ref, grid, sorted, slotHalfSingle, slotHalfOrders, slotHalfAllN);
     SweepDeviceChoices(ref, grid);
+    SweepHalfChoices(ref, grid);
 
     // The device-callable entries: one handle, one set of rows, and the same
     // consumer kernels every time. The order and capacity refusals are exercised
