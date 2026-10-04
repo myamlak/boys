@@ -388,12 +388,14 @@ instead of fixed, and `BoysFitRoutesF32` reports them. The measured column is th
 the committed reference, every order and every sample of the row's interval.
 
 **The same two routes are open at compile time, on the policy, and there the scheme comes with
-them.** The lane's `BoysSingleF32`, `BoysAllOrdersF32` and `BoysAllNF32` take the `EvalPolicy` the
-double lane's entries take, so the route is a template argument as well as a run-time selector, and
-the scheme — the choice between the Chebyshev table and the monomial form of the same fits — is
-offered beside it. Every pair this lane stores is carried, and the gate
-measures the two entries with a policy as ten rows, one per policy for each region the policy's fits
-serve — the six the lane shipped, plus the narrow partition's four — 294690 comparison cells with no
+them.** The lane's `BoysSingleF32`, `BoysAllOrdersF32`, `BoysFixedNF32`, `BoysAllNF32` and
+`BoysAllNAtOrdersF32` take the `EvalPolicy` the double lane's entries take, so the route is a
+template argument as well as a run-time selector, and the scheme — the choice between the Chebyshev
+table and the monomial form of the same fits — is offered beside it. Every pair this lane stores is
+carried, and the gate measures the single and all-orders entries with a policy, ten rows each, one
+per policy for each region the policy's fits serve — the six the lane shipped, plus the narrow
+partition's four. The lane's array entries carry the policy into those same two bodies, so those
+rows are their readings at the same policy too: 294690 comparison cells with no
 row measured over no argument, and no narrow row of them outside its bar in either multiply-add
 route's build. The float lane's Horner reading is 7.68e-08 at its worst cell (order 0, x = 0.553691) over
 region A and 2.22e-08 (order 32, x = 11.8998) over region B, against the lane's 1.5e-07 bar; the
@@ -1529,7 +1531,8 @@ lane's budget imposed on the half lanes. `DefaultPolicyFp16` and `DefaultPolicyB
 type — one lane at one budget — named twice so that a document can cite the format its reader uses.
 
 **The half lanes' entries take no policy argument.** `BoysSingleF16`, `BoysAllOrdersF16`,
-`BoysSingleBf16` and `BoysAllOrdersBf16` take no policy at the call site: the budget is the whole
+`BoysFixedNF16`, `BoysAllNF16`, `BoysAllNAtOrdersF16`, `BoysSingleBf16` and `BoysAllOrdersBf16` take
+no policy at the call site: the budget is the whole
 of what their default adds to the float lane's, so they run `DefaultPolicyFp16` and
 `DefaultPolicyBf16` as a policy they carry rather than one a call site passes. The name is what a
 document cites and what the check below holds them to.
