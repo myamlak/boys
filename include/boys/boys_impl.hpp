@@ -3673,6 +3673,64 @@ void BoysAllNF32Impl(int nmax, const float* x, float* out, std::size_t count) no
     }
 }
 
+// The float lane's fixed-order batch: the per-argument single body at every
+// argument, one fixed order, the strided output the public surface documents.
+// It is the loop the double lane's fixed-order entry falls back to when its
+// policy names a route or the grid, and it is a body of its own here because
+// the float lane has no shaped region kernel to carry the other path: the
+// packed lane this entry would need is an AVX2 kernel over doubles, so the
+// per-argument body is the whole of what this entry serves at every policy,
+// which is also why no speed is claimed for it over the caller's own loop.
+template <EvalPolicyLike Policy>
+void BoysFixedNF32Impl(
+    int n, const float* x, float* out, std::size_t count, std::size_t stride) noexcept {
+    // The packing axis is not asserted here: the per-argument body this loop
+    // calls, BoysSingleF32Impl, refuses the orders axis itself, on the reading
+    // its own comment gives - one order at one argument has no second order to
+    // fill a lane with - and a guard here would state the same refusal twice.
+    assert(n >= 0 && n <= kMaxBoysOrder);
+    assert(x != nullptr);
+    assert(out != nullptr);
+    assert(stride >= 1);
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        assert(x[i] >= 0.0f);
+        out[i * stride] = BoysSingleF32Impl<Policy>(n, x[i]);
+    }
+}
+
+// The float lane's per-element-top-order batch: the per-argument all-orders
+// body at each argument's own top order, written into the caller's planes
+// exactly as the double lane's entry of this shape writes them, and with the
+// same property - the cells above each column's own top order are left as the
+// caller left them, because each column stops at its own n[i].
+template <EvalPolicyLike Policy>
+void BoysAllNAtOrdersF32Impl(
+    const int* n, const float* x, float* out, std::size_t count) noexcept {
+    // No RefuseUniformPartition here, on the double lane's own reading: every
+    // value below comes from BoysAllOrdersF32Impl, which reads the uniform grid
+    // where the policy names it, so a guard at this entry would refuse a
+    // combination this body serves.
+    assert(count == 0 || n != nullptr);
+    assert(count == 0 || x != nullptr);
+    assert(count == 0 || out != nullptr);
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        assert(n[i] >= 0 && n[i] <= kMaxBoysOrder);
+        assert(x[i] >= 0.0f);
+
+        float row[kMaxBoysOrder + 1];
+        BoysAllOrdersF32Impl<Policy>(n[i], x[i], row);
+
+        for (int l = 0; l <= n[i]; ++l)
+        {
+            out[static_cast<std::size_t>(l) * count + i] = row[static_cast<std::size_t>(l)];
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // The region kernels (internal: defined in boys_simd.cpp)
 // ---------------------------------------------------------------------------
@@ -4844,6 +4902,17 @@ void BoysAllNF32(int nmax, const float* x, float* out, std::size_t count) noexce
     detail::BoysAllNF32Impl<Policy>(nmax, x, out, count);
 }
 
+template <EvalPolicyLike Policy>
+void BoysFixedNF32(
+    int n, const float* x, float* out, std::size_t count, std::size_t stride) noexcept {
+    detail::BoysFixedNF32Impl<Policy>(n, x, out, count, stride);
+}
+
+template <EvalPolicyLike Policy>
+void BoysAllNAtOrdersF32(const int* n, const float* x, float* out, std::size_t count) noexcept {
+    detail::BoysAllNAtOrdersF32Impl<Policy>(n, x, out, count);
+}
+
 
 #if BoysFp16
 // The fp16/bf16 lanes forward the multiplier and the policy to the F32 engine with the
@@ -4928,6 +4997,84 @@ void BoysAllOrdersBf16(int nmax, Bf16 x, Bf16* out) noexcept {
     for (int l = 0; l <= nmax; ++l)
     {
         out[l] = static_cast<Bf16>(scratch[l]);
+    }
+}
+
+// The half lane's array shapes: the float lane's own bodies at each argument,
+// the results stored to half once, exactly as BoysAllOrdersF16 stores one
+// argument's ladder. Nothing is computed in half here beyond the store - the
+// arithmetic is the fp32 engine's, which is what makes these the fp16 lane's
+// entries rather than a second engine - and each element is the fp16 lane's
+// single or all-orders entry at that argument, so the bound is that entry's.
+template <EvalPolicyLike Policy>
+void BoysFixedNF16(
+    int n, const F16* x, F16* out, std::size_t count, std::size_t stride) noexcept {
+    static_assert(Policy::kBudget == BoysBudget::kFp16,
+                  "the half lanes run the fp16 engine budget, so a policy named here is one built "
+                  "at it: name BoysBudget::kFp16, or call the float lane's entry to run the float "
+                  "lane's arithmetic");
+
+    assert(n >= 0 && n <= kMaxBoysOrder);
+    assert(x != nullptr);
+    assert(out != nullptr);
+    assert(stride >= 1);
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        assert(x[i] >= static_cast<F16>(0.0f));
+        out[i * stride] = static_cast<F16>(
+            detail::BoysSingleF32Impl<Policy>(n, static_cast<float>(x[i])));
+    }
+}
+
+template <EvalPolicyLike Policy>
+void BoysAllNF16(int nmax, const F16* x, F16* out, std::size_t count) noexcept {
+    static_assert(Policy::kBudget == BoysBudget::kFp16,
+                  "the half lanes run the fp16 engine budget, so a policy named here is one built "
+                  "at it: name BoysBudget::kFp16, or call the float lane's entry to run the float "
+                  "lane's arithmetic");
+
+    assert(nmax >= 0 && nmax <= kMaxBoysOrder);
+    assert(count == 0 || x != nullptr);
+    assert(count == 0 || out != nullptr);
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        assert(x[i] >= static_cast<F16>(0.0f));
+
+        float row[kMaxBoysOrder + 1];
+        detail::BoysAllOrdersF32Impl<Policy>(nmax, static_cast<float>(x[i]), row);
+
+        for (int l = 0; l <= nmax; ++l)
+        {
+            out[static_cast<std::size_t>(l) * count + i] = static_cast<F16>(row[l]);
+        }
+    }
+}
+
+template <EvalPolicyLike Policy>
+void BoysAllNAtOrdersF16(const int* n, const F16* x, F16* out, std::size_t count) noexcept {
+    static_assert(Policy::kBudget == BoysBudget::kFp16,
+                  "the half lanes run the fp16 engine budget, so a policy named here is one built "
+                  "at it: name BoysBudget::kFp16, or call the float lane's entry to run the float "
+                  "lane's arithmetic");
+
+    assert(count == 0 || n != nullptr);
+    assert(count == 0 || x != nullptr);
+    assert(count == 0 || out != nullptr);
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        assert(n[i] >= 0 && n[i] <= kMaxBoysOrder);
+        assert(x[i] >= static_cast<F16>(0.0f));
+
+        float row[kMaxBoysOrder + 1];
+        detail::BoysAllOrdersF32Impl<Policy>(n[i], static_cast<float>(x[i]), row);
+
+        for (int l = 0; l <= n[i]; ++l)
+        {
+            out[static_cast<std::size_t>(l) * count + i] = static_cast<F16>(row[l]);
+        }
     }
 }
 

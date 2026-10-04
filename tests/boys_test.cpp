@@ -950,3 +950,157 @@ TEST(BoysTest, SimdMatchesScalarBf16) {
                       boys::detail::BoysRegionCSimdBf16>();
 }
 #endif // BoysFp16
+
+// The five host classes whose rows the default-policy table did not carry: the
+// float lane's fixed-order and per-element-top-order batches and the half lane's
+// three array shapes. Each entry is a composition and not a second engine - the
+// per-argument body at every argument, the result stored once - so what these
+// tests hold them to is the composition itself: the value at every (order,
+// argument) is the per-argument entry's at the same pair, bit for bit. That is
+// the strongest statement a composition can be held to, and it is the one the
+// half lane's entries also need, because the store to half is the whole of what
+// they add to the fp32 body they run.
+TEST(BoysHostClassesTest, TheNewFixedNEntriesAreTheirPerArgumentLoop) {
+    const std::array<int, 4> orders{0, 1, 6, boys::kMaxBoysOrder};
+    const std::array<double, 8> args{0.0, 1.0e-8, 0.05, 0.7, 3.5, 12.0, 80.0, 640.0};
+    const std::size_t count = args.size();
+    const std::size_t stride = 3;
+
+    std::vector<float> floats(count);
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        floats[i] = static_cast<float>(args[i]);
+    }
+
+    std::vector<float> out32(count * stride, -1.0f);
+
+    for (const int n : orders)
+    {
+        boys::BoysFixedNF32(n, floats.data(), out32.data(), count, stride);
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            EXPECT_EQ(out32[i * stride], boys::BoysSingleF32(n, floats[i]))
+                << "n=" << n << " x=" << args[i];
+        }
+
+        // The stride is the entry's own surface: every slot it does not own keeps
+        // the caller's value.
+        for (std::size_t k = 0; k < count; ++k)
+        {
+            for (std::size_t s = 1; s < stride; ++s)
+            {
+                EXPECT_EQ(out32[k * stride + s], -1.0f) << "slot " << k * stride + s;
+            }
+        }
+    }
+
+#if BoysFp16
+    std::vector<boys::F16> halves(count);
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        halves[i] = static_cast<boys::F16>(static_cast<float>(args[i]));
+    }
+
+    std::vector<boys::F16> out16(count * stride, boys::F16{-1.0f});
+
+    for (const int n : orders)
+    {
+        boys::BoysFixedNF16(n, halves.data(), out16.data(), count, stride);
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            // The same fp32 body the float entry runs, stored to half once.
+            EXPECT_EQ(static_cast<float>(out16[i * stride]),
+                      static_cast<float>(boys::BoysSingleF16(n, halves[i])))
+                << "n=" << n << " x=" << args[i];
+        }
+    }
+#endif // BoysFp16
+}
+
+TEST(BoysHostClassesTest, TheNewBatchEntriesAreTheirPerArgumentLoop) {
+    const std::array<double, 5> args{0.0, 0.35, 2.5, 30.0, 900.0};
+    const std::array<int, 5> tops{0, 4, 9, 15, boys::kMaxBoysOrder};
+    const std::size_t count = args.size();
+    const std::size_t nmax = static_cast<std::size_t>(boys::kMaxBoysOrder);
+
+    std::vector<float> floats(count);
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        floats[i] = static_cast<float>(args[i]);
+    }
+
+    // The per-element-top-order shape: each column stops at its own top, and the
+    // cells above it are the caller's.
+    std::vector<float> ragged32(count * (nmax + 1), -1.0f);
+    boys::BoysAllNAtOrdersF32(tops.data(), floats.data(), ragged32.data(), count);
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        std::array<float, boys::kMaxBoysOrder + 1> column{};
+        boys::BoysAllOrdersF32(tops[i], floats[i], column.data());
+
+        for (std::size_t k = 0; k <= nmax; ++k)
+        {
+            const float got = ragged32[k * count + i];
+
+            if (static_cast<int>(k) <= tops[i])
+            {
+                EXPECT_EQ(got, column[k]) << "top=" << tops[i] << " x=" << args[i] << " k=" << k;
+            }
+            else
+            {
+                EXPECT_EQ(got, -1.0f) << "cell above the top: i=" << i << " k=" << k;
+            }
+        }
+    }
+
+#if BoysFp16
+    std::vector<boys::F16> halves(count);
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        halves[i] = static_cast<boys::F16>(static_cast<float>(args[i]));
+    }
+
+    std::vector<boys::F16> planes16(count * (nmax + 1), boys::F16{-1.0f});
+    boys::BoysAllNF16(boys::kMaxBoysOrder, halves.data(), planes16.data(), count);
+
+    std::vector<boys::F16> ragged16(count * (nmax + 1), boys::F16{-1.0f});
+    boys::BoysAllNAtOrdersF16(tops.data(), halves.data(), ragged16.data(), count);
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        std::array<boys::F16, boys::kMaxBoysOrder + 1> ladder{};
+        boys::BoysAllOrdersF16(boys::kMaxBoysOrder, halves[i], ladder.data());
+
+        for (std::size_t k = 0; k <= nmax; ++k)
+        {
+            EXPECT_EQ(static_cast<float>(planes16[k * count + i]), static_cast<float>(ladder[k]))
+                << "x=" << args[i] << " k=" << k;
+        }
+
+        std::array<boys::F16, boys::kMaxBoysOrder + 1> column{};
+        boys::BoysAllOrdersF16(tops[i], halves[i], column.data());
+
+        for (std::size_t k = 0; k <= nmax; ++k)
+        {
+            const float got = static_cast<float>(ragged16[k * count + i]);
+
+            if (static_cast<int>(k) <= tops[i])
+            {
+                EXPECT_EQ(got, static_cast<float>(column[k]))
+                    << "top=" << tops[i] << " x=" << args[i] << " k=" << k;
+            }
+            else
+            {
+                EXPECT_EQ(got, -1.0f) << "cell above the top: i=" << i << " k=" << k;
+            }
+        }
+    }
+#endif // BoysFp16
+}
