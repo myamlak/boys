@@ -178,7 +178,8 @@ enum class OptionPrecision : int {
     kBf16,
     /// The device lane's single precision: the arithmetic of a single-precision
     /// call run on a CUDA device, with the lane's own figure beside it. Its
-    /// entries are the ones a host without such a device cannot run.
+    /// entries are calls this probe does not make — it has no device arm — so a
+    /// class of that lane is counted here and ranked nowhere.
     kFp32Device,
 };
 
@@ -214,19 +215,32 @@ const char* PrecisionName(OptionPrecision precision) noexcept;
 ///
 /// \ingroup boys
 enum class OptionProbeShape : int {
+    /// One order at one argument: the entry a caller reaches with a single
+    /// (n, x) pair and no array.
+    kSingle = 0,
     /// One argument per call, the ladder to that argument's own order: the shape
     /// an integral engine asks for, and the shape this probe's workload is.
-    kAllOrders = 0,
+    kAllOrders,
+    /// One order at every argument of an array: the same n for the whole batch,
+    /// which is the shape a caller whose inner loop needs one order per element
+    /// has.
+    kFixedN,
     /// One call over many arguments at one common top order: the ladder to the
     /// same order for every argument of the array.
     kAllN,
+    /// One call over many arguments, each column stopping at its own top order:
+    /// the tops arrive as an array, so no argument is padded up to the batch's
+    /// largest order.
+    kAllNAtOrders,
 };
 
-/// The name a report prints a question shape under: "all-orders" or "all-n".
+/// The name a report prints a question shape under, and the enumerator order is
+/// the seam's own (boys/boys.hpp, \c Shape): "single", "all-orders", "fixed-n",
+/// "all-n" or "all-n-at-orders".
 ///
 /// \param shape the shape to name
 ///
-/// \returns the name, which is never empty: one of those two, and "unknown"
+/// \returns the name, which is never empty: one of those five, and "unknown"
 ///          for a value outside the enumerators
 ///
 /// "unknown" is not a shape the probe ranked.
@@ -521,8 +535,8 @@ struct OptionProbeCell {
 
     /// Whether this build serves the cell, so a served cell has an option row in
     /// this report unless the run was narrowed by ProbeOptions::only, or the cell
-    /// belongs to the device lane: that lane's entries need a CUDA device, so its
-    /// cells are counted here and measured nowhere. The coverage is the library's
+    /// belongs to the device lane: this probe has no device arm, so that lane's
+    /// cells are counted here and ranked nowhere. The coverage is the library's
     /// book, so a narrowed run still accounts for every cell.
     bool served = false;
 
@@ -660,10 +674,11 @@ struct OptionProbeReport {
     std::vector<OptionProbeCell> cells;
 
     /// The device lane's book: every cell of that class, counted here and
-    /// measured nowhere, because an entry of that lane is a call on a CUDA device
-    /// and this is a host build. It is kept apart from \c cells so that a served
-    /// cell of that vector is one this build ran, or one the caller's selection
-    /// narrowed away, and never one no body here could run.
+    /// ranked nowhere, because this probe has no device arm — the driver it is
+    /// reached through names no CUDA entry and this probe calls none. It is kept
+    /// apart from \c cells so that a served cell of that vector is one this build
+    /// ran, or one the caller's selection narrowed away, and never one no arm here
+    /// could run.
     std::vector<OptionProbeCell> deviceCells;
 
     /// Options the library offers on other builds but not on this one, because
@@ -847,9 +862,10 @@ struct OptionProbeReport {
 /// by it, and a served cell is in exactly one of the states below. A refused cell
 /// is the library's own answer, with its own reason, and the work it describes is
 /// unbuilt rather than impossible. A served cell of the device lane's book is
-/// counted apart and not against this build: an entry of that lane is a call on a
-/// CUDA device, so no cell of it can be run here whatever arithmetic the library
-/// documents for it.
+/// counted apart and not against this build's options: this probe has no device
+/// arm — the driver it is reached through names no CUDA entry and this probe calls
+/// none — so no cell of that lane has a row here, whatever arithmetic the library
+/// documents for it and whether or not the build it runs in carries CUDA.
 ///
 /// **Nothing else is a state, and \c unaccounted counts the cells in none of
 /// them.** A cell there is one the library serves and this run neither measured,

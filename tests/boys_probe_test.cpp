@@ -2111,16 +2111,34 @@ TEST(ProbeTest, TheClosureCountsTheRowsThatAreNoCellOfTheSpace) {
 
         ++outside;
 
-        // The cells of the row's own class, less the cell the row itself stands at.
-        const std::size_t perClass = DistinctRoutes(boys::Precision::kFp64).size() *
+        // The cells of the row's own class, less the cell the row itself stands at. The
+        // rows outside the space are one per shape and per lane, so the row's own lane is
+        // not always the double lane's: it is the lane the row's class's cells were
+        // enumerated from, read here from the report's own cell book, which the probe
+        // filled from the library. The two half formats are one lane in the library and
+        // two classes here, so the class does not answer this and the cell does.
+        bool hasLane = false;
+        boys::Precision rowLane = boys::Precision::kFp64;
+
+        for (const boys::OptionProbeCell& candidate : report.cells) {
+            if (candidate.precision == row.precision) {
+                rowLane = candidate.lane;
+                hasLane = true;
+                break;
+            }
+        }
+
+        EXPECT_TRUE(hasLane) << row.name
+                             << " is a row outside the space and no cell of the report's books "
+                                "was enumerated for its class";
+
+        const std::size_t perClass = DistinctRoutes(rowLane).size() *
                                      boys::BoysEvalSchemes().size() *
                                      boys::BoysFitGranularities().size() *
                                      boys::BoysPackAxes().size() *
                                      boys::BoysDivisionForms().size() *
                                      boys::BoysRegionBExps().size();
-        if (row.precision == OptionPrecision::kFp64) {
-            crossed += perClass - 1;
-        }
+        crossed += perClass - 1;
     }
 
     EXPECT_EQ(closure.shapesNotCrossed, outside);
@@ -2272,6 +2290,65 @@ TEST(ProbeTest, TheEmittedSeamIsAReplacementForTheSeamItRead) {
 
     EXPECT_TRUE(boys::FormatBuildDefaults(rankedNothing, "a test run").empty())
         << "a run that measured no class wrote a seam";
+}
+
+// The seam's own key is the whole of what the probe accounts for: every host class the seam can
+// name has a line in the block that writes the rows, whether this build's library carries an
+// entry of that shape on that lane or not. The defect this pins is a class dropped from the
+// account - a class the probe carries nothing for is one whose absence a reader of the block
+// cannot see, and the block is read as an account of the seam the file it writes replaces.
+TEST(ProbeTest, TheDefaultsBlockNamesEveryClassTheSeamKeys) {
+    // The protocol that ranks: a run with too few paired rounds to order anything writes no
+    // rows at all - its block says so in its own words - and this test is about the block a
+    // ranking run writes.
+    const OptionProbeReport report = boys::RunOptionProbe(Timed());
+    const std::string text = boys::FormatOptionProbe(report);
+
+    // The block that writes the rows, and not the class list above it: the two spell a class
+    // differently, and it is this one that is an account of the seam.
+    const std::size_t at = text.find("the build-defaults seam this run implies");
+
+    ASSERT_NE(at, std::string::npos) << text;
+
+    // A block that measured no class carries no row lines to check against.
+    ASSERT_NE(text.find("carry a measured row", at), std::string::npos)
+        << "this protocol ordered nothing, so there is no row list here to be complete";
+
+    const std::string block = text.substr(at);
+
+    // The host classes the seam's own key reaches: the lanes it keys by, crossed with the
+    // shapes it can name. The two half formats are one lane in the library and two classes
+    // here, so a bf16 class the lane also carries is read at the lane's own spelling.
+    std::vector<std::string> classes;
+
+    for (const boys::OptionProbeClass& klass : report.classes) {
+        if (klass.precision == OptionPrecision::kFp32Device) {
+            continue;
+        }
+
+        bool folded = false;
+
+        if (klass.precision == OptionPrecision::kBf16) {
+            for (const boys::OptionProbeClass& lane : report.classes) {
+                folded = folded || (lane.precision == OptionPrecision::kFp16 &&
+                                    lane.shape == klass.shape);
+            }
+        }
+
+        if (folded) {
+            continue;
+        }
+
+        classes.push_back(klass.name);
+    }
+
+    EXPECT_EQ(classes.size(), 15u)
+        << "the seam keys three host lanes by five shapes, folded over the two half formats";
+
+    for (const std::string& klass : classes) {
+        EXPECT_NE(block.find("    " + klass + "\n"), std::string::npos)
+            << klass << " is a class the seam's own key reaches and the block does not name";
+    }
 }
 
 } // namespace
