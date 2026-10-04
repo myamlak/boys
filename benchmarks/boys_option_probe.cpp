@@ -103,7 +103,7 @@ void Usage() {
                "                     the build-defaults seam, in the format its\n"
                "                     BOYS_BUILD_DEFAULT_ROWS consumes, and report which\n"
                "                     classes carry a measured row and which carry the\n"
-               "                     seam's own five. The file is what the CMake option\n"
+               "                     seam's own names. The file is what the CMake option\n"
                "                     BOYS_BUILD_DEFAULTS points a build at; a run that\n"
                "                     measured no class writes no file.\n"
                "  --help             this text\n"

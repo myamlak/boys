@@ -5444,8 +5444,8 @@ SeamWinner WinnerOf(const OptionProbeReport& report,
 /// The five the emitted file states as its fallback: **the build's own five**, and not this
 /// run's winner for any class.
 ///
-/// The five are the point a class the table carries no row for resolves to, so they have to
-/// be a combination every class of every lane compiles - and a run's winner is not: a class
+/// The five are the host names a table built from names alone writes into every host row,
+/// so they have to be a combination every host class compiles - and a run's winner is not: a class
 /// whose entry evaluates one order refuses the orders axis by construction, and
 /// `boys_impl.hpp` asserts it, so a file whose fallback named a batch winner stops compiling
 /// for the shapes the list does not carry. That is measured and not assumed: the first
@@ -5954,11 +5954,14 @@ std::string FormatBuildDefaults(const OptionProbeReport& report, const std::stri
     text += "/// `BOYS_BUILD_DEFAULTS` CMake option defines `BOYS_BUILD_DEFAULTS_REPLACED` and reads\n";
     text += "/// it instead of the committed file.\n";
     text += "\n";
-    text += "/// The five a class the list below carries no row for resolves to. **They are the\n";
-    text += "/// build's own five and not this run's winner**: the fallback has to be a combination\n";
+    text += "/// The seven a class the list below carries no row for resolves to: the build's own\n";
+    text += "/// values, which is what this build compiled before this file existed. Five are the\n";
+    text += "/// host lane's and two are the device lane's own, and a class of the device lane\n";
+    text += "/// carries the device pair and not the host's. **They are the build's own choices and\n";
+    text += "/// not this run's winner**: the fallback has to be a combination\n";
     text += "/// every class compiles, and a run's winner for one lane's batch shape is not - a class\n";
     text += "/// whose entry evaluates one order refuses the orders axis, so this line would stop the\n";
-    text += "/// file compiling if it named one. The rows below are the measurements; these five are\n";
+    text += "/// file compiling if it named one. The rows below are the measurements; these names are\n";
     text += "/// the choices the file already carried.\n";
 
     text += Text("#define BOYS_BUILD_DEFAULT_FIT_ROUTE %s\n\n", RouteCell(five.route));
