@@ -38,24 +38,31 @@
 //   * the across-arguments packed lane's region-A body (boys_simd.cpp:
 //     BoysRegionASimd), which reaches the packed backends at the selection;
 //   * the across-orders lane (boys_orders_simd.cpp): the double entry and its
-//     composed fetch, and the single-precision entry, at every scheme this
-//     library certifies a summation for.
+//     composed fetch, the single-precision entry, and the two policy entries
+//     that name a partition, a budget and a division form rather than taking a
+//     stride (BoysAllOrdersPacked, BoysAllOrdersF32Packed), each at every
+//     scheme, partition and budget that axis declares.
 // The packed backends themselves (boys_backend_simd.hpp: Avx2Fp64/Avx2Fp32) are
 // held in tests/boys_muladd_route_simd_test.cpp, whose translation unit carries
 // the intrinsics' flags the way the library's SIMD units do.
 //
+// THE ROUTE FAMILY'S OWN BODIES are reached through the two policy entries
+// rather than against a second reference of their own: each row compares the
+// value the entry delivered with the SAME CELL's value in the route-named
+// arithmetic - that cell's partition, degree and mapped argument, read off the
+// tables the entry reads - so a body that stopped reading the route fails the
+// row it answers. A cell the entry answers from the certified scalar ladder
+// rather than from a lane body is the seam the scalar rows hold, and is not
+// held a second time here.
+//
 // NOT COVERED, and why: the CUDA device lane, which has its own
-// boys-cuda-route-tests and no device in this configuration; the rational fit
-// family's own region-A body, which reaches the route through the same
-// Scalar<T>::MulAdd the step row holds, over a different summation; the derived
-// partitions of the across-orders lane (narrow and uniform), whose bodies run
-// the same route-templated StepMulAdd/StepMulSub the shipped body runs and are
-// not separately swept; and the arguments at or above kX0, where a lane's
-// region-A body stops being what answers and the entry hands the argument to
-// the region-B, asymptotic and certified scalar bodies
-// (boys_orders_simd.cpp:1076 OrdersLaneApplies, :1744 F32OrdersLaneApplies).
-// The sweeps here stay strictly below that cut (RegionASweep), so what they
-// hold, and all they claim, is each lane's region-A body at the build's route.
+// boys-cuda-route-tests and no device in this configuration; and the arguments
+// at or above kX0, where a lane's region-A body stops being what answers and the
+// entry hands the argument to the region-B, asymptotic and certified scalar
+// bodies (boys_orders_simd.cpp:1076 OrdersLaneApplies, :1744
+// F32OrdersLaneApplies). The sweeps here stay strictly below that cut
+// (RegionASweep), so what they hold, and all they claim, is each lane's
+// region-A body at the build's route.
 
 #include <gtest/gtest.h>
 
@@ -942,6 +949,777 @@ TEST(BoysMulAddRouteOrders, F32EntryDeliversTheReportedRoute) {
         boys::detail::OrdersScheme::kSplitClenshaw, reported->route, contracts, "split-clenshaw"));
     Hold(SweepF32Orders<boys::EvalScheme::kHorner>(
         boys::detail::OrdersScheme::kHorner, reported->route, contracts, "horner"));
+}
+
+// --- The across-orders POLICY entries ----------------------------------------
+//
+// Everything above holds a LANE: the scalar steps, the across-arguments body, the
+// across-orders fetch entries at their two fetches, the float fetch. What a
+// consumer of this axis calls is neither fetch but the two policy entries
+// boys_impl.hpp declares on it - detail::BoysAllOrdersPacked and
+// detail::BoysAllOrdersF32Packed - each a template over the axis's choices, each
+// electing its body from them at the build's route. Measured before this section
+// was written: neither name appears in any test in this tree, and a dump of the
+// packed ladder at the two route selections moved 2,271 of 13,728 cells. The
+// route is live on this axis and nothing watched it.
+//
+// THE REFERENCE is this file's, applied to the entries' own bodies: the
+// partition's stored fit, summed by the library's certified scheme over a backend
+// whose route is a template argument (boys_muladd_route_reference.hpp), at the
+// piece, the degree, the table and the mapped argument the entry's own body reads
+// them at. A body that stopped reading backend::detail::kSelectedRoute keeps
+// compiling and keeps every published bound - both routes are accurate, and the
+// bounds are the fused route's - and delivers the OTHER route's values, which is
+// what the counts below say.
+//
+// WHICH CELLS, and what each is held to:
+//   * coarsest x Chebyshev: the shipped cover's body at its stored degrees, the
+//     same body this file's across-orders sweep already holds through the composed
+//     fetch, reached here through the entry and at the division form the caller
+//     named;
+//   * coarsest x rational: the shipped cover's geometry and the route's own stored
+//     pairs, at the per-order handover rule (kTierThresholds) the route's
+//     single-order entries answer with;
+//   * narrow x Chebyshev and narrow x rational: the partition's own pieces, each
+//     order looked up in its own, at the partition's own degree table;
+//   * uniform x Chebyshev: the fixed grid's cell at the interval's own degree;
+//   * uniform x rational: the certified scalar single lane the entry delegates
+//     this cell to, at the uniform grid's rational row.
+// Both divisions of the double lane's form axis are swept beside the default, and
+// both of the float lane's budgets, so every cell of both entries' declared shapes
+// is in one of the rows below.
+//
+// NOT COVERED, and why: the arguments at or above each body's own cut - kX0 for
+// every region-A body, kFlatHi and kFlatHiF32 for the grid - where the entry hands
+// the argument to the certified scalar single lane, which is a different lane's
+// arithmetic and no sweep of this file holds it; and the host without the vector
+// tier, where the entry is that lane at every argument. The sweeps stay strictly
+// below the cuts (RegionASweep), so what they hold, and all they claim, is each
+// entry's region-A body at the build's route.
+
+/// The library's own certified summation over one stored fit, at a route the
+/// caller names instead of the build's selection. Same two tables, same mapped
+/// argument, same order; the step is the only thing the route changes.
+template <boys::EvalScheme kScheme>
+double PackedFitAtRoute(
+    MulAddRoute route, const double* cheb, const double* mono, int deg, double t) noexcept {
+    if (route == MulAddRoute::kFused)
+    {
+        return detail::FitSum<kScheme, RouteStep<MulAddRoute::kFused, double>>(cheb, mono, deg, t);
+    }
+
+    return detail::FitSum<kScheme, RouteStep<MulAddRoute::kSeparate, double>>(cheb, mono, deg, t);
+}
+
+template <boys::EvalScheme kScheme>
+float PackedFitAtRouteF32(
+    MulAddRoute route, const float* cheb, const float* mono, int deg, float t) noexcept {
+    if (route == MulAddRoute::kFused)
+    {
+        return detail::FitSum<kScheme, RouteStep<MulAddRoute::kFused, float>>(cheb, mono, deg, t);
+    }
+
+    return detail::FitSum<kScheme, RouteStep<MulAddRoute::kSeparate, float>>(cheb, mono, deg, t);
+}
+
+/// The same certified summation at the SCALAR backend's contract instead of the
+/// orders lane's step: the two differ in what a multiply-subtract does, and one
+/// cell of the float entry reaches the scalar backend directly (the uniform
+/// grid's Chebyshev member, boys_impl.hpp: UniformOrderAtF32 over
+/// backend::ScalarFp32), so its reference has to be that arithmetic.
+template <boys::EvalScheme kScheme>
+float ScalarFitAtRouteF32(
+    MulAddRoute route, const float* cheb, const float* mono, int deg, float t) noexcept {
+    if (route == MulAddRoute::kFused)
+    {
+        return detail::FitSum<kScheme, RouteForced<MulAddRoute::kFused, float>>(cheb, mono, deg, t);
+    }
+
+    return detail::FitSum<kScheme, RouteForced<MulAddRoute::kSeparate, float>>(cheb, mono, deg, t);
+}
+
+/// One cut numerator/denominator pair at a named route: boys_impl.hpp's
+/// RationalPieceAtCut, RationalPieceNarrowAtCut and RationalPieceF32AtCutBody,
+/// which differ in their table and their width alone, with the scalar backend's
+/// step made a template argument. The cut keeps the low-order terms of both parts,
+/// and the denominator's position is the piece's FULL numerator degree's, as the
+/// library's three bodies write it.
+template <MulAddRoute kRoute, typename T>
+T RationalCutAtTheRoute(
+    const T* c, int storedNumDeg, int numDeg, int denDeg, T t) noexcept {
+    using B = RouteForced<kRoute, T>;
+    T num = c[numDeg];
+
+    for (int j = numDeg - 1; j >= 0; --j)
+    {
+        num = B::MulAdd(num, t, c[j]);
+    }
+
+    if (denDeg == 0)
+    {
+        return num;
+    }
+
+    T den = c[storedNumDeg + denDeg];
+
+    for (int j = denDeg - 1; j >= 1; --j)
+    {
+        den = B::MulAdd(den, t, c[storedNumDeg + j]);
+    }
+
+    return num / B::MulAdd(den, t, T{1});
+}
+
+template <typename T>
+T RationalCutAtRoute(
+    MulAddRoute route, const T* c, int storedNumDeg, int numDeg, int denDeg, T t) noexcept {
+    if (route == MulAddRoute::kFused)
+    {
+        return RationalCutAtTheRoute<MulAddRoute::kFused, T>(c, storedNumDeg, numDeg, denDeg, t);
+    }
+
+    return RationalCutAtTheRoute<MulAddRoute::kSeparate, T>(c, storedNumDeg, numDeg, denDeg, t);
+}
+
+/// One order off the uniform grid's rational member at a named route:
+/// boys_impl.hpp's RationalUniformOrderAt, whose two readers the entry reaches
+/// through the certified scalar single lane (SingleOrder, UniformSingleOrder).
+template <MulAddRoute kRoute>
+double RationalUniformAtRoute(const detail::FlatPoint& at, int order) noexcept {
+    using B = RouteForced<kRoute, double>;
+    const std::size_t stored = static_cast<std::size_t>(detail::kFlatRatStored[at.iv]);
+    const double* c = detail::kFlatRatCoeffs.data() +
+                      static_cast<std::size_t>(detail::kFlatRatOffsets[at.iv]) +
+                      static_cast<std::size_t>(order) * stored;
+    const int m = detail::kFlatRatNumDeg[at.iv];
+    const int k = detail::kFlatRatDenDeg[at.iv];
+    double num = c[m];
+
+    for (int j = m - 1; j >= 0; --j)
+    {
+        num = B::MulAdd(num, at.t, c[j]);
+    }
+
+    double den = c[m + k];
+
+    for (int j = k - 1; j >= 1; --j)
+    {
+        den = B::MulAdd(den, at.t, c[m + j]);
+    }
+
+    return num / B::MulAdd(den, at.t, 1.0);
+}
+
+template <MulAddRoute kRoute>
+float RationalUniformAtRouteF32(const detail::FlatPointF32& at, int order) noexcept {
+    using B = RouteForced<kRoute, float>;
+    const std::size_t stored = static_cast<std::size_t>(detail::f32::kFlatRatStoredF32[at.iv]);
+    const float* c = detail::f32::kFlatRatCoeffsF32.data() +
+                     static_cast<std::size_t>(detail::f32::kFlatRatOffsetsF32[at.iv]) +
+                     static_cast<std::size_t>(order) * stored;
+    const int m = detail::f32::kFlatRatNumDegF32[at.iv];
+    const int k = detail::f32::kFlatRatDenDegF32[at.iv];
+    float num = c[m];
+
+    for (int j = m - 1; j >= 0; --j)
+    {
+        num = B::MulAdd(num, at.t, c[j]);
+    }
+
+    float den = c[m + k];
+
+    for (int j = k - 1; j >= 1; --j)
+    {
+        den = B::MulAdd(den, at.t, c[m + j]);
+    }
+
+    return num / B::MulAdd(den, at.t, 1.0f);
+}
+
+/// The order from which the rational route's own fits are what the lane reads:
+/// the route hands an order over at that order's own end of region A, and the
+/// ends are non-decreasing in the order, so the orders the route answers are a
+/// prefix (boys_orders_simd.cpp: RationalOrdersBody).
+int ServedOrders(int nmax, double x) noexcept {
+    int served = 0;
+
+    while (served <= nmax && x >= detail::kTierThresholds[static_cast<std::size_t>(served)])
+    {
+        ++served;
+    }
+
+    return served;
+}
+
+/// The degree a group of four orders is read at: the largest of the four lanes'
+/// own, which is the lane's group rule (boys_orders_simd.cpp: GroupDegree) and is
+/// not the same number as the degree any one lane was certified at. The lane
+/// states it is free to read above a lane's own cut, so the same order can carry
+/// one value in a whole group and another in a tail - which is why the reading
+/// below says which of the two an order is in rather than assuming one.
+///
+/// The four lanes' indices come from a lookup and not from a stride: the narrow
+/// partition's pieces are cut per order, so its four lanes are not one stride
+/// apart in its table.
+template <typename Degrees, typename FlatAt>
+int GroupDegreeOf(const Degrees& degrees, int own, FlatAt flat_of_lane) noexcept {
+    int deg = own;
+
+    for (int j = 1; j < 4; ++j)
+    {
+        const int mate = degrees[flat_of_lane(j)];
+        deg = mate > deg ? mate : deg;
+    }
+
+    return deg;
+}
+
+/// The narrow partition's piece index for one order, which is what its group
+/// degree rule looks its four lanes up by (boys_orders_simd.cpp: NarrowGeometry).
+std::size_t NarrowFlatOf(int order, double x) noexcept {
+    return static_cast<std::size_t>(&detail::FindNarrowAPiece(order, x) -
+                                    detail::kNarrowAPieces.data());
+}
+
+/// Which of a route body's two readings one order takes, and whether it is read
+/// with its group: the rule boys_orders_simd.cpp's RationalOrdersBody and
+/// NarrowRationalOrdersBody share - a whole group below the handover is the
+/// route's own pair, a whole group at or above it is the partition's fit at the
+/// group's degree, and a group the handover falls inside, and the tail, are read
+/// one order at a time, in those same two readings.
+struct PackedReading {
+    bool route;
+
+    /// Read at the four lanes' largest degree rather than at the lane's own.
+    bool grouped;
+};
+
+PackedReading PackedReadingOf(int order, int nmax, int served) noexcept {
+    const int l = order - (order % 4);
+
+    if (OrderSitsInAGroup(order, nmax))
+    {
+        if (l >= served)
+        {
+            return PackedReading{false, true};
+        }
+
+        if (l + 4 <= served)
+        {
+            return PackedReading{true, false};
+        }
+    }
+
+    return PackedReading{order < served, false};
+}
+
+/// The double entry's region-A value for one order, at a route the caller names:
+/// the entry's own body, read off the tables it reads.
+template <boys::EvalScheme kScheme,
+          boys::FitRoute kFitRoute,
+          boys::FitGranularity kGranularity,
+          boys::DivisionForm kForm>
+double PackedOrderAtRoute(MulAddRoute route, int order, int nmax, double x) {
+    if constexpr (kGranularity == boys::FitGranularity::kUniform)
+    {
+        const detail::FlatPoint at = detail::FlatLocate(x);
+
+        if constexpr (kFitRoute == boys::FitRoute::kRationalMinimax)
+        {
+            // The entry delegates this cell to the certified scalar single lane,
+            // whose uniform-rational read is RationalUniformOrderAt.
+            if (route == MulAddRoute::kFused)
+            {
+                return RationalUniformAtRoute<MulAddRoute::kFused>(at, order);
+            }
+
+            return RationalUniformAtRoute<MulAddRoute::kSeparate>(at, order);
+        } else
+        {
+            const int deg = detail::kFlatDegs[at.iv];
+            const std::size_t base =
+                at.block + static_cast<std::size_t>(order) * static_cast<std::size_t>(deg + 1);
+
+            return PackedFitAtRoute<kScheme>(route,
+                                             detail::kFlatCoeffs.data() + base,
+                                             detail::kFlatMonoCoeffs.data() + base,
+                                             deg,
+                                             at.t);
+        }
+    } else if constexpr (kGranularity == boys::FitGranularity::kCoarsest)
+    {
+        const ShippedOrdersGeometry g = ShippedGeometryAt(x);
+        const std::size_t offset = static_cast<std::size_t>(g.piece->offset) +
+                                   static_cast<std::size_t>(order) *
+                                       static_cast<std::size_t>(g.orderStride);
+
+        if constexpr (kFitRoute == boys::FitRoute::kRationalMinimax)
+        {
+            static constexpr auto kPairs = detail::RationalRegionADegrees();
+            static constexpr auto kDegrees =
+                detail::RegionADegrees<detail::BoysRole::kDoubleSingle,
+                                       detail::SchemeTailBasis<kScheme>()>();
+            const std::size_t flat = g.flatFirst + static_cast<std::size_t>(order) *
+                                                       static_cast<std::size_t>(g.pieceStride);
+            const PackedReading reading = PackedReadingOf(order, nmax, ServedOrders(nmax, x));
+
+            // This body's own mapped argument, 2(x - a)/(b - a) - 1, which the
+            // route's pair and the shipped fit are both read at here - not the
+            // fixed-piece mapping the shipped body forms.
+            const double t = 2.0 * (x - g.piece->a) / (g.piece->b - g.piece->a) - 1.0;
+
+            if (reading.route)
+            {
+                return RationalCutAtRoute(route,
+                                          detail::kRatACoeffs.data() + detail::kRatAOffset[flat],
+                                          detail::kRatANumDeg[flat],
+                                          kPairs.num[flat],
+                                          kPairs.den[flat],
+                                          t);
+            }
+
+            int deg = kDegrees[flat];
+
+            if (reading.grouped)
+            {
+                const int l = order - (order % 4);
+                deg = GroupDegreeOf(kDegrees, deg, [&](int j) {
+                    return static_cast<int>(g.flatFirst) + (l + j) * g.pieceStride;
+                });
+            }
+
+            // The route's body maps both of its readings with the plain form
+            // above (boys_orders_simd.cpp: RationalOrdersBody), not with the
+            // shipped body's fused one - the two differ in the last bit at some
+            // arguments, and this branch reads what that body reads.
+            return PackedFitAtRoute<kScheme>(route,
+                                             detail::kCoeffs.data() + offset,
+                                             detail::kMonoCoeffs.data() + offset,
+                                             deg,
+                                             t);
+        } else
+        {
+            // This cell's body is the shipped cover's at its STORED degrees
+            // (OrdersByScheme), which is the reading this file's across-orders
+            // sweep holds too; the reference reads the same table at the same
+            // group rule.
+            const int deg = ReadDegree(g, order, nmax);
+
+            return PackedFitAtRoute<kScheme>(route,
+                                             detail::kCoeffs.data() + offset,
+                                             detail::kMonoCoeffs.data() + offset,
+                                             deg,
+                                             g.t);
+        }
+    } else
+    {
+        const detail::OrderPiece& piece = detail::FindNarrowAPiece(order, x);
+        const std::size_t flat = static_cast<std::size_t>(&piece - detail::kNarrowAPieces.data());
+        const double t = std::fma(x - piece.a, 2.0 / (piece.b - piece.a), -1.0);
+
+        if constexpr (kFitRoute == boys::FitRoute::kRationalMinimax)
+        {
+            static constexpr auto kPairs = detail::RationalRegionANarrowDegrees();
+            static constexpr auto kDegrees =
+                detail::NarrowRegionADegrees<detail::BoysRole::kDoubleSingle,
+                                             detail::SchemeTailBasis<kScheme>()>();
+            const PackedReading reading = PackedReadingOf(order, nmax, ServedOrders(nmax, x));
+
+            if (reading.route)
+            {
+                return RationalCutAtRoute(route,
+                                          detail::kNarrowRatACoeffs.data() +
+                                              detail::kNarrowRatAOffset[flat],
+                                          detail::kNarrowRatANumDeg[flat],
+                                          kPairs.num[flat],
+                                          kPairs.den[flat],
+                                          t);
+            }
+
+            int deg = kDegrees[flat];
+
+            if (reading.grouped)
+            {
+                const int l = order - (order % 4);
+                deg = GroupDegreeOf(
+                    kDegrees, deg, [&](int j) { return static_cast<int>(NarrowFlatOf(l + j, x)); });
+            }
+
+            return PackedFitAtRoute<kScheme>(route,
+                                             detail::kNarrowACoeffs.data() + piece.offset,
+                                             detail::kNarrowAMonoCoeffs.data() + piece.offset,
+                                             deg,
+                                             t);
+        } else
+        {
+            static constexpr auto kDegrees =
+                detail::NarrowRegionADegrees<detail::BoysRole::kDoubleSingle,
+                                             detail::SchemeTailBasis<kScheme>()>();
+            int deg = kDegrees[flat];
+
+            if (OrderSitsInAGroup(order, nmax))
+            {
+                const int l = order - (order % 4);
+                deg = GroupDegreeOf(
+                    kDegrees, deg, [&](int j) { return static_cast<int>(NarrowFlatOf(l + j, x)); });
+            }
+
+            return PackedFitAtRoute<kScheme>(route,
+                                             detail::kNarrowACoeffs.data() + piece.offset,
+                                             detail::kNarrowAMonoCoeffs.data() + piece.offset,
+                                             deg,
+                                             t);
+        }
+    }
+}
+
+/// The float entry's region-A value for one order, at a named route. The float
+/// fetch zeroes every coefficient above the degree its lane is read at, so a
+/// lane's value is its own fit's at its own degree whatever the group runs at -
+/// the group's `degMax` reaches the shape of the recurrence and not the value,
+/// which the lane's own suite asserts and this reference reads as stated.
+template <boys::EvalScheme kScheme,
+          boys::FitRoute kFitRoute,
+          boys::BoysBudget kBudget,
+          boys::FitGranularity kGranularity,
+          boys::DivisionForm kForm>
+float PackedOrderAtRouteF32(MulAddRoute route, int order, int nmax, float x) {
+    constexpr detail::BoysRole kRole = (kBudget == boys::BoysBudget::kFloat)
+                                           ? detail::BoysRole::kF32Single
+                                           : detail::BoysRole::kF32Fp16Single;
+
+    if constexpr (kGranularity == boys::FitGranularity::kUniform)
+    {
+        const detail::FlatPointF32 at = detail::FlatLocateF32(x);
+
+        if constexpr (kFitRoute == boys::FitRoute::kRationalMinimax)
+        {
+            if (route == MulAddRoute::kFused)
+            {
+                return RationalUniformAtRouteF32<MulAddRoute::kFused>(at, order);
+            }
+
+            return RationalUniformAtRouteF32<MulAddRoute::kSeparate>(at, order);
+        } else
+        {
+            const int deg = detail::f32::kFlatDegsF32[at.iv];
+            const std::size_t base =
+                at.block + static_cast<std::size_t>(order) * static_cast<std::size_t>(deg + 1);
+
+            // This cell is the certified scalar body's own read (boys_impl.hpp:
+            // UniformOrderAtF32, over backend::ScalarFp32), not the packed lane's
+            // step: the grid's cells are stored per order with nothing to step,
+            // so the entry reads them one at a time in the scalar backend.
+            return ScalarFitAtRouteF32<kScheme>(route,
+                                                detail::f32::kFlatCoeffsF32.data() + base,
+                                                detail::f32::kFlatMonoCoeffsF32.data() + base,
+                                                deg,
+                                                at.t);
+        }
+    } else if constexpr (kGranularity == boys::FitGranularity::kCoarsest)
+    {
+        if constexpr (kFitRoute == boys::FitRoute::kRationalMinimax)
+        {
+            static constexpr auto kPairs = detail::RationalRegionAF32Degrees<kRole>();
+            const detail::f32::RatPiece& piece = detail::FindRatPieceF32(order, x);
+            const std::size_t flat =
+                static_cast<std::size_t>(&piece - detail::f32::kRatAPieces.data());
+            const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
+
+            // The group reader clamps a lane's denominator cut to the piece's
+            // stored one (BuildF32RatGroup); the tail hands the cut through.
+            const int cut = kPairs.den[flat];
+            const bool grouped = order - (order % 8) + 8 <= nmax + 1;
+            const int den = grouped && cut > piece.dendeg ? piece.dendeg : cut;
+
+            return RationalCutAtRoute(route,
+                                      detail::f32::kRatACoeffs.data() + piece.offset,
+                                      piece.numdeg,
+                                      kPairs.num[flat],
+                                      den,
+                                      t);
+        } else
+        {
+            const detail::f32::OrderPiece& piece = detail::FindPieceF32(order, x);
+            const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
+
+            // This cell's body reads the shipped float cover whole
+            // (F32StoredDegree), so the degree is the piece's own.
+            return PackedFitAtRouteF32<kScheme>(route,
+                                                detail::f32::kCoeffs.data() + piece.offset,
+                                                detail::f32::kMonoCoeffs.data() + piece.offset,
+                                                piece.deg,
+                                                t);
+        }
+    } else
+    {
+        if constexpr (kFitRoute == boys::FitRoute::kRationalMinimax)
+        {
+            static constexpr auto kPairs = detail::NarrowRationalRegionAF32Degrees<kRole>();
+            const detail::f32::RatPiece& piece = detail::FindNarrowRatPieceF32(order, x);
+            const std::size_t flat =
+                static_cast<std::size_t>(&piece - detail::f32::kNarrowRatAPiecesF32.data());
+            const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
+            const int cut = kPairs.den[flat];
+            const bool grouped = order - (order % 8) + 8 <= nmax + 1;
+            const int den = grouped && cut > piece.dendeg ? piece.dendeg : cut;
+
+            return RationalCutAtRoute(route,
+                                      detail::f32::kNarrowRatACoeffsF32.data() + piece.offset,
+                                      piece.numdeg,
+                                      kPairs.num[flat],
+                                      den,
+                                      t);
+        } else
+        {
+            static constexpr auto kDegrees =
+                detail::NarrowRegionADegrees<kRole, detail::SchemeTailBasis<kScheme>()>();
+            const detail::f32::OrderPiece& piece = detail::FindNarrowPieceF32(order, x);
+            const std::size_t flat =
+                static_cast<std::size_t>(&piece - detail::f32::kNarrowAPiecesF32.data());
+            const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
+
+            return PackedFitAtRouteF32<kScheme>(route,
+                                                detail::f32::kNarrowACoeffsF32.data() + piece.offset,
+                                                detail::f32::kNarrowAMonoCoeffsF32.data() +
+                                                    piece.offset,
+                                                kDegrees[flat],
+                                                t);
+        }
+    }
+}
+
+/// The double entry over the sweep, at one (scheme, route, partition, form) cell:
+/// what the entry delivers against both routes' reference values.
+template <boys::EvalScheme kScheme,
+          boys::FitRoute kFitRoute,
+          boys::FitGranularity kGranularity,
+          boys::DivisionForm kForm>
+RouteRow SweepPackedOrders(
+    const char* label, MulAddRoute reported, bool contracts) {
+    RouteRow row;
+    row.family = "avx2-orders-packed-fp64";
+    row.scheme = label;
+    row.reported = reported;
+    row.contracts = contracts;
+
+    for (const double x : RegionASweep())
+    {
+        for (const int nmax : {1, 3, 7, 14, 32})
+        {
+            std::vector<double> delivered(static_cast<std::size_t>(nmax) + 1);
+
+            detail::BoysAllOrdersPacked<kScheme, kFitRoute, kGranularity, kForm>(
+                nmax, x, delivered.data());
+
+            for (int order = 0; order <= nmax; ++order)
+            {
+                row.Add(delivered[static_cast<std::size_t>(order)],
+                        PackedOrderAtRoute<kScheme, kFitRoute, kGranularity, kForm>(
+                            MulAddRoute::kFused, order, nmax, x),
+                        PackedOrderAtRoute<kScheme, kFitRoute, kGranularity, kForm>(
+                            MulAddRoute::kSeparate, order, nmax, x),
+                        order,
+                        x);
+            }
+        }
+    }
+
+    return row;
+}
+
+/// The float entry over the same sweep, at one (scheme, route, budget, partition,
+/// form) cell.
+template <boys::EvalScheme kScheme,
+          boys::FitRoute kFitRoute,
+          boys::BoysBudget kBudget,
+          boys::FitGranularity kGranularity,
+          boys::DivisionForm kForm>
+RouteRow SweepPackedOrdersF32(
+    const char* label, MulAddRoute reported, bool contracts) {
+    RouteRow row;
+    row.family = "avx2-orders-packed-fp32";
+    row.scheme = label;
+    row.reported = reported;
+    row.contracts = contracts;
+
+    for (const double xd : RegionASweep())
+    {
+        const float x = static_cast<float>(xd);
+
+        for (const int nmax : {7, 15, 32})
+        {
+            std::vector<float> delivered(static_cast<std::size_t>(nmax) + 1);
+
+            detail::BoysAllOrdersF32Packed<kScheme, kFitRoute, kBudget, kGranularity, kForm>(
+                nmax, x, delivered.data());
+
+            for (int order = 0; order <= nmax; ++order)
+            {
+                row.Add(static_cast<double>(delivered[static_cast<std::size_t>(order)]),
+                        static_cast<double>(
+                            PackedOrderAtRouteF32<kScheme, kFitRoute, kBudget, kGranularity, kForm>(
+                                MulAddRoute::kFused, order, nmax, x)),
+                        static_cast<double>(
+                            PackedOrderAtRouteF32<kScheme, kFitRoute, kBudget, kGranularity, kForm>(
+                                MulAddRoute::kSeparate, order, nmax, x)),
+                        order,
+                        static_cast<double>(x));
+            }
+        }
+    }
+
+    return row;
+}
+
+/// One (scheme, partition) cell of the double entry at all three division
+/// forms: three rows, one per form.
+template <boys::EvalScheme kScheme, boys::FitRoute kFitRoute, boys::FitGranularity kGranularity>
+void HoldPackedDoubleCell(
+    const char* scheme_name, const char* partition_name, MulAddRoute reported, bool contracts) {
+    char label[96];
+
+    std::snprintf(label, sizeof label, "%s/%s/exact-division", scheme_name, partition_name);
+    Hold(SweepPackedOrders<kScheme, kFitRoute, kGranularity, boys::DivisionForm::kExactDivision>(
+        label, reported, contracts));
+
+    std::snprintf(label, sizeof label, "%s/%s/plain-reciprocal", scheme_name, partition_name);
+    Hold(SweepPackedOrders<kScheme, kFitRoute, kGranularity,
+                           boys::DivisionForm::kPlainReciprocal>(label, reported, contracts));
+
+    std::snprintf(label, sizeof label, "%s/%s/refined-reciprocal", scheme_name, partition_name);
+    Hold(SweepPackedOrders<kScheme, kFitRoute, kGranularity,
+                           boys::DivisionForm::kRefinedReciprocal>(label, reported, contracts));
+}
+
+/// The same for the float entry, one budget at a time.
+template <boys::EvalScheme kScheme, boys::FitRoute kFitRoute, boys::BoysBudget kBudget,
+          boys::FitGranularity kGranularity>
+void HoldPackedF32Cell(const char* scheme_name,
+                       const char* partition_name,
+                       const char* budget_name,
+                       MulAddRoute reported,
+                       bool contracts) {
+    char label[96];
+
+    std::snprintf(label, sizeof label, "%s/%s/%s/exact-division", scheme_name, partition_name,
+                  budget_name);
+    Hold(SweepPackedOrdersF32<kScheme, kFitRoute, kBudget, kGranularity,
+                              boys::DivisionForm::kExactDivision>(label, reported, contracts));
+
+    std::snprintf(label, sizeof label, "%s/%s/%s/plain-reciprocal", scheme_name, partition_name,
+                  budget_name);
+    Hold(SweepPackedOrdersF32<kScheme, kFitRoute, kBudget, kGranularity,
+                              boys::DivisionForm::kPlainReciprocal>(label, reported, contracts));
+
+    std::snprintf(label, sizeof label, "%s/%s/%s/refined-reciprocal", scheme_name, partition_name,
+                  budget_name);
+    Hold(SweepPackedOrdersF32<kScheme, kFitRoute, kBudget, kGranularity,
+                              boys::DivisionForm::kRefinedReciprocal>(label, reported, contracts));
+}
+
+template <boys::BoysBudget kBudget>
+void HoldPackedF32Budget(const char* budget_name, MulAddRoute reported, bool contracts) {
+    HoldPackedF32Cell<boys::EvalScheme::kSplitClenshaw, boys::FitRoute::kChebyshev, kBudget,
+                      boys::FitGranularity::kCoarsest>(
+        "split-clenshaw", "coarsest", budget_name, reported, contracts);
+    HoldPackedF32Cell<boys::EvalScheme::kHorner, boys::FitRoute::kChebyshev, kBudget,
+                      boys::FitGranularity::kCoarsest>(
+        "horner", "coarsest", budget_name, reported, contracts);
+    HoldPackedF32Cell<boys::EvalScheme::kSplitClenshaw, boys::FitRoute::kChebyshev, kBudget,
+                      boys::FitGranularity::kNarrow>(
+        "split-clenshaw", "narrow", budget_name, reported, contracts);
+    HoldPackedF32Cell<boys::EvalScheme::kHorner, boys::FitRoute::kChebyshev, kBudget,
+                      boys::FitGranularity::kNarrow>(
+        "horner", "narrow", budget_name, reported, contracts);
+    HoldPackedF32Cell<boys::EvalScheme::kSplitClenshaw, boys::FitRoute::kChebyshev, kBudget,
+                      boys::FitGranularity::kUniform>(
+        "split-clenshaw", "uniform", budget_name, reported, contracts);
+    HoldPackedF32Cell<boys::EvalScheme::kHorner, boys::FitRoute::kChebyshev, kBudget,
+                      boys::FitGranularity::kUniform>(
+        "horner", "uniform", budget_name, reported, contracts);
+    HoldPackedF32Cell<boys::EvalScheme::kSplitClenshaw, boys::FitRoute::kRationalMinimax, kBudget,
+                      boys::FitGranularity::kCoarsest>(
+        "split-clenshaw", "coarsest-rational", budget_name, reported, contracts);
+    HoldPackedF32Cell<boys::EvalScheme::kHorner, boys::FitRoute::kRationalMinimax, kBudget,
+                      boys::FitGranularity::kCoarsest>(
+        "horner", "coarsest-rational", budget_name, reported, contracts);
+    HoldPackedF32Cell<boys::EvalScheme::kSplitClenshaw, boys::FitRoute::kRationalMinimax, kBudget,
+                      boys::FitGranularity::kNarrow>(
+        "split-clenshaw", "narrow-rational", budget_name, reported, contracts);
+    HoldPackedF32Cell<boys::EvalScheme::kHorner, boys::FitRoute::kRationalMinimax, kBudget,
+                      boys::FitGranularity::kNarrow>(
+        "horner", "narrow-rational", budget_name, reported, contracts);
+    HoldPackedF32Cell<boys::EvalScheme::kSplitClenshaw, boys::FitRoute::kRationalMinimax, kBudget,
+                      boys::FitGranularity::kUniform>(
+        "split-clenshaw", "uniform-rational", budget_name, reported, contracts);
+    HoldPackedF32Cell<boys::EvalScheme::kHorner, boys::FitRoute::kRationalMinimax, kBudget,
+                      boys::FitGranularity::kUniform>(
+        "horner", "uniform-rational", budget_name, reported, contracts);
+}
+
+TEST(BoysMulAddRouteOrders, PackedEntryDeliversTheReportedRoute) {
+    if (!boys::BoysAvx2Available())
+    {
+        GTEST_SKIP() << "the AVX2 tier is not available on this host: every cell of these entries "
+                        "is the certified scalar single lane here, and this sweep holds the "
+                        "vector bodies";
+    }
+
+    const boys::backend::BackendInfo* reported = ReportedEntry("scalar-fp64");
+    ASSERT_NE(reported, nullptr);
+    const bool contracts = bdetail::MeasureContraction<double>();
+    const MulAddRoute r = reported->route;
+
+    std::printf("  route-liveness across-orders-pack packed entry=%s\n", MulAddRouteName(r));
+
+    HoldPackedDoubleCell<boys::EvalScheme::kSplitClenshaw, boys::FitRoute::kChebyshev,
+                         boys::FitGranularity::kCoarsest>("split-clenshaw", "coarsest", r, contracts);
+    HoldPackedDoubleCell<boys::EvalScheme::kHorner, boys::FitRoute::kChebyshev,
+                         boys::FitGranularity::kCoarsest>("horner", "coarsest", r, contracts);
+    HoldPackedDoubleCell<boys::EvalScheme::kSplitClenshaw, boys::FitRoute::kChebyshev,
+                         boys::FitGranularity::kNarrow>("split-clenshaw", "narrow", r, contracts);
+    HoldPackedDoubleCell<boys::EvalScheme::kHorner, boys::FitRoute::kChebyshev,
+                         boys::FitGranularity::kNarrow>("horner", "narrow", r, contracts);
+    HoldPackedDoubleCell<boys::EvalScheme::kSplitClenshaw, boys::FitRoute::kChebyshev,
+                         boys::FitGranularity::kUniform>("split-clenshaw", "uniform", r, contracts);
+    HoldPackedDoubleCell<boys::EvalScheme::kHorner, boys::FitRoute::kChebyshev,
+                         boys::FitGranularity::kUniform>("horner", "uniform", r, contracts);
+    HoldPackedDoubleCell<boys::EvalScheme::kSplitClenshaw, boys::FitRoute::kRationalMinimax,
+                         boys::FitGranularity::kCoarsest>(
+        "split-clenshaw", "coarsest-rational", r, contracts);
+    HoldPackedDoubleCell<boys::EvalScheme::kHorner, boys::FitRoute::kRationalMinimax,
+                         boys::FitGranularity::kCoarsest>(
+        "horner", "coarsest-rational", r, contracts);
+    HoldPackedDoubleCell<boys::EvalScheme::kSplitClenshaw, boys::FitRoute::kRationalMinimax,
+                         boys::FitGranularity::kNarrow>(
+        "split-clenshaw", "narrow-rational", r, contracts);
+    HoldPackedDoubleCell<boys::EvalScheme::kHorner, boys::FitRoute::kRationalMinimax,
+                         boys::FitGranularity::kNarrow>("horner", "narrow-rational", r, contracts);
+    HoldPackedDoubleCell<boys::EvalScheme::kSplitClenshaw, boys::FitRoute::kRationalMinimax,
+                         boys::FitGranularity::kUniform>(
+        "split-clenshaw", "uniform-rational", r, contracts);
+    HoldPackedDoubleCell<boys::EvalScheme::kHorner, boys::FitRoute::kRationalMinimax,
+                         boys::FitGranularity::kUniform>("horner", "uniform-rational", r, contracts);
+}
+
+TEST(BoysMulAddRouteOrders, PackedF32EntryDeliversTheReportedRoute) {
+    if (!boys::BoysAvx2Available())
+    {
+        GTEST_SKIP() << "the AVX2 tier is not available on this host: every cell of these entries "
+                        "is the certified scalar single lane here, and this sweep holds the "
+                        "vector bodies";
+    }
+
+    const boys::backend::BackendInfo* reported = ReportedEntry("scalar-fp32");
+    ASSERT_NE(reported, nullptr);
+    const bool contracts = bdetail::MeasureContraction<float>();
+    const MulAddRoute r = reported->route;
+
+    std::printf("  route-liveness across-orders-pack packed-f32 entry=%s\n", MulAddRouteName(r));
+
+    HoldPackedF32Budget<boys::BoysBudget::kFloat>("kFloat", r, contracts);
+    HoldPackedF32Budget<boys::BoysBudget::kFp16>("kFp16", r, contracts);
 }
 
 } // namespace
