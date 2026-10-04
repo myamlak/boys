@@ -333,11 +333,12 @@ constexpr bool kCoarsestFiveInForce =
 // Read through detail::DefaultPolicyRow rather than through DefaultPolicy, because a class
 // the table carries no row for is not a class this question is about: DefaultPolicyFor
 // asserts on it - that absence is the seam's own build error - and a replacement is free to
-// carry fewer classes than the shipped table composes. The committed list carries nineteen
-// classes, the ten the host's entries reach beside the nine the device half holds; the
-// five-composed table carries twenty-four, the host's fifteen beside the device's nine; this
-// guard reads all twenty-four whichever is in force. A class this table does not name is no
-// evidence that the replacement chose nothing, so it answers true here.
+// carry fewer classes than the shipped table composes. The shipped table carries
+// twenty-four classes in both of its shapes: the committed list's fifteen host rows beside
+// the device half's nine, and the same fifteen and nine that the five names compose into.
+// This guard names all twenty-four and reads them whichever is in force; one a replacement
+// does not carry answers true below. A class this table does not name is no evidence that
+// the replacement chose nothing, so it answers true here.
 template <boys::Precision kLane, boys::Shape kShape, boys::Device kDevice = boys::Device::kHost>
 constexpr bool ClassIsTheShippedCombination() noexcept
 {
@@ -397,7 +398,7 @@ constexpr bool kCoarsestClassTableInForce =
 static_assert(!(kCoarsestFiveInForce && kCoarsestClassTableInForce),
               "the defaults header in force names all five shipped values and answers every class "
               "with the shipped combination, so this build has chosen nothing: point "
-              "BOYS_BUILD_DEFAULTS at a header that moves at least one of the five or that carries "
+              "BOYS_BUILD_DEFAULTS at a header that moves at least one of the seven or that carries "
               "a row moving a class, or unset it to build the shipped configuration");
 
 #if defined(BOYS_BUILD_DEFAULTS_TEST_FIXTURE)

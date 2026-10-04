@@ -122,8 +122,8 @@
 
 namespace {
 
-// The five seam macros expand to enumerator names written as the library's own
-// headers write them - FitRoute::kChebyshev and its four siblings - and the
+// The seven seam macros expand to enumerator names written as the library's own
+// headers write them - FitRoute::kChebyshev and its six siblings - and the
 // library's headers write them inside namespace boys. A translation unit that
 // reads the macros therefore has to be in that namespace or import it, which is
 // what this using-directive is for and the only reason it is here.
@@ -149,13 +149,13 @@ constexpr boys::RegionBExp kSeamDeviceRegionBExp = BOYS_BUILD_DEFAULT_DEVICE_REG
 // is where that is read. Naming the values here is what makes the assertions below
 // claims about the build's header and not about this line.
 //
-// The region-B exponential is named as the library's own default rather than left to
-// EvalPolicy's template default, and the seam carries no macro for it: the five macros
-// above are the seam's, and this axis is one a ROW moves rather than one the five
-// compose. Spelling it keeps the type the same as EvalPolicy<>'s - the default is this
-// constant - and makes the axis a reader of this file can see, which is what the
-// comparisons below need to tell a class whose row moved the exponential from one whose
-// row spells the seam's five.
+// The region-B exponential is named as the host lane's own default rather than left to
+// EvalPolicy's template default, and no host macro of the seam names it: this axis is
+// one a host ROW moves, and the device lane's own macro above
+// (BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP) is what its half reads. Spelling it keeps the
+// type the same as EvalPolicy<>'s - the default is this constant - and makes the axis a
+// reader of this file can see, which is what the comparisons below need to tell a class
+// whose row moved the exponential from one whose row spells the seam's five.
 using SeamPolicy = boys::EvalPolicy<BOYS_BUILD_DEFAULT_FIT_ROUTE,
                                     BOYS_BUILD_DEFAULT_EVAL_SCHEME,
                                     boys::BoysBudget::kFloat,
@@ -218,9 +218,10 @@ static_assert(boys::kDefaultRegionBExp == boys::RegionBExp::kAccurate,
 #endif
 
 // --- Link two: the policy the five constants compose --------------------------
-// EvalPolicy's template defaults are the five constants, so EvalPolicy<> is the
-// combination the seam names and the point a class the table carries no row for
-// resolves to. A default that stopped reading the constants would keep every
+// EvalPolicy's template defaults are the five constants, so EvalPolicy<> is the host
+// combination the seam names; a device class composes the device lane's own two names
+// beside four of these rather than this type (include/boys/boys_build_defaults.hpp).
+// A default that stopped reading the constants would keep every
 // constant correct and answer a caller from another policy - the same silent
 // substitution one step further down. What an entry that names no policy resolves
 // to is its class's row rather than this name, which is the last test below's
