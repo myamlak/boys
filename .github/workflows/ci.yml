@@ -125,10 +125,10 @@ concurrency:
 # only a run of that leg can make one, and the job log is not a file. The step
 # therefore TEES the probe's stdout - the row is the first thing the probe
 # prints, before it compares anything - into build-facts-row.txt, and the step
-# after it uploads that file as an artifact. Ten of the twenty-one legs cannot
+# after it uploads that file as an artifact. Ten of the twenty-two legs cannot
 # print a row at all - option-plan and the clang-tidy leg build no binary and the
 # eight option-matrix cells build the accuracy gate and the test suite and no
-# probe - and the eleven that carry this step are the ones that can. A maintainer
+# probe - and the twelve that carry this step are the ones that can. A maintainer
 # downloads those artifacts and folds each row in with
 # `python tools/gen_build_facts.py --record <file>`.
 #
@@ -154,10 +154,18 @@ concurrency:
 # mac-intel zips, verified to carry the same flat doxygen-1.18.0/doxygen layout
 # as the Linux tarball).
 #
-# There is deliberately no CUDA leg: CI has no GPU runner, the device pins are
-# a documented local gate, and the timed benchmark passes stay local-only by
-# design (each timed run records machine, clock and commit). The
-# CMake benchmark targets are therefore off in CI (BUILD_BENCHMARKS=OFF).
+# THE CUDA LEG COMPILES AND DOES NOT RUN. CI has no GPU runner, so what this
+# leg can hold is the half of the device surface that is a PROPERTY OF THE
+# SOURCE: that every CUDA translation unit compiles at the standard the library
+# pins and every device target links against the kernels it was written for. It
+# cannot hold a single device fact, and it does not claim one. What it does NOT
+# do is stated as a step AND on the run's own summary, so a reader of the log
+# cannot mistake "compiled" for "tested" (see the linux-cuda job). The device
+# pins stay a documented local gate; the timed benchmark passes stay local-only
+# by design (each timed run records machine, clock and commit), and every other
+# leg keeps BUILD_BENCHMARKS=OFF for that reason. The one exception is the
+# second tree in the CUDA leg, which turns BUILD_BENCHMARKS=ON to COMPILE the
+# two CUDA drivers that live under it and never runs one.
 #
 # --- The dispatch assertion ------------------------------------------------
 #
@@ -1113,3 +1121,184 @@ jobs:
             exit 1
           fi
           echo "clang-tidy: every TU parsed, no error: diagnostics"
+
+  # -------------------------------------------------------------------------
+  # THE CUDA LEG, WHICH COMPILES THE DEVICE SOURCES AND RUNS NO KERNEL.
+  #
+  # WHY IT EXISTS. Every other leg configures with -DBUILD_CUDA=OFF, so before
+  # this one not one of the six CUDA translation units in this tree
+  # (src/boys_cuda.cu, src/boys_cuda_probe_kernels.cu, the two consumer kernels
+  # tests/boys_cuda_device_demo.cu and tests/boys_cuda_route_test.cu, the
+  # consumer default check's tests/consumer_cuda_defaults.cu, and the benchmark
+  # driver's benchmarks/boys_cuda_benchmark_kernels.cu) and not one of the
+  # host-side translation units that include the toolkit's headers for them
+  # (src/boys_cuda.cpp, src/boys_cuda_probe.cpp, tests/boys_cuda_test.cpp,
+  # tests/boys_cuda_probe_test.cpp, the two device gate TUs, the consumer
+  # default check's host half and the two benchmark drivers) had ever been
+  # compiled by CI at all. A file that does not parse, a header the toolkit does
+  # not have, a language standard the toolkit refuses, a launcher whose kernel
+  # signature moved: each of those was a red build that no leg could ever
+  # report, for as long as it took a person to build the lane locally.
+  #
+  # WHAT A GPU RUNNER WOULD ADD, AND WHAT THIS LEG IS INSTEAD. CI has no GPU
+  # runner, so this leg holds the half of the device surface that is a property
+  # of the SOURCE rather than of a card: that the device translation units
+  # compile, and that every device target links against the kernels it was
+  # written for. It holds no device fact. It runs no kernel, measures no
+  # duration, and compares no figure against the committed reference grid. A
+  # green run of this leg says the device sources are COMPILED; it says nothing
+  # whatever about what they compute. The device pins stay a documented local
+  # gate, unchanged, and so do the timed passes.
+  #
+  # WHAT IT RUNS, AND WHY EXACTLY THAT. The probe's own test binary is the one
+  # device target carrying tests that are device-free, and which those are is
+  # read off the source rather than guessed at:
+  #   * RunDeviceOptionProbe returns a status BEFORE it touches a device - a
+  #     runtime that cannot report a count, a count of zero, and a device index
+  #     past the count each return kDeviceError, kNoDevice and kDeviceNotFound,
+  #     with a failure string and no classes and no measurements
+  #     (src/boys_cuda_probe.cpp, RunDeviceOptionProbe);
+  #   * the space and closure tests build their reports from the library's own
+  #     tables (BoysDeviceOptions(), BoysDivisionForms()) and take the probe's
+  #     rendering of them, so they need no card and no clock
+  #     (tests/boys_cuda_probe_test.cpp).
+  # The six names below are those tests, and the count is asserted, because a
+  # filter that matched nothing exits zero and this step must not be a green
+  # step that ran nothing. Everything else in that binary needs a card, and so
+  # does every other device target: boys-cuda-tests exits ZERO having executed
+  # none of its seventeen tests (every one is a soft GTEST_SKIP of "no CUDA
+  # device", tests/boys_cuda_test.cpp), so running it here would report a suite
+  # that did not run, and boys-consumer-cuda-defaults, boys-cuda-route-tests and
+  # boys-cuda-accuracy-gate each exit non-zero with "no usable device".
+  #
+  # THE SECOND TREE. benchmarks/boys_cuda_benchmark_kernels.cu and
+  # benchmarks/boys_device_probe.cpp are CUDA translation units too, and they
+  # live under BUILD_BENCHMARKS, which every leg keeps OFF because the TIMED
+  # passes are local-only by design. This leg turns it on in a tree of its own
+  # to COMPILE those two drivers, and runs neither of them: what is local-only
+  # about a benchmark is its timing, and a compiled driver takes no timing.
+  # -------------------------------------------------------------------------
+  linux-cuda:
+    name: linux-cuda compile-only
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          submodules: true
+      # The scope as a step and not only as the comment above, so that it is in
+      # the log of every run this leg makes rather than only in the file.
+      - name: Scope (what this leg proves, and what it does not)
+        run: |
+          cat <<'EOF'
+          =========================================================================
+          SCOPE OF THIS LEG: COMPILED, NOT TESTED.
+          =========================================================================
+          This runner has no GPU. What a green run of this leg proves is a
+          property of the SOURCE:
+            COMPILED  every CUDA translation unit in the tree, at the language
+                      standard the library pins for it, by the pinned toolkit.
+            LINKED    every device target, against the kernels it calls.
+            RUN       six tests of the probe's own suite, the ones the source
+                      says are device-free. They assert the shape of a report
+                      and the status an absent device returns; none of them
+                      reads a clock or touches a card.
+          What it does NOT do, and does not claim: run a kernel, measure a
+          duration, compare a device figure against the committed reference
+          grid, or exercise any device entry point. The device bounds are a
+          documented local gate and this leg is not a substitute for it.
+          A failure here means the device source does not build. A pass here
+          means nothing about what the device code computes.
+          =========================================================================
+          EOF
+      # The toolkit, from NVIDIA's own apt repository. Two packages rather than
+      # the cuda-toolkit metapackage: cuda-compiler-13-3 carries nvcc, and
+      # cuda-cudart-dev-13-3 carries every header this tree includes
+      # (cuda_runtime.h, cuda_fp16.h and cuda.h are all that package's) and
+      # libcudart. No driver package and no device: nvcc compiles device code
+      # with no card present, which is the whole reason this leg can exist.
+      #
+      # The repository path is derived from the image instead of written down:
+      # ubuntu-latest has moved release before, and a hardcoded ubuntu2404 turns
+      # that into a leg that fails inside apt rather than inside the code it is
+      # here to check. The toolkit version IS pinned - 13.3 is the version this
+      # lane is built and verified against locally, and the version the probe's
+      # report names as the toolkit that compiled the kernels.
+      - name: CUDA toolkit 13.3 (nvcc and the runtime; no driver, no card)
+        run: |
+          set -euo pipefail
+          ubuntu="$(. /etc/os-release && echo "${VERSION_ID//./}")"
+          curl -fsSL -o /tmp/cuda-keyring.deb \
+            "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu${ubuntu}/x86_64/cuda-keyring_1.1-1_all.deb"
+          sudo dpkg -i /tmp/cuda-keyring.deb
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cuda-compiler-13-3 cuda-cudart-dev-13-3
+          # A partial install creates no /usr/local/cuda alternatives link, so
+          # nvcc is put on PATH for the steps below: CMake finds the toolkit
+          # from the compiler it finds, and the include and library paths the
+          # device targets need follow from that one fact.
+          echo "/usr/local/cuda-13.3/bin" >> "$GITHUB_PATH"
+          /usr/local/cuda-13.3/bin/nvcc --version
+      - name: Configure (BUILD_CUDA=ON)
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=ON
+      # The whole default target set, not a list of the device targets: with the
+      # CUDA lane on, the CPU accuracy gate and the CUDA consumer target link
+      # boys-cuda and compile against the toolkit's headers too, so what a
+      # device target can break is not confined to the device targets.
+      - name: Build (every CUDA translation unit, every device target)
+        run: cmake --build build -j 4
+      # The build's own facts against this leg's recorded row: see the note in
+      # the windows-msvc job for what it gates.
+      - name: Build facts (probe vs docs/build-facts.md)
+        run: |
+          set -o pipefail
+          ./build/boys-build-facts --leg "linux-cuda compile-only" --check docs/build-facts.md | tee build-facts-row.txt
+      # The row this leg just printed, as a file: the capture `--record` reads.
+      # `always()` because the row is most wanted on a run whose probe failed -
+      # a fact that moved is a row to re-record, not one to lose.
+      - name: Build facts row (the block to record)
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: build-facts-row-linux-cuda
+          path: build-facts-row.txt
+          if-no-files-found: ignore
+          retention-days: 30
+      # The six device-free tests, by name. See the job comment for how the list
+      # was established; the counted line below is what keeps a filter that
+      # matched nothing from being a green step.
+      - name: Device-free probe tests (the six that need no card)
+        run: |
+          set -o pipefail
+          ./build/boys-cuda-probe-tests \
+            --gtest_filter='DeviceProbe.ACanaryThatDidNotRunIsNotAQuietCanary:DeviceProbe.AnAbsentDeviceIsAStatusAndNotACrash:DeviceProbe.ARowIsServedOrRefusedAndTheSpaceIsCountedFromTheRows:DeviceProbe.TheClosurePutsEveryMemberOfTheSpaceInOneState:DeviceProbe.AClosureOverARunThatMeasuredNothingFails:DeviceProbe.ARequestForOneEntryIsClosedWithTheRestOfTheSpaceStated' \
+            | tee cuda-tests-without-a-card.txt
+          grep -q '^\[  PASSED  \] 6 tests\.$' cuda-tests-without-a-card.txt
+      # The two CUDA drivers that live under BUILD_BENCHMARKS, COMPILED and
+      # never run. A separate tree because turning benchmarks on in the tree
+      # above would build every timing harness here, which is not what this leg
+      # is for; BOYS_BUILD_TESTS=OFF because the library and its two drivers are
+      # the whole of what this tree is asked to produce.
+      - name: CUDA benchmark drivers (compiled, never run)
+        run: |
+          cmake -S . -B build-drivers -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_CUDA=ON -DBUILD_BENCHMARKS=ON -DBOYS_BUILD_TESTS=OFF
+          cmake --build build-drivers -j 4 --target boys-cuda-benchmark boys-device-probe
+      # The device targets as files, which is what "linked" means: a target that
+      # was configured but not linked is a file that is not here, and `ls` fails
+      # on one of those. `always()` so a red build still reports which of them
+      # got as far as being produced.
+      - name: What was built (the device targets, as files)
+        if: always()
+        run: |
+          ls -l build/boys-cuda-tests \
+                build/boys-cuda-tests-divform-control \
+                build/boys-cuda-probe-tests \
+                build/boys-cuda-accuracy-gate \
+                build/boys-consumer-cuda-defaults \
+                build/boys-cuda-route-tests \
+                build-drivers/boys-cuda-benchmark \
+                build-drivers/boys-device-probe

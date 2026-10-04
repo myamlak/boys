@@ -62,7 +62,8 @@ ctest --test-dir build --output-on-failure
 ```
 
 Optional: `-DBUILD_BENCHMARKS=ON` for the benchmark drivers, which are default ON locally, and
-`-DBUILD_CUDA=ON` for the CUDA lane, which needs the CUDA toolkit and is local-only.
+`-DBUILD_CUDA=ON` for the CUDA lane, which needs the CUDA toolkit; the `linux-cuda` CI leg
+compiles and links that lane and runs no kernel, so every device figure stays a local gate.
 
 `-DBOYS_BUILD_DEFAULTS=<header>` builds with a header of your own carrying the five choices an entry
 that names no policy resolves to, in place of the committed ones: the fit route, the evaluation
