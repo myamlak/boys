@@ -96,8 +96,8 @@ __m256d StepMulSub(__m256d a, __m256d b, __m256d c) noexcept {
 // is what makes the lane a call that evaluates through the arithmetic the library
 // reports for it (boys_simd.cpp, AppendPackedBackends) rather than a second
 // spelling that agrees with the report by inspection: the entries that carry the
-// orders axis - BoysAllOrdersF32 at PackAxis::kOrders and the batch entry that
-// hands it each argument - run this step. The route stays a template parameter,
+// orders axis - BoysAllOrdersF32 at PackAxis::kOrders and the batch entries that
+// hand it each argument - run this step. The route stays a template parameter,
 // and the backend carries it the same way, so a caller's route still selects the
 // instruction.
 //
