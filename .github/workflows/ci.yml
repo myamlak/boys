@@ -818,6 +818,23 @@ jobs:
         if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_class_surface.py --check
+      # The device half has the same exposure in its own key, and neither step
+      # above reaches it: that check walks the host cross, and the device
+      # bijection has the entry as its unit - so a precision the option table
+      # carries rows for at two questions and none at the third reads complete
+      # from inside every list being read, and the entry each of its rows names
+      # is declared. This step walks the DeviceOptionPrecision-by-
+      # DeviceOptionQuestion cross the options header declares, which is the key
+      # src/boys_cuda_probe.cpp counts a class by and the one its build-defaults
+      # emission writes a row's shape cell from, and requires every cell to be
+      # carried by a row of the option table or refused by every row with a
+      # reason the row itself states. It reads two files and nothing else - no
+      # build, no compiler, no CUDA toolkit - so it is scoped to this
+      # combination like the three steps above it.
+      - name: Device (every class the enumerations imply)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_device_class_surface.py --check
       # The defaults table is the third hand-written list read against the entries
       # themselves, and until this step nothing read it: a row for a class no entry
       # reaches is a default a caller cannot ask for, and it is invisible - the
