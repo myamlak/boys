@@ -63,10 +63,29 @@ def read(path: str) -> str:
         return ""
 
 
+def code_lines(path: str) -> list[tuple[int, str]]:
+    """The file's lines with comments removed, as (line number, text).
+
+    A class named in prose is not a declaration. The header's own commentary spells the row format
+    out with the placeholder `DefaultPolicy<Precision::kX, Shape::kY>`, which is the same text a real
+    entry writes, so a check that scans raw lines reads that sentence as a class named (kX, kY) and
+    reports an entry no row can carry. The line numbers kept here are the file's own, so a report
+    still names a line a reader can open.
+    """
+    kept: list[tuple[int, str]] = []
+
+    for number, line in enumerate(read(path).splitlines(), start=1):
+        if line.lstrip().startswith("//"):
+            continue
+        kept.append((number, line.split("//", 1)[0]))
+
+    return kept
+
+
 def rows() -> dict[tuple[str, str], int]:
     """The table's classes, with the line each is written on."""
     found: dict[tuple[str, str], int] = {}
-    for number, line in enumerate(read(ROWS_FILE).splitlines(), start=1):
+    for number, line in code_lines(ROWS_FILE):
         match = ROW.search(line)
         if match:
             found[(match.group(1), match.group(2))] = number
@@ -81,7 +100,7 @@ def entries() -> dict[tuple[str, str], list[tuple[str, int]]]:
             continue
         # A device entry keys its class on Device::kDevice; both are the same class set here,
         # because what this checks is that a row and an entry name the same (precision, shape).
-        for number, line in enumerate(read(path).splitlines(), start=1):
+        for number, line in code_lines(path):
             for match in ENTRY.finditer(line):
                 key = (match.group(1), match.group(2))
                 found.setdefault(key, []).append((os.path.relpath(path, REPO), number))
