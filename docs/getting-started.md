@@ -242,7 +242,7 @@ const boys::CombinationCoverage answer = boys::QueryCombination(
     tolerance);
 ```
 
-    the double entry, every order, as it ships:
+    the double entry, every order, as it stands:
       requested    verdict                  guaranteed   measured
       1e-12        YES - guaranteed       5.5e-14      4.1e-14  [throughout, every region]
       1e-10        YES - guaranteed       5.5e-14      4.1e-14  [throughout, every region]
