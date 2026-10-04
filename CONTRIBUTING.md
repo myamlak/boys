@@ -71,7 +71,7 @@ scheme, the packing axis, the division form and the fit granularity, which are w
 falls back to, and the device lane's own division form and region-B exponential beside them, which
 is what a device class falls back to. They are compile-time values,
 so the build compiles them into every call that names none, and pays nothing for them at run time.
-The choice was a template argument before and is one still. **One of the five a build cannot move**,
+The choice was a template argument before and is one still. **One of the host five a build cannot move**,
 and it refuses at compile time with the library's own reason rather than compiling something else:
 the packing axis, because an entry that produces one order has no second order to pack into a vector
 lane. The uniform member of the fit granularity was the second until this revision: the four batched

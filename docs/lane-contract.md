@@ -1485,7 +1485,7 @@ per name in `include/boys/boys_build_defaults.hpp`, the file a build's defaults 
 build replaces that file with its own seven rather than editing the tree, which is what lets a
 consumer set them for the machine they deploy on without touching a library header
 (`BOYS_BUILD_DEFAULTS`, CONTRIBUTING.md), and the entries that name no policy then compile those
-choices at no run-time cost. **One of the five a build cannot move**, and it refuses at compile time
+choices at no run-time cost. **One of the host five a build cannot move**, and it refuses at compile time
 with the library's own reason rather than compiling something else: the packing axis, because an
 entry that produces one order has no second order to pack into a vector lane. The uniform member of
 the fit granularity was the second until this revision: the four batched bodies that refused it now
