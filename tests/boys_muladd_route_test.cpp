@@ -701,6 +701,12 @@ void SweepOrdersEntry(const char* family,
 }
 
 TEST(BoysMulAddRouteOrders, DoubleEntriesDeliverTheReportedRoute) {
+    if (!boys::BoysAvx2Available())
+    {
+        GTEST_SKIP() << "the AVX2 tier is not available on this host: the lane's body is not the "
+                        "one this test holds";
+    }
+
     const boys::backend::BackendInfo* reported = ReportedEntry("scalar-fp64");
     ASSERT_NE(reported, nullptr);
     const bool contracts = bdetail::MeasureContraction<double>();
@@ -723,6 +729,133 @@ TEST(BoysMulAddRouteOrders, DoubleEntriesDeliverTheReportedRoute) {
             SweepOrdersEntry(
                 "avx2-orders-fp64", scheme, scheme_name, composed, reported->route, contracts);
         }
+    }
+}
+
+// --- The negative control for the availability guard -------------------------
+
+/// The guard above is a claim about WHICH BODY this entry is on this target, and
+/// a skip is a way of not looking: a guard put on the wrong predicate, or on a
+/// build that does have the lane, would turn a failing sweep into a green skip
+/// and the route would go unwatched from that day on. What follows is what holds
+/// that guard to its premise, in both directions and on every target.
+///
+/// The premise has two halves and both are read off the library rather than
+/// restated here. Where the tier is available the entry is the across-orders
+/// group body, which reads the shipped group table at the group's degree and
+/// mapped argument, so it must NOT agree with the certified scalar single lane
+/// at every cell of the sweep - a guard that skipped there would be skipping a
+/// sweep that had something to measure. Where the tier is absent the entry is
+/// the certified scalar single lane, because that is what the lane's non-x86
+/// branch defines it as (src/boys_orders_simd.cpp: BoysAllOrdersSimd), so it
+/// must agree at EVERY cell: the skip then states which body is built instead of
+/// postponing the question.
+TEST(BoysMulAddRouteOrders, TheAvailabilityGuardStatesWhichBodyIsBuilt) {
+    // The predicate the guard reads and the arithmetics this build reports are
+    // one statement: AppendPackedBackends lists the packed pair exactly where the
+    // tier is available, so the size of BoysBackends() is the same fact told a
+    // second way, and a guard reading one of them reads the other.
+    const std::size_t listed = boys::backend::BoysBackends().size();
+    EXPECT_EQ(listed, boys::BoysAvx2Available() ? std::size_t{4} : std::size_t{2})
+        << "the packed pair is listed exactly where the tier is available, so a guard reading "
+           "BoysAvx2Available() reads the fact this build's own report prints";
+
+    // Which arithmetic this entry runs is a question with three answers, not
+    // two: the group lane's value at the reported route, the group lane's value
+    // at the OTHER route - which is the silent substitution a lane that stopped
+    // reading the selection would deliver - and neither of those, which is a
+    // different arithmetic. The sweep counts all three, so a build that reports
+    // one route and delivers the other is told apart from one whose entry is not
+    // the group lane at all rather than being read as either.
+    const boys::backend::BackendInfo* const scalar_report = ReportedEntry("scalar-fp64");
+    const boys::backend::BackendInfo* const packed_report = ReportedEntry("avx2-orders-fp64");
+
+    std::size_t cells = 0;
+    std::size_t agree_with_the_scalar_lane = 0;
+    std::size_t at_the_reported_route = 0;
+    std::size_t at_the_other_route = 0;
+
+    for (const double x : RegionASweep())
+    {
+        for (const int nmax : {1, 7, 32})
+        {
+            std::vector<double> delivered(static_cast<std::size_t>(nmax) + 1);
+
+            detail::BoysAllOrdersSimd(
+                boys::detail::OrdersScheme::kSplitClenshaw, nmax, x, delivered.data(), 1);
+
+            const ShippedOrdersGeometry geometry = ShippedGeometryAt(x);
+
+            for (int order = 0; order <= nmax; ++order)
+            {
+                const std::size_t l = static_cast<std::size_t>(order);
+                const double scalar = boys::BoysSingle<>(order, x);
+                const double* const got = &delivered[l];
+
+                const double group_reported = OrdersLaneFitFor(
+                    boys::detail::OrdersScheme::kSplitClenshaw, scalar_report->route, order, nmax,
+                    geometry);
+                const double group_other = OrdersLaneFitFor(
+                    boys::detail::OrdersScheme::kSplitClenshaw,
+                    scalar_report->route == MulAddRoute::kFused ? MulAddRoute::kSeparate
+                                                                : MulAddRoute::kFused,
+                    order, nmax, geometry);
+
+                ++cells;
+
+                if (std::memcmp(got, &scalar, sizeof(double)) == 0)
+                {
+                    ++agree_with_the_scalar_lane;
+                }
+
+                if (std::memcmp(got, &group_reported, sizeof(double)) == 0)
+                {
+                    ++at_the_reported_route;
+                }
+
+                if (std::memcmp(got, &group_other, sizeof(double)) == 0)
+                {
+                    ++at_the_other_route;
+                }
+            }
+        }
+    }
+
+    std::printf(
+        "  guard-premise avx2-available=%d contracts=%d scalar-fp64-report=%s "
+        "avx2-orders-fp64-report=%s contracts-at-that-arithmetic=%d cells=%zu "
+        "at-the-scalar-lane=%zu at-the-reported-routes-group-lane=%zu "
+        "at-the-other-routes-group-lane=%zu\n",
+        boys::BoysAvx2Available() ? 1 : 0,
+        bdetail::MeasureContraction<double>() ? 1 : 0,
+        scalar_report == nullptr ? "(no such arithmetic is reported)"
+                                 : MulAddRouteName(scalar_report->route),
+        packed_report == nullptr ? "(no such arithmetic is reported)"
+                                 : MulAddRouteName(packed_report->route),
+        scalar_report == nullptr ? 0 : (scalar_report->contracts ? 1 : 0),
+        cells,
+        agree_with_the_scalar_lane,
+        at_the_reported_route,
+        at_the_other_route);
+    std::fflush(stdout);
+
+    if (boys::BoysAvx2Available())
+    {
+        EXPECT_LT(agree_with_the_scalar_lane, cells)
+            << "the AVX2 tier is available, so this entry is the across-orders group body and not "
+               "the certified scalar single lane; it agreed with that lane at all "
+            << cells
+            << " cells of the sweep, so either the entry is not the group body or the guard above "
+               "is skipping a sweep that had something to measure";
+    } else
+    {
+        EXPECT_EQ(agree_with_the_scalar_lane, cells)
+            << "the AVX2 tier is absent, so this entry is the certified scalar single lane "
+               "(src/boys_orders_simd.cpp: BoysAllOrdersSimd) and must agree with it at all "
+            << cells
+            << " cells of the sweep; it agreed at " << agree_with_the_scalar_lane
+            << ", so the entry is some other body and the guard above is skipping a sweep that "
+               "should have run";
     }
 }
 
