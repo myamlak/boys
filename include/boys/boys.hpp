@@ -742,9 +742,12 @@ using DefaultPolicy = typename DefaultPolicyFor<kPrecision, kShape, kDevice>::Ty
 /// on the lanes where that costs accuracy the plain form's figure is the base
 /// plus this term, and \c BoysAccuracyGuaranteed answers it when the caller
 /// names that form. It is 0.0 on every lane whose forms deliver one figure: the
-/// double lane's plain form stays inside the base everywhere, and on the device
-/// lane, which carries the axis but has no figure measured per form, the row's
-/// one figure is read at that lane's own default form.
+/// double lane's plain form stays inside the base everywhere, and the device's
+/// float and double lanes deliver all three of their forms inside the figure
+/// their rows state. The device's half lane is not one of those: at a subnormal
+/// result the plain reciprocal's rounding leaves the base, so that lane's row
+/// carries the term, and \c BoysAccuracyGuaranteed answers 1e-7 + 1e-7 for that
+/// form there.
 ///
 /// \ingroup boys
 struct LaneContractInfo {
