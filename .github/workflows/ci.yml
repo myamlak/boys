@@ -859,6 +859,30 @@ jobs:
         if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_default_rows_have_entries.py
+      # The option space closes in three places and only one of them is a property
+      # this checkout can settle on its own: the host space closes from the
+      # accuracy gate's recorded run, which is committed, while the device and
+      # probe spaces close from the option probes' own reports - and those reports
+      # are what a probe run for keeps PRODUCES. A step that waited for all three
+      # would be waiting for the thing it guards, so this one reads the half that
+      # is a precondition and leaves the other half to be judged after the run
+      # that makes it. What it reads is the recorded run's own printed arithmetic,
+      # so a run that stops printing it fails here rather than passing quietly.
+      - name: Host (every member of the option space accounted for and certified)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_host_space_closes.py
+      # A conditional that opens a construct and closes it outside its own branch
+      # compiles on the configuration its author is building and fails on every
+      # other one: an `#if` around a `namespace {` that closes after the `#endif`
+      # is balanced on the branch that took the `#if`, and the branch that did not
+      # sees an unbalanced brace. Five arm64 legs went red on exactly that shape,
+      # so the balance is read here rather than left to whichever targets happen
+      # to be built.
+      - name: Sources (a construct a conditional opens is closed inside it)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_conditional_spans.py --check
       # The scheme arms have the same exposure one layer down, and no compiler sees
       # all of it. gcc and clang catch an arm the switch is missing through
       # -Wswitch, but only while the switch has no `default` arm, and a switch that
