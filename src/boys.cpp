@@ -828,7 +828,7 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
     // subnormal in the half format, and the two forms that divide exactly deliver
     // 1.78813934e-07 and 1.1920929e-07 there, so the plain form's extra rounding
     // is 5.39e-8 over the base and 1e-7 bounds it.
-    static const std::array<LaneContractInfo, 6> rows = {{
+    static const std::array<LaneContractInfo, 7> rows = {{
         {Precision::kFp64, "fp64", 5.5e-14, 0.0, 0.0, RegionBExp::kFast,
          "throughout, every region"},
         {Precision::kFp32, "fp32", 1.5e-7, 0.0, 1e-7, RegionBExp::kFast,
@@ -918,6 +918,29 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
          "inside the base at 2.5e-8 and 3.5e-8 from the value. The difference over the base is "
          "5.39e-8, and the term published is 1e-7, which bounds it with the margin a guarantee "
          "needs"},
+        // This lane runs the fp16 lane's bodies at the fp16 lane's budget and differs from it in
+        // the format it stores, so the base and the plain form's term are that lane's and the
+        // digit the sentence carries is this format's own. The row stands here rather than being
+        // folded into the fp16 one because the seam keys a class by the format a return carries:
+        // `Precision::kBf16` is the bfloat16 class's own name, `DefaultPolicy<Precision::kBf16,
+        // Shape>` its own default, and the two classes' measured winners are not one
+        // combination (boys/boys_build_defaults.hpp writes each class's row).
+        {Precision::kBf16, "bf16", 1.5e-7, 0.0, 1e-7, RegionBExp::kFast,
+         "the single-precision lane's own figure, plus half of the last representable digit of "
+         "the returned value, which in this format is 2^-9 = 1.953125e-03, and claimed only where "
+         "the value exceeds the sum. The half lane computes in that arithmetic and stores what it "
+         "returns, so it cannot be more accurate than the lane whose arithmetic it runs: a bar "
+         "below that figure is one no conforming host can keep, and a host whose rounding differs "
+         "delivers the fit's own error through it. It is the fp16 lane's figure on this format's "
+         "store and not the fp16 class's row: the two are two classes of one lane, each stating "
+         "its own format's half digit, and this format's is the coarser of the two - 2^-9 against "
+         "2^-11. The fp16 row beside this one states that term in words; this row names its "
+         "number. "
+         "Beside the base, and under the same division form: the fp16 and bf16 entries run the "
+         "single-precision engine's own bodies and round at the boundary (BoysAllOrdersBf16, "
+         "boys_impl.hpp), so the plain reciprocal's larger figure on that lane - 1.75140e-07 at "
+         "n = 0, x = 9.74054909, 6.67e-8 above that lane's own worst of 1.08354e-07 - is this "
+         "lane's too, before the format's own half digit is added to it"},
     }};
 
     return rows;
@@ -1206,6 +1229,7 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
             return CarriesDeviceF16(route, scheme, axis, granularity);
         case Precision::kFp32:
         case Precision::kFp16:
+        case Precision::kBf16:
             return CarriesSingle(route, scheme, axis, granularity);
         case Precision::kFp64:
             break;
@@ -1324,10 +1348,12 @@ AccuracyFigure BoysAccuracyDelivered(Precision precision,
         return figure;
     }
 
-    // Both of the half lanes answer this way, the host's and the device's: the device half lane
-    // computes in the float lane's bodies and stores half, so what the caller receives carries
-    // the same format quantum the host half lane's return does.
-    if (precision == Precision::kFp16 || precision == Precision::kFp16Device)
+    // Every half lane answers this way: the host's two formats and the device's. Each computes
+    // in the float lane's bodies and stores half, so what the caller receives carries the same
+    // format quantum a half-typed return does - a different quantum of the value in each of the
+    // two host formats, which is why the sentence below names the lanes and not one format.
+    if (precision == Precision::kFp16 || precision == Precision::kFp16Device ||
+        precision == Precision::kBf16)
     {
         figure.available = false;
         figure.reason =
@@ -1348,12 +1374,16 @@ AccuracyFigure BoysAccuracyDelivered(Precision precision,
     const char* source = "BoysFitRoutesF32()";
 
     // The half and single lanes' own route table; the double lane's, which the
-    // device lane's single-precision entries read their region-A fits from.
+    // device lane's single-precision entries read their region-A fits from. Both
+    // half formats read the single-precision table: they run that lane's bodies.
     const std::span<const FitRouteInfo> routes =
-        (precision == Precision::kFp32 || precision == Precision::kFp16) ? BoysFitRoutesF32()
-                                                                         : BoysFitRoutes();
+        (precision == Precision::kFp32 || precision == Precision::kFp16 ||
+         precision == Precision::kBf16)
+            ? BoysFitRoutesF32()
+            : BoysFitRoutes();
 
-    if (precision != Precision::kFp32 && precision != Precision::kFp16)
+    if (precision != Precision::kFp32 && precision != Precision::kFp16 &&
+        precision != Precision::kBf16)
     {
         source = "BoysFitRoutes()";
     }

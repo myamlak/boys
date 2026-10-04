@@ -5078,6 +5078,88 @@ void BoysAllNAtOrdersF16(const int* n, const F16* x, F16* out, std::size_t count
     }
 }
 
+// The bf16 lane's array shapes: the same three bodies as the fp16 array entries
+// above, op for op, with this format's conversions in place of fp16's. Nothing
+// is computed in half here beyond the store either, so the arithmetic is the
+// float lane's - which is what makes these this lane's entries rather than a
+// second engine - and the one term that differs between the two half formats is
+// the half digit of the store each makes: 2^-9 for a bfloat16 return against
+// 2^-11 for a binary16 one. A bf16 sibling needs nothing the fp16 entry
+// does not: the fp32 engine, the argument widened once on the way in and the
+// result rounded once on the way out, both through operations this format's type
+// carries as the other's does.
+template <EvalPolicyLike Policy>
+void BoysFixedNBf16(
+    int n, const Bf16* x, Bf16* out, std::size_t count, std::size_t stride) noexcept {
+    static_assert(Policy::kBudget == BoysBudget::kFp16,
+                  "the half lanes run the fp16 engine budget, so a policy named here is one built "
+                  "at it: name BoysBudget::kFp16, or call the float lane's entry to run the float "
+                  "lane's arithmetic");
+
+    assert(n >= 0 && n <= kMaxBoysOrder);
+    assert(x != nullptr);
+    assert(out != nullptr);
+    assert(stride >= 1);
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        assert(x[i] >= static_cast<Bf16>(0.0f));
+        out[i * stride] = static_cast<Bf16>(
+            detail::BoysSingleF32Impl<Policy>(n, static_cast<float>(x[i])));
+    }
+}
+
+template <EvalPolicyLike Policy>
+void BoysAllNBf16(int nmax, const Bf16* x, Bf16* out, std::size_t count) noexcept {
+    static_assert(Policy::kBudget == BoysBudget::kFp16,
+                  "the half lanes run the fp16 engine budget, so a policy named here is one built "
+                  "at it: name BoysBudget::kFp16, or call the float lane's entry to run the float "
+                  "lane's arithmetic");
+
+    assert(nmax >= 0 && nmax <= kMaxBoysOrder);
+    assert(count == 0 || x != nullptr);
+    assert(count == 0 || out != nullptr);
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        assert(x[i] >= static_cast<Bf16>(0.0f));
+
+        float row[kMaxBoysOrder + 1];
+        detail::BoysAllOrdersF32Impl<Policy>(nmax, static_cast<float>(x[i]), row);
+
+        for (int l = 0; l <= nmax; ++l)
+        {
+            out[static_cast<std::size_t>(l) * count + i] = static_cast<Bf16>(row[l]);
+        }
+    }
+}
+
+template <EvalPolicyLike Policy>
+void BoysAllNAtOrdersBf16(const int* n, const Bf16* x, Bf16* out, std::size_t count) noexcept {
+    static_assert(Policy::kBudget == BoysBudget::kFp16,
+                  "the half lanes run the fp16 engine budget, so a policy named here is one built "
+                  "at it: name BoysBudget::kFp16, or call the float lane's entry to run the float "
+                  "lane's arithmetic");
+
+    assert(count == 0 || n != nullptr);
+    assert(count == 0 || x != nullptr);
+    assert(count == 0 || out != nullptr);
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        assert(n[i] >= 0 && n[i] <= kMaxBoysOrder);
+        assert(x[i] >= static_cast<Bf16>(0.0f));
+
+        float row[kMaxBoysOrder + 1];
+        detail::BoysAllOrdersF32Impl<Policy>(n[i], static_cast<float>(x[i]), row);
+
+        for (int l = 0; l <= n[i]; ++l)
+        {
+            out[static_cast<std::size_t>(l) * count + i] = static_cast<Bf16>(row[l]);
+        }
+    }
+}
+
 // The half lanes' rung-argument entries: the fp16 engine's ladder through the
 // store this lane makes, at the policy named, so the two selections meet here as
 // they do on the double lane.

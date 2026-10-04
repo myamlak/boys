@@ -123,17 +123,17 @@
 /// four host choices its lane composes - so a file carrying no row at all is the
 /// build this file was before the list existed.
 ///
-/// **The precision cell is a LANE, not a format.** `boys::Precision` is the lane
-/// a call runs in - `kFp16` is the fp16 *and* bfloat16 entries, which are one
-/// engine at one budget and differ only in the type they store - so a row
-/// written for `kFp16` is the row both half-format entries resolve to, and there
-/// is no `kBf16` cell to write. The option probe ranks the two formats as two
-/// classes, because what it times includes the store; where its two winners were
-/// one combination, as they are at this revision, the lane carries one row and
-/// nothing is lost. Where they were not, that is a finding about the keying
-/// rather than a row to fold: a lane is what the library can resolve, and a
-/// format-specific default would need a format key that `Precision` does not
-/// have.
+/// **The precision cell is a LANE, and each half format is a lane of its own.**
+/// `boys::Precision` is the lane a call runs in: `kFp16` is the binary16 entries
+/// and `kBf16` the bfloat16 ones, which are one engine at one budget and differ
+/// in the type they store. A class is keyed by the format a return carries, so
+/// the two are two classes and the list below carries a row for each. The option
+/// probe ranks the two formats as two classes, because what it times includes
+/// the store, and the two rows are what lets each format's own winner be written
+/// where its class resolves. One row for both would be a default the other
+/// format reads: the figure a half-typed return carries is the format's own half
+/// digit - 2^-11 for a binary16 store, 2^-9 for a bfloat16 one - and the two
+/// classes' measured winners are not one combination.
 ///
 /// **The rung is not a key, because the rung is the caller's and not the library's.** A caller
 /// chooses the accuracy before the call and this table answers what the library then picks, so a
@@ -165,9 +165,10 @@
 ///
 /// **EVERY CLASS THE LIBRARY CARRIES HAS A ROW**, and a class without one
 /// is a build error rather than a call answered by something else. The list
-/// below carries both halves of the table: one row per class the host's entries reach - five
-/// shapes on the double lane, three on the single-precision lane and two on the half lane,
-/// because a shape no entry carries has no default to state - beside one row per class the
+/// below carries both halves of the table: one row per class the host's entries reach - the
+/// five shapes (single, fixed-N, all-N, all-N-at-orders and all-orders) on each of the four
+/// host lanes, the double lane, the float lane and the two half formats, because a shape no
+/// entry carries has no default to state - beside one row per class the
 /// device half holds, the three device lanes by the three questions a device entry answers. A
 /// list missing one of them stops compiling rather than handing the missing class's callers a
 /// combination nobody chose: `boys::DefaultPolicyFor` refuses the class it is asked for, and
@@ -179,12 +180,14 @@
 /// **Each row says whether it is a measurement or a choice, and the difference
 /// is in the comment above it.** A measured row is the option probe's own
 /// winner for that class's m = 1 runs, on the host that produced this file:
-/// 2026-10-02, a 12-logical-processor AVX2+FMA host, window run 2, seed 47. The
-/// double all-orders row measured 92.89 ns per argument where the seam's own
-/// combination measures 172.88, and the float and half all-orders rows are the
-/// winners of the refinement vote that settled each of those classes. A row is a
-/// figure taken on one host, which is why the machine, the date and the run are
-/// here.
+/// the run of 2026-10-02, a 12-logical-processor AVX2+FMA host, window run 2,
+/// seed 47. The double all-orders row measured 92.89 ns per argument where the
+/// seam's own combination measures 172.88, and the float and fp16 all-orders
+/// rows are the winners of the refinement vote that settled each of those
+/// classes. The bf16 all-orders row is the run of 2026-10-04's own verdict for
+/// that class - the run whose key carries the two half formats as two classes -
+/// and its comment names that run. A row is a figure taken on one host, which is
+/// why the machine, the date and the run are here.
 ///
 /// **The device rows are one card's run, and the figure beside each is that run's own.** The nine
 /// device rows are `boys-device-probe --emit-defaults` output from the run of 2026-10-04 on a
@@ -205,19 +208,24 @@
 /// statement of what the card is shown to do, and a re-run on a quiet machine is what retires
 /// this paragraph.
 ///
-/// The host rows below the measured three name the five choices above, at their
+/// The host rows below the measured four name the five choices above, at their
 /// lane's budget, because the probe ranks two of the five host shapes at this
 /// revision - the all-orders ladder and the batch - so a class of a shape it
-/// does not rank has no measurement to carry. They are written out rather than
+/// does not rank has no measurement to carry. The measured four are the four
+/// host lanes' all-orders classes, each row its own class's winner and not a
+/// neighbour's. They are written out rather than
 /// left to anything implicit: a row written here is a default that has been
 /// decided and can be read, and the marker above it says on what.
 ///
-/// **The exponential cell of every row below is `RegionBExp::kFast`, and it is
-/// written rather than left to the policy's default.** `kFast` is
+/// **The exponential cell of every host row that states the five is
+/// `RegionBExp::kFast`, and it is written rather than left to the policy's
+/// default.** `kFast` is
 /// `kDefaultHostRegionBExp`, which is the member `EvalPolicy` filled in for
-/// these rows while this format carried no cell for that axis, so every row here
-/// denotes the same policy it denoted before the cell existed and no figure in
-/// this file moved. It is written out because the alternative is a row whose
+/// these rows while this format carried no cell for that axis, so every one of
+/// them denotes the same policy it denoted before the cell existed and no figure
+/// in this file moved. A row that states a measured winner carries the member
+/// that winner was measured at, which is `RegionBExp::kAccurate` in the bf16
+/// all-orders row below. It is written out because the alternative is a row whose
 /// arithmetic is decided by a template default rather than by the table, and a
 /// reader of the table cannot see which member a class runs. A row that wants
 /// the other member names `RegionBExp::kAccurate`; both are certified and
@@ -243,7 +251,8 @@
     X(kHost, kFp32, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
       DivisionForm::kRefinedReciprocal, RegionBExp::kFast)\
-    /* measured: the vote's winner; the one lane both half formats run */\
+    /* measured: the half lane's vote winner, from the run whose key carried the
+       two half formats as one lane; this is the fp16 class's row */\
     X(kHost, kFp16, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
       RegionBExp::kFast)\
@@ -286,10 +295,29 @@
     X(kHost, kFp16, kAllNAtOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
       RegionBExp::kFast)\
-    /* the half lane is one lane for both half formats: `Precision::kFp16` is
-       where the fp16 and bfloat16 entries live, so there is one row per shape
-       and no second format to key. A format-specific default would need a
-       format key that `Precision` does not have. */\
+    /* measured: m = 1, the bf16 all-orders class's own entry, 116.06 ns per
+       argument, reached by the unanimous vote over the refinement runs - the run
+       of 2026-10-04, a 12-logical-processor AVX2+FMA host, seed 47, whose key
+       carries the two half formats as two classes. The fp16 row above is the
+       earlier run's verdict for the lane as that run keyed it - one lane for
+       both formats; here the two rows are two classes' defaults */\
+    X(kHost, kBf16, kAllOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner,\
+      BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
+      DivisionForm::kPlainReciprocal, RegionBExp::kAccurate)\
+    /* no probe run has ranked these four shapes on this lane: the row carries the
+       shipped five at the half budget, as the fp16 class's unranked shapes do */\
+    X(kHost, kBf16, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
+      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kFast)\
+    X(kHost, kBf16, kFixedN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
+      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kFast)\
+    X(kHost, kBf16, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
+      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kFast)\
+    X(kHost, kBf16, kAllNAtOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
+      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kFast)\
     /* measured: the fp64 single class, 'device-single-fp64-plain-reciprocal', 1.383 ns per argument, reached by vote */\
     X(kDevice, kFp64Device, kSingle, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kCoarsest,\

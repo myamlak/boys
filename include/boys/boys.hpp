@@ -456,9 +456,18 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept;
 /// A lane is a precision and an arithmetic, not a region and not a route: the
 /// same combination of the other axes exists in every lane this build carries,
 /// and the figure it delivers differs by lane because the fits and the
-/// arithmetic do. \c kFp16 is the fp16 and bfloat16 entries, which round a
-/// 32-bit engine's result to the format at the boundary and are compiled behind
-/// this build's fp16 seam. \c kFp64Device, \c kFp32Device and \c kFp16Device are
+/// arithmetic do. \c kFp16 and \c kBf16 are the two half-format lanes: they
+/// round a 32-bit engine's result to the format at the boundary, are compiled
+/// behind this build's fp16 seam, and run the one engine at the one
+/// \c BoysBudget::kFp16 budget between them. They are two members rather than
+/// one because the key is a class and the library carries two: the figure a
+/// half-typed return carries is the format's own half digit - 2^-11 for a
+/// binary16 store, 2^-9 for a bfloat16 one - and, measured, the two formats'
+/// winning combinations are not one combination, which the option probe states
+/// by keying a class per format where this enumeration keys a lane. A single
+/// member for both is one row where the seam's rule is one row per class, and
+/// the second format then has no default of its own to resolve to.
+/// \c kFp64Device, \c kFp32Device and \c kFp16Device are
 /// the device lane's own three, whose entries a host without a CUDA device
 /// cannot run - every one of them is named here because a caller choosing a
 /// combination has to be able to name the combination it chose, and
@@ -478,7 +487,11 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept;
 /// **The members are appended, and the order is the history rather than the
 /// family.** \c kFp32Device was the device lane's only member before the other
 /// two existed and its value is read by name in the accuracy gate, so it keeps
-/// the value it had. \c BoysLaneContracts is indexed by this enumeration with one
+/// the value it had. \c kBf16 is the last member under that rule and not out of
+/// any kinship with \c kFp16Device beside it: it was appended rather than
+/// written next to the format it splits from, so every value this enumeration
+/// had is the value it has and the gate's own `kFp32Device` is unmoved.
+/// \c BoysLaneContracts is indexed by this enumeration with one
 /// row per member, so a member added here without its row there reads a row that
 /// does not exist.
 ///
@@ -486,10 +499,11 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept;
 enum class Precision : std::uint8_t {
     kFp64 = 0, ///< double precision, the certified lane every other is measured against
     kFp32, ///< single precision, the host's fp32 engine
-    kFp16, ///< half precision: the fp16 and bfloat16 entries, whose figure carries a term of the format
+    kFp16, ///< the binary16 half lane: the fp16 entries, whose figure carries the format's 2^-11 digit
     kFp32Device, ///< single precision as the device lane runs it: the float lane, under the fast exponential's term
     kFp64Device, ///< the device's double lane: the double pieces, region A read by the seeded recurrence
     kFp16Device, ///< the device's half lane: the float lane's bodies, stored half and under the half budget
+    kBf16, ///< the bfloat16 half lane: the same engine and budget as kFp16, stored in this format, whose figure carries 2^-9
 };
 
 /// The device a call runs on: the first key of the default-policy table.
@@ -555,11 +569,13 @@ constexpr BoysBudget LaneFallbackBudget() noexcept
 {
     static_assert(kLane == Precision::kFp64 || kLane == Precision::kFp32 ||
                       kLane == Precision::kFp16 || kLane == Precision::kFp32Device ||
-                      kLane == Precision::kFp64Device || kLane == Precision::kFp16Device,
+                      kLane == Precision::kFp64Device || kLane == Precision::kFp16Device ||
+                      kLane == Precision::kBf16,
                   "no budget: the library carries one for each enumerator of Precision and for "
                   "none besides");
 
-    if constexpr (kLane == Precision::kFp16 || kLane == Precision::kFp16Device)
+    if constexpr (kLane == Precision::kFp16 || kLane == Precision::kFp16Device ||
+                  kLane == Precision::kBf16)
     {
         return BoysBudget::kFp16;
     }
@@ -636,15 +652,18 @@ BOYS_BUILD_DEFAULT_ROWS(BOYS_DEFAULT_POLICY_ROW)
 // the row *is*: a written row whose cells come from the build's own five names, not an absent row
 // answered by something else.
 //
-// THE FIFTEEN ARE THE ENTRIES' OWN CLASSES, READ OFF THE ENTRIES. Every host entry's policy
-// parameter defaults to its own class's DefaultPolicy, and the fifteen below are exactly
+// THE TWENTY ARE THE ENTRIES' OWN CLASSES, READ OFF THE ENTRIES. Every host entry's policy
+// parameter defaults to its own class's DefaultPolicy, and the twenty below are exactly
 // the (precision, shape) pairs those defaults name: each lane's five shapes - single, fixed-N,
 // all-N, all-N-at-orders and all-orders (boys/boys.hpp and boys/boys_span.hpp are where the entries
-// are declared). A row for a class no entry names is a combination nothing asks for, and an entry
-// added at a class this list does not carry fails to compile until its row is written - both halves
-// of the same statement, which is why the list is the entries' classes and not a superset of them.
+// are declared) - on the double lane, the float lane and the two half lanes. The two half formats
+// are one engine at one budget and two classes: a class is keyed by the format a return is stored
+// in, and the two formats' defaults are two rows of this list rather than one row read twice. A row
+// for a class no entry names is a combination nothing asks for, and an entry added at a class this
+// list does not carry fails to compile until its row is written - both halves of the same
+// statement, which is why the list is the entries' classes and not a superset of them.
 #define BOYS_DEFAULT_POLICY_BUILD_ROW(kPrecision, kShape)                                           BOYS_DEFAULT_POLICY_ROW(kHost, kPrecision, kShape, kDefaultFitRoute, kDefaultEvalScheme,                                LaneFallbackBudget<Precision::kPrecision>(), kDefaultPackAxis,                                               kDefaultFitGranularity, kDefaultDivisionForm,                                         kDefaultHostRegionBExp)
-#define BOYS_DEFAULT_POLICY_BUILD_ROWS(X)                                                           X(kFp64, kSingle) X(kFp64, kFixedN) X(kFp64, kAllN) X(kFp64, kAllNAtOrders) X(kFp64, kAllOrders) X(kFp32, kSingle) X(kFp32, kFixedN) X(kFp32, kAllN) X(kFp32, kAllNAtOrders) X(kFp32, kAllOrders) X(kFp16, kSingle) X(kFp16, kFixedN) X(kFp16, kAllN) X(kFp16, kAllNAtOrders) X(kFp16, kAllOrders)
+#define BOYS_DEFAULT_POLICY_BUILD_ROWS(X)                                                           X(kFp64, kSingle) X(kFp64, kFixedN) X(kFp64, kAllN) X(kFp64, kAllNAtOrders) X(kFp64, kAllOrders) X(kFp32, kSingle) X(kFp32, kFixedN) X(kFp32, kAllN) X(kFp32, kAllNAtOrders) X(kFp32, kAllOrders) X(kFp16, kSingle) X(kFp16, kFixedN) X(kFp16, kAllN) X(kFp16, kAllNAtOrders) X(kFp16, kAllOrders) X(kBf16, kSingle) X(kBf16, kFixedN) X(kBf16, kAllN) X(kBf16, kAllNAtOrders) X(kBf16, kAllOrders)
 BOYS_DEFAULT_POLICY_BUILD_ROWS(BOYS_DEFAULT_POLICY_BUILD_ROW)
 #undef BOYS_DEFAULT_POLICY_BUILD_ROWS
 #undef BOYS_DEFAULT_POLICY_BUILD_ROW
@@ -1868,15 +1887,16 @@ void BoysAllNAtOrdersF16(const int* n, const F16* x, F16* out, std::size_t count
 /// boundary, same
 /// contract as BoysSingleF16 (bf16 representation term, 8-bit mantissa).
 ///
-/// \tparam Policy see BoysSingleF16. The two half formats are one lane at one
-///         budget, so this is the fp16 lane's policy type: \c DefaultPolicyBf16
-///         is \c DefaultPolicyFp16
+/// \tparam Policy see BoysSingleF16. The half lane's budget is one budget and its
+///         two formats are two classes of it, so the default here is this class's
+///         own row: \c DefaultPolicy<Precision::kBf16, Shape::kSingle>, which the
+///         table carries beside the fp16 class's and not in place of it
 /// \param n     order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0 (bf16)
 /// \returns     F_n(x) in bf16
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp16, Shape::kSingle>>
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kBf16, Shape::kSingle>>
 Bf16 BoysSingleBf16(int n, Bf16 x) noexcept;
 
 /// F_0(x)..F_nmax(x) in bf16, same contract as BoysAllOrdersF16 per value.
@@ -1887,8 +1907,74 @@ Bf16 BoysSingleBf16(int n, Bf16 x) noexcept;
 /// \param out   receives nmax + 1 values, out[k] = F_k(x)
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp16, Shape::kAllOrders>>
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kBf16, Shape::kAllOrders>>
 void BoysAllOrdersBf16(int nmax, Bf16 x, Bf16* out) noexcept;
+
+/// F_n(x_i) for an array of arguments in bf16 — the bf16 lane's entry of the
+/// shape BoysFixedN has in the double lane, same certified-boundary contract as
+/// BoysSingleBf16 per value.
+///
+/// Layout and totality as BoysFixedN: out[i * stride] = F_n(x[i]) with stride
+/// measured in bf16 values and defaulting to 1 (contiguous), count may be 0 (no
+/// writes), and the two arrays must not overlap. Each element is the bf16 lane's
+/// single entry at that argument, stored once, so the bound is that entry's: the
+/// figure this lane's own row publishes — \c BoysLaneContracts at
+/// \c Precision::kBf16, 1.5e-7, plus that row's 1e-7 where the plain reciprocal
+/// is named — beside this format's own half digit, 2^-9 = 1.953125e-03, the
+/// largest a return can carry since |F_n(x)| <= 1. The fp16 entries carry the
+/// same figure with 2^-11 = 4.8828125e-04 in place of that term.
+///
+/// \tparam Policy see BoysSingleBf16: the budget is this lane's, and naming
+///         another is rejected at the call site
+/// \param n      order, 0..kMaxBoysOrder
+/// \param x      array of count arguments, each >= 0 (bf16)
+/// \param out    receives F_n(x[i]) at out[i * stride]
+/// \param count  number of arguments
+/// \param stride output stride in bf16 values, >= 1 (default 1 = contiguous)
+///
+/// \ingroup boys
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kBf16, Shape::kFixedN>>
+void BoysFixedNBf16(
+    int n, const Bf16* x, Bf16* out, std::size_t count, std::size_t stride = 1) noexcept;
+
+/// F_0(x_i)..F_nmax(x_i) for an array of arguments in bf16 — the bf16 lane's
+/// entry of the shape BoysAllN has in the double lane, same contract as
+/// BoysAllOrdersBf16 per value.
+///
+/// Layout and totality as BoysAllN: out[k * count + i] = F_k(x[i]), order-major
+/// planes, the output holding count * (nmax + 1) bf16 values, count may be 0 (no
+/// writes). Each column is the bf16 lane's all-orders entry at that argument, so
+/// the figure is the one the bf16 entry declared above states.
+///
+/// \tparam Policy see BoysSingleBf16
+/// \param nmax  highest order, 0..kMaxBoysOrder
+/// \param x     array of count arguments, each >= 0 (bf16)
+/// \param out   receives count * (nmax + 1) values, out[k * count + i] = F_k(x[i])
+/// \param count number of arguments; may be 0 (no writes)
+///
+/// \ingroup boys
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kBf16, Shape::kAllN>>
+void BoysAllNBf16(int nmax, const Bf16* x, Bf16* out, std::size_t count) noexcept;
+
+/// F_k(x_i) for k = 0..n[i] over an array of arguments with a per-element top
+/// order, in bf16 — the bf16 lane's entry of the shape BoysAllNAtOrders has in
+/// the double lane, same contract as BoysAllOrdersBf16 per value.
+///
+/// Layout and totality as BoysAllNAtOrders: out[k * count + i] = F_k(x[i]) for
+/// k = 0..n[i], order-major planes, each column stopping at its own top order,
+/// the cells above it left as the caller left them, and the output holding
+/// count * (1 + max_i n[i]) bf16 values. count may be 0 (no writes).
+///
+/// \tparam Policy see BoysSingleBf16
+/// \param n     array of count top orders, each 0..kMaxBoysOrder
+/// \param x     array of count arguments, each >= 0 (bf16)
+/// \param out   receives the planes: out[k * count + i] = F_k(x[i]) for
+///              k = 0..n[i], every cell above n[i] untouched
+/// \param count number of arguments; may be 0 (no writes)
+///
+/// \ingroup boys
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kBf16, Shape::kAllNAtOrders>>
+void BoysAllNAtOrdersBf16(const int* n, const Bf16* x, Bf16* out, std::size_t count) noexcept;
 
 
 

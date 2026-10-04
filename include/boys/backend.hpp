@@ -568,20 +568,23 @@ concept EvalPolicyLike = requires {
 ///    carries is inert;
 ///  - the **float** lane reads the budget at a relaxed multiplier, and its own
 ///    is \c BoysBudget::kFloat;
-///  - the **half** lanes (\c fp16 and \c bf16) are the same engine under the
+///  - the **half** lanes (\c fp16 and \c bf16) are one engine under the
 ///    tighter \c BoysBudget::kFp16 budget, which is the axis that cuts their
 ///    fits for a 1e-7 region target rather than the float lane's — this is the
-///    one place the four names differ in more than their spelling, and it is
-///    why a single default for every precision would be the float lane's
-///    budget imposed on the half lanes. It is not an accuracy they can
-///    publish: they run the float lane's arithmetic and store what it returns,
-///    so their published figure is that lane's (1.5e-7) plus the half-ULP
-///    term the store adds;
+///    one place the half names differ from the double and float names in more
+///    than their spelling, and it is why a single default for every precision
+///    would be the float lane's budget imposed on the half lanes. It is not an
+///    accuracy they can publish: they run the float lane's arithmetic and store
+///    what it returns, so their published figure is that lane's (1.5e-7) plus
+///    the half-ULP term the store adds, which is the format's own — 2^-11 for
+///    the binary16 store, 2^-9 for the bfloat16 one;
 ///  - \c DefaultPolicyFp16 and \c DefaultPolicyBf16 denote one and the same
-///    policy type, because fp16 and bf16 are one lane at one budget; they are
-///    named twice so that a document can cite the default for the format its
-///    reader is using, and a reader comparing the two names is comparing a
-///    lane, not a choice.
+///    policy type — one engine, one budget, and no cell of a policy is a format
+///    — but neither is a class's default. What an entry that names no policy
+///    resolves to is \c DefaultPolicy<Precision, Shape>: one row per class, and
+///    the fp16 and bf16 classes are two of those rows. The two names are here so
+///    that a document can cite the lane it is writing about; a caller asking
+///    what an unnamed bf16 call runs asks for the bf16 class.
 ///
 /// **These defaults are a measurement, and the option probe is how it was
 /// taken.** Which option is fastest is a property of the host, its flags and
@@ -601,16 +604,22 @@ using DefaultPolicyFp64 = EvalPolicy<>;
 /// \ingroup boys
 using DefaultPolicyFp32 = EvalPolicy<>;
 
-/// The fp16 lane's default policy. See \c DefaultPolicyFp64.
+/// The fp16 lane's default policy: the seam's five at the half lane's budget. A
+/// class's own default is \c DefaultPolicy<Precision::kFp16, Shape>, which the
+/// table may state with other cells. See \c DefaultPolicyFp64.
 ///
 /// \ingroup boys
 using DefaultPolicyFp16 = EvalPolicy<kDefaultFitRoute, kDefaultEvalScheme, BoysBudget::kFp16>;
 
-/// The bf16 lane's default policy: the fp16 lane's, because the two formats are
-/// one lane at one budget. See \c DefaultPolicyFp64.
+/// The bf16 lane's default policy: the seam's five at the same half budget, and
+/// the same policy type as \c DefaultPolicyFp16, because the two half formats are
+/// one engine and a policy carries no format cell. The classes are two: an
+/// unnamed bf16 call resolves through \c DefaultPolicy<Precision::kBf16, Shape>,
+/// which is this lane's own row, so this name is the lane's five and not the fp16
+/// class's answer. See \c DefaultPolicyFp64.
 ///
 /// \ingroup boys
-using DefaultPolicyBf16 = DefaultPolicyFp16;
+using DefaultPolicyBf16 = EvalPolicy<kDefaultFitRoute, kDefaultEvalScheme, BoysBudget::kFp16>;
 
 namespace backend {
 
