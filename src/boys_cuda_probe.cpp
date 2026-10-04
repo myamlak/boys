@@ -4436,39 +4436,36 @@ static_assert(PackingCellIsNamed<DevicePacking::kLadder>() &&
               "an enumerator of DevicePacking names no cell: name it in SeamPackCell "
               "(src/boys_cuda_probe.cpp)");
 
-// The one row list this run read, expanded twice: once as the rows written back into the file
-// it emits, cell for cell and stringized rather than re-derived - so a row of the committed
-// file or of another replacement reaches the file this run writes with the tokens it was
-// written with - and once as the (device, precision, shape) classes those rows already carry.
+// The one row list this run read, expanded into the table in force's own rows: each entry keeps
+// the class it carries and the row as the tokens that class's own file wrote it with - cell for
+// cell and stringized rather than re-derived, so a row of the committed file or of another
+// replacement reaches the file this run writes exactly as it arrived. The class is kept beside
+// the row because the base is written over and not beside: a class this run measured is carried
+// by this run's own row, and the base's row for it is left out below.
 #define BOYS_DEVICE_PROBE_SEAM_ROW(device, precision, shape, route, scheme, budget, pack,          \
                                    granularity, division, exp)                                     \
-    "    X(" #device ", " #precision ", " #shape ", " #route ", " #scheme ", " #budget ", "        \
-    #pack ", " #granularity ", " #division ", " #exp ")\\\n"
+    {#device, #precision, #shape,                                                                  \
+     "    X(" #device ", " #precision ", " #shape ", " #route ", " #scheme ", " #budget ", "       \
+     #pack ", " #granularity ", " #division ", " #exp ")\\\n"},
 
-#define BOYS_DEVICE_PROBE_SEAM_CLASS(device, precision, shape, route, scheme, budget, pack,        \
-                                     granularity, division, exp)                                   \
-    {#device, #precision, #shape},
-
-/// One class of the table in force, as that table's own list spells it.
-struct SeamClassKey {
+/// One row of the table in force: the class it carries, as that table's own list spells it,
+/// and the row itself, as that table's own list writes it.
+struct SeamRow {
     const char* device;
     const char* precision;
     const char* shape;
+    const char* text;
 };
 
 #if defined(BOYS_BUILD_DEFAULT_ROWS)
-/// The classes the table in force already carries. A class already there is left exactly as
-/// it is: writing a second row for it would be two explicit specializations of one template,
-/// which does not compile.
-const SeamClassKey kTableClasses[] = {BOYS_BUILD_DEFAULT_ROWS(BOYS_DEVICE_PROBE_SEAM_CLASS)};
+/// The rows the table in force carries, verbatim.
+const SeamRow kTableRows[] = {BOYS_BUILD_DEFAULT_ROWS(BOYS_DEVICE_PROBE_SEAM_ROW)};
 #else
-// A build that carries only the five names lists no class, so none is already carried. The one
-// entry is the empty key rather than an empty array, which C++ does not have: a name of ""
-// matches no class below.
-const SeamClassKey kTableClasses[] = {{"", "", ""}};
+// A build that carries only the seven names lists no row, so the base is empty. The one entry is
+// the empty key rather than an empty array, which C++ does not have: a device name of "" is no
+// class this run writes, so nothing of the base is written back.
+const SeamRow kTableRows[] = {{"", "", "", ""}};
 #endif
-
-#undef BOYS_DEVICE_PROBE_SEAM_CLASS
 
 // Two steps, so a macro is stringized as its value and not as its own name.
 #define BOYS_DEVICE_PROBE_STRING(text) #text
@@ -4490,6 +4487,28 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
     std::string rows;
     bool measured = false;
 
+    // The classes this run's own rows carry, as the seam spells them. The file this run writes
+    // holds one row per class - the base's own for a class it did not measure, this run's for one
+    // it did - so the base's list below is written minus these.
+    struct SeamClass {
+        const char* precision;
+        const char* shape;
+    };
+    std::vector<SeamClass> writtenClasses;
+
+    const auto thisRunWroteClass = [&writtenClasses](const char* precision, const char* shape) {
+        for (const SeamClass& written : writtenClasses)
+        {
+            if (std::strcmp(written.precision, precision) == 0 &&
+                std::strcmp(written.shape, shape) == 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    };
+
     // One row per class the probe ranks: the three device precisions by the three questions, in
     // the table's own order. A class is a (device, precision, shape) triple, so the nine rows
     // below are the nine classes of the device half of the seam - one class per shape would be
@@ -4503,22 +4522,16 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
             const char* const shapeCell = SeamShapeCell(question);
             bool carried = false;
 
-            // A class the table in force already carries is left exactly as it is: writing a
-            // second row for it would be two specializations of one template, which does not
-            // compile. It is a class this run has nothing to add to.
-            for (const SeamClassKey& known : kTableClasses)
+            // The table in force is the BASE this run writes over and not a fence: a class it
+            // already carries is a class this run replaces, and one it carries that this run did
+            // not measure is written back verbatim by the header's own list. So the check here
+            // decides the marker and the list the row is reported in, never whether the row is
+            // written.
+            for (const SeamRow& known : kTableRows)
             {
                 carried = carried || (std::strcmp(known.device, "kDevice") == 0 &&
                                       std::strcmp(known.precision, precisionCell) == 0 &&
                                       std::strcmp(known.shape, shapeCell) == 0);
-            }
-
-            if (carried)
-            {
-                emission.refused.push_back(Text("%s: the table in force already carries this class, "
-                                                "so its row is left as that file wrote it",
-                                                klass.c_str()));
-                continue;
             }
 
             // The class this row would come from: this run's own class of this precision and this
@@ -4536,10 +4549,17 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
                 }
             }
 
+            // What a refused class is left with: a class the table in force carries keeps that
+            // file's own row, which the list below writes back verbatim, and one it does not carry
+            // has no row in the file this run writes. The two are different answers and the reason
+            // line says which one this is.
+            const char* const stands =
+                carried ? "; the table in force's own row for it is written back unchanged" : "";
+
             if (founder == nullptr)
             {
-                emission.refused.push_back(Text("%s: this run carried no %s class of that question",
-                                                klass.c_str(), PrecisionName(precision)));
+                emission.refused.push_back(Text("%s: this run carried no %s class of that question%s",
+                                                klass.c_str(), PrecisionName(precision), stands));
                 continue;
             }
 
@@ -4548,10 +4568,11 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
             if (winner.empty() || founder->ranking.verdict == DeviceProbeVerdict::kCannotDetermine)
             {
                 emission.refused.push_back(
-                    Text("%s: %s", klass.c_str(),
+                    Text("%s: %s%s", klass.c_str(),
                          founder->ranking.reason.empty()
                              ? "the class's ranking named no entry and gave no reason"
-                             : founder->ranking.reason.c_str()));
+                             : founder->ranking.reason.c_str(),
+                         stands));
                 continue;
             }
 
@@ -4573,8 +4594,8 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
             if (won == nullptr)
             {
                 emission.refused.push_back(
-                    Text("%s: the row it named, '%s', is no row of this run's own option table",
-                         klass.c_str(), winner.c_str()));
+                    Text("%s: the row it named, '%s', is no row of this run's own option table%s",
+                         klass.c_str(), winner.c_str(), stands));
                 continue;
             }
 
@@ -4594,8 +4615,8 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
             if (row == nullptr)
             {
                 emission.refused.push_back(
-                    Text("%s: the entry it named, '%s', is no row of the library's option space",
-                         klass.c_str(), winner.c_str()));
+                    Text("%s: the entry it named, '%s', is no row of the library's option space%s",
+                         klass.c_str(), winner.c_str(), stands));
                 continue;
             }
 
@@ -4615,8 +4636,8 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
             {
                 emission.refused.push_back(
                     Text("%s: the entry it named, '%s', states no reading of region A, so no packing "
-                         "cell of the seam is this row's",
-                         klass.c_str(), winner.c_str()));
+                         "cell of the seam is this row's%s",
+                         klass.c_str(), winner.c_str(), stands));
                 continue;
             }
 
@@ -4634,8 +4655,8 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
             {
                 emission.refused.push_back(
                     Text("%s: the row it named, '%s', states no division form, so no "
-                         "division-form cell of the seam is this row's",
-                         klass.c_str(), winner.c_str()));
+                         "division-form cell of the seam is this row's%s",
+                         klass.c_str(), winner.c_str(), stands));
                 continue;
             }
 
@@ -4658,15 +4679,22 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
                 continue;
             }
 
+            // A row written over one the table in force already carries says so in its own
+            // marker: the emitted file is read on its own, and a row that silently replaced the
+            // file's own would leave a reader comparing two files to find out what this run
+            // changed.
+            const char* const replaces =
+                carried ? "; this row replaces the one the table in force carries" : "";
+
             rows += walkover
                         ? Text("    /* a choice, not a measurement: '%s' was the last entry standing "
                                "in\n"
                                "       this class, so the row is an answer and not the winner of a\n"
-                               "       comparison */\\\n",
-                               winner.c_str())
-                        : Text("    /* measured: the %s %s class, '%s', reached by %s */\\\n",
+                               "       comparison%s */\\\n",
+                               winner.c_str(), replaces)
+                        : Text("    /* measured: the %s %s class, '%s', reached by %s%s */\\\n",
                                PrecisionName(precision), QuestionName(question), winner.c_str(),
-                               DeviceProbeDefaultHowName(founder->ranking.defaultHow));
+                               DeviceProbeDefaultHowName(founder->ranking.defaultHow), replaces);
 
             rows += Text("    X(kDevice, %s, %s, %s, %s,\\\n"
                          "      %s, %s, %s,\\\n"
@@ -4676,6 +4704,7 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
                          SeamGranularityCell(*row), formCell, expCell);
 
             measured = measured || !walkover;
+            writtenClasses.push_back(SeamClass{precisionCell, shapeCell});
 
             const std::string how =
                 Text("reached by %s, a measurement of this class's own runs",
@@ -4686,6 +4715,17 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
                      walkover ? "the last entry standing - written as a choice and not as a "
                                 "measurement"
                               : how.c_str()));
+
+            // What this row did to the table in force: a class that file already carries has had its
+            // row replaced, and the replacement is listed here so the run's own edits to the shipped
+            // table are read off the emission rather than found by comparing two files.
+            if (carried)
+            {
+                emission.overridden.push_back(
+                    Text("%s: now '%s', %s - the row the table in force carried for this class is "
+                         "replaced by this one",
+                         klass.c_str(), winner.c_str(), how.c_str()));
+            }
         }
     }
 
@@ -4701,10 +4741,11 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
     text += "#pragma once\n\n";
     text += "/// \\file\n";
     text += "/// This build's default-policy seam, the device half, written by the device option\n";
-    text += "/// probe from the classes it measured: the device classes it ranked carry the entry\n";
-    text += "/// that won them, and the classes the table in force already carried are written\n";
-    text += "/// back beside them, because a replacement is read INSTEAD of the committed file and\n";
-    text += "/// one that dropped them would leave their callers with no row at all.\n";
+    text += "/// probe from the classes it measured: every device class this run ranked carries the\n";
+    text += "/// entry that won it, over the row the table in force wrote for that class where it\n";
+    text += "/// wrote one, and the classes that file carries and this run did not measure are\n";
+    text += "/// written back beside them, because a replacement is read INSTEAD of the committed\n";
+    text += "/// file and one that dropped them would leave their callers with no row at all.\n";
     text += "///\n";
     text += "/// The command is `boys-device-probe --emit-defaults <file>`, and the surface it\n";
     text += "/// reports is `boys/boys_cuda_probe.hpp`. A row is a measurement taken on one card,\n";
@@ -4750,10 +4791,13 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
     text += "/// **A row a probe named by there being no rival is a choice, not a measurement.** A\n";
     text += "/// device class whose winner won an ordering carries the marker a measurement carries;\n";
     text += "/// one whose winner was the last entry left standing carries the marker a choice\n";
-    text += "/// carries, and a class this run did not measure carries no row at all.\n";
+    text += "/// carries, and a class this run did not measure is left with the row the table in\n";
+    text += "/// force carries for it, written back by the list below.\n";
     text += "\n";
-    text += "/// The five a class the list below carries no row for resolves to: the build's own\n";
-    text += "/// values, which is what this build compiled before this file existed.\n";
+    text += "/// The seven a class the list below carries no row for resolves to: the build's own\n";
+    text += "/// values, which is what this build compiled before this file existed. Five are the\n";
+    text += "/// host lane's and two are the device lane's own, and a class of the device lane\n";
+    text += "/// carries the device pair and not the host's.\n";
     text += Text("#define BOYS_BUILD_DEFAULT_FIT_ROUTE %s\n\n",
                  BOYS_DEVICE_PROBE_VALUE(BOYS_BUILD_DEFAULT_FIT_ROUTE));
     text += Text("#define BOYS_BUILD_DEFAULT_EVAL_SCHEME %s\n\n",
@@ -4764,15 +4808,38 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
                  BOYS_DEVICE_PROBE_VALUE(BOYS_BUILD_DEFAULT_DIVISION_FORM));
     text += Text("#define BOYS_BUILD_DEFAULT_FIT_GRANULARITY %s\n\n",
                  BOYS_DEVICE_PROBE_VALUE(BOYS_BUILD_DEFAULT_FIT_GRANULARITY));
+    text += "/// The device lane's two, which are the host's names' own siblings: a device class\n";
+    text += "/// resolves its division form and its region-B exponential to these and never to the\n";
+    text += "/// host's, so an unnamed device call reads this lane's own seam (boys_cuda.hpp,\n";
+    text += "/// accuracy.hpp, boys_device_tables.hpp).\n";
+    text += Text("#define BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM %s\n\n",
+                 BOYS_DEVICE_PROBE_VALUE(BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM));
+    text += Text("#define BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP %s\n\n",
+                 BOYS_DEVICE_PROBE_VALUE(BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP));
 
 #if defined(BOYS_BUILD_DEFAULT_ROWS)
     text += "/// The classes this file sets a default for: **one row per class**, in the table's own\n";
-    text += "/// format. The rows first are the table in force's own, written back verbatim; the\n";
-    text += "/// device rows after them are this run's.\n";
+    text += "/// format. The rows first are the table in force's own, for the classes this run did\n";
+    text += "/// not measure and written back verbatim; the rows after them are this run's, one per\n";
+    text += "/// class it measured, over the row that table carried for the class where it carried\n";
+    text += "/// one.\n";
     text += "#define BOYS_BUILD_DEFAULT_ROWS(X)\\\n";
-    text += BOYS_BUILD_DEFAULT_ROWS(BOYS_DEVICE_PROBE_SEAM_ROW);
+
+    for (const SeamRow& base : kTableRows)
+    {
+        // The base is written over and not beside: a class this run measured is carried by this
+        // run's own row below, and writing the base's row for it as well would be two rows for one
+        // class, which is two explicit specializations of one template and does not compile.
+        if (std::strcmp(base.device, "kDevice") == 0 &&
+            thisRunWroteClass(base.precision, base.shape))
+        {
+            continue;
+        }
+
+        text += base.text;
+    }
 #else
-    // A build that carries only the five names has no classes to write back: the rows below are
+    // A build that carries only the seven names has no classes to write back: the rows below are
     // the whole list, which is the one statement this run can make about a table it does not
     // have.
     text += "/// The classes this file sets a default for: **one row per class**, in the table's own\n";
