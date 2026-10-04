@@ -1183,13 +1183,14 @@ DD DivDD(DD a, DD b)
 // claim a caller can name, and the reading of it is one reading whatever the
 // second name reaches. A reader sees the two rows carry one figure.
 
-/// The division form this gate's device cells are launched at. Every entry of the
-/// surface takes the form as a trailing argument and the device option space
-/// crosses each of them with all three, but a bound is stated for a lane and a
-/// region and there is no device figure per form, so the cells here are read at
-/// the arithmetic the library's own default names - the one every published device
-/// figure was measured at. Crossing the forms here would be a second option space
-/// beside the probe's, and this gate is not that instrument.
+/// The division form the carriage question below is asked at. Whether a lane
+/// carries a member is a property of the lane and the region and not of the
+/// form: every carrier this library answers with takes no form at all
+/// (src/boys.cpp, CarriesDevice, CarriesDeviceF64, CarriesDeviceF16,
+/// CarriesSingle), so one call answers it for all three of them. The figure a
+/// carried member is judged by does depend on the form, and the device arms
+/// below read each of their cells at every form the axis answers rather than at
+/// this one.
 constexpr boys::DivisionForm kGateDivisionForm = boys::kDefaultDivisionForm;
 
 /// The entry one member of the device lane's cross is measured through, read at
@@ -10207,6 +10208,20 @@ int main(int argc, char** argv) {
     // one entry per lane - BoysAllOrders for the double and device lanes,
     // BoysAllOrdersF32 for the single and half ones - and a shape that entry
     // does not have is not a member of this cross.
+    // The forms the sweep below writes out as policies. The instantiations are
+    // compile-time and the accessor's answer is not, so the list is written once
+    // and reconciled against the accessor where the cross reports: a fourth form
+    // added to BoysDivisionForms() turns that row red instead of leaving the
+    // axis swept at three while the library offers four.
+    constexpr std::size_t kCombForms = 3;
+
+    // The plain reciprocal as a column index, for the places that read the bar
+    // one form was judged by: the arms compose that bar under this form's name
+    // and the rows below compare the accessor's answer for it against the same
+    // column.
+    constexpr std::size_t kPlainFormIndex =
+        static_cast<std::size_t>(boys::DivisionForm::kPlainReciprocal);
+
     struct Combination {
         std::string axes;
         std::string state;
@@ -10230,6 +10245,13 @@ int main(int argc, char** argv) {
         // publish different figures for the lane, and the check below holds the
         // query to the answer it is the same question as.
         double accessorFormBound = 0.0;
+        // The accessor's figure for the plain reciprocal, and the bar the arms
+        // judged that form by. A row that publishes a term for that form
+        // publishes a second figure, and these two are what say the figure the
+        // arms hold the form to is the one a consumer reads from the accessor
+        // at that form.
+        double accessorPlainBound = 0.0;
+        double plainBar = 0.0;
         double accessorDelivered = 0.0;
         bool accessorDeliveredKnown = false;
         boys::ToleranceVerdict atBound = boys::ToleranceVerdict::kNotCarried;
@@ -10241,6 +10263,13 @@ int main(int argc, char** argv) {
         int worstN = -1;
         double worstX = 0.0;
         int worstForm = -1; // the division form that delivered the worst value
+        // Each form's own worst, the point it was found at, and the count of
+        // forms the row was read at: a row whose lane states a figure per form
+        // prints the figures its forms delivered.
+        std::size_t forms = 0;
+        double formWorst[kCombForms] = {};
+        int formWorstN[kCombForms] = {-1, -1, -1};
+        double formWorstX[kCombForms] = {};
     };
 
     // The lanes, in the order BoysLaneContracts() reports them. Three of them are the device's -
@@ -10301,13 +10330,6 @@ int main(int argc, char** argv) {
     const std::size_t combPartitions = boys::BoysFitGranularities().size();
     const std::size_t combAxes = boys::BoysPackAxes().size();
 
-    // The forms the sweep below writes out as policies. The instantiations are
-    // compile-time and the accessor's answer is not, so the list is written once
-    // and reconciled against the accessor where the cross reports: a fourth form
-    // added to BoysDivisionForms() turns that row red instead of leaving the
-    // axis swept at three while the library offers four.
-    constexpr std::size_t kCombForms = 3;
-
     // The division forms, read off the accessor that names them for the reason
     // the five axis sizes above are read off theirs: a member added to the axis
     // moves this number rather than leaving a list written here to drift from
@@ -10355,6 +10377,22 @@ int main(int argc, char** argv) {
         std::size_t moved;    // values a form past the first delivered differently
         std::size_t compared; // values a form past the first was asked for
         std::size_t movedByForm[kCombForms]; // the same, one count per form
+        // Each form's own worst over the points this cell was read at, and the
+        // point it was found at. The delivered column above is the worst over
+        // the forms; on a lane whose row states a figure for a form past the
+        // first, this is the figure that form's own statement is held to, and
+        // it is what the row's sentence prints where the lane is a device lane.
+        double formWorst[kCombForms];
+        int formWorstN[kCombForms];
+        double formWorstX[kCombForms];
+        // The bar this cell's plain-reciprocal form was judged by, as the arm
+        // composed it: the lane's base plus the term the row publishes for that
+        // form plus the member term. It is the figure that form's statement is
+        // held to, and the accessor's own composition is held to it below, so
+        // that the figure a row publishes per form is the figure a consumer
+        // reads from BoysAccuracyGuaranteed at that form rather than a number
+        // this gate composes and judges by.
+        double plainBar;
     };
 
     std::vector<CombCell> combMeasured;
@@ -10399,6 +10437,14 @@ int main(int argc, char** argv) {
         // bit-identical to exact division, and a single total cannot say whether
         // the values that moved were that form's or the plain one's.
         std::size_t movedByForm[kCombForms] = {};
+
+        // Each form's own worst, kept beside the worst over all of them: a row
+        // whose forms deliver different figures states one figure per form, and
+        // the figure a form's statement has to bound is that form's own worst
+        // rather than the worst of the three.
+        double formWorst[kCombForms] = {};
+        int formWorstN[kCombForms] = {-1, -1, -1};
+        double formWorstX[kCombForms] = {};
 
         void add(int n, double x, double got, double want, double ulp = 0.0,
                  int form = 0) noexcept
@@ -10446,6 +10492,15 @@ int main(int argc, char** argv) {
                 worstN = n;
                 worstX = x;
                 worstForm = form;
+            }
+
+            const std::size_t sf = static_cast<std::size_t>(form);
+
+            if (err > formWorst[sf])
+            {
+                formWorst[sf] = err;
+                formWorstN[sf] = n;
+                formWorstX[sf] = x;
             }
         }
 
@@ -10553,7 +10608,11 @@ int main(int argc, char** argv) {
                                 a.moved,
                                 a.compared,
                                 {a.movedByForm[0], a.movedByForm[1],
-                                 a.movedByForm[2]}});
+                                 a.movedByForm[2]},
+                                {a.formWorst[0], a.formWorst[1], a.formWorst[2]},
+                                {a.formWorstN[0], a.formWorstN[1], a.formWorstN[2]},
+                                {a.formWorstX[0], a.formWorstX[1], a.formWorstX[2]},
+                                a.formBar[kPlainFormIndex]});
     };
 
     const auto combSingleLane =
@@ -10625,7 +10684,11 @@ int main(int argc, char** argv) {
                                     a.moved,
                                     a.compared,
                                     {a.movedByForm[0], a.movedByForm[1],
-                                     a.movedByForm[2]}});
+                                     a.movedByForm[2]},
+                                    {a.formWorst[0], a.formWorst[1], a.formWorst[2]},
+                                    {a.formWorstN[0], a.formWorstN[1], a.formWorstN[2]},
+                                    {a.formWorstX[0], a.formWorstX[1], a.formWorstX[2]},
+                                    a.formBar[kPlainFormIndex]});
         };
 
     const int kLaneDouble = static_cast<int>(boys::Precision::kFp64);
@@ -11062,7 +11125,6 @@ int main(int argc, char** argv) {
     GateDeviceBuffer<int> combDeviceN(ref.count);
     GateDeviceBuffer<double> combDeviceX(ref.count);
     GateDeviceBuffer<float> combDeviceValues(combDeviceCells);
-    std::vector<float> combDeviceOut(combDeviceCells);
 
     // The buffers are the sweep's own and the arm below reads them, so what
     // they could not do is asked once, here, rather than inside the sweep: a
@@ -11082,30 +11144,37 @@ int main(int argc, char** argv) {
             "was measured";
     }
 
-    // The arm: one reading per (route, scheme, partition, packing axis), the
-    // same shape as the two arms above with the entry selected by the map
-    // rather than by a policy template.
+    // The forms these arms launch their cells at: the three the axis answers,
+    // written out for the reason the host sweeps' three are - the form is a
+    // template argument of the device engine, so a form an arm names is an
+    // instantiation, and only three of them exist.
     //
-    // Each cell carries one figure and not three, and the reason is a figure
-    // rather than a surface. The device lane's entries DO carry the division-form
-    // axis: DivisionForm is a trailing parameter of every launched entry, the
-    // device option space crosses each entry with all three (boys_cuda_options.hpp,
-    // DeviceOptionAxis::kDivision), and this arm launches each cell at
-    // kGateDivisionForm - the arithmetic every published device figure was
-    // measured at. What this lane does not have is a bound per form: a bound is
-    // stated for a lane and a region, and a second reading of the same entry at
-    // another form would be certifying a figure this gate does not hold. So the
-    // worst-form column of a row this arm measured holds the sentinel the report
-    // reads as "no form was recorded" rather than one of the three form names:
-    // naming one of them for a value this lane returned at another would be a
-    // claim about arithmetic the reading was not taken at.
-    const int kDeviceForm = -1;
+    // Each cell of the device arms is read at every one of them, which is what
+    // the two arms above do and what the axis's own carriage implies: the form
+    // is a trailing parameter of every launched entry and the device option
+    // space crosses each entry with all three (boys_cuda_options.hpp,
+    // DeviceOptionAxis::kDivision). A device figure per form is what a lane that
+    // runs three arithmetics owes, so the cells are read at each of the three
+    // and the worst of them is judged against the figure that form's own row
+    // states. The reconciliation at the end of the division-form block holds
+    // this list to BoysDivisionForms() the way the sweep's own list is held to
+    // it.
+    constexpr std::array<boys::DivisionForm, kCombForms> kDeviceForms = {
+        boys::DivisionForm::kExactDivision,
+        boys::DivisionForm::kPlainReciprocal,
+        boys::DivisionForm::kRefinedReciprocal};
 
+    // The float lane's arm: one reading per (route, scheme, partition, packing
+    // axis), the same shape as the two arms above with the entry selected by the
+    // map rather than by a policy template, and each cell read at every form the
+    // axis answers.
     const auto combDeviceSweep =
         [&]<boys::FitRoute kRoute, boys::EvalScheme kScheme, boys::PackAxis kAxis,
             boys::FitGranularity kGran>(int lane) {
             const double laneBound = combLaneRows[static_cast<std::size_t>(lane)].bound;
             const double laneAdd = combLaneRows[static_cast<std::size_t>(lane)].additive;
+            const double lanePlainAdd =
+                combLaneRows[static_cast<std::size_t>(lane)].plainAdditive;
 
             constexpr auto kEntry = GateDeviceEntry(kRoute, kScheme, kGran, kAxis);
 
@@ -11120,32 +11189,48 @@ int main(int argc, char** argv) {
             }
 
             CombAccum a;
+            std::array<std::vector<float>, kCombForms> devOut;
+
+            // One download target per form, sized like the arm's own buffer: the
+            // download writes through the vector's data, so an empty one is a
+            // refused copy rather than an empty reading.
+            for (std::vector<float>& out : devOut)
+            {
+                out.resize(combDeviceCells);
+            }
 
             // The figure the row is judged by, computed the way the
             // accessor computes it (src/boys.cpp, BoysAccuracyGuaranteed):
             // the lane's base, plus the term the lane adds beside it -
             // on this lane the fast region-B exponential's corrected
-            // seed, which the base does not carry.
+            // seed, which the base does not carry - and, under the
+            // plain reciprocal, that form's own figure where the lane's
+            // row states one.
             a.bound = laneBound + laneAdd;
+            a.formBar[static_cast<std::size_t>(boys::DivisionForm::kPlainReciprocal)] =
+                laneBound + lanePlainAdd + laneAdd;
 
-            const boys::BoysStatus status = kEntry(combDeviceN.get(),
-                                                   combDeviceX.get(),
-                                                   combDeviceValues.get(),
-                                                   ref.count,
-                                                   nullptr,
-                                                   kGateDivisionForm);
-
-            if (status != boys::BoysStatus::kSuccess ||
-                cudaDeviceSynchronize() != cudaSuccess ||
-                !combDeviceValues.Download(combDeviceOut))
+            for (std::size_t f = 0; f < kCombForms; ++f)
             {
-                std::printf("  the device lane: the entry for one member of the cross "
-                            "did not run (BoysStatus %d), so that member "
-                            "is measured by no cell here\n",
-                            static_cast<int>(status));
-                failed = true;
+                const boys::BoysStatus status = kEntry(combDeviceN.get(),
+                                                       combDeviceX.get(),
+                                                       combDeviceValues.get(),
+                                                       ref.count,
+                                                       nullptr,
+                                                       kDeviceForms[f]);
 
-                return;
+                if (status != boys::BoysStatus::kSuccess ||
+                    cudaDeviceSynchronize() != cudaSuccess ||
+                    !combDeviceValues.Download(devOut[f]))
+                {
+                    std::printf("  the device lane: the entry for one member of the cross "
+                                "did not run (BoysStatus %d), so that member "
+                                "is measured by no cell here\n",
+                                static_cast<int>(status));
+                    failed = true;
+
+                    return;
+                }
             }
 
             for (int n = 0; n <= nmax; ++n)
@@ -11153,10 +11238,12 @@ int main(int argc, char** argv) {
                 for (std::size_t i = 0; i < ref.count; ++i)
                 {
                     const std::size_t e = ref.Index(n, i);
-                    const double got[1] = {
-                        static_cast<double>(combDeviceOut[e])};
+                    const double got[kCombForms] = {
+                        static_cast<double>(devOut[0][e]),
+                        static_cast<double>(devOut[1][e]),
+                        static_cast<double>(devOut[2][e])};
 
-                    a.addAtForms(n, ref.xf[i], got, 1, ref.vf[e]);
+                    a.addAtForms(n, ref.xf[i], got, kCombForms, ref.vf[e]);
                 }
             }
 
@@ -11175,12 +11262,16 @@ int main(int argc, char** argv) {
                                     a.judgedValue,
                                     a.worstN,
                                     a.worstX,
-                                    kDeviceForm,
+                                    a.worstForm,
                                     a.forms,
                                     a.moved,
                                     a.compared,
                                     {a.movedByForm[0], a.movedByForm[1],
-                                     a.movedByForm[2]}});
+                                     a.movedByForm[2]},
+                                    {a.formWorst[0], a.formWorst[1], a.formWorst[2]},
+                                    {a.formWorstN[0], a.formWorstN[1], a.formWorstN[2]},
+                                    {a.formWorstX[0], a.formWorstX[1], a.formWorstX[2]},
+                                    a.formBar[kPlainFormIndex]});
         };
 
     // The float lane's arm, over every member of the cross that lane claims:
@@ -11331,6 +11422,8 @@ int main(int argc, char** argv) {
             const char* const laneName = combLaneRows[static_cast<std::size_t>(lane)].name;
             const double laneBound = combLaneRows[static_cast<std::size_t>(lane)].bound;
             const double laneAdd = combLaneRows[static_cast<std::size_t>(lane)].additive;
+            const double lanePlainAdd =
+                combLaneRows[static_cast<std::size_t>(lane)].plainAdditive;
 
             // This lane's own allocations, asked for here rather than shared
             // with the arm above: a device that refuses one of them leaves this
@@ -11339,7 +11432,14 @@ int main(int argc, char** argv) {
             GateDeviceBuffer<int> laneN(ref.count);
             GateDeviceBuffer<TArg> laneArgs(args.size());
             GateDeviceBuffer<TVal> laneValues(combDeviceCells);
-            std::vector<TVal> laneOut(combDeviceCells);
+            std::array<std::vector<TVal>, kCombForms> laneOut;
+
+            // One download target per form, sized like the buffer above and for
+            // the reason the float arm's targets are.
+            for (std::vector<TVal>& out : laneOut)
+            {
+                out.resize(combDeviceCells);
+            }
 
             if (!laneN.Upload(combDeviceTops) || !laneArgs.Upload(args) || !laneValues.ok())
             {
@@ -11418,29 +11518,46 @@ int main(int argc, char** argv) {
                             // lane plus half a representable digit of the value
                             // each cell returned, which is the term that lane's
                             // own figure carries and the term its arm above
-                            // judges its cells with.
+                            // judges its cells with. Under the plain reciprocal
+                            // it is that form's own figure where the lane's row
+                            // states one.
                             a.bound = laneBound + laneAdd;
+                            a.formBar[static_cast<std::size_t>(
+                                boys::DivisionForm::kPlainReciprocal)] =
+                                laneBound + lanePlainAdd + laneAdd;
                             a.ceiling = halfLane ? a.bound : 0.0;
 
-                            const boys::BoysStatus status =
-                                entry(laneN.get(),
-                                      laneArgs.get(),
-                                      laneValues.get(),
-                                      ref.count,
-                                      nullptr,
-                                      kGateDivisionForm);
+                            bool ran = false;
 
-                            if (status != boys::BoysStatus::kSuccess ||
-                                cudaDeviceSynchronize() != cudaSuccess ||
-                                !laneValues.Download(laneOut))
+                            for (std::size_t f = 0; f < kCombForms; ++f)
                             {
-                                std::printf("  the %s lane: the entry for one member of the "
-                                            "cross did not run (BoysStatus %d), so that member "
-                                            "is measured by no cell here\n",
-                                            laneName,
-                                            static_cast<int>(status));
-                                failed = true;
+                                const boys::BoysStatus status =
+                                    entry(laneN.get(),
+                                          laneArgs.get(),
+                                          laneValues.get(),
+                                          ref.count,
+                                          nullptr,
+                                          kDeviceForms[f]);
 
+                                if (status != boys::BoysStatus::kSuccess ||
+                                    cudaDeviceSynchronize() != cudaSuccess ||
+                                    !laneValues.Download(laneOut[f]))
+                                {
+                                    std::printf("  the %s lane: the entry for one member of the "
+                                                "cross did not run (BoysStatus %d), so that "
+                                                "member is measured by no cell here\n",
+                                                laneName,
+                                                static_cast<int>(status));
+                                    failed = true;
+
+                                    break;
+                                }
+
+                                ran = true;
+                            }
+
+                            if (!ran)
+                            {
                                 continue;
                             }
 
@@ -11449,15 +11566,21 @@ int main(int argc, char** argv) {
                                 for (std::size_t i = 0; i < ref.count; ++i)
                                 {
                                     const std::size_t e = ref.Index(n, i);
-                                    const double got = static_cast<double>(laneOut[e]);
-                                    const double ulp = halfLane ? halfUlp(got) : 0.0;
+                                    const double got[kCombForms] = {
+                                        static_cast<double>(laneOut[0][e]),
+                                        static_cast<double>(laneOut[1][e]),
+                                        static_cast<double>(laneOut[2][e])};
+                                    const double ulp[kCombForms] = {
+                                        halfLane ? halfUlp(got[0]) : 0.0,
+                                        halfLane ? halfUlp(got[1]) : 0.0,
+                                        halfLane ? halfUlp(got[2]) : 0.0};
 
                                     a.addAtForms(n,
                                                  static_cast<double>(args[i]),
-                                                 &got,
-                                                 1,
+                                                 got,
+                                                 kCombForms,
                                                  want[e],
-                                                 halfLane ? &ulp : nullptr);
+                                                 halfLane ? ulp : nullptr);
                                 }
                             }
 
@@ -11476,12 +11599,19 @@ int main(int argc, char** argv) {
                                                     a.judgedValue,
                                                     a.worstN,
                                                     a.worstX,
-                                                    kDeviceForm,
+                                                    a.worstForm,
                                                     a.forms,
                                                     a.moved,
                                                     a.compared,
                                                     {a.movedByForm[0], a.movedByForm[1],
-                                                     a.movedByForm[2]}});
+                                                     a.movedByForm[2]},
+                                                    {a.formWorst[0], a.formWorst[1],
+                                                     a.formWorst[2]},
+                                                    {a.formWorstN[0], a.formWorstN[1],
+                                                     a.formWorstN[2]},
+                                                    {a.formWorstX[0], a.formWorstX[1],
+                                                     a.formWorstX[2]},
+                                                    a.formBar[kPlainFormIndex]});
                         }
                     }
                 }
@@ -11638,6 +11768,19 @@ int main(int argc, char** argv) {
                                                          scheme,
                                                          axisRow.axis,
                                                          partition.granularity);
+                        // The same accessor read at the form a row publishes a
+                        // figure of its own for. On a row that states no term
+                        // for that form this is the figure above; on one that
+                        // does, it is the base plus the term, and the row's own
+                        // arm judged that form by the bar this figure is held to
+                        // below.
+                        const boys::AccuracyFigure guaranteedPlain = boys::BoysAccuracyGuaranteed(
+                            static_cast<boys::Precision>(lane),
+                            route,
+                            scheme,
+                            axisRow.axis,
+                            partition.granularity,
+                            boys::DivisionForm::kPlainReciprocal);
                         const boys::AccuracyFigure delivered = boys::BoysAccuracyDelivered(
                             static_cast<boys::Precision>(lane),
                             route,
@@ -11654,6 +11797,7 @@ int main(int argc, char** argv) {
                                      axisRow.name);
                         c.accessorBound = guaranteed.value;
                         c.accessorFormBound = guaranteedForm.value;
+                        c.accessorPlainBound = guaranteedPlain.value;
                         c.accessorDelivered = delivered.value;
                         c.accessorDeliveredKnown = delivered.available;
 
@@ -11725,6 +11869,15 @@ int main(int argc, char** argv) {
                             c.worstN = cell->worstN;
                             c.worstX = cell->worstX;
                             c.worstForm = cell->worstForm;
+                            c.forms = cell->forms;
+                            c.plainBar = cell->plainBar;
+
+                            for (std::size_t f = 0; f < kCombForms; ++f)
+                            {
+                                c.formWorst[f] = cell->formWorst[f];
+                                c.formWorstN[f] = cell->formWorstN[f];
+                                c.formWorstX[f] = cell->formWorstX[f];
+                            }
                             c.state = c.over == 0
                                           ? "certified and published"
                                           : "DEFECT: delivers outside its documented bound";
@@ -11755,16 +11908,48 @@ int main(int argc, char** argv) {
                                             "and not of the call";
                             }
 
+                            // A row read at more than one form on a device lane also states
+                            // the figure each of them delivered: the device lanes are the
+                            // ones whose per-form figures this gate is the only instrument
+                            // for - the host lanes' are carried by the sweeps of
+                            // tests/boys_backend_test.cpp at their named cells - and a row
+                            // that now delivers a figure per form is owed the numbers they
+                            // were read from. The clause this string trails already says
+                            // the row was read at every form, so the figures hang off a
+                            // colon rather than repeating it.
+                            std::string formFigures;
+
+                            if (combIsDeviceLane(lane) && cell->forms > 1)
+                            {
+                                const double baseWorst =
+                                    std::max(cell->formWorst[0],
+                                             cell->formWorst[2]);
+
+                                formFigures = Fmt(
+                                    ": %.6g at worst over the forms that share the lane's "
+                                    "base, and %.6g under the plain reciprocal at n=%d, "
+                                    "x=%.6g",
+                                    baseWorst,
+                                    cell->formWorst[1],
+                                    cell->formWorstN[1],
+                                    cell->formWorstX[1]);
+                            }
+
+                            const char* formClause =
+                                cell->forms > 1 && formFigures.empty()
+                                    ? ", and the row was read at every form"
+                                    : "";
+
                             c.source = c.judgedBound > c.bound
                                            ? Fmt("measured here over the whole committed grid. "
                                                  "The bound shown is %.6g, not the lane's base: "
-                                                 "it is that base plus %s%s",
+                                                 "it is that base plus %s%s%s",
                                                  c.judgedBound,
                                                  barTerms.c_str(),
-                                                 cell->forms > 1 ? ", and the row was read at "
-                                                                   "every form"
-                                                                 : "")
-                                           : "measured here over the whole committed grid";
+                                                 formClause,
+                                                 formFigures.c_str())
+                                           : Fmt("measured here over the whole committed grid%s",
+                                                 formFigures.c_str());
                         } else if (!guaranteed.available)
                         {
                             c.state = "refused - owed";
@@ -11852,6 +12037,14 @@ int main(int argc, char** argv) {
                 ++combAccessorDisagreeing;
             }
 
+            // The accessor answers no figure for a refused combination at any
+            // form, the plain one included: a second figure here would be a
+            // figure for a combination the library does not carry.
+            if (c.accessorPlainBound != 0.0)
+            {
+                ++combAccessorDisagreeing;
+            }
+
             continue;
         }
 
@@ -11868,6 +12061,18 @@ int main(int argc, char** argv) {
         }
 
         if (c.accessorBound != c.bound)
+        {
+            ++combAccessorDisagreeing;
+        }
+
+        // The same equality for the form a row publishes its own figure for: the
+        // bar the arm judged that form by is the accessor's answer for it, which
+        // is what makes the per-form figure in the row above a figure a consumer
+        // reads rather than one this gate composed. On a row that states no term
+        // for the plain reciprocal the two sides are the accessor's figure and
+        // the lane's base, exactly as the check above is, so the row's own
+        // arithmetic is what decides which of the two numbers is the larger.
+        if (c.accessorPlainBound != c.plainBar)
         {
             ++combAccessorDisagreeing;
         }
@@ -12356,18 +12561,14 @@ int main(int argc, char** argv) {
             }
         }
 
-        std::printf("\n  the division form: every cell of the cross above on a lane whose entries "
-                    "carry the\n  axis was read at each of the %zu form(s) BoysDivisionForms() "
-                    "answers, each form\n  judged against the figure the row's own lane "
-                    "publishes. The columns after the\n  compared count are the values each form "
-                    "past the first delivered differently from\n  the first form's at the same "
-                    "order and argument, against the values it was asked\n  for. A lane whose "
-                    "column is zero for every form is a lane the axis selects no\n  arithmetic "
-                    "on: its three names reach one body, and one is what it was certified at. "
-                    "The\n  device lane's rows carry one reading here: its entries carry the axis "
-                    "and every\n  one of them runs every form, but this gate launches each cell at "
-                    "the default\n  form, and no device bound is published per form, so there is "
-                    "no second figure\n  to compare against and their form(s) column reads 1\n",
+        std::printf("\n  the division form: every cell of the cross above was read at each "
+                    "of the %zu\n  form(s) BoysDivisionForms() answers, each form judged "
+                    "against the figure the\n  row's own lane publishes for it. The columns "
+                    "after the compared count are the\n  values each form past the first "
+                    "delivered differently from the first form's at the\n  same order and "
+                    "argument, against the values it was asked for. A lane whose\n  column is "
+                    "zero for every form is a lane the axis selects no arithmetic on: its\n  "
+                    "three names reach one body, and one is what it was certified at\n",
                     combForms);
         std::printf("    %-27s %-11s %10s %9s %11s", "lane", "axis", "cell(s)", "form(s)",
                     "compared");
