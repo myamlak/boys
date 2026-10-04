@@ -319,6 +319,17 @@ constexpr bool kCoarsestFiveInForce =
 // having chosen nothing. That is the same shape as the row the guard's own row list could not
 // name while the row format carried six cells.
 //
+// THE EXPONENTIAL IS ONE MEMBER PER HALF, and the comparison is against the member each half's
+// shipped tables read: kFast for a host class, kAccurate for a device class - the arithmetic
+// every figure published for that lane was measured at, which the committed seam names in
+// BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP. A device row compared against this build's own
+// kDefaultDeviceRegionBExp instead would answer "the shipped combination" for a row a
+// replacement had moved that name to, which is the reading the paragraph above refuses, and a
+// device row compared against the host's member - one name for both halves - answers "not the
+// shipped combination" for every device class there is, which is a guard that cannot refuse a
+// device class at all. The division cell needs no such split: the two halves' shipped forms are
+// one member.
+//
 // Read through detail::DefaultPolicyRow rather than through DefaultPolicy, because a class
 // the table carries no row for is not a class this question is about: DefaultPolicyFor
 // asserts on it - that absence is the seam's own build error - and a replacement is free to
@@ -340,13 +351,17 @@ constexpr bool ClassIsTheShippedCombination() noexcept
     {
         using Policy = typename Row::Type;
 
+        constexpr boys::RegionBExp kShippedRegionBExp =
+            kDevice == boys::Device::kHost ? boys::kDefaultHostRegionBExp
+                                           : boys::RegionBExp::kAccurate;
+
         return Policy::kRoute == boys::FitRoute::kChebyshev &&
                Policy::kScheme == boys::EvalScheme::kHorner &&
                Policy::kBudget == boys::detail::LaneFallbackBudget<kLane>() &&
                Policy::kPack == boys::PackAxis::kArguments &&
                Policy::kGranularity == boys::FitGranularity::kNarrow &&
                Policy::kDivision == boys::DivisionForm::kRefinedReciprocal &&
-               Policy::kRegionBExp == boys::kDefaultHostRegionBExp;
+               Policy::kRegionBExp == kShippedRegionBExp;
     }
 }
 
