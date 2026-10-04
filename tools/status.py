@@ -37,6 +37,12 @@ STATES = ("certified/served", "refused and owed", "not runnable on this host", "
 
 RUN = os.path.join(REPO, "tests", "data", "boys_accuracy_gate_run.txt")
 
+# Suffixes that are not a report whatever they contain. A closure is printed by a program to its
+# stdout and filed as text; anything packed, archived or linked is an artefact about a tree and not
+# a measurement of one.
+BINARY_SUFFIXES = {".tar", ".gz", ".tgz", ".zip", ".7z", ".exe", ".dll", ".obj", ".lib", ".pdb",
+                   ".png", ".jpg", ".pdf"}
+
 # The gate's coverage block, as the gate prints it.
 COMBINATIONS = re.compile(
     r"COMBINATIONS:\s*(\d+)\s+of\s+(\d+)\s+member\(s\) of the option space")
@@ -182,6 +188,14 @@ def device_space() -> tuple[str, list[str], bool]:
         for root, _dirs, names in os.walk(directory):
             for name in names:
                 path = os.path.join(root, name)
+                # A REPORT IS TEXT. A packed tree, an archive, a binary or an object file can carry
+                # the same words a report prints - a `base-*.tar` of a revision contains the source
+                # that names the option table - and reading one as a closure reports a space from an
+                # artifact that measured nothing. This tool did exactly that: it read a control tar
+                # as the device closure and reported the block "present but not in the shape this
+                # reads", which is a true statement about a file that is not a run.
+                if os.path.splitext(path)[1].lower() in BINARY_SUFFIXES:
+                    continue
                 text = read(path)
                 # The WHOLE closure block, not the phrase. A lane's write-up quotes "the arithmetic:"
                 # while discussing a run, and reading that as a closure is exactly the wrong read this
