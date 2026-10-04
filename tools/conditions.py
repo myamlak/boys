@@ -203,14 +203,14 @@ FREEZE = [
                "another agent holds. Count the lanes and say the number: the freeze is not met "
                "while any of them is running.",
     },
-    {
-        "name": "every refusal carries a reason a tool can read",
-        "cmd": None,
-        "why": "the spaces above count refusals, but whether each refusal's stated reason is one a "
-               "checker reads rather than a sentence a reader does is not yet a command. Named here "
-               "rather than assumed, because the owner's ruling is that such a reason is the "
-               "condition, not a courtesy.",
-    },
+    # The owner's ruling is that a combination may be unsupported only for a very serious
+    # fundamental reason, and that finding whether one exists is the work - so the condition is not
+    # "every refusal states a reason" but "there is no refusal that should not be". That is already
+    # read above: the host entry requires the certified count to equal the space's own size, and the
+    # arithmetic's second term is the refused-and-owed count, so a single refusal that is not
+    # fundamental fails that entry by making certified short of total. The device and probe spaces
+    # close from the probes' own reports, which do not exist yet, so their refusal counts are read
+    # after their runs rather than here.
 ]
 
 
