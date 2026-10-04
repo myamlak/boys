@@ -502,13 +502,19 @@ void PrintHeader() {
                 "choice\n");
 #endif
 
-    std::printf("seam's five      fit route %s | eval scheme %s | packing axis %s\n"
+    std::printf("seam's seven     the host lane's five:\n"
+                "                 fit route %s | eval scheme %s | packing axis %s\n"
                 "                 division form %s | fit granularity %s\n",
                 RouteName(BOYS_BUILD_DEFAULT_FIT_ROUTE),
                 EvalSchemeName(BOYS_BUILD_DEFAULT_EVAL_SCHEME),
                 PackAxisName(BOYS_BUILD_DEFAULT_PACK_AXIS),
                 DivisionFormName(BOYS_BUILD_DEFAULT_DIVISION_FORM),
                 GranularityName(BOYS_BUILD_DEFAULT_FIT_GRANULARITY));
+
+    std::printf("                 the device lane's own two:\n"
+                "                 division form %s | region-B exponential %s\n",
+                DivisionFormName(BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM),
+                RegionBExpName(BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP));
 }
 
 /// The lane rows the figures above are stated per: the multiplicand, and the

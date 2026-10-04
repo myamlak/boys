@@ -39,8 +39,9 @@ inline constexpr const char* VersionString() noexcept
 }
 
 /// The seam this build's unnamed calls resolve through: which file supplied the
-/// five choices — the fit route, the evaluation scheme, the packing axis, the
-/// division form and the fit granularity — as a caller can query it.
+/// seven choices — the host lane's five, the fit route, the evaluation scheme,
+/// the packing axis, the division form and the fit granularity, and the device
+/// lane's own division form and region-B exponential — as a caller can query it.
 ///
 /// A build configured with the `BOYS_BUILD_DEFAULTS` CMake option hashed the
 /// file the option named and reports that sha256, 64 lowercase hexadecimal
@@ -61,7 +62,7 @@ inline constexpr const char* VersionString() noexcept
 /// seam; it does not describe one, and a caller holding a digest of a file it
 /// does not have learns that the seam moved and not where. The choices a build
 /// resolves are the `boys-defaults` command's report, class by class, and the
-/// seam's own five are what that report's header prints beside them.
+/// seam's own seven are what that report's header prints beside them.
 ///
 /// The value is a compile-time constant, fixed when the build was configured: a
 /// seam file edited after that is a configure that has to run again, which the
