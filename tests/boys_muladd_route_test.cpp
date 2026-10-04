@@ -792,14 +792,19 @@ TEST(BoysMulAddRouteOrders, TheAvailabilityGuardStatesWhichBodyIsBuilt) {
                 const double scalar = boys::BoysSingle<>(order, x);
                 const double* const got = &delivered[l];
 
-                const double group_reported = OrdersLaneFitFor(
-                    boys::detail::OrdersScheme::kSplitClenshaw, scalar_report->route, order, nmax,
-                    geometry);
+                const double group_reported =
+                    OrdersLaneFitFor(boys::detail::OrdersScheme::kSplitClenshaw,
+                                     scalar_report->route,
+                                     order,
+                                     nmax,
+                                     geometry);
                 const double group_other = OrdersLaneFitFor(
                     boys::detail::OrdersScheme::kSplitClenshaw,
                     scalar_report->route == MulAddRoute::kFused ? MulAddRoute::kSeparate
                                                                 : MulAddRoute::kFused,
-                    order, nmax, geometry);
+                    order,
+                    nmax,
+                    geometry);
 
                 ++cells;
 
@@ -821,22 +826,21 @@ TEST(BoysMulAddRouteOrders, TheAvailabilityGuardStatesWhichBodyIsBuilt) {
         }
     }
 
-    std::printf(
-        "  guard-premise avx2-available=%d contracts=%d scalar-fp64-report=%s "
-        "avx2-orders-fp64-report=%s contracts-at-that-arithmetic=%d cells=%zu "
-        "at-the-scalar-lane=%zu at-the-reported-routes-group-lane=%zu "
-        "at-the-other-routes-group-lane=%zu\n",
-        boys::BoysAvx2Available() ? 1 : 0,
-        bdetail::MeasureContraction<double>() ? 1 : 0,
-        scalar_report == nullptr ? "(no such arithmetic is reported)"
-                                 : MulAddRouteName(scalar_report->route),
-        packed_report == nullptr ? "(no such arithmetic is reported)"
-                                 : MulAddRouteName(packed_report->route),
-        scalar_report == nullptr ? 0 : (scalar_report->contracts ? 1 : 0),
-        cells,
-        agree_with_the_scalar_lane,
-        at_the_reported_route,
-        at_the_other_route);
+    std::printf("  guard-premise avx2-available=%d contracts=%d scalar-fp64-report=%s "
+                "avx2-orders-fp64-report=%s contracts-at-that-arithmetic=%d cells=%zu "
+                "at-the-scalar-lane=%zu at-the-reported-routes-group-lane=%zu "
+                "at-the-other-routes-group-lane=%zu\n",
+                boys::BoysAvx2Available() ? 1 : 0,
+                bdetail::MeasureContraction<double>() ? 1 : 0,
+                scalar_report == nullptr ? "(no such arithmetic is reported)"
+                                         : MulAddRouteName(scalar_report->route),
+                packed_report == nullptr ? "(no such arithmetic is reported)"
+                                         : MulAddRouteName(packed_report->route),
+                scalar_report == nullptr ? 0 : (scalar_report->contracts ? 1 : 0),
+                cells,
+                agree_with_the_scalar_lane,
+                at_the_reported_route,
+                at_the_other_route);
     std::fflush(stdout);
 
     if (boys::BoysAvx2Available())
@@ -852,8 +856,7 @@ TEST(BoysMulAddRouteOrders, TheAvailabilityGuardStatesWhichBodyIsBuilt) {
         EXPECT_EQ(agree_with_the_scalar_lane, cells)
             << "the AVX2 tier is absent, so this entry is the certified scalar single lane "
                "(src/boys_orders_simd.cpp: BoysAllOrdersSimd) and must agree with it at all "
-            << cells
-            << " cells of the sweep; it agreed at " << agree_with_the_scalar_lane
+            << cells << " cells of the sweep; it agreed at " << agree_with_the_scalar_lane
             << ", so the entry is some other body and the guard above is skipping a sweep that "
                "should have run";
     }
