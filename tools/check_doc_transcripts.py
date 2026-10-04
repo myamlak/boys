@@ -127,9 +127,10 @@ measured rather than asserted.
 
 Exit status is 0 when no run is a proper prefix of a source string and no marked
 run is absent from the strings the library holds, and 1 when one is. A construct
-the script cannot read - the rows' initialiser, a row that is not six members, a
-`source` member that is not a string literal, a `src/` or `include/` that is not
-there - is an error naming the construct, never a quiet pass.
+the script cannot read - the rows' initialiser, the struct's own declaration, a
+row that carries fewer members than the declaration puts before `source`, a
+`source` member that is not a string literal, a `src/`, `include/` or header that
+is not there - is an error naming the construct, never a quiet pass.
 """
 
 from __future__ import annotations
@@ -165,18 +166,28 @@ ROWS = re.compile(
     re.S,
 )
 
-# The members of a LaneContractInfo row this check reads: precision, name, bound,
-# additive, plainAdditive, source. The last of them is the one whose string this
-# check reads. A row may leave the members after it to their defaults - the plain
-# reciprocal's own sentence is one - so a row carries at least these and at most
-# the struct's own count, and a revision that adds a field the row has to write
-# before `source` is a construct the readers below name rather than a row read
-# short.
-FIELDS = 6
+# The declaration the row format is read from, the struct a lane row is an
+# initialiser of, and the one member this check reads out of every row.
+#
+# A row writes its members positionally, so which member `source` is belongs to
+# the declaration and to nothing else: not to a row, and not to a list held here.
+# A list held here is a copy of the declaration, and a member inserted before
+# `source` leaves the copy reading whatever took `source`'s place - which is what
+# a `RegionBExp` member inserted there did. The check reported a value computed
+# from an enumerator as a run no document quotes, and had the member inserted
+# there been a string literal of its own the copy would have compared that
+# literal against the documents and passed, quietly, over the drift this check
+# exists to see. The declaration is the only place where "the member named
+# `source`" is written down, so that is where this reads it, and a declaration it
+# cannot read is an error naming the construct.
+CONTRACT_STRUCT = REPO / "include" / "boys" / "boys.hpp"
+ROW_STRUCT = "LaneContractInfo"
+SOURCE_MEMBER = "source"
 
-# The members LaneContractInfo declares: the six above and the plain
-# reciprocal's own sentence, which trails `source` and which no row has to write.
-STRUCT_FIELDS = 7
+# One member declaration of that struct: everything up to the first `=` is the
+# declaration and the name it ends with is the member's, which is how a row
+# writes it positionally.
+MEMBER_NAME = re.compile(r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*$")
 
 # One or more adjacent string literals - which is how a value longer than a
 # line is written here - and the escape sequences decoded below.
@@ -392,6 +403,73 @@ def join_literals(member: str, where: str) -> str:
     )
 
 
+def struct_member_names(path: pathlib.Path) -> list[str]:
+    """The row struct's members, in declaration order, read off the declaration.
+
+    A row initialises these positionally, so this is what says which member a row
+    writes where. The declaration is read rather than a list held in this file,
+    because a list held here goes on naming `source` when the declaration has
+    moved it and reads the member that took its place - quietly, where that
+    member is a string literal of its own.
+    """
+    if not path.is_file():
+        raise CheckError(
+            f"no such header: {display(path)}; this check reads the {ROW_STRUCT} declaration - "
+            f"the member list a lane row initialises - there, so a tree without it cannot say "
+            f"which member a row's `{SOURCE_MEMBER}` is written at"
+        )
+
+    text = strip_comments(read_text(path))
+    declared = text.find(f"struct {ROW_STRUCT}")
+    if declared < 0:
+        raise CheckError(
+            f"{display(path)}: no `struct {ROW_STRUCT}` declaration; this check reads the member "
+            f"list a lane row initialises there and has no other place to read it from"
+        )
+
+    opened = text.find("{", declared)
+    if opened < 0:
+        raise CheckError(f"{display(path)}: `struct {ROW_STRUCT}` opens no brace")
+    depth = 0
+    body = None
+    for i in range(opened, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                body = text[opened + 1 : i]
+                break
+    if body is None:
+        raise CheckError(f"{display(path)}: `struct {ROW_STRUCT}` is not closed")
+
+    names: list[str] = []
+    for piece in split_members(body, ";"):
+        declaration = piece.split("=", 1)[0].strip()
+        if not declaration:
+            continue
+        name = MEMBER_NAME.search(declaration)
+        if name is None:
+            raise CheckError(
+                f"{display(path)}: `{declaration[:60]}` is a member of {ROW_STRUCT} this check "
+                f"cannot name, and a row's member positions are read from these names"
+            )
+        names.append(name.group("name"))
+
+    if SOURCE_MEMBER not in names:
+        raise CheckError(
+            f"{display(path)}: {ROW_STRUCT} declares no member named `{SOURCE_MEMBER}` "
+            f"({', '.join(names) or 'no members'}); this check reads each row's `{SOURCE_MEMBER}` "
+            f"and would read the wrong member without it"
+        )
+    if len(set(names)) != len(names):
+        raise CheckError(
+            f"{display(path)}: {ROW_STRUCT} declares a member name twice ({', '.join(names)}), so "
+            f"the position `{SOURCE_MEMBER}` names is not one member"
+        )
+    return names
+
+
 def read_source_strings(path: pathlib.Path) -> list[SourceString]:
     """The lane rows' `source` members, or an error naming what could not be read."""
     if not path.is_file():
@@ -413,21 +491,26 @@ def read_source_strings(path: pathlib.Path) -> list[SourceString]:
             f"{path.name}: the initialiser declares {declared} rows and holds {len(rows)}"
         )
 
+    declared_members = struct_member_names(CONTRACT_STRUCT)
+    source_at = declared_members.index(SOURCE_MEMBER)
+    least = source_at + 1
+    most = len(declared_members)
+
     strings: list[SourceString] = []
     for index, row in enumerate(rows, 1):
         where = f"{path.name}: row {index}"
         if not (row.startswith("{") and row.endswith("}")):
             raise CheckError(f"{where}: not a braced initialiser ({row[:60]!r} ...)")
         members = split_members(row[1:-1], ",")
-        if not FIELDS <= len(members) <= STRUCT_FIELDS:
+        if not least <= len(members) <= most:
             raise CheckError(
-                f"{where}: {len(members)} members, and a row carries {FIELDS} to {STRUCT_FIELDS} "
-                f"of LaneContractInfo's (precision, name, bound, additive, plainAdditive, source, "
-                f"plainSource); `source`, the last of the six this check reads, is the one it "
-                f"reads here"
+                f"{where}: {len(members)} members, and a row carries {least} to {most} of "
+                f"{ROW_STRUCT}'s ({', '.join(declared_members)}), read off "
+                f"{display(CONTRACT_STRUCT)}; `{SOURCE_MEMBER}`, the one this check reads here, "
+                f"is member {source_at + 1} of that declaration"
             )
         lane = " ".join(join_literals(members[1], where).split()) or f"row {index}"
-        source = " ".join(join_literals(members[FIELDS - 1], where).split())
+        source = " ".join(join_literals(members[source_at], where).split())
         strings.append(SourceString(lane, source))
 
     if not strings:

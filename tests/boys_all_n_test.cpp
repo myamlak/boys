@@ -600,6 +600,23 @@ using OrdersAxisPolicy =
     boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
                      boys::PackAxis::kOrders>;
 
+// The certified scalar single lane the axis's fallback runs: the axis's own policy with
+// the packing axis set to this shape's, the one cell the per-order entry carries
+// (boys_impl.hpp asserts it, one order at one argument having no four orders to fill a
+// lane with) and the cell ScalarOrders names when it hands its orders over one at a
+// time - src/boys_orders_simd.cpp, "the certified scalar single lane at the policy the
+// axis names". Every other cell is the axis's, so a rung and a form fall back to their
+// own arithmetic and not to another's.
+template <boys::EvalScheme kScheme>
+using OrdersAxisSingleLane =
+    boys::EvalPolicy<OrdersAxisPolicy<kScheme>::kRoute,
+                     kScheme,
+                     OrdersAxisPolicy<kScheme>::kBudget,
+                     boys::PackAxis::kArguments,
+                     OrdersAxisPolicy<kScheme>::kGranularity,
+                     OrdersAxisPolicy<kScheme>::kDivision,
+                     OrdersAxisPolicy<kScheme>::kRegionBExp>;
+
 bool SameBits(double a, double b) {
     return std::memcmp(&a, &b, sizeof(double)) == 0;
 }
@@ -686,11 +703,15 @@ TEST(BoysAllNTest, OrdersAxisIsThePerArgumentEntryBitForBit) {
 }
 
 // Past the packed lane's own interval the axis runs the certified scalar single lane
-// one order at a time, asserted exactly: the fallback claims that lane's values.
+// one order at a time, asserted exactly: the fallback claims that lane's values. The
+// lane is the one at the policy the axis names - the policy this test asks the batch
+// entry with - so the per-order side is asked at that same policy rather than at the
+// single-order entry's own class row, which a replacement seam may move apart from it.
 TEST(BoysAllNTest, OrdersAxisIsDefinedPastItsOwnDomain) {
     const std::vector<double> xs = {0.0, kX0, kX0 + 1e-9, 20.0, kX1, 31.0, 200.0};
     const int nmax = boys::kMaxBoysOrder;
     const std::size_t count = xs.size();
+    using AxisLane = OrdersAxisSingleLane<boys::EvalScheme::kSplitClenshaw>;
     const std::vector<double> planes =
         RunOrdersAxis<boys::EvalScheme::kSplitClenshaw>(xs, nmax, false);
     std::size_t differing = 0;
@@ -699,7 +720,7 @@ TEST(BoysAllNTest, OrdersAxisIsDefinedPastItsOwnDomain) {
     {
         for (int l = 0; l <= nmax; ++l)
         {
-            const double single = boys::BoysSingle(l, xs[i]);
+            const double single = boys::BoysSingle<AxisLane>(l, xs[i]);
             const std::size_t slot = static_cast<std::size_t>(l) * count + i;
 
             if (!SameBits(planes[slot], single))

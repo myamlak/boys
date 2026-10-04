@@ -186,13 +186,22 @@ LANE_ROWS = re.compile(
     r"[A-Za-z_][A-Za-z0-9_]*\s*=\s*\{\{(?P<rows>.*?)\}\};",
     re.S,
 )
-# precision, name, bound, additive, plainAdditive, source, plainSource.
-LANE_MEMBERS = 7
-# The members of a row this check reads - precision, name, bound, additive,
-# plainAdditive - and so the fewest a row may carry: a trailing member left to
-# its default is not written in the initialiser, which is why the count is a
-# range and not one number.
-LANE_MEMBERS_READ = 5
+# The members of a lane row this check reads, in the order it reads them, and the
+# number of members the row struct declares.
+#
+# A row writes its members positionally, so this is a claim about the struct's
+# declaration and not about any row, and it is read off the declaration rather
+# than held here. A list held here is a copy of the declaration: a member
+# inserted before the ones below leaves the copy reading another member's value
+# while the check goes on printing the name of the one it meant to read, and a
+# bound read off the wrong member is a figure the gate is held to and the
+# documents are not. A declaration this cannot read is an error naming the
+# construct, never a quiet pass.
+LANE_READ_MEMBERS = ("name", "bound", "additive", "plainAdditive")
+ROW_STRUCT = "LaneContractInfo"
+# One member declaration: everything up to the first `=` is the declaration and
+# the name it ends with is the member's.
+MEMBER_NAME = re.compile(r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*$")
 
 # The column of the header's contract table, by the label this check reads it
 # under. Matching is by prefix so a parenthesised range beside a label - the
@@ -757,8 +766,73 @@ def declared_gate(gate: dict[str, Figure], name: str) -> Figure:
     return gate[name]
 
 
+def struct_member_names(path: pathlib.Path) -> list[str]:
+    """A row struct's members, in declaration order, read off the declaration.
+
+    A row initialises these positionally, so this is what says which member a row
+    writes where - and the declaration is the only place that says it.
+    """
+    if not path.is_file():
+        raise CheckError(
+            f"no such header: {display(path)}; this check reads the {ROW_STRUCT} declaration - "
+            f"the member list a lane row initialises - there, so a tree without it cannot say "
+            f"which member a row writes a figure at"
+        )
+
+    text = strip_comments(read_text(path))
+    declared = text.find(f"struct {ROW_STRUCT}")
+    if declared < 0:
+        raise CheckError(
+            f"{display(path)}: no `struct {ROW_STRUCT}` declaration; this check reads the member "
+            f"list a lane row initialises there and has no other place to read it from"
+        )
+
+    opened = text.find("{", declared)
+    if opened < 0:
+        raise CheckError(f"{display(path)}: `struct {ROW_STRUCT}` opens no brace")
+    depth = 0
+    body = None
+    for i in range(opened, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                body = text[opened + 1 : i]
+                break
+    if body is None:
+        raise CheckError(f"{display(path)}: `struct {ROW_STRUCT}` is not closed")
+
+    names: list[str] = []
+    for piece in split_members(body, ";"):
+        declaration = piece.split("=", 1)[0].strip()
+        if not declaration:
+            continue
+        name = MEMBER_NAME.search(declaration)
+        if name is None:
+            raise CheckError(
+                f"{display(path)}: `{declaration[:60]}` is a member of {ROW_STRUCT} this check "
+                f"cannot name, and a row's member positions are read from these names"
+            )
+        names.append(name.group("name"))
+
+    for member in LANE_READ_MEMBERS:
+        if member not in names:
+            raise CheckError(
+                f"{display(path)}: {ROW_STRUCT} declares no member named `{member}` "
+                f"({', '.join(names) or 'no members'}); this check reads each row's `{member}` "
+                f"and would read another member's value without it"
+            )
+    if len(set(names)) != len(names):
+        raise CheckError(
+            f"{display(path)}: {ROW_STRUCT} declares a member name twice ({', '.join(names)}), so "
+            f"the position a figure is read at is not one member"
+        )
+    return names
+
+
 def read_lanes(
-    path: pathlib.Path,
+    path: pathlib.Path, header: pathlib.Path
 ) -> dict[str, tuple[Figure, Figure | None, Figure | None]]:
     """The `BoysLaneContracts()` rows: lane name to its bound, additive and plain term.
 
@@ -767,6 +841,11 @@ def read_lanes(
     that form is the bound plus it, and that sum is what the document rows are
     held to - the row states the term and the document states the figure, which
     is the same fact written the two ways each side writes it.
+
+    `header` is the file the row struct's declaration is read from, which is the
+    header the rest of this check reads - `--header` names another revision of
+    one file, and the rows of another revision are written at that revision's
+    member positions.
     """
     text = strip_comments(read_text(path))
     source = display(path)
@@ -783,6 +862,12 @@ def read_lanes(
             f"{source}: the initialiser declares {match.group('count')} lane rows and holds "
             f"{len(rows)}"
         )
+    declared_members = struct_member_names(header)
+    member_at = {member: declared_members.index(member) for member in LANE_READ_MEMBERS}
+    deepest = max(LANE_READ_MEMBERS, key=lambda member: member_at[member])
+    least = member_at[deepest] + 1
+    most = len(declared_members)
+
     body_start = text.count("\n", 0, match.start("rows")) + 1
     lanes: dict[str, tuple[Figure, Figure | None, Figure | None]] = {}
     offset = 0
@@ -794,21 +879,22 @@ def read_lanes(
         if not (row.startswith("{") and row.endswith("}")):
             raise CheckError(f"{where}: not a braced initialiser ({ascii_safe(row[:60])} ...)")
         members = split_members(row[1:-1], ",")
-        if not LANE_MEMBERS_READ <= len(members) <= LANE_MEMBERS:
+        if not least <= len(members) <= most:
             raise CheckError(
-                f"{where}: {len(members)} members, and a lane row carries {LANE_MEMBERS_READ} to "
-                f"{LANE_MEMBERS} of LaneContractInfo's (precision, name, bound, additive, "
-                f"plainAdditive, source, plainSource)"
+                f"{where}: {len(members)} members, and a lane row carries {least} to {most} of "
+                f"{ROW_STRUCT}'s ({', '.join(declared_members)}), read off {display(HEADER)}; the "
+                f"deepest member this check reads, `{deepest}`, is member {least} of that "
+                f"declaration"
             )
-        if re.fullmatch(r'"[^"\\]*"', members[1].strip()) is None:
+        if re.fullmatch(r'"[^"\\]*"', members[member_at["name"]].strip()) is None:
             raise CheckError(
-                f"{where}: the lane name is not a plain string literal ({ascii_safe(members[1])}); "
-                f"this check keys its rows by that name"
+                f"{where}: the lane name is not a plain string literal "
+                f"({ascii_safe(members[member_at['name']])}); this check keys its rows by that name"
             )
-        lane = members[1].strip()[1:-1]
-        bound = members[2].strip()
-        additive = members[3].strip()
-        plain_additive = members[4].strip()
+        lane = members[member_at["name"]].strip()[1:-1]
+        bound = members[member_at["bound"]].strip()
+        additive = members[member_at["additive"]].strip()
+        plain_additive = members[member_at["plainAdditive"]].strip()
         for value in (bound, additive, plain_additive):
             if NUMBER.fullmatch(value) is None:
                 raise CheckError(
@@ -943,7 +1029,7 @@ def main() -> int:
     lines: list[str] = []
     try:
         gate = read_gate(gate_path)
-        lanes = read_lanes(library_path)
+        lanes = read_lanes(library_path, header_path)
 
         header = find_table(read_tables(header_path), header_path, "Lane", 1 + len(REGIONS))
         region_column = {key: column_of(header, label) for key, label in REGIONS.items()}

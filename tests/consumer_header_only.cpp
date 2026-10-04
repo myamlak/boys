@@ -256,56 +256,110 @@ double Bf16IoBound(double returned) {
 }
 #endif // BoysFp16
 
-// The two policies this check names. Neither is one the library pre-instantiates
-// (the `<>` entries are), so every instantiation below must link from the headers
-// alone. Each flips one structural axis away from the build's own default and
-// leaves the rest - so the combination is one the lane carries - and neither
-// flips the division form, the one axis that moves a lane's guaranteed figure.
-constexpr boys::FitRoute kOtherRoute = boys::kDefaultFitRoute == boys::FitRoute::kChebyshev
-                                           ? boys::FitRoute::kRationalMinimax
-                                           : boys::FitRoute::kChebyshev;
-constexpr boys::EvalScheme kOtherScheme = boys::kDefaultEvalScheme == boys::EvalScheme::kHorner
-                                              ? boys::EvalScheme::kSplitClenshaw
-                                              : boys::EvalScheme::kHorner;
+// The named policies this check carries. None of them is the policy a call that names one resolves
+// to: that policy is the entry's own class row in the build's default-policy table (boys/boys.hpp,
+// DefaultPolicy - the name an entry's policy parameter defaults to, resolved for the class of the
+// call), so each policy below is one cell off the row of the lane it serves and every instantiation
+// below is this translation unit's own, to be had from the headers alone.
+//
+// Each is built from that row rather than from the five names the seam states. The five are the axes
+// a build composes its rows from (boys/boys.hpp, BOYS_DEFAULT_POLICY_BUILD_ROW), not the rows: a
+// build whose table writes rows is one whose row for a class may be a combination the five do not
+// name - tests/build_defaults_rows.hpp is such a build - and a policy composed from the five is a
+// row of that table exactly when a class's row carries the combination. The assertions under the
+// policies are what hold every call below off the rows this file reaches; they are the premise, and
+// a build whose rows put one of these policies on a reached class fails the build here instead of
+// passing with a check that proves nothing.
+template <boys::FitRoute kRoute>
+constexpr boys::FitRoute OtherRoute = kRoute == boys::FitRoute::kChebyshev
+                                          ? boys::FitRoute::kRationalMinimax
+                                          : boys::FitRoute::kChebyshev;
+template <boys::EvalScheme kScheme>
+constexpr boys::EvalScheme OtherScheme = kScheme == boys::EvalScheme::kHorner
+                                             ? boys::EvalScheme::kSplitClenshaw
+                                             : boys::EvalScheme::kHorner;
 
-using First = boys::EvalPolicy<kOtherRoute, boys::kDefaultEvalScheme, boys::BoysBudget::kFloat,
-                               boys::kDefaultPackAxis, boys::kDefaultFitGranularity>;
-using Second = boys::EvalPolicy<boys::kDefaultFitRoute, kOtherScheme, boys::BoysBudget::kFloat,
-                                boys::kDefaultPackAxis, boys::kDefaultFitGranularity>;
-// The half lanes run the fp16 engine budget, so their policies name it.
-using FirstHalf = boys::EvalPolicy<kOtherRoute, boys::kDefaultEvalScheme, boys::BoysBudget::kFp16,
-                                   boys::kDefaultPackAxis, boys::kDefaultFitGranularity>;
-using SecondHalf = boys::EvalPolicy<boys::kDefaultFitRoute, kOtherScheme, boys::BoysBudget::kFp16,
-                                    boys::kDefaultPackAxis, boys::kDefaultFitGranularity>;
+/// The class row this file's double lane serves, and the one its half lane serves: the policies
+/// below are cells of these two rows, moved.
+using DoubleClass = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>;
+using HalfClass = boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kAllOrders>;
 
-// The claim every call below rests on: a named policy is not the type its entry was
-// pre-instantiated at, so the call is an instantiation this translation unit owes a definition for,
-// and one it can only get from the headers. A build whose default row named the combination above
-// would fold the call onto the library's own instantiation and this check would prove nothing.
-static_assert(
-    !std::is_same_v<First, boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kSingle>>);
-static_assert(
-    !std::is_same_v<First, boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>>);
-static_assert(
-    !std::is_same_v<Second, boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kSingle>>);
-static_assert(
-    !std::is_same_v<Second, boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>>);
-static_assert(
-    !std::is_same_v<FirstHalf, boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kSingle>>);
-static_assert(
-    !std::is_same_v<FirstHalf,
-                    boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kAllOrders>>);
-static_assert(
-    !std::is_same_v<SecondHalf, boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kSingle>>);
-static_assert(
-    !std::is_same_v<SecondHalf,
-                    boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kAllOrders>>);
+/// A named policy: the row's own cells with the two axes named here moved, so the route and the
+/// scheme are the caller's and every other cell is the class's - and neither policy moves the
+/// division form, the one axis that moves a lane's guaranteed figure.
+///
+/// The packing axis is named rather than read from the row, and it is the one axis that is: the
+/// single-order entry asserts it, in the library's own words, because one order at one argument has
+/// no four orders to fill a vector lane with (boys/boys_impl.hpp, BoysSingleImpl), and these policies
+/// are passed to that entry. Naming it here is a statement about which entry the policy is handed to,
+/// not a cell of the row: the arguments axis is one the row may itself name, and at a seam whose row
+/// for a packed class names the orders axis the policy below is that row's other cells at the axis
+/// the call below can take.
+template <class Row, boys::FitRoute kRoute, boys::EvalScheme kScheme>
+using MovedFrom = boys::EvalPolicy<kRoute, kScheme, Row::kBudget, boys::PackAxis::kArguments,
+                                   Row::kGranularity, Row::kDivision, Row::kRegionBExp>;
 
-/// The label a rule carries for a named policy: the axis that policy flips away from the build's
-/// own default, which is what makes it an instantiation the library does not pre-instantiate.
+/// The first moves the fit route off the double lane's row; the second moves the scheme as well.
+///
+/// The scheme is moved beside the route because the scheme alone is not a cell a policy can be held
+/// off the rows by: a build whose own row for a class already names the other scheme puts the
+/// scheme-flipped combination on that row, and a policy that is a row is the vacuity these
+/// assertions exist to catch. The two together are off a table whose rows all name one route, which
+/// is what the assertion below states for this build rather than assumes.
+using First = MovedFrom<DoubleClass, OtherRoute<DoubleClass::kRoute>, DoubleClass::kScheme>;
+using Second =
+    MovedFrom<DoubleClass, OtherRoute<DoubleClass::kRoute>, OtherScheme<DoubleClass::kScheme>>;
+// The half lanes run the fp16 engine budget, so their policies are cells of the fp16 class's row.
+using FirstHalf = MovedFrom<HalfClass, OtherRoute<HalfClass::kRoute>, HalfClass::kScheme>;
+using SecondHalf = MovedFrom<HalfClass, OtherRoute<HalfClass::kRoute>, OtherScheme<HalfClass::kScheme>>;
+
+/// Whether a policy is off every class row the calls below reach.
+///
+/// The rows are named one class at a time, and the classes are exactly the ones the calls reach: the
+/// double lane's single, fixed-N, all-N and all-orders entries, the float lane's single and
+/// all-orders entries, and the half lane's single and all-orders entries. A policy equal to one of
+/// these is the instantiation the library already carries for that entry, so the call would fold
+/// onto it and the header-only claim would be read off a definition the library supplied.
 template <class Policy>
+constexpr bool OffEveryClassRowThisFileReaches =
+    !std::is_same_v<Policy, boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kSingle>> &&
+    !std::is_same_v<Policy, boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kFixedN>> &&
+    !std::is_same_v<Policy, boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllN>> &&
+    !std::is_same_v<Policy, boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>> &&
+    !std::is_same_v<Policy, boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kSingle>> &&
+    !std::is_same_v<Policy, boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllOrders>> &&
+    !std::is_same_v<Policy, boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kSingle>> &&
+    !std::is_same_v<Policy, boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kAllOrders>>;
+
+static_assert(OffEveryClassRowThisFileReaches<First>,
+              "the first named policy is a class row this build carries, at a class one of this "
+              "file's calls reaches: that call would fold onto the library's own instantiation");
+static_assert(OffEveryClassRowThisFileReaches<Second>,
+              "the second named policy is a class row this build carries, at a class one of this "
+              "file's calls reaches: that call would fold onto the library's own instantiation");
+static_assert(OffEveryClassRowThisFileReaches<FirstHalf>,
+              "the first named half policy is a class row this build carries, at a class this "
+              "file's calls reach: that call would fold onto the library's own instantiation");
+static_assert(OffEveryClassRowThisFileReaches<SecondHalf>,
+              "the second named half policy is a class row this build carries, at a class this "
+              "file's calls reach: that call would fold onto the library's own instantiation");
+
+/// The label a rule carries for a named policy: the axes that policy moves away from the class row
+/// it was built from, which is what makes it an instantiation the library does not pre-instantiate.
+template <class Policy, class Row>
 const char* PolicyLabel() {
-    return Policy::kRoute != boys::kDefaultFitRoute ? "the other route" : "the other scheme";
+    if constexpr (Policy::kRoute != Row::kRoute && Policy::kScheme != Row::kScheme)
+    {
+        return "the other route and scheme";
+    }
+    else if constexpr (Policy::kRoute != Row::kRoute)
+    {
+        return "the other route";
+    }
+    else
+    {
+        return "the other scheme";
+    }
 }
 
 constexpr double kOracleBound = 5.5e-14;
@@ -315,19 +369,20 @@ constexpr double kUnwritten = -1.0;
 
 /// The double lane's whole family at one named policy: the single, all-orders and fixed-N entries
 /// over the grid, and the fixed-N entry's values against the single entry's bit for bit. The
-/// instantiation is this file's: the policy is not the type the library pre-instantiates.
-template <class Policy>
+/// instantiation is this file's: the policy is not the type the library pre-instantiates, and \c Row
+/// is the class row it was built from, which is what the label names the move against.
+template <class Policy, class Row>
 void CheckDoubleLanes(Report& report, const std::vector<Cell>& cells) {
     char name[160] = {};
 
     std::snprintf(name, sizeof(name), "BoysSingle<%s> (grid sweep, no library)",
-                  PolicyLabel<Policy>());
+                  PolicyLabel<Policy, Row>());
     Rule& single = NewRule(name);
     std::snprintf(name, sizeof(name), "BoysAllOrders<%s> (grid sweep, no library)",
-                  PolicyLabel<Policy>());
+                  PolicyLabel<Policy, Row>());
     Rule& batch = NewRule(name);
     std::snprintf(name, sizeof(name), "BoysFixedN<%s> (grid sweep, no library)",
-                  PolicyLabel<Policy>());
+                  PolicyLabel<Policy, Row>());
     Rule& fixed = NewRule(name);
 
     for (const Cell& cell : cells)
@@ -445,12 +500,14 @@ void CheckManyArgumentLanes(Report& report, const std::vector<Cell>& cells) {
 /// not one figure: the lane's row carries a base of 1.5e-7 and, beside it, the term the plain
 /// reciprocal adds - 1.5e-7 plus 1e-7 under that form - because the form rounds once more per
 /// step (include/boys/boys.hpp, LaneContractInfo; include/boys/backend.hpp, DivisionForm states
-/// the same two figures, measured, for this lane of the three the axis has). Neither policy
-/// below names a form, so the form in force is the build's own default one, and a build whose
-/// seam moved that axis publishes and runs the second figure rather than the first. This target
-/// links no library, so `BoysLaneContracts()` is not reachable here and the two figures are
-/// written as the row states them; what sweeps the lane against an independent reference and
-/// holds it inside them is the accuracy gate's float book, tests/boys_accuracy_gate.cpp.
+/// the same two figures, measured, for this lane of the three the axis has). The form in force is
+/// the one named at the call, which is the named policy's own division cell - a policy names the
+/// form it runs - so the term is read off that cell and not off the axis the seam states: a build
+/// whose class row for the lane the policy came from names the plain form runs it and publishes
+/// the second figure. This target links no library, so `BoysLaneContracts()` is not reachable here
+/// and the two figures are written as the row states them; what sweeps the lane against an
+/// independent reference and holds it inside them is the accuracy gate's float book,
+/// tests/boys_accuracy_gate.cpp.
 ///
 /// The term is what the plain form spends on the downward ladder, which is inside the batch
 /// shape and not inside the single one, so the batch rule is judged at the sum and the single
@@ -463,7 +520,7 @@ void CheckFloatLane(const std::vector<Cell>& cells) {
     constexpr double kFloatLaneBase = 1.5e-7;
     constexpr double kFloatPlainTerm = 1e-7;
     const double plainTerm =
-        boys::kDefaultDivisionForm == boys::DivisionForm::kPlainReciprocal ? kFloatPlainTerm : 0.0;
+        Policy::kDivision == boys::DivisionForm::kPlainReciprocal ? kFloatPlainTerm : 0.0;
     const double singleBound = kFloatLaneBase + kOracleBound;
     const double batchBound = kFloatLaneBase + plainTerm + kOracleBound;
 
@@ -602,8 +659,8 @@ int main(int argc, char** argv) {
 
     std::printf("header-only consumer check: this binary links no library\n");
     Report report;
-    CheckDoubleLanes<First>(report, cells);
-    CheckDoubleLanes<Second>(report, cells);
+    CheckDoubleLanes<First, DoubleClass>(report, cells);
+    CheckDoubleLanes<Second, DoubleClass>(report, cells);
     CheckManyArgumentLanes(report, cells);
     CheckFloatLane<First>(cells);
 #if BoysFp16

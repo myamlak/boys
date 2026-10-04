@@ -395,18 +395,26 @@ TEST(BoysFixedNTest, TheRationalRouteIsCarriedAndIsBoysSingle) {
         << "the rational route returns the shipped values: the carriage is not reachable";
 }
 
+// The entry at the row its own class carries, against the per-argument single entry at
+// that same row: the row IS the defaults, so the route this pair runs is the class's own
+// and naming no policy is the same call. The pair is one policy on both sides rather
+// than a policy composed from the seam's five against a class of its own - the five are
+// the point a class with no row falls to, and a replacement header that moves this
+// class's row moves both sides with it.
 TEST(BoysFixedNTest, TheDefaultRouteIsUnchangedByTheRouteAxis) {
+    using FixedNClass = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kFixedN>;
+
     const std::vector<double> args = {0.0, 0.25, 1.0, 3.0, kX0 - 1e-6, kX0, 12.5, 20.0, kX1, 60.0};
     std::vector<double> got(args.size());
     std::size_t differing = 0;
 
     for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
     {
-        BoysFixedN<RoutePolicy<boys::FitRoute::kChebyshev>>(n, args.data(), got.data(), args.size());
+        BoysFixedN<FixedNClass>(n, args.data(), got.data(), args.size());
 
         for (std::size_t i = 0; i < args.size(); ++i)
         {
-            const double plain = BoysSingle(n, args[i]);
+            const double plain = BoysSingle<FixedNClass>(n, args[i]);
 
             if (std::memcmp(&got[i], &plain, sizeof(double)) != 0)
             {
