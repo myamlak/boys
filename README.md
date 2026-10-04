@@ -714,10 +714,11 @@ library call per recurrence step, and this option removes it. Where the compiler
 **different arithmetic** — two roundings rather than one — and it has its own measured bound, which
 `docs/lane-contract.md` states lane by lane. `BoysBackends()` reports which route is in force.
 `-DBOYS_WERROR=OFF` drops `-WX` for a consumer whose compiler warning noise this tree has not been
-made clean for. `-DBOYS_BUILD_DEFAULTS=<header>` compiles the five choices an entry that names no
-policy resolves to from a header of your own instead of the shipped ones — the choices are
-compile-time values, so an unnamed call costs what it costs either way. CONTRIBUTING.md states what
-such a header carries and what the option does not do.
+made clean for. `-DBOYS_BUILD_DEFAULTS=<header>` compiles the choices an entry that names no
+policy resolves to — the host's five and the device lane's own division form and region-B
+exponential — from a header of your own instead of the shipped ones; the choices are compile-time
+values, so an unnamed call costs what it costs either way. CONTRIBUTING.md states what such a
+header carries and what the option does not do.
 
 As a submodule:
 

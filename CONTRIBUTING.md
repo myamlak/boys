@@ -65,11 +65,13 @@ Optional: `-DBUILD_BENCHMARKS=ON` for the benchmark drivers, which are default O
 `-DBUILD_CUDA=ON` for the CUDA lane, which needs the CUDA toolkit; the `linux-cuda` CI leg
 compiles and links that lane and runs no kernel, so every device figure stays a local gate.
 
-`-DBOYS_BUILD_DEFAULTS=<header>` builds with a header of your own carrying the five choices an entry
+`-DBOYS_BUILD_DEFAULTS=<header>` builds with a header of your own carrying the choices an entry
 that names no policy resolves to, in place of the committed ones: the fit route, the evaluation
-scheme, the packing axis, the division form and the fit granularity. They are compile-time values,
+scheme, the packing axis, the division form and the fit granularity, which are what a host class
+falls back to, and the device lane's own division form and region-B exponential beside them, which
+is what a device class falls back to. They are compile-time values,
 so the build compiles them into every call that names none, and pays nothing for them at run time.
-The choice was a template argument before and is one still. **One of the five a build cannot move**,
+The choice was a template argument before and is one still. **One of the host five a build cannot move**,
 and it refuses at compile time with the library's own reason rather than compiling something else:
 the packing axis, because an entry that produces one order has no second order to pack into a vector
 lane. The uniform member of the fit granularity was the second until this revision: the four batched
@@ -80,7 +82,7 @@ tree names it, and a configure that did would be the first reading of that confi
 Setting the packing axis to what the library already runs is fine; setting it to another member is a
 build that does not compile, and that is the answer rather than a defect. The file is
 `include/boys/boys_build_defaults.hpp`. Its own comment is the contract a replacement satisfies: the
-five names, and beside them the machine, the date and the option probe's own figures, because a
+seven names, and beside them the machine, the date and the option probe's own figures, because a
 choice made there is a measurement taken on one host and a reader has to be able to tell a tuned
 build from a committed one. The default is OFF. An untuned build is the committed configuration, the one
 every bound in this repository was measured at. **Nothing in this tree writes such a header**:
@@ -179,8 +181,8 @@ changing a bound, a document's bound table, or a lane row. The same command runs
 `--gate`, `--header`, `--readme`, `--mainpage` and `--library` read a side from another file, which
 is how a shifted figure is shown to fail as a negative control.
 
-The build-defaults seam offers a consumer five choices, and a choice read by nothing is what this
-check is for: three of the five once sat in the seam file, documented, while the library compiled
+The build-defaults seam offers a consumer seven choices, and a choice read by nothing is what this
+check is for: three of them once sat in the seam file, documented, while the library compiled
 hard-coded literals, so a consumer who replaced it had two choices honoured and three silently
 ignored and nothing reported it.
 

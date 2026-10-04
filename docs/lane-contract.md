@@ -1482,10 +1482,10 @@ and its card, and the probe is what a consumer runs where they deploy. The route
 carry the settings the library has always shipped and have not been ranked against a timing. Setting
 any of them from a run is one line
 per name in `include/boys/boys_build_defaults.hpp`, the file a build's defaults are read from: a
-build replaces that file with its own five rather than editing the tree, which is what lets a
+build replaces that file with its own seven rather than editing the tree, which is what lets a
 consumer set them for the machine they deploy on without touching a library header
 (`BOYS_BUILD_DEFAULTS`, CONTRIBUTING.md), and the entries that name no policy then compile those
-choices at no run-time cost. **One of the five a build cannot move**, and it refuses at compile time
+choices at no run-time cost. **One of the host five a build cannot move**, and it refuses at compile time
 with the library's own reason rather than compiling something else: the packing axis, because an
 entry that produces one order has no second order to pack into a vector lane. The uniform member of
 the fit granularity was the second until this revision: the four batched bodies that refused it now
@@ -1493,10 +1493,14 @@ hand a policy naming the grid to the path that reads it, and the accuracy gate's
 those cells as rows rather than counting them as owed. Whether a build *naming* that member compiles
 is not stated here, because it has not been measured — no fixture in this tree names it. Setting the
 packing axis to what the library already runs is fine; setting it to another member is a build that
-does not compile. The device lane's own, `boys::kDefaultRegionBExp` in `boys_device_tables.hpp`, is
-outside that file and is set where it
-is declared — and is therefore not consumer-reachable at all, which is owed work rather than a
-design choice. *What is not claimed*, at the end of this page, names the lanes
+does not compile. The device lane's own two are named in that same file: the division form its
+entries take is `BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM` and the region-B exponential its tables
+read is `BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP`, and `boys/accuracy.hpp` reads each once, as
+`boys::kDefaultDeviceDivisionForm` and `boys::kDefaultDeviceRegionBExp` — of which
+`boys::kDefaultRegionBExp` in `boys_device_tables.hpp` is that same constant spelled for the lane.
+A build that replaces the seam moves the device default too, and a replacement that leaves either
+name out fails to compile at that name rather than taking the committed value silently. *What is
+not claimed*, at the end of this page, names the lanes
 nothing here was measured on.
 
 | Precision | Name | Fit route | Scheme | Granularity | Packing axis | Engine budget |

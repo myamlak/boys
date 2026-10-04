@@ -101,7 +101,7 @@ enum class BoysStatus {
 ///
 /// Every entry that launches a kernel takes a division form (boys/accuracy.hpp)
 /// — the entry's arithmetic with a different division of its ladder steps, all
-/// three certified, kDefaultDivisionForm unless the caller names another; the
+/// three certified, kDefaultDeviceDivisionForm unless the caller names another; the
 /// \c form parameter of each entry below names it. One entry carries a second
 /// axis on top of it: the f32 single entry's region-B exponential
 /// is a certified choice of arithmetic — two options, two measured bounds
@@ -197,7 +197,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
     template <RegionBExp kExp = kDefaultRegionBExp>
@@ -207,7 +207,7 @@ public:
         float* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// F_0(x[i])..F_nmax(x[i]) in single precision per input (i) — all orders
     /// at every argument, the top order read per element.
@@ -229,7 +229,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
     static BoysStatus AllOrdersF32(
@@ -238,7 +238,7 @@ public:
         float* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// F_0(x[i])..F_nmax(x[i]) at one common nmax, single precision — every order
     /// at every argument of the batch, in one launch.
@@ -265,7 +265,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kInvalidArgument when nmax is outside [0, kMaxBoysOrder],
     /// kDeviceError when the launch fails.
@@ -275,7 +275,7 @@ public:
         float* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// F_n(x[i]) in double precision, |error| <= 5.5e-14 (the double single
     /// lane's loosest per-region bound; the others are tighter).
@@ -287,7 +287,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
     static BoysStatus SingleF64(
@@ -296,7 +296,7 @@ public:
         double* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// F_0(x[i])..F_nmax(x[i]) in double precision per input (i) — shape and
     /// layout as AllOrdersF32 (a per-element top order, order-major planes).
@@ -311,7 +311,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
     static BoysStatus AllOrdersF64(
@@ -320,7 +320,7 @@ public:
         double* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// F_0(x[i])..F_n(x[i]) as AllOrdersF64, with the library's second partition of
     /// the double lane's fits: region A's pieces are cut per order instead of two to
@@ -339,7 +339,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
     static BoysStatus AllOrdersF64Narrow(
@@ -348,7 +348,7 @@ public:
         double* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// F_0(x[i])..F_n(x[i]) as AllOrdersF64, with region A read as one fit per order:
     /// every order's own piece is located and its own fit summed, where the coarsest
@@ -367,7 +367,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
     static BoysStatus AllOrdersF64Orders(
@@ -376,7 +376,7 @@ public:
         double* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// F_0(x[i])..F_n(x[i]) with both of the choices above in force: the
     /// narrow partition's pieces, read one fit per order inside region A and
@@ -390,7 +390,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
     static BoysStatus AllOrdersF64NarrowOrders(
@@ -399,7 +399,7 @@ public:
         double* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// F_0(x[i])..F_n(x[i]) as AllOrdersF64 with the other evaluation scheme: every
     /// piece is summed in the monomial basis by Horner in ascending order, where the
@@ -421,7 +421,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
     static BoysStatus AllOrdersF64Mono(
@@ -430,7 +430,7 @@ public:
         double* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// The monomial scheme's orders-axis member: F_0(x[i])..F_n(x[i]) with
     /// region A read as one fit per order, each summed in the basis
@@ -446,7 +446,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
     static BoysStatus AllOrdersF64OrdersMono(
@@ -455,7 +455,7 @@ public:
         double* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// The monomial scheme over the narrow partition: F_0(x[i])..F_n(x[i]) from
     /// the narrow pieces, their piecewise region-B seed and their own
@@ -468,7 +468,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
     static BoysStatus AllOrdersF64NarrowMono(
@@ -477,7 +477,7 @@ public:
         double* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// Both of the choices above in force at once: the narrow partition read
     /// one fit per order inside region A, summed in the monomial basis, with
@@ -490,7 +490,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
     static BoysStatus AllOrdersF64NarrowOrdersMono(
@@ -499,7 +499,7 @@ public:
         double* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// F_0(x[i])..F_n(x[i]) as AllOrdersF64 with the other fit route: every piece is
     /// a numerator/denominator pair, evaluated as two Horner sums and a division,
@@ -525,7 +525,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
     static BoysStatus AllOrdersF64Rat(
@@ -534,7 +534,7 @@ public:
         double* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// The rational route's orders-axis member: F_0(x[i])..F_n(x[i]) with
     /// region A read as one fit per order, each summed as the pair
@@ -550,7 +550,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
     static BoysStatus AllOrdersF64OrdersRat(
@@ -559,7 +559,7 @@ public:
         double* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// The rational route over the narrow partition: F_0(x[i])..F_n(x[i]) from
     /// the narrow pieces, their piecewise region-B seed and their own
@@ -572,7 +572,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
     static BoysStatus AllOrdersF64NarrowRat(
@@ -581,7 +581,7 @@ public:
         double* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// Both of the choices above in force at once: the narrow partition read
     /// one fit per order inside region A, each piece summed as the pair
@@ -594,7 +594,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
     static BoysStatus AllOrdersF64NarrowOrdersRat(
@@ -603,7 +603,7 @@ public:
         double* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// F_0(x[i])..F_n(x[i]) as AllOrdersF64, off the library's third cut of
     /// the double lane's domain: one *uniform* table — a single grid over
@@ -636,7 +636,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF64Uniform(
@@ -645,7 +645,7 @@ public:
         double* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// F_0(x[i])..F_n(x[i]) off the same uniform table as AllOrdersF64Uniform,
     /// summed in the other form the table stores: every order's coefficients are
@@ -669,7 +669,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF64UniformHorner(
@@ -678,7 +678,7 @@ public:
         double* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// F_0(x[i])..F_n(x[i]) as AllOrdersF64Uniform, with the route's region-A
     /// reading named at the packing axis: every order is read from its own fit
@@ -700,7 +700,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF64OrdersUniform(
@@ -709,7 +709,7 @@ public:
         double* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// Both of the choices above at once: the uniform route's per-order reading
     /// summed in the other form its table stores, by Horner over the monomial
@@ -727,7 +727,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF64OrdersUniformHorner(
@@ -736,7 +736,7 @@ public:
         double* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// F_0(x[i])..F_n(x[i]) in fp32 off the float lane's own narrow partition: the
     /// lane's 218 pieces at degree 6, the same shape, layout and arguments as
@@ -762,7 +762,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF32Narrow(
@@ -771,7 +771,7 @@ public:
         float* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// The same partition with the other summation: every piece of region A and
     /// region B is read from the monomial form of its own fit and summed by Horner,
@@ -792,7 +792,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF32NarrowMono(
@@ -801,7 +801,7 @@ public:
         float* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// F_0(x[i])..F_n(x[i]) in fp32 off the float lane's own uniform table: the same
     /// grid the double route reads — one interval width, one stored degree for every
@@ -817,7 +817,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF32Uniform(
@@ -826,7 +826,7 @@ public:
         float* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// The same grid summed in the other form the table stores: every order's
     /// coefficients are read from the monomial image of its own fit and summed by
@@ -841,7 +841,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF32UniformHorner(
@@ -850,7 +850,7 @@ public:
         float* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// F_0(x[i])..F_n(x[i]) in fp32 off the uniform grid's RATIONAL member.
     ///
@@ -872,7 +872,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF32UniformRat(
@@ -881,7 +881,7 @@ public:
         float* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF32UniformRat under the Horner scheme name. A forwarder and not a
     /// second row over a second table: the rational member is stored in one form, so
@@ -894,7 +894,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns what \c AllOrdersF32UniformRat returns, and its refusals with it:
     /// this name is that entry's and adds none of its own.
@@ -904,7 +904,7 @@ public:
         float* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// The same four on the double lane's grid, whose rational member is the
     /// double lane's own pair per interval over that lane's intervals. The
@@ -917,7 +917,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF64UniformRat(
@@ -926,7 +926,7 @@ public:
         double* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF64UniformRat under the Horner scheme name.
     ///
@@ -937,7 +937,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns what \c AllOrdersF64UniformRat returns, and its refusals with it:
     /// this name is that entry's and adds none of its own.
@@ -947,7 +947,7 @@ public:
         double* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// F_0(x[i])..F_n(x[i]) as \c AllOrdersF32UniformRat over the grid's other packing
     /// axis, whose one member this route has: the grid's rational member stores one
@@ -966,7 +966,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF32OrdersUniformRat(
@@ -975,7 +975,7 @@ public:
         float* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF32OrdersUniformRat under the Horner scheme name. A forwarder and not a
     /// second row over a second table: the rational member is stored in one form, so both
@@ -988,7 +988,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns what \c AllOrdersF32OrdersUniformRat returns, and its refusals with it:
     /// this name is that entry's and adds none of its own.
@@ -998,7 +998,7 @@ public:
         float* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// The same four on the double lane's grid, whose rational member is that lane's own
     /// pair per interval over its own intervals: the contract and the Horner
@@ -1011,7 +1011,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF64OrdersUniformRat(
@@ -1020,7 +1020,7 @@ public:
         double* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF64OrdersUniformRat under the Horner scheme name.
     ///
@@ -1031,7 +1031,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns what \c AllOrdersF64OrdersUniformRat returns, and its refusals with it:
     /// this name is that entry's and adds none of its own.
@@ -1041,7 +1041,7 @@ public:
         double* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// F_0(x[i])..F_n(x[i]) in fp32 off the float lane's rational route: region A's
     /// seed comes from the double lane's rational pair over the coarsest partition —
@@ -1067,7 +1067,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF32Rat(
@@ -1076,7 +1076,7 @@ public:
         float* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF32Rat under the route's other scheme name. The route's pair is
     /// stored in monomial form and read by Horner, so neither name selects a second
@@ -1091,7 +1091,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF32RatHorner(
@@ -1100,7 +1100,7 @@ public:
         float* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF32Rat over the float lane's narrow partition: region A's
     /// seed is the double lane's rational pair over the *narrow* pieces and
@@ -1117,7 +1117,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF32NarrowRat(
@@ -1126,7 +1126,7 @@ public:
         float* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF32NarrowRat under the route's other scheme name, with the
     /// contract of \c AllOrdersF32RatHorner.
@@ -1138,7 +1138,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF32NarrowRatHorner(
@@ -1147,7 +1147,7 @@ public:
         float* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// F_0(x[i])..F_n(x[i]) as \c AllOrdersF32, with region A read as one fit per
     /// order: every order's own piece is located and its own fit summed, where
@@ -1175,7 +1175,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF32Orders(
@@ -1184,7 +1184,7 @@ public:
         float* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF32Orders on the narrow partition, with the contract of
     /// \c AllOrdersF32Narrow: the partition's pieces one fit per order.
@@ -1195,7 +1195,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF32NarrowOrders(
@@ -1204,7 +1204,7 @@ public:
         float* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF32NarrowOrders in the monomial basis, with the contract of
     /// \c AllOrdersF32NarrowMono.
@@ -1215,7 +1215,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF32NarrowOrdersMono(
@@ -1224,7 +1224,7 @@ public:
         float* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF32Orders over the fit route's pairs, with the contract of
     /// \c AllOrdersF32Rat: each order's own piece read at A = 1, where the
@@ -1238,7 +1238,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF32OrdersRat(
@@ -1247,7 +1247,7 @@ public:
         float* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF32OrdersRat under the route's other scheme name, over the same
     /// kernel.
@@ -1258,7 +1258,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF32OrdersRatHorner(
@@ -1267,7 +1267,7 @@ public:
         float* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF32OrdersRat on the narrow partition, with the contract of
     /// \c AllOrdersF32NarrowRat.
@@ -1278,7 +1278,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF32NarrowOrdersRat(
@@ -1287,7 +1287,7 @@ public:
         float* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF32NarrowOrdersRat under the route's other scheme name, over the
     /// same kernel.
@@ -1298,7 +1298,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF32NarrowOrdersRatHorner(
@@ -1307,7 +1307,7 @@ public:
         float* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF32Uniform with the orders axis's own rows: the route's one
     /// reading of the grid, and therefore the kernel \c AllOrdersF32Uniform
@@ -1323,7 +1323,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF32OrdersUniform(
@@ -1332,7 +1332,7 @@ public:
         float* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF32OrdersUniform over the grid's other stored form, with the
     /// contract of \c AllOrdersF32UniformHorner.
@@ -1343,7 +1343,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the table upload or the launch fails.
     static BoysStatus AllOrdersF32OrdersUniformHorner(
@@ -1352,7 +1352,7 @@ public:
         float* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// F_0(x[i])..F_nmax(x[i]) at one common nmax, double precision — the
     /// uniform-order batch: many arguments, all nmax + 1 orders each, the
@@ -1370,7 +1370,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kInvalidArgument when nmax is outside [0, kMaxBoysOrder],
     /// kDeviceError when the launch fails.
@@ -1380,7 +1380,7 @@ public:
         double* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
 #if BoysFp16
     /// F_n(x[i]) in fp16 — the fp16 lane of the certified mixed-precision
@@ -1401,7 +1401,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when a device operation fails.
     static BoysStatus SingleF16(
@@ -1410,7 +1410,7 @@ public:
         F16* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// F_0(x[i])..F_nmax(x[i]) in fp16 per input (i), layout as AllOrdersF32
     /// (out[order * count + i] = F_order(x[i])), device pointers and
@@ -1423,7 +1423,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when a device operation fails.
     static BoysStatus AllOrdersF16(
@@ -1432,7 +1432,7 @@ public:
         F16* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// F_0(x[i])..F_nmax(x[i]) at one common nmax in fp16 — the uniform-order
     /// batch of the fp16 lane, layout as AllNF32, device pointers and stream
@@ -1449,7 +1449,7 @@ public:
     /// \param stream device stream (cudaStream_t) or nullptr for the default
     /// \param form   which division form the call runs: the entry's arithmetic with a different
     ///   division of its ladder steps, one of the three certified forms (DivisionForm,
-    ///   boys/accuracy.hpp); kDefaultDivisionForm unless another is named.
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kInvalidArgument when nmax is outside [0, kMaxBoysOrder],
     /// kDeviceError when a device operation fails.
@@ -1459,7 +1459,7 @@ public:
         F16* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// The fp16 counterparts of the float lane's other bodies: each entry
     /// below computes what the float entry of the same name computes
@@ -1498,7 +1498,7 @@ public:
         F16* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF32NarrowMono's arithmetic and contract, stored fp16: the
     /// narrow partition in its monomial basis, which is the form the Horner
@@ -1518,7 +1518,7 @@ public:
         F16* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF32Rat's arithmetic and contract, stored fp16: the rational
     /// route over the coarsest partition. The route's pair is stored in one form
@@ -1538,7 +1538,7 @@ public:
         F16* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF16Rat under the route's other scheme name. A forwarder and
     /// not a second arithmetic: it runs \c AllOrdersF16Rat's kernel and returns
@@ -1558,7 +1558,7 @@ public:
         F16* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF32NarrowRat's arithmetic and contract, stored fp16: the
     /// rational route over the narrow partition, with the same two scheme names
@@ -1578,7 +1578,7 @@ public:
         F16* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF16NarrowRat under the route's other scheme name. A
     /// forwarder and not a second arithmetic.
@@ -1597,7 +1597,7 @@ public:
         F16* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF32Uniform's arithmetic and contract, stored fp16: the float
     /// lane's uniform grid in its Chebyshev blocks.
@@ -1616,7 +1616,7 @@ public:
         F16* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF32UniformHorner's arithmetic and contract, stored fp16. The
     /// grid's two entries are two stored forms of one fit and not two
@@ -1636,7 +1636,7 @@ public:
         F16* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF32UniformRat's arithmetic and contract, stored fp16: the
     /// grid's rational route, with the same two scheme names reaching one
@@ -1656,7 +1656,7 @@ public:
         F16* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF16UniformRat under the route's other scheme name. A
     /// forwarder and not a second arithmetic.
@@ -1675,7 +1675,7 @@ public:
         F16* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF32Orders' arithmetic and contract, stored fp16: the float
     /// lane's other packing axis over the coarsest partition. It reads region A
@@ -1697,7 +1697,7 @@ public:
         F16* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF32NarrowOrders' arithmetic and contract, stored fp16: the
     /// orders axis over the narrow partition.
@@ -1716,7 +1716,7 @@ public:
         F16* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF32NarrowOrdersMono's arithmetic and contract, stored fp16:
     /// the orders axis over the narrow partition in its monomial basis.
@@ -1735,7 +1735,7 @@ public:
         F16* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF32OrdersRat's arithmetic and contract, stored fp16: the
     /// orders axis on the rational route over the coarsest partition, with the
@@ -1755,7 +1755,7 @@ public:
         F16* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF16OrdersRat under the route's other scheme name. A
     /// forwarder and not a second arithmetic.
@@ -1774,7 +1774,7 @@ public:
         F16* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF32NarrowOrdersRat's arithmetic and contract, stored fp16:
     /// the orders axis on the rational route over the narrow partition, with
@@ -1794,7 +1794,7 @@ public:
         F16* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF16NarrowOrdersRat under the route's other scheme name. A
     /// forwarder and not a second arithmetic.
@@ -1813,7 +1813,7 @@ public:
         F16* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF32OrdersUniform's arithmetic and contract, stored fp16. The
     /// grid's cells carry their own degree and block start, so the route's
@@ -1834,7 +1834,7 @@ public:
         F16* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// The grid's monomial basis over the orders axis: the kernel
     /// \c AllOrdersF16UniformHorner launches, for the reason
@@ -1854,7 +1854,7 @@ public:
         F16* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// The grid's rational route over the orders axis: the kernel
     /// \c AllOrdersF16UniformRat launches, for the reason
@@ -1874,7 +1874,7 @@ public:
         F16* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// \c AllOrdersF16OrdersUniformRat under the route's other scheme name. A
     /// forwarder and not a second arithmetic.
@@ -1893,7 +1893,7 @@ public:
         F16* out,
         std::size_t count,
         void* stream,
-        DivisionForm form = kDefaultDivisionForm);
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
 #endif // BoysFp16
 };

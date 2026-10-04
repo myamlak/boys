@@ -620,7 +620,7 @@ struct DeviceProbeMeasurement {
     /// (\c probe_detail::ProbeTimeRequest::form), and it is stated on the row so
     /// that the arithmetic a figure is about is read off the row and not
     /// recovered from its name.
-    DivisionForm form = kDefaultDivisionForm;
+    DivisionForm form = kDefaultDeviceDivisionForm;
 
     /// \c "single", \c "all-orders", \c "all-n" or \c "each-order": the shape of
     /// the call.
@@ -1338,10 +1338,10 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report);
 /// The build-defaults file this run can write, and the classes it writes a row for and
 /// refuses.
 ///
-/// The seam it writes into is `boys/boys_build_defaults.hpp`: a replacement carries the five
-/// names, a `BOYS_BUILD_DEFAULT_ROWS` list, and no `BOYS_BUILD_DEFAULTS_SHIPPED`, and a build
-/// pointed at it through the `BOYS_BUILD_DEFAULTS` CMake option reads it instead of the
-/// committed file. The device lane is the half of that table which no measurement had ever
+/// The seam it writes into is `boys/boys_build_defaults.hpp`: a replacement carries the seven
+/// names - the host's five and this lane's own two - a `BOYS_BUILD_DEFAULT_ROWS` list, and no
+/// `BOYS_BUILD_DEFAULTS_SHIPPED`, and a build pointed at it through the `BOYS_BUILD_DEFAULTS`
+/// CMake option reads it instead of the committed file. The device lane is the half of that table which no measurement had ever
 /// written a row for, and the reason is the surface: a row names the arithmetic its class
 /// compiles, and until every device option row stated the route, the scheme and the packing
 /// its entry fixes (\c DeviceEntryAxesOf, boys_cuda_options.hpp) a device row would have
@@ -1375,9 +1375,13 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report);
 /// measure, or whose ranking could not determine an entry, gets no row at all and a reason in
 /// \c refused.
 ///
-/// The classes the table in force already carries are written back verbatim beside the
-/// device rows: a replacement is read INSTEAD of the committed file, so one that dropped
-/// them would leave their callers with no row at all.
+/// **A class the table in force already carries is overlaid and not skipped.** The shipped
+/// rows are the base this run writes over: a class this run measured carries this run's row
+/// even where the table in force wrote one, and that class is listed in \c overridden with
+/// the row it replaced, so which rows the run changed is read off the emission and not
+/// inferred from the file. A class the table carries and this run did not measure is written
+/// back verbatim and appears in neither list: a replacement is read INSTEAD of the committed
+/// file, so one that dropped it would leave its callers with no row at all.
 ///
 /// \ingroup boys
 struct DeviceDefaultsEmission {
@@ -1387,6 +1391,11 @@ struct DeviceDefaultsEmission {
     /// One line per row written: the class, the entry it was taken from, and how that
     /// entry was reached.
     std::vector<std::string> emitted;
+
+    /// One line per row written over a row the table in force already carried: the class
+    /// and the entry, so the run's own edits to the shipped table are listed and not left
+    /// to be found by reading two files against each other.
+    std::vector<std::string> overridden;
 
     /// One line per class no row is written for, with the reason.
     std::vector<std::string> refused;

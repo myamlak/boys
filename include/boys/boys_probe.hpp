@@ -994,10 +994,14 @@ OptionProbeClosure OptionProbeSpaceClosure(const OptionProbeReport& report);
 /// combination that won its class, marked with the figure and the
 /// way it was reached; a class whose ranking was a single entry standing alone is
 /// marked a choice, because a walkover is not a comparison. A class the run
-/// ranked no cell of carries the file's own five at that lane's budget and is
-/// marked as that - the seam's own fallback, stated rather than guessed, because
-/// the seam's list must name every class it carries or the build stops compiling.
-/// The block the report prints names both sets.
+/// ranked no cell of carries the file's own choices at that lane's budget and is
+/// marked as that: the host's five on a host class, with the library's host
+/// region-B member in the exponential cell, and on a class of the device half
+/// those four beside the device lane's own division form and region-B
+/// exponential, because an unnamed device call reads the device lane's two names
+/// and never the host's. It is the seam's own fallback, stated rather than
+/// guessed, because the seam's list must name every class it carries or the
+/// build stops compiling. The block the report prints names both sets.
 ///
 /// **The classes are the seam's own, read from its macro list**, so a class the
 /// seam carries and this run did not rank is written as a fallback row and a
@@ -1007,10 +1011,10 @@ OptionProbeClosure OptionProbeSpaceClosure(const OptionProbeReport& report);
 /// formats are one lane and one row, and a run whose two half winners differed
 /// says so in the report rather than folding them.
 ///
-/// The text is a valid `BOYS_BUILD_DEFAULTS` replacement: it carries the five
-/// names, the row list, and no `BOYS_BUILD_DEFAULTS_SHIPPED`, so a build pointed
-/// at it defines `BOYS_BUILD_DEFAULTS_REPLACED` and reads it instead of the
-/// committed file.
+/// The text is a valid `BOYS_BUILD_DEFAULTS` replacement: it carries the seven
+/// names - the host's five and the device lane's two - the row list, and no
+/// `BOYS_BUILD_DEFAULTS_SHIPPED`, so a build pointed at it defines
+/// `BOYS_BUILD_DEFAULTS_REPLACED` and reads it instead of the committed file.
 ///
 /// \param report  a report, from RunOptionProbe
 /// \param takenAt when the run was taken, as the caller's own clock spells it: the

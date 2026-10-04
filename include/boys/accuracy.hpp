@@ -256,6 +256,20 @@ enum class RegionBExp : int {
 /// arithmetic does, not because one of them is a preference.
 inline constexpr RegionBExp kDefaultHostRegionBExp = RegionBExp::kFast;
 
+/// The region-B exponential the device lane evaluates when the call site names
+/// none: \c BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP, from
+/// `boys/boys_build_defaults.hpp`.
+///
+/// **Declared here beside the host's, and read by two.** It is the device lane's
+/// own member and not the host's - the lane's published figures were measured at
+/// the library routine, which the constant's own documentation in
+/// `boys/boys_device_tables.hpp` states - and it is declared here because the
+/// policy table's device rows name it where they are composed (`boys/boys.hpp`
+/// does not carry the device tables header). `boys::kDefaultRegionBExp` in
+/// `boys/boys_device_tables.hpp` is this lane's own spelling of the same
+/// constant, declared where the tables it is read with are.
+inline constexpr RegionBExp kDefaultDeviceRegionBExp = BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP;
+
 /// How narrowly the fitted domain is cut into pieces.
 ///
 /// A stored fit is a polynomial over one interval, and a narrower interval
@@ -453,6 +467,27 @@ enum class DivisionForm : std::uint8_t {
 /// reads 3.220 ns per step against 5.333 here, the difference being the
 /// refinement's two fused multiply-adds paid once per order. All three forms are
 /// served, and the option probe measures them.
+///
+/// **This is the host's name, and the device lane has its own.** The CUDA
+/// entries take the form as an argument and every one of them runs every form,
+/// so what a device call performs its divisions in when it names none is
+/// \c kDefaultDeviceDivisionForm below and not this: a build whose card
+/// measured another form names that lane's form in the seam
+/// (\c BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM) without moving the host's
+/// arithmetic, and one that names nothing keeps each lane at the form its own
+/// figures were measured at.
 inline constexpr DivisionForm kDefaultDivisionForm = BOYS_BUILD_DEFAULT_DIVISION_FORM;
+
+/// The division form the device lane's divisions are performed in when the call
+/// site names none: \c BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM, from
+/// `boys/boys_build_defaults.hpp`.
+///
+/// **One name per target, because the two targets' figures are two sets.** It is
+/// declared here beside the host's so that the policy table's device rows can
+/// name it where they are composed (`boys/boys.hpp`), and it is declared at all
+/// so that the device lane's form is a seam name of its own: the shipped value is
+/// the form every figure this repository publishes for that lane was measured at,
+/// which is what a build that names nothing keeps.
+inline constexpr DivisionForm kDefaultDeviceDivisionForm = BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM;
 
 } // namespace boys

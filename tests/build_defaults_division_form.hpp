@@ -62,3 +62,10 @@
 #define BOYS_BUILD_DEFAULT_EVAL_SCHEME EvalScheme::kHorner
 #define BOYS_BUILD_DEFAULT_PACK_AXIS PackAxis::kArguments
 #define BOYS_BUILD_DEFAULT_FIT_GRANULARITY FitGranularity::kNarrow
+
+// Shipped: the device lane's own two names, which this fixture does not move. A device class
+// resolves its form and its region-B exponential to these and never to the host's five above,
+// which is why the host's division form above is not the value the device half of this build
+// carries: this configure moves one axis on one side of the device boundary.
+#define BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM DivisionForm::kRefinedReciprocal
+#define BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP RegionBExp::kAccurate

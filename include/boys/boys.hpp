@@ -628,8 +628,9 @@ struct DefaultPolicyRow {
 BOYS_BUILD_DEFAULT_ROWS(BOYS_DEFAULT_POLICY_ROW)
 #else
 // A build that names only the five axes - a fixture overriding one of them, say - carries the table
-// those five make: one row per class the host's entries reach and no row besides, every cell the
-// build's own choice. This is not a fallback for a class a table omits. The table here is complete
+// those five make: one row per class the host's entries reach, the device half's nine below them,
+// and no row besides, every cell the build's own choice. This is not a fallback for a class a table
+// omits. The table here is complete
 // by construction, because the rows are written out by this list rather than looked up, and a build
 // that writes its own table and omits a class still fails to compile for it. The distinction is what
 // the row *is*: a written row whose cells come from the build's own five names, not an absent row
@@ -647,6 +648,30 @@ BOYS_BUILD_DEFAULT_ROWS(BOYS_DEFAULT_POLICY_ROW)
 BOYS_DEFAULT_POLICY_BUILD_ROWS(BOYS_DEFAULT_POLICY_BUILD_ROW)
 #undef BOYS_DEFAULT_POLICY_BUILD_ROWS
 #undef BOYS_DEFAULT_POLICY_BUILD_ROW
+
+// The device half of the interface, composed the same way: a class is a (device, precision, shape)
+// triple, so a table that carried the host's classes alone would leave every device class with no
+// default in this build - a hole rather than a fallback, and one the list below closes. The rows are
+// the four host choices above at each device lane's budget, beside the device lane's own two - the
+// division form its entries take and the region-B exponential its tables read - one per class of
+// each of the three device lanes: the three questions the device entries answer, which are the
+// classes the device half holds. The division cell and the exponential cell are the device's names
+// and not the host's because the two lanes' published figures are two sets, measured at two
+// arithmetics (boys/boys_build_defaults.hpp). A build that replaces the seam with a list of its own
+// writes these rows itself, or omits them and fails to compile for them - the same rule the host's
+// classes are held to.
+#define BOYS_DEFAULT_POLICY_BUILD_DEVICE_ROW(kPrecision, kShape)                                    \
+    BOYS_DEFAULT_POLICY_ROW(kDevice, kPrecision, kShape, kDefaultFitRoute, kDefaultEvalScheme,      \
+                            LaneFallbackBudget<Precision::kPrecision>(), kDefaultPackAxis,          \
+                            kDefaultFitGranularity, kDefaultDeviceDivisionForm,                     \
+                            kDefaultDeviceRegionBExp)
+#define BOYS_DEFAULT_POLICY_BUILD_DEVICE_ROWS(X)                                                    \
+    X(kFp64Device, kSingle) X(kFp64Device, kAllOrders) X(kFp64Device, kAllN)                        \
+    X(kFp32Device, kSingle) X(kFp32Device, kAllOrders) X(kFp32Device, kAllN)                        \
+    X(kFp16Device, kSingle) X(kFp16Device, kAllOrders) X(kFp16Device, kAllN)
+BOYS_DEFAULT_POLICY_BUILD_DEVICE_ROWS(BOYS_DEFAULT_POLICY_BUILD_DEVICE_ROW)
+#undef BOYS_DEFAULT_POLICY_BUILD_DEVICE_ROWS
+#undef BOYS_DEFAULT_POLICY_BUILD_DEVICE_ROW
 #endif
 /// \endcond
 
@@ -814,7 +839,7 @@ struct AccuracyFigure {
 /// lane's own additive term where it documents one. A combination the library
 /// does not carry has no figure and says so.
 ///
-/// The bound is the lane's and not the axes': a way to read any of the five axes
+/// The bound is the lane's and not the axes': a way to read any of the axes
 /// that narrowed it would be a bound this build does not certify, and the
 /// per-axis figures are the ones each axis's own row publishes. What the axes
 /// change is the *delivered* figure - see \c BoysAccuracyDelivered - the one to
@@ -923,7 +948,9 @@ AccuracyFigure BoysAccuracyGuaranteedStated() noexcept
 ///
 /// The axes it asks the accessor above with are the ones
 /// \c DefaultPolicy<kPrecision, kShape, kDevice> resolves to - the row the table
-/// carries for the class, or the seam's own five where it carries none - so this
+/// carries for the class: the class's own row where the seam states one, and the
+/// seam's own names at that lane's budget where the seam states no row list at
+/// all, the device lane's two included on a class of the device half - so this
 /// is the same figure, from the same table, as a caller gets by naming the
 /// policy's axes by hand, the region-B exponential included. It is a table read
 /// and not a measurement: nothing is evaluated and nothing is timed.

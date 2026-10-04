@@ -267,6 +267,11 @@ int main(int argc, char** argv) {
             std::printf("  written: %s\n", line.c_str());
         }
 
+        for (const std::string& line : emission.overridden)
+        {
+            std::printf("  overrode: %s\n", line.c_str());
+        }
+
         for (const std::string& line : emission.refused)
         {
             std::printf("  no row:  %s\n", line.c_str());

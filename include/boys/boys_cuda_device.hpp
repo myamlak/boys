@@ -577,7 +577,7 @@ __device__ __forceinline__ BoysDeviceStatus DeviceLadderRequest(
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -595,7 +595,7 @@ __device__ __forceinline__ BoysDeviceStatus DeviceLadderRequest(
 /// \returns kSuccess after writing F_n(x); kTablesNotReady when \c tables
 /// carries no tables; kOrderOutOfRange when \c order is outside
 /// 0..kMaxBoysOrder. A refused call writes nothing.
-template <DivisionForm kForm = kDefaultDivisionForm>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceSingleF64(
     const BoysDeviceTables& tables,
     int order,
@@ -626,7 +626,7 @@ __device__ BoysDeviceStatus BoysDeviceSingleF64(
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -643,7 +643,7 @@ __device__ BoysDeviceStatus BoysDeviceSingleF64(
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
 /// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
 /// writing.
-template <DivisionForm kForm = kDefaultDivisionForm>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64(const BoysDeviceTables& tables,
                                                    int order,
                                                    double x,
@@ -689,7 +689,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64(const BoysDeviceTables& table
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -704,7 +704,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64(const BoysDeviceTables& table
 /// \returns kSuccess after writing kTopOrder + 1 values; kTablesNotReady when
 /// \c tables carries no tables. There is no order or capacity check: the top
 /// order is compiled in and \c out is the caller's declaration.
-template <DivisionForm kForm = kDefaultDivisionForm, int kTopOrder>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm, int kTopOrder>
 __device__ BoysDeviceStatus BoysDeviceAllNF64(const BoysDeviceTables& tables,
                                               double x,
                                               double* out) {
@@ -740,7 +740,7 @@ __device__ BoysDeviceStatus BoysDeviceAllNF64(const BoysDeviceTables& tables,
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -758,7 +758,7 @@ __device__ BoysDeviceStatus BoysDeviceAllNF64(const BoysDeviceTables& tables,
 /// \returns kSuccess once every order has been handed to \c sink;
 /// kTablesNotReady or kOrderOutOfRange otherwise, in which case \c sink is
 /// not called at all.
-template <DivisionForm kForm = kDefaultDivisionForm, typename Sink>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm, typename Sink>
 __device__ BoysDeviceStatus BoysDeviceEachOrderF64(const BoysDeviceTables& tables,
                                                    int order,
                                                    double x,
@@ -800,7 +800,7 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderF64(const BoysDeviceTables& table
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -817,7 +817,7 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderF64(const BoysDeviceTables& table
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
 /// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
 /// writing.
-template <DivisionForm kForm = kDefaultDivisionForm>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Uniform(const BoysDeviceTables& tables,
                                                           int order,
                                                           double x,
@@ -860,7 +860,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Uniform(const BoysDeviceTables
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -875,7 +875,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Uniform(const BoysDeviceTables
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
 /// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
 /// writing.
-template <DivisionForm kForm = kDefaultDivisionForm>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64UniformHorner(
     const BoysDeviceTables& tables,
     int order,
@@ -922,7 +922,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64UniformHorner(
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -932,7 +932,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64UniformHorner(
 /// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
 /// \param capacity   the caller's out capacity, which must be >= order + 1
 /// \return kSuccess, or a refusal naming the argument that was not servable
-template <DivisionForm kForm = kDefaultDivisionForm>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64UniformRat(const BoysDeviceTables& tables,
                                                              int order,
                                                              double x,
@@ -980,7 +980,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64UniformRat(const BoysDeviceTab
 ///
 /// \returns what BoysDeviceAllOrdersF64UniformRat returns, and its refusals with
 /// it: this name is that entry's and adds none of its own.
-template <DivisionForm kForm = kDefaultDivisionForm>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64UniformRatHorner(
     const BoysDeviceTables& tables,
     int order,
@@ -1014,7 +1014,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64UniformRatHorner(
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -1027,7 +1027,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64UniformRatHorner(
 ///
 /// \returns kSuccess after writing F_n(x); kTablesNotReady, kOrderOutOfRange or
 /// otherwise, without writing.
-template <DivisionForm kForm = kDefaultDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceSingleF32(const BoysDeviceTables& tables,
                                                 int order,
                                                 float x,
@@ -1064,7 +1064,7 @@ __device__ BoysDeviceStatus BoysDeviceSingleF32(const BoysDeviceTables& tables,
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -1079,7 +1079,7 @@ __device__ BoysDeviceStatus BoysDeviceSingleF32(const BoysDeviceTables& tables,
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
 /// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
 /// writing.
-template <DivisionForm kForm = kDefaultDivisionForm>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32(const BoysDeviceTables& tables,
                                                    int order,
                                                    float x,
@@ -1124,7 +1124,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32(const BoysDeviceTables& table
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -1138,7 +1138,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32(const BoysDeviceTables& table
 ///
 /// \returns kSuccess after writing kTopOrder + 1 values; kTablesNotReady
 /// otherwise.
-template <DivisionForm kForm = kDefaultDivisionForm, int kTopOrder>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm, int kTopOrder>
 __device__ BoysDeviceStatus BoysDeviceAllNF32(const BoysDeviceTables& tables,
                                               float x,
                                               float* out) {
@@ -1171,7 +1171,7 @@ __device__ BoysDeviceStatus BoysDeviceAllNF32(const BoysDeviceTables& tables,
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -1186,7 +1186,7 @@ __device__ BoysDeviceStatus BoysDeviceAllNF32(const BoysDeviceTables& tables,
 ///
 /// \returns kSuccess once every order has been handed to \c sink;
 /// kTablesNotReady or kOrderOutOfRange otherwise, with \c sink not called.
-template <DivisionForm kForm = kDefaultDivisionForm, typename Sink>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm, typename Sink>
 __device__ BoysDeviceStatus BoysDeviceEachOrderF32(const BoysDeviceTables& tables,
                                                    int order,
                                                    float x,
@@ -1232,7 +1232,7 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderF32(const BoysDeviceTables& table
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -1249,7 +1249,7 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderF32(const BoysDeviceTables& table
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
 /// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
 /// writing.
-template <DivisionForm kForm = kDefaultDivisionForm>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Uniform(const BoysDeviceTables& tables,
                                                           int order,
                                                           float x,
@@ -1290,7 +1290,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Uniform(const BoysDeviceTables
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -1305,7 +1305,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Uniform(const BoysDeviceTables
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
 /// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
 /// writing.
-template <DivisionForm kForm = kDefaultDivisionForm>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformHorner(
     const BoysDeviceTables& tables,
     int order,
@@ -1356,7 +1356,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformHorner(
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -1366,7 +1366,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformHorner(
 /// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
 /// \param capacity   the caller's out capacity, which must be >= order + 1
 /// \return kSuccess, or a refusal naming the argument that was not servable
-template <DivisionForm kForm = kDefaultDivisionForm>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformRat(const BoysDeviceTables& tables,
                                                              int order,
                                                              float x,
@@ -1415,7 +1415,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformRat(const BoysDeviceTab
 ///
 /// \returns what BoysDeviceAllOrdersF32UniformRat returns, and its refusals with
 /// it: this name is that entry's and adds none of its own.
-template <DivisionForm kForm = kDefaultDivisionForm>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformRatHorner(
     const BoysDeviceTables& tables,
     int order,
@@ -1438,7 +1438,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformRatHorner(
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -1452,7 +1452,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformRatHorner(
 ///
 /// \returns kSuccess after writing F_n(x); kTablesNotReady, kOrderOutOfRange or
 /// otherwise, without writing.
-template <DivisionForm kForm = kDefaultDivisionForm>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceSingleF16(const BoysDeviceTables& tables,
                                                 int order,
                                                 __half x,
@@ -1483,7 +1483,7 @@ __device__ BoysDeviceStatus BoysDeviceSingleF16(const BoysDeviceTables& tables,
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -1499,7 +1499,7 @@ __device__ BoysDeviceStatus BoysDeviceSingleF16(const BoysDeviceTables& tables,
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
 /// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
 /// writing.
-template <DivisionForm kForm = kDefaultDivisionForm>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF16(const BoysDeviceTables& tables,
                                                    int order,
                                                    __half x,
@@ -1540,7 +1540,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF16(const BoysDeviceTables& table
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -1554,7 +1554,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF16(const BoysDeviceTables& table
 ///
 /// \returns kSuccess after writing kTopOrder + 1 values; kTablesNotReady
 /// otherwise.
-template <DivisionForm kForm = kDefaultDivisionForm, int kTopOrder>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm, int kTopOrder>
 __device__ BoysDeviceStatus BoysDeviceAllNF16(const BoysDeviceTables& tables,
                                               __half x,
                                               __half* out) {
@@ -1590,7 +1590,7 @@ __device__ BoysDeviceStatus BoysDeviceAllNF16(const BoysDeviceTables& tables,
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -1603,7 +1603,7 @@ __device__ BoysDeviceStatus BoysDeviceAllNF16(const BoysDeviceTables& tables,
 ///
 /// \returns kSuccess once every order has been handed to \c sink;
 /// kTablesNotReady or kOrderOutOfRange otherwise, with \c sink not called.
-template <DivisionForm kForm = kDefaultDivisionForm, typename Sink>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm, typename Sink>
 __device__ BoysDeviceStatus BoysDeviceEachOrderF16(const BoysDeviceTables& tables,
                                                    int order,
                                                    __half x,
@@ -1656,7 +1656,7 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderF16(const BoysDeviceTables& table
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -1673,7 +1673,7 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderF16(const BoysDeviceTables& table
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
 /// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
 /// writing.
-template <DivisionForm kForm = kDefaultDivisionForm>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Narrow(const BoysDeviceTables& tables,
                                                          int order,
                                                          double x,
@@ -1710,7 +1710,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Narrow(const BoysDeviceTables&
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -1727,7 +1727,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Narrow(const BoysDeviceTables&
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
 /// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
 /// writing.
-template <DivisionForm kForm = kDefaultDivisionForm>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowMono(
     const BoysDeviceTables& tables,
     int order,
@@ -1764,7 +1764,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowMono(
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -1781,7 +1781,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowMono(
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
 /// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
 /// writing.
-template <DivisionForm kForm = kDefaultDivisionForm>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Rat(const BoysDeviceTables& tables,
                                                       int order,
                                                       double x,
@@ -1821,7 +1821,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Rat(const BoysDeviceTables& ta
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
 /// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
 /// writing.
-template <DivisionForm kForm = kDefaultDivisionForm>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64RatHorner(
     const BoysDeviceTables& tables,
     int order,
@@ -1844,7 +1844,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64RatHorner(
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -1861,7 +1861,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64RatHorner(
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
 /// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
 /// writing.
-template <DivisionForm kForm = kDefaultDivisionForm>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowRat(
     const BoysDeviceTables& tables,
     int order,
@@ -1902,7 +1902,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowRat(
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
 /// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
 /// writing.
-template <DivisionForm kForm = kDefaultDivisionForm>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowRatHorner(
     const BoysDeviceTables& tables,
     int order,
@@ -1926,7 +1926,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowRatHorner(
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -1943,7 +1943,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowRatHorner(
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
 /// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
 /// writing.
-template <DivisionForm kForm = kDefaultDivisionForm>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Narrow(const BoysDeviceTables& tables,
                                                          int order,
                                                          double x,
@@ -1987,7 +1987,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Narrow(const BoysDeviceTables&
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -2004,7 +2004,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Narrow(const BoysDeviceTables&
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
 /// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
 /// writing.
-template <DivisionForm kForm = kDefaultDivisionForm>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowMono(
     const BoysDeviceTables& tables,
     int order,
@@ -2050,7 +2050,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowMono(
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -2067,7 +2067,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowMono(
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
 /// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
 /// writing.
-template <DivisionForm kForm = kDefaultDivisionForm>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Rat(const BoysDeviceTables& tables,
                                                       int order,
                                                       double x,
@@ -2119,7 +2119,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Rat(const BoysDeviceTables& ta
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
 /// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
 /// writing.
-template <DivisionForm kForm = kDefaultDivisionForm>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32RatHorner(
     const BoysDeviceTables& tables,
     int order,
@@ -2143,7 +2143,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32RatHorner(
 ///         division, never in what is approximated, so a call is placed by the
 ///         lane's figure plus whatever the form adds to it — the axis states
 ///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDivisionForm, which is what a call site
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
 ///         that names no form is compiled as; the choice is a template argument
 ///         because it selects an arithmetic inside the caller's own kernel, so
 ///         the form not named is absent from it rather than merely untaken.
@@ -2160,7 +2160,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32RatHorner(
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
 /// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
 /// writing.
-template <DivisionForm kForm = kDefaultDivisionForm>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowRat(
     const BoysDeviceTables& tables,
     int order,
@@ -2215,7 +2215,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowRat(
 /// \returns kSuccess after writing order + 1 values; kTablesNotReady,
 /// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
 /// writing.
-template <DivisionForm kForm = kDefaultDivisionForm>
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowRatHorner(
     const BoysDeviceTables& tables,
     int order,

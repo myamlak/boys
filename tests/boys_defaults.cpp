@@ -285,12 +285,14 @@ struct Coverage {
 /// The figure a class's default carries, through the name the library
 /// publishes for it.
 ///
-/// A host class reads \c DefaultGuarantee<Precision, Shape>(), which is the
-/// accessor the seam documents for "the bound a class's default policy carries".
-/// A device class has no such name yet - the same accessor reads a host class and
-/// says so (include/boys/boys.hpp, the device lane's rows are owed work) - so it
-/// reads the axis-taking accessor with the axes its own row resolves to, which
-/// is the figure the same table answers.
+/// Both sides of the interface read the one accessor:
+/// \c DefaultGuarantee<Precision, Shape, Device>() is the name the seam documents
+/// for "the bound a class's default policy carries", it reads the row the table
+/// carries for the class the caller names, and \c kDevice defaults to
+/// \c Device::kHost where a caller does not spell one. A device class reads it
+/// too, rather than assembling the figure here from the axes its own row resolves
+/// to: an assembled reading is this file's answer rather than the library's, and
+/// what the report is about is the library's.
 ///
 /// \tparam kDevice the class's device
 /// \tparam kPrecision the class's lane
@@ -298,22 +300,38 @@ struct Coverage {
 /// \returns the figure and whether this build carries the combination
 template <Device kDevice, Precision kPrecision, Shape kShape>
 AccuracyFigure ClassGuarantee() noexcept {
-    if constexpr (kDevice == Device::kHost)
-    {
-        return DefaultGuarantee<kPrecision, kShape>();
-    }
-    else
-    {
-        using Policy = DefaultPolicy<kPrecision, kShape, kDevice>;
+    return DefaultGuarantee<kPrecision, kShape, kDevice>();
+}
 
-        return BoysAccuracyGuaranteed(kPrecision, Policy::kRoute, Policy::kScheme, Policy::kPack,
-                                      Policy::kGranularity, Policy::kDivision);
-    }
+/// The term the class's division form adds beside the lane's base.
+///
+/// \param lane the lane's contract row
+/// \param form the class's division form
+/// \returns the term beside the base, 0.0 where the lane's forms share one figure
+double FormTerm(const LaneContractInfo& lane, DivisionForm form) noexcept {
+    return form == DivisionForm::kPlainReciprocal ? lane.plainAdditive : 0.0;
+}
+
+/// The term the class's region-B exponential adds beside the lane's base.
+///
+/// The row states the member its additive term is under - the fp32-device row's
+/// 8e-8 is the fast member's own contribution, certified there and nowhere else
+/// (include/boys/boys.hpp, \c LaneContractInfo::additiveMember) - so a class
+/// naming the other member is not owed it and is answered without it. That is the
+/// accessor's own rule (src/boys.cpp, \c BoysAccuracyGuaranteed: \c memberTerm),
+/// written here so the report's terms are the accessor's terms.
+///
+/// \param lane the lane's contract row
+/// \param exp the class's region-B exponential
+/// \returns the term beside the base, 0.0 where the class names the other member
+double MemberTerm(const LaneContractInfo& lane, RegionBExp exp) noexcept {
+    return exp == lane.additiveMember ? lane.additive : 0.0;
 }
 
 /// The arithmetic the library states a figure by: the lane's multiplicand plus
 /// the term the named form adds beside it, times the multiplier of the one
-/// accuracy this library serves, plus the lane's additive term.
+/// accuracy this library serves, plus the term the named region-B exponential
+/// adds beside the base.
 ///
 /// It is the accessor's own expression (src/boys.cpp, \c BoysAccuracyGuaranteed),
 /// written out so the report can print the terms a reader recomputes the figure
@@ -321,11 +339,11 @@ AccuracyFigure ClassGuarantee() noexcept {
 ///
 /// \param lane the lane's contract row
 /// \param form the class's division form
+/// \param exp the class's region-B exponential
 /// \returns the figure the terms compose to
-double ComposedFigure(const LaneContractInfo& lane, DivisionForm form) noexcept {
-    const double formTerm = form == DivisionForm::kPlainReciprocal ? lane.plainAdditive : 0.0;
-
-    return kBoysFullAccuracyMultiplier * (lane.bound + formTerm) + lane.additive;
+double ComposedFigure(const LaneContractInfo& lane, DivisionForm form, RegionBExp exp) noexcept {
+    return kBoysFullAccuracyMultiplier * (lane.bound + FormTerm(lane, form)) +
+           MemberTerm(lane, exp);
 }
 
 /// One class's row: the class, the six axes the table resolves it to, and the
@@ -370,45 +388,43 @@ void PrintClass(Coverage& coverage) {
         return;
     }
 
-    const double formTerm =
-        Policy::kDivision == DivisionForm::kPlainReciprocal ? lane.plainAdditive : 0.0;
-
     std::printf("bound %.6g = (%.6g + %.6g) x m %.6g + %.6g\n",
                 figure.value,
                 lane.bound,
-                formTerm,
+                FormTerm(lane, Policy::kDivision),
                 kBoysFullAccuracyMultiplier,
-                lane.additive);
+                MemberTerm(lane, Policy::kRegionBExp));
 
-    if (ComposedFigure(lane, Policy::kDivision) != figure.value)
+    if (ComposedFigure(lane, Policy::kDivision, Policy::kRegionBExp) != figure.value)
     {
         std::printf("    the terms above do not compose to the figure the accessor returned: "
                     "composed %.17g, returned %.17g\n",
-                    ComposedFigure(lane, Policy::kDivision),
+                    ComposedFigure(lane, Policy::kDivision, Policy::kRegionBExp),
                     figure.value);
         ++coverage.compositionFailed;
     }
 
-    // The two named readings of one figure, held to each other where both exist:
-    // DefaultGuarantee is documented as the same figure, from the same table, as
-    // the axis-taking accessor asked with the policy's own axes.
-    if constexpr (kDevice == Device::kHost)
-    {
-        const AccuracyFigure direct = BoysAccuracyGuaranteed(kPrecision,
-                                                             Policy::kRoute,
-                                                             Policy::kScheme,
-                                                             Policy::kPack,
-                                                             Policy::kGranularity,
-                                                             Policy::kDivision);
+    // The two named readings of one figure, held to each other: DefaultGuarantee is
+    // documented as the same figure, from the same table, as the axis-taking
+    // accessor asked with the policy's own axes, the region-B exponential included
+    // (include/boys/boys.hpp, \c DefaultGuarantee), and the claim is over classes
+    // rather than over host classes - a device class reads the same accessor and
+    // is held to the same two readings.
+    const AccuracyFigure direct = BoysAccuracyGuaranteed(kPrecision,
+                                                         Policy::kRoute,
+                                                         Policy::kScheme,
+                                                         Policy::kPack,
+                                                         Policy::kGranularity,
+                                                         Policy::kDivision,
+                                                         Policy::kRegionBExp);
 
-        if (!direct.available || direct.value != figure.value)
-        {
-            std::printf("    DefaultGuarantee and the axes the class resolves to disagree: "
-                        "%.17g against %.17g\n",
-                        figure.value,
-                        direct.value);
-            ++coverage.accessorsDisagree;
-        }
+    if (!direct.available || direct.value != figure.value)
+    {
+        std::printf("    DefaultGuarantee and the axes the class resolves to disagree: "
+                    "%.17g against %.17g\n",
+                    figure.value,
+                    direct.value);
+        ++coverage.accessorsDisagree;
     }
 }
 
@@ -507,17 +523,23 @@ void PrintHeader() {
 #else
     std::printf("table            no row list (BOYS_BUILD_DEFAULT_ROWS is undefined): the table is "
                 "composed from the five\n"
-                "                 names below, one row per host class, every cell this build's own "
+                "                 names below, one row per class, every cell this build's own "
                 "choice\n");
 #endif
 
-    std::printf("seam's five      fit route %s | eval scheme %s | packing axis %s\n"
+    std::printf("seam's seven     the host lane's five:\n"
+                "                 fit route %s | eval scheme %s | packing axis %s\n"
                 "                 division form %s | fit granularity %s\n",
                 RouteName(BOYS_BUILD_DEFAULT_FIT_ROUTE),
                 EvalSchemeName(BOYS_BUILD_DEFAULT_EVAL_SCHEME),
                 PackAxisName(BOYS_BUILD_DEFAULT_PACK_AXIS),
                 DivisionFormName(BOYS_BUILD_DEFAULT_DIVISION_FORM),
                 GranularityName(BOYS_BUILD_DEFAULT_FIT_GRANULARITY));
+
+    std::printf("                 the device lane's own two:\n"
+                "                 division form %s | region-B exponential %s\n",
+                DivisionFormName(BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM),
+                RegionBExpName(BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP));
 }
 
 /// The lane rows the figures above are stated per: the multiplicand, and the
@@ -659,7 +681,7 @@ int main() {
 
     if (coverage.accessorsDisagree != 0)
     {
-        std::printf("  FAILED: %zu host classes where DefaultGuarantee and the class's own axes "
+        std::printf("  FAILED: %zu classes where DefaultGuarantee and the class's own axes "
                     "disagree\n",
                     coverage.accessorsDisagree);
         ++failures;
@@ -668,7 +690,7 @@ int main() {
     if (failures == 0)
     {
         std::printf("  all %zu carried classes resolved: every reference figure is available, the "
-                    "printed\n  multiplicity composes to it to the bit, and a host class's "
+                    "printed\n  multiplicity composes to it to the bit, and a class's "
                     "DefaultGuarantee and its own\n  axes are one figure. The axes are the table's "
                     "own specializations; nothing was evaluated\n  and nothing was timed\n",
                     carried);

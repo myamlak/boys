@@ -103,8 +103,10 @@ registry to consult. A call costs nothing beyond the arithmetic it asked for.
 library draws.** Precision and the shape of the question are the caller's, because they change what
 comes back: which arithmetic is used, and whether the call answers for one order or for a ladder of
 them, at one argument or across an array of arguments. The five structural axes are the library's to
-default. Each precision has one setting that a call naming nothing receives. A caller who cares
-about one of them may name it; a caller who does not is not asked to.
+default, and the device lane's own two — the division form its recurrence divides in and the
+region-B exponential its tables read — with them. Each precision has one setting that a call naming
+nothing receives. A caller who cares about one of them may name it; a caller who does not is not
+asked to.
 
 **Where the recommendation comes from: a measurement taken where you deploy.** Which combination is
 cheapest depends on the machine, on whether your compiler fuses a product-plus-add into one

@@ -3,9 +3,10 @@
 // no policy resolves to.
 //
 // The defect this file exists for is on the record. include/boys/
-// boys_build_defaults.hpp names five choices, a build may replace it
-// (BOYS_BUILD_DEFAULTS), and until the wiring three of the five - the packing
-// axis, the division form and the fit granularity - were expanded by nothing at
+// boys_build_defaults.hpp named five choices then - seven now, the host's five
+// and the device lane's two - a build may replace it (BOYS_BUILD_DEFAULTS), and
+// until the wiring three of the five - the packing axis, the division form and
+// the fit granularity - were expanded by nothing at
 // all: the library compiled hard-coded literals, a consumer who replaced the
 // header got two choices honoured and three silently ignored, and no test
 // noticed, because the fixture moved one choice and copied the library's own
@@ -30,7 +31,7 @@
 //
 // HOW THIS FAILS
 //
-// The five macros are expanded here as values, so each comparison below is
+// The seven macros are expanded here as values, so each comparison below is
 // between the value the seam in force names and the value this build's unnamed
 // policy carries:
 //
@@ -76,10 +77,12 @@
 //     the accuracy gate's business (tests/boys_accuracy_gate.cpp), not this
 //     file's.
 //   - the enumeration of what the seam offers is the text check's and not this
-//     file's: this file names the five choices an unnamed call resolves to, and a
-//     sixth macro added to the seam header is read by tools/check_seam_macros.py
-//     (which reads the names off that file) rather than by a list here that would
-//     go stale.
+//     file's: this file names the seven choices an unnamed call resolves to - the
+//     host lane's five and the device lane's two, which are held by the same
+//     comparisons because the device lane reads its own names and not the host's -
+//     and an eighth macro added to the seam header is read by
+//     tools/check_seam_macros.py (which reads the names off that file) rather than
+//     by a list here that would go stale.
 //
 // WHERE IT IS BUILT
 //
@@ -90,6 +93,11 @@
 #include "boys/backend.hpp"
 
 #include "boys/boys.hpp"
+
+// The device lane's region-B exponential is declared beside the device tables it
+// belongs to, and boys.hpp does not carry that header: the device seam name is read
+// where the tables are.
+#include "boys/boys_device_tables.hpp"
 
 #include <algorithm>
 #include <array>
@@ -114,22 +122,24 @@
 
 namespace {
 
-// The five seam macros expand to enumerator names written as the library's own
-// headers write them - FitRoute::kChebyshev and its four siblings - and the
+// The seven seam macros expand to enumerator names written as the library's own
+// headers write them - FitRoute::kChebyshev and its six siblings - and the
 // library's headers write them inside namespace boys. A translation unit that
 // reads the macros therefore has to be in that namespace or import it, which is
 // what this using-directive is for and the only reason it is here.
 using namespace boys;
 
-// The five values the seam in force names. Each macro expands to the enumerator a
-// replacement writes, so these are the build's choices as values and not as text:
-// the include path delivers the replacement in a replaced build, and the
-// committed header in every other one.
+// The seven values the seam in force names: the host lane's five and the device
+// lane's two. Each macro expands to the enumerator a replacement writes, so these
+// are the build's choices as values and not as text: the include path delivers the
+// replacement in a replaced build, and the committed header in every other one.
 constexpr boys::FitRoute kSeamFitRoute = BOYS_BUILD_DEFAULT_FIT_ROUTE;
 constexpr boys::EvalScheme kSeamEvalScheme = BOYS_BUILD_DEFAULT_EVAL_SCHEME;
 constexpr boys::PackAxis kSeamPackAxis = BOYS_BUILD_DEFAULT_PACK_AXIS;
 constexpr boys::DivisionForm kSeamDivisionForm = BOYS_BUILD_DEFAULT_DIVISION_FORM;
 constexpr boys::FitGranularity kSeamFitGranularity = BOYS_BUILD_DEFAULT_FIT_GRANULARITY;
+constexpr boys::DivisionForm kSeamDeviceDivisionForm = BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM;
+constexpr boys::RegionBExp kSeamDeviceRegionBExp = BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP;
 
 // The policy the seam's own five values compose: the point a class the table carries
 // no row for resolves to, and the type EvalPolicy<> names. It is NOT what every entry
@@ -139,13 +149,13 @@ constexpr boys::FitGranularity kSeamFitGranularity = BOYS_BUILD_DEFAULT_FIT_GRAN
 // is where that is read. Naming the values here is what makes the assertions below
 // claims about the build's header and not about this line.
 //
-// The region-B exponential is named as the library's own default rather than left to
-// EvalPolicy's template default, and the seam carries no macro for it: the five macros
-// above are the seam's, and this axis is one a ROW moves rather than one the five
-// compose. Spelling it keeps the type the same as EvalPolicy<>'s - the default is this
-// constant - and makes the axis a reader of this file can see, which is what the
-// comparisons below need to tell a class whose row moved the exponential from one whose
-// row spells the seam's five.
+// The region-B exponential is named as the host lane's own default rather than left to
+// EvalPolicy's template default, and no host macro of the seam names it: this axis is
+// one a host ROW moves, and the device lane's own macro above
+// (BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP) is what its half reads. Spelling it keeps the
+// type the same as EvalPolicy<>'s - the default is this constant - and makes the axis a
+// reader of this file can see, which is what the comparisons below need to tell a class
+// whose row moved the exponential from one whose row spells the seam's five.
 using SeamPolicy = boys::EvalPolicy<BOYS_BUILD_DEFAULT_FIT_ROUTE,
                                     BOYS_BUILD_DEFAULT_EVAL_SCHEME,
                                     boys::BoysBudget::kFloat,
@@ -177,10 +187,41 @@ static_assert(kSeamFitGranularity == boys::kDefaultFitGranularity,
               "the seam names a fit granularity the library does not read: "
               "boys::kDefaultFitGranularity is not BOYS_BUILD_DEFAULT_FIT_GRANULARITY");
 
+// The device lane's two names, held the same way and for the same reason. They are
+// separate from the five above because they are the device half of the seam: a
+// device class resolves its form and its region-B exponential through these and
+// never through the host's, so a build whose device half stopped reading its own
+// names would take the host's values in silence - the shape that sat here before
+// the device half existed, where an unnamed device call compiled the host macro's
+// form and a literal region-B.
+static_assert(kSeamDeviceDivisionForm == boys::kDefaultDeviceDivisionForm,
+              "the seam names a device division form the library does not read: "
+              "boys::kDefaultDeviceDivisionForm is not BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM");
+static_assert(kSeamDeviceRegionBExp == boys::kDefaultRegionBExp,
+              "the seam names a region-B exponential the library does not read: "
+              "boys::kDefaultRegionBExp is not BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP");
+static_assert(boys::kDefaultRegionBExp == boys::RegionBExp::kAccurate ||
+                  boys::kDefaultRegionBExp == boys::RegionBExp::kFast,
+              "boys::kDefaultRegionBExp is no enumerator of RegionBExp: the device lane's "
+              "region-B exponential is read from BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP, and the "
+              "two values it may name are the library routine and the reduced-argument "
+              "polynomial");
+
+// The value the committed header names, and only there: the device rows beside it are figures
+// taken at the library routine, so the shipped configuration's own device exponential is that
+// routine. A replacement states its own value and this pin is about what this repository
+// publishes, not about what a consumer's card measured.
+#if defined(BOYS_BUILD_DEFAULTS_SHIPPED)
+static_assert(boys::kDefaultRegionBExp == boys::RegionBExp::kAccurate,
+              "the committed header's device region-B exponential is not the one the device rows "
+              "beside it were measured at: boys/boys_build_defaults.hpp states RegionBExp::kAccurate");
+#endif
+
 // --- Link two: the policy the five constants compose --------------------------
-// EvalPolicy's template defaults are the five constants, so EvalPolicy<> is the
-// combination the seam names and the point a class the table carries no row for
-// resolves to. A default that stopped reading the constants would keep every
+// EvalPolicy's template defaults are the five constants, so EvalPolicy<> is the host
+// combination the seam names; a device class composes the device lane's own two names
+// beside four of these rather than this type (include/boys/boys_build_defaults.hpp).
+// A default that stopped reading the constants would keep every
 // constant correct and answer a caller from another policy - the same silent
 // substitution one step further down. What an entry that names no policy resolves
 // to is its class's row rather than this name, which is the last test below's
@@ -233,6 +274,49 @@ static_assert(boys::DefaultPolicyBf16::kRoute == kSeamFitRoute &&
                   boys::DefaultPolicyBf16::kDivision == kSeamDivisionForm,
               "DefaultPolicyBf16 does not carry the seam's five values");
 
+// --- Link four: the nine device classes, asked for by name --------------------
+//
+// A class is a (device, precision, shape) triple, and the device half of the table
+// is nine of them: the three device lanes - the precisions a device entry is
+// built at, which are lanes of Precision and not formats of one - by the three
+// questions a device entry answers. Each of the nine is asked for here the way a
+// caller asks: by the class's own default policy, which is the name an unnamed
+// call resolves through (include/boys/boys.hpp, DefaultPolicyFor).
+//
+// THE ASK IS THE CHECK. The seam's rule for a class with no row is a static_assert
+// in DefaultPolicyFor, and an assertion fires only where something asks for the
+// class: a device row dropped from the list in force leaves one of the nine names
+// below unanswered and this file stops compiling, with the seam's own message -
+// "this build's default-policy table carries no row for this class". A list that
+// stopped carrying one of the nine is what this link exists for, because a table
+// whose device half went missing reads complete from the file it is written in.
+//
+// The two shapes the host lanes carry these beside - kFixedN and kAllNAtOrders -
+// are not device classes and are asked for by no name here: the device option
+// probe asks three questions, so no device class is keyed by the other two.
+//
+// In the committed configuration each of these resolves to the row the seam
+// writes for that class, which is the row this file's Link four pins below; in a
+// replacement the row is the replacement's, and the ask is the same ask.
+using DeviceFp64Single = boys::DefaultPolicy<boys::Precision::kFp64Device, boys::Shape::kSingle,
+                                              boys::Device::kDevice>;
+using DeviceFp64Orders = boys::DefaultPolicy<boys::Precision::kFp64Device, boys::Shape::kAllOrders,
+                                             boys::Device::kDevice>;
+using DeviceFp64AllN = boys::DefaultPolicy<boys::Precision::kFp64Device, boys::Shape::kAllN,
+                                           boys::Device::kDevice>;
+using DeviceFp32Single = boys::DefaultPolicy<boys::Precision::kFp32Device, boys::Shape::kSingle,
+                                             boys::Device::kDevice>;
+using DeviceFp32Orders = boys::DefaultPolicy<boys::Precision::kFp32Device, boys::Shape::kAllOrders,
+                                             boys::Device::kDevice>;
+using DeviceFp32AllN = boys::DefaultPolicy<boys::Precision::kFp32Device, boys::Shape::kAllN,
+                                           boys::Device::kDevice>;
+using DeviceFp16Single = boys::DefaultPolicy<boys::Precision::kFp16Device, boys::Shape::kSingle,
+                                             boys::Device::kDevice>;
+using DeviceFp16Orders = boys::DefaultPolicy<boys::Precision::kFp16Device, boys::Shape::kAllOrders,
+                                             boys::Device::kDevice>;
+using DeviceFp16AllN = boys::DefaultPolicy<boys::Precision::kFp16Device, boys::Shape::kAllN,
+                                           boys::Device::kDevice>;
+
 // Which of the two the file in force is: the committed header defines
 // BOYS_BUILD_DEFAULTS_SHIPPED, a replacement does not, and the CMake option puts
 // BOYS_BUILD_DEFAULTS_REPLACED on the command line of every unit of a build that
@@ -258,6 +342,38 @@ const char* RouteName(boys::FitRoute route) {
     }
 
     return "unknown";
+}
+
+// The budget cell, as a report names it. The library publishes no name function for
+// BoysBudget - the enumeration has two members and the cell a row carries is the lane's
+// own (detail::LaneFallbackBudget) - so the two names here are this file's reading of a
+// cell the report prints rather than a second answer to what a lane resolves to.
+const char* BudgetName(boys::BoysBudget budget) {
+    switch (budget) {
+    case boys::BoysBudget::kFloat:
+        return "float";
+    case boys::BoysBudget::kFp16:
+        return "half";
+    }
+
+    return "unknown";
+}
+
+// One device class of the nine, as a report prints it: the class, and the row the name it was
+// asked for by resolved to. The policy is a template parameter, so the row printed is the one
+// the compiler selected for the class - a class this build carries no row for has no policy to
+// pass here, and the ask is what refuses it rather than this printer.
+template <typename Policy>
+void PrintDeviceClass(const char* lane, const char* shape) {
+    std::printf("  %-14s %-11s %-8s %-14s %-12s %-14s %-12s %-18s\n",
+                lane,
+                shape,
+                BudgetName(Policy::kBudget),
+                RouteName(Policy::kRoute),
+                boys::EvalSchemeName(Policy::kScheme),
+                boys::PackAxisName(Policy::kPack),
+                boys::GranularityName(Policy::kGranularity),
+                boys::DivisionFormName(Policy::kDivision));
 }
 
 std::string Cells(bool same, const char* seam, const char* constant, const char* resolved) {
@@ -598,6 +714,34 @@ TEST(BuildDefaultsTest, EveryEntryResolvesThroughItsOwnClasssRow) {
                                      "resolve to its own class's default policy";
     EXPECT_EQ(allNF32Moved, 0u) << "the float all-n entry that names no policy does not resolve to "
                                    "its own class's default policy";
+}
+
+// The device half printed: one row per class, holding the row that class resolves to. It is the
+// run-time reading of Link four - the nine names are instantiated above whether or not this test
+// is run, so what the print adds is which row each name resolved to rather than whether it
+// resolved at all: a class the table carries no row for stops the build at Link four, and a class
+// whose row moved prints the row it moved to.
+TEST(BuildDefaultsTest, TheDeviceClassesPrintTheRowEachResolvesTo) {
+    std::printf("boys: the device half of the table, one row per class, as this build resolves it\n");
+    std::printf("boys: %-14s %-11s %-8s %-14s %-12s %-14s %-12s %-18s\n",
+                "lane",
+                "shape",
+                "budget",
+                "fit route",
+                "scheme",
+                "packing axis",
+                "granularity",
+                "division form");
+
+    PrintDeviceClass<DeviceFp64Single>("fp64 device", "single");
+    PrintDeviceClass<DeviceFp64Orders>("fp64 device", "all-orders");
+    PrintDeviceClass<DeviceFp64AllN>("fp64 device", "all-n");
+    PrintDeviceClass<DeviceFp32Single>("fp32 device", "single");
+    PrintDeviceClass<DeviceFp32Orders>("fp32 device", "all-orders");
+    PrintDeviceClass<DeviceFp32AllN>("fp32 device", "all-n");
+    PrintDeviceClass<DeviceFp16Single>("fp16 device", "single");
+    PrintDeviceClass<DeviceFp16Orders>("fp16 device", "all-orders");
+    PrintDeviceClass<DeviceFp16AllN>("fp16 device", "all-n");
 }
 
 namespace {

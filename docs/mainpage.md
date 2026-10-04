@@ -37,8 +37,13 @@ Six words carry the design. Each means something narrower here than it means els
 All CPU entries are `noexcept` and total. Their preconditions are n in [0, 32], x >= 0, and output
 spans of the documented size. The CUDA lane reports through \ref boys::BoysStatus instead.
 
-Every entry is templated on one policy, the five structural axes a call site names once and the
-compiler resolves where it is written (\ref boys::EvalPolicy). Every entry evaluates at the one
+Every CPU entry is templated on one policy, the five structural axes a call site names once and the
+compiler resolves where it is written (\ref boys::EvalPolicy). The CUDA lane's entries carry no
+`EvalPolicy`: `BoysCuda::SingleF32` takes the region-B exponential as a run-time argument, and the
+device-callable entries of `boys/boys_cuda_device.hpp` take the division form their recurrence
+divides in and the exponential their tables read as template parameters, each defaulting to the
+lane's own member (\ref boys::kDefaultDeviceDivisionForm, \ref boys::kDefaultDeviceRegionBExp).
+Every entry evaluates at the one
 accuracy this library carries, the full static accuracy of the certified lane. The native half lane
 is the exception: it has no stored fit, and no region but region C. See the accuracy contract below.
 

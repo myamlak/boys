@@ -250,7 +250,7 @@ TEST(BackendTest, ThePackedPairAppearsExactlyWithTheVectorTier) {
 } // namespace
 
 // ---------------------------------------------------------------------------
-// The selection axes on the policy, and the five names the build fixes
+// The selection axes on the policy, and the names the build fixes
 // ---------------------------------------------------------------------------
 // Every axis the entries select is one field of EvalPolicy with its own default. The pins
 // say which member each default names, so a move of one is a decision this test states
@@ -319,17 +319,30 @@ constexpr bool kCoarsestFiveInForce =
 // having chosen nothing. That is the same shape as the row the guard's own row list could not
 // name while the row format carried six cells.
 //
+// THE EXPONENTIAL IS ONE MEMBER PER HALF, and the comparison is against the member each half's
+// shipped tables read: kFast for a host class, kAccurate for a device class - the arithmetic
+// every figure published for that lane was measured at, which the committed seam names in
+// BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP. A device row compared against this build's own
+// kDefaultDeviceRegionBExp instead would answer "the shipped combination" for a row a
+// replacement had moved that name to, which is the reading the paragraph above refuses, and a
+// device row compared against the host's member - one name for both halves - answers "not the
+// shipped combination" for every device class there is, which is a guard that cannot refuse a
+// device class at all. The division cell needs no such split: the two halves' shipped forms are
+// one member.
+//
 // Read through detail::DefaultPolicyRow rather than through DefaultPolicy, because a class
 // the table carries no row for is not a class this question is about: DefaultPolicyFor
 // asserts on it - that absence is the seam's own build error - and a replacement is free to
-// carry fewer classes than the shipped table composes. The committed list carries the ten
-// classes the host's entries reach; the five-composed table carries fifteen; this guard reads
-// all fifteen whichever is in force. A class this table does not name is no evidence that the
-// replacement chose nothing, so it answers true here.
-template <boys::Precision kLane, boys::Shape kShape>
+// carry fewer classes than the shipped table composes. The shipped table carries
+// twenty-four classes in both of its shapes: the committed list's fifteen host rows beside
+// the device half's nine, and the same fifteen and nine that the five names compose into.
+// This guard names all twenty-four and reads them whichever is in force; one a replacement
+// does not carry answers true below. A class this table does not name is no evidence that
+// the replacement chose nothing, so it answers true here.
+template <boys::Precision kLane, boys::Shape kShape, boys::Device kDevice = boys::Device::kHost>
 constexpr bool ClassIsTheShippedCombination() noexcept
 {
-    using Row = boys::detail::DefaultPolicyRow<boys::Device::kHost, kLane, kShape>;
+    using Row = boys::detail::DefaultPolicyRow<kDevice, kLane, kShape>;
 
     if constexpr (!Row::kCarried)
     {
@@ -339,13 +352,17 @@ constexpr bool ClassIsTheShippedCombination() noexcept
     {
         using Policy = typename Row::Type;
 
+        constexpr boys::RegionBExp kShippedRegionBExp =
+            kDevice == boys::Device::kHost ? boys::kDefaultHostRegionBExp
+                                           : boys::RegionBExp::kAccurate;
+
         return Policy::kRoute == boys::FitRoute::kChebyshev &&
                Policy::kScheme == boys::EvalScheme::kHorner &&
                Policy::kBudget == boys::detail::LaneFallbackBudget<kLane>() &&
                Policy::kPack == boys::PackAxis::kArguments &&
                Policy::kGranularity == boys::FitGranularity::kNarrow &&
                Policy::kDivision == boys::DivisionForm::kRefinedReciprocal &&
-               Policy::kRegionBExp == boys::kDefaultHostRegionBExp;
+               Policy::kRegionBExp == kShippedRegionBExp;
     }
 }
 
@@ -364,12 +381,24 @@ constexpr bool kCoarsestClassTableInForce =
     ClassIsTheShippedCombination<boys::Precision::kFp16, boys::Shape::kFixedN>() &&
     ClassIsTheShippedCombination<boys::Precision::kFp16, boys::Shape::kAllN>() &&
     ClassIsTheShippedCombination<boys::Precision::kFp16, boys::Shape::kAllNAtOrders>() &&
-    ClassIsTheShippedCombination<boys::Precision::kFp16, boys::Shape::kAllOrders>();
+    ClassIsTheShippedCombination<boys::Precision::kFp16, boys::Shape::kAllOrders>() &&
+    // The device half, the same nine classes the seam's own list carries: the three device
+    // lanes by the three questions a device entry answers. A replacement that left these at
+    // the shipped combination has chosen nothing for them, which is what this reads.
+    ClassIsTheShippedCombination<boys::Precision::kFp64Device, boys::Shape::kSingle, boys::Device::kDevice>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp64Device, boys::Shape::kAllOrders, boys::Device::kDevice>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp64Device, boys::Shape::kAllN, boys::Device::kDevice>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp32Device, boys::Shape::kSingle, boys::Device::kDevice>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp32Device, boys::Shape::kAllOrders, boys::Device::kDevice>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp32Device, boys::Shape::kAllN, boys::Device::kDevice>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp16Device, boys::Shape::kSingle, boys::Device::kDevice>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp16Device, boys::Shape::kAllOrders, boys::Device::kDevice>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp16Device, boys::Shape::kAllN, boys::Device::kDevice>();
 
 static_assert(!(kCoarsestFiveInForce && kCoarsestClassTableInForce),
               "the defaults header in force names all five shipped values and answers every class "
               "with the shipped combination, so this build has chosen nothing: point "
-              "BOYS_BUILD_DEFAULTS at a header that moves at least one of the five or that carries "
+              "BOYS_BUILD_DEFAULTS at a header that moves at least one of the seven or that carries "
               "a row moving a class, or unset it to build the shipped configuration");
 
 #if defined(BOYS_BUILD_DEFAULTS_TEST_FIXTURE)

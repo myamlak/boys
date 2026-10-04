@@ -27,17 +27,28 @@ namespace boys {
 /// ones, and the f32 single entry BoysDeviceSingleF32 (a template argument) and
 /// the batch entry BoysCuda::SingleF32 (a run-time argument) both name them.
 ///
-/// This constant is the device lane's own. It is \c kAccurate rather than the
-/// host's \c kFast because this lane's published figures were measured at the
-/// library routine - which is also the arithmetic the f32 batch bodies run, the
-/// same bits for the same (n, x) outside region A - so naming nothing keeps the
-/// values the documents state.
+/// This constant is the device lane's own, and it is the lane's own **name in
+/// the build's seam** - \c BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP, in
+/// `boys/boys_build_defaults.hpp` - because it is not the host's value: it is
+/// \c kAccurate rather than the host's \c kFast because this lane's published
+/// figures were measured at the library routine - which is also the arithmetic
+/// the f32 batch bodies run, the same bits for the same (n, x) outside region A
+/// - so naming nothing keeps the values the documents state. One name for both
+/// targets could only be wrong on one of them, so the build that measured its
+/// own card names this lane's member here, in the seam file, and not through the
+/// host's. The seam name itself is read once, in `boys/accuracy.hpp`,
+/// as \c boys::kDefaultDeviceRegionBExp: this name is the same constant, spelled
+/// here because the tables it is read with are here, and the policy table's device
+/// rows name the other spelling where this header is not carried.
 ///
-/// The device lane's other default is the accuracy multiplier
-/// \c kBoysFullAccuracyMultiplier, the same name the CPU entries default to.
+/// The device lane's other defaults are the accuracy multiplier
+/// \c kBoysFullAccuracyMultiplier, the same name the CPU entries default to, and
+/// the division form \c boys::kDefaultDeviceDivisionForm, which is declared
+/// beside the host's own in `boys/accuracy.hpp` because the policy table's
+/// device rows name it in `boys/boys.hpp`.
 ///
 /// \ingroup boys
-inline constexpr RegionBExp kDefaultRegionBExp = RegionBExp::kAccurate;
+inline constexpr RegionBExp kDefaultRegionBExp = kDefaultDeviceRegionBExp;
 
 /// The six degree tables an entry can read, in the order the handle's relaxed
 /// degree arrays hold them.

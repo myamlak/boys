@@ -34,10 +34,17 @@
 // the other), so a class this list omits has no default policy at all and fails to compile
 // where it is asked for. Every row names the region-B exponential as its last cell, which is
 // a cell of the format and not an extra: a row that leaves one out is a row that does not
-// compile (include/boys/boys.hpp, the row macro), so the ten rows below are ten cells each
-// like every other row this format carries. The member is `RegionBExp::kFast`, the host's own
-// default (`kDefaultHostRegionBExp`), so each row here resolves to the policy it resolved to
-// before the cell existed.
+// compile (include/boys/boys.hpp, the row macro), so every row below is ten cells each
+// like every other row this format carries. The host rows name `RegionBExp::kFast`, the host's
+// own default (`kDefaultHostRegionBExp`), so each of them resolves to the policy it resolved
+// to before the cell existed.
+//
+// The nine below them are the device half: a class is a (device, precision, shape) triple,
+// so the host's classes are half the table and the device's three lanes by the three
+// questions a device entry answers are the other half. They are the same five at each device
+// lane's budget, beside the device lane's own division form and its own region-B member, and
+// they are written out for the same reason the host's rows are: the list this file carries is
+// the whole table for this build, and the device classes are asked for by name like any other.
 #define BOYS_BUILD_DEFAULTS_TEST_ROWS 1
 
 #define BOYS_BUILD_DEFAULT_FIT_ROUTE FitRoute::kChebyshev
@@ -78,4 +85,40 @@
       DivisionForm::kRefinedReciprocal, RegionBExp::kFast)\
     X(kHost, kFp16, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kFast)
+      DivisionForm::kRefinedReciprocal, RegionBExp::kFast)\
+    /* the device half: the five above at each device lane's budget, beside the device lane's
+       own division form and its own region-B member, one row per class */\
+    X(kDevice, kFp64Device, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner,\
+      BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+    X(kDevice, kFp64Device, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner,\
+      BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+    X(kDevice, kFp64Device, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner,\
+      BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+    X(kDevice, kFp32Device, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner,\
+      BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+    X(kDevice, kFp32Device, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner,\
+      BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+    X(kDevice, kFp32Device, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner,\
+      BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+    X(kDevice, kFp16Device, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner,\
+      BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+    X(kDevice, kFp16Device, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner,\
+      BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+    X(kDevice, kFp16Device, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner,\
+      BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)
+
+// Shipped: the device lane's own two names, which this fixture does not move. A device class
+// resolves its form and its region-B exponential to these and never to the host's five above.
+// The device rows above name both as cells, one row per class, so these two are the fallback
+// for a device class this list carries no row for and not the rows themselves.
+#define BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM DivisionForm::kRefinedReciprocal
+#define BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP RegionBExp::kAccurate

@@ -91,6 +91,13 @@
 // narrow one, and the entries' own fallbacks name it.
 #define BOYS_BUILD_DEFAULT_FIT_GRANULARITY FitGranularity::kCoarsest
 
+// Shipped: the device lane's own two names, which this fixture does not move. A device class
+// resolves its form and its region-B exponential to these and never to the host's five above,
+// so the three axes moved above are the values this build resolves differently and the device
+// half of it compiles what the committed file names.
+#define BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM DivisionForm::kRefinedReciprocal
+#define BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP RegionBExp::kAccurate
+
 // The moves above are the compile-time half of the seam check, and this file's
 // own configure is the only reading there is for them: the `Build defaults`
 // step in `.github/workflows/ci.yml` points BOYS_BUILD_DEFAULTS at this file on

@@ -694,13 +694,13 @@ struct DeviceEntryAxes {
 /// rational route's pairs — the two names are two rows and each states the name it was
 /// reached by, which is the one thing about such a row its kernel does not decide.
 ///
-/// **The division is the build's default form and not a per-entry property.** No
+/// **The division is the device lane's default form and not a per-entry property.** No
 /// entry of this space names a form: the bodies every kernel of them hands its lane
 /// take the form as a compile-time parameter, and the kernels instantiate it from this
-/// switch, so what an entry runs is \c kDefaultDivisionForm —
-/// \c BOYS_BUILD_DEFAULT_DIVISION_FORM, the same value the device probe's seam writes
-/// into that file's device half (src/boys_cuda_probe.cpp), which is what keeps the
-/// build's one statement of the default and the arithmetic its entries run from coming
+/// switch, so what an entry runs is \c kDefaultDeviceDivisionForm —
+/// \c BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM, the device lane's own name in the
+/// build's seam (boys/boys_build_defaults.hpp), which is what keeps the build's one
+/// statement of the device's default and the arithmetic its entries run from coming
 /// apart. An entry that ran another form would be a row of the option probe's cross,
 /// where the form it ran is the form the run named rather than this field.
 ///
@@ -736,7 +736,7 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kDeviceSingleF32Fast:
         case DeviceEntry::kDeviceSingleF16:
             return {FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, DevicePacking::kNotApplicable,
-                    kDefaultDivisionForm};
+                    kDefaultDeviceDivisionForm};
 
         // The ladder read on the Chebyshev pieces: the coarsest partition's ladders on
         // both lanes and in both formats, the all-N and each-order shapes, the
@@ -768,7 +768,7 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         // BoysCuda::AllOrdersF16Narrow hands its lane.
         case DeviceEntry::kAllOrdersF16Narrow:
             return {FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, DevicePacking::kLadder,
-                    kDefaultDivisionForm};
+                    kDefaultDeviceDivisionForm};
 
         // The same pieces and the same summation read the other way: each order's own
         // fit, through DeviceOrdersBody and DeviceOrdersBody32 over a Chebyshev lane.
@@ -781,7 +781,7 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kAllOrdersF16Orders:
         case DeviceEntry::kAllOrdersF16NarrowOrders:
             return {FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, DevicePacking::kPerOrder,
-                    kDefaultDivisionForm};
+                    kDefaultDeviceDivisionForm};
 
         // The monomial form of the same fits: Lane64MonoFull, Lane64MonoEff, the narrow
         // partition's monomial lanes and their float lane counterparts state kMonomial,
@@ -795,7 +795,7 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         // The half lane's monomial row of the same pieces, read by the same bodies.
         case DeviceEntry::kAllOrdersF16NarrowMono:
             return {FitRoute::kChebyshev, EvalScheme::kHorner, DevicePacking::kLadder,
-                    kDefaultDivisionForm};
+                    kDefaultDeviceDivisionForm};
 
         case DeviceEntry::kAllOrdersF64OrdersMono:
         case DeviceEntry::kAllOrdersF64NarrowOrdersMono:
@@ -803,7 +803,7 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         // The half lane's row of it.
         case DeviceEntry::kAllOrdersF16NarrowOrdersMono:
             return {FitRoute::kChebyshev, EvalScheme::kHorner, DevicePacking::kPerOrder,
-                    kDefaultDivisionForm};
+                    kDefaultDeviceDivisionForm};
 
         // The uniform grid, whose every block is one order's own fit at the interval's
         // own degree: every order is read from its own block and none is built from
@@ -821,7 +821,7 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kAllOrdersF16Uniform:
         case DeviceEntry::kAllOrdersF16OrdersUniform:
             return {FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, DevicePacking::kPerOrder,
-                    kDefaultDivisionForm};
+                    kDefaultDeviceDivisionForm};
 
         case DeviceEntry::kAllOrdersF64UniformHorner:
         case DeviceEntry::kAllOrdersF64OrdersUniformHorner:
@@ -833,7 +833,7 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kAllOrdersF16UniformHorner:
         case DeviceEntry::kAllOrdersF16OrdersUniformHorner:
             return {FitRoute::kChebyshev, EvalScheme::kHorner, DevicePacking::kPerOrder,
-                    kDefaultDivisionForm};
+                    kDefaultDeviceDivisionForm};
 
         // The fit route: the same partitions, region structure and shapes with a piece
         // stored as a numerator and a denominator, which is a family of its own and the
@@ -855,7 +855,7 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kAllOrdersF16Rat:
         case DeviceEntry::kAllOrdersF16NarrowRat:
             return {FitRoute::kRationalMinimax, EvalScheme::kSplitClenshaw, DevicePacking::kLadder,
-                    kDefaultDivisionForm};
+                    kDefaultDeviceDivisionForm};
 
         case DeviceEntry::kAllOrdersF64RatHorner:
         case DeviceEntry::kAllOrdersF64NarrowRatHorner:
@@ -869,7 +869,7 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kAllOrdersF16RatHorner:
         case DeviceEntry::kAllOrdersF16NarrowRatHorner:
             return {FitRoute::kRationalMinimax, EvalScheme::kHorner, DevicePacking::kLadder,
-                    kDefaultDivisionForm};
+                    kDefaultDeviceDivisionForm};
 
         // The route's pieces on its orders reading: each order's own piece at A = 1,
         // through the same bodies the Chebyshev rows of that axis use
@@ -882,7 +882,7 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kAllOrdersF16OrdersRat:
         case DeviceEntry::kAllOrdersF16NarrowOrdersRat:
             return {FitRoute::kRationalMinimax, EvalScheme::kSplitClenshaw, DevicePacking::kPerOrder,
-                    kDefaultDivisionForm};
+                    kDefaultDeviceDivisionForm};
 
         case DeviceEntry::kAllOrdersF64OrdersRatHorner:
         case DeviceEntry::kAllOrdersF64NarrowOrdersRatHorner:
@@ -892,7 +892,7 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kAllOrdersF16OrdersRatHorner:
         case DeviceEntry::kAllOrdersF16NarrowOrdersRatHorner:
             return {FitRoute::kRationalMinimax, EvalScheme::kHorner, DevicePacking::kPerOrder,
-                    kDefaultDivisionForm};
+                    kDefaultDeviceDivisionForm};
 
         // The grid on the rational route: one pair per interval at the interval's own
         // stored count, read by the two Horner sums every pair of this family is read by
@@ -908,7 +908,7 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kAllOrdersF16UniformRat:
         case DeviceEntry::kAllOrdersF16OrdersUniformRat:
             return {FitRoute::kRationalMinimax, EvalScheme::kSplitClenshaw, DevicePacking::kPerOrder,
-                    kDefaultDivisionForm};
+                    kDefaultDeviceDivisionForm};
 
         case DeviceEntry::kAllOrdersF64UniformRatHorner:
         case DeviceEntry::kAllOrdersF64OrdersUniformRatHorner:
@@ -920,7 +920,7 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kAllOrdersF16UniformRatHorner:
         case DeviceEntry::kAllOrdersF16OrdersUniformRatHorner:
             return {FitRoute::kRationalMinimax, EvalScheme::kHorner, DevicePacking::kPerOrder,
-                    kDefaultDivisionForm};
+                    kDefaultDeviceDivisionForm};
 
         // The sentinel one past the last row this report defines, and not a row a call
         // can name. It is named rather than left to a default arm for the reason

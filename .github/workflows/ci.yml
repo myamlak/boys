@@ -726,8 +726,9 @@ jobs:
         if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Debug' }}
         run: |
           python3 tools/check_example_transcripts.py --check --examples-dir build
-      # The build-defaults seam offers a consumer five choices, and until this
-      # step nothing checked that the library reads them. Three of the five were
+      # The build-defaults seam offered a consumer five choices when this step was
+      # added - it offers seven now, the host's five and the device lane's two - and
+      # until this step nothing checked that the library reads them. Three of the five were
       # read by nothing at all - the packing axis, the division form and the fit
       # granularity compiled hard-coded literals - so a consumer who replaced
       # the seam header got two choices honoured and three silently ignored, and

@@ -2225,9 +2225,10 @@ TEST(ProbeTest, TheEmittedSeamIsAReplacementForTheSeamItRead) {
     // This build's seam carries a class list, so a run of it has a class to write a row for.
     ASSERT_FALSE(text.empty()) << "a run that measured a class writes a seam";
 
-    // The five names a replacement must carry, the list macro, and the marker it must not:
-    // the committed file defines BOYS_BUILD_DEFAULTS_SHIPPED and a replacement does not, so a
-    // build pointed at this file says which of the two it read.
+    // The seven names a replacement must carry - the host's five and the device lane's two -
+    // the list macro, and the marker it must not: the committed file defines
+    // BOYS_BUILD_DEFAULTS_SHIPPED and a replacement does not, so a build pointed at this file
+    // says which of the two it read.
     EXPECT_NE(text.find("#pragma once"), std::string::npos);
     EXPECT_NE(text.find("#define BOYS_BUILD_DEFAULT_FIT_ROUTE FitRoute::"), std::string::npos);
     EXPECT_NE(text.find("#define BOYS_BUILD_DEFAULT_EVAL_SCHEME EvalScheme::"), std::string::npos);
@@ -2238,21 +2239,41 @@ TEST(ProbeTest, TheEmittedSeamIsAReplacementForTheSeamItRead) {
               std::string::npos);
     EXPECT_NE(text.find("#define BOYS_BUILD_DEFAULT_ROWS(X)\\\n"), std::string::npos);
 
+    // The device lane's own two names travel with the five: a replacement is the whole seam and
+    // not the host half of one, so a file that left them out would leave a build resolving an
+    // unnamed device call through whatever the file said about the host - and `boys/accuracy.hpp`
+    // reads both names, so it would not compile at all. The five above are the file's own
+    // choices; these two are the device lane's, read from the seam this run replaced.
+    EXPECT_NE(text.find("#define BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM DivisionForm::"),
+              std::string::npos);
+    EXPECT_NE(text.find("#define BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP RegionBExp::"),
+              std::string::npos);
+
     // The marker the committed file defines and a replacement must not: the file may name it
     // in the sentence that says which of the two it is, and must not define it.
     EXPECT_EQ(text.find("#define BOYS_BUILD_DEFAULTS_SHIPPED"), std::string::npos);
 
-    // The classes the seam carries, read from the seam's own list.
-#define BOYS_PROBE_TEST_SEAM_CLASS(device, precision, shape, ...) {#precision, #shape},
-    const std::pair<const char*, const char*> classes[] = {
-        BOYS_BUILD_DEFAULT_ROWS(BOYS_PROBE_TEST_SEAM_CLASS)};
+    // The classes the seam carries, read from the seam's own list - the device cell included,
+    // because a class is a (device, precision, shape) triple and the row the writer emits has to
+    // be the row for the class it read. A host cell written for a device class is a row for a
+    // different class, and a table whose only row for kFp64Device all-orders is keyed kHost is
+    // exactly the shape a list that grew a device half has to be checked against: the classes
+    // here are read from the seam, so a half the seam carries is a half this reads.
+    struct SeamClassKey {
+        const char* device;
+        const char* precision;
+        const char* shape;
+    };
+#define BOYS_PROBE_TEST_SEAM_CLASS(device, precision, shape, ...) {#device, #precision, #shape},
+    const SeamClassKey classes[] = {BOYS_BUILD_DEFAULT_ROWS(BOYS_PROBE_TEST_SEAM_CLASS)};
 #undef BOYS_PROBE_TEST_SEAM_CLASS
 
     ASSERT_GT(std::size(classes), 0u)
         << "the seam in force carries a class list with no class in it";
 
-    for (const auto& [precision, shape] : classes) {
-        const std::string row = std::string("X(kHost, ") + precision + ", " + shape + ", ";
+    for (const SeamClassKey& klass : classes) {
+        const std::string row =
+            std::string("X(") + klass.device + ", " + klass.precision + ", " + klass.shape + ", ";
 
         EXPECT_NE(text.find(row), std::string::npos)
             << row << " is a class the seam carries and the emitted file does not";
@@ -2265,9 +2286,10 @@ TEST(ProbeTest, TheEmittedSeamIsAReplacementForTheSeamItRead) {
     EXPECT_NE(text.find("/* a choice, not a measurement:"), std::string::npos);
 #else
     // This build's seam carries no class list, which is a shape a replacement is allowed to
-    // have: the five names are then the whole of it, and include/boys/boys.hpp writes the table
-    // those five make - one row per host class, every cell the build's own choice, which its
-    // comment on that branch names the fixture overriding one of them as the case for. There is
+    // have: the seven names are then the whole of it, and include/boys/boys.hpp writes the table
+    // those names make - one row per class of each half, the device classes' two cells the device
+    // lane's own, every cell the build's own choice, which its comment on that branch names the
+    // fixture overriding one of them as the case for. There is
     // no class for the writer to key a row to, because the rows are one per class the seam
     // names (src/boys_probe.cpp, SeamRows over SeamClasses), so a run of this build measures
     // its cells and writes no seam at all. What it may not write is a file that defines the
