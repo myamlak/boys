@@ -476,6 +476,11 @@ if (BOYS_BUILD_TESTS)
         tests/boys_probe_test.cpp
         tests/boys_build_defaults_test.cpp
         tests/boys_transform_test.cpp
+        # The refusal's reason: every combination QueryCombination can be asked
+        # about, and every member of the device option space, held to the reason
+        # its own field documents. The device arm of this file is compiled in by
+        # the CUDA lane's target below; this is the host arm.
+        tests/boys_refusal_reason_test.cpp
         # The defaults a consumer reaches by naming nothing, instantiated and linked.
         # A default naming a combination the library cannot serve for every caller is
         # invisible in the table and breaks every call site that names nothing, so it
@@ -1260,6 +1265,26 @@ if (BUILD_CUDA)
         target_compile_features(boys-cuda-route-tests PRIVATE cxx_std_20)
         boys_strict_warnings(boys-cuda-route-tests)
         add_test(NAME boys-cuda-route-tests COMMAND boys-cuda-route-tests)
+
+        # The refusal's reason, the device arm: the same source the suite builds as
+        # tests/boys_refusal_reason_test.cpp, with the arm that walks
+        # BoysDeviceOptions() compiled in. This configuration and no other is where
+        # the device option space can be held to its own field comment - the rows
+        # are defined by the lane (src/boys_cuda.cpp) - so the arm is stated here
+        # rather than guarded in a header. What it needs beyond the sources is what
+        # boys-cuda already carries, and it needs no device to run: it reads the
+        # lane's own table and the host query, so a machine that can build this lane
+        # can run this check.
+        add_executable(boys-cuda-refusal-reason-tests
+            tests/boys_refusal_reason_test.cpp)
+        target_link_libraries(boys-cuda-refusal-reason-tests PRIVATE boys-cuda boys
+            gtest gtest_main)
+        target_compile_features(boys-cuda-refusal-reason-tests PRIVATE cxx_std_20)
+        target_compile_definitions(boys-cuda-refusal-reason-tests
+            PRIVATE BOYS_REFUSAL_REASON_DEVICE=1)
+        boys_strict_warnings(boys-cuda-refusal-reason-tests)
+        add_test(NAME boys-cuda-refusal-reason-tests
+            COMMAND boys-cuda-refusal-reason-tests)
     endif()
 endif()
 
