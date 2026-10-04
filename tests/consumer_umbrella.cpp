@@ -382,6 +382,33 @@ constexpr double kOracleBound = 5.5e-14;
 /// supported order and argument, so a negative marker says "not written".
 constexpr double kUnwritten = -1.0;
 
+/// The figure the float lane's contract publishes for one class's division form:
+/// the base the lane documents, plus the term the plain reciprocal adds beside it
+/// where that form is the one the class runs. README's contract row states the
+/// figure per form - "float single / batch | <= 1.5e-7, or <= 2.5e-7 in the
+/// plain-reciprocal form" - and the form a call runs is its own class's row, so a
+/// rule judged at one form's figure while the entry divides in the other measures
+/// the call against an arithmetic it did not run. Both numbers are read from
+/// BoysLaneContracts rather than written here: the base is the row's own
+/// documented figure and the term beside it is the row's own plain-form term.
+template <boys::Precision kPrecision, boys::Shape kShape>
+double FloatFigure() {
+    using Class = boys::DefaultPolicy<kPrecision, kShape>;
+    double base = 0.0;
+    double plainTerm = 0.0;
+
+    for (const boys::LaneContractInfo& row : boys::BoysLaneContracts())
+    {
+        if (row.precision == kPrecision)
+        {
+            base = row.bound;
+            plainTerm = row.plainAdditive;
+        }
+    }
+
+    return base + (Class::kDivision == boys::DivisionForm::kPlainReciprocal ? plainTerm : 0.0);
+}
+
 // --- the entries the rules sweep --------------------------------------------
 //
 // Each helper names its entry at the lane's own default policy - the call an
@@ -693,6 +720,30 @@ void CheckFitRoutes(Report& report, const std::vector<Cell>& cells) {
     const std::span<const boys::FitRouteInfo> routes = boys::BoysFitRoutes();
     const std::vector<double> args = DistinctArgs(cells);
 
+    // The class every unnamed call in this check is made through, and the domain
+    // the table that class reads covers. A row of BoysFitRoutes states the
+    // intervals of the per-order partitions' fits; a class row naming the grid
+    // reads one fixed table instead, whose domain is its own row of
+    // BoysFitGranularities - the grid covers [0, kFlatHi) whole, region A's and
+    // region B's arguments alike, and the body answers the whole of that domain
+    // from the table and returns before the region tests. Where the class row
+    // names that partition, naming a route reaches every argument the partition
+    // covers, because the route's own member over the grid is what answers there.
+    using AllOrdersDefault =
+        boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>;
+    const boys::FitGranularityInfo* partition = nullptr;
+
+    for (const boys::FitGranularityInfo& row : boys::BoysFitGranularities())
+    {
+        if (row.granularity == AllOrdersDefault::kGranularity)
+        {
+            partition = &row;
+        }
+    }
+
+    const bool readsGrid =
+        partition != nullptr && partition->granularity == boys::FitGranularity::kUniform;
+
     Require(report, !routes.empty(), "BoysFitRoutes reports the routes this build carries");
 
     bool chebyshev = false;
@@ -781,18 +832,26 @@ void CheckFitRoutes(Report& report, const std::vector<Cell>& cells) {
             "the report carries both the default and the rational route");
     Require(report, regionA && regionB, "the report covers region A and region B");
 
-    // Documented: outside the intervals its rows report, naming a route runs the
-    // default entry's own code, so a caller who names one and one who does not agree.
+    // Documented: outside the intervals a route's own fits cover, naming a route
+    // runs the default entry's own code, so a caller who names one and one who
+    // does not agree. Which intervals those are is the class row's: a per-order
+    // partition leaves the route rows' own boundaries, and a class row naming the
+    // grid leaves the partition's cover, where the route's member over the table
+    // answers every argument. Read from the two reports rather than written here,
+    // so a class row that moves the partition moves the domain with it.
     std::size_t outside = 0;
     std::size_t changedOutside = 0;
 
     for (const double x : args)
     {
-        bool served = false;
+        bool served = readsGrid && x >= partition->lo && x < partition->hi;
 
-        for (const boys::FitRouteInfo& row : routes)
+        if (!readsGrid)
         {
-            served = served || (x >= row.servesFrom && x < row.hi);
+            for (const boys::FitRouteInfo& row : routes)
+            {
+                served = served || (x >= row.servesFrom && x < row.hi);
+            }
         }
 
         if (served)
@@ -846,14 +905,50 @@ void CheckFitRoutes(Report& report, const std::vector<Cell>& cells) {
 
     // The two axes compose at run time as they do at compile time: the entry names
     // both, and a caller holds one fixed to see the other move. If one axis did not
-    // reach the call, one of the three counts below would be zero - which makes this
+    // reach the call, one of the counts below would be zero - which makes this
     // a check of the pair rather than of two options printed beside each other.
+    //
+    // What the scheme reaches on the rational route is the library's own account of
+    // it: "the scheme reaches the parts of the call that route's fits do not serve"
+    // (boys/boys.hpp, the three-selector overload), and where the call reads those
+    // parts it reads the Chebyshev lane's own tables at the policy's scheme
+    // (boys_impl.hpp, PolicyRegionAValue: "below each route's fits-first crossover
+    // the value a policy answers with is the Chebyshev lane's"). Which parts those
+    // are is the class row's partition: a per-order partition leaves the arguments
+    // below the route's own takeover, and a class row naming the grid leaves none
+    // inside the fitted domain - the grid's branch answers them from its own
+    // member, one fit under either scheme. Both readings are taken from the two
+    // reports rather than written here, so a class row that moves the partition
+    // moves them with it.
     std::size_t routeAtClenshaw = 0;
     std::size_t routeAtHorner = 0;
     std::size_t schemeOnRational = 0;
+    std::size_t schemeInsideTheFits = 0;
+    std::size_t partsTheRationalFitsDoNotServe = 0;
 
     for (const double x : args)
     {
+        // Inside the fitted domain the class reads, and inside the rational
+        // route's own part of it, at this argument.
+        const bool fitted = partition != nullptr && x >= partition->lo && x < partition->hi;
+        bool rationalServes = readsGrid && fitted;
+
+        if (!readsGrid)
+        {
+            for (const boys::FitRouteInfo& row : routes)
+            {
+                if (row.route == boys::FitRoute::kRationalMinimax)
+                {
+                    rationalServes = rationalServes || (x >= row.servesFrom && x < row.hi);
+                }
+            }
+        }
+
+        if (fitted && !rationalServes)
+        {
+            ++partsTheRationalFitsDoNotServe;
+        }
+
         std::array<double, 33> rationalClenshaw = {};
         std::array<double, 33> rationalHorner = {};
         std::array<double, 33> chebyshevClenshaw = {};
@@ -896,6 +991,7 @@ void CheckFitRoutes(Report& report, const std::vector<Cell>& cells) {
             if (rationalClenshaw[j] != rationalHorner[j])
             {
                 ++schemeOnRational;
+                schemeInsideTheFits += rationalServes ? 1 : 0;
             }
         }
     }
@@ -906,8 +1002,23 @@ void CheckFitRoutes(Report& report, const std::vector<Cell>& cells) {
     Require(report,
             routeAtHorner > 0,
             "naming the rational route changes values with the Horner scheme held");
+    // The two counts behind the reading above, printed rather than left in the
+    // assertions: the differences inside the rational route's own domain are what
+    // the region-A read at the policy's scheme reaches when the class row names a
+    // per-order partition, and the argument count outside it is the domain the
+    // axis is live over on this build.
+    std::printf("  scheme on the rational route: %zu differing cell(s), %zu of them inside the "
+                "domain that route's own fits answer, over %zu swept argument(s) outside it\n",
+                schemeOnRational,
+                schemeInsideTheFits,
+                partsTheRationalFitsDoNotServe);
+    // The half the sentence states, read off the partition: where the class row
+    // leaves the route parts its own fits do not serve, naming a scheme reaches
+    // them. A class row naming the grid leaves none - the shape it names is the
+    // one fit under either scheme - so there the axis is live on this route
+    // nowhere, and the count above states that rather than asserting it away.
     Require(report,
-            schemeOnRational > 0,
+            partsTheRationalFitsDoNotServe == 0 || schemeOnRational > 0,
             "naming a scheme on the rational route reaches the parts its own fits do not serve");
 
     // Documented: the two-selector overload names a route and no scheme, so the
@@ -1063,6 +1174,15 @@ void CheckFitRoutesF32(Report& report, const std::vector<Cell>& cells) {
 void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
     using ByDefault = boys::DefaultPolicyFp32;
 
+    // The name each entry read below actually resolves to when no policy is named: its
+    // own class's row, which is `ByDefault` where this build's seam carries no row for
+    // the class and the row where it does. The two entries are held to this name for
+    // the reason CheckEvalSchemes states: a name that happens to agree with the entry's
+    // default at this revision is not the entry's default.
+    using SingleDefault = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kSingle>;
+    using AllOrdersDefault =
+        boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllOrders>;
+
     // The scheme this build does not default to. The axis has two members and this
     // names the one EvalPolicy<> leaves at the other, so what the readings below
     // separate is the scheme and not the word a build compiled it at.
@@ -1097,7 +1217,7 @@ void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
     {
         const float xf = static_cast<float>(cell.x);
         const float byDefault = boys::BoysSingleF32(cell.n, xf);
-        const float byItsDefault = boys::BoysSingleF32<ByDefault>(cell.n, xf);
+        const float byItsDefault = boys::BoysSingleF32<SingleDefault>(cell.n, xf);
         const float otherScheme = boys::BoysSingleF32<OtherScheme>(cell.n, xf);
         const float rational = boys::BoysSingleF32<Rational>(cell.n, xf);
         const float bySelector[2] = {
@@ -1152,7 +1272,7 @@ void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
         std::array<float, boys::kMaxBoysOrder + 1> rational = {};
 
         boys::BoysAllOrdersF32(boys::kMaxBoysOrder, xf, plain.data());
-        boys::BoysAllOrdersF32<ByDefault>(boys::kMaxBoysOrder, xf, named.data());
+        boys::BoysAllOrdersF32<AllOrdersDefault>(boys::kMaxBoysOrder, xf, named.data());
         boys::BoysAllOrdersF32<OtherScheme>(boys::kMaxBoysOrder, xf, otherScheme.data());
         boys::BoysAllOrdersF32<Rational>(boys::kMaxBoysOrder, xf, rational.data());
 
@@ -1270,6 +1390,20 @@ void CheckPerElementOrderLanes(Report& report, const std::vector<Cell>& cells) {
     const std::size_t count = args.size();
     const int nmax = boys::kMaxBoysOrder;
     const std::size_t plane = static_cast<std::size_t>(nmax) + 1;
+
+    // The name each entry below resolves to when no policy is named: its own
+    // class's row, which is the five where this build's seam carries no row for the
+    // class and the row where it does. Both entries document the identity each
+    // check reads as one with a body of the all-orders shape - "the per-argument
+    // all-orders body run at that argument's own top order" for the order-array
+    // entry, and "the all-orders body this entry calls" for the float all-N one -
+    // and that body is read at this entry's own name: two classes whose rows differ
+    // answer two arithmetics, and reading one class's row on the body would measure
+    // the seam's choice reaching two shapes rather than the shape reaching a body.
+    using AllNAtOrdersDefault =
+        boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllNAtOrders>;
+    using AllNF32Default = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllN>;
+
     std::vector<int> raggeds(count);
     std::vector<int> commons(count, nmax);
     std::vector<double> planes(count * plane);
@@ -1309,8 +1443,9 @@ void CheckPerElementOrderLanes(Report& report, const std::vector<Cell>& cells) {
         {
             // Documented: the column stops at the argument's own top order and
             // is, bit for bit, the per-argument all-orders entry's value at that
-            // argument and that top order.
-            AllOrders(raggeds[i], args[i], row.data());
+            // argument and that top order - that entry at this entry's own
+            // class row, which is the name the call above resolves to.
+            boys::BoysAllOrders<AllNAtOrdersDefault>(raggeds[i], args[i], row.data());
 
             for (int n = 0; n <= nmax; ++n)
             {
@@ -1380,7 +1515,8 @@ void CheckPerElementOrderLanes(Report& report, const std::vector<Cell>& cells) {
     // The float all-N batch at the float lane's own default policy.
     {
         Rule& rule = NewRule("BoysAllNF32 (the float all-N batch)");
-        const double bound = 1.5e-7 + kOracleBound;
+        const double bound =
+            FloatFigure<boys::Precision::kFp32, boys::Shape::kAllN>() + kOracleBound;
 
         std::fill(planesF.begin(), planesF.end(), static_cast<float>(kUnwritten));
         AllNF32(nmax, argsF.data(), planesF.data(), count);
@@ -1393,7 +1529,10 @@ void CheckPerElementOrderLanes(Report& report, const std::vector<Cell>& cells) {
             // the reference is the certified double entry at that rounded
             // argument, in the same shape.
             boys::BoysAllOrders<>(nmax, static_cast<double>(argsF[i]), row.data());
-            AllOrdersF32(nmax, argsF[i], rowF.data());
+            // Documented: each column of this entry is that entry's value at the
+            // same (nmax, x[i]) bit for bit - the float all-orders entry at this
+            // entry's own class row, which is the name the call above resolves to.
+            boys::BoysAllOrdersF32<AllNF32Default>(nmax, argsF[i], rowF.data());
 
             for (int n = 0; n <= nmax; ++n)
             {
@@ -1426,7 +1565,12 @@ void CheckFloatLane(const std::vector<Cell>& cells) {
     {
         Rule& single = NewRule("BoysSingleF32 (vs the double lane at float(x))");
         Rule& batch = NewRule("BoysAllOrdersF32 (vs the double lane at float(x))");
-        const double bound = 1.5e-7 + kOracleBound;
+        // Each rule's own figure: the two entries are two classes, and this build
+        // may name them two forms.
+        const double singleBound =
+            FloatFigure<boys::Precision::kFp32, boys::Shape::kSingle>() + kOracleBound;
+        const double batchBound =
+            FloatFigure<boys::Precision::kFp32, boys::Shape::kAllOrders>() + kOracleBound;
 
         for (const Cell& cell : cells)
         {
@@ -1435,7 +1579,7 @@ void CheckFloatLane(const std::vector<Cell>& cells) {
             Judge(single,
                   static_cast<double>(SingleF32(cell.n, xf)),
                   oracle,
-                  bound,
+                  singleBound,
                   cell.n,
                   cell.x);
         }
@@ -1451,7 +1595,12 @@ void CheckFloatLane(const std::vector<Cell>& cells) {
                 if (cell.x == x)
                 {
                     const double oracle = boys::BoysSingle<>(cell.n, static_cast<double>(xf));
-                    Judge(batch, static_cast<double>(out[cell.n]), oracle, bound, cell.n, cell.x);
+                    Judge(batch,
+                          static_cast<double>(out[cell.n]),
+                          oracle,
+                          batchBound,
+                          cell.n,
+                          cell.x);
                 }
             }
         }
@@ -1943,6 +2092,19 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
     // policy is the Chebyshev route at the scheme this build's defaults header
     // names, read from the constants rather than written here.
     using DefaultPolicy = boys::EvalPolicy<>;
+
+    // The name a call that names no policy actually resolves to, per class: its own
+    // class's row, which is the five above where this build's seam carries no row for
+    // the class and the row where it does (boys/boys.hpp, DefaultPolicy: "the policy a
+    // class compiles when its call site names no policy: the name an entry's policy
+    // parameter defaults to"). The two entries read below are held to this name rather
+    // than to `DefaultPolicy`, because `DefaultPolicy` is the five and agrees with the
+    // class's row only while the seam carries none: a name that happens to agree with
+    // the entry's default at this revision is not the entry's default.
+    using SingleDefault = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kSingle>;
+    using AllOrdersDefault =
+        boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>;
+
     using SplitClenshawPolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
                                                  boys::EvalScheme::kSplitClenshaw>;
     using HornerPolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>;
@@ -1979,7 +2141,7 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
     for (const Cell& cell : cells)
     {
         const double byDefault = boys::BoysSingle<>(cell.n, cell.x);
-        const double byDefaultNamed = boys::BoysSingle<DefaultPolicy>(cell.n, cell.x);
+        const double byDefaultNamed = boys::BoysSingle<SingleDefault>(cell.n, cell.x);
         Require(report,
                 byDefault == byDefaultNamed,
                 "a call naming no policy is the pair the library's defaults name, bit for bit");
@@ -1987,7 +2149,7 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
         std::array<double, 33> un = {};
         std::array<double, 33> named = {};
         boys::BoysAllOrders<>(cell.n, cell.x, un.data());
-        boys::BoysAllOrders<DefaultPolicy>(cell.n, cell.x, named.data());
+        boys::BoysAllOrders<AllOrdersDefault>(cell.n, cell.x, named.data());
         Require(report,
                 std::memcmp(un.data(), named.data(), sizeof(un)) == 0,
                 "a batch call naming no policy is the pair the library's defaults name, bit "
@@ -2118,8 +2280,13 @@ void CheckGranularityLane(Report& report, const std::vector<Cell>& cells) {
     {
         const double byDefault = boys::BoysSingle<>(cell.n, cell.x);
         // The default member, named, and the other member, named: the call that names
-        // neither is the default one of them.
-        const double byDefaultNamed = boys::BoysSingle<DefaultPolicy>(cell.n, cell.x);
+        // neither is the default one of them. The default is named by its own class
+        // rather than by `DefaultPolicy`, which is the five and is the class's row only
+        // where this build's seam carries none for it - the same reason the entries in
+        // CheckEvalSchemes above are held to their class's name.
+        const double byDefaultNamed =
+            boys::BoysSingle<boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kSingle>>(
+                cell.n, cell.x);
         const double other = boys::BoysSingle<OtherPolicy>(cell.n, cell.x);
 
         if (cell.x < boys::kRegionAEnd)

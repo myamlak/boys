@@ -62,7 +62,14 @@ using Bf16Default = boys::DefaultPolicyBf16;
 // the library resolves a class to - the row the build's seam carries for it, or the five
 // above where it carries none - so an entry is held to its own class's default rather than
 // to a name that happens to agree with it at this revision.
+using Fp64Single = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kSingle>;
+using Fp64FixedN = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kFixedN>;
+using Fp64AllN = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllN>;
+using Fp64AllNAtOrders =
+    boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllNAtOrders>;
 using Fp64AllOrders = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>;
+using Fp32Single = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kSingle>;
+using Fp32AllN = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllN>;
 using Fp32AllOrders = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllOrders>;
 using Fp16Single = boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kSingle>;
 using Fp16AllOrders = boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kAllOrders>;
@@ -95,6 +102,14 @@ static_assert(Fp16Default::kGranularity == boys::kDefaultFitGranularity);
 // not merely that the name is a type the entry could be called with. A revision that
 // changed an entry's template default without changing the alias fails them.
 //
+// The alias each entry is held to is its own class's name above, not the lane name: an
+// entry's parameter defaults to `DefaultPolicy<Precision, Shape>` for the class it
+// belongs to (boys/boys.hpp, the declarations at BoysSingle, BoysFixedN, BoysAllN,
+// BoysAllNAtOrders, BoysSingleF32, BoysAllNF32), and that name is the lane name only
+// while this build's seam carries no row for the class. Holding a class to the lane
+// name would compare the entry against a name it does not default to as soon as a seam
+// carries the class's own row.
+//
 // Only the yes direction is a constant expression: comparing two distinct function
 // addresses is not one under the sanitizer configuration this file is also built in.
 // g++ 15 with -fsanitize=address,undefined refuses it with "'(f == g)' is not a constant
@@ -104,13 +119,13 @@ static_assert(Fp16Default::kGranularity == boys::kDefaultFitGranularity);
 // comparison cannot be written as one; the two controls that can say no compare in main().
 template <auto Left, auto Right> constexpr bool SameCall = (Left == Right);
 
-static_assert(SameCall<&boys::BoysSingle<>, &boys::BoysSingle<Fp64Default>>);
+static_assert(SameCall<&boys::BoysSingle<>, &boys::BoysSingle<Fp64Single>>);
 static_assert(SameCall<&boys::BoysAllOrders<>, &boys::BoysAllOrders<Fp64AllOrders>>);
-static_assert(SameCall<&boys::BoysFixedN<>, &boys::BoysFixedN<Fp64Default>>);
-static_assert(SameCall<&boys::BoysAllNAtOrders<>, &boys::BoysAllNAtOrders<Fp64Default>>);
-static_assert(SameCall<&boys::BoysSingleF32<>, &boys::BoysSingleF32<Fp32Default>>);
+static_assert(SameCall<&boys::BoysFixedN<>, &boys::BoysFixedN<Fp64FixedN>>);
+static_assert(SameCall<&boys::BoysAllNAtOrders<>, &boys::BoysAllNAtOrders<Fp64AllNAtOrders>>);
+static_assert(SameCall<&boys::BoysSingleF32<>, &boys::BoysSingleF32<Fp32Single>>);
 static_assert(SameCall<&boys::BoysAllOrdersF32<>, &boys::BoysAllOrdersF32<Fp32AllOrders>>);
-static_assert(SameCall<&boys::BoysAllNF32<>, &boys::BoysAllNF32<Fp32Default>>);
+static_assert(SameCall<&boys::BoysAllNF32<>, &boys::BoysAllNF32<Fp32AllN>>);
 
 // --- the comparison ---------------------------------------------------------
 
@@ -318,7 +333,7 @@ int main() {
     {
         Row row = SingleOrderRow<double>(
             xs,
-            [](int n, double x) { return boys::BoysSingle<Fp64Default>(n, x); },
+            [](int n, double x) { return boys::BoysSingle<Fp64Single>(n, x); },
             [](int n, double x) { return boys::BoysSingle<>(n, x); });
         row.name = "fp64 BoysSingle";
         Print(row);
@@ -341,7 +356,7 @@ int main() {
         Row row = ManyArgRow(
             xs,
             [](int nmax, const double* x, std::size_t count, double* out, std::size_t* workspace) {
-                boys::BoysAllN<Fp64Default>(nmax, x, out, count, workspace);
+                boys::BoysAllN<Fp64AllN>(nmax, x, out, count, workspace);
             },
             [](int nmax, const double* x, std::size_t count, double* out, std::size_t* workspace) {
                 boys::BoysAllN<>(nmax, x, out, count, workspace);
@@ -355,7 +370,7 @@ int main() {
         Row row = ManyArgRow(
             xs,
             [](int nmax, const double* x, std::size_t count, double* out, std::size_t*) {
-                boys::BoysAllN<Fp64Default>(nmax, x, out, count, boys::BoysSortedArgs{});
+                boys::BoysAllN<Fp64AllN>(nmax, x, out, count, boys::BoysSortedArgs{});
             },
             [](int nmax, const double* x, std::size_t count, double* out, std::size_t*) {
                 boys::BoysAllN<>(nmax, x, out, count, boys::BoysSortedArgs{});
@@ -369,7 +384,7 @@ int main() {
         Row row = FixedOrderRow<double>(
             xs,
             [](int n, const double* x, std::size_t count, double* out) {
-                boys::BoysFixedN<Fp64Default>(n, x, out, count);
+                boys::BoysFixedN<Fp64FixedN>(n, x, out, count);
             },
             [](int n, const double* x, std::size_t count, double* out) {
                 boys::BoysFixedN<>(n, x, out, count);
@@ -385,7 +400,7 @@ int main() {
         Row row = SingleOrderRow<float>(
             xs,
             [](int n, double x) {
-                return boys::BoysSingleF32<Fp32Default>(n, static_cast<float>(x));
+                return boys::BoysSingleF32<Fp32Single>(n, static_cast<float>(x));
             },
             [](int n, double x) { return boys::BoysSingleF32<>(n, static_cast<float>(x)); });
         row.name = "fp32 BoysSingleF32";

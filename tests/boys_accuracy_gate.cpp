@@ -1640,17 +1640,41 @@ int main(int argc, char** argv) {
         return 0.0;
     }();
 
-    // The figure the float lane publishes for the division form its own entries
-    // run. The claims below measure BoysSingleF32, BoysAllOrdersF32, BoysAllNF32
-    // and the orders-axis policy, every one of which names no division form, so
-    // the form they divide in is the build's default one. Read as one figure the
-    // row is the shipped build's, and the bar was judged against entries that may
-    // be in another form's arithmetic. The base is the transcribed constant the
-    // documents are held to; the term beside it belongs to the form in force.
-    const double floatLaneFigure =
-        kBoundFloat + (boys::kDefaultDivisionForm == boys::DivisionForm::kPlainReciprocal
-                           ? floatPlainTerm
-                           : 0.0);
+    // The figure the float lane publishes for one division form. README's
+    // contract row states the lane's figure per form - "float single / batch |
+    // <= 1.5e-7, or <= 2.5e-7 in the plain-reciprocal form" (README.md, the
+    // accuracy contract) - so a row judged at one form's figure while dividing
+    // in the other is a row judged against an arithmetic it did not run, which
+    // is the same rule the granularity book's own rows state for the policies
+    // they sweep. The base is the transcribed constant the documents are held
+    // to; the term beside it belongs to the form in force.
+    const auto floatFigureFor = [&](boys::DivisionForm form) {
+        return kBoundFloat +
+               (form == boys::DivisionForm::kPlainReciprocal ? floatPlainTerm : 0.0);
+    };
+
+    // The form each claim below divides in. Those claims measure BoysSingleF32,
+    // BoysAllOrdersF32, BoysAllNF32 and the orders-axis policy, every one of
+    // which names no division form at its call site, so each divides in the form
+    // its own class's default carries - the row this build's seam gives that
+    // class, or the five where it gives none. Read off `kDefaultDivisionForm`
+    // alone the figure is the shipped build's, and a seam that carries a row for
+    // one of these classes in another form would have that class's entry judged
+    // against an arithmetic it does not run.
+    const double floatSingleFigure =
+        floatFigureFor(boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kSingle>::kDivision);
+    const double floatOrdersFigure = floatFigureFor(
+        boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllOrders>::kDivision);
+    const double floatAllNFigure =
+        floatFigureFor(boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllN>::kDivision);
+
+    // The entry the orders-axis claim measures: the float ladder over the
+    // orders packing axis, named once here because the claim's figure is read
+    // off it and the sweep below instantiates it.
+    using FloatOrdersAxis = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                             boys::EvalScheme::kSplitClenshaw,
+                                             boys::BoysBudget::kFloat,
+                                             boys::PackAxis::kOrders>;
 
     const int kSingleA = AddClaim("double single", "A", kBoundSingleA);
     const int kSingleBand = AddClaim("double single", "band", kBoundSingleBand);
@@ -1660,10 +1684,11 @@ int main(int argc, char** argv) {
     const int kFixedN = AddClaim("double batch", "fixed-n", kBoundDoubleBatch);
     const int kAllN = AddClaim("double batch", "all-n", kBoundDoubleBatch);
     const int kAllNAtOrders = AddClaim("double batch", "all-n at-orders", kBoundDoubleBatch);
-    const int kFloatSingle = AddClaim("float single", "all", floatLaneFigure);
-    const int kFloatOrders = AddClaim("float batch", "all", floatLaneFigure);
-    const int kFloatOrdersPacked = AddClaim("float batch", "all, orders axis", floatLaneFigure);
-    const int kFloatAllN = AddClaim("float batch", "all-n", floatLaneFigure);
+    const int kFloatSingle = AddClaim("float single", "all", floatSingleFigure);
+    const int kFloatOrders = AddClaim("float batch", "all", floatOrdersFigure);
+    const int kFloatOrdersPacked =
+        AddClaim("float batch", "all, orders axis", floatFigureFor(FloatOrdersAxis::kDivision));
+    const int kFloatAllN = AddClaim("float batch", "all-n", floatAllNFigure);
     const int kF16Single = AddClaim("fp16 store-half", "single", kBoundHalfBase);
     const int kF16Orders = AddClaim("fp16 store-half", "batch", kBoundHalfBase);
     const int kBf16Single = AddClaim("bf16 store-half", "single", kBoundHalfBase);
@@ -2064,6 +2089,39 @@ int main(int argc, char** argv) {
     std::size_t routeDefaultDiff = 0;
     std::size_t routeUnknownDiff = 0;
 
+    // The class the unnamed calls of this section are made through: BoysAllOrders,
+    // the double lane's ladder entry. Every reading below that holds the entry's
+    // own axes fixed reads them off this class's row - the combination this
+    // build's seam gives the class, or the five where it carries none - because
+    // the row is what a call naming no policy compiles (boys/boys.hpp,
+    // DefaultPolicy). A reading that spelled the five would judge this build's
+    // selector against another combination's arithmetic.
+    using RouteClass = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>;
+
+    // The domain the class's entries read, and the one a route's selector takes
+    // over in this build. A row of BoysFitRoutes states the intervals of the
+    // per-order partitions' fits; a class row naming the grid reads one fixed
+    // table instead, and that partition's domain is its own row of
+    // BoysFitGranularities - the grid covers [0, kFlatHi) whole, region A's and
+    // region B's arguments alike, and the body answers the whole of that domain
+    // from the table and returns before the region tests (boys_impl.hpp,
+    // AllOrdersBody: "The uniform route answers the whole of its table's domain
+    // from the table"). Where the class row names that partition, naming either
+    // route reaches every argument the partition covers, because each route's own
+    // member over the grid is what answers there (backend.hpp, RouteFit).
+    const boys::FitGranularityInfo* routePartition = nullptr;
+
+    for (const boys::FitGranularityInfo& partition : boys::BoysFitGranularities())
+    {
+        if (partition.granularity == RouteClass::kGranularity)
+        {
+            routePartition = &partition;
+        }
+    }
+
+    const bool routeReadsGrid = routePartition != nullptr &&
+                                routePartition->granularity == boys::FitGranularity::kUniform;
+
     // Filled by the carriage measurement below and read by the route book's
     // claims: the run-time selector's pairs, and the entries that name a route
     // without answering it.
@@ -2116,7 +2174,8 @@ int main(int argc, char** argv) {
         {
             const double x = ref.x[i];
             bool covered = false;
-            bool served = false;
+            bool served =
+                routeReadsGrid && x >= routePartition->lo && x < routePartition->hi;
 
             for (const boys::FitRouteInfo& row : boys::BoysFitRoutes())
             {
@@ -2127,8 +2186,12 @@ int main(int argc, char** argv) {
 
                 // The domain a route's selector takes over, which is where
                 // naming it may change a value. A row whose fit reaches further
-                // than its selector claims the narrower interval here.
-                if (x >= std::max(row.lo, row.servesFrom) && x < row.hi)
+                // than its selector claims the narrower interval here. Where the
+                // class row reads the grid, the partition's own cover is the
+                // domain and the rows' boundaries are read only for coverage:
+                // they describe the per-order partitions' fits, and this class
+                // reads neither of them.
+                if (!routeReadsGrid && x >= std::max(row.lo, row.servesFrom) && x < row.hi)
                 {
                     served = true;
                 }
@@ -2525,13 +2588,26 @@ int main(int argc, char** argv) {
         // exists so that a caller who cannot name the pair at compile time still
         // gets the pair they named.
         const auto runtimePair = [&]<boys::FitRoute kRoute, boys::EvalScheme kScheme>() {
+            // The entry a call site writes for this pair: the policy names the
+            // route and the scheme and leaves the entry's other axes to its own
+            // class, which is the reading the selector itself makes for the axes
+            // its caller did not name (src/boys.cpp, SelectorPolicy). Naming the
+            // pair alone would compare the selector against the five, and the two
+            // sides agree then only while the seam carries no row for the class.
+            using Counterpart = boys::EvalPolicy<kRoute,
+                                                 kScheme,
+                                                 RouteClass::kBudget,
+                                                 RouteClass::kPack,
+                                                 RouteClass::kGranularity,
+                                                 RouteClass::kDivision,
+                                                 RouteClass::kRegionBExp>;
+
             for (std::size_t i = 0; i < count; ++i)
             {
                 std::array<double, 33> a{};
                 std::array<double, 33> b{};
                 boys::BoysAllOrdersWithRoute(kRoute, kScheme, nmax, ref.x[i], a.data());
-                boys::BoysAllOrders< boys::EvalPolicy<kRoute, kScheme>>(nmax, ref.x[i],
-                                                                            b.data());
+                boys::BoysAllOrders<Counterpart>(nmax, ref.x[i], b.data());
 
                 for (int n = 0; n <= nmax; ++n)
                 {
@@ -2754,7 +2830,7 @@ int main(int argc, char** argv) {
                         asDouble,
                         ref.vf[k],
                         ref.decadeF[k],
-                        floatLaneFigure,
+                        floatSingleFigure,
                         got == 0.0f || std::fabs(asDouble) < std::numeric_limits<float>::min());
             }
         }
@@ -2773,7 +2849,7 @@ int main(int argc, char** argv) {
                         asDouble,
                         ref.vf[k],
                         ref.decadeF[k],
-                        floatLaneFigure,
+                        floatOrdersFigure,
                         out[static_cast<std::size_t>(n)] == 0.0f ||
                             std::fabs(asDouble) < std::numeric_limits<float>::min());
             }
@@ -2785,15 +2861,9 @@ int main(int argc, char** argv) {
         // The bound is the same one and the reference is the same grid, because
         // a packing axis chooses which lane evaluates and not which fit.
         {
-            using OrdersAxis =
-                boys::EvalPolicy<boys::FitRoute::kChebyshev,
-                                 boys::EvalScheme::kSplitClenshaw,
-                                 boys::BoysBudget::kFloat,
-                                 boys::PackAxis::kOrders>;
-
             for (std::size_t i = 0; i < count; ++i)
             {
-                boys::BoysAllOrdersF32< OrdersAxis>(nmax,
+                boys::BoysAllOrdersF32<FloatOrdersAxis>(nmax,
                                                         static_cast<float>(ref.x[i]),
                                                         out.data());
 
@@ -2807,7 +2877,7 @@ int main(int argc, char** argv) {
                             asDouble,
                             ref.vf[k],
                             ref.decadeF[k],
-                            floatLaneFigure,
+                            floatFigureFor(FloatOrdersAxis::kDivision),
                             out[static_cast<std::size_t>(n)] == 0.0f ||
                                 std::fabs(asDouble) < std::numeric_limits<float>::min());
                 }
@@ -2838,7 +2908,7 @@ int main(int argc, char** argv) {
                         asDouble,
                         ref.vf[k],
                         ref.decadeF[k],
-                        floatLaneFigure,
+                        floatAllNFigure,
                         allN[k] == 0.0f || std::fabs(asDouble) < std::numeric_limits<float>::min());
             }
         }
@@ -8714,7 +8784,8 @@ int main(int argc, char** argv) {
         addRoute("route.confined",
                  "naming a route leaves every argument outside the domain that route's selector "
                  "takes over at the default entry's value, bit for bit",
-                 "include/boys/boys.hpp, BoysAllOrdersWithRoute() and FitRouteInfo::servesFrom",
+                 "include/boys/boys.hpp, BoysAllOrdersWithRoute() and FitRouteInfo::servesFrom; "
+                 "src/boys.cpp, BoysFitGranularities() where the class row names the grid",
                  routeDiffOutside == 0 ? Verdict::Verified : Verdict::Exceeded,
                  Fmt("%zu of %zu comparison cell(s) outside every route's served domain differ "
                      "from the default entry; %zu cell(s) lie inside a route's fit and %zu of them "
@@ -8783,7 +8854,7 @@ int main(int argc, char** argv) {
                  "the run-time selector's route-and-scheme form answers each pair as the "
                  "compile-time entry for that pair does, value for value",
                  "include/boys/boys.hpp, BoysAllOrdersWithRoute(route, scheme, ...) and "
-                 "EvalPolicy",
+                 "EvalPolicy; src/boys.cpp, SelectorPolicy for the axes the pair does not name",
                  routeRuntimeDiff == 0 ? Verdict::Verified : Verdict::Exceeded,
                  Fmt("%zu of %zu cell(s) differ between the run-time pair selector and the "
                      "compile-time entry it names, over all four (route, scheme) pairs",
