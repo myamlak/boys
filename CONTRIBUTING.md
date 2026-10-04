@@ -162,19 +162,22 @@ own transcription, with the document's claim printed beside its own number:
 python3 tools/check_bound_transcripts.py --check
 ```
 
-It reads the gate's constants, the contract table in `include/boys/boys.hpp`, both the contract
-table and the printed-run table in `README.md`, and the lane rows `BoysLaneContracts()` carries. It
-exits non-zero, naming the constant, both files and both lines, when a figure the two state as one
+It reads the gate's constants, the contract table in `include/boys/boys.hpp`, the contract table of
+every document the tool lists in `DOCUMENTS` (`README.md` and `docs/mainpage.md`) with the
+printed-run table in `README.md`, and the lane rows `BoysLaneContracts()` carries. It exits
+non-zero, naming the constant, the files and the lines, when a figure two of them state as one
 fact disagrees. The correspondence between the tables is not one to one. The header has a cell per
-lane and region, the README's contract table resolves by region in its prose, and the library
-carries one figure per lane. So the tool declares each tie it makes, compares the README's per-lane
-rows as sets rather than reading their prose as a partition, and prints every figure it did not tie,
-with the reason it did not. Two things fail the run until they are declared in the tool: a constant
-of the gate holding a documented figure under a name of its own, and a figure-bearing table row no
-tie holds. The drift it is written for is a new transcription nobody tied. Run it after changing a
-bound, a document's bound table, or a lane row. The same command runs as a CI step. `--gate`,
-`--header`, `--readme` and `--library` read a side from another file, which is how a shifted figure
-is shown to fail as a negative control.
+lane and region, a contract table resolves by region in its prose, and the library carries one
+figure per lane. So the tool declares each tie it makes, compares a document's per-lane rows as sets
+rather than reading their prose as a partition, and prints every figure it did not tie, with the
+reason it did not. Two things fail the run until they are declared in the tool: a constant of the
+gate holding a documented figure under a name of its own, and a figure-bearing table row no tie
+holds. The drift it is written for is a new transcription nobody tied - a third document stating
+these figures and read by no tie is the shape that took longest to be seen, which is why a document
+is added to `DOCUMENTS` and read by every tie at once rather than wired into one. Run it after
+changing a bound, a document's bound table, or a lane row. The same command runs as a CI step.
+`--gate`, `--header`, `--readme`, `--mainpage` and `--library` read a side from another file, which
+is how a shifted figure is shown to fail as a negative control.
 
 The build-defaults seam offers a consumer five choices, and a choice read by nothing is what this
 check is for: three of the five once sat in the seam file, documented, while the library compiled

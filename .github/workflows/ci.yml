@@ -661,8 +661,12 @@ jobs:
       # run green, the document's claim printed beside the gate's number.
       #
       # This step holds each transcribed constant to the cell the same fact is
-      # stated in: the header's contract table, the README's contract row for
-      # the lane, and the README's own copy of the gate's printed run. It then
+      # stated in: the header's contract table, the contract row for the lane in
+      # every document the tool reads, and the README's own copy of the gate's
+      # printed run. Each of those documents is a place a consumer reads these
+      # figures, so a table the ties are not read against is a published figure
+      # nothing holds - the landing page was one, and had drifted, before the
+      # tool's DOCUMENTS list named it. It then
       # names what it could not tie rather than passing over it - a constant of
       # the gate that holds a documented figure under another name fails until
       # it is tied or named, and a figure-bearing row no tie holds fails until
@@ -671,9 +675,10 @@ jobs:
       # tables is not one to one and the tool says which ties are set-level for
       # that reason.
       #
-      # It reads the two documents, the gate and src/boys.cpp and nothing else -
-      # no build, no compiler, no network - so it is scoped to one combination
-      # like the gates above it, and it is as fast as reading four files.
+      # It reads the three documents, the gate and src/boys.cpp and nothing
+      # else - no build, no compiler, no network - so it is scoped to one
+      # combination like the gates above it, and it is as fast as reading five
+      # files.
       - name: Docs (the bounds the gate transcribes)
         if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
