@@ -3777,9 +3777,9 @@ void CheckRefusals(const boys::BoysDeviceTables& tables) {
 }
 
 // ---------------------------------------------------------------------------
-// The uniform grid's carriage on the single-precision rows.
+// The uniform grid's carriage on the rows that answer a policy naming it.
 //
-// Every fp32 row of the report that answers a policy naming the uniform grid is
+// Every row of the report that answers a policy naming the uniform grid is
 // measured above for accuracy, and no accuracy row can tell that grid from the
 // narrow member below it: the two partitions are different fits of the same
 // function over the same intervals and hold the same bar, so a row that read
@@ -3799,29 +3799,64 @@ void CheckRefusals(const boys::BoysDeviceTables& tables) {
 // precision on the host they separate on the card. The rule is the CPU gate's:
 // a region where the per-argument entry's two readings agree is a region where
 // no cell can discriminate, so no row is held to it - which is why region C is
-// carried as a token and not judged, the float lane's grid ending inside region
-// B at kFlatHiF32 and every reading above kX1 being the asymptotic form's.
+// carried as a token and not judged where the lane's grid ends inside region B
+// (kFlatHiF32 on the float lane and the half lane that reads its tables, kFlatHi
+// on the double lane) and every reading above kX1 is the asymptotic form's. The
+// comparison is made in the format the row itself returns, which is why the
+// float and double lanes' rows are held to a reference read in their own.
 //
-// The rows are every fp32 row the report names over the grid: the launched pair
-// on both packing axes at each of the lane's four arms, and the device-callable
-// pair reached through the consumer's kernels. An arm left out would be a row
-// of the report's float block that nothing below asks this of.
+// The half lane's rows are not two fits read against each other but one lane's
+// bodies with half I/O: the row named for a policy is the float lane's body of
+// that name, its arguments and its return the half ones (measured, all four
+// arms on both axes: the half row and the float body it names agree in 56694 of
+// 56694 cells at the half lane's own arguments). Each is held to the body it
+// names, cell for cell, in every region: a row that read the other member's
+// fits would part from the body it names in every cell where the two bodies'
+// half images differ - 39 cells of B today - and the float lane's own rows
+// carry the rest. The reference the two bodies' own separation is recorded
+// against says why the rest is not carried here: the two bodies differ over
+// 4148 cells of A and 7789 of band at fp32, and the half format tells 0 and 0
+// of them apart, so in A and band a row answering from the other member's fits
+// and a row answering from its own are the same half values, cell for cell, and
+// no rule reading half values can tell them apart. That separation is measured
+// on the device pair of the same arm, not on the host's half entry: the host
+// path's two readings part at the half boundaries while the device pair agrees,
+// which is host rounding and not a difference any cell of the lane's can show.
+//
+// The rows are every row the report names over the grid, in all three
+// precisions: the launched pair on both packing axes at each arm of each lane,
+// and the device-callable pair reached through the consumer's kernels where the
+// lane reports one. The float and double lanes carry twelve rows - the four
+// arms of their cross, each on the argument axis, the orders axis and the
+// device-callable entry, which is all-orders-fp64-orders-uniform and
+// all-orders-f64-rat-horner-orders-uniform among the orders-axis rows - and the
+// half lane eight, its four arms on the two launched axes, the half lane having
+// no device-callable uniform/narrow pair over the grid to reach. An arm left
+// out would be a row of the report that nothing below asks this of.
 // ---------------------------------------------------------------------------
 
 /// One carriage row: the entry's own reading against the narrow member's of the
-/// same arm, cell for cell, region by region.
+/// same arm, cell for cell, region by region - or, where the row names a body
+/// (`namesBody`), against the float body it names, the row being that body with
+/// the half lane's argument and return.
 struct PartitionCarriageRow {
     std::string entry;
     std::array<std::size_t, 4> refDiffer{};
     std::array<std::size_t, 4> cells{};
     std::array<std::size_t, 4> differ{};
+    bool namesBody = false;
 };
 
 /// The per-argument host entry's own separation at one arm, which is the
-/// reference the arm's rows are held to.
+/// reference the arm's rows are held to. `bodies` is the half lane's: the same
+/// two bodies at fp32, where the arm's rows name float bodies and the lane's
+/// own format is the coarser of the two - recorded only there, the float and
+/// double lanes' references being read at their own resolution.
 struct PartitionCarriageRef {
     std::string axes;
     std::array<std::size_t, 4> differ{};
+    std::array<std::size_t, 4> bodies{};
+    bool bodiesRecorded = false;
 };
 
 std::vector<PartitionCarriageRow>& PartitionCarriageRows() {
@@ -3837,14 +3872,50 @@ std::vector<PartitionCarriageRef>& PartitionCarriageRefs() {
 /// The regions in the CPU gate's vocabulary, in its order.
 const char* const kCarriageRegionTag[4] = {"A", "band", "B", "C"};
 
-using LaunchF32 = boys::BoysStatus (*)(const int*, const double*, float*, std::size_t, void*,
-                                       boys::DivisionForm);
-using DemoF32 =
-    int (*)(const boys::BoysDeviceTables*, const int*, const double*, const double*, float*,
-            std::size_t, int, int*);
+/// The launched entries' shape at one lane: a batch of arguments in, one value
+/// per order per argument out. The value and the argument are the lane's - the
+/// fp64 rows carry doubles on the entries' own argument and the fp16 rows the
+/// half format on the half lane's - so one shape serves the three.
+template <typename Value, typename Arg>
+using LaunchAt = boys::BoysStatus (*)(const int*, const Arg*, Value*, std::size_t, void*,
+                                      boys::DivisionForm);
+
+/// The device-callable entries' shape at one lane: the handle, the factor pair
+/// a consumer's kernel forms its own argument from, and a block per element.
+template <typename Value>
+using DemoAt = int (*)(const boys::BoysDeviceTables*, const int*, const double*, const double*,
+                       Value*, std::size_t, int, int*);
 
 /// The per-argument host entry's own separation at one arm: the cells where
-/// naming the grid and naming the narrow member return different fp32 values.
+/// naming the grid and naming the narrow member return different values. The
+/// two readers are that entry at the arm's two granularities, read at the
+/// argument the lane evaluates at, and the two values are compared in the
+/// format the arm's own rows return.
+template <typename Value, typename GridRead, typename NarrowRead>
+std::array<std::size_t, 4> CarriageSeparation(const Reference& ref,
+                                              const std::vector<double>& args,
+                                              GridRead grid,
+                                              NarrowRead narrow) {
+    std::array<std::size_t, 4> differ{};
+
+    for (std::size_t i = 0; i < ref.count; ++i) {
+        const std::size_t region = static_cast<std::size_t>(SingleClaim(ref.x[i]));
+
+        for (int n = 0; n <= boys::kMaxBoysOrder; ++n) {
+            const Value got = grid(n, args[i]);
+            const Value other = narrow(n, args[i]);
+
+            if (std::memcmp(&got, &other, sizeof(Value)) != 0) {
+                ++differ[region];
+            }
+        }
+    }
+
+    return differ;
+}
+
+/// The float lane's per-argument entry at one arm, in its own argument and its
+/// own return: the two policies name the lane's grid and its narrow member.
 template <boys::FitRoute kRoute, boys::EvalScheme kScheme>
 std::array<std::size_t, 4> F32Separation(const Reference& ref) {
     using GridReading = boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFloat,
@@ -3854,38 +3925,98 @@ std::array<std::size_t, 4> F32Separation(const Reference& ref) {
                                            boys::PackAxis::kArguments,
                                            boys::FitGranularity::kNarrow>;
 
-    std::array<std::size_t, 4> differ{};
+    return CarriageSeparation<float>(
+        ref,
+        ref.xf,
+        [](int n, double x) {
+            return boys::BoysSingleF32<GridReading>(n, static_cast<float>(x));
+        },
+        [](int n, double x) {
+            return boys::BoysSingleF32<NarrowReading>(n, static_cast<float>(x));
+        });
+}
 
-    for (std::size_t i = 0; i < ref.count; ++i) {
-        const float xf = static_cast<float>(ref.xf[i]);
-        const std::size_t region = static_cast<std::size_t>(SingleClaim(ref.x[i]));
+/// The double lane's, at the same arm and the same two granularities. The
+/// budget axis is inert on this lane, which is why the policy names kFloat as
+/// the lane's own rows do.
+template <boys::FitRoute kRoute, boys::EvalScheme kScheme>
+std::array<std::size_t, 4> F64Separation(const Reference& ref) {
+    using GridReading = boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFloat,
+                                         boys::PackAxis::kArguments,
+                                         boys::FitGranularity::kUniform>;
+    using NarrowReading = boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFloat,
+                                           boys::PackAxis::kArguments,
+                                           boys::FitGranularity::kNarrow>;
 
-        for (int n = 0; n <= boys::kMaxBoysOrder; ++n) {
-            const float got = boys::BoysSingleF32<GridReading>(n, xf);
-            const float other = boys::BoysSingleF32<NarrowReading>(n, xf);
+    return CarriageSeparation<double>(
+        ref,
+        ref.x,
+        [](int n, double x) { return boys::BoysSingle<GridReading>(n, x); },
+        [](int n, double x) { return boys::BoysSingle<NarrowReading>(n, x); });
+}
 
-            if (std::memcmp(&got, &other, sizeof(float)) != 0) {
-                ++differ[region];
-            }
-        }
+/// The half lane's, at the same arm: the entry is the half lane's own and it is
+/// read at the argument that lane evaluates at, the half value the grid carries
+/// in x16. The two readings are compared as half values, which is what the rows
+/// this reference holds return.
+template <boys::FitRoute kRoute, boys::EvalScheme kScheme>
+std::array<std::size_t, 4> F16Separation(const Reference& ref) {
+    using GridReading = boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFp16,
+                                         boys::PackAxis::kArguments,
+                                         boys::FitGranularity::kUniform>;
+    using NarrowReading = boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFp16,
+                                           boys::PackAxis::kArguments,
+                                           boys::FitGranularity::kNarrow>;
+
+    return CarriageSeparation<boys::F16>(
+        ref,
+        ref.x16,
+        [](int n, double x) {
+            return boys::BoysSingleF16<GridReading>(n, boys::F16(static_cast<float>(x)));
+        },
+        [](int n, double x) {
+            return boys::BoysSingleF16<NarrowReading>(n, boys::F16(static_cast<float>(x)));
+        });
+}
+
+/// One arm's reference line, recorded: the lane, the route and the scheme the
+/// separation was measured at, which is what the line names it by, and - on the
+/// half lane - the same two bodies' separation where the reference is measured
+/// at the lane's own resolution rather than at the bodies'.
+void RecordPartitionCarriageRef(const char* precision,
+                                boys::FitRoute route,
+                                boys::EvalScheme scheme,
+                                const std::array<std::size_t, 4>& differ,
+                                const std::array<std::size_t, 4>* bodies = nullptr) {
+    PartitionCarriageRef reference;
+    reference.axes = (std::string(precision) + ", " + RouteName(route) + ", "
+                      + boys::EvalSchemeName(scheme));
+    reference.differ = differ;
+
+    if (bodies != nullptr) {
+        reference.bodies = *bodies;
+        reference.bodiesRecorded = true;
     }
 
-    return differ;
+    PartitionCarriageRefs().push_back(reference);
 }
 
 /// One row recorded. The slot function is the row's own layout: the launched
 /// rows write the order-major cell indexing, the device-callable ones a block
-/// per element.
-template <typename Slot>
-void RecordPartitionCarriageF32(const std::string& entry,
-                                const std::array<std::size_t, 4>& refDiffer,
-                                const Reference& ref,
-                                const std::vector<float>& uniform,
-                                const std::vector<float>& narrow,
-                                Slot slot) {
+/// per element. `namesBody` says the second reading is the float body the row
+/// names rather than the narrow member's own row.
+template <typename Value, typename Slot>
+void RecordPartitionCarriage(const std::string& entry,
+                             const std::array<std::size_t, 4>& refDiffer,
+                             const Reference& ref,
+                             const std::vector<Value>& uniform,
+                             const std::vector<Value>& narrow,
+                             Slot slot,
+                             bool namesBody = false) {
     PartitionCarriageRow row;
     row.entry = entry;
     row.refDiffer = refDiffer;
+    row.namesBody = namesBody;
 
     for (int n = 0; n <= boys::kMaxBoysOrder; ++n) {
         for (std::size_t i = 0; i < ref.count; ++i) {
@@ -3893,7 +4024,7 @@ void RecordPartitionCarriageF32(const std::string& entry,
             const std::size_t region = static_cast<std::size_t>(SingleClaim(ref.x[i]));
             ++row.cells[region];
 
-            if (std::memcmp(&uniform[slot(e, n)], &narrow[slot(e, n)], sizeof(float)) != 0) {
+            if (std::memcmp(&uniform[slot(e, n)], &narrow[slot(e, n)], sizeof(Value)) != 0) {
                 ++row.differ[region];
             }
         }
@@ -3904,19 +4035,24 @@ void RecordPartitionCarriageF32(const std::string& entry,
 
 /// One launched row's cells over the grid, with no claim attached: a carriage
 /// row is not a bound claim and is counted in the section of its own.
-std::vector<float> LaunchCarriageF32(const Reference& ref,
-                                     const Grid& grid,
-                                     const char* what,
-                                     LaunchF32 launch) {
-    const std::size_t count = ref.count;
+///
+/// The entry is handed the lane's argument list - the first `count` elements of
+/// the array the two entries below are launched over - and writes one value per
+/// order per argument, which is the layout the cells are indexed in.
+template <typename Value, typename Arg>
+std::vector<Value> LaunchCarriageGrid(const std::vector<Arg>& args,
+                                      std::size_t count,
+                                      std::size_t cells,
+                                      const char* what,
+                                      LaunchAt<Value, Arg> launch) {
     DevBuf<int> dN(count);
-    DevBuf<double> dX(count);
-    DevBuf<float> dOut(grid.cells);
+    DevBuf<Arg> dX(count);
+    DevBuf<Value> dOut(cells);
     const std::vector<int> tops(count, boys::kMaxBoysOrder);
     dN.Upload(tops);
-    dX.Upload(grid.x);
+    dX.Upload(args);
     CheckLaunch(launch(dN.get(), dX.get(), dOut.get(), count, nullptr, kGateDivisionForm), what);
-    std::vector<float> out(grid.cells);
+    std::vector<Value> out(cells);
     dOut.Download(out);
     Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
     return out;
@@ -3924,21 +4060,22 @@ std::vector<float> LaunchCarriageF32(const Reference& ref,
 
 /// One device-callable row's cells, through the consumer kernel that reaches
 /// it: the family layout, one block per element.
-std::vector<float> LaunchCarriageDemoF32(const boys::BoysDeviceTables& tables,
-                                         const Grid& grid,
-                                         const char* what,
-                                         DemoF32 demo) {
+template <typename Value>
+std::vector<Value> LaunchCarriageDemo(const boys::BoysDeviceTables& tables,
+                                      const Grid& grid,
+                                      const char* what,
+                                      DemoAt<Value> demo) {
     const std::size_t cells = grid.cells;
     const std::size_t family = cells * (static_cast<std::size_t>(boys::kMaxBoysOrder) + 1);
     DevBuf<int> dN(cells);
     DevBuf<double> dRho(cells);
     DevBuf<double> dD2(cells);
-    DevBuf<float> dOut(family);
+    DevBuf<Value> dOut(family);
     DevBuf<int> dStatus(cells);
     dN.Upload(grid.n);
     dRho.Upload(grid.rho);
     dD2.Upload(grid.d2);
-    dOut.Upload(std::vector<float>(family, 0.0f));
+    dOut.Upload(std::vector<Value>(family, Value{}));
     dStatus.Upload(std::vector<int>(cells, -1));
     CheckDemo(demo(&tables,
                    dN.get(),
@@ -3949,7 +4086,7 @@ std::vector<float> LaunchCarriageDemoF32(const boys::BoysDeviceTables& tables,
                    boys::kMaxBoysOrder + 1,
                    dStatus.get()),
               what);
-    std::vector<float> out(family);
+    std::vector<Value> out(family);
     std::vector<int> status(cells);
     dOut.Download(out);
     dStatus.Download(status);
@@ -3958,70 +4095,149 @@ std::vector<float> LaunchCarriageDemoF32(const boys::BoysDeviceTables& tables,
     return out;
 }
 
-/// One arm's rows: the launched pair on the arguments axis, the launched pair
-/// on the orders axis, and the device-callable pair. The three are one arm's
-/// and not three: the reference they are held to is that arm's own.
-template <boys::FitRoute kRoute, boys::EvalScheme kScheme>
-void PartitionCarriageArmF32(const Reference& ref,
-                             const Grid& grid,
-                             const boys::BoysDeviceTables& tables,
-                             boys::DeviceEntry uniformArgs,
-                             LaunchF32 uniformArgsLaunch,
-                             boys::DeviceEntry narrowArgs,
-                             LaunchF32 narrowArgsLaunch,
-                             boys::DeviceEntry uniformOrders,
-                             LaunchF32 uniformOrdersLaunch,
-                             boys::DeviceEntry narrowOrders,
-                             LaunchF32 narrowOrdersLaunch,
-                             boys::DeviceEntry uniformDemo,
-                             DemoF32 uniformDemoLaunch,
-                             boys::DeviceEntry narrowDemo,
-                             DemoF32 narrowDemoLaunch) {
-    const std::array<std::size_t, 4> refDiffer = F32Separation<kRoute, kScheme>(ref);
-
-    PartitionCarriageRef reference;
-    reference.axes = (std::string("fp32, ") + RouteName(kRoute) + ", "
-                      + boys::EvalSchemeName(kScheme));
-    reference.differ = refDiffer;
-    PartitionCarriageRefs().push_back(reference);
-
+/// One arm's launched rows: the pair on the arguments axis and the pair on the
+/// orders axis. The rows are held to the arm's own reference, which the caller
+/// computes once: the two axes are one arm's and not two.
+///
+/// Where the arm's row names a float body - the half lane's shape - the body's
+/// values in the row's own format are handed in, and the row is read against
+/// that body rather than against the narrow member's row. The narrow entry and
+/// its launcher are the pair's other name and are not reached there.
+template <typename Value, typename Arg>
+void PartitionCarriageLaunchedRows(const Reference& ref,
+                                   const Grid& grid,
+                                   const std::array<std::size_t, 4>& refDiffer,
+                                   const std::vector<Arg>& args,
+                                   boys::DeviceEntry uniformArgs,
+                                   LaunchAt<Value, Arg> uniformArgsLaunch,
+                                   boys::DeviceEntry narrowArgs,
+                                   LaunchAt<Value, Arg> narrowArgsLaunch,
+                                   boys::DeviceEntry uniformOrders,
+                                   LaunchAt<Value, Arg> uniformOrdersLaunch,
+                                   boys::DeviceEntry narrowOrders,
+                                   LaunchAt<Value, Arg> narrowOrdersLaunch,
+                                   const std::vector<Value>* uniformArgsBody = nullptr,
+                                   const std::vector<Value>* uniformOrdersBody = nullptr) {
     // The launched rows write the order-major cell indexing the report's rows
     // are measured in, so the cell index is the slot.
     const auto cellSlot = [](std::size_t e, int) { return e; };
 
     {
         const std::string uniformName = Label(DeviceRow(uniformArgs).name);
-        const std::string narrowName = Label(DeviceRow(narrowArgs).name);
-        const std::vector<float> u =
-            LaunchCarriageF32(ref, grid, uniformName.c_str(), uniformArgsLaunch);
-        const std::vector<float> v =
-            LaunchCarriageF32(ref, grid, narrowName.c_str(), narrowArgsLaunch);
+        const std::vector<Value> u = LaunchCarriageGrid<Value, Arg>(
+            args, ref.count, grid.cells, uniformName.c_str(), uniformArgsLaunch);
 
-        RecordPartitionCarriageF32(uniformName, refDiffer, ref, u, v, cellSlot);
+        if (uniformArgsBody != nullptr) {
+            RecordPartitionCarriage<Value>(
+                uniformName, refDiffer, ref, u, *uniformArgsBody, cellSlot, true);
+        } else {
+            const std::string narrowName = Label(DeviceRow(narrowArgs).name);
+            const std::vector<Value> v = LaunchCarriageGrid<Value, Arg>(
+                args, ref.count, grid.cells, narrowName.c_str(), narrowArgsLaunch);
+
+            RecordPartitionCarriage<Value>(uniformName, refDiffer, ref, u, v, cellSlot);
+        }
     }
 
     // The orders axis: the same reference, the arm's other reading of region A.
     {
         const std::string uniformName = Label(DeviceRow(uniformOrders).name);
-        const std::string narrowName = Label(DeviceRow(narrowOrders).name);
-        const std::vector<float> u =
-            LaunchCarriageF32(ref, grid, uniformName.c_str(), uniformOrdersLaunch);
-        const std::vector<float> v =
-            LaunchCarriageF32(ref, grid, narrowName.c_str(), narrowOrdersLaunch);
+        const std::vector<Value> u = LaunchCarriageGrid<Value, Arg>(
+            args, ref.count, grid.cells, uniformName.c_str(), uniformOrdersLaunch);
 
-        RecordPartitionCarriageF32(uniformName, refDiffer, ref, u, v, cellSlot);
+        if (uniformOrdersBody != nullptr) {
+            RecordPartitionCarriage<Value>(
+                uniformName, refDiffer, ref, u, *uniformOrdersBody, cellSlot, true);
+        } else {
+            const std::string narrowName = Label(DeviceRow(narrowOrders).name);
+            const std::vector<Value> v = LaunchCarriageGrid<Value, Arg>(
+                args, ref.count, grid.cells, narrowName.c_str(), narrowOrdersLaunch);
+
+            RecordPartitionCarriage<Value>(uniformName, refDiffer, ref, u, v, cellSlot);
+        }
     }
+}
 
-    // The device-callable pair, in the family layout of the consumer's kernel.
-    {
-        const std::string uniformName = Label(DeviceRow(uniformDemo).name);
-        const std::string narrowName = Label(DeviceRow(narrowDemo).name);
-        const std::vector<float> u =
-            LaunchCarriageDemoF32(tables, grid, uniformName.c_str(), uniformDemoLaunch);
-        const std::vector<float> v =
-            LaunchCarriageDemoF32(tables, grid, narrowName.c_str(), narrowDemoLaunch);
+/// One arm's device-callable rows, where the lane reports a pair: the same
+/// reference, reached through the consumer's kernel in the family layout.
+template <typename Value>
+void PartitionCarriageDemoRows(const Reference& ref,
+                               const boys::BoysDeviceTables& tables,
+                               const Grid& grid,
+                               const std::array<std::size_t, 4>& refDiffer,
+                               boys::DeviceEntry uniformDemo,
+                               DemoAt<Value> uniformDemoLaunch,
+                               boys::DeviceEntry narrowDemo,
+                               DemoAt<Value> narrowDemoLaunch) {
+    const std::string uniformName = Label(DeviceRow(uniformDemo).name);
+    const std::string narrowName = Label(DeviceRow(narrowDemo).name);
+    const std::vector<Value> u =
+        LaunchCarriageDemo<Value>(tables, grid, uniformName.c_str(), uniformDemoLaunch);
+    const std::vector<Value> v =
+        LaunchCarriageDemo<Value>(tables, grid, narrowName.c_str(), narrowDemoLaunch);
 
-        RecordPartitionCarriageF32(uniformName, refDiffer, ref, u, v, FamilySlot);
+    RecordPartitionCarriage<Value>(uniformName, refDiffer, ref, u, v, FamilySlot);
+}
+
+/// One arm's rows: the launched pair on the arguments axis, the launched pair
+/// on the orders axis, and - where the lane reports one - the device-callable
+/// pair. The three are one arm's and not three: the reference they are held to
+/// is that arm's own, which the caller measures once and hands in.
+///
+/// On the half lane the two bodies the rows name are handed in with the arm:
+/// each row is read against the body it names rather than against the narrow
+/// member's row, and the bodies' own separation is recorded with the reference.
+template <typename Value, typename Arg, boys::FitRoute kRoute, boys::EvalScheme kScheme>
+void PartitionCarriageArm(const char* precision,
+                          const Reference& ref,
+                          const Grid& grid,
+                          const std::vector<Arg>& args,
+                          const std::array<std::size_t, 4>& refDiffer,
+                          const boys::BoysDeviceTables& tables,
+                          boys::DeviceEntry uniformArgs,
+                          LaunchAt<Value, Arg> uniformArgsLaunch,
+                          boys::DeviceEntry narrowArgs,
+                          LaunchAt<Value, Arg> narrowArgsLaunch,
+                          boys::DeviceEntry uniformOrders,
+                          LaunchAt<Value, Arg> uniformOrdersLaunch,
+                          boys::DeviceEntry narrowOrders,
+                          LaunchAt<Value, Arg> narrowOrdersLaunch,
+                          boys::DeviceEntry uniformDemo,
+                          DemoAt<Value> uniformDemoLaunch,
+                          boys::DeviceEntry narrowDemo,
+                          DemoAt<Value> narrowDemoLaunch,
+                          const std::vector<Value>* uniformArgsBody = nullptr,
+                          const std::vector<Value>* uniformOrdersBody = nullptr,
+                          const std::array<std::size_t, 4>* bodies = nullptr) {
+    RecordPartitionCarriageRef(precision, kRoute, kScheme, refDiffer, bodies);
+
+    PartitionCarriageLaunchedRows<Value, Arg>(ref,
+                                              grid,
+                                              refDiffer,
+                                              args,
+                                              uniformArgs,
+                                              uniformArgsLaunch,
+                                              narrowArgs,
+                                              narrowArgsLaunch,
+                                              uniformOrders,
+                                              uniformOrdersLaunch,
+                                              narrowOrders,
+                                              narrowOrdersLaunch,
+                                              uniformArgsBody,
+                                              uniformOrdersBody);
+
+    // The half lane's report carries no device-callable row over the grid, and
+    // a launcher it does not have is the only way to say so: the pair is
+    // reached where the lane reports one and nowhere else.
+    if (uniformDemoLaunch != nullptr && narrowDemoLaunch != nullptr) {
+        PartitionCarriageDemoRows<Value>(ref,
+                                         tables,
+                                         grid,
+                                         refDiffer,
+                                         uniformDemo,
+                                         uniformDemoLaunch,
+                                         narrowDemo,
+                                         narrowDemoLaunch);
     }
 }
 
@@ -4033,9 +4249,15 @@ void PartitionCarriageArmF32(const Reference& ref,
 void PartitionCarriageF32(const Reference& ref,
                           const Grid& grid,
                           const boys::BoysDeviceTables& tables) {
-    PartitionCarriageArmF32<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw>(
+    PartitionCarriageArm<float,
+                         double,
+                         boys::FitRoute::kChebyshev,
+                         boys::EvalScheme::kSplitClenshaw>(
+        "fp32",
         ref,
         grid,
+        ref.x,
+        F32Separation<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw>(ref),
         tables,
         boys::DeviceEntry::kAllOrdersF32Uniform,
         &boys::BoysCuda::AllOrdersF32Uniform,
@@ -4050,9 +4272,12 @@ void PartitionCarriageF32(const Reference& ref,
         boys::DeviceEntry::kDeviceAllOrdersF32Narrow,
         &BoysDeviceDemoLadder32Narrow);
 
-    PartitionCarriageArmF32<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>(
+    PartitionCarriageArm<float, double, boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>(
+        "fp32",
         ref,
         grid,
+        ref.x,
+        F32Separation<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>(ref),
         tables,
         boys::DeviceEntry::kAllOrdersF32UniformHorner,
         &boys::BoysCuda::AllOrdersF32UniformHorner,
@@ -4067,10 +4292,15 @@ void PartitionCarriageF32(const Reference& ref,
         boys::DeviceEntry::kDeviceAllOrdersF32NarrowMono,
         &BoysDeviceDemoLadder32NarrowMono);
 
-    PartitionCarriageArmF32<boys::FitRoute::kRationalMinimax,
-                            boys::EvalScheme::kSplitClenshaw>(
+    PartitionCarriageArm<float,
+                         double,
+                         boys::FitRoute::kRationalMinimax,
+                         boys::EvalScheme::kSplitClenshaw>(
+        "fp32",
         ref,
         grid,
+        ref.x,
+        F32Separation<boys::FitRoute::kRationalMinimax, boys::EvalScheme::kSplitClenshaw>(ref),
         tables,
         boys::DeviceEntry::kAllOrdersF32UniformRat,
         &boys::BoysCuda::AllOrdersF32UniformRat,
@@ -4085,9 +4315,12 @@ void PartitionCarriageF32(const Reference& ref,
         boys::DeviceEntry::kDeviceAllOrdersF32NarrowRat,
         &BoysDeviceDemoLadder32NarrowRat);
 
-    PartitionCarriageArmF32<boys::FitRoute::kRationalMinimax, boys::EvalScheme::kHorner>(
+    PartitionCarriageArm<float, double, boys::FitRoute::kRationalMinimax, boys::EvalScheme::kHorner>(
+        "fp32",
         ref,
         grid,
+        ref.x,
+        F32Separation<boys::FitRoute::kRationalMinimax, boys::EvalScheme::kHorner>(ref),
         tables,
         boys::DeviceEntry::kAllOrdersF32UniformRatHorner,
         &boys::BoysCuda::AllOrdersF32UniformRatHorner,
@@ -4103,33 +4336,367 @@ void PartitionCarriageF32(const Reference& ref,
         &BoysDeviceDemoLadder32NarrowRatHorner);
 }
 
+/// The fp64 lane's, at the same four arms and the same two reaches. The
+/// launched entries carry doubles on their own argument and the device-callable
+/// ones the factor pair, so the argument vector is the reference's own.
+void PartitionCarriageF64(const Reference& ref,
+                          const Grid& grid,
+                          const boys::BoysDeviceTables& tables) {
+    PartitionCarriageArm<double,
+                         double,
+                         boys::FitRoute::kChebyshev,
+                         boys::EvalScheme::kSplitClenshaw>(
+        "fp64",
+        ref,
+        grid,
+        ref.x,
+        F64Separation<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw>(ref),
+        tables,
+        boys::DeviceEntry::kAllOrdersF64Uniform,
+        &boys::BoysCuda::AllOrdersF64Uniform,
+        boys::DeviceEntry::kAllOrdersF64Narrow,
+        &boys::BoysCuda::AllOrdersF64Narrow,
+        boys::DeviceEntry::kAllOrdersF64OrdersUniform,
+        &boys::BoysCuda::AllOrdersF64OrdersUniform,
+        boys::DeviceEntry::kAllOrdersF64NarrowOrders,
+        &boys::BoysCuda::AllOrdersF64NarrowOrders,
+        boys::DeviceEntry::kDeviceAllOrdersF64Uniform,
+        &BoysDeviceDemoLadder64Uniform,
+        boys::DeviceEntry::kDeviceAllOrdersF64Narrow,
+        &BoysDeviceDemoLadder64Narrow);
+
+    PartitionCarriageArm<double, double, boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>(
+        "fp64",
+        ref,
+        grid,
+        ref.x,
+        F64Separation<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>(ref),
+        tables,
+        boys::DeviceEntry::kAllOrdersF64UniformHorner,
+        &boys::BoysCuda::AllOrdersF64UniformHorner,
+        boys::DeviceEntry::kAllOrdersF64NarrowMono,
+        &boys::BoysCuda::AllOrdersF64NarrowMono,
+        boys::DeviceEntry::kAllOrdersF64OrdersUniformHorner,
+        &boys::BoysCuda::AllOrdersF64OrdersUniformHorner,
+        boys::DeviceEntry::kAllOrdersF64NarrowOrdersMono,
+        &boys::BoysCuda::AllOrdersF64NarrowOrdersMono,
+        boys::DeviceEntry::kDeviceAllOrdersF64UniformHorner,
+        &BoysDeviceDemoLadder64UniformHorner,
+        boys::DeviceEntry::kDeviceAllOrdersF64NarrowMono,
+        &BoysDeviceDemoLadder64NarrowMono);
+
+    PartitionCarriageArm<double,
+                         double,
+                         boys::FitRoute::kRationalMinimax,
+                         boys::EvalScheme::kSplitClenshaw>(
+        "fp64",
+        ref,
+        grid,
+        ref.x,
+        F64Separation<boys::FitRoute::kRationalMinimax, boys::EvalScheme::kSplitClenshaw>(ref),
+        tables,
+        boys::DeviceEntry::kAllOrdersF64UniformRat,
+        &boys::BoysCuda::AllOrdersF64UniformRat,
+        boys::DeviceEntry::kAllOrdersF64NarrowRat,
+        &boys::BoysCuda::AllOrdersF64NarrowRat,
+        boys::DeviceEntry::kAllOrdersF64OrdersUniformRat,
+        &boys::BoysCuda::AllOrdersF64OrdersUniformRat,
+        boys::DeviceEntry::kAllOrdersF64NarrowOrdersRat,
+        &boys::BoysCuda::AllOrdersF64NarrowOrdersRat,
+        boys::DeviceEntry::kDeviceAllOrdersF64UniformRat,
+        &BoysDeviceDemoLadder64UniformRat,
+        boys::DeviceEntry::kDeviceAllOrdersF64NarrowRat,
+        &BoysDeviceDemoLadder64NarrowRat);
+
+    PartitionCarriageArm<double,
+                         double,
+                         boys::FitRoute::kRationalMinimax,
+                         boys::EvalScheme::kHorner>(
+        "fp64",
+        ref,
+        grid,
+        ref.x,
+        F64Separation<boys::FitRoute::kRationalMinimax, boys::EvalScheme::kHorner>(ref),
+        tables,
+        boys::DeviceEntry::kAllOrdersF64UniformRatHorner,
+        &boys::BoysCuda::AllOrdersF64UniformRatHorner,
+        boys::DeviceEntry::kAllOrdersF64NarrowRatHorner,
+        &boys::BoysCuda::AllOrdersF64NarrowRat,
+        boys::DeviceEntry::kAllOrdersF64OrdersUniformRatHorner,
+        &boys::BoysCuda::AllOrdersF64OrdersUniformRatHorner,
+        boys::DeviceEntry::kAllOrdersF64NarrowOrdersRatHorner,
+        &boys::BoysCuda::AllOrdersF64NarrowOrdersRat,
+        boys::DeviceEntry::kDeviceAllOrdersF64UniformRatHorner,
+        &BoysDeviceDemoLadder64UniformRatHorner,
+        boys::DeviceEntry::kDeviceAllOrdersF64NarrowRatHorner,
+        &BoysDeviceDemoLadder64NarrowRatHorner);
+}
+
+#if BoysFp16
+/// The two float bodies one arm's half rows name, at the half lane's own
+/// arguments: counted per region, the cells where the two differ at fp32 - the
+/// separation the float lane's own rows carry - and the cells where their half
+/// images differ, which is where a row answering from the other member's fits
+/// would part from the body it names.
+struct HalfBodies {
+    std::array<std::size_t, 4> halves{};
+    std::array<std::size_t, 4> bodies{};
+};
+
+/// The two bodies of one axis, read from the device pair of the same arm
+/// launched at the half lane's own arguments.
+HalfBodies HalfBodiesOf(const Reference& ref,
+                        const std::vector<float>& uniform,
+                        const std::vector<float>& narrow) {
+    HalfBodies counted;
+
+    for (std::size_t i = 0; i < ref.count; ++i) {
+        const std::size_t region = static_cast<std::size_t>(SingleClaim(ref.x[i]));
+
+        for (int n = 0; n <= boys::kMaxBoysOrder; ++n) {
+            const std::size_t e = ref.Index(n, i);
+
+            if (std::memcmp(&uniform[e], &narrow[e], sizeof(float)) != 0) {
+                ++counted.bodies[region];
+            }
+
+            const boys::F16 got = boys::F16(uniform[e]);
+            const boys::F16 other = boys::F16(narrow[e]);
+
+            if (std::memcmp(&got, &other, sizeof(boys::F16)) != 0) {
+                ++counted.halves[region];
+            }
+        }
+    }
+
+    return counted;
+}
+
+/// One half-lane arm. The lane's rows name the float lane's bodies with half
+/// I/O, so the arm is handed those bodies' launchers: the pair is launched at
+/// the half lane's own arguments, the body's half image is what each row is
+/// read against, and the bodies' own separation is the reference recorded with
+/// the arm. That reference is read at the lane's resolution, because a rule
+/// reading this lane's rows cannot hold a difference the format has already
+/// rounded away; the fp32 count recorded beside it is the same two bodies'
+/// separation, which is what the float lane's own rows carry.
+template <boys::FitRoute kRoute, boys::EvalScheme kScheme>
+void PartitionCarriageHalfArm(const Reference& ref,
+                              const Grid& grid,
+                              const std::vector<boys::F16>& args,
+                              const std::vector<double>& halfArgs,
+                              const boys::BoysDeviceTables& tables,
+                              boys::DeviceEntry uniformArgs,
+                              LaunchAt<boys::F16, boys::F16> uniformArgsLaunch,
+                              boys::DeviceEntry narrowArgs,
+                              LaunchAt<boys::F16, boys::F16> narrowArgsLaunch,
+                              boys::DeviceEntry uniformOrders,
+                              LaunchAt<boys::F16, boys::F16> uniformOrdersLaunch,
+                              boys::DeviceEntry narrowOrders,
+                              LaunchAt<boys::F16, boys::F16> narrowOrdersLaunch,
+                              boys::DeviceEntry bodyArgs,
+                              LaunchAt<float, double> bodyArgsLaunch,
+                              boys::DeviceEntry bodyNarrowArgs,
+                              LaunchAt<float, double> bodyNarrowArgsLaunch,
+                              boys::DeviceEntry bodyOrders,
+                              LaunchAt<float, double> bodyOrdersLaunch,
+                              boys::DeviceEntry bodyNarrowOrders,
+                              LaunchAt<float, double> bodyNarrowOrdersLaunch) {
+    const std::string bodyArgsName = Label(DeviceRow(bodyArgs).name);
+    const std::string bodyNarrowArgsName = Label(DeviceRow(bodyNarrowArgs).name);
+    const std::string bodyOrdersName = Label(DeviceRow(bodyOrders).name);
+    const std::string bodyNarrowOrdersName = Label(DeviceRow(bodyNarrowOrders).name);
+
+    const std::vector<float> ua = LaunchCarriageGrid<float, double>(
+        halfArgs, ref.count, grid.cells, bodyArgsName.c_str(), bodyArgsLaunch);
+    const std::vector<float> na = LaunchCarriageGrid<float, double>(
+        halfArgs, ref.count, grid.cells, bodyNarrowArgsName.c_str(), bodyNarrowArgsLaunch);
+    const std::vector<float> uo = LaunchCarriageGrid<float, double>(
+        halfArgs, ref.count, grid.cells, bodyOrdersName.c_str(), bodyOrdersLaunch);
+    const std::vector<float> no = LaunchCarriageGrid<float, double>(
+        halfArgs, ref.count, grid.cells, bodyNarrowOrdersName.c_str(), bodyNarrowOrdersLaunch);
+
+    const HalfBodies argsBodies = HalfBodiesOf(ref, ua, na);
+    const HalfBodies ordersBodies = HalfBodiesOf(ref, uo, no);
+
+    std::vector<boys::F16> argsImage(grid.cells);
+    std::vector<boys::F16> ordersImage(grid.cells);
+
+    for (std::size_t e = 0; e < grid.cells; ++e) {
+        argsImage[e] = boys::F16(ua[e]);
+        ordersImage[e] = boys::F16(uo[e]);
+    }
+
+    PartitionCarriageArm<boys::F16,
+                         boys::F16,
+                         kRoute,
+                         kScheme>("fp16",
+                                  ref,
+                                  grid,
+                                  args,
+                                  argsBodies.halves,
+                                  tables,
+                                  uniformArgs,
+                                  uniformArgsLaunch,
+                                  narrowArgs,
+                                  narrowArgsLaunch,
+                                  uniformOrders,
+                                  uniformOrdersLaunch,
+                                  narrowOrders,
+                                  narrowOrdersLaunch,
+                                  boys::DeviceEntry::kAllOrdersF16Uniform,
+                                  nullptr,
+                                  boys::DeviceEntry::kAllOrdersF16Narrow,
+                                  nullptr,
+                                  &argsImage,
+                                  &ordersImage,
+                                  &argsBodies.bodies);
+}
+
+/// The fp16 lane's, at the same four arms: the launched row on each packing
+/// axis, held to the float body it names, cell for cell, at the lane's own
+/// arguments - the body's values in the row's format are the row's second
+/// reading. The lane carries no device-callable row of the uniform pair, so
+/// none is reached here. The argument vector is the half value the lane's own
+/// rows are launched on, which is the value the reference's x16 column holds;
+/// the float bodies are launched at those same values, widened, because that is
+/// the argument list the lane the rows belong to is handed.
+void PartitionCarriageF16(const Reference& ref,
+                          const Grid& grid,
+                          const boys::BoysDeviceTables& tables) {
+    std::vector<boys::F16> args(ref.count);
+    std::vector<double> halfArgs(ref.count);
+
+    for (std::size_t i = 0; i < ref.count; ++i) {
+        args[i] = boys::F16(static_cast<float>(ref.x[i]));
+        halfArgs[i] = static_cast<double>(args[i]);
+    }
+
+    PartitionCarriageHalfArm<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw>(
+        ref,
+        grid,
+        args,
+        halfArgs,
+        tables,
+        boys::DeviceEntry::kAllOrdersF16Uniform,
+        &boys::BoysCuda::AllOrdersF16Uniform,
+        boys::DeviceEntry::kAllOrdersF16Narrow,
+        &boys::BoysCuda::AllOrdersF16Narrow,
+        boys::DeviceEntry::kAllOrdersF16OrdersUniform,
+        &boys::BoysCuda::AllOrdersF16OrdersUniform,
+        boys::DeviceEntry::kAllOrdersF16NarrowOrders,
+        &boys::BoysCuda::AllOrdersF16NarrowOrders,
+        boys::DeviceEntry::kAllOrdersF32Uniform,
+        &boys::BoysCuda::AllOrdersF32Uniform,
+        boys::DeviceEntry::kAllOrdersF32Narrow,
+        &boys::BoysCuda::AllOrdersF32Narrow,
+        boys::DeviceEntry::kAllOrdersF32OrdersUniform,
+        &boys::BoysCuda::AllOrdersF32OrdersUniform,
+        boys::DeviceEntry::kAllOrdersF32NarrowOrders,
+        &boys::BoysCuda::AllOrdersF32NarrowOrders);
+
+    PartitionCarriageHalfArm<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>(
+        ref,
+        grid,
+        args,
+        halfArgs,
+        tables,
+        boys::DeviceEntry::kAllOrdersF16UniformHorner,
+        &boys::BoysCuda::AllOrdersF16UniformHorner,
+        boys::DeviceEntry::kAllOrdersF16NarrowMono,
+        &boys::BoysCuda::AllOrdersF16NarrowMono,
+        boys::DeviceEntry::kAllOrdersF16OrdersUniformHorner,
+        &boys::BoysCuda::AllOrdersF16OrdersUniformHorner,
+        boys::DeviceEntry::kAllOrdersF16NarrowOrdersMono,
+        &boys::BoysCuda::AllOrdersF16NarrowOrdersMono,
+        boys::DeviceEntry::kAllOrdersF32UniformHorner,
+        &boys::BoysCuda::AllOrdersF32UniformHorner,
+        boys::DeviceEntry::kAllOrdersF32NarrowMono,
+        &boys::BoysCuda::AllOrdersF32NarrowMono,
+        boys::DeviceEntry::kAllOrdersF32OrdersUniformHorner,
+        &boys::BoysCuda::AllOrdersF32OrdersUniformHorner,
+        boys::DeviceEntry::kAllOrdersF32NarrowOrdersMono,
+        &boys::BoysCuda::AllOrdersF32NarrowOrdersMono);
+
+    PartitionCarriageHalfArm<boys::FitRoute::kRationalMinimax, boys::EvalScheme::kSplitClenshaw>(
+        ref,
+        grid,
+        args,
+        halfArgs,
+        tables,
+        boys::DeviceEntry::kAllOrdersF16UniformRat,
+        &boys::BoysCuda::AllOrdersF16UniformRat,
+        boys::DeviceEntry::kAllOrdersF16NarrowRat,
+        &boys::BoysCuda::AllOrdersF16NarrowRat,
+        boys::DeviceEntry::kAllOrdersF16OrdersUniformRat,
+        &boys::BoysCuda::AllOrdersF16OrdersUniformRat,
+        boys::DeviceEntry::kAllOrdersF16NarrowOrdersRat,
+        &boys::BoysCuda::AllOrdersF16NarrowOrdersRat,
+        boys::DeviceEntry::kAllOrdersF32UniformRat,
+        &boys::BoysCuda::AllOrdersF32UniformRat,
+        boys::DeviceEntry::kAllOrdersF32NarrowRat,
+        &boys::BoysCuda::AllOrdersF32NarrowRat,
+        boys::DeviceEntry::kAllOrdersF32OrdersUniformRat,
+        &boys::BoysCuda::AllOrdersF32OrdersUniformRat,
+        boys::DeviceEntry::kAllOrdersF32NarrowOrdersRat,
+        &boys::BoysCuda::AllOrdersF32NarrowOrdersRat);
+
+    PartitionCarriageHalfArm<boys::FitRoute::kRationalMinimax, boys::EvalScheme::kHorner>(
+        ref,
+        grid,
+        args,
+        halfArgs,
+        tables,
+        boys::DeviceEntry::kAllOrdersF16UniformRatHorner,
+        &boys::BoysCuda::AllOrdersF16UniformRatHorner,
+        boys::DeviceEntry::kAllOrdersF16NarrowRatHorner,
+        &boys::BoysCuda::AllOrdersF16NarrowRatHorner,
+        boys::DeviceEntry::kAllOrdersF16OrdersUniformRatHorner,
+        &boys::BoysCuda::AllOrdersF16OrdersUniformRatHorner,
+        boys::DeviceEntry::kAllOrdersF16NarrowOrdersRatHorner,
+        &boys::BoysCuda::AllOrdersF16NarrowOrdersRatHorner,
+        boys::DeviceEntry::kAllOrdersF32UniformRatHorner,
+        &boys::BoysCuda::AllOrdersF32UniformRatHorner,
+        boys::DeviceEntry::kAllOrdersF32NarrowRatHorner,
+        &boys::BoysCuda::AllOrdersF32NarrowRatHorner,
+        boys::DeviceEntry::kAllOrdersF32OrdersUniformRatHorner,
+        &boys::BoysCuda::AllOrdersF32OrdersUniformRatHorner,
+        boys::DeviceEntry::kAllOrdersF32NarrowOrdersRatHorner,
+        &boys::BoysCuda::AllOrdersF32NarrowOrdersRatHorner);
+}
+#endif // BoysFp16
+
 /// The carriage section: the arms' references, the rows, and the verdict. A row
 /// is held to every region where the per-argument entry's two readings differ,
 /// and a row whose readings coincide over all of such a region is a row that
 /// answered that region from the narrow member's fits.
 ///
 /// Returns the number of rows that failed, which the caller's verdict carries.
-std::size_t PrintPartitionCarriageF32() {
+std::size_t PrintPartitionCarriage() {
     const std::vector<PartitionCarriageRow>& rows = PartitionCarriageRows();
 
     if (rows.empty()) {
         return 0;
     }
 
-    std::printf("\nthe uniform grid's carriage on the single-precision device rows: every fp32 row "
-                "of\nthe report that answers a policy naming the grid is read twice in one pass - "
-                "its own\nreading and the narrow member's of the same arm - and the cells where the "
-                "two differ\nare counted per region against the per-argument host entry's own "
-                "separation at that\narm, which is the rule the CPU gate holds its own "
-                "single-precision rows to. The two\npartitions hold the same bar over the same "
-                "intervals, so no accuracy row can tell them\napart: a row that read the narrow "
-                "member's tables under the grid's name would print\nthe same numbers, and a region "
-                "where the per-argument entry's readings differ and\nthis row's do not is that "
-                "row answering from the narrow member's fits.\n");
-    std::printf("  the per-argument host entry's own separation, the reference each arm's rows "
-                "are held to:\n");
+    std::printf("\nthe uniform grid's carriage on the device rows: every row of the report that "
+                "answers a\npolicy naming the grid is read twice in one pass, and the cells where "
+                "the two readings\ndiffer are counted per region - which is the rule the CPU gate "
+                "holds its own rows to. The\ntwo partitions hold the same bar over the same "
+                "intervals, so no accuracy row can tell\nthem apart: a row that read the narrow "
+                "member's tables under the grid's name would print\nthe same numbers inside the "
+                "same bound.\n");
+
+    std::printf("\n  the per-argument host entry's own separation, the reference the float and "
+                "double\n  lanes' rows are held to: a region where the entry's own two readings "
+                "differ and the\n  row's do not is that row answering from the narrow member's "
+                "fits\n");
 
     for (const PartitionCarriageRef& armRef : PartitionCarriageRefs()) {
+        if (armRef.bodiesRecorded) {
+            continue;
+        }
+
         std::printf("    %-40s A %zu, band %zu, B %zu, C %zu cell(s)\n",
                     armRef.axes.c_str(),
                     armRef.differ[0],
@@ -4138,13 +4705,41 @@ std::size_t PrintPartitionCarriageF32() {
                     armRef.differ[3]);
     }
 
-    std::printf("  %-58s %9s %9s  %-14s %s\n",
+    std::printf("\n  the half lane's rows are not two fits read against each other: each names "
+                "a float\n  body of the lane that stores half values with half I/O, and is held "
+                "to the body it\n  names, cell for cell, at the half lane's own arguments. The "
+                "two bodies an arm's rows\n  name, and the cells where a row answering from the "
+                "other member's fits would part\n  from the body it names - the half format "
+                "tells apart only what the half store still\n  carries, and the count at fp32 "
+                "beside it is what the float lane's own rows hold:\n");
+
+    for (const PartitionCarriageRef& armRef : PartitionCarriageRefs()) {
+        if (!armRef.bodiesRecorded) {
+            continue;
+        }
+
+        std::printf("    %-40s A %zu, band %zu, B %zu, C %zu cell(s) at fp32,\n",
+                    armRef.axes.c_str(),
+                    armRef.bodies[0],
+                    armRef.bodies[1],
+                    armRef.bodies[2],
+                    armRef.bodies[3]);
+        std::printf("    %-40s of which the half format tells A %zu, band %zu, B %zu, C %zu "
+                    "apart\n",
+                    "",
+                    armRef.differ[0],
+                    armRef.differ[1],
+                    armRef.differ[2],
+                    armRef.differ[3]);
+    }
+
+    std::printf("  %-58s %9s %9s  %-20s %s\n",
                 "entry",
                 "cells",
                 "differ",
                 "A/band/B/C",
                 "verdict");
-    std::printf("  %s\n", std::string(140, '-').c_str());
+    std::printf("  %s\n", std::string(150, '-').c_str());
 
     std::size_t met = 0;
     std::vector<std::string> notMet;
@@ -4157,11 +4752,18 @@ std::size_t PrintPartitionCarriageF32() {
         std::size_t at = 0;
 
         for (std::size_t r = 0; r < 4; ++r) {
-            const char* tok = row.cells[r] == 0 ? "-" : (row.differ[r] > 0 ? "yes" : "NO");
+            const char* tok = row.cells[r] == 0
+                                  ? "-"
+                                  : row.namesBody ? (row.differ[r] == 0 ? "same" : "DIFF")
+                                                  : (row.differ[r] > 0 ? "yes" : "NO");
             at += static_cast<std::size_t>(std::snprintf(
                 tokens + at, sizeof(tokens) - at, "%s%s", r == 0 ? "" : "/", tok));
 
-            if (row.refDiffer[r] > 0 && row.cells[r] > 0 && row.differ[r] == 0) {
+            if (row.namesBody) {
+                if (row.differ[r] > 0) {
+                    ++missed;
+                }
+            } else if (row.refDiffer[r] > 0 && row.cells[r] > 0 && row.differ[r] == 0) {
                 ++missed;
             }
 
@@ -4171,16 +4773,45 @@ std::size_t PrintPartitionCarriageF32() {
 
         if (missed == 0) {
             ++met;
-            std::printf("  %-58s %9zu %9zu  %-14s %s\n",
+            std::printf("  %-58s %9zu %9zu  %-20s %s\n",
                         row.entry.c_str(),
                         cells,
                         differ,
                         tokens,
-                        "answers with the grid's own values");
+                        row.namesBody ? "carries the body it names"
+                                      : "answers with the grid's own values");
             continue;
         }
 
         notMet.push_back(row.entry);
+
+        if (row.namesBody) {
+            char which[64];
+            std::size_t wat = 0;
+
+            for (std::size_t r = 0; r < 4; ++r) {
+                if (row.differ[r] > 0) {
+                    wat += static_cast<std::size_t>(
+                        std::snprintf(which + wat,
+                                      sizeof(which) - wat,
+                                      "%s%s: %zu",
+                                      wat == 0 ? "" : ", ",
+                                      kCarriageRegionTag[r],
+                                      row.differ[r]));
+                }
+            }
+
+            std::printf("  %-58s %9zu %9zu  %-20s NOT CARRIED - this row parts from the body "
+                        "it\n      names, in %s cell(s), and the half lane's row for a policy "
+                        "naming the grid is\n      that float body with half I/O\n",
+                        row.entry.c_str(),
+                        cells,
+                        differ,
+                        tokens,
+                        which);
+            continue;
+        }
+
         char which[24];
         std::size_t wat = 0;
 
@@ -4194,7 +4825,7 @@ std::size_t PrintPartitionCarriageF32() {
             }
         }
 
-        std::printf("  %-58s %9zu %9zu  %-14s NOT CARRIED - region %s separates on the\n"
+        std::printf("  %-58s %9zu %9zu  %-20s NOT CARRIED - region %s separates on the\n"
                     "      per-argument entry and nowhere on this row, so this row answered it "
                     "from the\n      narrow member's fits\n",
                     row.entry.c_str(),
@@ -4204,11 +4835,12 @@ std::size_t PrintPartitionCarriageF32() {
                     which);
     }
 
-    std::printf("  %s\n", std::string(140, '-').c_str());
-    std::printf("  PARTITION RESULT: %zu of %zu single-precision device row(s) answer a policy "
-                "naming the\n                    uniform grid with a reading the narrow member does "
-                "not answer with, in every\n                    region where the two readings can "
-                "differ\n",
+    std::printf("  %s\n", std::string(150, '-').c_str());
+    std::printf("  PARTITION RESULT: %zu of %zu device row(s) over the uniform grid carry the "
+                "body their\n                    policy names - the float and double lanes' rows "
+                "a reading the narrow member\n                    does not answer with in every "
+                "region where the two readings can differ,\n                    and the half "
+                "lane's rows the float body each names, cell for cell\n",
                 met,
                 rows.size());
 
@@ -4219,14 +4851,13 @@ std::size_t PrintPartitionCarriageF32() {
             std::printf(" [%s]", id.c_str());
         }
 
-        std::printf("\n  FAIL (exit status 1; a single-precision row that fails this is an entry "
-                    "answering a\n  uniform policy from the narrow member's fits - the substitution "
-                    "the partition axis\n  exists to prevent)\n");
+        std::printf("\n  FAIL (exit status 1; a row that fails this answers a uniform policy "
+                    "with fits it\n  does not name - the substitution the partition axis exists "
+                    "to prevent)\n");
     }
 
     return notMet.size();
 }
-
 // The device-callable entries: the handle filled once, the rows its cells are
 // measured into, and every entry through the consumer's kernels. Filling the
 // handle is what makes the degree tables resident for the kernels, and the
@@ -4241,6 +4872,10 @@ void SweepDeviceLane(const Reference& ref,
     SweepDevice(ref, grid, sorted, tables, slots);
     SweepDigit64(digits, tables, slots);
     PartitionCarriageF32(ref, grid, tables);
+    PartitionCarriageF64(ref, grid, tables);
+#if BoysFp16
+    PartitionCarriageF16(ref, grid, tables);
+#endif
 }
 
 // One cell, every entry: what each device entry returns beside the reference, so
@@ -4862,7 +5497,7 @@ int main(int argc, char** argv) {
         PrintClaim(a);
     }
 
-    const std::size_t carriageMissed = PrintPartitionCarriageF32();
+    const std::size_t carriageMissed = PrintPartitionCarriage();
 
     // The device entries that are one body reached through different shapes: a
     // bound cannot say this and the header does, so the gate checks it. Every slot
@@ -5039,8 +5674,8 @@ int main(int argc, char** argv) {
 
     if (carriageMissed > 0)
     {
-        std::printf("\n  RESULT: FAIL - %zu single-precision row(s) answered a policy naming the "
-                    "uniform grid\n  with the narrow member's own values (exit status 1): the two "
+        std::printf("\n  RESULT: FAIL - %zu device row(s) answered a policy naming the "
+                    "uniform grid\n  with fits it does not name (exit status 1): the two "
                     "partitions hold the same\n  bar over the same intervals, so no accuracy row "
                     "can tell them apart and the carriage\n  section above is the only statement "
                     "that can\n",
