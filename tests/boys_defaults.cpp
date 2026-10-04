@@ -303,9 +303,35 @@ AccuracyFigure ClassGuarantee() noexcept {
     return DefaultGuarantee<kPrecision, kShape, kDevice>();
 }
 
+/// The term the class's division form adds beside the lane's base.
+///
+/// \param lane the lane's contract row
+/// \param form the class's division form
+/// \returns the term beside the base, 0.0 where the lane's forms share one figure
+double FormTerm(const LaneContractInfo& lane, DivisionForm form) noexcept {
+    return form == DivisionForm::kPlainReciprocal ? lane.plainAdditive : 0.0;
+}
+
+/// The term the class's region-B exponential adds beside the lane's base.
+///
+/// The row states the member its additive term is under - the fp32-device row's
+/// 8e-8 is the fast member's own contribution, certified there and nowhere else
+/// (include/boys/boys.hpp, \c LaneContractInfo::additiveMember) - so a class
+/// naming the other member is not owed it and is answered without it. That is the
+/// accessor's own rule (src/boys.cpp, \c BoysAccuracyGuaranteed: \c memberTerm),
+/// written here so the report's terms are the accessor's terms.
+///
+/// \param lane the lane's contract row
+/// \param exp the class's region-B exponential
+/// \returns the term beside the base, 0.0 where the class names the other member
+double MemberTerm(const LaneContractInfo& lane, RegionBExp exp) noexcept {
+    return exp == lane.additiveMember ? lane.additive : 0.0;
+}
+
 /// The arithmetic the library states a figure by: the lane's multiplicand plus
 /// the term the named form adds beside it, times the multiplier of the one
-/// accuracy this library serves, plus the lane's additive term.
+/// accuracy this library serves, plus the term the named region-B exponential
+/// adds beside the base.
 ///
 /// It is the accessor's own expression (src/boys.cpp, \c BoysAccuracyGuaranteed),
 /// written out so the report can print the terms a reader recomputes the figure
@@ -313,11 +339,11 @@ AccuracyFigure ClassGuarantee() noexcept {
 ///
 /// \param lane the lane's contract row
 /// \param form the class's division form
+/// \param exp the class's region-B exponential
 /// \returns the figure the terms compose to
-double ComposedFigure(const LaneContractInfo& lane, DivisionForm form) noexcept {
-    const double formTerm = form == DivisionForm::kPlainReciprocal ? lane.plainAdditive : 0.0;
-
-    return kBoysFullAccuracyMultiplier * (lane.bound + formTerm) + lane.additive;
+double ComposedFigure(const LaneContractInfo& lane, DivisionForm form, RegionBExp exp) noexcept {
+    return kBoysFullAccuracyMultiplier * (lane.bound + FormTerm(lane, form)) +
+           MemberTerm(lane, exp);
 }
 
 /// One class's row: the class, the six axes the table resolves it to, and the
@@ -362,28 +388,26 @@ void PrintClass(Coverage& coverage) {
         return;
     }
 
-    const double formTerm =
-        Policy::kDivision == DivisionForm::kPlainReciprocal ? lane.plainAdditive : 0.0;
-
     std::printf("bound %.6g = (%.6g + %.6g) x m %.6g + %.6g\n",
                 figure.value,
                 lane.bound,
-                formTerm,
+                FormTerm(lane, Policy::kDivision),
                 kBoysFullAccuracyMultiplier,
-                lane.additive);
+                MemberTerm(lane, Policy::kRegionBExp));
 
-    if (ComposedFigure(lane, Policy::kDivision) != figure.value)
+    if (ComposedFigure(lane, Policy::kDivision, Policy::kRegionBExp) != figure.value)
     {
         std::printf("    the terms above do not compose to the figure the accessor returned: "
                     "composed %.17g, returned %.17g\n",
-                    ComposedFigure(lane, Policy::kDivision),
+                    ComposedFigure(lane, Policy::kDivision, Policy::kRegionBExp),
                     figure.value);
         ++coverage.compositionFailed;
     }
 
     // The two named readings of one figure, held to each other: DefaultGuarantee is
     // documented as the same figure, from the same table, as the axis-taking
-    // accessor asked with the policy's own axes, and the claim is over classes
+    // accessor asked with the policy's own axes, the region-B exponential included
+    // (include/boys/boys.hpp, \c DefaultGuarantee), and the claim is over classes
     // rather than over host classes - a device class reads the same accessor and
     // is held to the same two readings.
     const AccuracyFigure direct = BoysAccuracyGuaranteed(kPrecision,
@@ -391,7 +415,8 @@ void PrintClass(Coverage& coverage) {
                                                          Policy::kScheme,
                                                          Policy::kPack,
                                                          Policy::kGranularity,
-                                                         Policy::kDivision);
+                                                         Policy::kDivision,
+                                                         Policy::kRegionBExp);
 
     if (!direct.available || direct.value != figure.value)
     {
