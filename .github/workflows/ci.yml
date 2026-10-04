@@ -368,6 +368,28 @@ jobs:
           Copy-Item tests/data/boys_reference.csv boundary-run\boys_reference.csv
           Set-Location boundary-run
           .\boys-boundary-check.exe
+      # The build-defaults seam read on this leg's own compiler. The step of this
+      # name in linux-x86 states what it reads and why it is not a fact about the
+      # sources alone: the tree it configures runs the option probe's own tests,
+      # and a probe's ranking is this machine's - which entry leads a class is a
+      # timing, and the two compilers this configuration now runs on have been read
+      # naming different winners for the same classes. A defect that reads a winner
+      # is one only the compiler that produced it can see, so the configuration
+      # runs here as well as there.
+      #
+      # Release only, this leg's own build type and the gcc step's: the reading is
+      # the compiler's, and MSVC Debug is the configuration this workflow keeps out
+      # of the matrix's doubling rather than the one it needs twice.
+      #
+      # The configure is this leg's own with the seam flag added, on the same
+      # generator and with the matrix's own AVX2 tier, so the two trees differ in
+      # exactly the header the seam resolves to.
+      - name: Build defaults (tuned fixture built and tested)
+        if: ${{ matrix.build_type == 'Release' }}
+        run: |
+          cmake -S . -B build-defaults-tuned -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF -DBOYS_EXPECT_AVX2=${{ matrix.expect_avx2 }} -DBOYS_BUILD_DEFAULTS=tests/build_defaults_tuned.hpp
+          cmake --build build-defaults-tuned
+          ctest --test-dir build-defaults-tuned --output-on-failure
   # -------------------------------------------------------------------------
   # ubuntu-latest, GCC and Clang, Debug + Release. The original
   # linux-gcc-release job, unchanged, plus Clang and the Debug configurations.
@@ -759,12 +781,25 @@ jobs:
       # it copied the library's own values for the four it did not move.
       #
       # A second configure in a second build directory rather than a leg or a job
-      # of its own: the answer is a fact about the SOURCES - whether the library
-      # reads the choices it declares - and does not depend on this leg's compiler
-      # or build type, which is why the generator, generated-tables, packed-orders
-      # and docs steps above are scoped to the same one combination. It also
-      # leaves the leg list alone, and that list is what README's platform table is
-      # generated from (tools/gen_platform_table.py --check, run above).
+      # of its own. Whether the library reads the choices it declares is a fact
+      # about the SOURCES, and that half is the same on every compiler - which is
+      # why the generator, generated-tables, packed-orders and docs steps above are
+      # scoped to the same one combination. The suite this configure builds is not
+      # all of that half: it carries the option probe's own tests
+      # (tests/boys_probe_test.cpp), and the probe's report is, in CMakeLists' own
+      # words for the probe's driver, a property of the host and the clock - so the
+      # ranking those tests assert on is this leg's build on this leg's machine.
+      # Two probe runs, one on each of the two compilers this configuration now
+      # runs on, reported the same structure - 20 classes, 585 measurements, 144
+      # ranked cells in each all-orders class - and named different winners: all
+      # four all-orders classes, and the report's own recommendation with them. The
+      # block's own text is the same on both compilers, and this leg reads it; a
+      # defect that reads a winner is one only the compiler that produced it can
+      # see, so the configuration is carried on the MSVC Release leg beside this one
+      # (the step of this name in windows-msvc, on that leg's own configure line).
+      #
+      # It also leaves the leg list alone, and that list is what README's platform
+      # table is generated from (tools/gen_platform_table.py --check, run above).
       #
       # The configure is this leg's own with one flag added, so the two trees
       # differ in exactly the header the seam resolves to and the same suite is
