@@ -1358,7 +1358,14 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report);
 ///
 /// The route, the scheme and the packing axis of a row are the entry's own
 /// (\c DeviceEntryAxesOf), the granularity is the partition it reads, and the packing cell is
-/// that reading of region A in the axis the seam names \c PackAxis. The library serves one
+/// that reading of region A in the axis the seam names \c PackAxis. Two further cells name the
+/// row's own coordinates rather than the entry's fields: the division form the winning row was
+/// measured at, and the region-B exponential its entry carries
+/// (\c DeviceOptionInfo::regionBExp). Both are written because a device option's identity
+/// includes them - every entry of the space runs every form, so the form cell has to be the
+/// row's own, and the exponent is an axis the entries themselves vary
+/// (\c DeviceOptionAxis::kRegionBExp) - so a row holding the build's default in either cell
+/// would stand under a figure measured at another combination. The library serves one
 /// accuracy and no accuracy cell is written: a row of this table names what the library picks,
 /// and the figure behind it is the class's own reading.
 ///

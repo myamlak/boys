@@ -32,7 +32,12 @@
 // own lane's budget and written out rather than left implicit: the table a replacement
 // carries is read INSTEAD of the one the five compose (boys/boys.hpp expands one branch or
 // the other), so a class this list omits has no default policy at all and fails to compile
-// where it is asked for.
+// where it is asked for. Every row names the region-B exponential as its last cell, which is
+// a cell of the format and not an extra: a row that leaves one out is a row that does not
+// compile (include/boys/boys.hpp, the row macro), so the ten rows below are ten cells each
+// like every other row this format carries. The member is `RegionBExp::kFast`, the host's own
+// default (`kDefaultHostRegionBExp`), so each row here resolves to the policy it resolved to
+// before the cell existed.
 #define BOYS_BUILD_DEFAULTS_TEST_ROWS 1
 
 #define BOYS_BUILD_DEFAULT_FIT_ROUTE FitRoute::kChebyshev
@@ -45,32 +50,32 @@
     /* the class this fixture moves: the scheme, to the split Clenshaw recurrence */\
     X(kHost, kFp64, kAllOrders, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kFast)\
     /* the five above, at each class's own lane budget */\
     X(kHost, kFp64, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kFast)\
     X(kHost, kFp64, kFixedN, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kFast)\
     X(kHost, kFp64, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kFast)\
     X(kHost, kFp64, kAllNAtOrders, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kFast)\
     X(kHost, kFp32, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kFast)\
     X(kHost, kFp32, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kFast)\
     X(kHost, kFp32, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kFast)\
     X(kHost, kFp16, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kFast)\
     X(kHost, kFp16, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal)
+      DivisionForm::kRefinedReciprocal, RegionBExp::kFast)

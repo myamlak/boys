@@ -83,7 +83,7 @@
 /// table's own format
 ///
 ///     X(device, precision, shape, route, scheme, budget, packing axis,
-///       granularity, division form)
+///       granularity, division form, region-B exponential)
 ///
 /// A class is a (device, precision, shape) triple - the device a call runs on,
 /// the precision lane an entry is built at, and the question that entry answers
@@ -115,9 +115,20 @@
 /// **The axes are names, checked where they are read.** Each cell is written as
 /// the enumerator it means, unqualified by any prefix because the types are not
 /// declared yet at the point this file is read. The list is expanded in the
-/// header where all five enumerations are visible, so a cell naming an
+/// header where every enumeration it names is visible, so a cell naming an
 /// enumerator another axis owns is a compile error there rather than a default
 /// nobody reads.
+///
+/// **A ROW CARRIES ONE CELL PER AXIS, AND THE SEVENTH IS NOT OPTIONAL.** The
+/// axes a row names are the axes of the policy it resolves to, and the row's
+/// macro takes one cell for each of them; a row that leaves one out does not
+/// compile where the list expands, because the preprocessor knows how many
+/// cells the row takes. That is load-bearing rather than tidy: every axis of
+/// `EvalPolicy` has a default, so a row naming six of the seven would compile
+/// with the seventh filled in by a value the row never chose, and `DefaultPolicy`
+/// would hand that class's callers an arithmetic nobody decided. The exponential
+/// cell below was the one this format left out, and both of its members are
+/// offered on every host entry.
 ///
 /// **EVERY HOST CLASS THE LIBRARY CARRIES HAS A ROW**, and a class without one
 /// is a build error rather than a call answered by something else. The list
@@ -145,6 +156,17 @@
 /// left to anything implicit: a row written here is a default that has been
 /// decided and can be read, and the marker above it says on what.
 ///
+/// **The exponential cell of every row below is `RegionBExp::kFast`, and it is
+/// written rather than left to the policy's default.** `kFast` is
+/// `kDefaultHostRegionBExp`, which is the member `EvalPolicy` filled in for
+/// these rows while this format carried no cell for that axis, so every row here
+/// denotes the same policy it denoted before the cell existed and no figure in
+/// this file moved. It is written out because the alternative is a row whose
+/// arithmetic is decided by a template default rather than by the table, and a
+/// reader of the table cannot see which member a class runs. A row that wants
+/// the other member names `RegionBExp::kAccurate`; both are certified and
+/// neither substitutes for the other.
+///
 /// **A row a probe named by there being no rival is a choice, not a measurement.** The option
 /// probes separate the two in the data they emit - a class whose winner won an ordering and a class
 /// whose winner was simply the last entry left standing are different values of the probe's own
@@ -159,29 +181,38 @@
 #define BOYS_BUILD_DEFAULT_ROWS(X)\
     /* measured: m = 1 all-orders ladder, 92.89 ns per argument */\
     X(kHost, kFp64, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal)\
+      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kFast)\
     /* measured: m = 1 all-orders ladder, the refinement vote's winner */\
     X(kHost, kFp32, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kFast)\
     /* measured: the vote's winner; the one lane both half formats run */\
     X(kHost, kFp16, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal)\
+      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kFast)\
     /* the five macros above: no probe run has ranked this shape on any lane */\
     X(kHost, kFp64, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal)\
+      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kFast)\
     X(kHost, kFp64, kFixedN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal)\
+      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kFast)\
     X(kHost, kFp64, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal)\
+      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kFast)\
     X(kHost, kFp64, kAllNAtOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal)\
+      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kFast)\
     X(kHost, kFp32, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal)\
+      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kFast)\
     X(kHost, kFp32, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal)\
+      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kFast)\
     X(kHost, kFp16, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal)\
+      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kFast)\
     /* the half lane is one lane for both half formats: `Precision::kFp16` is
        where the fp16 and bfloat16 entries live, so there is one row per shape
        and no second format to key. A format-specific default would need a
