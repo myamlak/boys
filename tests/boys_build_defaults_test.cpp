@@ -119,12 +119,21 @@ constexpr boys::FitGranularity kSeamFitGranularity = BOYS_BUILD_DEFAULT_FIT_GRAN
 // row list or the five, never both), and the unnamed-call test at the end of this file
 // is where that is read. Naming the values here is what makes the assertions below
 // claims about the build's header and not about this line.
+//
+// The region-B exponential is named as the library's own default rather than left to
+// EvalPolicy's template default, and the seam carries no macro for it: the five macros
+// above are the seam's, and this axis is one a ROW moves rather than one the five
+// compose. Spelling it keeps the type the same as EvalPolicy<>'s - the default is this
+// constant - and makes the axis a reader of this file can see, which is what the
+// comparisons below need to tell a class whose row moved the exponential from one whose
+// row spells the seam's five.
 using SeamPolicy = boys::EvalPolicy<BOYS_BUILD_DEFAULT_FIT_ROUTE,
                                     BOYS_BUILD_DEFAULT_EVAL_SCHEME,
                                     boys::BoysBudget::kFloat,
                                     BOYS_BUILD_DEFAULT_PACK_AXIS,
                                     BOYS_BUILD_DEFAULT_FIT_GRANULARITY,
-                                    BOYS_BUILD_DEFAULT_DIVISION_FORM>;
+                                    BOYS_BUILD_DEFAULT_DIVISION_FORM,
+                                    boys::kDefaultHostRegionBExp>;
 
 // --- Link one: the constant that owns a macro reads it ------------------------
 // Each of the five constants is documented beside the enumeration it belongs to
@@ -334,17 +343,26 @@ TEST(BuildDefaultsTest, AnUnnamedCallIsItsClasssDefault) {
     // Which of the two the table answers each class with. Read from the class's own policy,
     // so it is the build's answer and not this line's. The budget is not one of the five and
     // is compared as the fp64 lane's: the seam's five name no budget.
+    //
+    // The region-B exponential is compared too, and it is the axis a row can move while
+    // spelling the seam's five: a class whose row differs from `SeamPolicy` in that cell
+    // alone is answered by another arithmetic, so a flag reading the five and stopping would
+    // call it the seam's own combination and the assertions below would then require the two
+    // calls to agree where the build's own table says they must not. Every axis of the policy
+    // is read here, which is what this flag's name claims.
     constexpr bool kOrdersClassIsTheSeamFive =
         OrdersClass::kRoute == kSeamFitRoute && OrdersClass::kScheme == kSeamEvalScheme &&
         OrdersClass::kPack == kSeamPackAxis &&
         OrdersClass::kGranularity == kSeamFitGranularity &&
         OrdersClass::kDivision == kSeamDivisionForm &&
+        OrdersClass::kRegionBExp == boys::kDefaultHostRegionBExp &&
         OrdersClass::kBudget == boys::BoysBudget::kFloat;
     constexpr bool kSingleClassIsTheSeamFive =
         SingleClass::kRoute == kSeamFitRoute && SingleClass::kScheme == kSeamEvalScheme &&
         SingleClass::kPack == kSeamPackAxis &&
         SingleClass::kGranularity == kSeamFitGranularity &&
         SingleClass::kDivision == kSeamDivisionForm &&
+        SingleClass::kRegionBExp == boys::kDefaultHostRegionBExp &&
         SingleClass::kBudget == boys::BoysBudget::kFloat;
 
     constexpr int kOrders[] = {0, 1, 4, 12, boys::kMaxBoysOrder};

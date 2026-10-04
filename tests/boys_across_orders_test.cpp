@@ -631,23 +631,38 @@ TEST(BoysAcrossOrders, ThePublicAxisIsDefinedPastItsOwnDomain) {
     EXPECT_EQ(differing, 0u) << "the entry's fallback is not the certified scalar single lane";
 }
 
-// The axis at the partition the run-time route selector reads: the library's own default.
+// The class the run-time route selector stands in for: BoysAllOrders, the double
+// lane's ladder entry, which is the entry its unnamed calls are made through.
+using RoutedClass = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>;
+
+// The axis at the combination the selector builds: the class's own row, with the
+// route and the scheme named where the selector takes them (src/boys.cpp,
+// SelectorClass and SelectorPolicy - "the axes a selector does not take are read off
+// the class's own default"). Spelling the other axes as the library's five instead
+// would compare the axis against a combination this build's class does not compile:
+// the routed entry reads the class row, so the two would differ wherever the seam
+// carries a row for the class, and the reading below would measure the seam rather
+// than the route.
 template <boys::FitRoute kRoute, boys::EvalScheme kScheme>
-using RoutedAxisPolicy =
-    boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFloat, boys::PackAxis::kOrders,
-                     boys::kDefaultFitGranularity>;
+using RoutedAxisPolicy = boys::EvalPolicy<kRoute,
+                                          kScheme,
+                                          RoutedClass::kBudget,
+                                          RoutedClass::kPack,
+                                          RoutedClass::kGranularity,
+                                          RoutedClass::kDivision,
+                                          RoutedClass::kRegionBExp>;
 
 // The rational route on the axis: a policy names the route and the entry answers
 // with that route's own region-A fits. The routed per-argument entry reads the same
-// stored pairs by the route's own body and differs from the axis only by a four-lane
-// group sum against a scalar fit evaluation - so where the readings part by more than
-// that, the axis has to be the routed one, which is the cell that says which table it
-// read.
-//
-// The partition is held at the library's default, the one the routed entry reads (it
-// takes no partition). Comparing at the other partition would measure the partition
-// rather than the route: that accounts for 1610 of the 1793 cells that tell the two
-// routes apart on the shipped partition.
+// stored pairs by the route's own body at the same combination, so the two agree bit
+// for bit - and the cell that says which table the axis read is the count of bits it
+// does not share with the other route's axis, the reading the narrow partition's test
+// above states: "the count of differing bits has to be nonzero, since a lane ignoring
+// the route would return that axis's bits exactly". The value difference is printed
+// beside it and not asserted: at a partition whose two routes are both accurate on
+// the grid, the routes' values agree well inside the arithmetic slack while their
+// bits do not, so a slack would measure the two fits' accuracy rather than which
+// table was read.
 TEST(BoysAcrossOrders, TheRationalRouteOnTheAxisIsTheRoutesOwnReading) {
     if (!VectorTier())
     {
@@ -689,7 +704,10 @@ TEST(BoysAcrossOrders, TheRationalRouteOnTheAxisIsTheRoutesOwnReading) {
                     ++differing;
                 }
 
-                if (std::abs(b - s) > kArithmeticSlack)
+                // Which table the axis read, in bits: a cell the two routes' axes
+                // answer with the same bits is a cell this reading cannot tell
+                // apart, whichever route was named.
+                if (!SameBits(b, s))
                 {
                     ++discriminating;
 

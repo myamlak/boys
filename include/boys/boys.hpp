@@ -595,12 +595,29 @@ struct DefaultPolicyRow {
 // combination its shape cannot carry is caught where that class's entries are
 // instantiated, which is the reading that makes a row which cannot compile a
 // build error rather than a surprise at a consumer's call site.
+//
+// ONE CELL PER AXIS OF THE POLICY, AND THE COUNT IS WHAT ENFORCES IT. Every
+// parameter of \c EvalPolicy carries a default, so a row that names six of the
+// seven axes compiles, and the seventh is filled in by a default the row never
+// chose: the row then reads as a combination someone decided, and the axis it
+// left out is one a reader of the table cannot name. That is how the region-B
+// exponential stood outside this format while both of its members were offered
+// on every host entry, and a table that cannot state a member the library
+// serves is a table whose rows are read as choices nobody made. The macro
+// therefore takes the exponential as its seventh axis cell, beside the other
+// six, and a row that omits it is an error wherever the row is written: the
+// class a row names, \c StatedEvalPolicy, carries no parameter default, so a
+// cell a row leaves out has nothing to fall back on and the error is the
+// class's rather than the list's. A cell added to that class owes the same
+// treatment here: an axis this macro does not take is an axis a row can omit
+// in silence, which is the defect this comment is about.
 /// \cond
 #define BOYS_DEFAULT_POLICY_ROW(kDevice, kPrecision, kShape, kRoute, kScheme, kBudget, kPack,  \
-                                kGranularity, kDivision)                                       \
+                                kGranularity, kDivision, kExp)                                 \
     template <>                                                                                \
     struct DefaultPolicyRow<Device::kDevice, Precision::kPrecision, Shape::kShape> {            \
-        using Type = EvalPolicy<kRoute, kScheme, kBudget, kPack, kGranularity, kDivision>;      \
+        using Type =                                                                           \
+            StatedEvalPolicy<kRoute, kScheme, kBudget, kPack, kGranularity, kDivision, kExp>;    \
         static_assert(EvalPolicyLike<Type>,                                                     \
                       "a row of the default-policy table does not name an evaluation policy: " \
                       "one of its cells is not an axis of the combination it is read as");      \
@@ -611,13 +628,23 @@ struct DefaultPolicyRow {
 BOYS_BUILD_DEFAULT_ROWS(BOYS_DEFAULT_POLICY_ROW)
 #else
 // A build that names only the five axes - a fixture overriding one of them, say - carries the table
-// those five make: one row per host class, every cell the build's own choice. This is not a
-// fallback for a class a table omits. The table here is complete by construction, because the rows
-// are written out by this list rather than looked up, and a build that writes its own table and
-// omits a class still fails to compile for it. The distinction is what the row *is*: a written row
-// whose cells come from the build's own five names, not an absent row answered by something else.
-#define BOYS_DEFAULT_POLICY_BUILD_ROW(kPrecision, kShape)                                           BOYS_DEFAULT_POLICY_ROW(kHost, kPrecision, kShape, kDefaultFitRoute, kDefaultEvalScheme,                                LaneFallbackBudget<Precision::kPrecision>(), kDefaultPackAxis,                                               kDefaultFitGranularity, kDefaultDivisionForm)
-#define BOYS_DEFAULT_POLICY_BUILD_ROWS(X)                                                           X(kFp64, kSingle) X(kFp64, kFixedN) X(kFp64, kAllN) X(kFp64, kAllNAtOrders)                     X(kFp64, kAllOrders) X(kFp32, kSingle) X(kFp32, kFixedN) X(kFp32, kAllN)                        X(kFp32, kAllNAtOrders) X(kFp32, kAllOrders) X(kFp16, kSingle) X(kFp16, kFixedN)                X(kFp16, kAllN) X(kFp16, kAllNAtOrders) X(kFp16, kAllOrders)
+// those five make: one row per class the host's entries reach and no row besides, every cell the
+// build's own choice. This is not a fallback for a class a table omits. The table here is complete
+// by construction, because the rows are written out by this list rather than looked up, and a build
+// that writes its own table and omits a class still fails to compile for it. The distinction is what
+// the row *is*: a written row whose cells come from the build's own five names, not an absent row
+// answered by something else.
+//
+// THE TEN ARE THE ENTRIES' OWN CLASSES, READ OFF THE ENTRIES. Every host entry's policy parameter
+// defaults to DefaultPolicy<Precision::kX, Shape::kY>, and the ten below are exactly the
+// (precision, shape) pairs those defaults name: the double lane's five shapes, the single-precision
+// lane's single, all-N and all-orders shapes, and the half lane's single and all-orders shapes
+// (boys/boys.hpp and boys/boys_span.hpp are where the entries are declared). A row for a class no
+// entry names is a combination nothing asks for, and an entry added at a class this list does not
+// carry fails to compile until its row is written - both halves of the same statement, which is why
+// the list is the entries' classes and not a superset of them.
+#define BOYS_DEFAULT_POLICY_BUILD_ROW(kPrecision, kShape)                                           BOYS_DEFAULT_POLICY_ROW(kHost, kPrecision, kShape, kDefaultFitRoute, kDefaultEvalScheme,                                LaneFallbackBudget<Precision::kPrecision>(), kDefaultPackAxis,                                               kDefaultFitGranularity, kDefaultDivisionForm,                                         kDefaultHostRegionBExp)
+#define BOYS_DEFAULT_POLICY_BUILD_ROWS(X)                                                           X(kFp64, kSingle) X(kFp64, kFixedN) X(kFp64, kAllN) X(kFp64, kAllNAtOrders) X(kFp64, kAllOrders) X(kFp32, kSingle) X(kFp32, kAllN) X(kFp32, kAllOrders) X(kFp16, kSingle) X(kFp16, kAllOrders)
 BOYS_DEFAULT_POLICY_BUILD_ROWS(BOYS_DEFAULT_POLICY_BUILD_ROW)
 #undef BOYS_DEFAULT_POLICY_BUILD_ROWS
 #undef BOYS_DEFAULT_POLICY_BUILD_ROW
@@ -727,6 +754,12 @@ struct LaneContractInfo {
     double bound = 0.0; ///< the documented base figure per value
     double additive = 0.0; ///< a term the lane adds beside the base, 0.0 where it has none
     double plainAdditive = 0.0; ///< a term the plain reciprocal adds beside the base, 0.0 where the forms share one figure
+    /// The region-B exponential the term beside the base is under. That term is a member's own
+    /// contribution - the fp32-device row's 8e-8 is the fast member's, certified there and nowhere
+    /// else - so a call naming the other member is not owed it and is answered without it. A row
+    /// whose term is 0.0 states the member the host's own default names, which is the member a
+    /// term, were one owed, would be stated under.
+    RegionBExp additiveMember = RegionBExp::kFast;
     const char* source = ""; ///< the figures beside the base, empty where the base is the whole claim
     /// The sentence for the figure the plain reciprocal gives, where that figure is not the base and
     /// `source` does not already describe it. A figure and its sentence are handed out together, so a
@@ -785,12 +818,16 @@ struct AccuracyFigure {
 /// change is the *delivered* figure - see \c BoysAccuracyDelivered - the one to
 /// rank two combinations by.
 ///
-/// **The division form is the one argument that does move the figure**, because
-/// it is an arithmetic rather than a spelling. On a lane whose
-/// plain reciprocal rounds once more per step, the figure that form is
-/// guaranteed is the lane's base plus the term its row publishes for it. Name
-/// the form you will evaluate in and this answers the figure for that form; a
-/// caller who names no form gets the figure of the library's default form.
+/// **The division form and the region-B exponential are the two arguments that can
+/// move the figure**, because both are arithmetics rather than spellings. On a lane
+/// whose plain reciprocal rounds once more per step, the figure that form is
+/// guaranteed is the lane's base plus the term its row publishes for it. Name the
+/// form you will evaluate in and this answers the figure for that form; a caller who
+/// names no form gets the figure of the library's default form. The exponential is
+/// the same shape one axis over: a row states the member its term beside the base is
+/// under, so naming the other member is answered without that term rather than with
+/// it. Name the member your build will run and this answers for it; the name a
+/// caller leaves out is the host's own default member.
 ///
 /// \param precision   the lane
 /// \param route       the fit route
@@ -798,6 +835,7 @@ struct AccuracyFigure {
 /// \param axis        the packing axis
 /// \param granularity the interval partition
 /// \param form        how the recursion divides
+/// \param exp         which exponential seeds a region-B ladder
 /// \returns the figure, and whether this revision carries the combination
 ///
 /// \ingroup boys
@@ -806,7 +844,77 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
                                       EvalScheme scheme,
                                       PackAxis axis,
                                       FitGranularity granularity,
-                                      DivisionForm form = kDefaultDivisionForm) noexcept;
+                                      DivisionForm form = kDefaultDivisionForm,
+                                      RegionBExp exp = kDefaultHostRegionBExp) noexcept;
+
+namespace detail {
+
+/// Whether each axis of a stated combination is an enumerator of its own
+/// enumeration.
+///
+/// Each bound is the axis's own last enumerator, and the table that axis indexes is
+/// built at the enumeration's size - the scheme table's own \c kSchemeCount and the
+/// lane table's one row per member of \c Precision (src/boys.cpp) - so the
+/// enumeration is the one source of the number and a member added to it moves the
+/// bound with it. A value past it is a value outside the enumeration this library
+/// serves, which names no combination on any lane: this is the refusal
+/// \c BoysAccuracyGuaranteed makes at run time, made where the axes are readable.
+///
+/// \ingroup boys
+template <Precision kPrecision, FitRoute kRoute, EvalScheme kScheme, PackAxis kAxis,
+          FitGranularity kGranularity, DivisionForm kForm, RegionBExp kExp>
+constexpr bool GuaranteeAxesAreEnumerators() noexcept
+{
+    return static_cast<std::size_t>(kPrecision) <= static_cast<std::size_t>(Precision::kFp16Device) &&
+           static_cast<std::size_t>(kRoute) <= static_cast<std::size_t>(FitRoute::kRationalMinimax) &&
+           static_cast<std::size_t>(kScheme) <= static_cast<std::size_t>(EvalScheme::kHorner) &&
+           static_cast<std::size_t>(kAxis) <= static_cast<std::size_t>(PackAxis::kOrders) &&
+           static_cast<std::size_t>(kGranularity) <= static_cast<std::size_t>(FitGranularity::kUniform) &&
+           static_cast<std::size_t>(kForm) <= static_cast<std::size_t>(DivisionForm::kRefinedReciprocal) &&
+           static_cast<std::size_t>(kExp) <= static_cast<std::size_t>(RegionBExp::kFast);
+}
+
+} // namespace detail
+
+/// The guarantee a **stated** combination carries: all seven axes as template
+/// arguments, so a seven-tuple this build's table does not carry is a compile error
+/// rather than a query answered with a reason.
+///
+/// The figure is the one \c BoysAccuracyGuaranteed answers with, read from the same
+/// table at the same seven axes; what the assertion adds is that every axis is an
+/// enumerator at all, which is the one part of the run-time answer a compiler can
+/// settle. What the rows add to that answer - which partition stores which route,
+/// which lane is instantiated over which packing axis - is read from rows rather
+/// than from enumerations, and a stated tuple the rows leave clear is answered by the
+/// run-time accessor's own refusal, with its own sentence and \c available false,
+/// rather than by a diagnostic here. No row of this revision leaves a lane or a
+/// partition clear at an enumerator's value, so the two answers coincide at every
+/// tuple a caller can write out of enumerators.
+///
+/// \tparam kPrecision   the lane
+/// \tparam kRoute       the fit route
+/// \tparam kScheme      the evaluation scheme
+/// \tparam kAxis        the packing axis
+/// \tparam kGranularity the interval partition
+/// \tparam kForm        how the recursion divides
+/// \tparam kExp         which exponential seeds a region-B ladder
+/// \returns the figure, and whether this revision carries the combination
+///
+/// \ingroup boys
+template <Precision kPrecision, FitRoute kRoute, EvalScheme kScheme, PackAxis kAxis,
+          FitGranularity kGranularity, DivisionForm kForm, RegionBExp kExp>
+AccuracyFigure BoysAccuracyGuaranteedStated() noexcept
+{
+    static_assert(detail::GuaranteeAxesAreEnumerators<kPrecision, kRoute, kScheme, kAxis, kGranularity,
+                                                      kForm, kExp>(),
+                  "the seven axes named are not a tuple this build's guarantee table carries: one "
+                  "cell is a value outside the enumeration this library serves, and a value "
+                  "outside an enumeration names no combination on any lane. Name each axis from "
+                  "its own enumerators; BoysAccuracyGuaranteed answers such a tuple at run time "
+                  "with the same refusal and no figure");
+
+    return BoysAccuracyGuaranteed(kPrecision, kRoute, kScheme, kAxis, kGranularity, kForm, kExp);
+}
 
 /// The bound a class's default policy carries: what a caller holding the
 /// default has, without reconstructing the axes to ask about it.
@@ -815,8 +923,8 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
 /// \c DefaultPolicy<kPrecision, kShape, kDevice> resolves to - the row the table
 /// carries for the class, or the seam's own five where it carries none - so this
 /// is the same figure, from the same table, as a caller gets by naming the
-/// policy's five axes by hand. It is a table read and not a measurement: nothing
-/// is evaluated and nothing is timed.
+/// policy's axes by hand, the region-B exponential included. It is a table read
+/// and not a measurement: nothing is evaluated and nothing is timed.
 ///
 /// **A class is a (device, precision, shape) triple, and this reads the class the
 /// caller names.** \c kDevice defaults to \c Device::kHost, which is what a name
@@ -839,7 +947,7 @@ inline AccuracyFigure DefaultGuarantee() noexcept
     using Policy = DefaultPolicy<kPrecision, kShape, kDevice>;
 
     return BoysAccuracyGuaranteed(kPrecision, Policy::kRoute, Policy::kScheme, Policy::kPack,
-                                  Policy::kGranularity, Policy::kDivision);
+                                  Policy::kGranularity, Policy::kDivision, Policy::kRegionBExp);
 }
 
 /// The accuracy a combination was measured to deliver, which is the figure that

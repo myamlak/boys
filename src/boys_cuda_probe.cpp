@@ -4273,6 +4273,34 @@ constexpr const char* SeamDivisionCell(DivisionForm form) noexcept {
     return nullptr;
 }
 
+/// The exponential cell of a row: the member of the region-B axis the winning entry carries.
+///
+/// It is read off the library's own row for that entry and not written from the build's default,
+/// for the reason the division-form cell above gives: where an entry varies this axis, the member
+/// it varies is part of that entry's identity (\c DeviceOptionInfo::regionBExp, which
+/// \c DeviceOptionAxis::kRegionBExp enumerates), so a cell holding the default would stand under
+/// a figure measured at another member. Where an entry varies no member, the table states
+/// \c RegionBExp::kAccurate on its row — that field's own reading for a row with no axis, which
+/// is also this lane's default member (\c kDefaultRegionBExp, boys/boys_device_tables.hpp) and
+/// what the device's accuracy gate pairs such a row with. So the cell is the table's statement
+/// for the row in both cases, and this probe never writes a member the table did not state.
+///
+/// \param exp the member the winning entry's row in the library's table carries
+///
+/// \returns the cell, or \c nullptr for a value outside \c RegionBExp's enumerators - which the
+///          crossing states for no member, since it reads the axis off the rows themselves
+constexpr const char* SeamExpCell(RegionBExp exp) noexcept {
+    switch (exp)
+    {
+        case RegionBExp::kAccurate:
+            return "RegionBExp::kAccurate";
+        case RegionBExp::kFast:
+            return "RegionBExp::kFast";
+    }
+
+    return nullptr;
+}
+
 /// The precision cell of a row: the lane the class runs in, as the default-policy table spells
 /// it.
 ///
@@ -4413,12 +4441,12 @@ static_assert(PackingCellIsNamed<DevicePacking::kLadder>() &&
 // file or of another replacement reaches the file this run writes with the tokens it was
 // written with - and once as the (device, precision, shape) classes those rows already carry.
 #define BOYS_DEVICE_PROBE_SEAM_ROW(device, precision, shape, route, scheme, budget, pack,          \
-                                   granularity, division)                                          \
+                                   granularity, division, exp)                                     \
     "    X(" #device ", " #precision ", " #shape ", " #route ", " #scheme ", " #budget ", "        \
-    #pack ", " #granularity ", " #division ")\\\n"
+    #pack ", " #granularity ", " #division ", " #exp ")\\\n"
 
 #define BOYS_DEVICE_PROBE_SEAM_CLASS(device, precision, shape, route, scheme, budget, pack,        \
-                                     granularity, division)                                        \
+                                     granularity, division, exp)                                   \
     {#device, #precision, #shape},
 
 /// One class of the table in force, as that table's own list spells it.
@@ -4611,6 +4639,25 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
                 continue;
             }
 
+            // The region-B exponential cell is the entry's own coordinate in the library's table
+            // (SeamExpCell). The member this run varies is the row's own reading, which is why it
+            // is read off the library's row for the winning entry and not off the build's default;
+            // a row of this space that varies no member of the axis carries the table's own
+            // statement for such a row, which is the lane's default member. An entry the table
+            // states no reading for is not a row this report can place, for the reason the two
+            // arms above give: the table states a member on every row it carries, so this arm
+            // reads a value that cannot arrive.
+            const char* const expCell = SeamExpCell(row->regionBExp);
+
+            if (expCell == nullptr)
+            {
+                emission.refused.push_back(
+                    Text("%s: the entry it named, '%s', states no region-B exponential, so no "
+                         "region-B cell of the seam is this row's",
+                         klass.c_str(), winner.c_str()));
+                continue;
+            }
+
             rows += walkover
                         ? Text("    /* a choice, not a measurement: '%s' was the last entry standing "
                                "in\n"
@@ -4623,10 +4670,10 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
 
             rows += Text("    X(kDevice, %s, %s, %s, %s,\\\n"
                          "      %s, %s, %s,\\\n"
-                         "      %s)\\\n",
+                         "      %s, %s)\\\n",
                          precisionCell, shapeCell, SeamRouteCell(row->route),
                          SeamSchemeCell(row->scheme), SeamBudgetCell(precision), packCell,
-                         SeamGranularityCell(*row), formCell);
+                         SeamGranularityCell(*row), formCell, expCell);
 
             measured = measured || !walkover;
 
@@ -4692,7 +4739,13 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
     text += "/// `DeviceOptionAxis::kDivision`: every entry of the space runs every form, so a row is an\n";
     text += "/// (entry, form) pair and the cell names the form the figure beside it was measured at - the\n";
     text += "/// form the winner's own row states, which is the build's default where that row won at the\n";
-    text += "/// default and that row's form where it did not.\n";
+    text += "/// default and that row's form where it did not. The region-B exponential cell is the\n";
+    text += "/// winning entry's own coordinate on\n";
+    text += "/// the axis the seam names `RegionBExp` (`DeviceOptionInfo::regionBExp`): the member the\n";
+    text += "/// entry's recurrence seeds with where the entry varies the axis, and the lane's own\n";
+    text += "/// default member where it varies none - a row of this space that offers the axis is the\n";
+    text += "/// one place the two rows of an entry differ in their arithmetic, so a row written from\n";
+    text += "/// the build's default would carry a figure measured at another member.\n";
     text += "///\n";
     text += "/// **A row a probe named by there being no rival is a choice, not a measurement.** A\n";
     text += "/// device class whose winner won an ordering carries the marker a measurement carries;\n";

@@ -2072,17 +2072,26 @@ void CellValuesSingle(const Option& option, int nmax, float x, float* out) noexc
 /// run-time values, so a cell's cost includes its own selection, as the run-time
 /// selector options' cost already does.
 ///
-/// The run-time entry is the default policy's and therefore divides in the
-/// default form and seeds its region-B ladders with the default exponential,
-/// whatever it is handed: it takes neither as an argument, so a cell at one of the
-/// other two forms or at the other member of the exponential axis would be
-/// measured through arithmetic it did not name. The form and the member are both
-/// part of the shortcut's own condition for that reason, and a cell of the default
-/// policy's shape at either other form, or at the other member, takes its own
+/// The run-time entry is the class's own default's - the row this build's seam
+/// gives \c BoysAllOrders, or the five where it gives none - and therefore
+/// divides in that row's form and seeds its region-B ladders with that row's
+/// exponential, whatever it is handed: it takes neither as an argument, so a cell
+/// at one of the other two form members or at the other member of the exponential
+/// axis would be measured through arithmetic it did not name. The form, the member
+/// and the packing axis are part of the shortcut's own condition for that reason,
+/// and a cell of the class's shape at another member of any of them takes its own
 /// instantiation below like any other cell.
+///
+/// The condition is read off the name the run-time entry stands in for and not
+/// off the five: in a build whose seam carries a row for the class, a cell at the
+/// five's own combination is a cell at another arithmetic, and measuring it
+/// through the selector would report one combination's cost for another's.
 void CellValues(const Option& option, int nmax, double x, double* out) noexcept {
-    if (option.granularity == kDefaultFitGranularity && option.pack == PackAxis::kArguments &&
-        option.division == kDefaultDivisionForm && option.regionBExp == kDefaultHostRegionBExp)
+    using SelectorClass = DefaultPolicy<Precision::kFp64, Shape::kAllOrders>;
+
+    if (option.granularity == SelectorClass::kGranularity && option.pack == SelectorClass::kPack &&
+        option.division == SelectorClass::kDivision &&
+        option.regionBExp == SelectorClass::kRegionBExp)
     {
         BoysAllOrdersWithRoute(option.route, option.scheme, nmax, x, out);
         return;
@@ -4753,6 +4762,26 @@ constexpr const char* BudgetCell(BoysBudget budget) noexcept {
     return "(a budget this probe names no cell for)";
 }
 
+/// The seam's own spelling of the seventh axis cell: which exponential a region-B ladder is
+/// seeded with.
+///
+/// It is a cell like the other six because the seam's row macro takes it like the other six,
+/// and the two members are two certified arithmetics rather than one member with a faster
+/// spelling: the accurate member is the exponential itself and the fast member the corrected
+/// seed's own series. A row that cannot name the member it was measured at cannot state the
+/// arithmetic it means, which is why this cell exists rather than being left to a default.
+constexpr const char* ExpCell(RegionBExp exp) noexcept {
+    switch (exp)
+    {
+    case RegionBExp::kAccurate:
+        return "RegionBExp::kAccurate";
+    case RegionBExp::kFast:
+        return "RegionBExp::kFast";
+    }
+
+    return "(a region-B exponential this probe names no cell for)";
+}
+
 /// The seam's own token for a lane's precision cell, and for a shape's cell: the two keys
 /// its class list is written in. They are matched by name because the seam's list names its
 /// cells as tokens rather than as values, and this is the spelling that list uses.
@@ -4885,13 +4914,19 @@ struct SeamClass {
 };
 
 #define BOYS_PROBE_SEAM_CLASS(device, precision, shape, route, scheme, budget, pack, granularity,  \
-                              division)                                                            \
+                              division, exp)                                                     \
     {#precision, #shape},
 
 /// The classes the seam in force carries, read from its own `BOYS_BUILD_DEFAULT_ROWS` list
 /// rather than written here: a class the seam adds is emitted without an edit here, and one
 /// it drops stops being emitted, which is what keeps the file this writes a replacement for
 /// the file it read.
+///
+/// The macro names every cell the row format carries, the region-B exponential included,
+/// because it is expanded from the same list the row macro is: a row that dropped a cell
+/// would otherwise be read here as a class and refused there, and the two readings of one
+/// list have to be one reading. Only the key cells are used; the rest are named so that the
+/// expansion is the row's own.
 ///
 /// A build whose seam carries no list has no classes to write and the emitted file carries
 /// none either - which is that seam's own shape, and not an omission here.
@@ -4915,31 +4950,20 @@ struct EmittedSeamRow {
     std::string cells; ///< the X(...) call, wrapped where the seam wraps it
     std::string marker; ///< the comment above it: a measurement, or a choice and why
     bool measured = false; ///< whether the row is this run's own winning combination
-
-    /// Whether this class's own winner seeds its region-B ladders with a member the seam's row
-    /// format cannot name, so the row written is not the class's winner.
-    bool winnerUnnamable = false;
 };
 
 /// The row this run measured for one class of the seam's table, with what it was reached by.
+///
+/// There is no second candidate beside \c row and no flag saying the winner could not be
+/// written: every axis a policy carries has a cell in the row format, so the combination that
+/// won a class is a combination the file can state, and the row written is the winner. A
+/// class whose winner the format could not name would be one whose row stated another
+/// arithmetic under this class's key, which is the reading this struct no longer carries a
+/// field for.
 struct SeamWinner {
     const OptionProbeMeasurement* row = nullptr;
     OptionProbeDefaultHow how = OptionProbeDefaultHow::kNone;
     bool formatsDisagree = false; ///< the two half classes were both ranked and differed
-
-    /// The fastest row of the same class that seeds its region-B ladders with the member the
-    /// seam's row format names, where that is not the winner itself.
-    ///
-    /// The seam's row format carries six cells and the region-B exponential is not one of
-    /// them, so a row written from it denotes the member the library's default names, and a
-    /// winner at the other member cannot be written without the file claiming arithmetic this
-    /// run did not measure. That row is therefore not written: the row written is the fastest
-    /// combination of the class the format can name, which is a cell this run did measure.
-    const OptionProbeMeasurement* namable = nullptr;
-
-    /// Whether the class's own winner is at a member the row format cannot name, and the row
-    /// written is \c namable rather than the winner.
-    bool winnerUnnamable = false;
 };
 
 /// The row one name belongs to in this run's own table, or nothing where no row carries it.
@@ -4985,35 +5009,26 @@ SeamWinner WinnerOf(const OptionProbeReport& report,
                 continue;
             }
 
-            // The class's own ranking is the order the namable member is read in: the first
-            // row of it the row format can name is the fastest combination of this class the
-            // file it writes can state, and it is a cell this run measured like any other.
-            const OptionProbeMeasurement* namable = nullptr;
-
-            for (const std::string& name : clause.ranked)
-            {
-                const OptionProbeMeasurement* member = RowNamed(report, name);
-
-                if (member != nullptr && member->regionBExp == kDefaultHostRegionBExp)
-                {
-                    namable = member;
-                    break;
-                }
-            }
-
+            // The class's leader, written as it stands: the row format carries every axis the
+            // leader's combination names, the region-B exponential included, so the fastest
+            // cell of this class is a combination the file it writes can state.
             if (winner.row == nullptr)
             {
                 winner.row = row;
                 winner.how = clause.how;
-                winner.namable = namable;
-                winner.winnerUnnamable = row->regionBExp != kDefaultHostRegionBExp;
                 continue;
             }
 
+            // The two half formats are one lane and one row: where both were ranked and their
+            // leaders were not one combination, the difference is one the seam's key cannot
+            // carry, and every axis of the policy is compared - the exponential included,
+            // because the row format names it and a difference in it is a difference in the
+            // arithmetic the lane would run.
             winner.formatsDisagree =
                 winner.formatsDisagree || winner.row->route != row->route ||
                 winner.row->scheme != row->scheme || winner.row->granularity != row->granularity ||
-                winner.row->pack != row->pack || winner.row->division != row->division;
+                winner.row->pack != row->pack || winner.row->division != row->division ||
+                winner.row->regionBExp != row->regionBExp;
         }
     }
 
@@ -5075,6 +5090,12 @@ constexpr SeamLaneBudget kSeamLaneBudgets[] = {
 /// from the enumerator they named: a class the probe reads and does not understand is still a
 /// class the file it replaces carries, and a row written from the seam's own tokens cannot
 /// disagree with the seam about which class it is for.
+///
+/// Every axis the policy carries has a cell here, the region-B exponential included. A cell
+/// the row format leaves out is a cell the seam's row macro takes and this writer must
+/// therefore write: the row it emits is read back by the seam's own macro, and a call short
+/// of one cell is an error where that macro expands rather than a row that resolves to the
+/// default of the axis nobody wrote.
 std::string SeamRowCall(const std::string& precisionToken,
                         const std::string& shapeToken,
                         BoysBudget budget,
@@ -5082,12 +5103,14 @@ std::string SeamRowCall(const std::string& precisionToken,
                         EvalScheme scheme,
                         PackAxis pack,
                         FitGranularity granularity,
-                        DivisionForm division) {
+                        DivisionForm division,
+                        RegionBExp exp) {
     return Text("    X(kHost, %s, %s, %s, %s, %s,\\\n"
-                "      %s, %s, %s)\\\n",
+                "      %s, %s, %s,\\\n"
+                "      %s)\\\n",
                 precisionToken.c_str(), shapeToken.c_str(), RouteCell(route), SchemeCell(scheme),
                 BudgetCell(budget), PackCell(pack), GranularityCell(granularity),
-                DivisionCell(division));
+                DivisionCell(division), ExpCell(exp));
 }
 
 /// The rows this run's own rankings imply, one per class the seam in force carries, in the
@@ -5138,12 +5161,11 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
 
         const SeamWinner winner = WinnerOf(report, klass.precision, klass.shape);
 
-        // The row this file can state: the class's own winner where the row format can name
-        // the member it seeds its region-B ladders with, and otherwise the fastest combination
-        // of the class that is at the member the format does name. A winner the format cannot
-        // name is never written as if it were that row.
-        const OptionProbeMeasurement* written =
-            winner.row == nullptr ? nullptr : (winner.winnerUnnamable ? winner.namable : winner.row);
+        // The row written is the class's own winner, exactly as the run ranked it. Every axis
+        // the policy carries has a cell in this format, so there is no combination the run
+        // measured that this file cannot state, and no second candidate to fall back to: a row
+        // written at any other member would carry this class's key over another arithmetic.
+        const OptionProbeMeasurement* written = winner.row;
 
         if (written != nullptr)
         {
@@ -5152,22 +5174,8 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
             const bool walkover = winner.how == OptionProbeDefaultHow::kOnlyEntry;
 
             row.measured = !walkover;
-            row.winnerUnnamable = winner.winnerUnnamable;
 
-            if (winner.winnerUnnamable)
-            {
-                row.marker =
-                    Text("    /* measured: m = 1, the %s class, %.2f ns per\n"
-                         "       argument on this host; the class's own winner seeds its region-B "
-                         "ladders with\n"
-                         "       the accurate exponential, which this file's row format carries no "
-                         "cell for, so\n"
-                         "       the row below is the fastest combination of the class that is at "
-                         "the member the\n"
-                         "       format does name */\\\n",
-                         ShapeSpelling(shape), written->nsPerArgument);
-            }
-            else if (walkover)
+            if (walkover)
             {
                 row.marker = "    /* a choice, not a measurement: one entry of this class was "
                              "measured\n"
@@ -5185,32 +5193,20 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
 
             row.cells = SeamRowCall(klass.precision, klass.shape, budget, written->route,
                                     written->scheme, written->pack, written->granularity,
-                                    written->division);
+                                    written->division, written->regionBExp);
             rows.push_back(std::move(row));
             continue;
         }
 
-        if (winner.winnerUnnamable)
-        {
-            // A class this run ranked whose every row seeds its region-B ladders with a member
-            // the row format has no cell for: the fallback is stated, and the reason is this
-            // axis rather than a class nothing was measured of.
-            row.winnerUnnamable = true;
-            row.marker = "    /* the five above: every row this run measured of this class seeds "
-                         "its region-B\n"
-                         "       ladders with the accurate exponential, which this file's row "
-                         "format carries no\n"
-                         "       cell for */\\\n";
-            row.cells = SeamRowCall(klass.precision, klass.shape, budget, five.route, five.scheme,
-                                    five.pack, five.granularity, five.division);
-            rows.push_back(std::move(row));
-            continue;
-        }
-
+        // A class the run ranked no cell of: the fallback is stated, and it is the file's own
+        // point rather than a measurement of this machine. The exponential cell is the
+        // library's host default, which is the member the fallback's arithmetic has always
+        // been; the five above do not carry that axis.
         row.marker = "    /* a choice, not a measurement: this run ranked no cell of this\n"
-                     "       class, so the row states the five above at this lane's budget */\\\n";
+                     "       class, so the row states the five above at this lane's budget and the\n"
+                     "       library's own region-B exponential */\\\n";
         row.cells = SeamRowCall(klass.precision, klass.shape, budget, five.route, five.scheme,
-                                five.pack, five.granularity, five.division);
+                                five.pack, five.granularity, five.division, kDefaultHostRegionBExp);
         rows.push_back(std::move(row));
     }
 
@@ -5218,9 +5214,14 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
 }
 
 /// The seam this run would write, as the report's own account of it: the classes it emits
-/// from this run's rankings, the classes whose winner it could not state and what it wrote
-/// instead, the classes it carries at the file's five because the run ranked no cell of
-/// them, and any disagreement between the two half formats.
+/// from this run's rankings, the classes it carries at the file's five because the run ranked
+/// no cell of them, and any disagreement between the two half formats.
+///
+/// There is no third set here and no class whose winner the file could not state: every axis
+/// a policy carries has a cell in the row format, so the combination that won a class is one
+/// the file writes. A table that could not name one of them would need this block to say
+/// which classes were written at another arithmetic, which is what the region-B exponential
+/// cost while the format carried six cells.
 ///
 /// The block exists because the file is the point and the account is what makes it
 /// checkable: a reader sees which rows a run measured before pointing a build at it, and a
@@ -5254,38 +5255,7 @@ void AppendDefaultsBlock(std::string& text, const OptionProbeReport& report) {
     {
         if (row.measured)
         {
-            text += Text("    %s%s\n", row.klass.c_str(),
-                         row.winnerUnnamable ? " (not the class's own winner: see below)" : "");
-        }
-    }
-
-    std::size_t unnamable = 0;
-
-    for (const EmittedSeamRow& row : rows)
-    {
-        unnamable += row.winnerUnnamable ? 1 : 0;
-    }
-
-    if (unnamable > 0)
-    {
-        // A row written at the namable member is not the class's winner, and the difference is
-        // not the run's: the file's row format carries six cells and the region-B exponential
-        // is not among them, so the winner's own arithmetic is not something this file can
-        // state. Naming the classes here is what keeps the row above from reading as the
-        // class's first place.
-        text += Text("  %zu class(es) whose own winner is not the row written: the class's "
-                     "first place\n  seeds its region-B ladders with the accurate exponential, "
-                     "and the seam's row format\n  carries no cell for that axis. The row written "
-                     "is the fastest combination of the\n  class that is at the member the format "
-                     "does name — a measured cell, and not the\n  class's first place:\n",
-                     unnamable);
-
-        for (const EmittedSeamRow& row : rows)
-        {
-            if (row.winnerUnnamable)
-            {
-                text += Text("    %s\n", row.klass.c_str());
-            }
+            text += Text("    %s\n", row.klass.c_str());
         }
     }
 
@@ -5340,8 +5310,8 @@ std::string FormatBuildDefaults(const OptionProbeReport& report, const std::stri
     text += "/// This build's default-policy seam, written by the option probe from the rankings it\n";
     text += Text("/// measured%s: the classes it ranked carry the combination that won the\n",
                  takenAt.empty() ? "" : Text(" on this host, %s", takenAt.c_str()).c_str());
-    text += "/// class among the combinations this row format can name (see the row list below), and\n";
-    text += "/// the classes it ranked no cell of carry the five below at their own lane's budget.\n";
+    text += "/// class (see the row list below), and the classes it ranked no cell of carry the five\n";
+    text += "/// below at their own lane's budget.\n";
     text += "///\n";
     text += "/// A row is a measurement taken on one machine and not a choice of the library's, so\n";
     text += "/// this file belongs to the host that produced it: a report from a build pointed at it\n";
@@ -5374,11 +5344,11 @@ std::string FormatBuildDefaults(const OptionProbeReport& report, const std::stri
     text += Text("#define BOYS_BUILD_DEFAULT_DIVISION_FORM %s\n\n", DivisionCell(five.division));
     text += Text("#define BOYS_BUILD_DEFAULT_FIT_GRANULARITY %s\n\n", GranularityCell(five.granularity));
     text += "/// The classes this file sets a default for: **one row per class**, in the table's own\n";
-    text += "/// format. A measured row is one this run's rounds placed first in its class **among\n";
-    text += "/// the combinations this row format can name** — the six cells below, which do not\n";
-    text += "/// carry the region-B exponential: a class whose first place is at the other member\n";
-    text += "/// is written at the member the format names, and it says so in its own comment. A\n";
-    text += "/// row marked a choice is one the run did not rank, and it states the five above.\n";
+    text += "/// format. A measured row is one this run's rounds placed first in its class: the\n";
+    text += "/// combination below is the winner's own, cell for cell, and every axis of the policy\n";
+    text += "/// has a cell here — the region-B exponential included, so the row states the\n";
+    text += "/// arithmetic the class's first place was measured at. A row marked a choice is one the\n";
+    text += "/// run did not rank, and it states the five above with the library's own exponential.\n";
     text += "#define BOYS_BUILD_DEFAULT_ROWS(X)\\\n";
 
     for (const EmittedSeamRow& row : rows)

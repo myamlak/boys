@@ -328,7 +328,7 @@ double ComposedFigure(const LaneContractInfo& lane, DivisionForm form) noexcept 
     return kBoysFullAccuracyMultiplier * (lane.bound + formTerm) + lane.additive;
 }
 
-/// One class's row: the class, the five axes the table resolves it to, and the
+/// One class's row: the class, the six axes the table resolves it to, and the
 /// bound that default carries, stated per the multiplicand and the multiplier it
 /// is computed from.
 ///
@@ -350,7 +350,7 @@ void PrintClass(Coverage& coverage) {
     const LaneContractInfo& lane = LaneRow(kPrecision);
     const AccuracyFigure figure = ClassGuarantee<kDevice, kPrecision, kShape>();
 
-    std::printf("  %-6s %-11s %-15s %-16s %-14s %-6s %-9s %-11s %-18s ",
+    std::printf("  %-6s %-11s %-15s %-16s %-14s %-6s %-9s %-11s %-18s %-8s ",
                 DeviceName(kDevice),
                 lane.name,
                 ShapeName(kShape),
@@ -359,7 +359,8 @@ void PrintClass(Coverage& coverage) {
                 BudgetName(Policy::kBudget),
                 PackAxisName(Policy::kPack),
                 GranularityName(Policy::kGranularity),
-                DivisionFormName(Policy::kDivision));
+                DivisionFormName(Policy::kDivision),
+                RegionBExpName(Policy::kRegionBExp));
 
     if (!figure.available)
     {
@@ -575,9 +576,9 @@ int main() {
     }
 
     std::printf("\nclasses this build's table carries, with the bound each default carries at "
-                "\nm = %.6g (the axes are the five the class resolves to):\n",
+                "\nm = %.6g (one column per axis of the class's policy, then the bound):\n",
                 kBoysFullAccuracyMultiplier);
-    std::printf("  %-6s %-11s %-15s %-16s %-14s %-6s %-9s %-11s %-18s %s\n",
+    std::printf("  %-6s %-11s %-15s %-16s %-14s %-6s %-9s %-11s %-18s %-8s %s\n",
                 "device",
                 "lane",
                 "shape",
@@ -587,6 +588,7 @@ int main() {
                 "pack",
                 "granularity",
                 "division",
+                "region-B",
                 "bound");
 
     Coverage coverage;

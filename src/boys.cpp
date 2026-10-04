@@ -51,13 +51,28 @@ template void BoysAllOrdersBf16<>(int nmax, Bf16 x, Bf16* out) noexcept;
 
 namespace {
 
+// The class the run-time selectors stand in for: BoysAllOrders, the double
+// lane's ladder entry, which is the entry the unnamed calls below are made
+// through.
+using SelectorClass = DefaultPolicy<Precision::kFp64, Shape::kAllOrders>;
+
 // The policy a run-time selector builds from the axes its caller named. The
-// three axes a selector does not take - the budget, the packing axis and the
-// granularity - are spelled here at their defaults rather than left to the
-// template's own.
+// axes a selector does not take are read off the class's own default - the row
+// this build's seam carries for BoysAllOrders, or the five where it carries
+// none - and not spelled here as the five. The entry the selector stands in for
+// is BoysAllOrders with no policy named, and the values a route does not serve
+// are that entry's bit for bit; a five spelled here agrees with that entry only
+// while the seam carries no row for the class, and a seam that carries one is a
+// build whose selector would then answer a different arithmetic from the
+// default entry it stands in for.
 template <FitRoute kRoute, EvalScheme kScheme>
-using SelectorPolicy =
-    EvalPolicy<kRoute, kScheme, BoysBudget::kFloat, kDefaultPackAxis, kDefaultFitGranularity>;
+using SelectorPolicy = EvalPolicy<kRoute,
+                                  kScheme,
+                                  SelectorClass::kBudget,
+                                  SelectorClass::kPack,
+                                  SelectorClass::kGranularity,
+                                  SelectorClass::kDivision,
+                                  SelectorClass::kRegionBExp>;
 
 } // namespace
 
@@ -238,12 +253,17 @@ float BoysSingleF32WithRoute(FitRoute route, int n, float x) noexcept {
     // the default entry's code for those arguments.
     if (route == FitRoute::kRationalMinimax)
     {
-        // The region-B exponential is read off the policy this entry's other arm
-        // runs rather than restated: a row and the arithmetic it names are one
-        // statement, and this entry is the default policy's call under a route
-        // argument.
-        return detail::SingleOrderF32Body<detail::RationalFit32<>, kDefaultDivisionForm,
-                                          DefaultPolicyFp32::kRegionBExp>(n, x);
+        // The division form and the region-B exponential are read off the policy
+        // this entry's other arm runs - BoysSingleF32's own default, the row this
+        // build's seam carries for the class, or the five where it carries none -
+        // rather than restated: a row and the arithmetic it names are one
+        // statement, and this entry is the default entry's call under a route
+        // argument. Read off the lane name instead, the two agree with that entry
+        // only while the seam carries no row for the class.
+        using SingleOrderClass = DefaultPolicy<Precision::kFp32, Shape::kSingle>;
+
+        return detail::SingleOrderF32Body<detail::RationalFit32<>, SingleOrderClass::kDivision,
+                                          SingleOrderClass::kRegionBExp>(n, x);
     }
 
     return BoysSingleF32<>(n, x);
@@ -789,12 +809,13 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
     // difference is 6.68e-8, and the term published is 1e-7, which bounds it
     // with the margin a guarantee needs.
     static const std::array<LaneContractInfo, 6> rows = {{
-        {Precision::kFp64, "fp64", 5.5e-14, 0.0, 0.0, "throughout, every region"},
-        {Precision::kFp32, "fp32", 1.5e-7, 0.0, 1e-7,
+        {Precision::kFp64, "fp64", 5.5e-14, 0.0, 0.0, RegionBExp::kFast,
+         "throughout, every region"},
+        {Precision::kFp32, "fp32", 1.5e-7, 0.0, 1e-7, RegionBExp::kFast,
          "every region, at exact division and the refined reciprocal",
          "every region under the plain reciprocal, whose extra rounding adds that form's own term "
          "beside the base"},
-        {Precision::kFp16, "fp16", 1.5e-7, 0.0, 1e-7,
+        {Precision::kFp16, "fp16", 1.5e-7, 0.0, 1e-7, RegionBExp::kFast,
          "the single-precision lane's own figure, plus half of the last representable digit of the "
          "returned value and claimed only where the value exceeds the sum. The half lane computes "
          "in that arithmetic and stores what it returns, so it cannot be more accurate than the "
@@ -805,7 +826,7 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
          "boys_impl.hpp), so the plain reciprocal's larger figure on that lane - 1.75140e-07 at "
          "n = 0, x = 9.74054909, 6.67e-8 above that lane's own worst of 1.08354e-07 - is this "
          "lane's too, before the format's own half digit is added to it"},
-        {Precision::kFp32Device, "fp32-device", 1.5e-7, 8e-8, 0.0,
+        {Precision::kFp32Device, "fp32-device", 1.5e-7, 8e-8, 0.0, RegionBExp::kFast,
          "plus 8e-8 under the fast region-B exponential, which is the corrected seed's own "
          "contribution. This row states one figure, read at this lane's own default form. The "
          "device lane carries the axis: the form is a trailing parameter of every launched "
@@ -823,7 +844,7 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
         // device lane, its entries a host without a CUDA device cannot run, and the figure a
         // consumer holding a `kFp64Device` class reads must be this lane's own statement
         // rather than the host row's beside it.
-        {Precision::kFp64Device, "fp64-device", 5.5e-14, 0.0, 0.0,
+        {Precision::kFp64Device, "fp64-device", 5.5e-14, 0.0, 0.0, RegionBExp::kFast,
          "the double lane's figure over the whole of x >= 0 on this lane's own entries, which "
          "publish it as \"|error| <= 5.5e-14\" (boys/boys_cuda.hpp, SingleF64 and AllOrdersF64). "
          "It is the host double lane's number because it is the same arithmetic over the same "
@@ -836,7 +857,7 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
         // AllOrdersF16), with the value-dependent term kept in the sentence below rather than
         // folded into the number, which is how the device option table states the same form
         // (src/boys_cuda.cpp, kFormF16 against kBoundF16).
-        {Precision::kFp16Device, "fp16-device", 1e-7, 0.0, 0.0,
+        {Precision::kFp16Device, "fp16-device", 1e-7, 0.0, 0.0, RegionBExp::kFast,
          "plus half of the last representable digit of the returned value, which is a term of "
          "the value the caller receives and not of the call: the lane computes in the float "
          "lane's bodies and stores half, so it cannot be more accurate than the format it stores "
@@ -1106,7 +1127,8 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
                                       EvalScheme scheme,
                                       PackAxis axis,
                                       FitGranularity granularity,
-                                      DivisionForm form) noexcept
+                                      DivisionForm form,
+                                      RegionBExp exp) noexcept
 {
     const std::span<const LaneContractInfo> lanes = BoysLaneContracts();
     const std::size_t index = static_cast<std::size_t>(precision);
@@ -1210,8 +1232,19 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
     const double formTerm =
         form == DivisionForm::kPlainReciprocal ? lane.plainAdditive : 0.0;
 
+    // Which exponential seeds a region-B ladder is an axis and not a spelling of
+    // the combination (accuracy.hpp: naming the other member is naming another
+    // arithmetic). A row states the member its term beside the base is under -
+    // the fp32-device row's 8e-8 is the fast member's own contribution, certified
+    // there - so a call naming the other member is not owed that term. On a row
+    // whose term is 0.0 the two members answer the same figure, which is the row's
+    // own statement: below the member's cut those are one evaluation bit for bit,
+    // and above it the term the narrowed member adds is a fraction of a rounding
+    // the published figure has room for (accuracy.hpp, kDefaultHostRegionBExp).
+    const double memberTerm = exp == lane.additiveMember ? lane.additive : 0.0;
+
     figure.available = true;
-    figure.value = lane.bound + formTerm + lane.additive;
+    figure.value = lane.bound + formTerm + memberTerm;
 
     // The sentence moves with the figure. `source` names the forms the base is for, so on a lane
     // whose plain form carries its own term the figure above is not the one that sentence describes;

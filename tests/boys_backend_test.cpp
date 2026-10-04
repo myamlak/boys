@@ -310,6 +310,15 @@ constexpr bool kCoarsestFiveInForce =
 // Whether the class table answers this class with the combination the shipped build composes
 // from the shipped five.
 //
+// EVERY AXIS THE COMBINATION CARRIES IS COMPARED, the region-B exponential included. The
+// exponential is an axis of EvalPolicy like the five the seam names, so a row that moved it
+// and nothing else is a row that moved the arithmetic this build runs - and the shipped
+// member is kFast, the value EvalPolicy's own default carries, so a guard reading the five
+// alone would answer "the shipped combination" for a class the replacement had moved the
+// exponential of, which is the reading that lets a build which chose something be refused for
+// having chosen nothing. That is the same shape as the row the guard's own row list could not
+// name while the row format carried six cells.
+//
 // Read through detail::DefaultPolicyRow rather than through DefaultPolicy, because a class
 // the table carries no row for is not a class this question is about: DefaultPolicyFor
 // asserts on it - that absence is the seam's own build error - and a replacement is free to
@@ -335,7 +344,8 @@ constexpr bool ClassIsTheShippedCombination() noexcept
                Policy::kBudget == boys::detail::LaneFallbackBudget<kLane>() &&
                Policy::kPack == boys::PackAxis::kArguments &&
                Policy::kGranularity == boys::FitGranularity::kNarrow &&
-               Policy::kDivision == boys::DivisionForm::kRefinedReciprocal;
+               Policy::kDivision == boys::DivisionForm::kRefinedReciprocal &&
+               Policy::kRegionBExp == boys::kDefaultHostRegionBExp;
     }
 }
 
