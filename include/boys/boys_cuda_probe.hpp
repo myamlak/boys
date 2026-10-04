@@ -1338,10 +1338,10 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report);
 /// The build-defaults file this run can write, and the classes it writes a row for and
 /// refuses.
 ///
-/// The seam it writes into is `boys/boys_build_defaults.hpp`: a replacement carries the five
-/// names, a `BOYS_BUILD_DEFAULT_ROWS` list, and no `BOYS_BUILD_DEFAULTS_SHIPPED`, and a build
-/// pointed at it through the `BOYS_BUILD_DEFAULTS` CMake option reads it instead of the
-/// committed file. The device lane is the half of that table which no measurement had ever
+/// The seam it writes into is `boys/boys_build_defaults.hpp`: a replacement carries the seven
+/// names - the host's five and this lane's own two - a `BOYS_BUILD_DEFAULT_ROWS` list, and no
+/// `BOYS_BUILD_DEFAULTS_SHIPPED`, and a build pointed at it through the `BOYS_BUILD_DEFAULTS`
+/// CMake option reads it instead of the committed file. The device lane is the half of that table which no measurement had ever
 /// written a row for, and the reason is the surface: a row names the arithmetic its class
 /// compiles, and until every device option row stated the route, the scheme and the packing
 /// its entry fixes (\c DeviceEntryAxesOf, boys_cuda_options.hpp) a device row would have
