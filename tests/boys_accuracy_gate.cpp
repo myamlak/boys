@@ -13317,10 +13317,12 @@ int main(int argc, char** argv) {
     // where no cell can discriminate, and no row is held to it.
     //
     // The sweep is every host arm the combination book above holds a row for,
-    // rather than one arm standing for the partition. The float lane's
-    // policy-taking entries are the per-argument single entry, which is the
-    // reference below, and the two the rows carry: the per-argument all-orders
-    // entry and the all-N plane entry. Each is read on both packing axes, on both
+    // rather than one arm standing for the partition. It reads the two entries
+    // the rows carry - the per-argument all-orders entry and the all-N plane
+    // entry - each beside the per-argument single entry's two readings, which
+    // are the reference below. The lane's array entries - the fixed-N entry and
+    // the all-N-at-orders entry - are loops over those two bodies, so their
+    // readings are these at the same policy. Each is read on both packing axes, on both
     // routes, at both schemes and at both engine budgets - the axis names which of
     // the lane's two bodies runs past the join, the packed orders lane and the
     // scalar per-argument one, and below it the grid's own branch answers either
@@ -13522,7 +13524,7 @@ int main(int argc, char** argv) {
                                              boys::EvalScheme::kHorner>();
 
     std::printf("\nthe uniform grid's carriage on the single-precision entries: each of the "
-                "float lane's\ntwo policy-taking entries is read twice in one pass, once under a "
+                "two entries the\nrows carry is read twice in one pass, once under a "
                 "policy naming the\ngrid and once under a policy naming the narrow member, at "
                 "each budget, route and\nscheme the combination book above holds a row for, and "
                 "the cells where the two\nreadings differ are counted per region. A region where "
