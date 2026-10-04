@@ -808,16 +808,26 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
     // The figure is one per lane and the division form is a third of the
     // arithmetic's choice, so where the forms of that axis deliver different
     // figures the row states the plain form's apart, in the member the struct
-    // documents for it. Two lanes carry a form dimension and two do not, and
-    // which is which is measured rather than reasoned - the numbers, the cells
-    // they were measured at and the grid are in the rows below.
+    // documents for it. Every lane here carries the axis, and how far it moves
+    // the figures is measured rather than reasoned - the numbers, the cells they
+    // were measured at and the grid are in the rows below. The measurement is the
+    // accuracy gate's: it reads every cell of every lane's rows at each of the
+    // three forms and judges each form against the figure the row publishes for
+    // it, so a row that states one figure states it for all three forms and a row
+    // that states the plain form's apart has the cell that forced it in its
+    // sentence.
     //
-    // The fp32 and fp16 terms are the plain reciprocal's own rounding, measured
-    // on the accuracy gate's reference grid at the reference multiplier: that
-    // form's worst on the fp32 lane is 1.75140e-07 at n = 0, x = 9.74054909,
+    // The host fp32 and fp16 lanes' terms are the plain reciprocal's own rounding,
+    // measured on the accuracy gate's reference grid at the reference multiplier:
+    // that form's worst on the fp32 lane is 1.75140e-07 at n = 0, x = 9.74054909,
     // where the lane's other two forms deliver 1.08354e-07 at worst. The
     // difference is 6.68e-8, and the term published is 1e-7, which bounds it
-    // with the margin a guarantee needs.
+    // with the margin a guarantee needs. The fp16-device lane's term is its own
+    // measurement and not that one: there the plain reciprocal's worst is
+    // 1.53895485e-07 at n = 32, x = 11.9453125, a cell at which the value is
+    // subnormal in the half format, and the two forms that divide exactly deliver
+    // 1.78813934e-07 and 1.1920929e-07 there, so the plain form's extra rounding
+    // is 5.39e-8 over the base and 1e-7 bounds it.
     static const std::array<LaneContractInfo, 6> rows = {{
         {Precision::kFp64, "fp64", 5.5e-14, 0.0, 0.0, RegionBExp::kFast,
          "throughout, every region"},
@@ -838,12 +848,18 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
          "lane's too, before the format's own half digit is added to it"},
         {Precision::kFp32Device, "fp32-device", 1.5e-7, 8e-8, 0.0, RegionBExp::kFast,
          "plus 8e-8 under the fast region-B exponential, which is the corrected seed's own "
-         "contribution. This row states one figure, read at this lane's own default form. The "
-         "device lane carries the axis: the form is a trailing parameter of every launched "
-         "entry, and DeviceOptionAxis::kDivision crosses each entry of the device option space "
-         "with all three (boys/boys_cuda_options.hpp). What the lane does not carry is a figure "
-         "measured per form, so the number above is this lane's at the default form and the "
-         "other two forms are owed the measurement the two rows above carry"},
+         "contribution. The device lane carries the division axis - the form is a trailing "
+         "parameter of every launched entry, and DeviceOptionAxis::kDivision crosses each entry "
+         "of the device option space with all three (boys/boys_cuda_options.hpp) - and the "
+         "accuracy gate reads every cell of this lane's rows at each of the three forms, "
+         "judging each against the figure this row publishes for it. The three forms share that "
+         "figure: over the lane's whole grid the plain reciprocal delivers 1.48716e-07 at "
+         "worst and the two forms that divide exactly deliver 1.28793e-07, and both are inside "
+         "the 2.3e-07 the row states. The axis is live on this lane rather than three names for "
+         "one body: the plain reciprocal's values differ from the exact form's in 194120 of the "
+         "cells on the arguments axis and 133158 on the orders axis, while the refined "
+         "reciprocal's differ in none, which is the bit-identity the library documents of that "
+         "form. So the row states one figure for all three forms and no plain term beside it"},
         // The device's double lane carries the axis like every other device lane, and states
         // one figure for it; the figure it publishes is the double lane's own: the entries of
         // this lane read the
@@ -859,25 +875,49 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
          "publish it as \"|error| <= 5.5e-14\" (boys/boys_cuda.hpp, SingleF64 and AllOrdersF64). "
          "It is the host double lane's number because it is the same arithmetic over the same "
          "pieces; it is this row's because the lane is this lane's - a device class asked for "
-         "its bound is answered here and not by the host row beside this one",
+         "its bound is answered here and not by the host row beside this one. The lane carries "
+         "the division axis like every device lane, and the accuracy gate reads every cell of "
+         "its rows at each of the three forms: all three deliver 5e-14 at worst, which is "
+         "inside the 5.5e-14 above, so the row states one figure for the axis and no plain "
+         "term beside it. The forms are not one body under three names there either - the "
+         "plain reciprocal's values differ from the exact form's in 302586 cells on the "
+         "arguments axis and 250542 on the orders axis - but the difference stays inside the "
+         "figure the row publishes, and the refined reciprocal's values differ in none",
          ""},
         // The device's half lane computes in the float lane's bodies and stores what it
         // returns, so the base is the half lane's and not the float lane's: 1e-7 is the figure
         // the CUDA surface states for this lane (boys/boys_cuda.hpp, SingleF16 and
         // AllOrdersF16), with the value-dependent term kept in the sentence below rather than
         // folded into the number, which is how the device option table states the same form
-        // (src/boys_cuda.cpp, kFormF16 against kBoundF16).
-        {Precision::kFp16Device, "fp16-device", 1e-7, 0.0, 0.0, RegionBExp::kFast,
+        // (src/boys_cuda.cpp, kFormF16 against kBoundF16). The plain term beside the base is
+        // this lane's own measurement and not the fp32 lane's: the gate found the plain
+        // reciprocal delivering zero where the base is 1e-7 and the other two forms were
+        // inside it, so a figure carried over from another lane would be a claim this lane's
+        // arithmetic does not keep.
+        {Precision::kFp16Device, "fp16-device", 1e-7, 0.0, 1e-7, RegionBExp::kFast,
          "plus half of the last representable digit of the returned value, which is a term of "
          "the value the caller receives and not of the call: the lane computes in the float "
          "lane's bodies and stores half, so it cannot be more accurate than the format it stores "
          "in, and where the value falls at or below the format's floor no accuracy is claimed at "
          "all. The base is the figure the device lane's own half entries publish "
-         "(boys/boys_cuda.hpp, SingleF16 and AllOrdersF16). This row states one figure, read at "
-         "this lane's own default form, for the reason the fp32-device row beside it gives: the "
-         "device lane carries the axis and every entry of its option space runs every form, but "
-         "no device figure has been measured per form, and the measurement is owed",
-         ""},
+         "(boys/boys_cuda.hpp, SingleF16 and AllOrdersF16). The lane carries the division axis "
+         "like the other device lanes, and the accuracy gate reads every cell of its rows at "
+         "each of the three forms, judging each against the figure this row states for it. Under "
+         "the two forms that divide exactly the lane delivers 2.43800e-04 at worst over the "
+         "grid, which is the half digit of the sentence above and not a term of the form; under "
+         "the plain reciprocal the values differ from the exact form's in 98 cells on the "
+         "arguments axis and 82 on the orders axis, and the difference is that form's own "
+         "rounding at a result the half format stores as a subnormal: at n = 32, x = 11.9453125 "
+         "the value is 1.53895485e-07, the two forms that divide exactly deliver 1.78813934e-07 "
+         "and 1.1920929e-07 there, and the plain reciprocal delivers zero. That is 1.53895485e-07 "
+         "from the value and outside the 1e-07 base, so this row states the plain form's figure "
+         "apart, in the term the struct documents for it and beside the same half-digit term",
+         "every region under the plain reciprocal, which at a subnormal result adds its own "
+         "rounding beside this lane's base: the accuracy gate measured that form's worst at "
+         "1.53895485e-07, at n = 32, x = 11.9453125, where the two forms that divide exactly are "
+         "inside the base at 2.5e-8 and 3.5e-8 from the value. The difference over the base is "
+         "5.39e-8, and the term published is 1e-7, which bounds it with the margin a guarantee "
+         "needs"},
     }};
 
     return rows;
