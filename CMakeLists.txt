@@ -1096,10 +1096,14 @@ if (BUILD_CUDA)
         PUBLIC include ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
         PRIVATE src)
     if (BOYS_BUILD_DEFAULTS_DIR)
-        # The device lane's option rows read the same five choices
-        # (boys_cuda_options.hpp), so a build that replaces the defaults header
-        # replaces it on both sides of the device boundary: the host and the
-        # device lane then name one default and not two.
+        # A build's defaults are one seam and not a host half: the device lane's
+        # rows are read from the same list (boys_cuda_options.hpp) and the device
+        # lane names two choices of its own - the division form its entries take
+        # and the region-B exponential its tables read (kDefaultDeviceDivisionForm,
+        # kDefaultRegionBExp) - so a replacement carries all seven names, the
+        # host's five and the device lane's two. One that leaves a device name out
+        # is a compile error at that name and not a device default taken silently
+        # from the committed file.
         #
         # The seam's identity travels with it, and it is the same digest the boys
         # target carries: the device lane reads the file the option named exactly
