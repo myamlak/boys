@@ -83,23 +83,54 @@ def read(path: str) -> str:
         return ""
 
 
-def code_lines(path: str) -> list[tuple[int, str]]:
-    """The file's lines with comments removed, as (line number, text).
+def code(path: str) -> str:
+    """The file's text with its comments blanked out, line structure kept.
 
-    A class named in prose is not a declaration. The header's own commentary spells the row format
-    out with the placeholder `DefaultPolicy<Precision::kX, Shape::kY>`, which is the same text a real
-    entry writes, so a check that scans raw lines reads that sentence as a class named (kX, kY) and
-    reports an entry no row can carry. The line numbers kept here are the file's own, so a report
-    still names a line a reader can open.
+    A name is read out of the code and not out of what the code says about itself. This
+    library's headers explain the shape of an entry's default in prose, and prose spells
+    the same `DefaultPolicy<Precision::k..., Shape::k...>` an entry does: boys.hpp's own
+    comment on the composed table writes the placeholders `kX` and `kY` in exactly that
+    form, and a reader that does not skip comments books a class called (kX, kY) that no
+    row could ever carry. Blanking rather than dropping keeps every line number the line
+    number it was, which is what the reports below print.
     """
-    kept: list[tuple[int, str]] = []
+    text = read(path)
+    out: list[str] = []
+    index = 0
+    while index < len(text):
+        pair = text[index:index + 2]
+        if pair == "//":
+            end = text.find("\n", index)
+            end = len(text) if end < 0 else end
+            out.append(" " * (end - index))
+            index = end
+        elif pair == "/*":
+            end = text.find("*/", index + 2)
+            end = len(text) if end < 0 else end + 2
+            out.append("".join("\n" if character == "\n" else " " for character in text[index:end]))
+            index = end
+        else:
+            out.append(text[index])
+            index += 1
+    return "".join(out)
 
-    for number, line in enumerate(read(path).splitlines(), start=1):
-        if line.lstrip().startswith("//"):
-            continue
-        kept.append((number, line.split("//", 1)[0]))
 
-    return kept
+def code_lines(path: str) -> list[tuple[int, str]]:
+    """The file's lines with comments blanked, as (line number, text).
+
+    The line-at-a-time reading of `code` above, for the caller that reads a thing written on
+    one line: a row is one line of the table, and a class's columns are read off it. An entry's
+    default is not - it is asked for across as many lines as the width allows - so the reader
+    that looks for one walks the whole text and this one is not offered to it. Deriving both
+    from one blanking is what keeps the two callers from disagreeing about what a comment is.
+
+    A class named in prose is not a declaration. The header's own commentary spells the row
+    format out with the placeholder `DefaultPolicy<Precision::kX, Shape::kY>`, which is the same
+    text a real entry writes, so a check that scans raw lines reads that sentence as a class
+    named (kX, kY) and reports an entry no row can carry. The line numbers kept here are the
+    file's own, so a report still names a line a reader can open.
+    """
+    return list(enumerate(code(path).splitlines(), start=1))
 
 
 def rows() -> dict[tuple[str, str], int]:
@@ -113,17 +144,29 @@ def rows() -> dict[tuple[str, str], int]:
 
 
 def entries() -> dict[tuple[str, str], list[tuple[str, int]]]:
-    """The classes the entries and the asking units name, with the file and line of each."""
+    """The classes the entries and the asking units name, with the file and line of each.
+
+    A name is matched over the whole file rather than line by line, because a class's name
+    is written the way the line length allows: the device classes are asked for as
+    `DefaultPolicy<...Precision::kFp64Device, Shape::kSingle,\\n ... Device::kDevice>`,
+    and a reader that stops at the newline sees a `DefaultPolicy<` that never closes and
+    books the class the ask reaches as a row nobody asks for.
+    """
     found: dict[tuple[str, str], list[tuple[str, int]]] = {}
     for path in ENTRY_FILES + ASK_FILES:
         if not os.path.exists(path):
             continue
         # A device entry keys its class on Device::kDevice; both are the same class set here,
         # because what this checks is that a row and an entry name the same (precision, shape).
-        for number, line in code_lines(path):
-            for match in ENTRY.finditer(line):
-                key = (match.group(1), match.group(2))
-                found.setdefault(key, []).append((os.path.relpath(path, REPO), number))
+        # Walked over the blanked text and not line by line: an entry's default is written the
+        # way the line width allows, so a class asked for across a line break has to be read
+        # across it. The blanking is `code` above, which is also what `code_lines` reads, so
+        # what counts as a declaration is one reading in both places.
+        text = code(path)
+        for match in ENTRY.finditer(text):
+            key = (match.group(1), match.group(2))
+            number = text.count("\n", 0, match.start()) + 1
+            found.setdefault(key, []).append((os.path.relpath(path, REPO), number))
     return found
 
 
