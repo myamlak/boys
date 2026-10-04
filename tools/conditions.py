@@ -168,8 +168,13 @@ FREEZE = [
         "timeout": 60,
     },
     {
-        "name": "every option space closes",
-        "cmd": [PY, "tools/status.py"],
+        # The HOST space closes from the accuracy gate's recorded run, which exists before a probe
+        # does. The DEVICE and PROBE spaces close from the probes' own reports, which are what a
+        # probe run PRODUCES - requiring them here would be a gate that can never open, because the
+        # thing it waits for is the thing it guards. This ran the whole of status.py once and was
+        # blocked by exactly that circularity.
+        "name": "the host option space closes (from the gate's recorded run)",
+        "cmd": [PY, "tools/check_host_space_closes.py"],
         "empty": False,
         "timeout": 900,
     },
