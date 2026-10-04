@@ -839,7 +839,7 @@ struct AccuracyFigure {
 /// lane's own additive term where it documents one. A combination the library
 /// does not carry has no figure and says so.
 ///
-/// The bound is the lane's and not the axes': a way to read any of the five axes
+/// The bound is the lane's and not the axes': a way to read any of the axes
 /// that narrowed it would be a bound this build does not certify, and the
 /// per-axis figures are the ones each axis's own row publishes. What the axes
 /// change is the *delivered* figure - see \c BoysAccuracyDelivered - the one to
@@ -948,7 +948,9 @@ AccuracyFigure BoysAccuracyGuaranteedStated() noexcept
 ///
 /// The axes it asks the accessor above with are the ones
 /// \c DefaultPolicy<kPrecision, kShape, kDevice> resolves to - the row the table
-/// carries for the class, or the seam's own five where it carries none - so this
+/// carries for the class: the class's own row where the seam states one, and the
+/// seam's own names at that lane's budget where the seam states no row list at
+/// all, the device lane's two included on a class of the device half - so this
 /// is the same figure, from the same table, as a caller gets by naming the
 /// policy's axes by hand, the region-B exponential included. It is a table read
 /// and not a measurement: nothing is evaluated and nothing is timed.
