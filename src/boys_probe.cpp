@@ -424,6 +424,14 @@ constexpr OptionProbeShape kProbeShapes[] = {
 constexpr Shape kSeamShapes[] = {Shape::kSingle, Shape::kAllOrders, Shape::kFixedN, Shape::kAllN,
                                  Shape::kAllNAtOrders};
 
+/// The shapes a device class answers, in the library's own order: the three questions the
+/// device entries take, which are the classes the device half holds. The host's five are not
+/// these three - a device entry answers a single order, an all-orders ladder and a run of
+/// orders, and has no separate fixed-order or per-argument-order entry - so the seam's key is
+/// two lane sets crossed with two shape lists, and the count of the classes it reaches is the
+/// sum of the two products rather than one product of one list.
+constexpr Shape kSeamDeviceShapes[] = {Shape::kSingle, Shape::kAllOrders, Shape::kAllN};
+
 /// The shape of the question this probe's workload asks, and so the shape whose
 /// reference class the default is taken from.
 ///
@@ -5654,10 +5662,15 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
     return rows;
 }
 
-/// The host lanes the seam's key is written for: this probe's own measurable classes folded to
-/// the lanes they run in. The two half formats are one lane - the library declares the bf16
-/// entries under the fp16 name, so a row written for one is the row both resolve to - and the
-/// fold is `ProbeClassesOf`'s reading of that and not a lane list written out here.
+/// The host lanes of the seam's key: this probe's own measurable classes folded to the lanes
+/// they run in. The two half formats are one lane - the library declares the bf16 entries under
+/// the fp16 name, so a row written for one is the row both resolve to - and the fold is
+/// `ProbeClassesOf`'s reading of that and not a lane list written out here.
+///
+/// The device lanes are the other half of the key and are not in this list: they are the lanes
+/// the seam's device rows are written for, which this probe measures no cell of
+/// (`SeamDeviceLanes` below), and the callers here are the ones that walk the cells this run
+/// ranked an option of.
 std::vector<Precision> SeamLanes() {
     std::vector<Precision> lanes;
 
@@ -5674,9 +5687,32 @@ std::vector<Precision> SeamLanes() {
     return lanes;
 }
 
-/// The number of classes the seam's own key reaches: its lanes, by the shapes it states.
+/// The device lanes of the seam's key: the lane table's own entries whose device cell is the
+/// device. Read from that table rather than written here as three, so a lane the library adds
+/// to the device half is counted without an edit in this file - the table is where this probe
+/// states which lanes the seam keys and which device each runs on, and a lane named there is a
+/// lane the seam's key reaches.
+std::size_t SeamDeviceLanes() {
+    std::size_t lanes = 0;
+
+    for (const SeamLaneBudget& lane : kSeamLaneBudgets)
+    {
+        lanes += lane.device == Device::kDevice ? 1 : 0;
+    }
+
+    return lanes;
+}
+
+/// The number of classes the seam's own key reaches: one product per half, summed.
+///
+/// The key is two lane sets crossed with two shape lists - the host lanes by the five shapes
+/// the seam states, the device lanes by the three questions a device entry answers - so a count
+/// over one half is a count of the classes the file's own rows would be read against, and a
+/// device class would be a class this block never accounts for. Both lists are the seam's
+/// (`kSeamShapes`, `kSeamDeviceShapes`), and both lane counts come off the tables in this file.
 std::size_t SeamClassCount() {
-    return SeamLanes().size() * std::size(kSeamShapes);
+    return SeamLanes().size() * std::size(kSeamShapes) +
+           SeamDeviceLanes() * std::size(kSeamDeviceShapes);
 }
 
 /// The seam this run would write, as the report's own account of it: the classes it emits
@@ -5834,10 +5870,11 @@ void AppendDefaultsBlock(std::string& text, const OptionProbeReport& report) {
                      "The fixed-order call and the\n  per-argument-order array entry are declared "
                      "for the double lane alone, and the\n  half lane's array shape is its native "
                      "entry, a different question from this\n  workload's. The seam's key is %zu "
-                     "host lanes by %zu shapes, %zu class(es), and this\n  file's row list is the "
-                     "list it replaces — a class that list does not name is one\n  no row below can "
-                     "be written for:\n",
-                     noFigure.size(), lanes.size(), std::size(kSeamShapes), SeamClassCount());
+                     "host lanes by %zu shapes\n  beside %zu device lanes by %zu, %zu class(es), and "
+                     "this file's row list is\n  the list it replaces — a class that list does not "
+                     "name is one no row below\n  can be written for:\n",
+                     noFigure.size(), lanes.size(), std::size(kSeamShapes), SeamDeviceLanes(),
+                     std::size(kSeamDeviceShapes), SeamClassCount());
 
         for (const std::string& klass : noFigure)
         {
