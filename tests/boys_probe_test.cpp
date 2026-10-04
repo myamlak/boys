@@ -2319,6 +2319,14 @@ TEST(ProbeTest, TheEmittedSeamIsAReplacementForTheSeamItRead) {
 // entry of that shape on that lane or not. The defect this pins is a class dropped from the
 // account - a class the probe carries nothing for is one whose absence a reader of the block
 // cannot see, and the block is read as an account of the seam the file it writes replaces.
+//
+// The key is the three host lanes by the five shapes the seam states, and it reaches those
+// classes for every shape of seam: one carrying a `BOYS_BUILD_DEFAULT_ROWS` list, whose rows the
+// block accounts for by name, and one carrying no list at all, where the file is the five names
+// and no rows and every class of the key is a class the file carries no row for. That second
+// shape is a replacement seam's own (boys/boys_build_defaults.hpp states it), and a block that
+// reported it as a run that measured nothing would have named the wrong cause and accounted for
+// none of the classes - which is what the two halves below hold apart.
 TEST(ProbeTest, TheDefaultsBlockNamesEveryClassTheSeamKeys) {
     // The protocol that ranks: a run with too few paired rounds to order anything writes no
     // rows at all - its block says so in its own words - and this test is about the block a
@@ -2332,9 +2340,27 @@ TEST(ProbeTest, TheDefaultsBlockNamesEveryClassTheSeamKeys) {
 
     ASSERT_NE(at, std::string::npos) << text;
 
-    // A block that measured no class carries no row lines to check against.
+    // A block that accounted for no class carries no class line to check against. Both a block
+    // that ranked none of the seam's classes and one whose seam carries no class list say so in
+    // prose instead, and either leaves the check below with nothing to be complete against.
+    ASSERT_NE(text.find("\n    ", at), std::string::npos)
+        << "the block carries no per-class line, so there is no list here to be complete";
+
+#if defined(BOYS_BUILD_DEFAULT_ROWS)
+    // This seam carries a class list, so its block states how many of the list's classes this
+    // protocol ranked, one row per class. A protocol that ranked none of them writes the
+    // refusal instead, and this is what says so.
     ASSERT_NE(text.find("carry a measured row", at), std::string::npos)
-        << "this protocol ordered nothing, so there is no row list here to be complete";
+        << "this seam carries a class list and this protocol ranked none of its classes";
+#else
+    // This seam names no class of its own, so the file it implies carries the five names and
+    // no row list, and the block has to say that in those terms. What it may not do is give
+    // the RUN as the reason: this protocol ranked cells of every class checked below, and a
+    // block reading "this run measured no class" is the seam's shape reported as the run's
+    // result - the defect that reads as an empty measurement instead of an empty class list.
+    EXPECT_EQ(text.find("this run measured no class", at), std::string::npos)
+        << "the block blamed the run for a row list this build's seam does not carry";
+#endif
 
     const std::string block = text.substr(at);
 

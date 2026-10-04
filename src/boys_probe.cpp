@@ -5728,6 +5728,12 @@ std::size_t SeamClassCount() {
 /// checkable: a reader sees which rows a run measured before pointing a build at it, and a
 /// class of the seam's key that no row of the file is written for is named as that rather
 /// than left as a class nobody asked about.
+///
+/// A seam that names no class of its own is the one shape where the file carries no row list
+/// at all, and it is a shape a replacement may have (`boys/boys_build_defaults.hpp`). There
+/// the block says what the file is - the five names and no rows - and names the classes the
+/// seam's own key reaches anyway: those classes are the reason the account is written, and the
+/// run that produced them measured them.
 void AppendDefaultsBlock(std::string& text, const OptionProbeReport& report) {
     const std::vector<EmittedSeamRow> rows = SeamRows(report);
     std::size_t measured = 0;
@@ -5741,17 +5747,42 @@ void AppendDefaultsBlock(std::string& text, const OptionProbeReport& report) {
             "(`--emit-defaults\n  <file>`, the command `boys/boys_build_defaults.hpp` names) "
             "would carry:\n";
 
-    if (measured == 0)
+    // Whether the seam in force names any class of its own. It is read from the seam's own
+    // `BOYS_BUILD_DEFAULT_ROWS` list, and a replacement that carries none is a build whose
+    // every class takes the five - a shape `boys/boys_build_defaults.hpp` states as one a
+    // replacement may have. Two states read alike in \c measured and are not the same thing:
+    // a run that ranked no class of the list, and a build whose seam has no list for a ranking
+    // to be keyed to. A block that named the run as the cause of the second would be false -
+    // the run measured the classes the seam's key reaches - and would leave those classes
+    // unnamed, which is the one thing the account below exists to prevent.
+    const bool seamNamesClasses = !SeamClasses().empty();
+
+    if (!seamNamesClasses)
+    {
+        // Not a refusal and not a reading of the run: the file a replacement of this seam
+        // states is the five names and no row list at all - `boys/boys.hpp` builds the whole
+        // default table from the five where the list is not defined, and a list macro with
+        // nothing under it is a hole at every class rather than an empty table - so there is
+        // no class here for this run's rankings to be keyed to. The classes the seam's own key
+        // reaches are named below, each with the reason no row of that file carries it.
+        text += "  no row and no file, and the reason is the seam and not the run: the seam in\n";
+        text += "  force names no class of its own, so a file written from this run would carry\n";
+        text += "  no row list for its rankings to be keyed to and every class resolves to the\n";
+        text += "  five above. The classes the seam's own key reaches are named below.\n";
+    }
+    else if (measured == 0)
     {
         text += "  no row and no file: this run measured no class, and a file of rows this run\n";
         text += "  did not rank would be a transcription of the seam rather than a measurement\n";
         text += "  of this machine.\n";
         return;
     }
-
-    text += Text("  %zu of the %zu class(es) this file's row list carries - the seam's own key "
-                 "reaches\n  %zu - carry a measured row, one row per class:\n",
-                 measured, rows.size(), SeamClassCount());
+    else
+    {
+        text += Text("  %zu of the %zu class(es) this file's row list carries - the seam's own key "
+                     "reaches\n  %zu - carry a measured row, one row per class:\n",
+                     measured, rows.size(), SeamClassCount());
+    }
 
     for (const EmittedSeamRow& row : rows)
     {
