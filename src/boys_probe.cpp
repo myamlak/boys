@@ -51,10 +51,16 @@ const char* PrecisionName(OptionPrecision precision) noexcept {
 const char* OptionProbeShapeName(OptionProbeShape shape) noexcept {
     switch (shape)
     {
+    case OptionProbeShape::kSingle:
+        return "single";
     case OptionProbeShape::kAllOrders:
         return "all-orders";
+    case OptionProbeShape::kFixedN:
+        return "fixed-n";
     case OptionProbeShape::kAllN:
         return "all-n";
+    case OptionProbeShape::kAllNAtOrders:
+        return "all-n-at-orders";
     }
 
     return "unknown";
@@ -63,10 +69,16 @@ const char* OptionProbeShapeName(OptionProbeShape shape) noexcept {
 const char* OptionProbeShapeQuestion(OptionProbeShape shape) noexcept {
     switch (shape)
     {
+    case OptionProbeShape::kSingle:
+        return "one call per order per argument: F_n(x) for one order at one argument";
     case OptionProbeShape::kAllOrders:
         return "one argument per call: F_0(x)..F_n(x) at that argument's own order n";
+    case OptionProbeShape::kFixedN:
+        return "one call per order over the array: F_n(x_i) at one fixed order n";
     case OptionProbeShape::kAllN:
         return "one call per order run: F_0(x)..F_nmax(x) for every argument of the array";
+    case OptionProbeShape::kAllNAtOrders:
+        return "one call over the array: F_0(x_i)..F_n[i](x_i) at each argument's own top order";
     }
 
     return "an unknown question";
@@ -103,9 +115,15 @@ std::string Text(const char* text) {
 /// One formatted line, so the report can be built without an iostream.
 ///
 /// A call with no arguments passes its text through `%s`, for the same reason.
+///
+/// The buffer is sized for the longest line this report forms, which is a class's note: a class
+/// holds one option per served cell of its lane, so its note enumerates them, and 144 cells at
+/// roughly ten characters a name is why a kilobyte is not enough. A line longer than this would
+/// be cut mid-word, and the newline that ends it with it - so the class after it would be
+/// printed on the same line, as a name with no line of its own.
 template <typename... Args>
 std::string Text(const char* format, Args... args) {
-    char buffer[1024];
+    char buffer[8192];
 
     if constexpr (sizeof...(args) == 0)
     {
@@ -378,25 +396,43 @@ constexpr std::size_t kMinimumPairedRounds = 4;
 /// host lanes after it.
 ///
 /// The device lane's single precision is not one of them, and its book is
-/// enumerated and counted beside theirs rather than left out of the report: its
-/// entries need a CUDA device, so no cell of that class can be run here, and a
-/// class dropped from every count would be a class whose refusals nothing in
-/// this report accounts for.
+/// enumerated and counted beside theirs rather than left out of the report: this
+/// probe has no device arm - `benchmarks/boys_option_probe.cpp`, the driver, names
+/// no CUDA entry and this translation unit calls none - so no cell of that class
+/// has a row here, and a class dropped from every count would be a class whose
+/// refusals nothing in this report accounts for.
 constexpr OptionPrecision kCellPrecisions[] = {OptionPrecision::kFp64, OptionPrecision::kFp32,
                                                OptionPrecision::kFp16, OptionPrecision::kBf16};
 
-/// The question shapes this probe measures, in the order it walks their classes.
-/// Both are shapes the library serves and this build carries an entry for; a
+/// The question shapes this probe measures, in the order it walks their classes:
+/// the seam's own five, in the seam's own order (\c Shape, boys/boys.hpp), so the
+/// classes here and the classes `BOYS_BUILD_DEFAULT_ROWS` names are one list. A
 /// shape no option answers produces no class, and the report says so instead of
-/// leaving its key unmentioned.
-constexpr OptionProbeShape kProbeShapes[] = {OptionProbeShape::kAllOrders, OptionProbeShape::kAllN};
+/// leaving its key unmentioned; which shapes those are is a property of this
+/// revision's entries rather than of the list.
+constexpr OptionProbeShape kProbeShapes[] = {
+    OptionProbeShape::kSingle, OptionProbeShape::kAllOrders, OptionProbeShape::kFixedN,
+    OptionProbeShape::kAllN, OptionProbeShape::kAllNAtOrders};
+
+/// The seam's own key, as the seam itself states it: the shapes its default-policy rows can be
+/// written for (\c Shape, boys/boys.hpp), in its own order. This is the vocabulary the emitted
+/// file's rows are drawn from, which is not the same list as the shapes this probe walks: a
+/// shape the seam gains and this probe is not taught is a class the seam's key reaches and no
+/// row of the emitted file can be written for, and the report names it as that rather than
+/// dropping it, which is why the two lists are kept apart rather than derived one from the
+/// other.
+constexpr Shape kSeamShapes[] = {Shape::kSingle, Shape::kAllOrders, Shape::kFixedN, Shape::kAllN,
+                                 Shape::kAllNAtOrders};
 
 /// The shape of the question this probe's workload asks, and so the shape whose
 /// reference class the default is taken from.
 ///
 /// The workload walks the arguments one at a time, each with its own highest
-/// order: the all-orders shape. The runs the all-N entries batch on are cut from
-/// the same arguments, so both shapes are measured on one workload.
+/// order: the all-orders shape. Every other shape's options are handed the same
+/// arguments - the runs the all-N entries take, the fixed order the fixed-N entry
+/// sweeps, the per-argument tops the all-n-at-orders entry reads - so every shape
+/// is measured on one workload, and the default is named from the class whose
+/// question that workload is.
 constexpr OptionProbeShape kWorkloadShape = OptionProbeShape::kAllOrders;
 
 /// The library precision whose lane answers for one of the classes above.
@@ -531,14 +567,36 @@ struct Buffers {
     std::vector<double> runX;
     std::vector<double> runOut;
     std::vector<std::size_t> workspace;
+
+    /// One order across every argument: the fixed-N entry's own output, and its
+    /// own argument array, so the sweep is not handed a compacted copy of the
+    /// workload's - the shape it answers is one order at every argument.
+    std::vector<double> fixedN;
+
+    /// The order-major planes the all-n-at-orders entry writes: count * (nmax +
+    /// 1) doubles, out[k * count + i].
+    std::vector<double> planesFp64;
+
+    /// The float lanes' own scratch: the run's arguments after the lane's own
+    /// narrowing, and the planes that lane's all-N entry writes.
+    std::vector<float> runXF32;
+    std::vector<float> runOutF32;
 };
 
 Buffers MakeBuffers(const Workload& work) {
     Buffers buffers;
     const std::size_t run = std::max<std::size_t>(work.largestRun, 1);
+    const std::size_t count = work.x.size();
+    const std::size_t planes = count * static_cast<std::size_t>(work.options.nmax + 1);
+    const std::size_t runPlanes = run * static_cast<std::size_t>(work.options.nmax + 1);
+
     buffers.runX.resize(run);
-    buffers.runOut.resize(run * static_cast<std::size_t>(work.options.nmax + 1));
+    buffers.runOut.resize(runPlanes);
     buffers.workspace.resize(BoysAllNWorkspaceSize(run));
+    buffers.fixedN.resize(count);
+    buffers.planesFp64.resize(planes);
+    buffers.runXF32.resize(run);
+    buffers.runOutF32.resize(runPlanes);
     return buffers;
 }
 
@@ -555,6 +613,12 @@ enum class OptionKind {
     kBatchFp32, ///< one all-orders fp32 call per argument
     kBatchF16, ///< one all-orders call per argument, fp16 I/O
     kBatchBf16, ///< one all-orders call per argument, bf16 I/O
+    kSingleFp64, ///< one single-order call per order per argument, fp64
+    kSingleFp32, ///< the same, fp32 I/O
+    kSingleHalf, ///< the same, at whichever half format the option's precision names
+    kFixedNFp64, ///< one fixed-N call per order, sweeping the array, fp64
+    kAllNAtOrdersFp64, ///< one all-N-at-orders call over the array, fp64
+    kGroupedFp32, ///< one all-N call per order run, fp32
 };
 
 /// The question one kind answers: what the entry under it hands back for a call.
@@ -567,7 +631,16 @@ constexpr OptionProbeShape ShapeOf(OptionKind kind) noexcept {
     {
     case OptionKind::kGroupedFp64:
     case OptionKind::kTaggedFp64:
+    case OptionKind::kGroupedFp32:
         return OptionProbeShape::kAllN;
+    case OptionKind::kSingleFp64:
+    case OptionKind::kSingleFp32:
+    case OptionKind::kSingleHalf:
+        return OptionProbeShape::kSingle;
+    case OptionKind::kFixedNFp64:
+        return OptionProbeShape::kFixedN;
+    case OptionKind::kAllNAtOrdersFp64:
+        return OptionProbeShape::kAllNAtOrders;
     case OptionKind::kBatchFp64:
     case OptionKind::kFp64Cell:
     case OptionKind::kSingleCell:
@@ -1391,6 +1464,65 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
            fp32,
            DefaultPolicyBound(OptionPrecision::kFp32));
 
+    // The rows for the shapes the seam names and no cell of the axes carries.
+    //
+    // A shape row's axes are the entry's own and not a cell's: every row below
+    // calls its entry with no policy argument, so what runs is the class's own row
+    // of the seam in force (`DefaultPolicy`, boys/boys.hpp), and the axes written
+    // here are read from that row rather than chosen. A row whose axes were
+    // written out by hand would state a combination its own body does not
+    // instantiate the moment the seam moved, and this report names the arithmetic
+    // each row ran.
+    //
+    // One row per class: the library carries one entry for each of these shapes at
+    // each lane below, so there is no alternative to rank - the class ranks its
+    // single option, which the seam's own header writes as a choice and not as a
+    // comparison's winner.
+    {
+        using Fp64SingleRow = DefaultPolicy<Precision::kFp64, Shape::kSingle>;
+
+        append("single-fp64", OptionKind::kSingleFp64, OptionPrecision::kFp64,
+               Fp64SingleRow::kRoute, Fp64SingleRow::kScheme, Fp64SingleRow::kGranularity,
+               Fp64SingleRow::kPack, Fp64SingleRow::kDivision, Fp64SingleRow::kRegionBExp, fp64,
+               fp64Bound);
+    }
+
+    {
+        using Fp64FixedNRow = DefaultPolicy<Precision::kFp64, Shape::kFixedN>;
+
+        append("fixed-n-fp64", OptionKind::kFixedNFp64, OptionPrecision::kFp64,
+               Fp64FixedNRow::kRoute, Fp64FixedNRow::kScheme, Fp64FixedNRow::kGranularity,
+               Fp64FixedNRow::kPack, Fp64FixedNRow::kDivision, Fp64FixedNRow::kRegionBExp, fp64,
+               fp64Bound);
+    }
+
+    {
+        using Fp64AtOrdersRow = DefaultPolicy<Precision::kFp64, Shape::kAllNAtOrders>;
+
+        append("all-n-at-orders-fp64", OptionKind::kAllNAtOrdersFp64, OptionPrecision::kFp64,
+               Fp64AtOrdersRow::kRoute, Fp64AtOrdersRow::kScheme, Fp64AtOrdersRow::kGranularity,
+               Fp64AtOrdersRow::kPack, Fp64AtOrdersRow::kDivision, Fp64AtOrdersRow::kRegionBExp,
+               fp64, fp64Bound);
+    }
+
+    {
+        using Fp32SingleRow = DefaultPolicy<Precision::kFp32, Shape::kSingle>;
+
+        append("single-fp32", OptionKind::kSingleFp32, OptionPrecision::kFp32,
+               Fp32SingleRow::kRoute, Fp32SingleRow::kScheme, Fp32SingleRow::kGranularity,
+               Fp32SingleRow::kPack, Fp32SingleRow::kDivision, Fp32SingleRow::kRegionBExp, fp32,
+               DefaultPolicyBound(OptionPrecision::kFp32));
+    }
+
+    {
+        using Fp32AllNRow = DefaultPolicy<Precision::kFp32, Shape::kAllN>;
+
+        append("grouped-fp32", OptionKind::kGroupedFp32, OptionPrecision::kFp32,
+               Fp32AllNRow::kRoute, Fp32AllNRow::kScheme, Fp32AllNRow::kGranularity,
+               Fp32AllNRow::kPack, Fp32AllNRow::kDivision, Fp32AllNRow::kRegionBExp, fp32,
+               DefaultPolicyBound(OptionPrecision::kFp32));
+    }
+
 #if BoysFp16
     // The half lanes run the fp32 engine, so their arithmetic is the fp32 one.
     append(LaneShapeName(OptionPrecision::kFp16),
@@ -1415,6 +1547,23 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
            DefaultPolicyFp32::kRegionBExp,
            fp32,
            DefaultPolicyBound(OptionPrecision::kBf16));
+
+    // The half lane's single-order row, one per format and for the reason the
+    // single-precision rows above carry: the shape's entry is the class's own, so
+    // there is nothing to rank it against. The two half formats are one lane and
+    // two classes, and each is measured under the format it returns.
+    {
+        using HalfSingleRow = DefaultPolicy<Precision::kFp16, Shape::kSingle>;
+
+        append("single-fp16", OptionKind::kSingleHalf, OptionPrecision::kFp16,
+               HalfSingleRow::kRoute, HalfSingleRow::kScheme, HalfSingleRow::kGranularity,
+               HalfSingleRow::kPack, HalfSingleRow::kDivision, HalfSingleRow::kRegionBExp, fp32,
+               DefaultPolicyBound(OptionPrecision::kFp16));
+        append("single-bf16", OptionKind::kSingleHalf, OptionPrecision::kBf16,
+               HalfSingleRow::kRoute, HalfSingleRow::kScheme, HalfSingleRow::kGranularity,
+               HalfSingleRow::kPack, HalfSingleRow::kDivision, HalfSingleRow::kRegionBExp, fp32,
+               DefaultPolicyBound(OptionPrecision::kBf16));
+    }
 
     // A build that carries both lanes has nothing to report as not carried, and
     // the register stays a parameter either way so its caller reads one list in
@@ -2340,6 +2489,166 @@ void VisitValues(const Workload& work, Buffers& buffers, const Option& option, V
                     visit(buffers.runX[j], k,
                           buffers.runOut[static_cast<std::size_t>(k) * run + j]);
                 }
+            }
+        }
+
+        break;
+    }
+
+    case OptionKind::kGroupedFp32:
+    {
+        // The float lane's all-N entry, reached the way the double lane's is: one
+        // call per order run, over that run's own arguments. The lane narrows the
+        // argument before it evaluates, so the values are visited on the argument
+        // the lane was asked about.
+        for (std::size_t r = 0; r + 1 < work.runBegin.size(); ++r)
+        {
+            const std::size_t from = work.runBegin[r];
+            const std::size_t to = work.runBegin[r + 1];
+            const std::size_t run = to - from;
+            const int n = work.runOrder[r];
+
+            for (std::size_t j = 0; j < run; ++j)
+            {
+                buffers.runXF32[j] = static_cast<float>(work.x[work.sorted[from + j]]);
+            }
+
+            BoysAllNF32(n, buffers.runXF32.data(), buffers.runOutF32.data(), run);
+
+            for (std::size_t j = 0; j < run; ++j)
+            {
+                const float x = buffers.runXF32[j];
+
+                for (int k = 0; k <= n; ++k)
+                {
+                    visit(static_cast<double>(x), k,
+                          static_cast<double>(
+                              buffers.runOutF32[static_cast<std::size_t>(k) * run + j]));
+                }
+            }
+        }
+
+        break;
+    }
+
+    case OptionKind::kSingleFp64:
+    {
+        // One order at one argument, called once for each order the ladder asks
+        // for: the same values the all-orders row returns, bought a call at a
+        // time. That is what the shape costs a caller who has one (n, x) pair.
+        for (std::size_t i = 0; i < work.x.size(); ++i)
+        {
+            const int n = work.order[i];
+
+            for (int k = 0; k <= n; ++k)
+            {
+                visit(work.x[i], k, BoysSingle(k, work.x[i]));
+            }
+        }
+
+        break;
+    }
+
+    case OptionKind::kSingleFp32:
+    {
+        for (std::size_t i = 0; i < work.x.size(); ++i)
+        {
+            const int n = work.order[i];
+            const float x = static_cast<float>(work.x[i]);
+
+            for (int k = 0; k <= n; ++k)
+            {
+                visit(static_cast<double>(x), k,
+                      static_cast<double>(BoysSingleF32(k, x)));
+            }
+        }
+
+        break;
+    }
+
+    case OptionKind::kSingleHalf:
+    {
+#if BoysFp16
+        if (option.precision == OptionPrecision::kFp16)
+        {
+            for (std::size_t i = 0; i < work.x.size(); ++i)
+            {
+                const int n = work.order[i];
+                const F16 x = static_cast<F16>(static_cast<float>(work.x[i]));
+
+                for (int k = 0; k <= n; ++k)
+                {
+                    visit(static_cast<double>(x), k,
+                          static_cast<double>(BoysSingleF16(k, x)));
+                }
+            }
+        } else
+        {
+            for (std::size_t i = 0; i < work.x.size(); ++i)
+            {
+                const int n = work.order[i];
+                const Bf16 x = static_cast<Bf16>(static_cast<float>(work.x[i]));
+
+                for (int k = 0; k <= n; ++k)
+                {
+                    visit(static_cast<double>(x), k,
+                          static_cast<double>(BoysSingleBf16(k, x)));
+                }
+            }
+        }
+#else
+        // Unreachable in this build, as in the arms above: the enumeration offers
+        // no option of this kind where the seam is closed.
+        std::fprintf(stderr,
+                     "boys-probe: %s names a half-precision lane this build does not carry "
+                     "(BoysFp16 = 0)\n",
+                     option.name.c_str());
+        std::abort();
+#endif // BoysFp16
+
+        break;
+    }
+
+    case OptionKind::kFixedNFp64:
+    {
+        // One order at every argument of the array: one call per order, each
+        // sweeping the whole array, and the argument's own value is read out of
+        // the sweep of its own order. Every order the workload asks for is
+        // computed once for the whole array, which is what the fixed-N entry
+        // costs a caller who needs one order per element.
+        const std::size_t count = work.x.size();
+
+        for (int k = 0; k <= work.options.nmax; ++k)
+        {
+            BoysFixedN(k, work.x.data(), buffers.fixedN.data(), count, 1);
+
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                if (work.order[i] >= k)
+                {
+                    visit(work.x[i], k, buffers.fixedN[i]);
+                }
+            }
+        }
+
+        break;
+    }
+
+    case OptionKind::kAllNAtOrdersFp64:
+    {
+        // The workload's whole answer in one call: the tops arrive as an array
+        // and each column stops at its own, so the arguments are neither padded
+        // up to the batch's largest order nor split into runs.
+        const std::size_t count = work.x.size();
+
+        BoysAllNAtOrders(work.order.data(), work.x.data(), buffers.planesFp64.data(), count);
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            for (int k = 0; k <= work.order[i]; ++k)
+            {
+                visit(work.x[i], k,
+                      buffers.planesFp64[static_cast<std::size_t>(k) * count + i]);
             }
         }
 
@@ -3799,8 +4108,8 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
     //
     // The device lane's book is enumerated beside the measured classes' and kept
     // out of them. A refusal of that lane is work the library owes, so it belongs
-    // in the account; no cell of it can be run here, because an entry of that lane
-    // is a call on a CUDA device, and a row of it would be timed by another
+    // in the account; no cell of it has a row here, because this probe has no
+    // device arm, and a row of it would be timed by another
     // class's body and reported as that lane's arithmetic. The report counts and
     // lists it in its own block, and no cell of it reaches the option book below.
     std::vector<OptionProbeCell> cells;
@@ -4147,8 +4456,8 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
     const std::vector<double> printed = PrintedFigures(report);
 
     // One stage per class that needs one, so a stage's tied set is the class's
-    // own: a precision's two shapes are two classes and get two votes, neither of
-    // which can decide an entry of the other's question.
+    // own: a precision's shapes are one class each and get one vote each, none of
+    // which can decide an entry of another's question.
     for (const OptionPrecision precision :
          {OptionPrecision::kFp64, OptionPrecision::kFp32, OptionPrecision::kFp16,
           OptionPrecision::kBf16})
@@ -4242,6 +4551,52 @@ std::string Joined(const std::vector<std::string>& items) {
     }
 
     return text;
+}
+
+/// One line of the report, its text wrapped at the report's own width and continued under the
+/// prefix it started on.
+///
+/// A class's note enumerates the members of its class - a class of a 144-cell lane holds about
+/// six thousand characters of names - and a note printed as one line is a line no terminal, a
+/// diff or a log reads, which is the promise `kReportWidth` states. It is also why the line is
+/// not left to a fixed buffer: a note cut mid-word is a list that ends where the buffer did, and
+/// the class printed after it would be printed on the same line.
+std::string WrappedAfter(const std::string& prefix, const std::string& text) {
+    const std::string indent(prefix.size(), ' ');
+    std::string out;
+    std::string line = prefix;
+    std::size_t start = 0;
+
+    while (start < text.size())
+    {
+        std::size_t end = text.find(' ', start);
+
+        if (end == std::string::npos)
+        {
+            end = text.size();
+        }
+
+        const std::string word = text.substr(start, end - start);
+        start = end + 1;
+
+        if (word.empty())
+        {
+            continue;
+        }
+
+        if (line.size() + 1 + word.size() > kReportWidth && line.size() > indent.size())
+        {
+            out += line + "\n";
+            line = indent;
+        } else if (line.size() > indent.size())
+        {
+            line += ' ';
+        }
+
+        line += word;
+    }
+
+    return out + line + "\n";
 }
 
 /// One cell's name and the library's reason, the reason wrapped under the name
@@ -4473,9 +4828,10 @@ void AppendOptionClosure(std::string& text,
                  "does not\n                declare\n",
                  closure.notCarried);
     text += Text("                %zu of the device lane's book, counted apart and not against this "
-                 "build:\n                an entry of that lane is a call on a CUDA device, so no "
-                 "cell of it can be run\n                here whatever arithmetic the library "
-                 "documents for it\n",
+                 "build:\n                this probe has no device arm — `benchmarks/"
+                 "boys_option_probe.cpp`\n                names no CUDA entry and this probe calls "
+                 "none — so no cell of that\n                lane has a row here, whatever "
+                 "arithmetic the library documents for it\n",
                  closure.deviceNotRun);
     text += Text("                %zu refused with the library's own reason, each named in the "
                  "coverage above:\n                unbuilt work the library owes\n",
@@ -4848,20 +5204,41 @@ std::vector<OptionPrecision> ProbeClassesOf(const std::string& precisionToken) {
     return {};
 }
 
-/// The probe's own shape for one of the seam's shape cells, and whether it ranks one at
-/// all: the probe ranks two of the seam's five shapes, and a shape it does not rank has no
-/// measurement to carry.
-bool ProbeShapeOf(const std::string& shapeToken, OptionProbeShape& shape) {
-    if (shapeToken == ShapeToken(Shape::kAllOrders))
+/// The probe's own class shape for one of the seam's shape cells. The two vocabularies name the
+/// same five questions and this is where they are held to each other: the switch is exhaustive
+/// over the seam's shapes, so a shape the seam gains and the probe does not is a warning here
+/// rather than a class the probe silently stops ranking.
+constexpr OptionProbeShape ProbeShapeFor(Shape shape) noexcept {
+    switch (shape)
     {
-        shape = OptionProbeShape::kAllOrders;
-        return true;
+    case Shape::kSingle:
+        return OptionProbeShape::kSingle;
+    case Shape::kAllOrders:
+        return OptionProbeShape::kAllOrders;
+    case Shape::kFixedN:
+        return OptionProbeShape::kFixedN;
+    case Shape::kAllN:
+        return OptionProbeShape::kAllN;
+    case Shape::kAllNAtOrders:
+        return OptionProbeShape::kAllNAtOrders;
     }
 
-    if (shapeToken == ShapeToken(Shape::kAllN))
+    return OptionProbeShape::kAllOrders;
+}
+
+/// The probe's own shape for one of the seam's shape cells, and whether the seam names one at
+/// all: the probe carries a class for each of the seam's five shapes, so only a token outside
+/// that set has no measurement behind it, and that answer is about the token and not the shape
+/// vocabulary.
+bool ProbeShapeOf(const std::string& shapeToken, OptionProbeShape& shape) {
+    for (const Shape candidate :
+         {Shape::kSingle, Shape::kAllOrders, Shape::kFixedN, Shape::kAllN, Shape::kAllNAtOrders})
     {
-        shape = OptionProbeShape::kAllN;
-        return true;
+        if (shapeToken == ShapeToken(candidate))
+        {
+            shape = ProbeShapeFor(candidate);
+            return true;
+        }
     }
 
     return false;
@@ -4950,6 +5327,17 @@ struct EmittedSeamRow {
     std::string cells; ///< the X(...) call, wrapped where the seam wraps it
     std::string marker; ///< the comment above it: a measurement, or a choice and why
     bool measured = false; ///< whether the row is this run's own winning combination
+
+    /// Whether the row states one entry this run measured of the class, that entry standing
+    /// alone: a class the library carries one entry for has nothing to compare, and the seam's
+    /// own header writes such a row as a choice rather than as a comparison's winner. It is
+    /// neither a measurement nor a row the run failed to rank, and the block that accounts for
+    /// the rows has to say which one it is.
+    bool choiceAlone = false;
+
+    /// Whether the cells written are the file's own five rather than a combination this run
+    /// measured: true of a class the run ranked no cell of.
+    bool fromFive = false;
 };
 
 /// The row this run measured for one class of the seam's table, with what it was reached by.
@@ -5174,6 +5562,7 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
             const bool walkover = winner.how == OptionProbeDefaultHow::kOnlyEntry;
 
             row.measured = !walkover;
+            row.choiceAlone = walkover;
 
             if (walkover)
             {
@@ -5202,6 +5591,7 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
         // point rather than a measurement of this machine. The exponential cell is the
         // library's host default, which is the member the fallback's arithmetic has always
         // been; the five above do not carry that axis.
+        row.fromFive = true;
         row.marker = "    /* a choice, not a measurement: this run ranked no cell of this\n"
                      "       class, so the row states the five above at this lane's budget and the\n"
                      "       library's own region-B exponential */\\\n";
@@ -5213,20 +5603,44 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
     return rows;
 }
 
+/// The host lanes the seam's key is written for: this probe's own measurable classes folded to
+/// the lanes they run in. The two half formats are one lane - the library declares the bf16
+/// entries under the fp16 name, so a row written for one is the row both resolve to - and the
+/// fold is `ProbeClassesOf`'s reading of that and not a lane list written out here.
+std::vector<Precision> SeamLanes() {
+    std::vector<Precision> lanes;
+
+    for (const OptionPrecision precision : kCellPrecisions)
+    {
+        const Precision lane = LaneOf(precision);
+
+        if (std::find(lanes.begin(), lanes.end(), lane) == lanes.end())
+        {
+            lanes.push_back(lane);
+        }
+    }
+
+    return lanes;
+}
+
+/// The number of classes the seam's own key reaches: its lanes, by the shapes it states.
+std::size_t SeamClassCount() {
+    return SeamLanes().size() * std::size(kSeamShapes);
+}
+
 /// The seam this run would write, as the report's own account of it: the classes it emits
 /// from this run's rankings, the classes it carries at the file's five because the run ranked
-/// no cell of them, and any disagreement between the two half formats.
+/// no cell of them, the classes the seam's own key reaches and the file carries no row for at
+/// all, and any disagreement between the two half formats.
 ///
-/// There is no third set here and no class whose winner the file could not state: every axis
-/// a policy carries has a cell in the row format, so the combination that won a class is one
-/// the file writes. A table that could not name one of them would need this block to say
-/// which classes were written at another arithmetic, which is what the region-B exponential
-/// cost while the format carried six cells.
+/// There is no set here for a class whose winner the file could not state: every axis a policy
+/// carries has a cell in the row format, so the combination that won a class is one the file
+/// writes. The region-B exponential is what that cost while the format carried six cells.
 ///
 /// The block exists because the file is the point and the account is what makes it
 /// checkable: a reader sees which rows a run measured before pointing a build at it, and a
-/// class the probe ranks no shape for is named as that rather than left as a row nobody
-/// asked about.
+/// class of the seam's key that no row of the file is written for is named as that rather
+/// than left as a class nobody asked about.
 void AppendDefaultsBlock(std::string& text, const OptionProbeReport& report) {
     const std::vector<EmittedSeamRow> rows = SeamRows(report);
     std::size_t measured = 0;
@@ -5248,8 +5662,9 @@ void AppendDefaultsBlock(std::string& text, const OptionProbeReport& report) {
         return;
     }
 
-    text += Text("  %zu of %zu class(es) carry a measured row, one row per class:\n", measured,
-                 rows.size());
+    text += Text("  %zu of the %zu class(es) this file's row list carries - the seam's own key "
+                 "reaches\n  %zu - carry a measured row, one row per class:\n",
+                 measured, rows.size(), SeamClassCount());
 
     for (const EmittedSeamRow& row : rows)
     {
@@ -5259,18 +5674,134 @@ void AppendDefaultsBlock(std::string& text, const OptionProbeReport& report) {
         }
     }
 
-    if (measured < rows.size())
+    std::size_t alone = 0;
+    std::size_t fromFive = 0;
+
+    for (const EmittedSeamRow& row : rows)
     {
-        text += Text("  %zu class(es) carry the file's own five, because this run ranked no cell "
-                     "of\n  them — a shape the probe has no class for is not a row to guess:\n",
-                     rows.size() - measured);
+        alone += row.choiceAlone ? 1 : 0;
+        fromFive += row.fromFive ? 1 : 0;
+    }
+
+    if (alone > 0)
+    {
+        // A class the library carries one entry for has nothing to compare, and the seam's
+        // own header asks for such a row to be marked a choice. It is neither of the two
+        // groups beside it: the run did measure the class's one entry - the row's own figure
+        // is that measurement - and it did rank a cell of the class, so the block below is
+        // not its place either.
+        text += Text("  %zu class(es) carry the one entry this run measured of them, which stood "
+                     "alone:\n  a class the library carries one entry for has nothing to compare, "
+                     "so the row is an\n  answer and not the winner of a comparison — the marker "
+                     "a choice carries, at the\n  entry's own axes:\n",
+                     alone);
 
         for (const EmittedSeamRow& row : rows)
         {
-            if (!row.measured)
+            if (row.choiceAlone)
             {
                 text += Text("    %s\n", row.klass.c_str());
             }
+        }
+    }
+
+    if (fromFive > 0)
+    {
+        text += Text("  %zu class(es) carry the file's own five, because this run ranked no cell "
+                     "of\n  them — a class with no cell ranked has no figure of its own to carry:\n",
+                     fromFive);
+
+        for (const EmittedSeamRow& row : rows)
+        {
+            if (row.fromFive)
+            {
+                text += Text("    %s\n", row.klass.c_str());
+            }
+        }
+    }
+
+    // The seam's own vocabulary of classes, which is what the file above is a row list for: the
+    // host lanes the seam keys by, crossed with the shapes it can name. A class of it the file
+    // carries no row for is named here rather than left out, because the block above is read as
+    // an account of the seam and a class the seam's own key reaches and the file does not is
+    // exactly what a reader cannot see for themselves.
+    //
+    // The lanes are this probe's own classes folded to their lanes - the two half formats are
+    // one lane, `ProbeClassesOf` - and the shapes are the ones the seam states, so the
+    // vocabulary here is read from the enumerations rather than written out a second time in
+    // this file. The spelling is the same two helpers the rows above are spelled with, so a
+    // class found here is a class the file does not carry and never a spelling that missed.
+    const std::vector<Precision> lanes = SeamLanes();
+
+    std::vector<std::string> noFigure;
+    std::vector<std::string> noRow;
+
+    for (const Precision lane : lanes)
+    {
+        for (const Shape shape : kSeamShapes)
+        {
+            const std::string klass = Text("%s %s", LaneSpelling(lane), ShapeSpelling(shape));
+            bool carried = false;
+
+            for (const EmittedSeamRow& row : rows)
+            {
+                carried = carried || row.klass == klass;
+            }
+
+            if (carried)
+            {
+                continue;
+            }
+
+            bool ranked = false;
+
+            for (const OptionPrecision probe : ProbeClassesOf(PrecisionToken(lane)))
+            {
+                for (const OptionProbeClass& member : report.classes)
+                {
+                    if (member.precision == probe && member.shape == ProbeShapeFor(shape) &&
+                        !member.leader.empty())
+                    {
+                        ranked = true;
+                    }
+                }
+            }
+
+            (ranked ? noRow : noFigure).push_back(klass);
+        }
+    }
+
+    if (!noFigure.empty())
+    {
+        text += Text("  %zu class(es) the seam's own key reaches and no row above carries: this\n"
+                     "  build's library carries no entry of that shape on that lane, so this "
+                     "probe's\n  own enumeration of the class finds nothing to call and the class "
+                     "has no cell\n  to rank. A row for one would state a combination nobody "
+                     "measured; writing the\n  entry is the work owed, and not a refusal here. "
+                     "The fixed-order call and the\n  per-argument-order array entry are declared "
+                     "for the double lane alone, and the\n  half lane's array shape is its native "
+                     "entry, a different question from this\n  workload's. The seam's key is %zu "
+                     "host lanes by %zu shapes, %zu class(es), and this\n  file's row list is the "
+                     "list it replaces — a class that list does not name is one\n  no row below can "
+                     "be written for:\n",
+                     noFigure.size(), lanes.size(), std::size(kSeamShapes), SeamClassCount());
+
+        for (const std::string& klass : noFigure)
+        {
+            text += Text("    %s\n", klass.c_str());
+        }
+    }
+
+    if (!noRow.empty())
+    {
+        text += Text("  %zu class(es) the seam's own key reaches and no row above carries, "
+                     "though this run\n  ranked cells of them: the rows are the list this file "
+                     "replaces, and a replacement\n  states the rows it read:\n",
+                     noRow.size());
+
+        for (const std::string& klass : noRow)
+        {
+            text += Text("    %s\n", klass.c_str());
         }
     }
 
@@ -5723,7 +6254,7 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
     text += "  (fp64, fp32, fp16 or bf16), built at the library's full-accuracy multiplier, and one "
             "question\n";
     text += "  shape — what the\n";
-    text += "  option hands back. The two shapes here are:\n";
+    text += "  option hands back. The five shapes here are, in the seam's own order:\n";
 
     // The list is read from the shapes the probe walks and the questions are the
     // statements those shapes carry, so the headings here and the class keys
@@ -5769,7 +6300,9 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
     {
         if (entry.leader.empty())
         {
-            text += Text("  %-21s %s\n", entry.name.c_str(), entry.note.c_str());
+            // The note is wrapped rather than printed on the class's own line: it is a sentence
+            // about the class, and the class's name is the line's prefix and not its first word.
+            text += WrappedAfter(Text("  %-21s ", entry.name.c_str()), entry.note);
             continue;
         }
 
@@ -5809,7 +6342,7 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
         }
 
         text += WrappedList(rankedLines, "             ");
-        text += Text("             %s\n", entry.note.c_str());
+        text += WrappedAfter("             ", entry.note);
 
         if (entry.precision == OptionPrecision::kFp64 && entry.shape == kWorkloadShape)
         {
@@ -5871,10 +6404,11 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
     {
         // The device lane's book, counted beside the classes above and measured
         // nowhere. It is enumerated and counted like theirs, because a refusal of
-        // that lane is work the library owes, and no cell of it can be run here:
-        // an entry of that lane is a call on a CUDA device and this is the host
-        // build. The block says both things in its own words, so its served count
-        // cannot be read as a count of rows this probe ran.
+        // that lane is work the library owes, and no cell of it has a row here:
+        // this probe has no device arm, so a row of that lane would have to be
+        // filled by a host entry under a device name. The block says both things
+        // in its own words, so its served count cannot be read as a count of rows
+        // this probe ran.
         std::size_t deviceServed = 0;
         std::size_t reasonWidth = 0;
 
@@ -5902,9 +6436,11 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
         text += Text("      and not measured: the %zu served cells of this book are what this "
                      "library\n",
                      deviceServed);
-        text += "      serves for that lane, and none of them was run, because an entry of it is a\n";
-        text += "      call on a CUDA device and this is the host build. That lane's refusals are\n";
-        text += "      unbuilt work of the same kind as any other class's:\n";
+        text += "      serves for that lane, and none of them has a row here, because this probe\n";
+        text += "      has no device arm: `benchmarks/boys_option_probe.cpp` names no CUDA entry\n";
+        text += "      and this probe calls none, so a row of that lane would be a host entry's\n";
+        text += "      figures under a device name. That lane's refusals are unbuilt work of the\n";
+        text += "      same kind as any other class's:\n";
 
         if (deviceRefused > 0)
         {
@@ -6469,7 +7005,11 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
     text += "  * the region-A matrix-product transform (region A alone, so measuring it means "
             "composing the\n";
     text += "    rest of an evaluation, and the composition would be what got measured);\n";
-    text += "  * the CUDA lanes (a separate optional build that needs a device);\n";
+    text += "  * the CUDA lanes (a separate optional build, and a lane this probe reaches with no "
+            "arm at\n";
+    text += "    all: `benchmarks/boys_option_probe.cpp` names no CUDA entry and this probe calls\n";
+    text += "    none, so a row of that lane would be a host entry's figures under a device "
+            "name);\n";
     text += "  * a partition's stored fits read directly: the figure a partition row prints beside "
             "its\n";
     text += "    verdict is the library's published figure for that partition's fits, and every row "
@@ -6494,24 +7034,28 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
     }
     text += "  * the call shapes other than this workload's all-orders-per-argument one, which the "
             "seven axes\n";
-    text += "    are not crossed with. The all-N grouping and its sorted-argument overload are\n";
-    text += "    measured, at their default policy alone, as the all-n classes above: one call per\n";
-    text += "    order run, at the shipped route, scheme, partition, packing axis, division form\n";
-    text += "    and region-B exponential. Those rows are no cell of the space, and they are\n";
-    text += "    counted in the closure below,\n";
+    text += "    are not crossed with. Every other shape the seam's key names is measured at its "
+            "class's\n";
+    text += "    own default policy alone - one row per class, and no crossing of the axes - so "
+            "the\n";
+    text += "    all-N grouping and its sorted-argument overload, the fixed-order call that "
+            "returns one\n";
+    text += "    order across an array, the array entry that reads a per-argument order, and the\n";
+    text += "    single-order call at each format the library declares it for are all measured "
+            "above.\n";
+    text += "    Those rows are no cell of the space, and they are counted in the closure below,\n";
     text += Text("    which names them and counts the crossing they stand for: %zu row(s),\n"
                  "    standing for the %zu cell(s) of their own class that crossing them\n"
                  "    with the axes would add beyond the cells they stand at.\n",
                  closure.shapesNotCrossed, closure.crossedOwed);
-    text += "    Not measured at all are the library's other entries - the fixed-order call, which\n";
-    text += "    returns one order across an array, and the array entry that takes a per-argument\n";
-    text += "    order, together with the narrower lanes' own array entries. Crossing any of them\n";
-    text += "    with the axes is outstanding work, not an impossibility, and the closure counts "
-            "no\n";
-    text += "    rows of it: an entry is a function, this probe calls those nowhere, and no table "
-            "of\n";
-    text += "    entries exists in this library for one to be counted from. What the closure does\n";
-    text += "    count is every row this report carries and the cells it stands for. The axes are\n";
+    text += "    Crossing them with the axes is outstanding work and not an impossibility: an "
+            "entry is a\n";
+    text += "    function, and no table of entries exists in this library for one to be counted "
+            "from. A\n";
+    text += "    class the seam's key reaches that this run produced no figure for is named in the\n";
+    text += "    build-defaults block above, with the reason this run has for it. What the closure\n";
+    text += "    does count is every row this report carries and the cells it stands for. The axes "
+            "are\n";
     text += "    crossed on every precision class: the routes each class's own lane reports its "
             "fits\n";
     text += "    in, the schemes, partitions, packing axes and division forms of that lane and the\n";
