@@ -190,6 +190,18 @@
    "shape": "ladder-scalar-out",
    "spelling": "template; the fp16 lane, under #if BoysFp16"
   },
+  "BoysFixedNF16": {
+   "shape": "one-array-out",
+   "spelling": "template; the fp16 lane, under #if BoysFp16"
+  },
+  "BoysAllNF16": {
+   "shape": "ladder-array-planes",
+   "spelling": "template; the fp16 lane, under #if BoysFp16"
+  },
+  "BoysAllNAtOrdersF16": {
+   "shape": "ladder-array-ragged-planes",
+   "spelling": "template; the fp16 lane, under #if BoysFp16"
+  },
   "BoysAllOrdersBf16": {
    "shape": "ladder-scalar-out",
    "spelling": "template; the bf16 lane, under #if BoysFp16"
@@ -208,6 +220,14 @@
   },
   "BoysAllNF32": {
    "shape": "ladder-array-planes",
+   "spelling": "template; the float lane"
+  },
+  "BoysFixedNF32": {
+   "shape": "one-array-out",
+   "spelling": "template; the float lane"
+  },
+  "BoysAllNAtOrdersF32": {
+   "shape": "ladder-array-ragged-planes",
    "spelling": "template; the float lane"
   },
   "BoysAllNF16Native": {
@@ -244,7 +264,9 @@
   "BoysFitGranularities": "the interval-partition rows",
   "BoysLaneContracts": "the per-lane contract rows",
   "BoysAccuracyGuaranteed": "the figure a lane documents for a combination",
+  "BoysAccuracyGuaranteedStated": "the figure a combination's own row states at compile time, read from the same table at another rung",
   "BoysAccuracyDelivered": "the figure a combination's rows were measured to deliver",
+  "GuaranteeAxesAreEnumerators": "a constexpr test on whether seven axis cells are inside their enumerations, the refusal BoysAccuracyGuaranteed makes at run time",
   "QueryCombination": "the verdict for a combination at a tolerance",
   "BoysFitRoutes": "the fit-route rows of the double lane",
   "BoysFitRoutesF32": "the fit-route rows of the single-precision lane",
