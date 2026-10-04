@@ -373,6 +373,15 @@ LIBRARY_TIES = (
     # all - it is here that it is read, against the README row that publishes
     # it. The header's table has no device row to hold it to.
     LibraryTie("fp32-device", "CUDA fp32, `RegionBExp::kFast`"),
+    # The device half lane's row states the plain reciprocal's own term beside
+    # its base, and both figures of it are read here rather than from the gate:
+    # this lane's half-digit term is composed at run time, and no constant
+    # states the 1e-7 base or the plain form's 1e-7 either. The header's table
+    # has no device row, so the README row is the cell the pair is held to - a
+    # lane whose row carries a figure no document states is the drift this
+    # check exists for, and before this entry was added the two figures of this
+    # row were published by the library and held by nothing.
+    LibraryTie("fp16-device", "CUDA fp16"),
 )
 
 UNTIED = (

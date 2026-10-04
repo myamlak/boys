@@ -158,6 +158,7 @@ over part of the range than over the rest. Every figure below holds for **all** 
 | CUDA fp64 | the same budgets as the CPU double lanes |
 | CUDA fp32, `RegionBExp::kAccurate` (the default) | the same budgets as the CPU float lanes, at the lane's own default division form |
 | CUDA fp32, `RegionBExp::kFast` | ≤ 1.5e-7 + 8e-8 — the lane's budget plus the corrected seed's own contribution |
+| CUDA fp16 | ≤ 1e-7 + ½ ULP, or ≤ 2e-7 + ½ ULP in the plain-reciprocal form — the CUDA surface's own half entries, and not the host half lane's figure |
 
 **One axis's members are not one figure.** `DivisionForm` is how every recurrence step divides, and
 its three members are three arithmetics, not three spellings of one. Exact division rounds once per
@@ -177,9 +178,11 @@ and bf16 lanes run that arithmetic and round at the boundary, so the same term s
 base, before the half digit above is added.
 
 `BoysAccuracyGuaranteed` takes the form as an argument and answers the figure for the form you name.
-The device lane's row is read at that lane's own default form: the CUDA surface's entries carry the
-axis and every entry of the device option space runs every form, but no device figure has been
-measured per form, so the lane claims none for the other two.
+A device lane's row is read at the form the caller names, as a host lane's is: the CUDA surface's
+entries carry the axis and every entry of the device option space runs every form. The float and
+double device lanes' rows state one figure for all three forms, which those forms deliver inside; the
+half lane's row states the plain reciprocal's own term beside its base, because at a subnormal result
+that form's rounding leaves the base — 1e-7 + 1e-7 = 2e-7.
 
 "ULP" is the last representable digit of the result in the format concerned.
 
