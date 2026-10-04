@@ -3,9 +3,10 @@
 // no policy resolves to.
 //
 // The defect this file exists for is on the record. include/boys/
-// boys_build_defaults.hpp names five choices, a build may replace it
-// (BOYS_BUILD_DEFAULTS), and until the wiring three of the five - the packing
-// axis, the division form and the fit granularity - were expanded by nothing at
+// boys_build_defaults.hpp named five choices then - seven now, the host's five
+// and the device lane's two - a build may replace it (BOYS_BUILD_DEFAULTS), and
+// until the wiring three of the five - the packing axis, the division form and
+// the fit granularity - were expanded by nothing at
 // all: the library compiled hard-coded literals, a consumer who replaced the
 // header got two choices honoured and three silently ignored, and no test
 // noticed, because the fixture moved one choice and copied the library's own

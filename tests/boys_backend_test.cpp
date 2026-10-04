@@ -250,7 +250,7 @@ TEST(BackendTest, ThePackedPairAppearsExactlyWithTheVectorTier) {
 } // namespace
 
 // ---------------------------------------------------------------------------
-// The selection axes on the policy, and the five names the build fixes
+// The selection axes on the policy, and the names the build fixes
 // ---------------------------------------------------------------------------
 // Every axis the entries select is one field of EvalPolicy with its own default. The pins
 // say which member each default names, so a move of one is a decision this test states
