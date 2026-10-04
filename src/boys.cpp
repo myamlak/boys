@@ -137,10 +137,13 @@ std::span<const FitRouteInfo> BoysFitRoutes() noexcept {
 }
 
 void BoysAllOrdersWithRoute(FitRoute route, int nmax, double x, double* out) noexcept {
-    // The default scheme, not the reference one: the values a route does not
+    // The class's own scheme, not the reference one: the values a route does not
     // serve are the default entry's bit for bit, which requires the scheme the
-    // default entry reads.
-    BoysAllOrdersWithRoute(route, kDefaultEvalScheme, nmax, x, out);
+    // default entry reads - and the default entry is the entry naming no policy,
+    // which reads its class's row. The scheme is therefore read off the row
+    // (SelectorClass above) rather than off the seam's five: the two agree only
+    // while the row carries the combination the five compose.
+    BoysAllOrdersWithRoute(route, SelectorClass::kScheme, nmax, x, out);
 }
 
 void BoysAllOrdersWithRoute(
@@ -157,8 +160,15 @@ void BoysAllOrdersWithRoute(
     //
     // The two axes select different things: the route names the fits, and the
     // scheme names the summation the shipped family's coefficients are read in.
-    // Both are answered as named.
-    if (route == FitRoute::kRationalMinimax)
+    // Both are answered as named, and the arm a route the enumeration does not
+    // name takes is read off the class row rather than written as "the route that
+    // is not the rational one": such a value evaluates at the default route, and
+    // the default route is the one the entry naming no route - the entry naming
+    // nothing - reads, which is the class's.
+    const bool served = route == FitRoute::kChebyshev || route == FitRoute::kRationalMinimax;
+    const FitRoute selected = served ? route : SelectorClass::kRoute;
+
+    if (selected == FitRoute::kRationalMinimax)
     {
         if (scheme == EvalScheme::kHorner)
         {

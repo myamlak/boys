@@ -1022,11 +1022,13 @@ void CheckFitRoutes(Report& report, const std::vector<Cell>& cells) {
             "naming a scheme on the rational route reaches the parts its own fits do not serve");
 
     // Documented: the two-selector overload names a route and no scheme, so the
-    // call it is one with is the three-selector call that names the build's
-    // default scheme - the scheme is the library's on an axis the caller leaves
-    // unnamed, and the two overloads answer one call rather than two. The
-    // argument is inside the rational route's served domain, where naming the
-    // route reaches values rather than the default entry.
+    // call it is one with is the three-selector call that names the scheme the
+    // class's own row carries - an axis a caller leaves unnamed is that class's
+    // choice and not the seam's five (boys/boys.hpp, DefaultPolicy: an entry's
+    // policy parameter defaults to the row its class resolves to) - and the two
+    // overloads answer one call rather than two. The argument is inside the
+    // rational route's served domain, where naming the route reaches values
+    // rather than the default entry.
     {
         double rationalFrom = 0.0;
         double rationalHi = 0.0;
@@ -1048,7 +1050,7 @@ void CheckFitRoutes(Report& report, const std::vector<Cell>& cells) {
         boys::BoysAllOrdersWithRoute(
             boys::FitRoute::kRationalMinimax, boys::kMaxBoysOrder, x, twoSelectors.data());
         boys::BoysAllOrdersWithRoute(boys::FitRoute::kRationalMinimax,
-                                     boys::kDefaultEvalScheme,
+                                     AllOrdersDefault::kScheme,
                                      boys::kMaxBoysOrder,
                                      x,
                                      threeSelectors.data());
@@ -1063,8 +1065,8 @@ void CheckFitRoutes(Report& report, const std::vector<Cell>& cells) {
 
         Require(report,
                 differing == 0,
-                "naming the default scheme on the three-selector overload is the two-selector "
-                "call, bit for bit");
+                "naming the class's own scheme on the three-selector overload is the "
+                "two-selector call, bit for bit");
     }
 
     Covered("boys::FitRoute");
@@ -1160,22 +1162,21 @@ void CheckFitRoutesF32(Report& report, const std::vector<Cell>& cells) {
 
 /// The float lane's policy path, which a consumer reaches as a template argument on
 /// the entries themselves rather than through the run-time selector. Three readings
-/// make that path an option rather than a name: a policy naming the default pair
-/// (the route and the scheme this build's defaults header names, read off the
-/// library's own default rather than written here) is the entry naming no policy,
-/// bit for bit; naming the OTHER scheme - whichever of the two this build does not
-/// default to - changes values the default scheme answers with; and each route's
+/// make that path an option rather than a name: a policy naming the pair the entry's
+/// own class row carries (the route and the scheme that row names, read off the row
+/// rather than written here) is the entry naming no policy, bit for bit; naming the
+/// OTHER scheme or the OTHER route - whichever member of the axis the class's row does
+/// not carry - changes values the class's own row answers with; and each route's
 /// policy answers exactly what that route's run-time selector answers, which is one
 /// body reached two ways rather than two wirings that happen to agree.
 ///
-/// The other scheme is read off the default rather than written here as Horner: a
-/// build that moves the scheme moves which word the other one is, and both readings
-/// above are the same two readings at either setting of the axis.
+/// Which member is the other one is read off the class's row rather than written here
+/// as Horner or as the rational route: a build whose row moves the scheme moves which
+/// word the other one is, and both readings above are the same two readings at either
+/// setting of the axis.
 void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
-    using ByDefault = boys::DefaultPolicyFp32;
-
     // The name each entry read below actually resolves to when no policy is named: its
-    // own class's row, which is `ByDefault` where this build's seam carries no row for
+    // own class's row, which is the five above where this build's seam carries no row for
     // the class and the row where it does. The two entries are held to this name for
     // the reason CheckEvalSchemes states: a name that happens to agree with the entry's
     // default at this revision is not the entry's default.
@@ -1183,29 +1184,80 @@ void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
     using AllOrdersDefault =
         boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllOrders>;
 
-    // The scheme this build does not default to. The axis has two members and this
-    // names the one EvalPolicy<> leaves at the other, so what the readings below
-    // separate is the scheme and not the word a build compiled it at.
+    // The scheme each class does not run: the axis has two members and this names the one
+    // that class's row leaves at the other, so what the readings below separate is the
+    // scheme and not the word a build compiled it at.
     constexpr boys::EvalScheme kOtherScheme =
-        boys::kDefaultEvalScheme == boys::EvalScheme::kHorner ? boys::EvalScheme::kSplitClenshaw
-                                                              : boys::EvalScheme::kHorner;
-    using OtherScheme = boys::EvalPolicy<boys::kDefaultFitRoute, kOtherScheme>;
-    using Rational = boys::EvalPolicy<boys::FitRoute::kRationalMinimax>;
+        SingleDefault::kScheme == boys::EvalScheme::kHorner ? boys::EvalScheme::kSplitClenshaw
+                                                           : boys::EvalScheme::kHorner;
+    constexpr boys::EvalScheme kOtherBatchScheme =
+        AllOrdersDefault::kScheme == boys::EvalScheme::kHorner
+            ? boys::EvalScheme::kSplitClenshaw
+            : boys::EvalScheme::kHorner;
 
-    static_assert(ByDefault{}.kRoute == boys::kDefaultFitRoute &&
-                      ByDefault{}.kScheme == boys::kDefaultEvalScheme &&
-                      ByDefault{}.kGranularity == boys::kDefaultFitGranularity,
-                  "the policy this check calls the default one names every axis the library "
-                  "defaults, so none of them is a second value written here");
+    // The route each class does not carry, named the same way: the readings below ask
+    // whether naming a route changes anything, and a route equal to the one the row
+    // already holds would read the class's own route against itself.
+    constexpr boys::FitRoute kOtherRoute = SingleDefault::kRoute == boys::FitRoute::kChebyshev
+                                               ? boys::FitRoute::kRationalMinimax
+                                               : boys::FitRoute::kChebyshev;
+
+    // Each policy below is one class's row with a single axis replaced, so the reading it
+    // carries is about that axis and nothing else about the class.
+    using OtherScheme =
+        boys::EvalPolicy<SingleDefault::kRoute,
+                         kOtherScheme,
+                         SingleDefault::kBudget,
+                         SingleDefault::kPack,
+                         SingleDefault::kGranularity,
+                         SingleDefault::kDivision,
+                         SingleDefault::kRegionBExp>;
+    using OtherRoute =
+        boys::EvalPolicy<kOtherRoute,
+                         SingleDefault::kScheme,
+                         SingleDefault::kBudget,
+                         SingleDefault::kPack,
+                         SingleDefault::kGranularity,
+                         SingleDefault::kDivision,
+                         SingleDefault::kRegionBExp>;
+    using BatchOtherScheme =
+        boys::EvalPolicy<AllOrdersDefault::kRoute,
+                         kOtherBatchScheme,
+                         AllOrdersDefault::kBudget,
+                         AllOrdersDefault::kPack,
+                         AllOrdersDefault::kGranularity,
+                         AllOrdersDefault::kDivision,
+                         AllOrdersDefault::kRegionBExp>;
+    using BatchOtherRoute =
+        boys::EvalPolicy<kOtherRoute,
+                         AllOrdersDefault::kScheme,
+                         AllOrdersDefault::kBudget,
+                         AllOrdersDefault::kPack,
+                         AllOrdersDefault::kGranularity,
+                         AllOrdersDefault::kDivision,
+                         AllOrdersDefault::kRegionBExp>;
 
     // Naming the other scheme moves the scheme and nothing else, which is what
     // makes the reading below a reading about the scheme rather than about a
-    // pair of values that differ in two places.
-    static_assert(OtherScheme{}.kRoute == ByDefault{}.kRoute &&
-                      OtherScheme{}.kGranularity == ByDefault{}.kGranularity &&
-                      OtherScheme{}.kScheme != ByDefault{}.kScheme,
-                  "the policy this check calls the other-scheme one differs from the default in "
-                  "its scheme alone, at either setting of the axis");
+    // pair of values that differ in two places; the same holds for the other route.
+    static_assert(OtherScheme{}.kRoute == SingleDefault{}.kRoute &&
+                      OtherScheme{}.kDivision == SingleDefault{}.kDivision &&
+                      OtherScheme{}.kScheme != SingleDefault{}.kScheme,
+                  "the policy this check calls the other-scheme one differs from the "
+                  "single-order class's row in its scheme alone, at either setting of the axis");
+    static_assert(OtherRoute{}.kScheme == SingleDefault{}.kScheme &&
+                      OtherRoute{}.kDivision == SingleDefault{}.kDivision &&
+                      OtherRoute{}.kRoute != SingleDefault{}.kRoute,
+                  "the policy this check calls the other-route one differs from the "
+                  "single-order class's row in its route alone, at either setting of the axis");
+    static_assert(BatchOtherScheme{}.kRoute == AllOrdersDefault{}.kRoute &&
+                      BatchOtherScheme{}.kScheme != AllOrdersDefault{}.kScheme,
+                  "the other-scheme policy on the batch class differs from that class's row in "
+                  "its scheme alone");
+    static_assert(BatchOtherRoute{}.kScheme == AllOrdersDefault{}.kScheme &&
+                      BatchOtherRoute{}.kRoute != AllOrdersDefault{}.kRoute,
+                  "the other-route policy on the batch class differs from that class's row in "
+                  "its route alone");
 
     std::size_t sameAsDefault = 0;
     std::size_t sameAsSelector[2] = {0, 0};
@@ -1219,17 +1271,17 @@ void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
         const float byDefault = boys::BoysSingleF32(cell.n, xf);
         const float byItsDefault = boys::BoysSingleF32<SingleDefault>(cell.n, xf);
         const float otherScheme = boys::BoysSingleF32<OtherScheme>(cell.n, xf);
-        const float rational = boys::BoysSingleF32<Rational>(cell.n, xf);
+        const float otherRoute = boys::BoysSingleF32<OtherRoute>(cell.n, xf);
         const float bySelector[2] = {
-            boys::BoysSingleF32WithRoute(boys::FitRoute::kChebyshev, cell.n, xf),
-            boys::BoysSingleF32WithRoute(boys::FitRoute::kRationalMinimax, cell.n, xf)};
+            boys::BoysSingleF32WithRoute(SingleDefault::kRoute, cell.n, xf),
+            boys::BoysSingleF32WithRoute(kOtherRoute, cell.n, xf)};
 
         sameAsDefault += (byItsDefault == byDefault) ? 1 : 0;
         sameAsSelector[0] += (byItsDefault == bySelector[0]) ? 1 : 0;
-        sameAsSelector[1] += (rational == bySelector[1]) ? 1 : 0;
+        sameAsSelector[1] += (otherRoute == bySelector[1]) ? 1 : 0;
         changedByScheme += (otherScheme != byItsDefault) ? 1 : 0;
-        changedByRoute += (rational != byItsDefault) ? 1 : 0;
-        allFinite = allFinite && std::isfinite(otherScheme) && std::isfinite(rational);
+        changedByRoute += (otherRoute != byItsDefault) ? 1 : 0;
+        allFinite = allFinite && std::isfinite(otherScheme) && std::isfinite(otherRoute);
     }
 
     Require(report,
@@ -1246,12 +1298,13 @@ void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
             "bit, so the two ways in read one body");
     Require(report,
             changedByScheme > 0,
-            "naming the scheme this build does not default to changes values the default "
-            "scheme answers with, so the unnamed call is not reading that scheme's tables");
+            "naming the scheme the single-order class does not carry changes values the "
+            "unnamed call answers with, so the unnamed call is not reading that scheme's "
+            "tables");
     Require(report,
             changedByRoute > 0,
-            "naming the rational route on the float lane changes values the default route "
-            "answers with somewhere on the reference grid");
+            "naming the route the single-order class does not carry changes values the class's "
+            "own route answers with somewhere on the reference grid");
 
     // The same pair on the all-orders shape. Its seeds are not the single entry's -
     // region A's is the double lane's fit at the policy's route and scheme, region
@@ -1269,12 +1322,12 @@ void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
         std::array<float, boys::kMaxBoysOrder + 1> plain = {};
         std::array<float, boys::kMaxBoysOrder + 1> named = {};
         std::array<float, boys::kMaxBoysOrder + 1> otherScheme = {};
-        std::array<float, boys::kMaxBoysOrder + 1> rational = {};
+        std::array<float, boys::kMaxBoysOrder + 1> otherRoute = {};
 
         boys::BoysAllOrdersF32(boys::kMaxBoysOrder, xf, plain.data());
         boys::BoysAllOrdersF32<AllOrdersDefault>(boys::kMaxBoysOrder, xf, named.data());
-        boys::BoysAllOrdersF32<OtherScheme>(boys::kMaxBoysOrder, xf, otherScheme.data());
-        boys::BoysAllOrdersF32<Rational>(boys::kMaxBoysOrder, xf, rational.data());
+        boys::BoysAllOrdersF32<BatchOtherScheme>(boys::kMaxBoysOrder, xf, otherScheme.data());
+        boys::BoysAllOrdersF32<BatchOtherRoute>(boys::kMaxBoysOrder, xf, otherRoute.data());
 
         ++batchArgs;
         batchSameAsDefault +=
@@ -1282,12 +1335,12 @@ void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
         batchChangedByScheme +=
             std::memcmp(plain.data(), otherScheme.data(), sizeof(plain)) == 0 ? 0 : 1;
         batchChangedByRoute +=
-            std::memcmp(plain.data(), rational.data(), sizeof(plain)) == 0 ? 0 : 1;
+            std::memcmp(plain.data(), otherRoute.data(), sizeof(plain)) == 0 ? 0 : 1;
 
         for (std::size_t k = 0; k < plain.size(); ++k)
         {
             batchFinite =
-                batchFinite && std::isfinite(otherScheme[k]) && std::isfinite(rational[k]);
+                batchFinite && std::isfinite(otherScheme[k]) && std::isfinite(otherRoute[k]);
         }
     }
 
@@ -2088,19 +2141,15 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
     Require(report, worstSchemeBound > 0.0, "the Horner scheme publishes a bound");
 
     // The two axes compose into one selection: a policy names the fit route and the
-    // scheme together, and every templated entry takes that policy. The default
-    // policy is the Chebyshev route at the scheme this build's defaults header
-    // names, read from the constants rather than written here.
-    using DefaultPolicy = boys::EvalPolicy<>;
-
+    // scheme together, and every templated entry takes that policy.
+    //
     // The name a call that names no policy actually resolves to, per class: its own
     // class's row, which is the five above where this build's seam carries no row for
     // the class and the row where it does (boys/boys.hpp, DefaultPolicy: "the policy a
     // class compiles when its call site names no policy: the name an entry's policy
-    // parameter defaults to"). The two entries read below are held to this name rather
-    // than to `DefaultPolicy`, because `DefaultPolicy` is the five and agrees with the
-    // class's row only while the seam carries none: a name that happens to agree with
-    // the entry's default at this revision is not the entry's default.
+    // parameter defaults to"). The two entries read below are held to their own class's
+    // name rather than to the point the seam's five compose: a name that happens to
+    // agree with the entry's default at this revision is not the entry's default.
     using SingleDefault = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kSingle>;
     using AllOrdersDefault =
         boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>;
@@ -2109,34 +2158,59 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
                                                  boys::EvalScheme::kSplitClenshaw>;
     using HornerPolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>;
 
-    // The scheme this build does not default to, named the same way the float lane's
-    // section names it: which of the two words is the other one is the build's, and
-    // the reading below is the same reading at either setting of the axis.
+    // The scheme each class does not run, named the same way the float lane's section
+    // names it: which of the two words is the other one is the row's, and the reading
+    // below is the same reading at either setting of the axis.
     constexpr boys::EvalScheme kOtherScheme =
-        boys::kDefaultEvalScheme == boys::EvalScheme::kHorner ? boys::EvalScheme::kSplitClenshaw
-                                                              : boys::EvalScheme::kHorner;
-    using OtherSchemePolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev, kOtherScheme>;
+        SingleDefault::kScheme == boys::EvalScheme::kHorner ? boys::EvalScheme::kSplitClenshaw
+                                                            : boys::EvalScheme::kHorner;
+    constexpr boys::EvalScheme kOtherBatchScheme =
+        AllOrdersDefault::kScheme == boys::EvalScheme::kHorner
+            ? boys::EvalScheme::kSplitClenshaw
+            : boys::EvalScheme::kHorner;
+
+    // Each other-scheme policy is its own class's row with the scheme replaced, so what
+    // the readings below separate is the scheme and nothing else about the class.
+    using OtherSchemePolicy =
+        boys::EvalPolicy<SingleDefault::kRoute,
+                         kOtherScheme,
+                         SingleDefault::kBudget,
+                         SingleDefault::kPack,
+                         SingleDefault::kGranularity,
+                         SingleDefault::kDivision,
+                         SingleDefault::kRegionBExp>;
+    using BatchOtherSchemePolicy =
+        boys::EvalPolicy<AllOrdersDefault::kRoute,
+                         kOtherBatchScheme,
+                         AllOrdersDefault::kBudget,
+                         AllOrdersDefault::kPack,
+                         AllOrdersDefault::kGranularity,
+                         AllOrdersDefault::kDivision,
+                         AllOrdersDefault::kRegionBExp>;
 
     // The policy's fields read back what it was named with, so a consumer can ask a
-    // policy which pair it carries rather than reading its type. What is pinned about
-    // the default one is that it names the library's own defaults - read from the
-    // constants rather than written here.
-    constexpr DefaultPolicy kDefaultPolicy{};
-    static_assert(kDefaultPolicy.kRoute == boys::kDefaultFitRoute &&
-                      kDefaultPolicy.kScheme == boys::kDefaultEvalScheme &&
-                      kDefaultPolicy.kGranularity == boys::kDefaultFitGranularity &&
-                      kDefaultPolicy.kBudget == boys::BoysBudget::kFloat,
-                  "the policy this check calls the default one names every axis the library "
-                  "defaults, at the float lane's budget");
+    // policy which pair it carries rather than reading its type; and each other-scheme
+    // policy is pinned to its own class's row on every axis but the scheme, so the
+    // readings below are readings about the scheme.
     static_assert(HornerPolicy{}.kScheme == boys::EvalScheme::kHorner &&
                       SplitClenshawPolicy{}.kScheme == boys::EvalScheme::kSplitClenshaw,
                   "a policy carries the scheme it was named with");
+    static_assert(OtherSchemePolicy{}.kRoute == SingleDefault{}.kRoute &&
+                      OtherSchemePolicy{}.kDivision == SingleDefault{}.kDivision &&
+                      OtherSchemePolicy{}.kScheme != SingleDefault{}.kScheme,
+                  "the policy this check calls the other-scheme one differs from the "
+                  "single-order class's row in its scheme alone");
+    static_assert(BatchOtherSchemePolicy{}.kRoute == AllOrdersDefault{}.kRoute &&
+                      BatchOtherSchemePolicy{}.kScheme != AllOrdersDefault{}.kScheme,
+                  "the other-scheme policy on the batch class differs from that class's row in "
+                  "its scheme alone");
 
     // The two schemes sum one polynomial, so the entries that name them differ by no
     // more than their own bounds and either entry is inside the other's error plus
     // twice that. A scheme that reached the wrong fit would be wrong by orders of
     // magnitude rather than by a bound, which is what this separates.
     std::size_t schemePartsFromOther = 0;
+    std::size_t batchSchemePartsFromOther = 0;
 
     for (const Cell& cell : cells)
     {
@@ -2144,7 +2218,7 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
         const double byDefaultNamed = boys::BoysSingle<SingleDefault>(cell.n, cell.x);
         Require(report,
                 byDefault == byDefaultNamed,
-                "a call naming no policy is the pair the library's defaults name, bit for bit");
+                "a call naming no policy is the pair its class's row names, bit for bit");
 
         std::array<double, 33> un = {};
         std::array<double, 33> named = {};
@@ -2152,26 +2226,32 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
         boys::BoysAllOrders<AllOrdersDefault>(cell.n, cell.x, named.data());
         Require(report,
                 std::memcmp(un.data(), named.data(), sizeof(un)) == 0,
-                "a batch call naming no policy is the pair the library's defaults name, bit "
+                "a batch call naming no policy is the pair its class's row names, bit "
                 "for bit");
 
-        // The unnamed call reads the scheme this build's defaults header names, and
-        // the reading that says so is the other scheme's: the two sum one fit, so they
+        // The unnamed call reads the scheme its own class's row carries, and the
+        // reading that says so is the other scheme's: the two sum one fit, so they
         // agree to within their own bounds and part somewhere, and the part is what
         // makes the unnamed call's scheme a reading rather than the only one there is.
-        // Which word the other scheme is belongs to the build, so this names the
-        // member the defaults header leaves at the other rather than the split
-        // Clenshaw recurrence; a build whose default is that recurrence reads the same
-        // three lines below about Horner's rule.
+        // Which word the other scheme is belongs to the row, so this names the member
+        // the row leaves at the other rather than the split Clenshaw recurrence; a
+        // build whose row names that recurrence reads the same three lines below about
+        // Horner's rule.
         const double byOtherScheme = boys::BoysSingle<OtherSchemePolicy>(cell.n, cell.x);
         schemePartsFromOther += (byDefault != byOtherScheme) ? 1 : 0;
         Require(report, std::isfinite(byOtherScheme), "the other scheme answers a finite value");
 
+        // The same reading on the batch entry, at that entry's own class's row: the
+        // two entries name two classes, so the batch arm is its own class's row with
+        // its scheme replaced rather than the single entry's policy.
         std::array<double, 33> otherSchemeOut = {};
-        boys::BoysAllOrders<OtherSchemePolicy>(cell.n, cell.x, otherSchemeOut.data());
+        boys::BoysAllOrders<BatchOtherSchemePolicy>(cell.n, cell.x, otherSchemeOut.data());
+        const double batchOtherScheme = otherSchemeOut[static_cast<std::size_t>(cell.n)];
         Require(report,
-                otherSchemeOut[static_cast<std::size_t>(cell.n)] == byOtherScheme,
-                "the batch entry answers the other scheme the same value as the single entry");
+                std::isfinite(batchOtherScheme),
+                "the batch entry's other scheme answers a finite value");
+        batchSchemePartsFromOther +=
+            (batchOtherScheme != un[static_cast<std::size_t>(cell.n)]) ? 1 : 0;
 
         Require(report,
                 std::abs(byOtherScheme - cell.value) <=
@@ -2182,9 +2262,13 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
 
     Require(report,
             schemePartsFromOther > 0,
-            "naming the scheme this build does not default to changes values the unnamed call "
-            "answers with somewhere on the reference grid, so the unnamed call reads the "
-            "defaults header's scheme and not the other one's tables");
+            "naming the scheme the single-order class does not carry changes values the unnamed "
+            "call answers with somewhere on the reference grid, so the unnamed call reads the "
+            "class row's scheme and not the other one's tables");
+    Require(report,
+            batchSchemePartsFromOther > 0,
+            "naming the scheme the batch class does not carry changes values the unnamed batch "
+            "call answers with somewhere on the reference grid");
 
     Covered("boys::EvalScheme");
     Covered("boys::kDefaultEvalScheme");
@@ -2216,42 +2300,47 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
 // and the gate's narrow rows; what is asserted here is that the policy carries the
 // partition it was named with.
 //
-// The member named is the one this build's defaults header leaves at the other, so
-// the readings hold at either setting: they separate the two partitions, they do not
-// pin which of the two a given build compiles as its default.
+// The member named is the one the class's own row leaves at the other, so the readings
+// hold at either setting: they separate the two partitions, they do not pin which of
+// the two a given row names as its default.
 void CheckGranularityLane(Report& report, const std::vector<Cell>& cells) {
-    // The axis' default member, named: the library's own policy, so the reading below
-    // is that the member a call reaches by naming nothing is the member the default names.
-    using DefaultPolicy = boys::EvalPolicy<>;
+    // The axis' default member, named: the policy the entry under this check compiles
+    // when no policy is named, which is the row its own class carries, so the reading
+    // below is that the member a call reaches by naming nothing is the member that row
+    // names. `BoysSingle<>` is the entry read, so the class is the double lane's
+    // single-order one.
+    using DefaultPolicy = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kSingle>;
 
-    // The other member, named: every axis the default policy carries, with the
-    // partition named to the value the default does not name. Which of the two words
-    // that is belongs to the build - the shipped partition is the default of a build
-    // whose defaults header names it - so what the readings below separate is the two
-    // partitions rather than which one a given build calls the default.
+    // The other member, named: every axis that row carries, with the partition named to
+    // the value the row does not name. Which of the two words that is belongs to the row
+    // - the shipped partition is the default of a build whose class rows name it - so
+    // what the readings below separate is the two partitions rather than which one a
+    // given build calls the default.
     constexpr boys::FitGranularity kOtherGranularity =
-        boys::kDefaultFitGranularity == boys::FitGranularity::kCoarsest
+        DefaultPolicy::kGranularity == boys::FitGranularity::kCoarsest
             ? boys::FitGranularity::kNarrow
             : boys::FitGranularity::kCoarsest;
-    using OtherPolicy = boys::EvalPolicy<boys::kDefaultFitRoute,
-                                         boys::kDefaultEvalScheme,
-                                         boys::BoysBudget::kFloat,
-                                         boys::kDefaultPackAxis,
-                                         kOtherGranularity>;
+    using OtherPolicy = boys::EvalPolicy<DefaultPolicy::kRoute,
+                                         DefaultPolicy::kScheme,
+                                         DefaultPolicy::kBudget,
+                                         DefaultPolicy::kPack,
+                                         kOtherGranularity,
+                                         DefaultPolicy::kDivision,
+                                         DefaultPolicy::kRegionBExp>;
 
-    static_assert(DefaultPolicy{}.kGranularity == boys::kDefaultFitGranularity &&
-                      OtherPolicy{}.kGranularity == kOtherGranularity &&
-                      kOtherGranularity != boys::kDefaultFitGranularity,
+    static_assert(OtherPolicy{}.kGranularity == kOtherGranularity &&
+                      kOtherGranularity != DefaultPolicy{}.kGranularity,
                   "a policy carries the partition it was named with: the one this check calls "
-                  "the default carries the library's default, and the other carries a member "
-                  "that is not it");
+                  "the other carries a member the class row does not name");
     static_assert(OtherPolicy{}.kRoute == DefaultPolicy{}.kRoute &&
                       OtherPolicy{}.kScheme == DefaultPolicy{}.kScheme &&
                       OtherPolicy{}.kBudget == DefaultPolicy{}.kBudget &&
                       OtherPolicy{}.kPack == DefaultPolicy{}.kPack &&
+                      OtherPolicy{}.kDivision == DefaultPolicy{}.kDivision &&
                       OtherPolicy{}.kGranularity != DefaultPolicy{}.kGranularity,
-                  "the policy this check calls the other-partition one differs from the default "
-                  "in its partition alone, so what the readings below separate is the partition");
+                  "the policy this check calls the other-partition one differs from the class "
+                  "row in its partition alone, so what the readings below separate is the "
+                  "partition");
     static_assert(!std::is_same_v<DefaultPolicy::Fit, OtherPolicy::Fit>,
                   "the two partitions are different fits: neither is the other under a second "
                   "name");
@@ -2280,13 +2369,10 @@ void CheckGranularityLane(Report& report, const std::vector<Cell>& cells) {
     {
         const double byDefault = boys::BoysSingle<>(cell.n, cell.x);
         // The default member, named, and the other member, named: the call that names
-        // neither is the default one of them. The default is named by its own class
-        // rather than by `DefaultPolicy`, which is the five and is the class's row only
-        // where this build's seam carries none for it - the same reason the entries in
+        // neither is the default one of them, and it is named through the same class-row
+        // alias the rest of this check reads - the same reason the entries in
         // CheckEvalSchemes above are held to their class's name.
-        const double byDefaultNamed =
-            boys::BoysSingle<boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kSingle>>(
-                cell.n, cell.x);
+        const double byDefaultNamed = boys::BoysSingle<DefaultPolicy>(cell.n, cell.x);
         const double other = boys::BoysSingle<OtherPolicy>(cell.n, cell.x);
 
         if (cell.x < boys::kRegionAEnd)
@@ -2328,23 +2414,23 @@ void CheckGranularityLane(Report& report, const std::vector<Cell>& cells) {
     // a grid that carries no argument of a region would leave the reading vacuous.
     Require(report,
             inA > 0 && changedInA > 0,
-            "naming the partition this build does not default to changes region A's values "
+            "naming the partition the class row does not carry changes region A's values "
             "against the default call: the member cuts region A's pieces as well as region B's "
             "seed, and the change is visible through the entry");
     Require(report,
             inB > 0 && changedInB > 0,
-            "naming the partition this build does not default to changes region B's values "
-            "against the default call: the member is a partition and not the default seed under "
-            "another name");
+            "naming the partition the class row does not carry changes region B's values "
+            "against the default call: the member is a partition and not the class row's seed "
+            "under another name");
     Require(report,
             aboveDomain > 0 && changedAboveDomain == 0,
-            "naming the partition this build does not default to changes nothing at or above the "
+            "naming the partition the class row does not carry changes nothing at or above the "
             "fitted domain's end: above it the entry reads the asymptotic path, which no "
             "partition of the stored fits is part of");
     Require(report,
             defaultDiffering == 0,
-            "naming the default partition is the default call bit for bit, so the default is "
-            "that member and not a third reading beside the two");
+            "naming the partition the class row carries is the default call bit for bit, so the "
+            "row's member is the default and not a third reading beside the two");
 
     std::printf("  %-56s %7zu cells  %zu of %zu in region A changed, %zu of %zu in region B, "
                 "%zu of %zu above the fitted domain\n",
