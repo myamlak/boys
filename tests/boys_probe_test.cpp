@@ -2286,9 +2286,10 @@ TEST(ProbeTest, TheEmittedSeamIsAReplacementForTheSeamItRead) {
     EXPECT_NE(text.find("/* a choice, not a measurement:"), std::string::npos);
 #else
     // This build's seam carries no class list, which is a shape a replacement is allowed to
-    // have: the five names are then the whole of it, and include/boys/boys.hpp writes the table
-    // those five make - one row per class, every cell the build's own choice, which its
-    // comment on that branch names the fixture overriding one of them as the case for. There is
+    // have: the seven names are then the whole of it, and include/boys/boys.hpp writes the table
+    // those names make - one row per class of each half, the device classes' two cells the device
+    // lane's own, every cell the build's own choice, which its comment on that branch names the
+    // fixture overriding one of them as the case for. There is
     // no class for the writer to key a row to, because the rows are one per class the seam
     // names (src/boys_probe.cpp, SeamRows over SeamClasses), so a run of this build measures
     // its cells and writes no seam at all. What it may not write is a file that defines the

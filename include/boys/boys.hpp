@@ -628,8 +628,9 @@ struct DefaultPolicyRow {
 BOYS_BUILD_DEFAULT_ROWS(BOYS_DEFAULT_POLICY_ROW)
 #else
 // A build that names only the five axes - a fixture overriding one of them, say - carries the table
-// those five make: one row per class the host's entries reach and no row besides, every cell the
-// build's own choice. This is not a fallback for a class a table omits. The table here is complete
+// those five make: one row per class the host's entries reach, the device half's nine below them,
+// and no row besides, every cell the build's own choice. This is not a fallback for a class a table
+// omits. The table here is complete
 // by construction, because the rows are written out by this list rather than looked up, and a build
 // that writes its own table and omits a class still fails to compile for it. The distinction is what
 // the row *is*: a written row whose cells come from the build's own five names, not an absent row
