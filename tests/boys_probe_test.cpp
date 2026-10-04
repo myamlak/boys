@@ -2298,7 +2298,10 @@ TEST(ProbeTest, TheEmittedSeamIsAReplacementForTheSeamItRead) {
 // account - a class the probe carries nothing for is one whose absence a reader of the block
 // cannot see, and the block is read as an account of the seam the file it writes replaces.
 TEST(ProbeTest, TheDefaultsBlockNamesEveryClassTheSeamKeys) {
-    const OptionProbeReport report = boys::RunOptionProbe(OneRound());
+    // The protocol that ranks: a run with too few paired rounds to order anything writes no
+    // rows at all - its block says so in its own words - and this test is about the block a
+    // ranking run writes.
+    const OptionProbeReport report = boys::RunOptionProbe(Timed());
     const std::string text = boys::FormatOptionProbe(report);
 
     // The block that writes the rows, and not the class list above it: the two spell a class
@@ -2307,6 +2310,10 @@ TEST(ProbeTest, TheDefaultsBlockNamesEveryClassTheSeamKeys) {
 
     ASSERT_NE(at, std::string::npos) << text;
 
+    // A block that measured no class carries no row lines to check against.
+    ASSERT_NE(text.find("carry a measured row", at), std::string::npos)
+        << "this protocol ordered nothing, so there is no row list here to be complete";
+
     const std::string block = text.substr(at);
 
     // The host classes the seam's own key reaches: the lanes it keys by, crossed with the
@@ -2314,7 +2321,7 @@ TEST(ProbeTest, TheDefaultsBlockNamesEveryClassTheSeamKeys) {
     // here, so a bf16 class the lane also carries is read at the lane's own spelling.
     std::vector<std::string> classes;
 
-    for (const OptionProbeClass& klass : report.classes) {
+    for (const boys::OptionProbeClass& klass : report.classes) {
         if (klass.precision == OptionPrecision::kFp32Device) {
             continue;
         }
@@ -2322,7 +2329,7 @@ TEST(ProbeTest, TheDefaultsBlockNamesEveryClassTheSeamKeys) {
         bool folded = false;
 
         if (klass.precision == OptionPrecision::kBf16) {
-            for (const OptionProbeClass& lane : report.classes) {
+            for (const boys::OptionProbeClass& lane : report.classes) {
                 folded = folded || (lane.precision == OptionPrecision::kFp16 &&
                                     lane.shape == klass.shape);
             }
