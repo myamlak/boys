@@ -156,6 +156,104 @@ CONDITIONS = [
 ]
 
 
+# The freeze: what must hold before an option probe may run for keeps. A probe run over a space
+# that is still moving produces defaults the next commit invalidates, so the run is held until
+# every one of these is true. Five are checkable here; the sixth is not, and says so rather than
+# being quietly counted as met.
+FREEZE = [
+    {
+        "name": "no uncommitted work in the tree a probe would be run from",
+        "cmd": ["git", "status", "--porcelain"],
+        "empty": True,
+        "timeout": 60,
+    },
+    {
+        "name": "every option space closes",
+        "cmd": [PY, "tools/status.py"],
+        "empty": False,
+        "timeout": 900,
+    },
+    {
+        "name": "the host class surface is served",
+        "cmd": [PY, "tools/check_class_surface.py", "--check"],
+        "empty": False,
+        "timeout": 60,
+    },
+    {
+        "name": "the device class surface is carried",
+        "cmd": [PY, "tools/check_device_class_surface.py", "--check"],
+        "empty": False,
+        "timeout": 60,
+    },
+    {
+        "name": "the recorded run is current",
+        "cmd": [PY, "tools/check_recorded_run.py"],
+        "empty": False,
+        "timeout": 300,
+    },
+    {
+        "name": "no lane is editing the tree",
+        "cmd": None,
+        "why": "a lane mid-edit is a space that is still moving, and no command can see a worktree "
+               "another agent holds. Count the lanes and say the number: the freeze is not met "
+               "while any of them is running.",
+    },
+    {
+        "name": "every refusal carries a reason a tool can read",
+        "cmd": None,
+        "why": "the spaces above count refusals, but whether each refusal's stated reason is one a "
+               "checker reads rather than a sentence a reader does is not yet a command. Named here "
+               "rather than assumed, because the owner's ruling is that such a reason is the "
+               "condition, not a courtesy.",
+    },
+]
+
+
+def freeze() -> int:
+    """Report the freeze conditions, each with the command that decided it."""
+    print("the freeze: what must hold before a probe runs for keeps\n")
+
+    unmet = 0
+    for condition in FREEZE:
+        if condition["cmd"] is None:
+            print(f"[NOT CHECKABLE] {condition['name']}")
+            print(f"    {condition['why']}\n")
+            unmet += 1
+            continue
+
+        try:
+            completed = subprocess.run(condition["cmd"], cwd=REPO, capture_output=True, text=True,
+                                       timeout=condition["timeout"], errors="replace")
+        except (subprocess.TimeoutExpired, FileNotFoundError) as failure:
+            print(f"[FAIL        ] {condition['name']}")
+            print(f"    command : {' '.join(condition['cmd'])}")
+            print(f"    result  : {failure}\n")
+            unmet += 1
+            continue
+
+        output = completed.stdout.strip()
+        # An "empty" condition is met by producing no output at all; every other is met by exiting
+        # zero. Both are read, because a command that exits zero while printing a complaint is the
+        # shape of failure this project has been bitten by.
+        if condition["empty"]:
+            met = completed.returncode == 0 and output == ""
+            detail = "no output" if output == "" else output.splitlines()[0]
+        else:
+            met = completed.returncode == 0
+            detail = (output.splitlines()[-1] if output else "(no output)")
+
+        print(f"[{'MET' if met else 'UNMET':<12}] {condition['name']}")
+        print(f"    command : {' '.join(condition['cmd'])}")
+        print(f"    result  : exit {completed.returncode}, {detail[:110]}\n")
+        unmet += 0 if met else 1
+
+    print(f"{len(FREEZE) - unmet} of {len(FREEZE)} freeze condition(s) met")
+    if unmet:
+        print("THE SPACE IS STILL MOVING. A probe run now produces defaults the next commit "
+              "invalidates, and the run is spent.")
+    return 1 if unmet else 0
+
+
 def mark(state: str) -> str:
     return {"pass": "PASS", "fail": "FAIL", "no-evaluator": "NO EVALUATOR",
             "timeout": "TIMEOUT"}[state]
@@ -187,7 +285,13 @@ def main() -> int:
     parser.add_argument("--report", action="store_true", help="run every evaluator and report")
     parser.add_argument("--list", action="store_true", help="print the conditions and their commands")
     parser.add_argument("--only", default="", help="a comma-separated list of condition numbers")
+    parser.add_argument("--freeze", action="store_true",
+                        help="report whether the option space has stopped moving, which is the "
+                             "gate a probe run for keeps waits on")
     args = parser.parse_args()
+
+    if args.freeze:
+        return freeze()
 
     wanted = {int(part) for part in args.only.split(",") if part.strip()} if args.only else None
     selected = [c for c in CONDITIONS if wanted is None or c["n"] in wanted]
