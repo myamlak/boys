@@ -441,36 +441,37 @@ struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kNarrow> {
 /// either family is a call those lanes answer as the double lane answers it, derived
 /// per partition at compile time rather than truncated from a shipped row.
 ///
-/// \tparam kFitRoute      the fit route; \c FitRoute::kChebyshev by default
-/// \tparam kEvalScheme    the scheme the fit's coefficients are summed in;
-///                        \c kDefaultEvalScheme by default, which is
-///                        \c EvalScheme::kHorner
+/// **Every axis is stated, and no parameter of this template carries a default.**
+/// A spelling that omits a cell is therefore a compile error here, whatever wrote
+/// it: this is the name the default-policy table's rows expand, so a row with a
+/// cell missing fails at the class rather than at the macro that expanded it, and
+/// a row written out by hand fails the same way. The defaulted spelling - the
+/// seven axes at the values a build that names none resolves on - is \c EvalPolicy
+/// below.
+///
+/// \tparam kFitRoute      the fit route
+/// \tparam kEvalScheme    the scheme the fit's coefficients are summed in
 /// \tparam kEngineBudget  the computation budget of a single-precision engine,
 ///                        read by the float and half-precision lanes and by
-///                        nothing else; \c BoysBudget::kFloat by default
+///                        nothing else
 /// \tparam kPackedAxis    the axis a packed evaluation vectorises over, read by
-///                        the entries that have a wide axis to fill;
-///                        \c PackAxis::kArguments by default
-/// \tparam kGranularity   how narrowly the fitted domain is cut into pieces;
-///                        \c kDefaultFitGranularity by default, which is
-///                        \c FitGranularity::kNarrow
-/// \tparam kDivision      how the recursion's per-order division is performed;
-///                        \c kDefaultDivisionForm by default, which is
-///                        \c DivisionForm::kRefinedReciprocal
-/// \tparam kExp           which exponential seeds a region-B ladder;
-///                        \c kDefaultHostRegionBExp by default, which is
+///                        the entries that have a wide axis to fill
+/// \tparam kGranularity   how narrowly the fitted domain is cut into pieces
+/// \tparam kDivision      how the recursion's per-order division is performed
+/// \tparam kExp           which exponential seeds a region-B ladder; the host
+///                        default is \c kDefaultHostRegionBExp, which is
 ///                        \c RegionBExp::kFast, the arithmetic the double
 ///                        lane's per-region figures were measured at
 ///
 /// \ingroup boys
-template <FitRoute kFitRoute = kDefaultFitRoute,
-          EvalScheme kEvalScheme = kDefaultEvalScheme,
-          BoysBudget kEngineBudget = BoysBudget::kFloat,
-          PackAxis kPackedAxis = kDefaultPackAxis,
-          FitGranularity kFitGranularity = kDefaultFitGranularity,
-          DivisionForm kDivisionForm = kDefaultDivisionForm,
-          RegionBExp kExp = kDefaultHostRegionBExp>
-struct EvalPolicy {
+template <FitRoute kFitRoute,
+          EvalScheme kEvalScheme,
+          BoysBudget kEngineBudget,
+          PackAxis kPackedAxis,
+          FitGranularity kFitGranularity,
+          DivisionForm kDivisionForm,
+          RegionBExp kExp>
+struct StatedEvalPolicy {
     /// The fit this policy evaluates, where the combination is one the library
     /// carries.
     using Fit = typename detail::RouteFit<kFitRoute, kEvalScheme, kFitGranularity>::Type;
@@ -496,6 +497,32 @@ struct EvalPolicy {
     static constexpr RegionBExp kRegionBExp = kExp;
 };
 
+/// The evaluation policy at the values a call site that names none resolves on:
+/// every axis of \c StatedEvalPolicy, each parameter defaulted, so a caller may
+/// name the one axis it has an opinion about and keep the rest.
+///
+/// **These are the seam's own values, and an entry's template default is not this
+/// name.** Each default below is the name the build's seam header
+/// (`boys/boys_build_defaults.hpp`) defines, so a build that replaces the seam
+/// moves this alias with it. What an entry defaults to is its class's row -
+/// \c DefaultPolicy<kPrecision, kShape> - and a build whose table moves a class
+/// resolves that class to its row and not to the point below: the two are one
+/// instantiation exactly where the row carries the combination these defaults
+/// compose, and two types where it does not. A caller who wants the class's own
+/// policy names no policy at the call site or names \c DefaultPolicy; a caller
+/// who wants this build's own point names this alias.
+///
+/// \ingroup boys
+template <FitRoute kFitRoute = kDefaultFitRoute,
+          EvalScheme kEvalScheme = kDefaultEvalScheme,
+          BoysBudget kEngineBudget = BoysBudget::kFloat,
+          PackAxis kPackedAxis = kDefaultPackAxis,
+          FitGranularity kFitGranularity = kDefaultFitGranularity,
+          DivisionForm kDivisionForm = kDefaultDivisionForm,
+          RegionBExp kExp = kDefaultHostRegionBExp>
+using EvalPolicy = StatedEvalPolicy<kFitRoute, kEvalScheme, kEngineBudget, kPackedAxis, kFitGranularity,
+                                    kDivisionForm, kExp>;
+
 /// The constraint the entries put on a policy, so a combination the library
 /// does not carry is rejected where the caller names it.
 ///
@@ -520,11 +547,17 @@ concept EvalPolicyLike = requires {
 /// precision: the shortcut for a consumer who has chosen a precision and does
 /// not want to choose anything else.
 ///
-/// Each name is what the entries of that precision run when the call site
-/// names no policy, so a caller may write \c BoysSingle<1.0, DefaultPolicyFp64>
-/// and get the call a caller who named nothing gets — the same instantiation,
-/// not a second one that happens to agree, and the entries' own template
-/// defaults are these names. The four differ in one field and in one only:
+/// Each name is \c EvalPolicy<> at one lane's budget: the point the build's seam
+/// header names, and never a class's row. A caller may write
+/// \c BoysSingle<1.0, DefaultPolicyFp64> to name that point explicitly, and the
+/// call it gets is the one a call site that named no policy gets exactly where the
+/// table's row for that class carries the combination this point composes. It is
+/// not the same instantiation in general, and an entry's own template default is
+/// not this name: an entry defaults to \c DefaultPolicy<kPrecision, kShape>, which
+/// the class's row resolves, so a build whose table moves a class answers that
+/// class from its row while this alias keeps the seam's point. A caller who wants
+/// the class's policy names no policy at the call site. The four differ in one
+/// field and in one only:
 ///
 ///  - the **double** lanes read no budget, so \c DefaultPolicyFp64 selects the
 ///    Chebyshev route, the Horner scheme, the narrow partition, the
