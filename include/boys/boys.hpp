@@ -1233,9 +1233,10 @@ void BoysAllOrdersWithRoute(
 /// \tparam Policy the evaluation policy (\c EvalPolicy): the fit route, the
 ///         scheme its coefficients are summed in, the partition of the fitted
 ///         regions, and a single-precision engine's budget, selected together.
-///         The default, \c DefaultPolicyFp64, names every axis the library
-///         defaults, so a call site that names no axis compiles that policy's code
-///         path, and naming any axis is how a caller asks for another
+///         The default is this call's own class row - \c DefaultPolicy at the
+///         precision and shape of the entry above - so a call site that names no
+///         axis resolves through the table the build's seam carries, and naming
+///         any axis is how a caller asks for another
 /// \param n     order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0
 /// \returns     F_n(x)
